@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Collections/Zenith_CircularQueue.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Profiling/Zenith_Profiling.h"
+
+#include <atomic>
 
 // ----------------------------------------------------------------------------
 // TaskSystem dependency model
@@ -57,9 +59,9 @@ public:
 	virtual void DoTask()
 	{
 		Zenith_Assert(m_pfnFunc != nullptr, "DoTask: Task function pointer is null");
-		Zenith_Profiling::BeginProfile(m_eProfileIndex);
+		g_xEngine.Profiling().BeginProfile(m_eProfileIndex);
 		m_pfnFunc(m_pData);
-		Zenith_Profiling::EndProfile(m_eProfileIndex);
+		g_xEngine.Profiling().EndProfile(m_eProfileIndex);
 		m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
 		m_xSemaphore.Signal();
 	}
@@ -67,9 +69,9 @@ public:
 	void WaitUntilComplete()
 	{
 		if (!m_bSubmitted.load(std::memory_order_acquire)) return;
-		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
+		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		m_xSemaphore.Wait();
-		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
+		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		m_bSubmitted.store(false, std::memory_order_release);
 	}
 
@@ -100,8 +102,7 @@ protected:
 	void* m_pData;
 	u_int m_uCompletedThreadID;
 
-	friend class Zenith_TaskSystemImpl;
-	friend class Zenith_TaskSystemImpl;  // Phase 3b: state owner accesses m_bSubmitted
+	friend class Zenith_TaskSystem;
 	std::atomic<bool> m_bSubmitted;  // Thread-safe submitted flag
 };
 
@@ -125,9 +126,9 @@ public:
 	{
 		u_int uInvocationIndex = m_uInvocationCounter.fetch_add(1);
 
-		Zenith_Profiling::BeginProfile(m_eProfileIndex);
+		g_xEngine.Profiling().BeginProfile(m_eProfileIndex);
 		m_pfnArrayFunc(m_pData, uInvocationIndex, m_uNumInvocations);
-		Zenith_Profiling::EndProfile(m_eProfileIndex);
+		g_xEngine.Profiling().EndProfile(m_eProfileIndex);
 
 		// Signal completion when ALL threads have finished their work
 		Zenith_Assert(uInvocationIndex < m_uNumInvocations, "We have done this task too many times");
@@ -170,9 +171,46 @@ private:
 	std::atomic<u_int> m_uCompletionCounter;
 };
 
-// Public static facade. Phase 3b moved the actual state + logic onto
-// Zenith_TaskSystemImpl (held by Zenith_Engine). These methods remain
-// as 1-line forwarders to g_xEngine.Tasks() so the 26 existing call
-// sites compile unchanged; Phase 9's static-API removal sweep deletes
-// them once the codemod to g_xEngine.Tasks().X() is done.
+// Per-Engine task-system state. Owns the worker-thread pool + the
+// shared task queue. Accessed via g_xEngine.Tasks(); worker threads
+// also reach in through g_xEngine.Tasks() since Engine is the
+// canonical single owner.
+class Zenith_TaskSystem
+{
+public:
+	Zenith_TaskSystem() = default;
+	~Zenith_TaskSystem() = default;
 
+	Zenith_TaskSystem(const Zenith_TaskSystem&) = delete;
+	Zenith_TaskSystem& operator=(const Zenith_TaskSystem&) = delete;
+
+	static constexpr u_int uMAX_TASKS = 128;
+
+	void Initialise();
+	void Shutdown();
+
+	void SubmitTask(Zenith_Task* pxTask);
+	void SubmitTaskArray(Zenith_TaskArray* pxTaskArray);
+
+	// Called by the static worker thread function. Public so the
+	// free-function ThreadFunc in the .cpp can reach in.
+	void RunWorkerLoop();
+
+private:
+	// Atomic CAS to claim a task for submission. Returns false if
+	// already submitted.
+	bool TryClaimTask(Zenith_Task* pxTask, const char* szCallerName);
+
+	// Enqueue a task pointer uCount times under the queue lock, then
+	// signal workers. Returns the number of tasks successfully
+	// enqueued.
+	u_int EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount);
+
+	Zenith_CircularQueue<Zenith_Task*, uMAX_TASKS> m_xTaskQueue;
+	Zenith_Semaphore* m_pxWorkAvailableSem    = nullptr;
+	Zenith_Semaphore* m_pxThreadsTerminatedSem = nullptr;
+	Zenith_Mutex      m_xQueueMutex;
+	std::atomic<bool> m_bTerminateThreads     {false};
+	std::atomic<bool> m_bInitialized          {false};
+	u_int             m_uNumWorkerThreads     = 0;
+};

@@ -189,7 +189,7 @@ struct Zenith_EditorCameraState
 //-----------------------------------------------------------------------------
 struct Zenith_EditorMaterialState
 {
-	// Same lifetime rule as Zenith_EditorImpl::m_xSelectedMaterial -- use a
+	// Same lifetime rule as Zenith_Editor::m_xSelectedMaterial -- use a
 	// MaterialHandle so the asset survives UnloadUnusedAssets cycles.
 	MaterialHandle m_xSelectedMaterial;
 	bool m_bShowEditor = true;

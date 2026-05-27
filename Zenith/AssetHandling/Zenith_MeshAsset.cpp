@@ -659,11 +659,11 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 	}
 
 	// Create GPU vertex buffer
-	Flux_MemoryManager::InitialiseVertexBuffer(pVertexData, uVertexDataSize, m_xVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(pVertexData, uVertexDataSize, m_xVertexBuffer);
 
 	// Create GPU index buffer
 	const size_t uIndexDataSize = static_cast<size_t>(m_uNumIndices) * sizeof(uint32_t);
-	Flux_MemoryManager::InitialiseIndexBuffer(m_xIndices.GetDataPointer(), uIndexDataSize, m_xIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(m_xIndices.GetDataPointer(), uIndexDataSize, m_xIndexBuffer);
 
 	delete[] pVertexData;
 
@@ -690,13 +690,13 @@ void Zenith_MeshAsset::ReleaseGPU()
 	{
 		if (m_xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 		{
-			Flux_MemoryManager::DestroyVertexBuffer(m_xVertexBuffer);
+			g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xVertexBuffer);
 		}
 		m_xVertexBuffer.Reset();
 
 		if (m_xIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 		{
-			Flux_MemoryManager::DestroyIndexBuffer(m_xIndexBuffer);
+			g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xIndexBuffer);
 		}
 		m_xIndexBuffer.Reset();
 

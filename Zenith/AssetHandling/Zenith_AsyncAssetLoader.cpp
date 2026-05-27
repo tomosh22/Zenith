@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Zenith_AsyncAssetLoader.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Static member definitions
 Zenith_Vector<Zenith_AsyncAssetLoader::LoadRequest> Zenith_AsyncAssetLoader::s_xPendingLoads;

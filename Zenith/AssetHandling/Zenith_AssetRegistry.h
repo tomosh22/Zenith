@@ -1,6 +1,8 @@
 #pragma once
 
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+
+#include "Flux/Flux_RendererImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <string>
 #include <unordered_map>
 #include <functional>
@@ -135,7 +137,7 @@ public:
 
 	/**
 	 * Initialize GPU-dependent assets (call after Vulkan/VMA is initialized)
-	 * Must be called after Flux::EarlyInitialise()
+	 * Must be called after g_xEngine.FluxRenderer().EarlyInitialise()
 	 */
 	static void InitializeGPUDependentAssets();
 

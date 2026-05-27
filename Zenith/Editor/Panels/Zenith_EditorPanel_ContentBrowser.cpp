@@ -366,12 +366,12 @@ void Zenith_EditorPanelContentBrowser::HandleEntryDoubleClickOpen(const ContentB
 			Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(xEntry.m_strFullPath);
 		if (pMaterial)
 		{
-			Zenith_Editor::SelectMaterial(pMaterial);
+			g_xEngine.Editor().SelectMaterial(pMaterial);
 		}
 	}
 	else if (xEntry.m_strExtension == ZENITH_SCENE_EXT)
 	{
-		Zenith_Editor::RequestLoadSceneFromFile(xEntry.m_strFullPath);
+		g_xEngine.Editor().RequestLoadSceneFromFile(xEntry.m_strFullPath);
 	}
 }
 

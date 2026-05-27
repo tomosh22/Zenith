@@ -15,7 +15,7 @@ class Zenith_MaterialAsset;
 
 // Material editor state structure.
 // m_pxSelectedMaterial is a non-owning view pointer -- the editor's owning
-// MaterialHandle lives on Zenith_EditorImpl. The panel never mutates this
+// MaterialHandle lives on Zenith_Editor. The panel never mutates this
 // field; it calls Zenith_Editor::SelectMaterial / ClearMaterialSelection
 // to change the selection.
 struct MaterialEditorState

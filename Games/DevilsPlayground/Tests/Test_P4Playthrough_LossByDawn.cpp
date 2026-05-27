@@ -83,8 +83,8 @@ namespace
 
 	Zenith_UI::Zenith_UIText* FindHudStatus()
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
 		pxScene->Query<Zenith_UIComponent>().ForEach(
@@ -114,7 +114,7 @@ static bool Step_P4LossDawn(int iFrame)
 	switch (g_iPhase)
 	{
 	case kLD_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kLD_WaitScene;
 		return true;
 

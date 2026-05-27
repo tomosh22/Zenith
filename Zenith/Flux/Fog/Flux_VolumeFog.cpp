@@ -95,16 +95,16 @@ void Flux_VolumeFogImpl::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Master controls
-	Zenith_DebugVariables::AddVector3({ "Render", "Volumetric Fog", "Shared", "Colour" }, g_xEngine.VolumeFog().m_xSharedConstants.m_xFogColour, 0.f, 1.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Density" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fDensity, 0.f, 0.01f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Scattering" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fScatteringCoeff, 0.f, 1.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Absorption" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fAbsorptionCoeff, 0.f, 1.f);
+	g_xEngine.DebugVariables().AddVector3({ "Render", "Volumetric Fog", "Shared", "Colour" }, g_xEngine.VolumeFog().m_xSharedConstants.m_xFogColour, 0.f, 1.f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Density" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fDensity, 0.f, 0.01f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Scattering" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fScatteringCoeff, 0.f, 1.f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Absorption" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fAbsorptionCoeff, 0.f, 1.f);
 	// Ambient irradiance ratio: fraction of sky light vs direct sun contribution to fog
 	// Physical basis: Clear sky ~0.15-0.25, overcast ~0.4-0.6
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Ambient Irradiance Ratio" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fAmbientIrradianceRatio, 0.f, 1.f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Ambient Irradiance Ratio" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fAmbientIrradianceRatio, 0.f, 1.f);
 	// Noise world scale: maps world-space coordinates to noise texture UV
 	// Smaller values = larger fog features, larger values = denser noise detail
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Noise World Scale" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fNoiseWorldScale, 0.001f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Noise World Scale" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fNoiseWorldScale, 0.001f, 0.1f);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog initialised");

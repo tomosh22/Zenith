@@ -1,11 +1,11 @@
 #include "Zenith.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 #include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistry.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueue.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
@@ -19,7 +19,7 @@
 // gates it. Public Zenith_SceneManager methods forward into this class.
 //=============================================================================
 
-// Phase 5e: scheduler state lives on Zenith_SceneLifecycleSchedulerImpl
+// Phase 5e: scheduler state lives on Zenith_SceneLifecycleScheduler
 // (held by Zenith_Engine as m_pxSceneLifecycle). Method bodies and
 // external readers reach it via g_xEngine.SceneLifecycle().m_xXxx.
 
@@ -60,7 +60,7 @@ namespace
 		for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 		{
 			Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
-			if (Zenith_SceneRegistry::IsSceneUpdatable(pxData))
+			if (g_xEngine.SceneRegistry().IsSceneUpdatable(pxData))
 			{
 				axOut.PushBack(pxData);
 			}
@@ -117,9 +117,9 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Update must be called from main thread");
 
-	Zenith_SceneOperationQueue::ProcessPendingAsyncLoads();
-	Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads();
-	Zenith_SceneOperationQueue::CleanupCompletedOperations();
+	g_xEngine.SceneOperations().ProcessPendingAsyncLoads();
+	g_xEngine.SceneOperations().ProcessPendingAsyncUnloads();
+	g_xEngine.SceneOperations().CleanupCompletedOperations();
 
 	// Mark as updating - any LoadScene/LoadSceneByIndex calls during script execution
 	// will route through LoadSceneAsync to defer to next frame (Unity parity).
@@ -166,7 +166,7 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 	if (g_pxAnimUpdateTask)
 	{
 #ifdef ZENITH_ASSERT
-		Zenith_SceneManager::SetAnimTasksActive(true);
+		g_xEngine.SceneLifecycle().SetAnimTasksActive(true);
 #endif
 		g_xEngine.Tasks().SubmitTaskArray(g_pxAnimUpdateTask);
 	}
@@ -180,7 +180,7 @@ void Zenith_SceneLifecycleScheduler::WaitForUpdateComplete()
 	{
 		g_pxAnimUpdateTask->WaitUntilComplete();
 #ifdef ZENITH_ASSERT
-		Zenith_SceneManager::SetAnimTasksActive(false);
+		g_xEngine.SceneLifecycle().SetAnimTasksActive(false);
 #endif
 	}
 }
@@ -244,6 +244,26 @@ void Zenith_SceneLifecycleScheduler::SetFixedTimestep(float fTimestep)
 float Zenith_SceneLifecycleScheduler::GetFixedTimestep()
 {
 	return g_xEngine.SceneLifecycle().m_fFixedTimestep;
+}
+
+//=============================================================================
+// Default creation target + main-loop flag (Phase 5c).
+//=============================================================================
+
+Zenith_Scene Zenith_SceneLifecycleScheduler::GetDefaultCreationScene()
+{
+	const u_int uDepth = m_axCreationTargetStack.GetSize();
+	if (uDepth > 0)
+	{
+		return m_axCreationTargetStack.Get(uDepth - 1);
+	}
+	return g_xEngine.SceneRegistry().GetActiveScene();
+}
+
+void Zenith_SceneLifecycleScheduler::SetMainLoopRunning(bool bRunning)
+{
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetMainLoopRunning must be called from main thread");
+	m_bIsMainLoopRunning = bRunning;
 }
 
 //=============================================================================

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
@@ -83,15 +84,15 @@ void Flux_RaymarchFogImpl::Initialise()
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Raymarch", "Step Count" }, dbg_uRaymarchSteps, 8, 256);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Noise Scale" }, dbg_fRaymarchNoiseScale, 0.001f, 0.1f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Noise Speed" }, dbg_fRaymarchNoiseSpeed, 0.0f, 1.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Max Distance" }, dbg_fRaymarchMaxDistance, 50.0f, 1000.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Height Falloff" }, dbg_fRaymarchHeightFalloff, 0.0f, 0.1f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Phase G" }, dbg_fRaymarchPhaseG, -0.9f, 0.9f);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Raymarch", "Step Count" }, dbg_uRaymarchSteps, 8, 256);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Noise Scale" }, dbg_fRaymarchNoiseScale, 0.001f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Noise Speed" }, dbg_fRaymarchNoiseSpeed, 0.0f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Max Distance" }, dbg_fRaymarchMaxDistance, 50.0f, 1000.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Height Falloff" }, dbg_fRaymarchHeightFalloff, 0.0f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Phase G" }, dbg_fRaymarchPhaseG, -0.9f, 0.9f);
 	// Volumetric shadow parameters (unified with Froxel fog)
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Bias" }, dbg_fRaymarchShadowBias, 0.0001f, 0.01f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Cone Radius" }, dbg_fRaymarchShadowConeRadius, 0.0001f, 0.01f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Bias" }, dbg_fRaymarchShadowBias, 0.0001f, 0.01f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Cone Radius" }, dbg_fRaymarchShadowConeRadius, 0.0001f, 0.01f);
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -150,7 +151,7 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 	// Check current debug mode
 	extern u_int dbg_uVolFogDebugMode;
 	s_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
-	s_xConstants.m_uFrameIndex = Flux::GetFrameCounter();
+	s_xConstants.m_uFrameIndex = g_xEngine.FluxRenderer().GetFrameCounter();
 	s_xConstants.m_fPhaseG = dbg_fRaymarchPhaseG;
 
 	// Volumetric shadow parameters (unified with Froxel fog for consistent shadow softness)

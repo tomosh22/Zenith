@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Flux/Flux_PerFrame.h"
+#include "Flux/Flux_RendererImpl.h"
 
 #include "Vulkan/Zenith_Vulkan.h"
 #include "Vulkan/Zenith_Vulkan_Platform.h"
@@ -7,7 +8,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include <algorithm>
 
 #ifdef ZENITH_WINDOWS
@@ -33,13 +34,13 @@
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation", /*"VK_LAYER_KHRONOS_synchronization2"*/ };
 #endif
 
-#include "Vulkan/Zenith_VulkanImpl.h"
+#include "Vulkan/Zenith_Vulkan.h"
 
-// Phase 6b: Vulkan backend state lives on Zenith_VulkanImpl held by
+// Phase 6b: Vulkan backend state lives on Zenith_Vulkan held by
 // Zenith_Engine. Methods below dereference g_xEngine.Vulkan().m_xXxx.
 
 #ifdef ZENITH_TOOLS
-const vk::DescriptorPool& Zenith_Vulkan::GetImGuiDescriptorPool() { return g_xEngine.Vulkan().m_xImGuiDescriptorPool; }
+const vk::DescriptorPool& Zenith_Vulkan::GetImGuiDescriptorPool() { return Zenith_Vulkan::m_xImGuiDescriptorPool; }
 
 // ImGui memory tracking
 static std::atomic<u_int64> s_ulImGuiMemoryAllocated = 0;
@@ -118,20 +119,20 @@ static const char* s_aszDeviceExtensions[] = {
 #endif
 };
 
-// All previously here-defined statics moved to Zenith_VulkanImpl.
+// All previously here-defined statics moved to Zenith_Vulkan.
 
-const vk::Instance&         Zenith_Vulkan::GetInstance()                  { return g_xEngine.Vulkan().m_xInstance; }
-const vk::PhysicalDevice&   Zenith_Vulkan::GetPhysicalDevice()            { return g_xEngine.Vulkan().m_xPhysicalDevice; }
-const vk::Device&           Zenith_Vulkan::GetDevice()                    { return g_xEngine.Vulkan().m_xDevice; }
-const vk::CommandPool&      Zenith_Vulkan::GetCommandPool(CommandType eType) { return g_xEngine.Vulkan().m_axCommandPools[eType]; }
-const vk::Queue&            Zenith_Vulkan::GetQueue(CommandType eType)    { return g_xEngine.Vulkan().m_axQueues[eType]; }
-const vk::SurfaceKHR&       Zenith_Vulkan::GetSurface()                   { return g_xEngine.Vulkan().m_xSurface; }
-const uint32_t              Zenith_Vulkan::GetQueueIndex(CommandType eType){ return g_xEngine.Vulkan().m_auQueueIndices[eType]; }
-const vk::DescriptorPool&   Zenith_Vulkan::GetDefaultDescriptorPool()     { return g_xEngine.Vulkan().m_xDefaultDescriptorPool; }
-vk::DescriptorSet&          Zenith_Vulkan::GetBindlessTexturesDescriptorSet()       { return g_xEngine.Vulkan().m_xBindlessTexturesDescriptorSet; }
-vk::DescriptorSetLayout&    Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout() { return g_xEngine.Vulkan().m_xBindlessTexturesDescriptorSetLayout; }
+const vk::Instance&         Zenith_Vulkan::GetInstance()                  { return Zenith_Vulkan::m_xInstance; }
+const vk::PhysicalDevice&   Zenith_Vulkan::GetPhysicalDevice()            { return Zenith_Vulkan::m_xPhysicalDevice; }
+const vk::Device&           Zenith_Vulkan::GetDevice()                    { return Zenith_Vulkan::m_xDevice; }
+const vk::CommandPool&      Zenith_Vulkan::GetCommandPool(CommandType eType) { return Zenith_Vulkan::m_axCommandPools[eType]; }
+const vk::Queue&            Zenith_Vulkan::GetQueue(CommandType eType)    { return Zenith_Vulkan::m_axQueues[eType]; }
+const vk::SurfaceKHR&       Zenith_Vulkan::GetSurface()                   { return Zenith_Vulkan::m_xSurface; }
+const uint32_t              Zenith_Vulkan::GetQueueIndex(CommandType eType){ return Zenith_Vulkan::m_auQueueIndices[eType]; }
+const vk::DescriptorPool&   Zenith_Vulkan::GetDefaultDescriptorPool()     { return Zenith_Vulkan::m_xDefaultDescriptorPool; }
+vk::DescriptorSet&          Zenith_Vulkan::GetBindlessTexturesDescriptorSet()       { return Zenith_Vulkan::m_xBindlessTexturesDescriptorSet; }
+vk::DescriptorSetLayout&    Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout() { return Zenith_Vulkan::m_xBindlessTexturesDescriptorSetLayout; }
 #ifdef ZENITH_FLUX_PROFILING
-vk::DispatchLoaderDynamic&  Zenith_Vulkan::GetDispatchLoader()            { return g_xEngine.Vulkan().m_xDispatchLoader; }
+vk::DispatchLoaderDynamic&  Zenith_Vulkan::GetDispatchLoader()            { return Zenith_Vulkan::m_xDispatchLoader; }
 #endif
 Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
 
@@ -200,11 +201,11 @@ void Zenith_Vulkan::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
-	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
-	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bOnlyUpdateDirtyDescriptors);
+	g_xEngine.DebugVariables().AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
+	g_xEngine.DebugVariables().AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
+	g_xEngine.DebugVariables().AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bOnlyUpdateDirtyDescriptors);
 
-	Zenith_DebugVariables::AddUInt32_ReadOnly({ "Vulkan", "Descriptor Sets Allocated" }, dbg_uNumDescSetAllocations);
+	g_xEngine.DebugVariables().AddUInt32_ReadOnly({ "Vulkan", "Descriptor Sets Allocated" }, dbg_uNumDescSetAllocations);
 #endif
 
 	g_xEngine.Vulkan().m_pxCurrentFrame = &g_xEngine.Vulkan().m_axPerFrame[0];
@@ -217,7 +218,7 @@ void Zenith_Vulkan::Initialise()
 	// it FIRST so it runs before any other backend's begin callback that might
 	// touch the slot. Counted in FLUX_PERFRAME_BEGIN_SUBSCRIBER_TALLY
 	// (Flux_PerFrame.cpp): bump that tally if you add another begin callback.
-	Flux_PerFrame::RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
 }
 
 void Zenith_Vulkan::InitialiseScratchBuffers()
@@ -233,7 +234,7 @@ void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
 	// Frame counter / ring index is owned by Flux_PerFrame; this callback
 	// receives the current ring index directly (no longer pulled from the
 	// swapchain). The swapchain itself will read GetCurrentFrameIndex()
-	// which is now a thin wrapper over Flux_PerFrame::GetRingIndex().
+	// which is now a thin wrapper over g_xEngine.FluxRenderer().GetRingIndex().
 	g_xEngine.Vulkan().m_pxCurrentFrame = &g_xEngine.Vulkan().m_axPerFrame[uRingIndex];
 	g_xEngine.Vulkan().m_pxCurrentFrame->BeginFrame();
 
@@ -437,7 +438,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 
 	for (u_int i = uStartIndex; i < uEndIndex; i++)
 	{
-		const Flux_CommandListEntry& xEntry = Flux::GetPendingCommandLists().Get(i);
+		const Flux_CommandListEntry& xEntry = g_xEngine.FluxRenderer().GetPendingCommandLists().Get(i);
 		const bool bIsComputePass = (xEntry.m_uNumColourAttachments == 0 && !xEntry.m_xDepthStencil.IsValid());
 		if (bIsComputePass)
 		{
@@ -482,9 +483,9 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	// Prepare frame work distribution in platform-independent layer
 	// Do this BEFORE memory submit so we know whether to signal the semaphore
 	Flux_WorkDistribution xWorkDistribution;
-	const bool bHasRenderWork = bSubmitRenderWork && Flux::PrepareFrame(xWorkDistribution);
+	const bool bHasRenderWork = bSubmitRenderWork && g_xEngine.FluxRenderer().PrepareFrame(xWorkDistribution);
 
-	const bool bShouldWait = Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore();
+	const bool bShouldWait = g_xEngine.VulkanSwapchain().ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(static_cast<uint32_t>(xPlatformMemoryCmdBufs.size()))
 		.setPCommandBuffers(xPlatformMemoryCmdBufs.data())
@@ -492,7 +493,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		.setPSignalSemaphores(bHasRenderWork ? &xMemorySemaphore : nullptr)
 		.setSignalSemaphoreCount(bHasRenderWork ? 1 : 0)
 		.setWaitDstStageMask(eMemWaitStages)
-		.setPWaitSemaphores(bShouldWait ? &Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore() : nullptr)
+		.setPWaitSemaphores(bShouldWait ? &g_xEngine.VulkanSwapchain().GetCurrentImageAvailableSemaphore() : nullptr)
 		.setWaitSemaphoreCount(bShouldWait);
 
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
@@ -504,7 +505,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		// Without this, stale command list entries accumulate across frames and can
 		// cause access violations when those entries are processed in subsequent frames
 		// after scene resources have been destroyed and recreated
-		Flux::ClearPendingCommandLists();
+		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 		return; // No work to do this frame
 	}
 	
@@ -522,7 +523,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	xRecordingTask.WaitUntilComplete();
 	
 	// Clear all pending command lists now that recording is complete
-	Flux::ClearPendingCommandLists();
+	g_xEngine.FluxRenderer().ClearPendingCommandLists();
 	
 	// Submit all worker command buffers in order (0 to 7)
 	// This maintains correct render order since work is distributed contiguously
@@ -1007,7 +1008,7 @@ void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImag
 
 void Zenith_Vulkan::WriteBindlessTextureSlot(uint32_t uIndex, const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler)
 {
-	const vk::ImageView xVkView = Zenith_Vulkan_MemoryManager::GetImageView(xView.m_xImageViewHandle);
+	const vk::ImageView xVkView = g_xEngine.VulkanMemory().GetImageView(xView.m_xImageViewHandle);
 	WriteBindlessDescriptor(uIndex, xVkView, xSampler.GetSampler());
 }
 
@@ -1032,7 +1033,7 @@ uint64_t Zenith_Vulkan::CreateImGuiTextureID(const Flux_ShaderResourceView& xVie
 
 	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
 		.setSampler(xSampler.GetSampler())
-		.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(xView.m_xImageViewHandle))
+		.setImageView(g_xEngine.VulkanMemory().GetImageView(xView.m_xImageViewHandle))
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
 	vk::WriteDescriptorSet xWriteInfo = vk::WriteDescriptorSet()
@@ -1135,7 +1136,7 @@ void Zenith_Vulkan::InitialiseImGuiRenderPass()
 {
 	// Use swapchain format (BGRA8_SRGB) since ImGui will render directly to the swapchain
 	vk::AttachmentDescription xColorAttachment = vk::AttachmentDescription()
-		.setFormat(Zenith_Vulkan_Swapchain::GetFormat())
+		.setFormat(g_xEngine.VulkanSwapchain().GetFormat())
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setLoadOp(vk::AttachmentLoadOp::eLoad)
 		.setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -1220,15 +1221,15 @@ void Zenith_Vulkan_PerFrame::Initialise()
 
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
-		xPool = VkUnwrap(Zenith_Vulkan::GetDevice().createDescriptorPool(xPoolInfo));
+		xPool = VkUnwrap(g_xEngine.Vulkan().GetDevice().createDescriptorPool(xPoolInfo));
 	}
 	
 	// Create per-worker-thread command pools for multithreaded command buffer recording
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
 	{
-		m_axCommandPools[i] = VkUnwrap(Zenith_Vulkan::GetDevice().createCommandPool(
+		m_axCommandPools[i] = VkUnwrap(g_xEngine.Vulkan().GetDevice().createCommandPool(
 			vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-			Zenith_Vulkan::GetQueueIndex(COMMANDTYPE_GRAPHICS))));
+			g_xEngine.Vulkan().GetQueueIndex(COMMANDTYPE_GRAPHICS))));
 		
 		// Initialize worker command buffers with their dedicated command pools and worker index
 		m_axWorkerCommandBuffers[i].InitialiseWithCustomPool(m_axCommandPools[i], i);
@@ -1236,16 +1237,16 @@ void Zenith_Vulkan_PerFrame::Initialise()
 
 	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
 		.setFlags(vk::FenceCreateFlagBits::eSignaled);
-	m_xFence = VkUnwrap(Zenith_Vulkan::GetDevice().createFence(xFenceInfo));
+	m_xFence = VkUnwrap(g_xEngine.Vulkan().GetDevice().createFence(xFenceInfo));
 
 	// Create persistent semaphore for memory submit synchronization (fixes per-frame semaphore leak)
-	m_xMemorySemaphore = VkUnwrap(Zenith_Vulkan::GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
+	m_xMemorySemaphore = VkUnwrap(g_xEngine.Vulkan().GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
 }
 
 void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 {
 	// Create scratch buffer for push constant replacement
-	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = Zenith_Vulkan_MemoryManager::CreatePersistentlyMappedBuffer(
+	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = g_xEngine.VulkanMemory().CreatePersistentlyMappedBuffer(
 		uSCRATCH_BUFFER_SIZE,
 		vk::BufferUsageFlagBits::eUniformBuffer);
 	m_xScratchBuffer = xScratch.m_xBuffer;
@@ -1253,7 +1254,7 @@ void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 	m_pScratchBufferMapped = xScratch.m_pMappedPtr;
 
 	// Query alignment requirement
-	m_uMinAlignment = static_cast<u_int>(Zenith_Vulkan::GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
+	m_uMinAlignment = static_cast<u_int>(g_xEngine.Vulkan().GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
 
 	// Initialize worker offsets
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
@@ -1269,7 +1270,7 @@ void Zenith_Vulkan_PerFrame::ShutdownScratchBuffer()
 	// allocator goes away in Zenith_Vulkan_MemoryManager::Shutdown.
 	if (m_xScratchAllocation != VK_NULL_HANDLE)
 	{
-		vmaDestroyBuffer(Zenith_Vulkan_MemoryManager::GetVMAAllocator(), m_xScratchBuffer, m_xScratchAllocation);
+		vmaDestroyBuffer(g_xEngine.VulkanMemory().GetVMAAllocator(), m_xScratchBuffer, m_xScratchAllocation);
 		m_xScratchBuffer = VK_NULL_HANDLE;
 		m_xScratchAllocation = VK_NULL_HANDLE;
 		m_pScratchBufferMapped = nullptr;
@@ -1278,7 +1279,7 @@ void Zenith_Vulkan_PerFrame::ShutdownScratchBuffer()
 
 void Zenith_Vulkan_PerFrame::BeginFrame()
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
 
 	// Pre-flight fence status check — under healthy operation the fence is
 	// either signalled (previous use of this slot completed) or initial-signalled
@@ -1296,19 +1297,19 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	}
 #endif
 
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	eResult = xDevice.resetFences(1, &m_xFence);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to reset fence");
 
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
 		xDevice.resetDescriptorPool(xPool);
 	}
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	// Destroy framebuffers and render passes from the previous use of this frame slot
 	for (vk::Framebuffer& xFB : m_axPendingFramebuffers)
 	{

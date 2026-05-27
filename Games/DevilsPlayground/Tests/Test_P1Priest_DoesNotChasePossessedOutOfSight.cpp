@@ -60,7 +60,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -80,7 +80,7 @@ namespace
 	Zenith_EntityID ReadPriestBBTarget(Zenith_EntityID xPriestId)
 	{
 		Zenith_SceneData* pxScene =
-			Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
@@ -105,7 +105,7 @@ static bool Step_P1NoChaseOutOfSight(int iFrame)
 	switch (g_iPhase)
 	{
 	case kNS_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kNS_WaitScene;
 		return true;
 

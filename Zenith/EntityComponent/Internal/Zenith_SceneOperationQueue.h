@@ -19,6 +19,8 @@
 // (added below) would otherwise inject an incomplete forward declaration that
 // shadows the real class.
 
+#include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashSet.h"
 #include "EntityComponent/Zenith_Scene.h"  // for Zenith_SceneOperationID alias
 #include <atomic>
 #include <cstdint>
@@ -122,7 +124,7 @@ public:
 
 	//==========================================================================
 	// Storage type declarations only — actual state lives on
-	// Zenith_SceneOperationQueueImpl owned by Zenith_Engine (Phase 5d).
+	// Zenith_SceneOperationQueue owned by Zenith_Engine (Phase 5d).
 	// External readers reach it through g_xEngine.SceneOperations().m_xXxx.
 	//==========================================================================
 
@@ -132,33 +134,35 @@ public:
 
 	// Tear down all in-flight load tasks (waits for workers), all unload jobs,
 	// the operation map, and active-operation list. Called from Zenith_SceneManager::Shutdown.
-	static void Shutdown();
+	void Shutdown();
 
 	// Same teardown but without waiting for ongoing operations to complete normally —
 	// used by Zenith_SceneManager::ResetForNextTest between unit tests.
-	static void ResetForNextTest();
+	void ResetForNextTest();
 
 	//==========================================================================
 	// Operation ID allocation / lookup / cleanup
 	//==========================================================================
 
-	static Zenith_SceneOperationID AllocateOperationID();
-	static Zenith_SceneOperation* GetOperation(Zenith_SceneOperationID ulID);
-	static bool IsOperationValid(Zenith_SceneOperationID ulID);
-	static void CleanupCompletedOperations();
+	Zenith_SceneOperationID AllocateOperationID();
+	Zenith_SceneOperation* GetOperation(Zenith_SceneOperationID ulID);
+	bool IsOperationValid(Zenith_SceneOperationID ulID);
+	void CleanupCompletedOperations();
 
 	//==========================================================================
 	// Async load pipeline (internal — public LoadSceneAsync* lives on
 	// Zenith_SceneManager and uses these helpers + state).
 	//==========================================================================
 
+	// Kept static — passed as a Zenith_TaskFunction pointer to the task
+	// system. The body resolves g_xEngine.SceneOperations().
 	static void AsyncSceneLoadTask(void* pData);
-	static u_int CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
-	static void ProcessPendingAsyncLoads();
-	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
-	static void CleanupAndRemoveAsyncJob(u_int uIndex);
-	static void SortAsyncJobsByPriority();
-	static bool HandleAsyncJobCancellation(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
+	u_int CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
+	void ProcessPendingAsyncLoads();
+	void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
+	void CleanupAndRemoveAsyncJob(u_int uIndex);
+	void SortAsyncJobsByPriority();
+	bool HandleAsyncJobCancellation(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
 
 	// B2: Unity AsyncOperation queue-stall predicate.
 	//
@@ -176,7 +180,7 @@ public:
 	//
 	// Self-contained: re-runs SortAsyncJobsByPriority() so callers don't
 	// need to pre-sort.
-	static bool IsAsyncQueueBlockedByActivationPausedHead();
+	bool IsAsyncQueueBlockedByActivationPausedHead();
 
 	// B4.B P2: synchronously wait for every in-flight async-load worker
 	// task to finish reading its file (i.e., flip m_bFileLoadComplete).
@@ -188,21 +192,21 @@ public:
 	// Skipped under re-entrancy (any of the depth counters non-zero, or
 	// IsUpdating()) because blocking the main thread on worker IO from
 	// inside a callback is exactly what those guards exist to prevent.
-	static void WaitForPendingFileReadsForBlockingPump();
-	static AsyncJobStepResult RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int& uIndex);
-	static AsyncJobStepResult RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
+	void WaitForPendingFileReadsForBlockingPump();
+	AsyncJobStepResult RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int& uIndex);
+	AsyncJobStepResult RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
 
 	// Inline forwarder. Body kept here for hot-path callers; it reaches
 	// into the engine-owned Impl (Zenith.h's PCH brings g_xEngine in scope).
-	static void NotifyAsyncJobPriorityChanged();
+	void NotifyAsyncJobPriorityChanged();
 
 	//==========================================================================
 	// Async unload pipeline (internal — public UnloadSceneAsync lives on
 	// Zenith_SceneManager).
 	//==========================================================================
 
-	static void ProcessPendingAsyncUnloads();
-	static uint32_t CountScenesBeingAsyncUnloaded();
+	void ProcessPendingAsyncUnloads();
+	uint32_t CountScenesBeingAsyncUnloaded();
 
 	// B4: Unity LoadScene flush-prior-async semantic.
 	//
@@ -221,14 +225,87 @@ public:
 	//     own LoadScene continues regardless.
 	//   * Waits on worker-side file I/O via the existing milestone atomics
 	//     (no extra synchronization).
-	static void CompletePriorOperationsForBlockingLoad();
+	void CompletePriorOperationsForBlockingLoad();
 
 	//==========================================================================
 	// Async configuration
 	//==========================================================================
 
-	static void SetAsyncUnloadBatchSize(uint32_t uEntitiesPerFrame);
-	static uint32_t GetAsyncUnloadBatchSize();
-	static void SetMaxConcurrentAsyncLoads(uint32_t uMax);
-	static uint32_t GetMaxConcurrentAsyncLoads();
+	void SetAsyncUnloadBatchSize(uint32_t uEntitiesPerFrame);
+	uint32_t GetAsyncUnloadBatchSize();
+	void SetMaxConcurrentAsyncLoads(uint32_t uMax);
+	uint32_t GetMaxConcurrentAsyncLoads();
+
+	//==========================================================================
+	// Public scene Load / Unload entry points (Phase 5c delegators).
+	// These forward to the corresponding Zenith_SceneManager bodies until
+	// Phase 5e migrates the bodies onto this class. The user-facing Scene API
+	// resolves through these accessors via g_xEngine.SceneOperations().Foo(...).
+	//==========================================================================
+
+	Zenith_Scene LoadScene(const std::string& strPath, Zenith_SceneLoadMode eMode);
+	Zenith_Scene LoadSceneByIndex(int iBuildIndex, Zenith_SceneLoadMode eMode);
+	Zenith_Scene LoadSceneBlockingForBootstrap(const std::string& strPath, Zenith_SceneLoadMode eMode);
+	Zenith_Scene LoadSceneByIndexBlockingForBootstrap(int iBuildIndex, Zenith_SceneLoadMode eMode);
+	Zenith_Scene LoadSceneBlocking_ToolsOnly(const std::string& strPath, Zenith_SceneLoadMode eMode);
+	Zenith_Scene LoadSceneByIndexBlocking_ToolsOnly(int iBuildIndex, Zenith_SceneLoadMode eMode);
+	Zenith_SceneOperationID LoadSceneAsync(const std::string& strPath, Zenith_SceneLoadMode eMode);
+	Zenith_SceneOperationID LoadSceneAsyncByIndex(int iBuildIndex, Zenith_SceneLoadMode eMode);
+
+	void UnloadScene(Zenith_Scene xScene);
+	Zenith_SceneOperationID UnloadSceneAsync(Zenith_Scene xScene);
+	void UnloadSceneForced(Zenith_Scene xScene);
+	void UnloadUnusedAssets();
+	bool CanUnloadScene(Zenith_Scene xScene);
+
+	bool HasPendingDestructions();
+	void ResetAllRenderSystems();
+
+	// Bulk unload of every non-persistent scene. Used by SCENE_LOAD_SINGLE
+	// teardown and engine shutdown paths. iExcludeHandle skips a specific
+	// slot (the atomic-swap sync LoadScene keeps the staging scene alive
+	// while old scenes are torn down).
+	void UnloadAllNonPersistent(int iExcludeHandle = -1);
+
+	// Private helpers exposed publicly so the manager-facade can forward to
+	// them. Phase 5e migrated these from Zenith_SceneManager so the orchestration
+	// logic lives next to the queue state it mutates.
+	void ProcessPendingUnloads();
+	void CompleteAsyncUnloadJobs(Zenith_HashSet<int>& xAlreadyFiredOut);
+	Zenith_Vector<Zenith_Scene> CollectNonPersistentScenes(int iExcludeHandle);
+	bool DestroyScenesAndFireUnloaded(const Zenith_Vector<Zenith_Scene>& axScenes,
+	                                   const Zenith_HashSet<int>& xAlreadyFired);
+	void UpdateActiveSceneAfterUnload(Zenith_Scene xOldActive);
+	void UnloadOneScene(Zenith_Scene xScene, bool& bActiveSceneUnloadedInOut);
+
+	//==========================================================================
+	// Data members (was Zenith_SceneOperationQueue)
+	//==========================================================================
+
+	Zenith_Vector<Zenith_SceneOperation*>    m_axActiveOperations;
+	Zenith_Vector<OperationMapEntry>         m_axOperationMap;
+	uint64_t                                 m_ulNextOperationID = 1;
+	Zenith_Vector<AsyncLoadJob*>             m_axAsyncJobs;
+	bool                                     m_bAsyncJobsNeedSort = false;
+	Zenith_Vector<AsyncUnloadJob*>           m_axAsyncUnloadJobs;
+	uint32_t                                 m_uAsyncUnloadBatchSize    = 50;
+	uint32_t                                 m_uMaxConcurrentAsyncLoads = 8;
+
+	// Re-entrancy depths for ProcessPendingAsyncLoads /
+	// ProcessPendingAsyncUnloads (RAII-bumped at entry, released at exit).
+	uint32_t                                 m_uProcessingAsyncLoadsDepth   = 0;
+	uint32_t                                 m_uProcessingAsyncUnloadsDepth = 0;
+
+#ifdef ZENITH_TESTING
+	// Phase 5b: B3 Unity-parity instrumentation. Tests assert this counter to
+	// verify SCENE_LOAD_SINGLE auto-fires UnloadUnusedAssets and ADDITIVE does
+	// not. Was a file-scope static in Zenith_SceneManager.cpp; moved here
+	// because UnloadUnusedAssets is queue-sequenced — the counter and the
+	// implementation move together (per D5).
+	uint32_t                                 m_uUnloadUnusedAssetsCallCount = 0;
+
+	// Test-introspection accessor. Public on the class so tests can read it
+	// via g_xEngine.SceneOperations().GetUnloadUnusedAssetsCallCount().
+	uint32_t GetUnloadUnusedAssetsCallCount() const { return m_uUnloadUnusedAssetsCallCount; }
+#endif
 };

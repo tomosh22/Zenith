@@ -303,7 +303,7 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 	// goes out of scope; the manual dispatch below fires once after recursion completes.
 	Zenith_Entity xEntity;
 	{
-		Zenith_SceneManager::PrefabInstantiationGuard xPrefabGuard;
+		Zenith_PrefabInstantiationGuard xPrefabGuard;
 		Zenith_Vector<const Zenith_Prefab*> axVisited;
 		xEntity = InstantiateInternal(pxSceneData, strEntityName, axVisited);
 	}
@@ -395,7 +395,7 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 
 Zenith_Entity Zenith_Prefab::Instantiate(const std::string& strEntityName) const
 {
-	const Zenith_Scene xTarget = Zenith_SceneManager::GetDefaultCreationScene();
+	const Zenith_Scene xTarget = g_xEngine.SceneLifecycle().GetDefaultCreationScene();
 	if (!xTarget.IsValid())
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB,
@@ -405,7 +405,7 @@ Zenith_Entity Zenith_Prefab::Instantiate(const std::string& strEntityName) const
 		return Zenith_Entity();
 	}
 
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTarget);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTarget);
 	if (!pxSceneData)
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB,

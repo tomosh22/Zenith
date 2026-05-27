@@ -87,7 +87,7 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kDD_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kDD_WaitScene;
 		return true;
 
@@ -97,8 +97,8 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		// "test villager" entity for the interact path. We don't need a
 		// real DPVillager_Behaviour — only a stable EntityID for
 		// DP_Player::SetPossessedVillager and the held-item table key.
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
 		Zenith_Entity xVillagerEnt(pxScene, std::string("DD_TestVillager"));
@@ -110,8 +110,8 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 
 	case kDD_Build:
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
 		// Construct the door entity with two named child leaves.
@@ -184,7 +184,7 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		// lerped open). Compare against a small epsilon to detect any
 		// rotation-application at all.
 		Zenith_SceneData* pxScene =
-			Zenith_SceneManager::GetSceneDataForEntity(g_xLeftLeaf);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xLeftLeaf);
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xL = pxScene->TryGetEntity(g_xLeftLeaf);
@@ -282,14 +282,14 @@ static bool Step_Forge(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kF_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kF_WaitScene;
 		return true;
 
 	case kF_WaitScene:
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
 		Zenith_Entity xVillagerEnt(pxScene, std::string("Forge_TestVillager"));
@@ -300,8 +300,8 @@ static bool Step_Forge(int /*iFrame*/)
 
 	case kF_Build:
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
 		// Build the forge entity at origin.
@@ -330,8 +330,8 @@ static bool Step_Forge(int /*iFrame*/)
 		// Construct a real Iron item entity so the side-table is populated
 		// the same way DPItemManager builds items, and DPForge's
 		// "destroy-input" path can find a real entity to destroy.
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
 		Zenith_Entity xIron(pxScene, std::string("TestIron"));
@@ -374,7 +374,7 @@ static bool Step_Forge(int /*iFrame*/)
 	{
 		// The original Iron entity should be destroyed.
 		Zenith_SceneData* pxIronScene =
-			Zenith_SceneManager::GetSceneDataForEntity(g_xIronItem);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xIronItem);
 		Zenith_Entity xIron = pxIronScene
 			? pxIronScene->TryGetEntity(g_xIronItem)
 			: Zenith_Entity();

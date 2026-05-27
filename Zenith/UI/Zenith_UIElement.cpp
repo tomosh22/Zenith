@@ -10,7 +10,7 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -569,8 +569,8 @@ void Zenith_UIElement::GetTransformedMousePosition(float& fMouseX, float& fMouse
     if (!Zenith_InputSimulator::IsEnabled())
 #endif
     {
-        Zenith_Maths::Vector2 xViewportPos = Zenith_Editor::GetViewportPos();
-        Zenith_Maths::Vector2 xViewportSize = Zenith_Editor::GetViewportSize();
+        Zenith_Maths::Vector2 xViewportPos = g_xEngine.Editor().GetViewportPos();
+        Zenith_Maths::Vector2 xViewportSize = g_xEngine.Editor().GetViewportSize();
         if (xViewportSize.x > 0.f && xViewportSize.y > 0.f && m_pxCanvas)
         {
             Zenith_Maths::Vector2 xCanvasSize = m_pxCanvas->GetSize();

@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Android_Window.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 
 #include <android/native_window.h>
 #include <android_native_app_glue.h>

@@ -1,0 +1,20 @@
+param([string]$RepoRoot = "C:\dev\Zenith\.claude\worktrees\heuristic-dubinsky-b1c5f3")
+$excludeNames = @('Zenith_SceneManager.cpp','Zenith_SceneManager.h','Zenith_SceneManagerInternal.h','Zenith_SceneManagerGuards.h')
+$excludeDirPattern = '\\(\.git|complexity_report|complexity_reports|FreeType|Vendor|Sharpmake|sharpmake|cs_build|3rdparty|temp|Temp|TEMP|node_modules)\\'
+$buildOutputPattern = '\\(build|Build)\\output\\'
+$files = Get-ChildItem -Path $RepoRoot -Recurse -File | Where-Object {
+    ($_.Extension -in @('.cpp', '.h', '.inl')) `
+    -and ($_.FullName -notmatch $excludeDirPattern) `
+    -and ($_.FullName -notmatch $buildOutputPattern) `
+    -and ($_.FullName -notmatch '\.Tests\.inl$') `
+    -and ($_.Name -notin $excludeNames)
+}
+foreach ($f in $files) {
+    $hits = Select-String -Path $f.FullName -Pattern 'Zenith_SceneManager::' -AllMatches
+    if ($hits) {
+        foreach ($h in $hits) {
+            if ($h.Line -match 'CODEMOD_SKIP') { continue }
+            Write-Output ("{0}:{1}: {2}" -f $f.FullName, $h.LineNumber, $h.Line.Trim())
+        }
+    }
+}

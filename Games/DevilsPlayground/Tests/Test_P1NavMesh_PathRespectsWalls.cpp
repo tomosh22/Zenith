@@ -91,14 +91,14 @@ static bool Step_P1NavMeshPathRespectsWalls(int iFrame)
 	switch (g_iPhase)
 	{
 	case kNW_Start:
-		g_xScene = Zenith_SceneManager::CreateEmptyScene("NavMeshWallSpike");
-		Zenith_SceneManager::SetActiveScene(g_xScene);
+		g_xScene = g_xEngine.SceneRegistry().CreateEmptyScene("NavMeshWallSpike");
+		g_xEngine.SceneRegistry().SetActiveScene(g_xScene);
 		g_iPhase = kNW_BuildScene;
 		return true;
 
 	case kNW_BuildScene:
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kNW_Done; return false; }
 
 		// Scale = full box size (half-extents = scale * 0.5).
@@ -119,7 +119,7 @@ static bool Step_P1NavMeshPathRespectsWalls(int iFrame)
 
 	case kNW_Generate:
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kNW_Done; return false; }
 		NavMeshGenerationConfig xConfig{}; // engine defaults
 		g_pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xConfig);

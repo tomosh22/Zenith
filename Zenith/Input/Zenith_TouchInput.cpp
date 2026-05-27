@@ -1,17 +1,17 @@
 #include "Zenith.h"
 
-#include "Input/Zenith_TouchInputImpl.h"
-#include "Input/Zenith_TouchInputImpl.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_TouchInput.h"
+#include "Input/Zenith_TouchInput.h"
+#include "Input/Zenith_Input.h"
 
-// Phase 5.5b: touch-gesture state lives on Zenith_TouchInputImpl held by
+// Phase 5.5b: touch-gesture state lives on Zenith_TouchInput held by
 // Zenith_Engine. All former file-statics are now reached via
 // g_xEngine.Touch().m_xXxx.
 
 // ============================================================================
 // Update
 // ============================================================================
-void Zenith_TouchInputImpl::Update()
+void Zenith_TouchInput::Update()
 {
 	// Reset per-frame events
 	g_xEngine.Touch().m_bTapThisFrame = false;

@@ -86,7 +86,7 @@ static bool Step_P1CooldownDeath(int iFrame)
 	switch (g_iPhase)
 	{
 	case kND_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kND_WaitScene;
 		return true;
 
@@ -135,7 +135,7 @@ static bool Step_P1CooldownDeath(int iFrame)
 		// m_bIsPossessed flag and bumped m_fRemainingLife back to
 		// m_fMaxLife (the "freshly-possessed transition" handler). Now
 		// the test can shrink life without it being clobbered.
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xA);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xA);
 		if (pxScene == nullptr) { g_iPhase = kND_Done; return false; }
 		Zenith_Entity xEnt = pxScene->TryGetEntity(g_xA);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) { g_iPhase = kND_Done; return false; }

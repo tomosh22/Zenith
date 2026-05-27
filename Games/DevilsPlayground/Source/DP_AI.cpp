@@ -96,7 +96,7 @@ namespace DP_AI
 			[&xPos](Zenith_EntityID xPriestId, Priest_Behaviour&)
 			{
 				Zenith_SceneData* pxScene =
-					Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+					g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
 				if (pxScene == nullptr) return;
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
 				if (!xEnt.IsValid()) return;
@@ -153,9 +153,9 @@ namespace DP_AI
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_AI::GetOrBuildLevelNavMesh must be called from main thread");
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
 		const int iActiveBuildIndex = xActive.IsValid()
-			? Zenith_SceneManager::GetSceneData(xActive)->GetBuildIndex()
+			? g_xEngine.SceneRegistry().GetSceneData(xActive)->GetBuildIndex()
 			: -1;
 		if (g_pxLevelNavMesh != nullptr && iActiveBuildIndex >= 0
 			&& iActiveBuildIndex == g_iCachedNavMeshBuildIndex)
@@ -170,7 +170,7 @@ namespace DP_AI
 
 		if (xActive.IsValid())
 		{
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 			if (pxScene != nullptr)
 			{
 				NavMeshGenerationConfig xCfg{};

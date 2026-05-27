@@ -427,7 +427,7 @@ int main(int argc, char** argv)
 
 	// Minimal engine init (required for solver profiling in conditional validation)
 	Zenith_MemoryManagement::Initialise();
-	Zenith_Profiling::Initialise();
+	g_xEngine.Profiling().Initialise();
 	Zenith_Multithreading::RegisterThread(true);
 
 	// Create application window

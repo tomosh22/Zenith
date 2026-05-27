@@ -101,7 +101,7 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 		// Step 3-6 require the persistent pause-menu instance. Load
 		// GameLevel and wait a few frames for OnStart to migrate the
 		// singleton.
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kPM_WaitForPersistentInstance;
 		return true;
 

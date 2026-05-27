@@ -27,7 +27,7 @@
 #include "TilePuzzle_Rules.h"
 #include "TilePuzzle_Solver.h"
 #include "Collections/Zenith_Vector.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
 
 // Generation constants
@@ -1212,7 +1212,7 @@ private:
 			xParams.uNumBlockers +
 			xParams.uNumColors * xParams.uNumShapesPerColor);
 
-		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 
 		// ---- Phase 1: Grid + static blockers ----
 
@@ -1250,7 +1250,7 @@ private:
 
 		if (axFloorPositions.size() < 3)
 		{
-			Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+			g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 			return false;
 		}
 
@@ -1360,7 +1360,7 @@ private:
 
 			if (!bPlaced)
 			{
-				Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+				g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 				return false;
 			}
 		}
@@ -1400,7 +1400,7 @@ private:
 				}
 				if (!bPlaced)
 				{
-					Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+					g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 					return false;
 				}
 			}
@@ -1426,7 +1426,7 @@ private:
 			}
 			if (eColor == TILEPUZZLE_COLOR_NONE)
 			{
-				Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+				g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 				return false;
 			}
 
@@ -1466,7 +1466,7 @@ private:
 				}
 				if (iTargetCatIdx < 0)
 				{
-					Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+					g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 					return false;
 				}
 
@@ -1598,10 +1598,10 @@ private:
 			}
 		}
 
-		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 
 		// ---- Phase 4: Scramble ----
-		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 
 		// Build draggable shape state arrays
 		std::vector<size_t> axDraggableIndices;
@@ -1623,7 +1623,7 @@ private:
 
 		if (axDraggableIndices.empty())
 		{
-			Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+			g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 			return false;
 		}
 
@@ -1665,10 +1665,10 @@ private:
 				uBFSDepth);
 			if (!bOK)
 			{
-				Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+				g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 				return false;
 			}
-			Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+			g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 			uSuccessfulMovesOut = uBFSDepth;
 			return true;
 		}
@@ -1933,7 +1933,7 @@ private:
 			}
 		} // end multi-start restarts
 
-		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 
 		if (!bAnyScrambleSuccess)
 			return false;

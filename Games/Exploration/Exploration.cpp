@@ -34,7 +34,7 @@ extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string&
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #endif
 
 // ============================================================================
@@ -700,53 +700,53 @@ void Project_RegisterEditorAutomationSteps()
 	static constexpr float fStartY = 1200.0f;
 
 	// ---- MainMenu scene (build index 0) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
-	Zenith_EditorAutomation::AddStep_CreateEntity("MenuManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(fStartX, fStartY, fStartZ);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.2f);
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(70.0f));
-	Zenith_EditorAutomation::AddStep_SetCameraFar(10000.0f);
-	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
-	Zenith_EditorAutomation::AddStep_AddUI();
-	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "EXPLORATION");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 48.f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 0.3f, 0.7f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_AttachScript("Exploration_Behaviour");
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("MenuManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(fStartX, fStartY, fStartZ);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(-0.2f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(70.0f));
+	g_xEngine.EditorAutomation().AddStep_SetCameraFar(10000.0f);
+	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
+	g_xEngine.EditorAutomation().AddStep_AddUI();
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("MenuTitle", "EXPLORATION");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuTitle", 48.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuTitle", 0.3f, 0.7f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("MenuPlay", "Play");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
+	g_xEngine.EditorAutomation().AddStep_AttachScript("Exploration_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- Exploration gameplay scene (build index 1) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("Exploration");
-	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(fStartX, fStartY, fStartZ);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.2f);
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(70.0f));
-	Zenith_EditorAutomation::AddStep_SetCameraFar(10000.0f);
-	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("Exploration");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(fStartX, fStartY, fStartZ);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(-0.2f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(70.0f));
+	g_xEngine.EditorAutomation().AddStep_SetCameraFar(10000.0f);
+	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
 	// HUD UI is created by Exploration_UIManager in OnStart
-	Zenith_EditorAutomation::AddStep_AttachScript("Exploration_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AttachScript("Exploration_Behaviour");
 	// NOTE: Procedural world generation (terrain + vegetation) cannot be decomposed into
 	// atomic editor steps. This is an intentional exception to the one-action-per-step rule.
-	Zenith_EditorAutomation::AddStep_Custom(&Exploration_GenerateTerrainDataWrapper);
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_Custom(&Exploration_GenerateTerrainDataWrapper);
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- Final scene loading ----
-	Zenith_EditorAutomation::AddStep_LoadInitialScene(&Project_LoadInitialScene);
+	g_xEngine.EditorAutomation().AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
 #endif
 
 void Project_LoadInitialScene()
 {
-	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT);
+	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
 }

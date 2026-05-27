@@ -5,7 +5,8 @@
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 
 //==========================================================================
 // Zenith_SceneEntityOwnership — implementations.
@@ -15,6 +16,33 @@
 // class. Entity-state mutation reads/writes Zenith_SceneData privates via
 // `friend class Zenith_SceneEntityOwnership`.
 //==========================================================================
+
+Zenith_Entity Zenith_SceneEntityOwnership::CreateEntity(const std::string& strName)
+{
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateEntity must be called from main thread");
+
+	const Zenith_Scene xTarget = g_xEngine.SceneLifecycle().GetDefaultCreationScene();
+	if (!xTarget.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE,
+			"CreateEntity: no creation target available (no active scene and no SceneCreationTargetScope); "
+			"entity '%s' was not created",
+			strName.c_str());
+		return Zenith_Entity();
+	}
+
+	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xTarget);
+	if (!pxData)
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE,
+			"CreateEntity: creation target scene (handle=%d gen=%u) is not loaded; "
+			"entity '%s' was not created",
+			xTarget.m_iHandle, xTarget.m_uGeneration, strName.c_str());
+		return Zenith_Entity();
+	}
+
+	return Zenith_Entity(pxData, strName);
+}
 
 bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData)
 {
@@ -115,7 +143,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene xTarget)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MoveEntityToScene must be called from main thread");
-	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
+	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(), "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xEntity.IsValid())
 	{
@@ -129,7 +157,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zeni
 		return false;
 	}
 
-	Zenith_SceneData* pxTargetData = Zenith_SceneRegistry::GetSceneData(xTarget);
+	Zenith_SceneData* pxTargetData = g_xEngine.SceneRegistry().GetSceneData(xTarget);
 	if (!pxTargetData)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "MoveEntityToScene: Invalid target scene data");
@@ -166,10 +194,10 @@ bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zeni
 bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MergeScenes must be called from main thread");
-	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
+	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(), "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
 
-	Zenith_SceneData* pxSource = Zenith_SceneRegistry::GetSceneData(xSource);
-	Zenith_SceneData* pxTarget = Zenith_SceneRegistry::GetSceneData(xTarget);
+	Zenith_SceneData* pxSource = g_xEngine.SceneRegistry().GetSceneData(xSource);
+	Zenith_SceneData* pxTarget = g_xEngine.SceneRegistry().GetSceneData(xTarget);
 
 	if (!pxSource || !pxTarget)
 	{
@@ -193,7 +221,7 @@ bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene
 	// Unity behavior: If source is active, target becomes active
 	if (xSource.m_iHandle == g_xEngine.SceneRegistry().m_iActiveSceneHandle)
 	{
-		Zenith_SceneManager::SetActiveScene(xTarget);
+		g_xEngine.SceneRegistry().SetActiveScene(xTarget);
 	}
 
 	// Get all root entities from source
@@ -208,7 +236,7 @@ bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene
 	}
 
 	// Unload the now-empty source scene (forced - bypasses last-scene guard since source is empty)
-	Zenith_SceneManager::UnloadSceneForced(xSource);
+	g_xEngine.SceneOperations().UnloadSceneForced(xSource);
 	return true;
 }
 
@@ -241,12 +269,12 @@ void Zenith_SceneEntityOwnership::MarkEntityPersistent(Zenith_Entity& xEntity)
 		return;
 	}
 
-	Zenith_Scene xPersistent = Zenith_SceneRegistry::GetPersistentScene();
+	Zenith_Scene xPersistent = g_xEngine.SceneRegistry().GetPersistentScene();
 	MoveEntityToScene(xEntity, xPersistent);
 
 	// Fire callback AFTER transfer so the entity reference is valid in the new scene
 	// Note: Unity's DontDestroyOnLoad doesn't have a callback; this is a Zenith extension
-	Zenith_SceneCallbackBus::FireEntityPersistent(xEntity);
+	g_xEngine.SceneCallbacks().FireEntityPersistent(xEntity);
 }
 
 //==========================================================================

@@ -33,7 +33,7 @@ public:
 	template<typename Func>
 	void ForEach(Func&& fn)
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::ForEach must be called from main thread or during render task execution");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(), "Query::ForEach must be called from main thread or during render task execution");
 		// Snapshot entity IDs before iteration to prevent invalidation
 		// if callback creates/destroys entities
 		Zenith_Vector<Zenith_EntityID> xSnapshot;
@@ -67,7 +67,7 @@ public:
 	template<typename Func>
 	void ForEachUnsafe(Func&& fn)
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::ForEachUnsafe must be called from main thread or during render task execution");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(), "Query::ForEachUnsafe must be called from main thread or during render task execution");
 		for (u_int u = 0; u < m_pxSceneData->GetActiveEntities().GetSize(); ++u)
 		{
 			Zenith_EntityID xEntityID = m_pxSceneData->GetActiveEntities().Get(u);
@@ -84,7 +84,7 @@ public:
 	// Count - returns the number of entities matching the query
 	u_int Count()
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::Count must be called from main thread or during render task execution");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(), "Query::Count must be called from main thread or during render task execution");
 		u_int uCount = 0;
 		ForEach([&uCount](Zenith_EntityID, Ts&...) { ++uCount; });
 		return uCount;
@@ -94,7 +94,7 @@ public:
 	// Same safety requirements as ForEachUnsafe.
 	u_int CountUnsafe()
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::CountUnsafe must be called from main thread or during render task execution");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(), "Query::CountUnsafe must be called from main thread or during render task execution");
 		u_int uCount = 0;
 		ForEachUnsafe([&uCount](Zenith_EntityID, Ts&...) { ++uCount; });
 		return uCount;
@@ -103,7 +103,7 @@ public:
 	// First - returns the first matching entity ID, or INVALID_ENTITY_ID if none
 	Zenith_EntityID First()
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::First must be called from main thread or during render task execution");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(), "Query::First must be called from main thread or during render task execution");
 		for (u_int u = 0; u < m_pxSceneData->GetActiveEntities().GetSize(); ++u)
 		{
 			Zenith_EntityID xEntityID = m_pxSceneData->GetActiveEntities().Get(u);
@@ -122,7 +122,7 @@ public:
 	// Any - returns true if at least one entity matches the query
 	bool Any()
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::Any must be called from main thread or during render task execution");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(), "Query::Any must be called from main thread or during render task execution");
 		return First().IsValid();
 	}
 

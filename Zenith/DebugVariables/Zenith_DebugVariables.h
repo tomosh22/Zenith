@@ -145,97 +145,103 @@ public:
 	Node* m_pxRoot;
 };
 
-// Phase 9: Zenith_DebugVariables converted from class-with-static-methods to a
-// namespace. Tree state lives on Zenith_DebugVariablesImpl held by Zenith_Engine.
-// Call sites keep their existing Zenith_DebugVariables::Add* syntax.
-namespace Zenith_DebugVariables
+// State + behaviour for the DebugVariables subsystem. Held on g_xEngine
+// and accessed via g_xEngine.DebugVariables(). The Add* methods are
+// inline instance members that build the right LeafNode subtype and
+// register it on m_xTree directly — no bridge needed, since the methods
+// are members of the class that owns the tree.
+class Zenith_DebugVariables
 {
-	// Non-inline helper -- body in Zenith_DebugVariables.cpp -- so this header
-	// doesn't drag Zenith_Engine.h into the 35 TUs that call Add*.
-	void AddLeafNodeToEngineTree(Zenith_DebugVariableTree::LeafNodeBase* pxLeaf, std::vector<std::string>& xName);
+public:
+	Zenith_DebugVariables() = default;
+	~Zenith_DebugVariables() = default;
+	Zenith_DebugVariables(const Zenith_DebugVariables&) = delete;
+	Zenith_DebugVariables& operator=(const Zenith_DebugVariables&) = delete;
+
+	Zenith_DebugVariableTree m_xTree;
 
 	inline void AddBoolean(std::vector<std::string> xName, bool& bVar)
 	{
 		Zenith_DebugVariableTree::LeafNode<bool>* pxLeaf = new Zenith_DebugVariableTree::LeafNode<bool>(xName, &bVar);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddVector2(std::vector<std::string> xName, Zenith_Maths::Vector2& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector2, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector2, float>(xName, &xVar, fMin, fMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddVector3(std::vector<std::string> xName, Zenith_Maths::Vector3& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>(xName, &xVar, fMin, fMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddUVector4(std::vector<std::string> xName, Zenith_Maths::UVector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>(xName, &xVar, fMin, fMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddVector4(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddVector3(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddFloat(std::vector<std::string> xName, float& fVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<float, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<float, float>(xName, &fVar, fMin, fMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddUInt32(std::vector<std::string> xName, uint32_t& xVar, uint32_t uMin, uint32_t uMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, &xVar, uMin, uMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	template<typename T>
 	inline void AddUInt32(std::vector<std::string> xName, T& xVar, uint32_t uMin, uint32_t uMax)
 	{
 		static_assert(std::is_enum<T>(), "Not an enum");
 		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, reinterpret_cast<uint32_t*>(&xVar), uMin, uMax);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddUInt32_ReadOnly(std::vector<std::string> xName, uint32_t& xVar)
 	{
 		Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>(xName, &xVar);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddUInt64_ReadOnly(std::vector<std::string> xName, uint64_t& xVar)
 	{
 		Zenith_DebugVariableTree::LeafNodeReadOnly<uint64_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<uint64_t>(xName, &xVar);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddFloat_ReadOnly(std::vector<std::string> xName, float& fVar)
 	{
 		Zenith_DebugVariableTree::LeafNodeReadOnly<float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<float>(xName, &fVar);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddButton(std::vector<std::string> xName, void(*pfnCallback)())
 	{
 		Zenith_DebugVariableTree::PfnLeafNode* pxLeaf = new Zenith_DebugVariableTree::PfnLeafNode(xName, pfnCallback);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddTexture(std::vector<std::string> xName, const Flux_ShaderResourceView& xTexture)
 	{
 		Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>* pxLeaf = new Zenith_DebugVariableTree::LeafNode(xName, &xTexture);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddTextureCallback(std::vector<std::string> xName, const Flux_ShaderResourceView*(*pfnGetSRV)())
 	{
 		Zenith_DebugVariableTree::TextureCallbackLeafNode* pxLeaf = new Zenith_DebugVariableTree::TextureCallbackLeafNode(xName, pfnGetSRV);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddText(std::vector<std::string> xName, std::string& strText)
 	{
 		Zenith_DebugVariableTree::TextNode* pxLeaf = new Zenith_DebugVariableTree::TextNode(xName, strText);
-		AddLeafNodeToEngineTree(pxLeaf, xName);
+		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
-}
+};
 
 #endif

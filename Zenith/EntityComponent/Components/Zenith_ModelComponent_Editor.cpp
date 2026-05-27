@@ -37,9 +37,12 @@
 //-----------------------------------------------------------------------------
 // Helper: Assign a texture file to a material slot
 //-----------------------------------------------------------------------------
-void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_Editor_MaterialUI::TextureSlotType eSlot)
+void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_EditorMaterialUI::TextureSlotType eSlot)
 {
-	using namespace Zenith_Editor_MaterialUI;
+	// Bring TextureSlotType enumerators into local scope so the `case TEXTURE_SLOT_X:`
+	// labels below work without qualification. (Was `using namespace ...;` before
+	// the namespace → class collapse — class members can't be brought in that way.)
+	using enum Zenith_EditorMaterialUI::TextureSlotType;
 
 	// Validate texture can be loaded via registry
 	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(szFilePath);
@@ -254,13 +257,13 @@ void Zenith_ModelComponent::RenderModelInstanceMaterialsSection()
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Edit"))
 			{
-				Zenith_Editor::SelectMaterial(pxMaterial);
+				g_xEngine.Editor().SelectMaterial(pxMaterial);
 			}
 
 			if (bExpanded)
 			{
 				// Material properties (using shared utility)
-				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ModelInstance");
+				g_xEngine.EditorMaterialUI().RenderMaterialProperties(pxMaterial, "ModelInstance");
 
 				ImGui::Separator();
 
@@ -285,17 +288,21 @@ void Zenith_ModelComponent::RenderModelInstanceMaterialsSection()
 //-----------------------------------------------------------------------------
 void Zenith_ModelComponent::RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_MaterialAsset& xMaterial)
 {
-	using namespace Zenith_Editor_MaterialUI;
-	auto fnAssign = [this, uMeshIdx](TextureSlotType eSlot) {
+	// Short alias since the enum lives on Zenith_EditorMaterialUI now (was a
+	// namespace-scoped unscoped enum before the namespace → class collapse,
+	// brought into local scope via `using namespace`). `using enum` doesn't
+	// apply to unscoped enums, so we just alias the class.
+	using MUI = Zenith_EditorMaterialUI;
+	auto fnAssign = [this, uMeshIdx](MUI::TextureSlotType eSlot) {
 		return [this, uMeshIdx, eSlot](const char* szPath) {
 			AssignTextureToSlot(szPath, uMeshIdx, eSlot);
 		};
 	};
-	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
-	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
-	RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
-	RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
-	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Diffuse",            xMaterial, MUI::TEXTURE_SLOT_DIFFUSE,             48.0f, fnAssign(MUI::TEXTURE_SLOT_DIFFUSE));
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Normal",             xMaterial, MUI::TEXTURE_SLOT_NORMAL,              48.0f, fnAssign(MUI::TEXTURE_SLOT_NORMAL));
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Roughness/Metallic", xMaterial, MUI::TEXTURE_SLOT_ROUGHNESS_METALLIC,  48.0f, fnAssign(MUI::TEXTURE_SLOT_ROUGHNESS_METALLIC));
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Occlusion",          xMaterial, MUI::TEXTURE_SLOT_OCCLUSION,           48.0f, fnAssign(MUI::TEXTURE_SLOT_OCCLUSION));
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Emissive",           xMaterial, MUI::TEXTURE_SLOT_EMISSIVE,            48.0f, fnAssign(MUI::TEXTURE_SLOT_EMISSIVE));
 }
 
 #endif // ZENITH_TOOLS

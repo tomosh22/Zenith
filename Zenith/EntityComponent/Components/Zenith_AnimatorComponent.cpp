@@ -387,7 +387,7 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 	}
 
 	// Tick animation from editor when game logic isn't running (Stopped/Paused mode)
-	if (Zenith_Editor::GetEditorMode() != EditorMode::Playing && m_xController.IsInitialized())
+	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing && m_xController.IsInitialized())
 	{
 		UpdateWorldMatrix();
 		m_xController.Update(g_xEngine.Frame().GetDt());

@@ -28,11 +28,11 @@ enum class GizmoOperation
 class Zenith_Gizmo
 {
 public:
-	static void Initialise();
-	static void Shutdown();
+void Initialise();
+void Shutdown();
 	
 	// Render and interact with gizmo
-	static bool Manipulate(
+bool Manipulate(
 		Zenith_Entity* pxEntity,
 		GizmoOperation eOperation,
 		const Zenith_Maths::Matrix4& viewMatrix,
@@ -42,16 +42,16 @@ public:
 	);
 	
 	// Settings
-	static void SetSnapEnabled(bool enabled);
-	static bool IsSnapEnabled();
+void SetSnapEnabled(bool enabled);
+bool IsSnapEnabled();
 
-	static void SetSnapValue(float value);
-	static float GetSnapValue();
+void SetSnapValue(float value);
+float GetSnapValue();
 
 	// State queries
-	static bool IsManipulating();
+bool IsManipulating();
 
-	static bool HandleTranslateGizmo(
+bool HandleTranslateGizmo(
 		Zenith_Entity* pxEntity,
 		const Zenith_Maths::Matrix4& viewMatrix,
 		const Zenith_Maths::Matrix4& projMatrix,
@@ -59,7 +59,7 @@ public:
 		const Zenith_Maths::Vector2& viewportSize
 	);
 	
-	static bool HandleRotateGizmo(
+bool HandleRotateGizmo(
 		Zenith_Entity* pxEntity,
 		const Zenith_Maths::Matrix4& viewMatrix,
 		const Zenith_Maths::Matrix4& projMatrix,
@@ -67,7 +67,7 @@ public:
 		const Zenith_Maths::Vector2& viewportSize
 	);
 	
-	static bool HandleScaleGizmo(
+bool HandleScaleGizmo(
 		Zenith_Entity* pxEntity,
 		const Zenith_Maths::Matrix4& viewMatrix,
 		const Zenith_Maths::Matrix4& projMatrix,
@@ -75,14 +75,14 @@ public:
 		const Zenith_Maths::Vector2& viewportSize
 	);
 	
-	static void RenderTranslateGizmo(
+void RenderTranslateGizmo(
 		const Zenith_Maths::Vector3& position,
 		const Zenith_Maths::Matrix4& viewMatrix,
 		const Zenith_Maths::Matrix4& projMatrix
 	);
 
 	// Mouse ray casting
-	static Zenith_Maths::Vector3 ScreenToWorldRay(
+Zenith_Maths::Vector3 ScreenToWorldRay(
 		const Zenith_Maths::Vector2& mousePos,
 		const Zenith_Maths::Vector2& viewportPos,
 		const Zenith_Maths::Vector2& viewportSize,
@@ -90,14 +90,21 @@ public:
 		const Zenith_Maths::Matrix4& projMatrix
 	);
 	
-	static float RayPlaneIntersection(
+float RayPlaneIntersection(
 		const Zenith_Maths::Vector3& rayOrigin,
 		const Zenith_Maths::Vector3& rayDir,
 		const Zenith_Maths::Vector3& planePoint,
 		const Zenith_Maths::Vector3& planeNormal
 	);
 	
-	// Phase 5.5d: 7 statics moved to Zenith_GizmoImpl (held by Zenith_Engine).
+	// ===== Data members (was Zenith_Gizmo) =====
+	GizmoAxis             m_eActiveAxis          = GizmoAxis::None;
+	bool                  m_bIsManipulating      = false;
+	Zenith_Maths::Vector3 m_xManipulationStartPos = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector2 m_xMouseStartPos        = Zenith_Maths::Vector2(0.0f);
+	bool                  m_bSnapEnabled         = false;
+	float                 m_fSnapValue           = 1.0f;
+	float                 m_fGizmoSize           = 1.0f;
 };
 
 #endif // ZENITH_TOOLS

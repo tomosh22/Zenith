@@ -1,9 +1,11 @@
 #pragma once
 
+
+#include "Flux/Flux_RendererImpl.h"
 /*
  * Zenith_GameRenderHook
  *
- * Game-side extension point into Flux::SetupRenderGraph(). Games (e.g.
+ * Game-side extension point into g_xEngine.FluxRenderer().SetupRenderGraph(). Games (e.g.
  * DevilsPlayground) can register a callback that is invoked at a specific
  * position inside SetupRenderGraph — immediately after g_xEngine.Fog().SetupRenderGraph
  * and before Flux_SDFs::SetupRenderGraph — to insert their own passes into the

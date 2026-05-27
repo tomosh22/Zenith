@@ -22,7 +22,7 @@ static std::string GetGameAssetsDirectory()
 #include <cstring>
 #include <cmath>
 
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 #define MAX_TERRAIN_HEIGHT 4096
 

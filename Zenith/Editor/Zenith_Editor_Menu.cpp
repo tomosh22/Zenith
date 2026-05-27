@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Editor.h"
-#include "Zenith_EditorImpl.h"
+#include "Zenith_Editor.h"
 #include "Zenith_UndoSystem.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -66,18 +66,18 @@ void Zenith_Editor::RenderFileMenu()
 			//
 			// Safe to call directly from the menu callback because RenderImGui runs after
 			// all render tasks have completed (see Zenith_Editor.cpp's main-loop comment).
-			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+			Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
 			if (xActiveScene.IsValid())
 			{
-				Zenith_SceneManager::UnloadSceneForced(xActiveScene);
+				g_xEngine.SceneOperations().UnloadSceneForced(xActiveScene);
 			}
-			Zenith_Scene xNewScene = Zenith_SceneManager::CreateEmptyScene("Untitled");
-			Zenith_SceneManager::SetActiveScene(xNewScene);
+			Zenith_Scene xNewScene = g_xEngine.SceneRegistry().CreateEmptyScene("Untitled");
+			g_xEngine.SceneRegistry().SetActiveScene(xNewScene);
 
 			ClearSelection();
 			g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 			ResetEditorCameraToDefaults();
-			Zenith_UndoSystem::Clear();
+			g_xEngine.UndoSystem().Clear();
 			Zenith_Log(LOG_CATEGORY_EDITOR, "New scene created (handle=%d, name='Untitled')", xNewScene.m_iHandle);
 		}
 
@@ -102,7 +102,7 @@ void Zenith_Editor::RenderFileMenu()
 				ZENITH_SCENE_EXT + 1);
 			if (!strFilePath.empty())
 			{
-				Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(strFilePath, SCENE_LOAD_ADDITIVE);
+				g_xEngine.SceneOperations().LoadSceneBlocking_ToolsOnly(strFilePath, SCENE_LOAD_ADDITIVE);
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded additively: %s", strFilePath.c_str());
 			}
 #endif
@@ -118,8 +118,8 @@ void Zenith_Editor::RenderFileMenu()
 			if (!strFilePath.empty())
 			{
 				// Safe to call directly - no render tasks active
-				Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-				Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+				Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+				Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 				if (pxSceneData)
 				{
 					pxSceneData->SaveToFile(strFilePath);
@@ -144,29 +144,29 @@ void Zenith_Editor::RenderEditMenu()
 {
 	if (ImGui::BeginMenu("Edit"))
 	{
-		bool bCanUndo = Zenith_UndoSystem::CanUndo();
-		bool bCanRedo = Zenith_UndoSystem::CanRedo();
+		bool bCanUndo = g_xEngine.UndoSystem().CanUndo();
+		bool bCanRedo = g_xEngine.UndoSystem().CanRedo();
 
 		if (ImGui::MenuItem("Undo", "Ctrl+Z", false, bCanUndo))
 		{
-			Zenith_UndoSystem::Undo();
+			g_xEngine.UndoSystem().Undo();
 		}
 
 		// Show tooltip with undo description
 		if (bCanUndo && ImGui::IsItemHovered())
 		{
-			ImGui::SetTooltip("Undo: %s", Zenith_UndoSystem::GetUndoDescription());
+			ImGui::SetTooltip("Undo: %s", g_xEngine.UndoSystem().GetUndoDescription());
 		}
 
 		if (ImGui::MenuItem("Redo", "Ctrl+Y", false, bCanRedo))
 		{
-			Zenith_UndoSystem::Redo();
+			g_xEngine.UndoSystem().Redo();
 		}
 
 		// Show tooltip with redo description
 		if (bCanRedo && ImGui::IsItemHovered())
 		{
-			ImGui::SetTooltip("Redo: %s", Zenith_UndoSystem::GetRedoDescription());
+			ImGui::SetTooltip("Redo: %s", g_xEngine.UndoSystem().GetRedoDescription());
 		}
 
 		ImGui::EndMenu();

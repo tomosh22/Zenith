@@ -1,6 +1,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_InputSimulator.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -46,9 +46,9 @@ namespace
 			Zenith_InputSimulator::Enable();
 			RenderTest_GameplayState::Reset();
 
-			xScene = Zenith_SceneManager::CreateEmptyScene("RenderTestInputTestScene");
-			Zenith_SceneManager::SetActiveScene(xScene);
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+			xScene = g_xEngine.SceneRegistry().CreateEmptyScene("RenderTestInputTestScene");
+			g_xEngine.SceneRegistry().SetActiveScene(xScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 
 			// Player entity: Transform (auto-added) + Collider, name "Player"
 			// so FollowCamera can find it by name.
@@ -87,7 +87,7 @@ namespace
 			delete pxCamera;
 			delete pxPlayer;
 			Zenith_InputSimulator::Disable();
-			Zenith_SceneManager::UnloadSceneForced(xScene);
+			g_xEngine.SceneOperations().UnloadSceneForced(xScene);
 		}
 
 		// Mirrors what Zenith_Core::Zenith_MainLoop's prologue does: clears
@@ -109,7 +109,7 @@ namespace
 
 		Zenith_Maths::Vector3 GetPlayerPosition() const
 		{
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerID);
 			Zenith_Maths::Vector3 xPos;
 			xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
@@ -118,7 +118,7 @@ namespace
 
 		void SetPlayerPosition(const Zenith_Maths::Vector3& xPos)
 		{
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerID);
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
 		}
@@ -257,7 +257,7 @@ void Zenith_UnitTests::TestRenderTestPlayerMovesForwardOnW()
 	// player). The player rotates to face +Z, which under the transform's
 	// rotation convention (angleAxis(target_yaw, +Y) starting from local +Z)
 	// is target_yaw == 0 — i.e., the identity quat.
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xFix.xScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xFix.xScene);
 	Zenith_Entity xPlayer = pxSceneData->GetEntity(xFix.uPlayerID);
 	Zenith_Maths::Quat xRot;
 	xPlayer.GetComponent<Zenith_TransformComponent>().GetRotation(xRot);
@@ -275,7 +275,7 @@ void Zenith_UnitTests::TestRenderTestPlayerNoRotationOnBackward()
 	RenderTest_TestFixture xFix;
 
 	Zenith_Maths::Quat xStartRot;
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xFix.xScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xFix.xScene);
 	Zenith_Entity xPlayer = pxSceneData->GetEntity(xFix.uPlayerID);
 	xPlayer.GetComponent<Zenith_TransformComponent>().GetRotation(xStartRot);
 
@@ -322,7 +322,7 @@ void Zenith_UnitTests::TestRenderTestPlayerRotatesWithCameraYawWhenAiming()
 	}
 	Zenith_InputSimulator::SimulateKeyUp(ZENITH_MOUSE_BUTTON_RIGHT);
 
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xFix.xScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xFix.xScene);
 	Zenith_Entity xPlayer = pxSceneData->GetEntity(xFix.uPlayerID);
 	Zenith_Maths::Quat xRot;
 	xPlayer.GetComponent<Zenith_TransformComponent>().GetRotation(xRot);

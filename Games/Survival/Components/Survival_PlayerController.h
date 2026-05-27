@@ -12,7 +12,7 @@
  * Interaction: E key to interact with nearby resources
  */
 
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
@@ -92,7 +92,7 @@ public:
 		float fDt)
 	{
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uPlayerEntityID);
 		if (!pxSceneData)
 			return;
 
@@ -175,7 +175,7 @@ public:
 	static Zenith_Maths::Vector3 GetPlayerPosition(Zenith_EntityID uPlayerEntityID)
 	{
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uPlayerEntityID);
 		if (!pxSceneData)
 			return Zenith_Maths::Vector3(0.f);
 
@@ -197,8 +197,8 @@ public:
 	{
 		// C1: resolve owning scenes from the entity ids — player and target
 		// could legitimately live in different scenes.
-		Zenith_SceneData* pxPlayerData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
-		Zenith_SceneData* pxTargetData = Zenith_SceneManager::GetSceneDataForEntity(uTargetEntityID);
+		Zenith_SceneData* pxPlayerData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uPlayerEntityID);
+		Zenith_SceneData* pxTargetData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uTargetEntityID);
 		if (!pxPlayerData || !pxTargetData)
 			return FLT_MAX;
 
@@ -245,7 +245,7 @@ public:
 		float fDt)
 	{
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uPlayerEntityID);
 		if (!pxSceneData)
 			return;
 
@@ -254,7 +254,7 @@ public:
 			return;
 
 		// Get camera from persistent scene
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -294,7 +294,7 @@ public:
 	 */
 	static Zenith_Maths::Vector3 GetCameraPosition()
 	{
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return Zenith_Maths::Vector3(0.f);
 

@@ -11,7 +11,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux_ModelInstance.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIButton.h"
 
@@ -78,7 +78,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kFEP_Start:
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 		g_iPhase = kFEP_LoadFE;
 		g_iWaitFrames = 0;
 		return true;
@@ -86,8 +86,8 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	case kFEP_LoadFE:
 	{
 		++g_iWaitFrames;
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxData)
 		{
 			g_bFrontEndLoaded = true;
@@ -102,7 +102,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		// Verified FrontEnd is alive. Now trigger the Play button's exact
 		// callback. We don't need to actually click — DPMainMenuController's
 		// callback is just LoadSceneByIndex(1, SINGLE).
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFEP_TriggerPlay;
 		g_iWaitFrames = 0;
 		return true;
@@ -131,8 +131,8 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	case kFEP_Verify:
 	{
 		// Probe the rendering-relevant state.
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxData != nullptr)
 		{
 			Zenith_CameraComponent* pxCam = pxData->TryGetMainCamera();
@@ -178,7 +178,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
 			[&](Zenith_EntityID xId, DPVillager_Behaviour&)
 			{
-				Zenith_SceneData* pxSceneV = Zenith_SceneManager::GetSceneDataForEntity(xId);
+				Zenith_SceneData* pxSceneV = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 				if (!pxSceneV) return;
 				Zenith_Entity xEnt = pxSceneV->TryGetEntity(xId);
 				if (!xEnt.IsValid()) return;
@@ -214,7 +214,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 				// should hit the villager's own collider.
 				Zenith_Maths::Vector3 xVPos2;
 				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos2);
-				Zenith_PhysicsImpl::RaycastResult xCast = g_xEngine.Physics().Raycast(
+				Zenith_Physics::RaycastResult xCast = g_xEngine.Physics().Raycast(
 					Zenith_Maths::Vector3(xVPos2.x, xVPos2.y + 5.0f, xVPos2.z),
 					Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
 					20.0f);

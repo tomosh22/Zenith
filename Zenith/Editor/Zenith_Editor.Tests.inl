@@ -12,7 +12,7 @@
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 #include "Editor/Panels/Zenith_EditorPanel_Hierarchy.h"
 #include "Editor/Panels/Zenith_EditorPanel_ContentBrowser.h"
@@ -68,18 +68,18 @@ ZENITH_TEST(Editor, BoundingBoxIntersection)
 ZENITH_TEST(Editor, SelectionSystemEmptyScene)
 {
 	// Test that RaycastSelect returns INVALID_ENTITY_ID when ray misses all entities
-	Zenith_SelectionSystem::Initialise();
-	Zenith_SelectionSystem::UpdateBoundingBoxes();
+	g_xEngine.Selection().Initialise();
+	g_xEngine.Selection().UpdateBoundingBoxes();
 
 	// Cast ray far away from any likely scene content, pointing away into empty space
 	Zenith_Maths::Vector3 rayOrigin(10000, 10000, 10000);
 	Zenith_Maths::Vector3 rayDir(1, 1, 1);
 	rayDir = glm::normalize(rayDir);
 
-	Zenith_EntityID result = Zenith_SelectionSystem::RaycastSelect(rayOrigin, rayDir);
+	Zenith_EntityID result = g_xEngine.Selection().RaycastSelect(rayOrigin, rayDir);
 	ZENITH_ASSERT_EQ(result, INVALID_ENTITY_ID, "Ray missing all entities should return INVALID_ENTITY_ID");
 
-	Zenith_SelectionSystem::Shutdown();
+	g_xEngine.Selection().Shutdown();
 
 }
 ZENITH_TEST(Editor, InvalidEntityID)
@@ -103,8 +103,8 @@ ZENITH_TEST(Editor, TransformRoundTrip)
 	// Test that transform values can be set and retrieved accurately
 	// This is important for property panel editing
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create a test entity
 	Zenith_Entity xEntity(pxSceneData, "TestEntity");
@@ -142,34 +142,34 @@ ZENITH_TEST(Editor, TransformRoundTrip)
 ZENITH_TEST(Editor, MultiSelectSingle)
 {
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create a test entity
 	Zenith_Entity xEntity(pxSceneData, "MultiSelectEntity1");
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// Clear selection first
-	Zenith_Editor::ClearSelection();
-	ZENITH_ASSERT_FALSE(Zenith_Editor::HasSelection(), "Should have no selection initially");
+	g_xEngine.Editor().ClearSelection();
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().HasSelection(), "Should have no selection initially");
 
 	// Select single entity
-	Zenith_Editor::SelectEntity(uEntityID, false);
+	g_xEngine.Editor().SelectEntity(uEntityID, false);
 
 	// Verify selection
-	ZENITH_ASSERT_TRUE(Zenith_Editor::HasSelection(), "Should have selection");
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 1, "Should have exactly 1 selected");
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID), "Entity should be selected");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::HasMultiSelection(), "Should not have multi-selection with 1 entity");
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().HasSelection(), "Should have selection");
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 1, "Should have exactly 1 selected");
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uEntityID), "Entity should be selected");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().HasMultiSelection(), "Should not have multi-selection with 1 entity");
 
-	Zenith_Editor::ClearSelection();
+	g_xEngine.Editor().ClearSelection();
 
 }
 ZENITH_TEST(Editor, MultiSelectCtrlClick)
 {
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create test entities
 	Zenith_Entity xEntity1(pxSceneData, "CtrlClickEntity1");
@@ -181,34 +181,34 @@ ZENITH_TEST(Editor, MultiSelectCtrlClick)
 	Zenith_EntityID uEntityID3 = xEntity3.GetEntityID();
 
 	// Clear and select first entity
-	Zenith_Editor::ClearSelection();
-	Zenith_Editor::SelectEntity(uEntityID1, false);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 1, "Should have 1 selected");
+	g_xEngine.Editor().ClearSelection();
+	g_xEngine.Editor().SelectEntity(uEntityID1, false);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 1, "Should have 1 selected");
 
 	// Add second entity (simulates Ctrl+click)
-	Zenith_Editor::SelectEntity(uEntityID2, true);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected");
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID1), "First entity should still be selected");
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID2), "Second entity should be selected");
-	ZENITH_ASSERT_TRUE(Zenith_Editor::HasMultiSelection(), "Should have multi-selection");
+	g_xEngine.Editor().SelectEntity(uEntityID2, true);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 2, "Should have 2 selected");
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uEntityID1), "First entity should still be selected");
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uEntityID2), "Second entity should be selected");
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().HasMultiSelection(), "Should have multi-selection");
 
 	// Add third entity
-	Zenith_Editor::SelectEntity(uEntityID3, true);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 3, "Should have 3 selected");
+	g_xEngine.Editor().SelectEntity(uEntityID3, true);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 3, "Should have 3 selected");
 
 	// Toggle selection (ctrl+click on already selected entity should deselect)
-	Zenith_Editor::ToggleEntitySelection(uEntityID2);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected after toggle");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID2), "Second entity should be deselected");
+	g_xEngine.Editor().ToggleEntitySelection(uEntityID2);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 2, "Should have 2 selected after toggle");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().IsSelected(uEntityID2), "Second entity should be deselected");
 
-	Zenith_Editor::ClearSelection();
+	g_xEngine.Editor().ClearSelection();
 
 }
 ZENITH_TEST(Editor, MultiSelectClear)
 {
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create and select multiple entities
 	Zenith_Entity xEntity1(pxSceneData, "ClearEntity1");
@@ -217,24 +217,24 @@ ZENITH_TEST(Editor, MultiSelectClear)
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
 
-	Zenith_Editor::ClearSelection();
-	Zenith_Editor::SelectEntity(uEntityID1, false);
-	Zenith_Editor::SelectEntity(uEntityID2, true);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected");
+	g_xEngine.Editor().ClearSelection();
+	g_xEngine.Editor().SelectEntity(uEntityID1, false);
+	g_xEngine.Editor().SelectEntity(uEntityID2, true);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 2, "Should have 2 selected");
 
 	// Clear all selection
-	Zenith_Editor::ClearSelection();
-	ZENITH_ASSERT_FALSE(Zenith_Editor::HasSelection(), "Should have no selection after clear");
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 0, "Selection count should be 0");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID1), "First entity should not be selected");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID2), "Second entity should not be selected");
+	g_xEngine.Editor().ClearSelection();
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().HasSelection(), "Should have no selection after clear");
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 0, "Selection count should be 0");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().IsSelected(uEntityID1), "First entity should not be selected");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().IsSelected(uEntityID2), "Second entity should not be selected");
 
 }
 ZENITH_TEST(Editor, MultiSelectAfterEntityDelete)
 {
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create entities
 	Zenith_Entity xEntity1(pxSceneData, "DeleteTestEntity1");
@@ -244,18 +244,18 @@ ZENITH_TEST(Editor, MultiSelectAfterEntityDelete)
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
 
 	// Select both entities
-	Zenith_Editor::ClearSelection();
-	Zenith_Editor::SelectEntity(uEntityID1, false);
-	Zenith_Editor::SelectEntity(uEntityID2, true);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected");
+	g_xEngine.Editor().ClearSelection();
+	g_xEngine.Editor().SelectEntity(uEntityID1, false);
+	g_xEngine.Editor().SelectEntity(uEntityID2, true);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 2, "Should have 2 selected");
 
 	// Remove one from selection (simulating entity deletion cleanup)
-	Zenith_Editor::DeselectEntity(uEntityID1);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 1, "Should have 1 selected after deselect");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID1), "Deleted entity should not be selected");
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID2), "Other entity should still be selected");
+	g_xEngine.Editor().DeselectEntity(uEntityID1);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetSelectionCount(), 1, "Should have 1 selected after deselect");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().IsSelected(uEntityID1), "Deleted entity should not be selected");
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uEntityID2), "Other entity should still be selected");
 
-	Zenith_Editor::ClearSelection();
+	g_xEngine.Editor().ClearSelection();
 
 }
 
@@ -270,11 +270,11 @@ ZENITH_TEST(Editor, ModeTransitionStoppedToPlaying)
 	EDITOR_TEST_BEGIN(TestModeTransitionStoppedToPlaying);
 
 	// Verify we're in Stopped mode (should be the default state)
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
 
 	// Transition to Playing mode
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode after transition");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Playing, "Should be in Playing mode after transition");
 
 	// Note: EDITOR_TEST_END will call TearDown which calls ResetEditorState,
 	// which sets mode back to Stopped and flushes pending scene operations
@@ -286,13 +286,13 @@ ZENITH_TEST(Editor, ModeTransitionPlayingToPaused)
 	EDITOR_TEST_BEGIN(TestModeTransitionPlayingToPaused);
 
 	// Start by transitioning to Playing mode
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Transition to Paused mode
-	Zenith_Editor::SetEditorMode(EditorMode::Paused);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Paused, "Should be in Paused mode after transition");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Paused);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Paused, "Should be in Paused mode after transition");
 
 	EDITOR_TEST_END(TestModeTransitionPlayingToPaused);
 }
@@ -301,16 +301,16 @@ ZENITH_TEST(Editor, ModeTransitionPausedToStopped)
 	EDITOR_TEST_BEGIN(TestModeTransitionPausedToStopped);
 
 	// Start by transitioning through Playing to Paused
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Editor::SetEditorMode(EditorMode::Paused);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Paused, "Should be in Paused mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	g_xEngine.Editor().SetEditorMode(EditorMode::Paused);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Paused, "Should be in Paused mode");
 
 	// Transition to Stopped mode
-	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode after transition");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode after transition");
 
 	// Flush pending scene operations to complete the restore
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	EDITOR_TEST_END(TestModeTransitionPausedToStopped);
 }
@@ -319,26 +319,26 @@ ZENITH_TEST(Editor, ModeTransitionFullCycle)
 	EDITOR_TEST_BEGIN(TestModeTransitionFullCycle);
 
 	// Start in Stopped mode
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
 
 	// Stopped -> Playing
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Playing -> Paused
-	Zenith_Editor::SetEditorMode(EditorMode::Paused);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Paused, "Should be in Paused mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Paused);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Paused, "Should be in Paused mode");
 
 	// Paused -> Playing (resume)
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode after resume");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Playing, "Should be in Playing mode after resume");
 
 	// Playing -> Stopped (this queues scene restore)
-	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
 
 	// Flush pending scene operations to complete the restore
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	EDITOR_TEST_END(TestModeTransitionFullCycle);
 }
@@ -348,28 +348,28 @@ ZENITH_TEST(Editor, ModePreservesSelection)
 
 	// Create a test entity and select it
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("SelectionTestEntity");
-	Zenith_Editor::SelectEntity(uEntity, false);
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntity), "Entity should be selected");
+	g_xEngine.Editor().SelectEntity(uEntity, false);
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uEntity), "Entity should be selected");
 
-	Zenith_Entity* pxSelected = Zenith_Editor::GetSelectedEntity();
+	Zenith_Entity* pxSelected = g_xEngine.Editor().GetSelectedEntity();
 	ZENITH_ASSERT_TRUE(pxSelected != nullptr && pxSelected->GetEntityID() == uEntity, "Selected entity should be retrievable");
 
 	// Transition to Playing mode (selection should be preserved during play)
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Selection is cleared during mode transitions (this is expected behavior)
 	// The scene backup/restore process resets selection state
 
 	// Transition back to Stopped and flush to complete restore
-	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	// Verify entity still exists in scene after restore
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
 	// Note: Entity IDs are regenerated on scene load, so we can't check the same ID
 	// Instead, verify scene has entities and is in a valid state
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be back in Stopped mode");
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should be back in Stopped mode");
 
 	EDITOR_TEST_END(TestModePreservesSelection);
 }
@@ -381,14 +381,14 @@ ZENITH_TEST(Editor, GizmoModeSwitch)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeSwitch);
 
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Translate);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Translate, "Should be Translate");
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Translate);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetGizmoMode(), EditorGizmoMode::Translate, "Should be Translate");
 
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Rotate);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Rotate, "Should be Rotate");
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Rotate);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetGizmoMode(), EditorGizmoMode::Rotate, "Should be Rotate");
 
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Scale);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Scale, "Should be Scale");
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Scale);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetGizmoMode(), EditorGizmoMode::Scale, "Should be Scale");
 
 	EDITOR_TEST_END(TestGizmoModeSwitch);
 }
@@ -396,8 +396,8 @@ ZENITH_TEST(Editor, GizmoModeTranslate)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeTranslate);
 
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Translate);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Translate, "Gizmo mode should be Translate");
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Translate);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetGizmoMode(), EditorGizmoMode::Translate, "Gizmo mode should be Translate");
 
 	EDITOR_TEST_END(TestGizmoModeTranslate);
 }
@@ -405,8 +405,8 @@ ZENITH_TEST(Editor, GizmoModeRotate)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeRotate);
 
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Rotate);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Rotate, "Gizmo mode should be Rotate");
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Rotate);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetGizmoMode(), EditorGizmoMode::Rotate, "Gizmo mode should be Rotate");
 
 	EDITOR_TEST_END(TestGizmoModeRotate);
 }
@@ -414,8 +414,8 @@ ZENITH_TEST(Editor, GizmoModeScale)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeScale);
 
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Scale);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Scale, "Gizmo mode should be Scale");
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Scale);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetGizmoMode(), EditorGizmoMode::Scale, "Gizmo mode should be Scale");
 
 	EDITOR_TEST_END(TestGizmoModeScale);
 }
@@ -445,8 +445,8 @@ ZENITH_TEST(Editor, UndoSystemCanUndo)
 {
 	EDITOR_TEST_BEGIN(TestUndoSystemCanUndo);
 
-	Zenith_UndoSystem::Clear();
-	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanUndo(), "Should not be able to undo with empty stack");
+	g_xEngine.UndoSystem().Clear();
+	ZENITH_ASSERT_FALSE(g_xEngine.UndoSystem().CanUndo(), "Should not be able to undo with empty stack");
 
 	EDITOR_TEST_END(TestUndoSystemCanUndo);
 }
@@ -454,8 +454,8 @@ ZENITH_TEST(Editor, UndoSystemCanRedo)
 {
 	EDITOR_TEST_BEGIN(TestUndoSystemCanRedo);
 
-	Zenith_UndoSystem::Clear();
-	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanRedo(), "Should not be able to redo with empty stack");
+	g_xEngine.UndoSystem().Clear();
+	ZENITH_ASSERT_FALSE(g_xEngine.UndoSystem().CanRedo(), "Should not be able to redo with empty stack");
 
 	EDITOR_TEST_END(TestUndoSystemCanRedo);
 }
@@ -464,8 +464,8 @@ ZENITH_TEST(Editor, TransformEditUndoRedo)
 	EDITOR_TEST_BEGIN(TestTransformEditUndoRedo);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("UndoTestEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -490,9 +490,9 @@ ZENITH_TEST(Editor, UndoStackClearOnSceneChange)
 {
 	EDITOR_TEST_BEGIN(TestUndoStackClearOnSceneChange);
 
-	Zenith_UndoSystem::Clear();
-	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanUndo(), "Undo stack should be empty after clear");
-	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanRedo(), "Redo stack should be empty after clear");
+	g_xEngine.UndoSystem().Clear();
+	ZENITH_ASSERT_FALSE(g_xEngine.UndoSystem().CanUndo(), "Undo stack should be empty after clear");
+	ZENITH_ASSERT_FALSE(g_xEngine.UndoSystem().CanRedo(), "Redo stack should be empty after clear");
 
 	EDITOR_TEST_END(TestUndoStackClearOnSceneChange);
 }
@@ -500,9 +500,9 @@ ZENITH_TEST(Editor, RedoStackClearOnNewEdit)
 {
 	EDITOR_TEST_BEGIN(TestRedoStackClearOnNewEdit);
 
-	Zenith_UndoSystem::Clear();
+	g_xEngine.UndoSystem().Clear();
 	// Redo stack should be cleared when a new edit is made after undo
-	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanRedo(), "Redo stack should be empty");
+	ZENITH_ASSERT_FALSE(g_xEngine.UndoSystem().CanRedo(), "Redo stack should be empty");
 
 	EDITOR_TEST_END(TestRedoStackClearOnNewEdit);
 }
@@ -510,15 +510,15 @@ ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 {
 	EDITOR_TEST_BEGIN(TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch);
 
-	Zenith_UndoSystem::Clear();
+	g_xEngine.UndoSystem().Clear();
 
 	// Snapshot saved active so we can restore at the end.
-	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xSavedActive = g_xEngine.SceneRegistry().GetActiveScene();
 
 	// Create Scene A (active), put an entity there, capture its old transform.
-	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("Audit318_UndoSceneA");
-	Zenith_SceneManager::SetActiveScene(xSceneA);
-	Zenith_SceneData* pxSceneAData = Zenith_SceneManager::GetSceneData(xSceneA);
+	Zenith_Scene xSceneA = g_xEngine.SceneRegistry().CreateEmptyScene("Audit318_UndoSceneA");
+	g_xEngine.SceneRegistry().SetActiveScene(xSceneA);
+	Zenith_SceneData* pxSceneAData = g_xEngine.SceneRegistry().GetSceneData(xSceneA);
 	Zenith_Entity xTargetEntity(pxSceneAData, "Audit318_UndoTarget");
 	Zenith_EntityID xTargetID = xTargetEntity.GetEntityID();
 	Zenith_TransformComponent& xTransform = xTargetEntity.GetComponent<Zenith_TransformComponent>();
@@ -536,7 +536,7 @@ ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 
 	// Record a TransformEdit command (commits to undo stack via Execute).
 	auto* pxCmd = new Zenith_UndoCommand_TransformEdit(xTargetID, xOldPos, xOldRot, xOldScale, xNewPos, xNewRot, xNewScale);
-	Zenith_UndoSystem::Execute(pxCmd);
+	g_xEngine.UndoSystem().Execute(pxCmd);
 
 	// Verify the new position landed.
 	Zenith_Maths::Vector3 xPosAfterExecute;
@@ -547,12 +547,12 @@ ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 	// broke undo: the command captured Scene A's handle, then Ctrl+Z would
 	// route through GetSceneData(m_xScene) but the selection-layer semantics
 	// would fail silently. With the EntityID-based resolution, undo survives.
-	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("Audit318_UndoSceneB");
-	Zenith_SceneManager::SetActiveScene(xSceneB);
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneB, "Setup: Scene B should be active before undo");
+	Zenith_Scene xSceneB = g_xEngine.SceneRegistry().CreateEmptyScene("Audit318_UndoSceneB");
+	g_xEngine.SceneRegistry().SetActiveScene(xSceneB);
+	ZENITH_ASSERT_EQ(g_xEngine.SceneRegistry().GetActiveScene(), xSceneB, "Setup: Scene B should be active before undo");
 
 	// Ctrl+Z — must restore Scene A's entity transform despite Scene B being active.
-	Zenith_UndoSystem::Undo();
+	g_xEngine.UndoSystem().Undo();
 
 	Zenith_Maths::Vector3 xPosAfterUndo;
 	xTransform.GetPosition(xPosAfterUndo);
@@ -560,12 +560,12 @@ ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 		"(Unity parity: object-scene is intrinsic via GetSceneDataForEntity)");
 
 	// Cleanup
-	Zenith_UndoSystem::Clear();
-	Zenith_SceneManager::UnloadScene(xSceneB);
-	Zenith_SceneManager::UnloadScene(xSceneA);
+	g_xEngine.UndoSystem().Clear();
+	g_xEngine.SceneOperations().UnloadScene(xSceneB);
+	g_xEngine.SceneOperations().UnloadScene(xSceneA);
 	if (xSavedActive.IsValid())
 	{
-		Zenith_SceneManager::SetActiveScene(xSavedActive);
+		g_xEngine.SceneRegistry().SetActiveScene(xSavedActive);
 	}
 
 	EDITOR_TEST_END(TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch);
@@ -581,8 +581,8 @@ ZENITH_TEST(Editor, EntityReparenting)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Set parent
@@ -600,8 +600,8 @@ ZENITH_TEST(Editor, CreateChildEntity)
 
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Child should have parent set");
 
@@ -614,8 +614,8 @@ ZENITH_TEST(Editor, UnparentEntity)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Set parent
@@ -636,8 +636,8 @@ ZENITH_TEST(Editor, HierarchyCircularPrevention)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
@@ -676,12 +676,12 @@ ZENITH_TEST(Editor, RangeSelection)
 	Zenith_EntityID uEntity1 = Zenith_EditorTestFixture::CreateTestEntity("RangeEntity1");
 	Zenith_EntityID uEntity2 = Zenith_EditorTestFixture::CreateTestEntity("RangeEntity2");
 
-	Zenith_Editor::SelectEntity(uEntity1, false);
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntity1), "First entity should be selected");
+	g_xEngine.Editor().SelectEntity(uEntity1, false);
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uEntity1), "First entity should be selected");
 
 	// SelectRange would select all entities between the last clicked and new one
 	// For now, test that the API exists
-	Zenith_Editor::SelectRange(uEntity2);
+	g_xEngine.Editor().SelectRange(uEntity2);
 
 	EDITOR_TEST_END(TestRangeSelection);
 }
@@ -695,14 +695,14 @@ ZENITH_TEST(Editor, SelectionWithHierarchy)
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
 	// Select parent
-	Zenith_Editor::SelectEntity(uParent, false);
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uParent), "Parent should be selected");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uChild), "Child should not be auto-selected");
+	g_xEngine.Editor().SelectEntity(uParent, false);
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uParent), "Parent should be selected");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().IsSelected(uChild), "Child should not be auto-selected");
 
 	// Select child
-	Zenith_Editor::SelectEntity(uChild, false);
-	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uChild), "Child should be selected");
-	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uParent), "Parent should be deselected");
+	g_xEngine.Editor().SelectEntity(uChild, false);
+	ZENITH_ASSERT_TRUE(g_xEngine.Editor().IsSelected(uChild), "Child should be selected");
+	ZENITH_ASSERT_FALSE(g_xEngine.Editor().IsSelected(uParent), "Parent should be deselected");
 
 	EDITOR_TEST_END(TestSelectionWithHierarchy);
 }
@@ -730,9 +730,9 @@ ZENITH_TEST(Editor, ConsoleAddLog)
 	EDITOR_TEST_BEGIN(TestConsoleAddLog);
 
 	// Test that we can add log messages without crashing
-	Zenith_Editor::AddLogMessage("Test info message", ConsoleLogEntry::LogLevel::Info, LOG_CATEGORY_CORE);
-	Zenith_Editor::AddLogMessage("Test warning message", ConsoleLogEntry::LogLevel::Warning, LOG_CATEGORY_CORE);
-	Zenith_Editor::AddLogMessage("Test error message", ConsoleLogEntry::LogLevel::Error, LOG_CATEGORY_CORE);
+	g_xEngine.Editor().AddLogMessage("Test info message", ConsoleLogEntry::LogLevel::Info, LOG_CATEGORY_CORE);
+	g_xEngine.Editor().AddLogMessage("Test warning message", ConsoleLogEntry::LogLevel::Warning, LOG_CATEGORY_CORE);
+	g_xEngine.Editor().AddLogMessage("Test error message", ConsoleLogEntry::LogLevel::Error, LOG_CATEGORY_CORE);
 
 	EDITOR_TEST_END(TestConsoleAddLog);
 }
@@ -740,8 +740,8 @@ ZENITH_TEST(Editor, ConsoleClear)
 {
 	EDITOR_TEST_BEGIN(TestConsoleClear);
 
-	Zenith_Editor::AddLogMessage("Message to clear", ConsoleLogEntry::LogLevel::Info, LOG_CATEGORY_CORE);
-	Zenith_Editor::ClearConsole();
+	g_xEngine.Editor().AddLogMessage("Message to clear", ConsoleLogEntry::LogLevel::Info, LOG_CATEGORY_CORE);
+	g_xEngine.Editor().ClearConsole();
 	// Console should be empty after clear
 
 	EDITOR_TEST_END(TestConsoleClear);
@@ -755,8 +755,8 @@ ZENITH_TEST(Editor, ComponentAddRemove)
 	EDITOR_TEST_BEGIN(TestComponentAddRemove);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("ComponentTestEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// All entities have TransformComponent by default
@@ -779,8 +779,8 @@ ZENITH_TEST(Editor, ComponentAddViaRegistry)
 	EDITOR_TEST_BEGIN(TestComponentAddViaRegistry);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("RegistryTestEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// The component registry provides type-erased component operations
@@ -796,8 +796,8 @@ ZENITH_TEST(Editor, MultipleComponentAdd)
 	EDITOR_TEST_BEGIN(TestMultipleComponentAdd);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("MultiComponentEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// Add multiple components
@@ -817,8 +817,8 @@ ZENITH_TEST(Editor, TransformPositionRoundTrip)
 	EDITOR_TEST_BEGIN(TestTransformPositionRoundTrip);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("PosRoundTripEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -837,8 +837,8 @@ ZENITH_TEST(Editor, TransformRotationRoundTrip)
 	EDITOR_TEST_BEGIN(TestTransformRotationRoundTrip);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("RotRoundTripEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -858,8 +858,8 @@ ZENITH_TEST(Editor, TransformScaleRoundTrip)
 	EDITOR_TEST_BEGIN(TestTransformScaleRoundTrip);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("ScaleRoundTripEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -878,8 +878,8 @@ ZENITH_TEST(Editor, TransformMatrixBuild)
 	EDITOR_TEST_BEGIN(TestTransformMatrixBuild);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("MatrixBuildEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -907,8 +907,8 @@ ZENITH_TEST(Editor, TransformParentChild)
 
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
@@ -928,8 +928,8 @@ ZENITH_TEST(Editor, TransformHierarchyTraversal)
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild1);
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild2);
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
 	Zenith_TransformComponent& xParentTransform = xParent.GetComponent<Zenith_TransformComponent>();
 
@@ -954,8 +954,8 @@ ZENITH_TEST(Editor, TransformIsDescendantOf)
 	Zenith_EditorTestFixture::SetupHierarchy(uGrandparent, uParent);
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
@@ -981,8 +981,8 @@ ZENITH_TEST(Editor, CameraPerspectiveMatrix)
 	EDITOR_TEST_BEGIN(TestCameraPerspectiveMatrix);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("PerspCameraEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -1004,8 +1004,8 @@ ZENITH_TEST(Editor, CameraOrthographicMatrix)
 	EDITOR_TEST_BEGIN(TestCameraOrthographicMatrix);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("OrthoCameraEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -1026,8 +1026,8 @@ ZENITH_TEST(Editor, CameraViewMatrix)
 	EDITOR_TEST_BEGIN(TestCameraViewMatrix);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("ViewCameraEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -1047,8 +1047,8 @@ ZENITH_TEST(Editor, CameraTypeSwitch)
 	EDITOR_TEST_BEGIN(TestCameraTypeSwitch);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("TypeSwitchCamera");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -1075,8 +1075,8 @@ ZENITH_TEST(Editor, CameraNearFarPlanes)
 	EDITOR_TEST_BEGIN(TestCameraNearFarPlanes);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("NearFarCamera");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -1094,8 +1094,8 @@ ZENITH_TEST(Editor, CameraFOVSettings)
 	EDITOR_TEST_BEGIN(TestCameraFOVSettings);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("FOVCamera");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -1297,8 +1297,8 @@ ZENITH_TEST(Editor, DragDropEntityToParent)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("DragDropParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("DragDropChild");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Simulate what happens when entity is dropped on another in hierarchy
@@ -1316,8 +1316,8 @@ ZENITH_TEST(Editor, DragDropEntityCircularPrevention)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("CircularParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("CircularChild");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
@@ -1341,8 +1341,8 @@ ZENITH_TEST(Editor, ContextMenuCreateChild)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("ContextParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("ContextChild");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	xChild.SetParent(uParent);
 
@@ -1357,8 +1357,8 @@ ZENITH_TEST(Editor, ContextMenuDeleteEntity)
 	// Test entity deletion via context menu
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("DeleteEntity");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntity), "Entity should exist before deletion");
 
 	pxSceneData->RemoveEntity(uEntity);
@@ -1377,8 +1377,8 @@ ZENITH_TEST(Editor, ContextMenuUnparent)
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("UnparentParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("UnparentChild");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	xChild.SetParent(uParent);
@@ -1420,8 +1420,8 @@ ZENITH_TEST(Editor, EntityNameChange)
 	EDITOR_TEST_BEGIN(TestEntityNameChange);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("OriginalName");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// Simulate name change from property panel text input
@@ -1436,8 +1436,8 @@ ZENITH_TEST(Editor, TransformDragPosition)
 	EDITOR_TEST_BEGIN(TestTransformDragPosition);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("DragPositionEntity");
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -1461,9 +1461,9 @@ ZENITH_TEST(Editor, CreateEntityViaEditor)
 	EDITOR_TEST_BEGIN(TestCreateEntityViaEditor);
 
 	// CreateEntity should create, set non-transient, and select the entity
-	Zenith_EntityID uEntityID = Zenith_Editor::CreateEntity("EditorOpTestEntity");
+	Zenith_EntityID uEntityID = g_xEngine.Editor().CreateEntity("EditorOpTestEntity");
 
-	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 	ZENITH_ASSERT_NOT_NULL(pxEntity, "Entity should be selected after CreateEntity");
 	ZENITH_ASSERT_EQ(pxEntity->GetEntityID(), uEntityID, "Selected entity should match returned ID");
 	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "EditorOpTestEntity", "Entity name should match");
@@ -1475,10 +1475,10 @@ ZENITH_TEST(Editor, AddInvalidComponent)
 {
 	EDITOR_TEST_BEGIN(TestAddInvalidComponent);
 
-	Zenith_Editor::CreateEntity("InvalidCompEntity");
+	g_xEngine.Editor().CreateEntity("InvalidCompEntity");
 
 	// Adding a non-existent component should return false
-	bool bResult = Zenith_Editor::AddComponentToSelected("NonexistentComponent");
+	bool bResult = g_xEngine.Editor().AddComponentToSelected("NonexistentComponent");
 	ZENITH_ASSERT_FALSE(bResult, "AddComponentToSelected should return false for unknown component name");
 
 	EDITOR_TEST_END(TestAddInvalidComponent);
@@ -1487,19 +1487,19 @@ ZENITH_TEST(Editor, SetSelectedEntityTransient)
 {
 	EDITOR_TEST_BEGIN(TestSetSelectedEntityTransient);
 
-	Zenith_Editor::CreateEntity("TransientTestEntity");
-	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	g_xEngine.Editor().CreateEntity("TransientTestEntity");
+	Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	// Initially non-transient (set by CreateEntity)
 	ZENITH_ASSERT_FALSE(pxEntity->IsTransient(), "Should be non-transient initially");
 
 	// Set transient
-	Zenith_Editor::SetSelectedEntityTransient(true);
+	g_xEngine.Editor().SetSelectedEntityTransient(true);
 	ZENITH_ASSERT_TRUE(pxEntity->IsTransient(), "Should be transient after SetSelectedEntityTransient(true)");
 
 	// Set back to non-transient
-	Zenith_Editor::SetSelectedEntityTransient(false);
+	g_xEngine.Editor().SetSelectedEntityTransient(false);
 	ZENITH_ASSERT_FALSE(pxEntity->IsTransient(), "Should be non-transient after SetSelectedEntityTransient(false)");
 
 	EDITOR_TEST_END(TestSetSelectedEntityTransient);
@@ -1545,22 +1545,22 @@ ZENITH_TEST(Editor, DeferredOpClearedAfterExecution)
 	Zenith_EditorTestFixture::SetUp();
 
 	// Enter Play mode to create a scene backup
-	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Stop Play mode — this queues a deferred scene-load via the editor state's deferred-ops
-	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
+	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
+	ZENITH_ASSERT_EQ(g_xEngine.Editor().GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
 
 	// Flush pending ops — this should execute the deferred load and clear the flag
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	// Flush again — if the flag was properly cleared, this is a no-op and should not crash
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	// Verify the scene is still valid after the double-flush
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Scene data should be valid after deferred op completed");
 
 	Zenith_EditorTestFixture::TearDown();
@@ -1578,7 +1578,7 @@ ZENITH_TEST(Editor, DeferredOpSkippedWhenFlagFalse)
 	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntityID), "Entity should exist before flush");
 
 	// Call FlushPendingSceneOperations with NO flags set
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	// Verify the entity still exists — proving no scene operation was executed
 	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntityID), "Entity should still exist after flush with no pending flags");

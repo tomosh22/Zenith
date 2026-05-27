@@ -63,15 +63,15 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
 	case kWait:
 	{
 		++g_iWait;
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene)
 		{
 			int iLights = 0;
@@ -105,8 +105,8 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 3) return true;
 
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene)
 		{
 			pxScene->Query<Zenith_LightComponent>().ForEach(

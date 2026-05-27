@@ -14,13 +14,14 @@
 // Zenith_SceneManager::Register*/Unregister*Callback. Those public methods
 // become two-line forwarders to this bus.
 
+#include "Collections/Zenith_Vector.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 
 class Zenith_SceneCallbackBus
 {
 public:
-	using CallbackHandle = Zenith_SceneManager::CallbackHandle;
-	static constexpr CallbackHandle INVALID_CALLBACK_HANDLE = Zenith_SceneManager::INVALID_CALLBACK_HANDLE;
+	using CallbackHandle = Zenith_SceneCallbackHandle;
+	static constexpr CallbackHandle INVALID_CALLBACK_HANDLE = Zenith_INVALID_SCENE_CALLBACK_HANDLE;
 
 	//==========================================================================
 	// Lifecycle
@@ -28,40 +29,49 @@ public:
 
 	// Clear all callback lists, suppression state, deferred-removal queue and
 	// reset the dispatch-depth counter. Called from Zenith_SceneManager::Shutdown().
-	static void Shutdown();
+	void Shutdown();
 
 	//==========================================================================
 	// Register / Unregister
 	//==========================================================================
 
-	static CallbackHandle RegisterActiveSceneChanged(Zenith_SceneManager::SceneChangedCallback pfn);
-	static bool UnregisterActiveSceneChanged(CallbackHandle ulHandle);
+	CallbackHandle RegisterActiveSceneChanged(Zenith_SceneChangedCallback pfn);
+	bool UnregisterActiveSceneChanged(CallbackHandle ulHandle);
 
-	static CallbackHandle RegisterSceneLoaded(Zenith_SceneManager::SceneLoadedCallback pfn);
-	static bool UnregisterSceneLoaded(CallbackHandle ulHandle);
+	CallbackHandle RegisterSceneLoaded(Zenith_SceneLoadedCallback pfn);
+	bool UnregisterSceneLoaded(CallbackHandle ulHandle);
 
-	static CallbackHandle RegisterSceneUnloading(Zenith_SceneManager::SceneUnloadingCallback pfn);
-	static bool UnregisterSceneUnloading(CallbackHandle ulHandle);
+	CallbackHandle RegisterSceneUnloading(Zenith_SceneUnloadingCallback pfn);
+	bool UnregisterSceneUnloading(CallbackHandle ulHandle);
 
-	static CallbackHandle RegisterSceneUnloaded(Zenith_SceneManager::SceneUnloadedCallback pfn);
-	static bool UnregisterSceneUnloaded(CallbackHandle ulHandle);
+	CallbackHandle RegisterSceneUnloaded(Zenith_SceneUnloadedCallback pfn);
+	bool UnregisterSceneUnloaded(CallbackHandle ulHandle);
 
-	static CallbackHandle RegisterSceneLoadStarted(Zenith_SceneManager::SceneLoadStartedCallback pfn);
-	static bool UnregisterSceneLoadStarted(CallbackHandle ulHandle);
+	CallbackHandle RegisterSceneLoadStarted(Zenith_SceneLoadStartedCallback pfn);
+	bool UnregisterSceneLoadStarted(CallbackHandle ulHandle);
 
-	static CallbackHandle RegisterEntityPersistent(Zenith_SceneManager::EntityPersistentCallback pfn);
-	static bool UnregisterEntityPersistent(CallbackHandle ulHandle);
+	CallbackHandle RegisterEntityPersistent(Zenith_EntityPersistentCallback pfn);
+	bool UnregisterEntityPersistent(CallbackHandle ulHandle);
+
+	//==========================================================================
+	// Composite unload-dispatch helper (Phase 5e)
+	//==========================================================================
+
+	// Fires SceneUnloading, frees the scene data slot, fires SceneUnloaded,
+	// and (if the unloaded scene was active) selects + announces a new active
+	// scene. Migrated from Zenith_SceneManager during Phase 5e.
+	void FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene);
 
 	//==========================================================================
 	// Fire
 	//==========================================================================
 
-	static void FireActiveSceneChanged(Zenith_Scene xOld, Zenith_Scene xNew);
-	static void FireSceneLoaded(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
-	static void FireSceneUnloading(Zenith_Scene xScene);
-	static void FireSceneUnloaded(Zenith_Scene xScene);
-	static void FireSceneLoadStarted(const std::string& strPath);
-	static void FireEntityPersistent(const Zenith_Entity& xEntity);
+	void FireActiveSceneChanged(Zenith_Scene xOld, Zenith_Scene xNew);
+	void FireSceneLoaded(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
+	void FireSceneUnloading(Zenith_Scene xScene);
+	void FireSceneUnloaded(Zenith_Scene xScene);
+	void FireSceneLoadStarted(const std::string& strPath);
+	void FireEntityPersistent(const Zenith_Entity& xEntity);
 
 	//==========================================================================
 	// Active-scene suppression scope state (read accessors).
@@ -76,15 +86,15 @@ public:
 	// is no scattered begin/end pair to leak.
 	//==========================================================================
 
-	static bool IsActiveSceneSuppressed();
-	static bool HasDeferredOldActive();
-	static Zenith_Scene GetDeferredOldActive();
-	static void SetDeferredOldActive(Zenith_Scene xScene);
+	bool IsActiveSceneSuppressed();
+	bool HasDeferredOldActive();
+	Zenith_Scene GetDeferredOldActive();
+	void SetDeferredOldActive(Zenith_Scene xScene);
 
 private:
 	friend class ActiveSceneChangeSuppressionScope;
-	static void SetActiveSceneSuppressed(bool b);
-	static void ClearDeferredOldActive();
+	void SetActiveSceneSuppressed(bool b);
+	void ClearDeferredOldActive();
 public:
 
 #ifdef ZENITH_TESTING
@@ -93,23 +103,58 @@ public:
 	// reached into the now-private statics.
 	//==========================================================================
 
-	static u_int GetActiveSceneChangedCallbackCount();
-	static u_int GetSceneLoadedCallbackCount();
-	static u_int GetSceneUnloadingCallbackCount();
-	static u_int GetSceneUnloadedCallbackCount();
-	static u_int GetSceneLoadStartedCallbackCount();
-	static u_int GetEntityPersistentCallbackCount();
-	static u_int GetCallbackDispatchDepth();
-	static u_int GetPendingRemovalCount();
+	u_int GetActiveSceneChangedCallbackCount();
+	u_int GetSceneLoadedCallbackCount();
+	u_int GetSceneUnloadingCallbackCount();
+	u_int GetSceneUnloadedCallbackCount();
+	u_int GetSceneLoadStartedCallbackCount();
+	u_int GetEntityPersistentCallbackCount();
+	u_int GetCallbackDispatchDepth();
+	u_int GetPendingRemovalCount();
 
 	// Lets TestCallbackHandleWrapNoCollision seed the handle counter to UINT64_MAX
 	// to force the wrap-around branch deterministically.
-	static void SetNextCallbackHandleForTest(CallbackHandle ulValue);
+	void SetNextCallbackHandleForTest(CallbackHandle ulValue);
 
 	// Lets TestShutdownClearsAllStatics seed suppression state to verify
 	// Shutdown forcibly clears even corrupt flag combinations.
-	static void SetActiveSceneSuppressedForTest(bool b);
+	void SetActiveSceneSuppressedForTest(bool b);
 #endif
+
+	//==========================================================================
+	// Data members (was Zenith_SceneCallbackBus)
+	//==========================================================================
+
+	template<typename T>
+	struct CallbackEntry
+	{
+		CallbackHandle m_ulHandle;
+		T m_pfnCallback;
+	};
+
+	template<typename TCallback>
+	struct CallbackList
+	{
+		Zenith_Vector<CallbackEntry<TCallback>> m_axEntries;
+	};
+
+	// Six callback lists — one per event type.
+	CallbackList<Zenith_SceneChangedCallback>      m_xActiveSceneChangedCallbacks;
+	CallbackList<Zenith_SceneLoadedCallback>       m_xSceneLoadedCallbacks;
+	CallbackList<Zenith_SceneUnloadingCallback>    m_xSceneUnloadingCallbacks;
+	CallbackList<Zenith_SceneUnloadedCallback>     m_xSceneUnloadedCallbacks;
+	CallbackList<Zenith_SceneLoadStartedCallback>  m_xSceneLoadStartedCallbacks;
+	CallbackList<Zenith_EntityPersistentCallback>  m_xEntityPersistentCallbacks;
+
+	// Handle allocator & deferred-removal machinery.
+	CallbackHandle                m_ulNextCallbackHandle = 1;
+	Zenith_Vector<CallbackHandle> m_axCallbacksPendingRemoval;
+	uint32_t                      m_uFiringCallbacksDepth = 0;
+
+	// Active-scene-changed suppression state.
+	bool         m_bSuppressActiveSceneChanged = false;
+	bool         m_bHaveDeferredOldActive      = false;
+	Zenith_Scene m_xDeferredOldActive;
 };
 
 //==========================================================================

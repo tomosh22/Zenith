@@ -125,23 +125,23 @@ void Flux_GraphicsImpl::Initialise()
 	}
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(g_xEngine.FluxGraphics().m_xQuadMesh);
-	Flux_MemoryManager::InitialiseVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexData(), g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexDataSize(), g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	Flux_MemoryManager::InitialiseIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexData(), g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexDataSize(), g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), g_xEngine.FluxGraphics().m_xFrameConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexData(), g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexDataSize(), g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexData(), g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexDataSize(), g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), g_xEngine.FluxGraphics().m_xFrameConstantsBuffer);
 
 	// Render targets are graph-owned transients, created in SetupTransients.
 	// No resize callback needed — the graph re-creates them on every
 	// SetupRenderGraph pass, which is already a resize callback.
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
-	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
+	g_xEngine.DebugVariables().AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
+	g_xEngine.DebugVariables().AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
-	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
-	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
 
-	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
-	Zenith_DebugVariables::AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
 #endif
 
 	g_xEngine.FluxGraphics().m_xFrameConstantsLayout.m_axBindings[0].m_eType = BINDING_TYPE_BUFFER;
@@ -152,15 +152,15 @@ void Flux_GraphicsImpl::Initialise()
 bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 {
 #ifdef ZENITH_TOOLS
-	if (Zenith_Editor::GetEditorMode() != EditorMode::Playing)
+	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing)
 	{
-		Zenith_Editor::BuildViewMatrix(xConstants.m_xViewMat);
-		Zenith_Editor::BuildProjectionMatrix(xConstants.m_xProjMat);
-		Zenith_Editor::GetCameraPosition(xConstants.m_xCamPos_Pad);
+		g_xEngine.Editor().BuildViewMatrix(xConstants.m_xViewMat);
+		g_xEngine.Editor().BuildProjectionMatrix(xConstants.m_xProjMat);
+		g_xEngine.Editor().GetCameraPosition(xConstants.m_xCamPos_Pad);
 		return true;
 	}
 #endif
-	Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 	if (pxCamera)
 	{
 		pxCamera->BuildViewMatrix(xConstants.m_xViewMat);
@@ -205,7 +205,7 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	g_xEngine.FluxGraphics().m_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
 #endif
 	g_xEngine.FluxGraphics().m_xFrameConstants.m_xCameraNearFar = { GetNearPlane(), GetFarPlane() };
-	Flux_MemoryManager::UploadBufferData(g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &g_xEngine.FluxGraphics().m_xFrameConstants, sizeof(FrameConstants));
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &g_xEngine.FluxGraphics().m_xFrameConstants, sizeof(FrameConstants));
 }
 
 TextureFormat Flux_GraphicsImpl::GetMRTFormat(MRTIndex eIndex)
@@ -244,18 +244,18 @@ Flux_DepthStencilView* Flux_GraphicsImpl::GetDepthStencilDSV()
 float Flux_GraphicsImpl::GetNearPlane()
 {
 #ifdef ZENITH_TOOLS
-	return Zenith_Editor::GetCameraNearPlane();
+	return g_xEngine.Editor().GetCameraNearPlane();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetNearPlane() : 0.1f;
 #endif
 }
 float Flux_GraphicsImpl::GetFarPlane()
 {
 #ifdef ZENITH_TOOLS
-	return Zenith_Editor::GetCameraFarPlane();
+	return g_xEngine.Editor().GetCameraFarPlane();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetFarPlane() : 1000.0f;
 #endif
 }
@@ -263,9 +263,9 @@ float Flux_GraphicsImpl::GetFarPlane()
 float Flux_GraphicsImpl::GetFOV()
 {
 #ifdef ZENITH_TOOLS
-	return Zenith_Editor::GetCameraFOV();
+	return g_xEngine.Editor().GetCameraFOV();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetFOV() : 1.0472f;
 #endif
 }
@@ -273,9 +273,9 @@ float Flux_GraphicsImpl::GetFOV()
 float Flux_GraphicsImpl::GetAspectRatio()
 {
 #ifdef ZENITH_TOOLS
-	return Zenith_Editor::GetCameraAspectRatio();
+	return g_xEngine.Editor().GetCameraAspectRatio();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetAspectRatio() : 1.7778f;
 #endif
 }
@@ -286,8 +286,8 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.FluxGraphics().m_pxGraph = &xGraph;
 
-	const u_int uWidth  = Flux_Swapchain::GetWidth();
-	const u_int uHeight = Flux_Swapchain::GetHeight();
+	const u_int uWidth  = g_xEngine.VulkanSwapchain().GetWidth();
+	const u_int uHeight = g_xEngine.VulkanSwapchain().GetHeight();
 	Zenith_Assert(uWidth > 0 && uHeight > 0,
 		"Flux_Graphics::SetupTransients: swapchain dimensions are %ux%u — window minimised or swapchain not yet created",
 		uWidth, uHeight);
@@ -327,7 +327,7 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 
 #ifdef ZENITH_TOOLS
 // Debug-variable callbacks: resolve the current MRT transient's SRV at each
-// ImGui draw. Registered once via Zenith_DebugVariables::AddTextureCallback —
+// ImGui draw. Registered once via g_xEngine.DebugVariables().AddTextureCallback —
 // the callback returns the live SRV pointer from the (possibly just-rebuilt)
 // graph, so rebuilds that invalidate the old SRV don't leave a stale binding
 // in the tree. Returns nullptr if the graph isn't set up yet (safe in early
@@ -395,11 +395,11 @@ void Flux_GraphicsImpl::Shutdown()
 	g_xEngine.FluxGraphics().m_pxGraph = nullptr;
 
 	// Destroy quad mesh buffers
-	Flux_MemoryManager::DestroyVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	// Destroy frame constants buffer
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.FluxGraphics().m_xFrameConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.FluxGraphics().m_xFrameConstantsBuffer);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shut down");
 }

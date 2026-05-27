@@ -58,8 +58,12 @@
 #include "Collections/Zenith_HashSet.h"
 #include <atomic>
 #include <string>
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+#include "EntityComponent/Zenith_SceneSystemGuards.h"  // Phase 5e: top-level guard types
+                                                          // (Zenith_SceneManagerGuards.h aliases them inside the class).
+#include "EntityComponent/Zenith_SceneCallbackTypes.h"   // Phase 5e: top-level callback typedefs
+                                                          // (aliased inside the class for back-compat).
 
 // Forward declarations
 struct Zenith_Scene;
@@ -673,15 +677,19 @@ public:
 	//==========================================================================
 
 	// Callback handle for unregistration
-	using CallbackHandle = uint64_t;
-	static constexpr CallbackHandle INVALID_CALLBACK_HANDLE = 0;
+	// Phase 5e: callback typedefs live as top-level types in
+	// Zenith_SceneCallbackTypes.h. The aliases below keep existing
+	// `Zenith_SceneManager::CallbackHandle` etc. call sites working until
+	// codemod migrates them to the top-level names.
+	using CallbackHandle             = Zenith_SceneCallbackHandle;
+	static constexpr CallbackHandle INVALID_CALLBACK_HANDLE = Zenith_INVALID_SCENE_CALLBACK_HANDLE;
 
-	using SceneChangedCallback = void(*)(Zenith_Scene, Zenith_Scene);
-	using SceneLoadedCallback = void(*)(Zenith_Scene, Zenith_SceneLoadMode);
-	using SceneUnloadingCallback = void(*)(Zenith_Scene);  // BEFORE destruction
-	using SceneUnloadedCallback = void(*)(Zenith_Scene);   // AFTER destruction
-	using SceneLoadStartedCallback = void(*)(const std::string&);
-	using EntityPersistentCallback = void(*)(const Zenith_Entity&);
+	using SceneChangedCallback       = Zenith_SceneChangedCallback;
+	using SceneLoadedCallback        = Zenith_SceneLoadedCallback;
+	using SceneUnloadingCallback     = Zenith_SceneUnloadingCallback;
+	using SceneUnloadedCallback      = Zenith_SceneUnloadedCallback;
+	using SceneLoadStartedCallback   = Zenith_SceneLoadStartedCallback;
+	using EntityPersistentCallback   = Zenith_EntityPersistentCallback;
 
 	/**
 	 * Register callback for active scene changes.
@@ -788,16 +796,9 @@ public:
 	 */
 	static void UnloadUnusedAssets();
 
-#ifdef ZENITH_TESTING
-	/**
-	 * Test-only call counter for UnloadUnusedAssets. Incremented on every
-	 * call (manual or auto-fired by SCENE_LOAD_SINGLE teardown). Reset to 0
-	 * by ResetForNextTest. Used by B3 regression tests to assert that
-	 * SCENE_LOAD_SINGLE auto-fires UnloadUnusedAssets and SCENE_LOAD_ADDITIVE
-	 * does not.
-	 */
-	static uint32_t GetUnloadUnusedAssetsCallCount();
-#endif
+	// Phase 5b: GetUnloadUnusedAssetsCallCount() (test-only B3 instrumentation)
+	// moved onto Zenith_SceneOperationQueue. Read via
+	// g_xEngine.SceneOperations().GetUnloadUnusedAssetsCallCount().
 
 	//==========================================================================
 	// Build Settings Registry
@@ -971,12 +972,19 @@ public:
 template<typename T>
 void Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes(Zenith_Vector<T*>& xOut)
 {
+	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<T>(xOut);
+}
+
+// Real body — lives on SceneRegistry post-Phase 5c.
+template<typename T>
+void Zenith_SceneRegistry::GetAllOfComponentTypeFromAllScenes(Zenith_Vector<T*>& xOut)
+{
 	xOut.Clear();
 
-	const uint32_t uSlotCount = Zenith_SceneRegistry::GetSceneSlotCount();
+	const uint32_t uSlotCount = GetSceneSlotCount();
 	for (uint32_t uIndex = 0; uIndex < uSlotCount; ++uIndex)
 	{
-		Zenith_SceneData* pxData = Zenith_SceneRegistry::GetLoadedSceneDataAtSlot(uIndex);
+		Zenith_SceneData* pxData = GetLoadedSceneDataAtSlot(uIndex);
 		if (pxData)
 		{
 			pxData->AppendAllOfComponentType<T>(xOut);

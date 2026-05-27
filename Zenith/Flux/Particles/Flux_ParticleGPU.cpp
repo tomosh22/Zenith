@@ -74,24 +74,24 @@ void Flux_ParticleGPUImpl::Initialise()
 {
 	BuildPipelines();
 
-	Flux_MemoryManager::InitialiseReadWriteBuffer(
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
 		nullptr,
 		sizeof(Flux_Particle) * s_uMaxGPUParticles,
 		m_xParticleBufferA
 	);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
 		nullptr,
 		sizeof(Flux_Particle) * s_uMaxGPUParticles,
 		m_xParticleBufferB
 	);
 
-	Flux_MemoryManager::InitialiseReadWriteBuffer(
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
 		nullptr,
 		sizeof(Flux_ParticleInstance) * s_uMaxGPUParticles,
 		m_xInstanceBuffer
 	);
 
-	Flux_MemoryManager::InitialiseIndirectBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(
 		sizeof(uint32_t),
 		m_xCounterBuffer
 	);
@@ -109,10 +109,10 @@ void Flux_ParticleGPUImpl::Shutdown()
 	m_xComputeRootSig = Flux_RootSig();
 	m_xComputeCommandList.Reset();
 
-	Flux_MemoryManager::DestroyReadWriteBuffer(m_xParticleBufferA);
-	Flux_MemoryManager::DestroyReadWriteBuffer(m_xParticleBufferB);
-	Flux_MemoryManager::DestroyReadWriteBuffer(m_xInstanceBuffer);
-	Flux_MemoryManager::DestroyIndirectBuffer(m_xCounterBuffer);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xParticleBufferA);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xParticleBufferB);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xInstanceBuffer);
+	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xCounterBuffer);
 
 	delete[] m_pxStagingBuffer;
 	m_pxStagingBuffer = nullptr;
@@ -270,7 +270,7 @@ void Flux_ParticleGPUImpl::ProcessPendingSpawns()
 		}
 
 		uint32_t uUploadOffset = xEmitter.m_uBaseOffset + xEmitter.m_uCurrentParticleCount;
-		Flux_MemoryManager::UploadBufferDataAtOffset(
+		g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
 			xInputBuffer.GetBuffer().m_xVRAMHandle,
 			m_pxStagingBuffer,
 			uSpawnCount * sizeof(Flux_Particle),
@@ -293,7 +293,7 @@ void Flux_ParticleGPUImpl::PreExecuteCompute()
 	ProcessPendingSpawns();
 
 	uint32_t uZero = 0;
-	Flux_MemoryManager::UploadBufferData(
+	g_xEngine.VulkanMemory().UploadBufferData(
 		m_xCounterBuffer.GetBuffer().m_xVRAMHandle,
 		&uZero,
 		sizeof(uint32_t)

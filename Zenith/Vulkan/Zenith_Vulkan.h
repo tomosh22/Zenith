@@ -15,6 +15,8 @@
 #include "Flux/Flux_Types.h"
 #include "Zenith_Vulkan_CommandBuffer.h"
 
+#include <vector>
+
 // VkUnwrap: extract value from vk::ResultValue<T>
 // Some Vulkan calls (e.g. createGraphicsPipeline) return ResultValue<T> on all platforms
 // because they have non-error success codes like VK_PIPELINE_COMPILE_REQUIRED
@@ -49,8 +51,8 @@ public:
 	Zenith_Vulkan_PerFrame() = default;
 
 	void Initialise();
-	void InitialiseScratchBuffers(); // Must be called after Flux_MemoryManager::Initialise()
-	void ShutdownScratchBuffer();    // Must be called before Flux_MemoryManager::Shutdown() destroys the VMA allocator
+	void InitialiseScratchBuffers(); // Must be called after g_xEngine.VulkanMemory().Initialise()
+	void ShutdownScratchBuffer();    // Must be called before g_xEngine.VulkanMemory().Shutdown() destroys the VMA allocator
 	void BeginFrame();
 	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
 	const vk::CommandPool& GetCommandPoolForWorkerIndex(u_int uWorkerIndex);
@@ -100,109 +102,119 @@ public:
 	vk::Sampler m_xSampler;
 };
 
+// Per-Engine state + behaviour for the Vulkan backend. Replaces both
+// the static-facade `class Zenith_Vulkan` and the data-only
+// `Zenith_VulkanImpl` that used to live in Zenith_VulkanImpl.h. Methods
+// moved off the facade; data members moved off the Impl. Accessed via
+// g_xEngine.Vulkan().
 class Zenith_Vulkan
 {
 public:
+	Zenith_Vulkan() = default;
+	~Zenith_Vulkan() = default;
+	Zenith_Vulkan(const Zenith_Vulkan&) = delete;
+	Zenith_Vulkan& operator=(const Zenith_Vulkan&) = delete;
 
-	static vk::Format ShaderDataTypeToVulkanFormat(ShaderDataType t);
-	static vk::DescriptorSet CreateDescriptorSet(const vk::DescriptorSetLayout& xLayout, const vk::DescriptorPool& xPool);
+	// ===== Format / descriptor helpers (called without a Vulkan instance) =====
+	// These are pure functions but kept as members so call sites consistently
+	// use g_xEngine.Vulkan().X() rather than mixing static + instance forms.
+	vk::Format ShaderDataTypeToVulkanFormat(ShaderDataType t);
+	vk::DescriptorSet CreateDescriptorSet(const vk::DescriptorSetLayout& xLayout, const vk::DescriptorPool& xPool);
 
-	static void Initialise();
-	static void InitialiseScratchBuffers(); // Must be called after Flux_MemoryManager::Initialise()
-	static void CreateInstance();
+	// ===== Bootstrap =====
+	void Initialise();
+	void InitialiseScratchBuffers(); // Must be called after g_xEngine.VulkanMemory().Initialise()
+	void CreateInstance();
 #ifdef ZENITH_DEBUG
-	static void CreateDebugMessenger();
+	void CreateDebugMessenger();
 #endif
 #ifdef ZENITH_FLUX_PROFILING
-	static vk::DispatchLoaderDynamic& GetDispatchLoader();
+	vk::DispatchLoaderDynamic& GetDispatchLoader();
 #endif
-	static void CreateSurface();
-	static void CreatePhysicalDevice();
-	static void LogFormatSupport();
-	static void CreateQueueFamilies();
-	static void CreateDevice();
-	static void CreateCommandPools();
-	static void CreateDefaultDescriptorPool();
-	static void CreateBindlessTexturesDescriptorPool();
+	void CreateSurface();
+	void CreatePhysicalDevice();
+	void LogFormatSupport();
+	void CreateQueueFamilies();
+	void CreateDevice();
+	void CreateCommandPools();
+	void CreateDefaultDescriptorPool();
+	void CreateBindlessTexturesDescriptorPool();
 
 #ifdef ZENITH_TOOLS
-	static void InitialiseImGui();
-	static void InitialiseImGuiRenderPass();
-	static void ShutdownImGui();
-	static void ImGuiBeginFrame();
-	static const vk::DescriptorPool& GetImGuiDescriptorPool();
+	void InitialiseImGui();
+	void InitialiseImGuiRenderPass();
+	void ShutdownImGui();
+	void ImGuiBeginFrame();
+	const vk::DescriptorPool& GetImGuiDescriptorPool();
 
 	// ImGui memory tracking
-	static u_int64 GetImGuiMemoryAllocated();
-	static u_int64 GetImGuiAllocationCount();
+	u_int64 GetImGuiMemoryAllocated();
+	u_int64 GetImGuiAllocationCount();
 
 	// Engine-typed wrapper that builds an ImGui-compatible texture identifier
-	// from a Flux SRV + sampler. Engine-side ImGui consumers (debug variable
-	// texture preview etc.) call this rather than allocating descriptor sets
-	// themselves. Returns a uint64 that can be cast to ImTextureID for
-	// ImGui::Image.
-	static uint64_t CreateImGuiTextureID(const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
+	// from a Flux SRV + sampler. Returns a uint64 that can be cast to
+	// ImTextureID for ImGui::Image.
+	uint64_t CreateImGuiTextureID(const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
 #endif
 
-	// Per-frame callback registered with Flux_PerFrame at Initialise time.
-	// Wraps the wait-fence / reset-pools / drain-typed-deletion-queues logic
-	// that used to live in BeginFrame. Receives the ring index from
-	// Flux_PerFrame so the swapchain is no longer the source of truth for
-	// the current per-frame slot.
+	// Per-frame callback registered with Flux_RendererImpl at Initialise time.
+	// Wraps the wait-fence / reset-pools / drain-typed-deletion-queues logic.
+	// The first parameter is the ring index from the per-frame ring; the
+	// second is the user data pointer supplied to RegisterBeginFrameCallback.
 	static void OnFluxPerFrameBegin(u_int uRingIndex, void* pUserData);
 
-	static void EndFrame(bool bSubmitRenderWork);
+	void EndFrame(bool bSubmitRenderWork);
 
 	// Wait for GPU to finish all work (blocks until idle)
-	// WARNING: This is expensive - only use for critical synchronization (scene transitions, shutdown, etc.)
-	static void WaitForGPUIdle();
+	// WARNING: This is expensive — only use for critical synchronization
+	// (scene transitions, shutdown, etc.)
+	void WaitForGPUIdle();
 
+	// Task-system entry point. Stays static so it can be passed as a
+	// Zenith_TaskArrayFunction; the body resolves the engine singleton.
 	static void RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 
-	static const vk::Instance& GetInstance();
-	static const vk::PhysicalDevice& GetPhysicalDevice();
-	static const vk::Device& GetDevice();
-	static const vk::CommandPool& GetCommandPool(CommandType eType);
-	static const vk::CommandPool& GetWorkerCommandPool(u_int uThreadIndex);
-	static const vk::Queue& GetQueue(CommandType eType);
-	static const vk::DescriptorPool& GetPerFrameDescriptorPool(u_int uWorkerIndex);
-	static const vk::SurfaceKHR& GetSurface();
-	static const uint32_t GetQueueIndex(CommandType eType);
-	static const vk::DescriptorPool& GetDefaultDescriptorPool();
-	static vk::Fence& GetCurrentInFlightFence();
+	const vk::Instance& GetInstance();
+	const vk::PhysicalDevice& GetPhysicalDevice();
+	const vk::Device& GetDevice();
+	const vk::CommandPool& GetCommandPool(CommandType eType);
+	const vk::CommandPool& GetWorkerCommandPool(u_int uThreadIndex);
+	const vk::Queue& GetQueue(CommandType eType);
+	const vk::DescriptorPool& GetPerFrameDescriptorPool(u_int uWorkerIndex);
+	const vk::SurfaceKHR& GetSurface();
+	const uint32_t GetQueueIndex(CommandType eType);
+	const vk::DescriptorPool& GetDefaultDescriptorPool();
+	vk::Fence& GetCurrentInFlightFence();
 
-	static const bool ShouldSubmitDrawCalls();
-	static const bool ShouldUseDescSetCache();
-	static const bool ShouldOnlyUpdateDirtyDescriptors();
+	const bool ShouldSubmitDrawCalls();
+	const bool ShouldUseDescSetCache();
+	const bool ShouldOnlyUpdateDirtyDescriptors();
 	#ifdef ZENITH_DEBUG_VARIABLES
-	static void IncrementDescriptorSetAllocations();
+	void IncrementDescriptorSetAllocations();
 	#endif
 
-	// Phase 6b: m_pxMemoryUpdateCmdBuf lives on Zenith_VulkanImpl; reach it
-	// via g_xEngine.Vulkan().m_pxMemoryUpdateCmdBuf.
-
-	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet();
-	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout();
-	static void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
+	vk::DescriptorSet& GetBindlessTexturesDescriptorSet();
+	vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout();
+	void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
 
 	// Engine-typed wrapper around WriteBindlessDescriptor. Engine code (asset
-	// system, etc.) calls this rather than reaching for vk::ImageView / vk::Sampler
-	// directly. The wrapper extracts the native handles internally so callers
-	// stay portable.
-	static void WriteBindlessTextureSlot(uint32_t uIndex, const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
+	// system, etc.) calls this rather than reaching for vk::ImageView /
+	// vk::Sampler directly. The wrapper extracts the native handles
+	// internally so callers stay portable.
+	void WriteBindlessTextureSlot(uint32_t uIndex, const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
 
 	// VRAM Registry
-	static Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
-	static Zenith_Vulkan_VRAM* GetVRAM(const Flux_VRAMHandle xHandle);
-	static void ReleaseVRAMHandle(const Flux_VRAMHandle xHandle);
+	Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
+	Zenith_Vulkan_VRAM* GetVRAM(const Flux_VRAMHandle xHandle);
+	void ReleaseVRAMHandle(const Flux_VRAMHandle xHandle);
 
 	// Format conversion utilities
-	static vk::Format ConvertToVkFormat_Colour(TextureFormat eFormat);
-	static vk::Format ConvertToVkFormat_DepthStencil(TextureFormat eFormat);
-	static vk::AttachmentLoadOp ConvertToVkLoadAction(LoadAction eAction);
-	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
+	vk::Format ConvertToVkFormat_Colour(TextureFormat eFormat);
+	vk::Format ConvertToVkFormat_DepthStencil(TextureFormat eFormat);
+	vk::AttachmentLoadOp ConvertToVkLoadAction(LoadAction eAction);
+	vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
 
-	// GPUCapabilities struct exposed so the Impl can declare a member.
+	// GPUCapabilities struct, nested for scoping.
 	struct GPUCapabilities {
 		uint32_t m_uMaxTextureWidth;
 		uint32_t m_uMaxTextureHeight;
@@ -210,15 +222,54 @@ public:
 		uint32_t m_uMaxFramebufferHeight;
 	};
 
+	// ===== Data members (was Zenith_Vulkan) =====
+
+	// Instance / surface / device.
+	vk::Instance                  m_xInstance;
+	vk::DebugUtilsMessengerEXT    m_xDebugMessenger;
+#ifdef ZENITH_FLUX_PROFILING
+	vk::DispatchLoaderDynamic     m_xDispatchLoader;
+#endif
+	vk::SurfaceKHR                m_xSurface;
+	vk::PhysicalDevice            m_xPhysicalDevice;
+	GPUCapabilities               m_xGPUCapabilties = {};
+	uint32_t                      m_auQueueIndices[COMMANDTYPE_MAX] = {};
+	vk::Device                    m_xDevice;
+	vk::Queue                     m_axQueues[COMMANDTYPE_MAX];
+	vk::CommandPool               m_axCommandPools[COMMANDTYPE_MAX];
+
+	// Default + bindless descriptor pools.
+	vk::DescriptorPool            m_xDefaultDescriptorPool;
+	vk::DescriptorPool            m_xBindlessTexturesDescriptorPool;
+	vk::DescriptorSet             m_xBindlessTexturesDescriptorSet;
+	vk::DescriptorSetLayout       m_xBindlessTexturesDescriptorSetLayout;
+
+	// VRAM registry + freelist of slots.
+	std::vector<Zenith_Vulkan_VRAM*> m_xVRAMRegistry;
+	std::vector<uint32_t>            m_xFreeVRAMHandles;
+
+	// Pending command buffers awaiting submission (Phase 2 of graph execute).
+	std::vector<const Zenith_Vulkan_CommandBuffer*> m_xPendingCommandBuffers;
+
+	// Per-frame ring state (fences, semaphores, command-pool slots).
+	Zenith_Vulkan_PerFrame        m_axPerFrame[MAX_FRAMES_IN_FLIGHT];
+	Zenith_Vulkan_PerFrame*       m_pxCurrentFrame = nullptr;
+
+	// Transfer command buffer used for staging-buffer flushes.
+	Zenith_Vulkan_CommandBuffer*  m_pxMemoryUpdateCmdBuf = nullptr;
+
+#ifdef ZENITH_TOOLS
+	// ImGui integration resources.
+	vk::RenderPass                m_xImGuiRenderPass;
+	vk::DescriptorPool            m_xImGuiDescriptorPool;
+	vk::DescriptorSetLayout       m_xImGuiPreviewLayout;
+#endif
+
 private:
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
 		vk::DebugUtilsMessageTypeFlagsEXT eMessageType,
 		const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData,
 		void* pUserData);
-
-	// Phase 6b: ~22 static data members moved off this class onto
-	// Zenith_VulkanImpl held by Zenith_Engine. Method bodies and the
-	// 55 external readers route through g_xEngine.Vulkan().m_xXxx.
 };
 
 class Zenith_Vulkan_VRAM

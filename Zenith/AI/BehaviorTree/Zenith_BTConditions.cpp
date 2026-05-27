@@ -23,7 +23,7 @@ BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity&, Zenith_Blackb
 		// Audit §3.18 fix: resolve target's OWN scene so cross-scene targets
 		// (persistent entity, additive-scene boss, etc.) are validated correctly.
 		// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xTarget);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xTarget);
 		if (pxSceneData)
 		{
 			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);
@@ -80,7 +80,7 @@ BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_B
 	{
 		// Audit §3.18 fix: resolve the target's OWN scene — supports cross-scene
 		// range checks (agent in scene A vs target in scene B / persistent scene).
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xTargetID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xTargetID);
 		if (!pxSceneData)
 		{
 			m_eLastStatus = BTNodeStatus::FAILURE;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 
 // Forward declaration
 struct Zenith_Scene;
@@ -32,7 +32,7 @@ struct Zenith_Scene;
  *   1.0  - COMPLETE
  *
  * Usage:
- *   Zenith_SceneOperation* pxOp = Zenith_SceneManager::LoadSceneAsync("Level.zscen");
+ *   Zenith_SceneOperation* pxOp = g_xEngine.SceneOperations().LoadSceneAsync("Level.zscen");
  *   pxOp->SetActivationAllowed(false);  // Pause at ~90%
  *
  *   // In update loop:

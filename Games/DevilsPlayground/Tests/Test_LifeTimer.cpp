@@ -66,7 +66,7 @@ static bool Step_LifeTimer(int iFrame)
 	switch (g_iLTPhase)
 	{
 	case kLT_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iLTPhase = kLT_WaitScene;
 		return true;
 

@@ -81,7 +81,7 @@ static bool Step_P5Particles(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kPB_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kPB_WaitScene;
 		g_iWaitFrames = 0;
 		return true;
@@ -166,8 +166,8 @@ static bool Step_P5Particles(int /*iFrame*/)
 
 	case kPB_Verify:
 	{
-		Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
-		Zenith_SceneData* pxPersistent = Zenith_SceneManager::GetSceneData(xPersistent);
+		Zenith_Scene xPersistent = g_xEngine.SceneRegistry().GetPersistentScene();
+		Zenith_SceneData* pxPersistent = g_xEngine.SceneRegistry().GetSceneData(xPersistent);
 		for (int i = 0; i < static_cast<int>(DP_Particles::Kind::COUNT); ++i)
 		{
 			DP_Particles::Kind eKind = static_cast<DP_Particles::Kind>(i);

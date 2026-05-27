@@ -10,7 +10,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "UI/Zenith_UI.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -31,7 +31,7 @@ PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEnt
 	if (!ls_bInit)
 	{
 		ls_bInit = true;
-		Zenith_DebugVariables::AddFloat({ "PlayerController", "Camera Distance" }, dbg_fCamDistance, 0, 50);
+		g_xEngine.DebugVariables().AddFloat({ "PlayerController", "Camera Distance" }, dbg_fCamDistance, 0, 50);
 	}
 #endif
 }
@@ -82,8 +82,8 @@ void PlayerController_Behaviour::Shoot()
 		return;
 	}
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Destroy old bullet in this slot to prevent entity leak
 	if (s_axBulletEntities[s_uCurrentBulletIndex].IsValid())
@@ -297,8 +297,8 @@ void PlayerController_Behaviour::FindHUDElements()
 		return;
 
 	// Find the HUD entity by name
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xHUDEntity = pxSceneData->FindEntityByName("HUD");
 	if (!xHUDEntity.IsValid())
 	{

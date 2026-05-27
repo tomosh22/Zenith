@@ -26,7 +26,7 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Source/DPInputActions.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -1038,7 +1038,7 @@ public:
 			[&eOut](Zenith_EntityID xPriestId, Priest_Behaviour&)
 			{
 				Zenith_SceneData* pxScene =
-					Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+					g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
 				if (pxScene == nullptr) return;
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
 				if (!xEnt.IsValid()) return;
@@ -1122,7 +1122,7 @@ private:
 
 	DPVillager_Behaviour* TryGetVillager(Zenith_EntityID xV)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xV);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xV);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xV);
 		if (!xEnt.IsValid()) return nullptr;
@@ -1132,7 +1132,7 @@ private:
 
 	static bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;

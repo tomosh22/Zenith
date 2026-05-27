@@ -6,7 +6,7 @@
 #include "Flux/Slang/Flux_ShaderRegistry.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Core/Zenith_FileWatcher.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include <algorithm>
 #include <string>
@@ -212,7 +212,7 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	// Pipelines tear-down through QueueVRAMDeletion etc, but the actual
 	// vk::Pipeline destruction must wait for the GPU to release in-flight
 	// references. Subsystems' rebuild callbacks expect the GPU to be idle.
-	Flux_PlatformAPI::WaitForGPUIdle();
+	g_xEngine.Vulkan().WaitForGPUIdle();
 
 	for (u_int u = 0; u < axCallbacks.GetSize(); u++)
 	{

@@ -59,7 +59,7 @@ static bool Step_P1Tuning_PriestValuesMatchConfig(int iFrame)
 	switch (g_iPhase)
 	{
 	case kPr_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kPr_WaitPriest;
 		return true;
 

@@ -86,7 +86,7 @@ private:
 	{
 		if (szName == nullptr) return nullptr;
 		const Zenith_Vector<Zenith_EntityID>& xChildren = m_xParentEntity.GetChildEntityIDs();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(
 			m_xParentEntity.GetEntityID());
 		if (pxScene == nullptr) return nullptr;
 		for (u_int u = 0; u < xChildren.GetSize(); ++u)

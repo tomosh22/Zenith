@@ -62,8 +62,8 @@ public:
 		uint32_t uTotalCollected)
 	{
 		CollectionResult xResult;
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		float fPickupDist = s_fBallPickupRadius + s_fCollectiblePickupRadius + s_fPickupMargin;
 
@@ -86,7 +86,7 @@ public:
 			if (fDist < fPickupDist)
 			{
 				// Collected!
-				Zenith_SceneManager::Destroy(xColl);
+				Zenith_SceneEntityOwnership::Destroy(xColl);
 				axCollectibleEntityIDs.erase(axCollectibleEntityIDs.begin() + i);
 
 				xResult.uCollectedCount++;
@@ -109,8 +109,8 @@ public:
 		const std::vector<Zenith_EntityID>& axCollectibleEntityIDs,
 		float fDt)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		for (Zenith_EntityID uID : axCollectibleEntityIDs)
 		{

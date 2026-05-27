@@ -23,13 +23,13 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_FontAsset.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -545,8 +545,8 @@ public:
 			m_bGateActive = true;
 			TilePuzzle::g_uPinballRequestedGate = UINT32_MAX;
 
-			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
-			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+			m_xPinballScene = g_xEngine.SceneRegistry().CreateEmptyScene("PinballPlay");
+			g_xEngine.SceneRegistry().SetActiveScene(m_xPinballScene);
 
 			g_xEngine.HDR().SetBloomIntensity(0.8f);
 			g_xEngine.HDR().SetBloomThreshold(0.8f);
@@ -583,8 +583,8 @@ public:
 			}
 			else
 			{
-				m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
-				Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+				m_xPinballScene = g_xEngine.SceneRegistry().CreateEmptyScene("PinballPlay");
+				g_xEngine.SceneRegistry().SetActiveScene(m_xPinballScene);
 
 				g_xEngine.HDR().SetBloomIntensity(0.8f);
 				g_xEngine.HDR().SetBloomThreshold(0.8f);
@@ -807,11 +807,11 @@ private:
 		// Cleanup dynamic scene
 		if (m_xPinballScene.IsValid())
 		{
-			Zenith_SceneManager::UnloadScene(m_xPinballScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xPinballScene);
 			m_xPinballScene = Zenith_Scene();
 		}
 
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ReturnToGateSelect()
@@ -819,7 +819,7 @@ private:
 		// Clean up gameplay scene
 		if (m_xPinballScene.IsValid())
 		{
-			Zenith_SceneManager::UnloadScene(m_xPinballScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xPinballScene);
 			m_xPinballScene = Zenith_Scene();
 		}
 
@@ -976,7 +976,7 @@ private:
 
 	void CreatePegs(uint32_t uLayoutIndex)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || uLayoutIndex >= m_uLayoutCount)
 			return;
 
@@ -993,7 +993,7 @@ private:
 
 	void DestroyPegs()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene)
 			return;
 
@@ -1002,7 +1002,7 @@ private:
 			if (m_axPegEntityIDs[i].IsValid() && pxScene->EntityExists(m_axPegEntityIDs[i]))
 			{
 				Zenith_Entity xPeg = pxScene->GetEntity(m_axPegEntityIDs[i]);
-				Zenith_SceneManager::Destroy(xPeg);
+				Zenith_SceneEntityOwnership::Destroy(xPeg);
 			}
 			m_axPegEntityIDs[i] = Zenith_EntityID();
 		}
@@ -1073,7 +1073,7 @@ private:
 
 	void CreatePlayfield()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene)
 			return;
 
@@ -1291,7 +1291,7 @@ private:
 
 	void SpawnBall()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene)
 			return;
 
@@ -1333,12 +1333,12 @@ private:
 		if (!m_xBallEntityID.IsValid())
 			return;
 
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !pxScene->EntityExists(m_xBallEntityID))
 			return;
 
 		Zenith_Entity xBall = pxScene->GetEntity(m_xBallEntityID);
-		Zenith_SceneManager::Destroy(xBall);
+		Zenith_SceneEntityOwnership::Destroy(xBall);
 		m_xBallEntityID = Zenith_EntityID();
 	}
 
@@ -1429,7 +1429,7 @@ private:
 
 	void LaunchBall()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !m_xBallEntityID.IsValid() || !pxScene->EntityExists(m_xBallEntityID))
 			return;
 
@@ -1452,7 +1452,7 @@ private:
 
 	void PositionBallOnPlunger()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !m_xBallEntityID.IsValid() || !pxScene->EntityExists(m_xBallEntityID))
 			return;
 
@@ -1477,7 +1477,7 @@ private:
 
 	void UpdatePlungerVisual()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !m_xPlungerEntityID.IsValid() || !pxScene->EntityExists(m_xPlungerEntityID))
 			return;
 
@@ -1495,7 +1495,7 @@ private:
 
 	void ConstrainBallToPlane()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !m_xBallEntityID.IsValid() || !pxScene->EntityExists(m_xBallEntityID))
 			return;
 
@@ -1529,7 +1529,7 @@ private:
 
 	void CheckScoringCollisions()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !m_xBallEntityID.IsValid() || !pxScene->EntityExists(m_xBallEntityID))
 			return;
 
@@ -1659,7 +1659,7 @@ private:
 	void RebuildPegsForCurrentGate()
 	{
 		DestroyPegs();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene)
 			return;
 
@@ -1943,11 +1943,11 @@ private:
 		// Cleanup dynamic scene
 		if (m_xPinballScene.IsValid())
 		{
-			Zenith_SceneManager::UnloadScene(m_xPinballScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xPinballScene);
 			m_xPinballScene = Zenith_Scene();
 		}
 
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -1972,7 +1972,7 @@ private:
 
 	void UpdatePegFlashTimers(float fDeltaTime)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene)
 			return;
 
@@ -2102,7 +2102,7 @@ private:
 
 	void CheckBallLost()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 		if (!pxScene || !m_xBallEntityID.IsValid() || !pxScene->EntityExists(m_xBallEntityID))
 			return;
 
@@ -2409,8 +2409,8 @@ private:
 		// Create dynamic scene and enter gameplay
 		if (!m_xPinballScene.IsValid())
 		{
-			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
-			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+			m_xPinballScene = g_xEngine.SceneRegistry().CreateEmptyScene("PinballPlay");
+			g_xEngine.SceneRegistry().SetActiveScene(m_xPinballScene);
 
 			g_xEngine.HDR().SetBloomIntensity(0.8f);
 			g_xEngine.HDR().SetBloomThreshold(0.8f);
@@ -2439,8 +2439,8 @@ private:
 		// Create dynamic scene and enter gameplay
 		if (!m_xPinballScene.IsValid())
 		{
-			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
-			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+			m_xPinballScene = g_xEngine.SceneRegistry().CreateEmptyScene("PinballPlay");
+			g_xEngine.SceneRegistry().SetActiveScene(m_xPinballScene);
 
 			g_xEngine.HDR().SetBloomIntensity(0.8f);
 			g_xEngine.HDR().SetBloomThreshold(0.8f);
@@ -2455,7 +2455,7 @@ private:
 			DestroyPegs();
 			LoadPegLayouts();
 			m_uCurrentLayout = 0;
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(m_xPinballScene);
 			if (pxScene)
 			{
 				CreatePegs(m_uCurrentLayout);

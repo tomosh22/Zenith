@@ -23,7 +23,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Components/DPItemSpawn_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
@@ -105,8 +105,8 @@ public:
 	{
 		// Active scene; if it's not loaded yet just bail (e.g. test harness
 		// will retry on a later boot).
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 
 		// Walk every DPItemSpawn_Behaviour and create an item entity for it.

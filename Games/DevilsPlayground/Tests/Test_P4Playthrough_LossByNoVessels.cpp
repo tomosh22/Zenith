@@ -83,8 +83,8 @@ namespace
 
 	Zenith_UI::Zenith_UIText* FindHudStatus()
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
 		pxScene->Query<Zenith_UIComponent>().ForEach(
@@ -115,7 +115,7 @@ static bool Step_P4LossNoVessels(int iFrame)
 	switch (g_iPhase)
 	{
 	case kLNV_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kLNV_WaitScene;
 		return true;
 
@@ -149,7 +149,7 @@ static bool Step_P4LossNoVessels(int iFrame)
 		for (uint32_t u = 0; u < axVillagers.GetSize(); ++u)
 		{
 			Zenith_EntityID xId = axVillagers.Get(u);
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 			if (pxScene == nullptr) continue;
 			Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 			if (!xEnt.IsValid()) continue;

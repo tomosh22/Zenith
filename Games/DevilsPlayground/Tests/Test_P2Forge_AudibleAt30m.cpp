@@ -105,7 +105,7 @@ static bool Step_P2ForgeAudible(int iFrame)
 	switch (g_iPhase)
 	{
 	case kFA_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFA_WaitScene;
 		return true;
 
@@ -131,8 +131,8 @@ static bool Step_P2ForgeAudible(int iFrame)
 
 	case kFA_BuildForge:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFA_Done; return false; }
 		Zenith_Entity xForge(pxScene, std::string("Test_AudibleForge"));
 		if (!xForge.IsValid()) { g_iPhase = kFA_Done; return false; }
@@ -151,8 +151,8 @@ static bool Step_P2ForgeAudible(int iFrame)
 
 	case kFA_BuildInput:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFA_Done; return false; }
 		Zenith_Entity xInput(pxScene, std::string("ForgeAudible_Iron"));
 		if (!xInput.IsValid()) { g_iPhase = kFA_Done; return false; }

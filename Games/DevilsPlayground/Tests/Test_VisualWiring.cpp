@@ -54,15 +54,15 @@ static bool Step_VisualWiring(int iFrame)
 {
 	if (iFrame == 0)
 	{
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_bTriggered = true;
 		return true;
 	}
 
 	if (!g_bSceneSwapped)
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxSceneData != nullptr)
 		{
 			int iFound = 0;
@@ -83,8 +83,8 @@ static bool Step_VisualWiring(int iFrame)
 		// Query<TransformComponent, ModelComponent> proves we have at least one
 		// renderable; Query<ColliderComponent>() and Query<LightComponent>()
 		// prove physics + lighting are wired.
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActive);
 		if (pxSceneData != nullptr)
 		{
 			pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>().ForEach(

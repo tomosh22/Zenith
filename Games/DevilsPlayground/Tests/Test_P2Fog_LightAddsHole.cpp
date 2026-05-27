@@ -75,7 +75,7 @@ static bool Step_P2FogLightAddsHole(int iFrame)
 	switch (g_iPhase)
 	{
 	case kFL_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFL_WaitScene;
 		return true;
 
@@ -110,8 +110,8 @@ static bool Step_P2FogLightAddsHole(int iFrame)
 		// disagree on what's in scope.
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
 			[](Zenith_EntityID, DPVillager_Behaviour&) { ++g_iVillagerCount; });
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene != nullptr)
 		{
 			pxScene->Query<Zenith_LightComponent>().ForEach(

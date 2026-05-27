@@ -131,7 +131,7 @@ protected:
 	virtual bool IsVillagerInRange(Zenith_EntityID xVillager) const
 	{
 		if (!xVillager.IsValid()) return false;
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xVillager);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
 		if (!xV.IsValid()) return false;

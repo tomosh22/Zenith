@@ -46,7 +46,7 @@ void Zenith_TextureAsset::MarkAsBindless()
 	if (m_xSRV.m_xImageViewHandle.IsValid())
 	{
 		// Engine-typed wrapper — backend extracts vk::ImageView / vk::Sampler internally.
-		Flux_PlatformAPI::WriteBindlessTextureSlot(
+		g_xEngine.Vulkan().WriteBindlessTextureSlot(
 			m_xSRV.m_xImageViewHandle.AsUInt(),
 			m_xSRV,
 			g_xEngine.FluxGraphics().m_xClampSampler);
@@ -127,8 +127,8 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	m_xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
 	// Create GPU resources
-	m_xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
-	m_xSRV = Flux_MemoryManager::CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	// Free the staging data
@@ -153,8 +153,8 @@ bool Zenith_TextureAsset::CreateFromData(const void* pData, const Flux_SurfaceIn
 	}
 
 	// Create GPU resources
-	m_xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
-	m_xSRV = Flux_MemoryManager::CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	return m_xVRAMHandle.IsValid();
@@ -195,8 +195,8 @@ bool Zenith_TextureAsset::CreateCubemap(const void* apFaceData[6], const Flux_Su
 	}
 
 	// Create GPU resources
-	m_xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pAllData, m_xSurfaceInfo, false);
-	m_xSRV = Flux_MemoryManager::CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pAllData, m_xSurfaceInfo, false);
+	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	Zenith_MemoryManagement::Deallocate(pAllData);
@@ -273,8 +273,8 @@ void Zenith_TextureAsset::ReleaseGPU()
 {
 	if (m_bGPUResourcesAllocated && m_xVRAMHandle.IsValid())
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(m_xVRAMHandle);
-		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
+		Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(m_xVRAMHandle);
+		g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
 		m_xSRV = Flux_ShaderResourceView();
 		m_bGPUResourcesAllocated = false;
 	}

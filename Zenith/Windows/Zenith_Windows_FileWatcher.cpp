@@ -4,7 +4,7 @@
 #ifdef ZENITH_WINDOWS
 
 #include "Core/Zenith_FileWatcher.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <Windows.h>
 #include <queue>
 

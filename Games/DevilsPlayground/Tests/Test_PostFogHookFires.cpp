@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Flux/Flux_RendererImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
@@ -10,7 +11,7 @@
 //
 // Regression test for a tools-vs-non-tools differential bug. Boot order is:
 //
-//   1. Flux::LateInitialise()
+//   1. g_xEngine.FluxRenderer().LateInitialise()
 //        -> SetupRenderGraph()
 //             -> Zenith_GameRenderHook::InvokePostFogRegistrations()
 //                  (callback list is EMPTY here — DPFogPass has not run yet)
@@ -19,7 +20,7 @@
 //             -> Zenith_GameRenderHook::RegisterPostFogPass(SetupDPFog)
 //
 // In step 1 there's no DP callback to fire, and in step 2 the graph has
-// already been built. Without an explicit Flux::RequestGraphRebuild() in
+// already been built. Without an explicit g_xEngine.FluxRenderer().RequestGraphRebuild() in
 // DPFogPass::Init, the post-fog hook is never invoked — the DP_Fog pass
 // never lands in the render graph and the engine fog override never sticks.
 //

@@ -89,7 +89,7 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 	switch (g_iPhase)
 	{
 	case kFW_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFW_WaitScene;
 		return true;
 
@@ -113,8 +113,8 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 
 	case kFW_BuildForge:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr)
 		{
 			g_iPhase = kFW_Done;
@@ -151,8 +151,8 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 
 	case kFW_BuildInput:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr)
 		{
 			g_iPhase = kFW_Done;

@@ -15,7 +15,7 @@
  */
 
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
 
 // Configuration constants

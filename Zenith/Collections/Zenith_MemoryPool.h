@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 
 /**
  * Zenith_MemoryPool - Fixed-size pool allocator for type T

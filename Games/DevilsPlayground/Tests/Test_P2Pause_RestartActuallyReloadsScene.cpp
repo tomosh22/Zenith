@@ -70,8 +70,8 @@ namespace
 
 	void MakeSyntheticItem(Zenith_EntityID& xOut)
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xEnt(pxScene, std::string("Test_PauseRestart_Item"));
 		if (!xEnt.IsValid()) return;
@@ -98,7 +98,7 @@ static bool Step_P2PauseRestart(int iFrame)
 	switch (g_iPhase)
 	{
 	case kRR_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kRR_WaitScene;
 		return true;
 

@@ -1567,7 +1567,7 @@ int main(int argc, char* argv[])
 
 	// Minimal engine init (same sequence as Zenith_Core::Zenith_Init, first 4 calls)
 	Zenith_MemoryManagement::Initialise();
-	Zenith_Profiling::Initialise();
+	g_xEngine.Profiling().Initialise();
 	Zenith_Multithreading::RegisterThread(true);
 	Zenith_TaskSystem::Inititalise();
 
@@ -1909,7 +1909,7 @@ int main(int argc, char* argv[])
 		while (!bAccepted && uDuplicateRetries < s_uMAX_DUPLICATE_RETRIES && s_bRunning)
 		{
 			if (bProfile)
-				Zenith_Profiling::ClearEvents();
+				g_xEngine.Profiling().ClearEvents();
 
 			TilePuzzleLevelData xBestLevel = {};
 			std::vector<TilePuzzleShapeDefinition> axBestLevelDefs;
@@ -1928,7 +1928,7 @@ int main(int argc, char* argv[])
 			double fTimeMs = std::chrono::duration<double, std::milli>(xEndTime - xStartTime).count();
 
 			if (bProfile)
-				Zenith_Profiling::WriteTextReport(stderr);
+				g_xEngine.Profiling().WriteTextReport(stderr);
 
 			if (uBestMoves > 0)
 			{
@@ -2018,7 +2018,7 @@ int main(int argc, char* argv[])
 		FILE* pProfilingFile = fopen(strProfilingPath.c_str(), "w");
 		if (pProfilingFile)
 		{
-			Zenith_Profiling::WriteTextReport(pProfilingFile);
+			g_xEngine.Profiling().WriteTextReport(pProfilingFile);
 			fclose(pProfilingFile);
 			printf("Profiling written to: %s\n", strProfilingPath.c_str());
 		}

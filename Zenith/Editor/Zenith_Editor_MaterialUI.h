@@ -5,6 +5,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include <functional>
+#include <unordered_map>
 
 //=============================================================================
 // Shared Material UI Utilities
@@ -15,8 +16,20 @@
 // - Terrain Component properties
 //=============================================================================
 
-namespace Zenith_Editor_MaterialUI
+// Per-Engine state + behaviour for the Material UI subsystem. Replaces the
+// `namespace Zenith_Editor_MaterialUI` facade (deleted) and the data-only
+// `Zenith_EditorMaterialUI` (folded in here). Accessed via
+// g_xEngine.EditorMaterialUI(). Class name `Zenith_EditorMaterialUI` matches
+// the engine-member naming convention (no underscore), per Q-9 of the
+// drop-impl plan.
+class Zenith_EditorMaterialUI
 {
+public:
+	Zenith_EditorMaterialUI() = default;
+	~Zenith_EditorMaterialUI() = default;
+	Zenith_EditorMaterialUI(const Zenith_EditorMaterialUI&) = delete;
+	Zenith_EditorMaterialUI& operator=(const Zenith_EditorMaterialUI&) = delete;
+
 	//-------------------------------------------------------------------------
 	// Texture Slot Types
 	//-------------------------------------------------------------------------
@@ -33,52 +46,21 @@ namespace Zenith_Editor_MaterialUI
 	// Texture Preview Cache Management
 	//-------------------------------------------------------------------------
 
-	/**
-	 * Get or create an ImGui texture handle for previewing a Zenith_TextureAsset.
-	 * Handles caching to avoid re-registration.
-	 * @param pxTexture The texture to get a preview handle for
-	 * @return Valid ImGui texture handle, or invalid handle if texture is null
-	 */
 	Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsset* pxTexture);
-
-	/**
-	 * Clear the texture preview cache.
-	 * Call this when textures are being unloaded.
-	 */
 	void ClearTexturePreviewCache();
 
 	//-------------------------------------------------------------------------
 	// Material Property Editing
 	//-------------------------------------------------------------------------
 
-	/**
-	 * Render full material properties panel (base color, metallic, roughness,
-	 * emissive, transparency, UV, rendering flags).
-	 * @param pxMaterial The material to edit
-	 * @param szIdSuffix Optional suffix for ImGui IDs to avoid conflicts
-	 */
 	void RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szIdSuffix = "");
 
 	//-------------------------------------------------------------------------
 	// Texture Slot Rendering
 	//-------------------------------------------------------------------------
 
-	/**
-	 * Callback type for custom texture assignment behavior.
-	 * Called when a texture is dropped on a slot.
-	 * @param szFilePath Path to the dropped texture file
-	 */
 	using TextureAssignCallback = std::function<void(const char* szFilePath)>;
 
-	/**
-	 * Render a texture slot with drag-drop support and a preview thumbnail.
-	 * @param szLabel Label for the texture slot
-	 * @param xMaterial Material to modify
-	 * @param eSlot Which texture slot to edit
-	 * @param fPreviewSize Size of the preview image (default 48.0f)
-	 * @param pfnOnAssign Optional callback for custom assignment behavior.
-	 *                    If null, uses default SetTexturePathForSlot behavior.
-	 */
 	void RenderTextureSlot(
 		const char* szLabel,
 		Zenith_MaterialAsset& xMaterial,
@@ -86,31 +68,27 @@ namespace Zenith_Editor_MaterialUI
 		float fPreviewSize = 48.0f,
 		TextureAssignCallback pfnOnAssign = nullptr);
 
-	/**
-	 * Render all texture slots for a material.
-	 * @param xMaterial Material to edit
-	 * @param bShowPreview Whether to show texture previews
-	 */
 	void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool bShowPreview = true);
 
 	//-------------------------------------------------------------------------
 	// Helpers
 	//-------------------------------------------------------------------------
 
-	/**
-	 * Get the current texture path from a material for a given slot type.
-	 */
 	std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot);
-
-	/**
-	 * Set a texture path on a material for a given slot type.
-	 */
 	void SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath);
-
-	/**
-	 * Get the Zenith_TextureAsset pointer for a given slot type.
-	 */
 	const Zenith_TextureAsset* GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot);
-}
+
+	//-------------------------------------------------------------------------
+	// Data members (was Zenith_EditorMaterialUI)
+	//-------------------------------------------------------------------------
+
+	struct TexturePreviewCacheEntry
+	{
+		Flux_ImGuiTextureHandle m_xHandle;
+		u_int64 m_ulImageViewHandle = 0;  // Cached to detect changes
+	};
+
+	std::unordered_map<u_int64, TexturePreviewCacheEntry> m_xTexturePreviewCache;
+};
 
 #endif // ZENITH_TOOLS

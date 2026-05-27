@@ -57,7 +57,7 @@ static bool Step_P1Villager_TuningMigration(int iFrame)
 	switch (g_iPhase)
 	{
 	case kS_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kS_WaitVillager;
 		return true;
 

@@ -26,6 +26,7 @@
 
 template <typename T>
 concept FluxBackendMemoryDelete = requires(
+	T t,
 	Flux_VertexBuffer& xVB,
 	Flux_DynamicVertexBuffer& xDVB,
 	Flux_IndexBuffer& xIB,
@@ -41,24 +42,24 @@ concept FluxBackendMemoryDelete = requires(
 {
 	// Wrapper destroyers — each queues VRAM for deletion AND invalidates
 	// the buffer's handle to prevent double-free (see Vulkan/CLAUDE.md).
-	{ T::DestroyVertexBuffer(xVB)                                              } -> std::same_as<void>;
-	{ T::DestroyDynamicVertexBuffer(xDVB)                                      } -> std::same_as<void>;
-	{ T::DestroyIndexBuffer(xIB)                                               } -> std::same_as<void>;
-	{ T::DestroyConstantBuffer(xCB)                                            } -> std::same_as<void>;
-	{ T::DestroyDynamicConstantBuffer(xDCB)                                    } -> std::same_as<void>;
-	{ T::DestroyIndirectBuffer(xIndB)                                          } -> std::same_as<void>;
-	{ T::DestroyReadWriteBuffer(xRWB)                                          } -> std::same_as<void>;
-	{ T::DestroyDynamicReadWriteBuffer(xDRWB)                                  } -> std::same_as<void>;
+	{ t.DestroyVertexBuffer(xVB)                                              } -> std::same_as<void>;
+	{ t.DestroyDynamicVertexBuffer(xDVB)                                      } -> std::same_as<void>;
+	{ t.DestroyIndexBuffer(xIB)                                               } -> std::same_as<void>;
+	{ t.DestroyConstantBuffer(xCB)                                            } -> std::same_as<void>;
+	{ t.DestroyDynamicConstantBuffer(xDCB)                                    } -> std::same_as<void>;
+	{ t.DestroyIndirectBuffer(xIndB)                                          } -> std::same_as<void>;
+	{ t.DestroyReadWriteBuffer(xRWB)                                          } -> std::same_as<void>;
+	{ t.DestroyDynamicReadWriteBuffer(xDRWB)                                  } -> std::same_as<void>;
 
 	// Direct VRAM / view handle deletion. QueueVRAMDeletion auto-invalidates
 	// the supplied handle (passed by reference) to prevent double-free on a
 	// subsequent destructor pass. Takes four optional image-view handles so
 	// render-attachment destruction can free the VRAM plus its RTV/DSV/SRV/UAV
 	// in one call, and uExtraFrameDelay for alias-pool-vs-image ordering.
-	{ T::QueueVRAMDeletion(pxVRAM, xVRAMHandle,
+	{ t.QueueVRAMDeletion(pxVRAM, xVRAMHandle,
 	                       xImageViewHandle, xImageViewHandle,
 	                       xImageViewHandle, xImageViewHandle,
 	                       uExtraFrameDelay)                                   } -> std::same_as<void>;
-	{ T::QueueImageViewDeletion(xImageViewHandle)                              } -> std::same_as<void>;
-	{ T::ProcessDeferredDeletions()                                            } -> std::same_as<void>;
+	{ t.QueueImageViewDeletion(xImageViewHandle)                              } -> std::same_as<void>;
+	{ t.ProcessDeferredDeletions()                                            } -> std::same_as<void>;
 };

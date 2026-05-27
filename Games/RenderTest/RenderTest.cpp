@@ -26,8 +26,8 @@
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "Physics/Zenith_PhysicsImpl.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_Physics.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
 #include "Zenith_OS_Include.h"
@@ -46,7 +46,7 @@
 
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir);
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
@@ -264,7 +264,7 @@ static bool RenderTest_AssertNoResidencyAlternation(const RenderTest_ResidencySn
 static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 {
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
 
 	bool bPass = true;
 	const bool bStreamingWarm = uFrame >= 60;
@@ -368,9 +368,9 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 // Helper: find the player entity in the active scene by name.
 static Zenith_Entity RenderTest_FindPlayerEntity()
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
 	if (!xScene.IsValid()) return Zenith_Entity();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	if (!pxSceneData) return Zenith_Entity();
 	return pxSceneData->FindEntityByName("Player");
 }
@@ -636,7 +636,7 @@ private:
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)
 	{
 		Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-		Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+		g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
 		axSnapshots.Clear();
 		for (u_int u = 0; u < xTerrains.GetSize(); u++)
 		{
@@ -1288,18 +1288,18 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Generate terrain heightmap + chunks + splatmap on disk before the saved
 	// scene's terrain entity tries to read them at SaveScene / first load.
-	Zenith_EditorAutomation::AddStep_Custom(&RenderTest_EnsureTerrainAssetsForAutomation);
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_EnsureTerrainAssetsForAutomation);
 
 	// Convert the user-supplied single-channel R32_SFLOAT splatmap into the
 	// RGBA8 4-material weight format the terrain shader samples.
-	Zenith_EditorAutomation::AddStep_Custom(&RenderTest_ConvertUserSplatmapToRGBA8);
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_ConvertUserSplatmapToRGBA8);
 
 	// Pack each material set's separately-supplied roughness + metallic BC1
 	// textures into a single RGBA8 (G=roughness, B=metallic) — matches the
 	// `xRM.gb` swizzle in Flux_Terrain_ToGBuffer.slang.
-	Zenith_EditorAutomation::AddStep_Custom(&RenderTest_PackTerrainRoughnessMetallic);
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_PackTerrainRoughnessMetallic);
 
-	Zenith_EditorAutomation::AddStep_CreateScene("RenderTest");
+	g_xEngine.EditorAutomation().AddStep_CreateScene("RenderTest");
 
 	// GameManager — main camera with follow-camera script.
 	// Initial position is approximate; the FollowCamera overwrites it on the
@@ -1309,39 +1309,39 @@ void Project_RegisterEditorAutomationSteps()
 	const float fInitialPlayerY = 50.0f;
 	const float fCamOffsetY = 2.0f;
 	const float fCamOffsetZ = -4.0f;
-	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(512 * 0.5f, fInitialPlayerY + fCamOffsetY, 512 * 0.5f + fCamOffsetZ);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.15f);
-	Zenith_EditorAutomation::AddStep_SetCameraYaw(0.0f);
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(70.0f));
-	Zenith_EditorAutomation::AddStep_SetCameraNear(0.1f);
-	Zenith_EditorAutomation::AddStep_SetCameraFar(10000.0f);
-	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
-	Zenith_EditorAutomation::AddStep_AttachScript("RenderTest_FollowCamera");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(512 * 0.5f, fInitialPlayerY + fCamOffsetY, 512 * 0.5f + fCamOffsetZ);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(-0.15f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraYaw(0.0f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(70.0f));
+	g_xEngine.EditorAutomation().AddStep_SetCameraNear(0.1f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFar(10000.0f);
+	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
+	g_xEngine.EditorAutomation().AddStep_AttachScript("RenderTest_FollowCamera");
 
 	// Terrain — fully expressible via the new automation steps.
-	Zenith_EditorAutomation::AddStep_CreateEntity("RenderTestTerrain");
-	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-	Zenith_EditorAutomation::AddStep_AddComponent("Terrain");
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(0, RenderTest::Resources().m_axTerrainMaterials[0].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(1, RenderTest::Resources().m_axTerrainMaterials[1].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(2, RenderTest::Resources().m_axTerrainMaterials[2].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(3, RenderTest::Resources().m_axTerrainMaterials[3].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath("game:Textures/Terrain/Splatmap_RGBA" ZENITH_TEXTURE_EXT);
-	Zenith_EditorAutomation::AddStep_AddCollider();
-	Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestTerrain");
+	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
+	g_xEngine.EditorAutomation().AddStep_AddComponent("Terrain");
+	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(0, RenderTest::Resources().m_axTerrainMaterials[0].GetDirect());
+	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(1, RenderTest::Resources().m_axTerrainMaterials[1].GetDirect());
+	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(2, RenderTest::Resources().m_axTerrainMaterials[2].GetDirect());
+	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(3, RenderTest::Resources().m_axTerrainMaterials[3].GetDirect());
+	g_xEngine.EditorAutomation().AddStep_SetTerrainSplatmapPath("game:Textures/Terrain/Splatmap_RGBA" ZENITH_TEXTURE_EXT);
+	g_xEngine.EditorAutomation().AddStep_AddCollider();
+	g_xEngine.EditorAutomation().AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 
 	// Cube platform — uses exported .zmodel so it survives SaveScene/LoadScene.
-	Zenith_EditorAutomation::AddStep_CreateEntity("CenterPlatform");
-	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-	Zenith_EditorAutomation::AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY - 2.f, 512 * 0.5f);
-	Zenith_EditorAutomation::AddStep_SetTransformScale(30.0f, 0.5f, 30.0f);
-	Zenith_EditorAutomation::AddStep_AddModel();
-	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
-	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::Resources().m_xCubeMaterial.GetDirect());
-	Zenith_EditorAutomation::AddStep_AddCollider();
-	Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("CenterPlatform");
+	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY - 2.f, 512 * 0.5f);
+	g_xEngine.EditorAutomation().AddStep_SetTransformScale(30.0f, 0.5f, 30.0f);
+	g_xEngine.EditorAutomation().AddStep_AddModel();
+	g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
+	g_xEngine.EditorAutomation().AddStep_SetModelMaterial(0, RenderTest::Resources().m_xCubeMaterial.GetDirect());
+	g_xEngine.EditorAutomation().AddStep_AddCollider();
+	g_xEngine.EditorAutomation().AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 
 	// IK foot-placement demo: small cube platforms at varying heights around the
 	// center platform. As the player walks across them with feet on different
@@ -1351,15 +1351,15 @@ void Project_RegisterEditorAutomationSteps()
 	auto AddIKPlatform = [](const char* szName, float fX, float fY, float fZ,
 		float fSX, float fSY, float fSZ)
 	{
-		Zenith_EditorAutomation::AddStep_CreateEntity(szName);
-		Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-		Zenith_EditorAutomation::AddStep_SetTransformPosition(fX, fY, fZ);
-		Zenith_EditorAutomation::AddStep_SetTransformScale(fSX, fSY, fSZ);
-		Zenith_EditorAutomation::AddStep_AddModel();
-		Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
-		Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::Resources().m_xCubeMaterial.GetDirect());
-		Zenith_EditorAutomation::AddStep_AddCollider();
-		Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+		g_xEngine.EditorAutomation().AddStep_CreateEntity(szName);
+		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
+		g_xEngine.EditorAutomation().AddStep_SetTransformPosition(fX, fY, fZ);
+		g_xEngine.EditorAutomation().AddStep_SetTransformScale(fSX, fSY, fSZ);
+		g_xEngine.EditorAutomation().AddStep_AddModel();
+		g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
+		g_xEngine.EditorAutomation().AddStep_SetModelMaterial(0, RenderTest::Resources().m_xCubeMaterial.GetDirect());
+		g_xEngine.EditorAutomation().AddStep_AddCollider();
+		g_xEngine.EditorAutomation().AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 	};
 
 	AddIKPlatform("IKPlatform_N",  256.0f, 48.30f, 269.0f, 1.0f, 0.10f, 1.0f);  // top Y=48.35
@@ -1390,82 +1390,82 @@ void Project_RegisterEditorAutomationSteps()
 	AddIKPlatform("IKStep_Spawn", 255.7975f, 48.40f, 256.0f, 0.195f, 0.30f, 0.40f);  // top Y=48.55, X-range [255.70, 255.895]
 
 	// Player — .zmodel with skeleton; AnimatorComponent discovers skeleton on OnStart.
-	Zenith_EditorAutomation::AddStep_CreateEntity("Player");
-	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-	Zenith_EditorAutomation::AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
-	Zenith_EditorAutomation::AddStep_AddModel();
-	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
-	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::Resources().m_xPlayerMaterial.GetDirect());
-	Zenith_EditorAutomation::AddStep_AddAnimator();
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("Player");
+	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
+	g_xEngine.EditorAutomation().AddStep_AddModel();
+	g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
+	g_xEngine.EditorAutomation().AddStep_SetModelMaterial(0, RenderTest::Resources().m_xPlayerMaterial.GetDirect());
+	g_xEngine.EditorAutomation().AddStep_AddAnimator();
 	// Muzzle flash emitter lives on the Player entity; the player behaviour
 	// overrides its emit position+direction per shot so we don't need a
 	// separate gun-barrel child entity.
-	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
-	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("RenderTest_MuzzleFlash");
-	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
-	Zenith_EditorAutomation::AddStep_AttachScript("RenderTest_PlayerBehaviour");
+	g_xEngine.EditorAutomation().AddStep_AddParticleEmitter();
+	g_xEngine.EditorAutomation().AddStep_SetParticleConfigByName("RenderTest_MuzzleFlash");
+	g_xEngine.EditorAutomation().AddStep_SetParticleEmitting(false);
+	g_xEngine.EditorAutomation().AddStep_AttachScript("RenderTest_PlayerBehaviour");
 
 	// HUD canvas — crosshair (5 small UIRects) + ammo counter text.
-	Zenith_EditorAutomation::AddStep_CreateEntity("HUD");
-	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-	Zenith_EditorAutomation::AddStep_AddUI();
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("HUD");
+	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
+	g_xEngine.EditorAutomation().AddStep_AddUI();
 
 	// Crosshair: center pixel + 4 short bars at +/-10px on each axis.
-	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Center");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Center", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Center", 0.0f, 0.0f);
-	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Center", 4.0f, 4.0f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Center", 1.0f, 1.0f, 1.0f, 0.85f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("Crosshair_Center");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("Crosshair_Center", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("Crosshair_Center", 0.0f, 0.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("Crosshair_Center", 4.0f, 4.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("Crosshair_Center", 1.0f, 1.0f, 1.0f, 0.85f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Top");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Top", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Top", 0.0f, -10.0f);
-	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Top", 2.0f, 8.0f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Top", 1.0f, 1.0f, 1.0f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("Crosshair_Top");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("Crosshair_Top", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("Crosshair_Top", 0.0f, -10.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("Crosshair_Top", 2.0f, 8.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("Crosshair_Top", 1.0f, 1.0f, 1.0f, 0.7f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Bottom");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Bottom", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Bottom", 0.0f, 10.0f);
-	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Bottom", 2.0f, 8.0f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Bottom", 1.0f, 1.0f, 1.0f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("Crosshair_Bottom");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("Crosshair_Bottom", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("Crosshair_Bottom", 0.0f, 10.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("Crosshair_Bottom", 2.0f, 8.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("Crosshair_Bottom", 1.0f, 1.0f, 1.0f, 0.7f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Left");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Left", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Left", -10.0f, 0.0f);
-	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Left", 8.0f, 2.0f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Left", 1.0f, 1.0f, 1.0f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("Crosshair_Left");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("Crosshair_Left", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("Crosshair_Left", -10.0f, 0.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("Crosshair_Left", 8.0f, 2.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("Crosshair_Left", 1.0f, 1.0f, 1.0f, 0.7f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Right");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Right", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Right", 10.0f, 0.0f);
-	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Right", 8.0f, 2.0f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Right", 1.0f, 1.0f, 1.0f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("Crosshair_Right");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("Crosshair_Right", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("Crosshair_Right", 10.0f, 0.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("Crosshair_Right", 8.0f, 2.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("Crosshair_Right", 1.0f, 1.0f, 1.0f, 0.7f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("AmmoText", "30 / 90");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("AmmoText", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("AmmoText", -100.0f, -40.0f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("AmmoText", 32.0f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("AmmoText", 1.0f, 1.0f, 1.0f, 1.0f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("AmmoText", "30 / 90");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("AmmoText", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("AmmoText", -100.0f, -40.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("AmmoText", 32.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("AmmoText", 1.0f, 1.0f, 1.0f, 1.0f);
 
 	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
 	if (RenderTest_IsSmokeMode())
 	{
-		Zenith_EditorAutomation::AddStep_CreateEntity("RenderTestSmokeRunner");
-		Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-		Zenith_EditorAutomation::AddStep_AttachScript("RenderTest_SmokeRunner");
+		g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestSmokeRunner");
+		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
+		g_xEngine.EditorAutomation().AddStep_AttachScript("RenderTest_SmokeRunner");
 	}
 
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
-	Zenith_EditorAutomation::AddStep_LoadInitialScene(&Project_LoadInitialScene);
+	g_xEngine.EditorAutomation().AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
 #endif
 
 void Project_LoadInitialScene()
 {
-	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
+	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
 
 	// Global Flux_Terrain debug flags + editor mode are runtime state that
 	// affects the loaded scene's rendering. Apply them here so they take effect
@@ -1478,7 +1478,7 @@ void Project_LoadInitialScene()
 		if (RenderTest_HasCommandLineFlag("--rendertest-wireframe"))
 			g_xEngine.Terrain().GetWireframeMode() = true;
 
-		Zenith_Editor::SetEditorMode(EditorMode::Playing);
+		g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 	}
 #endif
 }

@@ -35,7 +35,7 @@ namespace
 		// Sanity: an active scene exists after the harness's bootstrap
 		// path. If this fires, the boot sequence Phase 0 migrated
 		// returned control with the scene system in a bad state.
-		const Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+		const Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
 		Zenith_Assert(xActive.IsValid(),
 			"Phase 1 smoke: no active scene after engine boot.");
 	}

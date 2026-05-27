@@ -6,7 +6,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -422,32 +422,32 @@ void Flux_PrimitivesImpl::Initialise()
 	// Unit sphere
 	GenerateUnitSphere(xVertices, xIndices);
 	g_xEngine.Primitives().m_uSphereIndexCount = xIndices.GetSize();
-	Flux_MemoryManager::InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xSphereVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xSphereIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xSphereVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xSphereIndexBuffer);
 
 	// Unit cube
 	GenerateUnitCube(xVertices, xIndices);
 	g_xEngine.Primitives().m_uCubeIndexCount = xIndices.GetSize();
-	Flux_MemoryManager::InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCubeVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCubeIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCubeVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCubeIndexBuffer);
 
 	// Unit capsule
 	GenerateUnitCapsule(xVertices, xIndices);
 	g_xEngine.Primitives().m_uCapsuleIndexCount = xIndices.GetSize();
-	Flux_MemoryManager::InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCapsuleVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCapsuleIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCapsuleVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCapsuleIndexBuffer);
 
 	// Unit cylinder
 	GenerateUnitCylinder(xVertices, xIndices);
 	g_xEngine.Primitives().m_uCylinderIndexCount = xIndices.GetSize();
-	Flux_MemoryManager::InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCylinderVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCylinderIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCylinderVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCylinderIndexBuffer);
 
 	// Unit line
 	GenerateUnitLine(xVertices, xIndices);
 	g_xEngine.Primitives().m_uLineIndexCount = xIndices.GetSize();
-	Flux_MemoryManager::InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xLineVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xLineIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xLineVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xLineIndexBuffer);
 
 	BuildPipelines();
 
@@ -457,8 +457,8 @@ void Flux_PrimitivesImpl::Initialise()
 		const size_t uVertexBufferSize = s_uMaxTriangles * 3 * sizeof(PrimitiveVertex);
 		const size_t uIndexBufferSize = s_uMaxTriangles * 3 * sizeof(u_int);
 
-		Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer, false);
-		Flux_MemoryManager::InitialiseIndexBuffer(nullptr, uIndexBufferSize, g_xEngine.Primitives().m_xTriangleIndexBuffer);
+		g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer, false);
+		g_xEngine.VulkanMemory().InitialiseIndexBuffer(nullptr, uIndexBufferSize, g_xEngine.Primitives().m_xTriangleIndexBuffer);
 		g_xEngine.Primitives().m_bTriangleBuffersInitialised = true;
 	}
 
@@ -479,26 +479,26 @@ void Flux_PrimitivesImpl::Initialise()
 void Flux_PrimitivesImpl::Shutdown()
 {
 	// Destroy all vertex and index buffers
-	Flux_MemoryManager::DestroyVertexBuffer(g_xEngine.Primitives().m_xSphereVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Primitives().m_xSphereIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xSphereVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xSphereIndexBuffer);
 
-	Flux_MemoryManager::DestroyVertexBuffer(g_xEngine.Primitives().m_xCubeVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Primitives().m_xCubeIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xCubeVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xCubeIndexBuffer);
 
-	Flux_MemoryManager::DestroyVertexBuffer(g_xEngine.Primitives().m_xCapsuleVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Primitives().m_xCapsuleIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xCapsuleVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xCapsuleIndexBuffer);
 
-	Flux_MemoryManager::DestroyVertexBuffer(g_xEngine.Primitives().m_xCylinderVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Primitives().m_xCylinderIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xCylinderVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xCylinderIndexBuffer);
 
-	Flux_MemoryManager::DestroyVertexBuffer(g_xEngine.Primitives().m_xLineVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Primitives().m_xLineIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xLineVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xLineIndexBuffer);
 
 	// Destroy pre-allocated triangle buffers
 	if (g_xEngine.Primitives().m_bTriangleBuffersInitialised)
 	{
-		Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer);
-		Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Primitives().m_xTriangleIndexBuffer);
+		g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer);
+		g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xTriangleIndexBuffer);
 		g_xEngine.Primitives().m_bTriangleBuffersInitialised = false;
 	}
 
@@ -821,9 +821,9 @@ static void RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBin
 		xIndices.PushBack(uBaseVertex + 2);
 	}
 
-	Flux_MemoryManager::UploadBufferData(g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
 		xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex));
-	Flux_MemoryManager::UploadBufferData(g_xEngine.Primitives().m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Primitives().m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
 		xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int));
 
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Primitives().m_xPrimitivesPipeline);

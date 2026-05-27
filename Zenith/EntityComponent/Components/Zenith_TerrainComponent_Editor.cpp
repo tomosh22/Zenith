@@ -408,8 +408,8 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
-	Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(m_xUnifiedIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xUnifiedIndexBuffer);
 	m_ulUnifiedVertexBufferSize = 0;
 	m_ulUnifiedIndexBufferSize = 0;
 
@@ -514,11 +514,11 @@ void Zenith_TerrainComponent::RenderMaterialPalette()
 
 		char szImGuiId[32];
 		snprintf(szImGuiId, sizeof(szImGuiId), "TerrainMat%u", u);
-		Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMat, szImGuiId);
+		g_xEngine.EditorMaterialUI().RenderMaterialProperties(pxMat, szImGuiId);
 
 		ImGui::Separator();
 		ImGui::Text("Textures:");
-		Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pxMat, false);
+		g_xEngine.EditorMaterialUI().RenderAllTextureSlots(*pxMat, false);
 
 		ImGui::TreePop();
 	}
@@ -531,7 +531,7 @@ void Zenith_TerrainComponent::RenderSplatmapSlot()
 
 	if (Zenith_TextureAsset* pxSplatmap = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xSplatmap.GetPath()))
 	{
-		Flux_ImGuiTextureHandle xSplatmapHandle = Zenith_Editor_MaterialUI::GetOrCreateTexturePreviewHandle(pxSplatmap);
+		Flux_ImGuiTextureHandle xSplatmapHandle = g_xEngine.EditorMaterialUI().GetOrCreateTexturePreviewHandle(pxSplatmap);
 		if (xSplatmapHandle.IsValid())
 		{
 			ImGui::Image(

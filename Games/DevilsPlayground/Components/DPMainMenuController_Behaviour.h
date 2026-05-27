@@ -59,7 +59,7 @@ public:
 private:
 	static void OnPlayClicked(void* /*pUserData*/)
 	{
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	static void OnQuitClicked(void* /*pUserData*/)

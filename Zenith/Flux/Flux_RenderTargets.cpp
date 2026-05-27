@@ -21,7 +21,7 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
+	Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
 
 	// The 2D builder creates up to one RTV per mip and up to one per-mip SRV
@@ -30,20 +30,20 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 	// must be queued individually via QueueImageViewDeletion.
 	for (u_int uMip = 1; uMip < uNumMips; uMip++)
 	{
-		Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axRTVs[uMip].m_xImageViewHandle);
+		g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_axRTVs[uMip].m_xImageViewHandle);
 	}
 	for (u_int uMip = 0; uMip < uNumMips; uMip++)
 	{
-		Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axMipSRVs[uMip].m_xImageViewHandle);
+		g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_axMipSRVs[uMip].m_xImageViewHandle);
 	}
 	for (u_int uMip = 1; uMip < uNumMips; uMip++)
 	{
-		Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axUAVs[uMip].m_xImageViewHandle);
+		g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_axUAVs[uMip].m_xImageViewHandle);
 	}
 
 	// VRAM + the "primary" views (first of each type) go in one bundle.
 	// QueueVRAMDeletion auto-invalidates xAttachment.m_xVRAMHandle.
-	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
+	g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
 		xAttachment.m_axRTVs[0].m_xImageViewHandle,
 		xAttachment.m_xDSV.m_xImageViewHandle,
 		xAttachment.m_xSRV.m_xImageViewHandle,
@@ -58,19 +58,19 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
+	Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
 
 	// Per-mip slice SRVs (one per mip, all populated by BuildColourCubemap).
 	for (u_int uMip = 0; uMip < uNumMips; uMip++)
 	{
-		Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axSliceSRVs[uMip].m_xImageViewHandle);
+		g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_axSliceSRVs[uMip].m_xImageViewHandle);
 	}
 
 	// Per-mip whole-cube RTVs (mip 0 goes with the VRAM bundle below).
 	for (u_int uMip = 1; uMip < uNumMips; uMip++)
 	{
-		Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axRTVs[uMip].m_xImageViewHandle);
+		g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_axRTVs[uMip].m_xImageViewHandle);
 	}
 
 	// Per-(mip, face) single-layer RTVs — the render graph's IBL pass workhorses.
@@ -78,7 +78,7 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 	{
 		for (u_int uFace = 0; uFace < 6; uFace++)
 		{
-			Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_aaxMipFaceRTVs[uMip][uFace].m_xImageViewHandle);
+			g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_aaxMipFaceRTVs[uMip][uFace].m_xImageViewHandle);
 		}
 	}
 
@@ -86,12 +86,12 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 	// are a no-op inside QueueImageViewDeletion).
 	for (u_int uMip = 1; uMip < uNumMips; uMip++)
 	{
-		Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axUAVs[uMip].m_xImageViewHandle);
+		g_xEngine.VulkanMemory().QueueImageViewDeletion(xAttachment.m_axUAVs[uMip].m_xImageViewHandle);
 	}
 
 	// VRAM + the "primary" views (first of each type) in one bundle. Cubes never
 	// have a DSV, so the DSV slot is passed as an invalid default.
-	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
+	g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
 		xAttachment.m_axRTVs[0].m_xImageViewHandle,
 		Flux_ImageViewHandle(),
 		xAttachment.m_xSRV.m_xImageViewHandle,
@@ -228,10 +228,10 @@ void Flux_RenderAttachmentBuilder::BuildColourImpl(Flux_RenderAttachment& xAttac
 	// every "draw into mip N" operation to mip 0.
 	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 	{
-		xAttachment.m_axRTVs[uMip] = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, uMip);
+		xAttachment.m_axRTVs[uMip] = g_xEngine.VulkanMemory().CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, uMip);
 	}
 
-	xAttachment.m_xSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, m_uNumMips);
+	xAttachment.m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, m_uNumMips);
 	// Per-mip SRVs — each SRV views a single mip (uBaseMip = uMip, uMipCount = 1)
 	// so `SRV(uMip)` / `GetMipSRV(uMip)` actually return that mip. Previous code
 	// always created SRVs on mip 0 which broke multi-mip sampling (Hi-Z pyramid
@@ -240,20 +240,20 @@ void Flux_RenderAttachmentBuilder::BuildColourImpl(Flux_RenderAttachment& xAttac
 	// guard was dead.
 	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 	{
-		xAttachment.m_axMipSRVs[uMip] = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, uMip, 1);
+		xAttachment.m_axMipSRVs[uMip] = g_xEngine.VulkanMemory().CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, uMip, 1);
 	}
 
 	if (m_uMemoryFlags & (1 << MEMORY_FLAGS__UNORDERED_ACCESS))
 	{
 		for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 		{
-			xAttachment.m_axUAVs[uMip] = Flux_MemoryManager::CreateUnorderedAccessView(
+			xAttachment.m_axUAVs[uMip] = g_xEngine.VulkanMemory().CreateUnorderedAccessView(
 				xAttachment.m_xVRAMHandle, xInfo, uMip);
 		}
 	}
 
 	{
-		Flux_VRAM* pxVRAMForLog = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: %sColour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
 			szDiagPrefix,
 			strName.c_str(),
@@ -280,7 +280,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	xInfo.m_uNumLayers   = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	BuildColourImpl(xAttachment, strName, Flux_MemoryManager::CreateRenderTargetVRAM(xInfo), "");
+	BuildColourImpl(xAttachment, strName, g_xEngine.VulkanMemory().CreateRenderTargetVRAM(xInfo), "");
 }
 
 void Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM(Flux_RenderAttachment& xAttachment, const std::string& strName, Flux_VRAMHandle xAliasedVRAM)
@@ -317,7 +317,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	xInfo.m_uNumLayers = 6;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
+	xAttachment.m_xVRAMHandle = g_xEngine.VulkanMemory().CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
 #ifdef ZENITH_TOOLS
 	xAttachment.m_strName = strName;
@@ -327,13 +327,13 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 
 	// Whole-cube SRV spanning every mip and all 6 layers. This is the view that shaders
 	// bind for cube sampling (e.g. textureLod(cube, R, roughness) in IBL).
-	xAttachment.m_xSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, m_uNumMips);
+	xAttachment.m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, m_uNumMips);
 
 	// Per-mip cube-slice SRVs: cube view restricted to a single mip. Useful for debug
 	// visualisations (e.g. IBL_DEBUG_PREFILTERED_MIPS stepping through roughness mips).
 	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 	{
-		xAttachment.m_axSliceSRVs[uMip] = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, uMip, 1);
+		xAttachment.m_axSliceSRVs[uMip] = g_xEngine.VulkanMemory().CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, uMip, 1);
 	}
 
 	// Per-mip whole-cube RTVs: all 6 layers at a given mip, bound as a layered attachment.
@@ -341,7 +341,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	// RTVs below instead, one face at a time.
 	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 	{
-		xAttachment.m_axRTVs[uMip] = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, uMip);
+		xAttachment.m_axRTVs[uMip] = g_xEngine.VulkanMemory().CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, uMip);
 	}
 
 	// Per-(mip, face) RTVs: 2D single-layer single-mip views. The render graph selects
@@ -351,7 +351,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	{
 		for (u_int uFace = 0; uFace < 6; uFace++)
 		{
-			xAttachment.m_aaxMipFaceRTVs[uMip][uFace] = Flux_MemoryManager::CreateRenderTargetViewForLayer(xAttachment.m_xVRAMHandle, xInfo, uFace, uMip);
+			xAttachment.m_aaxMipFaceRTVs[uMip][uFace] = g_xEngine.VulkanMemory().CreateRenderTargetViewForLayer(xAttachment.m_xVRAMHandle, xInfo, uFace, uMip);
 		}
 	}
 
@@ -360,12 +360,12 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	{
 		for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 		{
-			xAttachment.m_axUAVs[uMip] = Flux_MemoryManager::CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, uMip);
+			xAttachment.m_axUAVs[uMip] = g_xEngine.VulkanMemory().CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, uMip);
 		}
 	}
 
 	{
-		Flux_VRAM* pxVRAMForLog = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Cubemap Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u layers=6",
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
@@ -388,7 +388,7 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xInfo.m_uNumLayers = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
+	xAttachment.m_xVRAMHandle = g_xEngine.VulkanMemory().CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
 #ifdef ZENITH_TOOLS
 	xAttachment.m_strName = strName;
@@ -396,11 +396,11 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	(void)strName;
 #endif
 
-	xAttachment.m_xDSV = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
-	xAttachment.m_xSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
+	xAttachment.m_xDSV = g_xEngine.VulkanMemory().CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	xAttachment.m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Flux_VRAM* pxVRAMForLog = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
@@ -434,11 +434,11 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM(Flux_RenderA
 	(void)strName;
 #endif
 
-	xAttachment.m_xDSV = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
-	xAttachment.m_xSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
+	xAttachment.m_xDSV = g_xEngine.VulkanMemory().CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	xAttachment.m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Flux_VRAM* pxVRAMForLog = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Aliased DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,

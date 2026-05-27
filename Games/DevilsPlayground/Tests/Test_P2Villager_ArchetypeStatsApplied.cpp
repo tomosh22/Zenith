@@ -65,7 +65,7 @@ static bool Step_P2Villager_ArchetypeStatsApplied(int iFrame)
 	switch (g_iPhase)
 	{
 	case kA_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kA_WaitVillager;
 		return true;
 

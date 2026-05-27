@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
@@ -237,8 +238,8 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	memset(pUnifiedIndexData + (ulLowLODIndexSize / sizeof(uint32_t)), 0, STREAMING_INDEX_BUFFER_SIZE);
 
 	// Upload unified buffers to GPU (component owns these)
-	Flux_MemoryManager::InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_xUnifiedVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_xUnifiedIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_xUnifiedIndexBuffer);
 
 	// Store buffer sizes
 	m_ulUnifiedVertexBufferSize = ulUnifiedVertexSize;
@@ -291,8 +292,8 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	}
 
 	// Destroy owned unified buffers
-	Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(m_xUnifiedIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xUnifiedIndexBuffer);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Unified terrain buffers destroyed");
 
@@ -685,8 +686,8 @@ void Zenith_TerrainComponent::InitializeUnifiedBuffers(const Flux_MeshGeometry& 
 	memset(pUnifiedVertexData + ulLowLODVertexSize, 0, STREAMING_VERTEX_BUFFER_SIZE);
 	memset(pUnifiedIndexData + (ulLowLODIndexSize / sizeof(uint32_t)), 0, STREAMING_INDEX_BUFFER_SIZE);
 
-	Flux_MemoryManager::InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_xUnifiedVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_xUnifiedIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_xUnifiedIndexBuffer);
 
 	m_ulUnifiedVertexBufferSize = ulUnifiedVertexSize;
 	m_ulUnifiedIndexBufferSize = ulUnifiedIndexSize;
@@ -806,7 +807,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	// ========== CREATE GPU BUFFERS ==========
 
 	// Frustum planes buffer (6 planes, updated per frame)
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(
 		nullptr,
 		sizeof(Zenith_CameraDataGPU),
 		m_xFrustumPlanesBuffer
@@ -819,17 +820,17 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	uint32_t* pZeroBuffer = new uint32_t[5 * TOTAL_CHUNKS];
 	memset(pZeroBuffer, 0, indirectBufferSize);
 
-	Flux_MemoryManager::InitialiseIndirectBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(
 		indirectBufferSize,
 		m_xIndirectDrawBuffer
 	);
 
 	// Upload the zero-initialized data
-	Flux_MemoryManager::UploadBufferData(m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
+	g_xEngine.VulkanMemory().UploadBufferData(m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
 	delete[] pZeroBuffer;
 
 	// Visible chunk counter (single atomic uint32_t)
-	Flux_MemoryManager::InitialiseIndirectBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(
 		sizeof(uint32_t),
 		m_xVisibleCountBuffer
 	);
@@ -844,7 +845,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	{
 		uint32_t* pZero = new uint32_t[TOTAL_CHUNKS];
 		memset(pZero, 0, sizeof(uint32_t) * TOTAL_CHUNKS);
-		Flux_MemoryManager::InitialiseReadWriteBuffer(
+		g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
 			pZero,
 			sizeof(uint32_t) * TOTAL_CHUNKS,
 			m_xLODLevelBuffer
@@ -861,7 +862,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	// just appeared. g_xEngine.Terrain().SetupRenderGraph reads
 	// m_bCullingResourcesInitialized when declaring per-component buffer
 	// dependencies, so the next graph compile must rebuild to pick them up.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 
 	// Note: m_xChunkDataBuffer no longer needs MarkBufferHostWritten here.
 	// It's now a Flux_DynamicReadWriteBuffer (frame-indexed, host-visible),
@@ -890,16 +891,16 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 	// (QueueVRAMDeletion + MAX_FRAMES_IN_FLIGHT+1 grace) keeps the buffers
 	// alive long enough for any in-flight command lists to finish reading
 	// them before the GPU side actually frees the memory.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 
 	// Cleanup GPU resources - queue for deferred deletion to avoid destroying in-use resources.
 	// Chunk data buffer is frame-indexed; DestroyDynamicReadWriteBuffer queues
 	// every frame slot for deferred deletion.
-	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(m_xChunkDataBuffer);
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(m_xFrustumPlanesBuffer);
-	Flux_MemoryManager::DestroyIndirectBuffer(m_xIndirectDrawBuffer);
-	Flux_MemoryManager::DestroyIndirectBuffer(m_xVisibleCountBuffer);
-	Flux_MemoryManager::DestroyReadWriteBuffer(m_xLODLevelBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicReadWriteBuffer(m_xChunkDataBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(m_xFrustumPlanesBuffer);
+	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xIndirectDrawBuffer);
+	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xVisibleCountBuffer);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xLODLevelBuffer);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Culling resources destroyed");
 
@@ -923,7 +924,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 	// valid chunk metadata in slot 0 by the time the first frame's compute
 	// runs (the orphan-read validator in the render graph would otherwise
 	// trip on a Read declaration with no preceding writer).
-	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(
+	g_xEngine.VulkanMemory().InitialiseDynamicReadWriteBuffer(
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		m_xChunkDataBuffer
@@ -989,7 +990,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	// memory residency means the write goes direct (no staging) and vkSubmit's
 	// implicit host-write-available barrier carries the visibility into the
 	// compute read on the render queue.
-	Flux_MemoryManager::UploadBufferDataAtOffset(
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
 		m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
@@ -1043,7 +1044,7 @@ void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Ma
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	Flux_MemoryManager::UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
 }
 
 void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)

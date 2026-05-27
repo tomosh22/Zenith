@@ -2,7 +2,7 @@
 
 #include "Windows/Zenith_Windows_Window.h"
 
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include <atomic>
 #include <cstdlib>  // __argc / __argv (MSVC globals) for --headless parsing
 #include <cstring>  // std::strcmp

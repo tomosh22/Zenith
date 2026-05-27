@@ -87,11 +87,11 @@ void Flux_ShadowsImpl::Initialise()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+		g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
+	g_xEngine.DebugVariables().AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
 #endif
 }
 
@@ -99,7 +99,7 @@ void Flux_ShadowsImpl::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+		g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 	}
 
 	g_xEngine.Shadows().m_pxGraph = nullptr;
@@ -213,7 +213,7 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 	const Zenith_Maths::Matrix4& xViewMat = g_xEngine.FluxGraphics().GetViewMatrix();
 	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
@@ -240,8 +240,8 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 
 		g_xEngine.Shadows().m_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
 
-		Flux_MemoryManager::UploadBufferData(g_xEngine.Shadows().m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_xEngine.Shadows().m_axSunViewProjMats[u], sizeof(g_xEngine.Shadows().m_axSunViewProjMats[u]));
+		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Shadows().m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_xEngine.Shadows().m_axSunViewProjMats[u], sizeof(g_xEngine.Shadows().m_axSunViewProjMats[u]));
 	}
 
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 }

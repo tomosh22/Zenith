@@ -51,7 +51,7 @@ namespace
 	template<typename T>
 	T* GetScript(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
@@ -60,7 +60,7 @@ namespace
 
 	bool TryGetEntityPosition(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
@@ -70,7 +70,7 @@ namespace
 
 	void TrySetEntityPosition(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
@@ -111,7 +111,7 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -252,7 +252,7 @@ static bool Step_VillagerDeath(int /*iFrame*/)
 	case kStart:
 		g_xHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVillagerDied>(
 			[](const DP_OnVillagerDied&) { g_bDeathFired = true; });
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -354,7 +354,7 @@ static bool Step_ChestInteract(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -451,7 +451,7 @@ static bool Step_NoiseMachineFlow(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -570,7 +570,7 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -588,7 +588,7 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 		// Snapshot camera position BEFORE possession.
 		// DPOrbitCamera_Behaviour writes to Zenith_CameraComponent::SetPosition
 		// (the camera's logical view position), NOT the entity transform.
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xCamera);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xCamera);
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xCamera);
@@ -611,7 +611,7 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 
 	case kVerify:
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xCamera);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xCamera);
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xCamera);
@@ -689,7 +689,7 @@ static bool Step_HUDLifeBar(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -714,7 +714,7 @@ static bool Step_HUDLifeBar(int /*iFrame*/)
 
 	case kVerify:
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xHUD);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xHUD);
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xHUD);

@@ -10,7 +10,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Flux/Flux_ModelInstance.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
@@ -109,8 +109,8 @@ void DPProcLevelBootstrap_Behaviour::OnDestroy()
 
 void DPProcLevelBootstrap_Behaviour::SpawnWalls()
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
 
 	const std::string strMeshPath =
@@ -162,8 +162,8 @@ void DPProcLevelBootstrap_Behaviour::SpawnWalls()
 
 void DPProcLevelBootstrap_Behaviour::SpawnGameElements()
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
 
 	const std::string strMeshPath =
@@ -380,8 +380,8 @@ void DPProcLevelBootstrap_Behaviour::FrameCameraToLevel()
 
 void DPProcLevelBootstrap_Behaviour::SpawnVillagers()
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
 
 	const std::string strMeshPath = GetCubeMeshPath();
@@ -405,8 +405,8 @@ void DPProcLevelBootstrap_Behaviour::SpawnVillagers()
 
 void DPProcLevelBootstrap_Behaviour::SpawnPriest()
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
 	if (!m_xLayout.xPriestSpawn.bValid) return;
 

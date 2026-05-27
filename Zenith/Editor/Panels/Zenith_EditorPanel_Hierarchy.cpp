@@ -47,7 +47,7 @@ bool IsAncestorOf(Zenith_EntityID uCandidateAncestor, Zenith_EntityID uTarget)
 	Zenith_EntityID uCheckID = uTarget;
 	while (uCheckID.IsValid())
 	{
-		Zenith_SceneData* pxCheckData = Zenith_SceneManager::GetSceneDataForEntity(uCheckID);
+		Zenith_SceneData* pxCheckData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uCheckID);
 		if (!pxCheckData || !pxCheckData->EntityExists(uCheckID))
 		{
 			break;
@@ -74,7 +74,7 @@ static void HandleSceneFileDragDrop()
 		std::string strPath(pxFilePayload->m_szFilePath);
 		if (strPath.ends_with(ZENITH_SCENE_EXT))
 		{
-			Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(strPath, SCENE_LOAD_ADDITIVE);
+			g_xEngine.SceneOperations().LoadSceneBlocking_ToolsOnly(strPath, SCENE_LOAD_ADDITIVE);
 		}
 	}
 }
@@ -92,7 +92,7 @@ static void RenderContextMenu_Hierarchy(Zenith_SceneData& xSceneData, Zenith_Ent
 		Zenith_Entity xNewEntity(&xSceneData, "New Child");
 		xNewEntity.SetTransient(false);
 		xNewEntity.SetParent(uEntityID);
-		Zenith_Editor::SelectEntity(xNewEntity.GetEntityID());
+		g_xEngine.Editor().SelectEntity(xNewEntity.GetEntityID());
 	}
 
 	if (xEntity.HasParent())
@@ -113,23 +113,23 @@ static void RenderContextMenu_MoveToScene(Zenith_Entity xEntity)
 
 	if (ImGui::BeginMenu("Move To Scene"))
 	{
-		uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
+		uint32_t uSceneCount = g_xEngine.SceneRegistry().GetLoadedSceneCount();
 		for (uint32_t i = 0; i < uSceneCount; ++i)
 		{
-			Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
+			Zenith_Scene xScene = g_xEngine.SceneRegistry().GetSceneAt(i);
 			if (!xScene.IsValid() || xScene == xEntityScene)
 				continue;
 
 			if (ImGui::MenuItem(xScene.GetName().c_str()))
 			{
-				Zenith_SceneManager::MoveEntityToScene(xEntity, xScene);
+				Zenith_SceneEntityOwnership::MoveEntityToScene(xEntity, xScene);
 			}
 		}
 		ImGui::EndMenu();
 	}
 
 	// Move to DontDestroyOnLoad (only if not already in persistent scene)
-	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+	Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
 	if (xEntityScene != xPersistentScene)
 	{
 		if (ImGui::MenuItem("Move to DontDestroyOnLoad"))
@@ -147,7 +147,7 @@ static void RenderContextMenu_MoveToScene(Zenith_Entity xEntity)
 				xRoot = pxRootScene->GetEntity(xParentID);
 				pxRootScene = xRoot.GetSceneData();
 			}
-			Zenith_SceneManager::MarkEntityPersistent(xRoot);
+			Zenith_SceneEntityOwnership::MarkEntityPersistent(xRoot);
 		}
 	}
 }
@@ -158,9 +158,9 @@ static void RenderContextMenu_Delete(Zenith_EntityID uEntityID, Zenith_EntityID&
 {
 	if (ImGui::MenuItem("Delete Entity"))
 	{
-		if (Zenith_Editor::IsSelected(uEntityID))
+		if (g_xEngine.Editor().IsSelected(uEntityID))
 		{
-			Zenith_Editor::DeselectEntity(uEntityID);
+			g_xEngine.Editor().DeselectEntity(uEntityID);
 		}
 		uEntityToDelete = uEntityID;
 	}
@@ -246,17 +246,17 @@ static void HandleNodeSelection(Zenith_EntityID uEntityID)
 	const bool bCtrlHeld = ImGui::GetIO().KeyCtrl;
 	const bool bShiftHeld = ImGui::GetIO().KeyShift;
 
-	if (bShiftHeld && Zenith_Editor::GetLastClickedEntityID() != INVALID_ENTITY_ID)
+	if (bShiftHeld && g_xEngine.Editor().GetLastClickedEntityID() != INVALID_ENTITY_ID)
 	{
-		Zenith_Editor::SelectRange(uEntityID);
+		g_xEngine.Editor().SelectRange(uEntityID);
 	}
 	else if (bCtrlHeld)
 	{
-		Zenith_Editor::ToggleEntitySelection(uEntityID);
+		g_xEngine.Editor().ToggleEntitySelection(uEntityID);
 	}
 	else
 	{
-		Zenith_Editor::SelectEntity(uEntityID, false);
+		g_xEngine.Editor().SelectEntity(uEntityID, false);
 	}
 }
 
@@ -293,7 +293,7 @@ static void HandleEntityDragDrop(
 static void RenderEntityTreeNode(Zenith_Entity xEntity, TreeNodeRenderContext& xCtx)
 {
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
-	bool bIsSelected = Zenith_Editor::IsSelected(uEntityID);
+	bool bIsSelected = g_xEngine.Editor().IsSelected(uEntityID);
 	bool bHasChildren = xEntity.HasChildren();
 
 	EntityDisplayLabel xLabel = BuildEntityDisplayLabel(xEntity);
@@ -381,7 +381,7 @@ static void RenderSceneContextMenu(
 
 	if (ImGui::MenuItem("Set Active Scene", nullptr, false, !bIsActiveScene && !bIsPersistentScene))
 	{
-		Zenith_SceneManager::SetActiveScene(xScene);
+		g_xEngine.SceneRegistry().SetActiveScene(xScene);
 	}
 
 	ImGui::Separator();
@@ -414,8 +414,8 @@ static void RenderSceneContextMenu(
 	if (ImGui::MenuItem("Unload Scene", nullptr, false, bCanUnload))
 	{
 		// Clear selection for entities in this scene
-		Zenith_Editor::ClearSelection();
-		Zenith_SceneManager::UnloadScene(xScene);
+		g_xEngine.Editor().ClearSelection();
+		g_xEngine.SceneOperations().UnloadScene(xScene);
 		ImGui::EndPopup();
 		// Scene list changed, signal caller to break out of iteration
 		bSceneUnloaded = true;
@@ -426,15 +426,15 @@ static void RenderSceneContextMenu(
 
 	if (ImGui::MenuItem("Create Empty Entity"))
 	{
-		Zenith_Editor::CreateEntity("New Entity");
+		g_xEngine.Editor().CreateEntity("New Entity");
 	}
 
 	if (!bIsPersistentScene)
 	{
-		bool bIsPaused = Zenith_SceneManager::IsScenePaused(xScene);
+		bool bIsPaused = g_xEngine.SceneRegistry().IsScenePaused(xScene);
 		if (ImGui::MenuItem(bIsPaused ? "Unpause Scene" : "Pause Scene"))
 		{
-			Zenith_SceneManager::SetScenePaused(xScene, !bIsPaused);
+			g_xEngine.SceneRegistry().SetScenePaused(xScene, !bIsPaused);
 		}
 	}
 
@@ -515,7 +515,7 @@ static void RenderSceneHeaderAndBody(const HierarchyRenderContext& xCtx)
 		{
 			Zenith_EntityID uSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
 			// Move entity to this scene (unparent + cross-scene move)
-			Zenith_SceneData* pxSourceData = Zenith_SceneManager::GetSceneDataForEntity(uSourceEntityID);
+			Zenith_SceneData* pxSourceData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uSourceEntityID);
 			if (pxSourceData && pxSourceData->EntityExists(uSourceEntityID))
 			{
 				Zenith_Entity xSourceEntity = pxSourceData->GetEntity(uSourceEntityID);
@@ -528,7 +528,7 @@ static void RenderSceneHeaderAndBody(const HierarchyRenderContext& xCtx)
 				Zenith_Scene xSourceScene = xSourceEntity.GetScene();
 				if (xSourceScene != xScene)
 				{
-					Zenith_SceneManager::MoveEntityToScene(xSourceEntity, xScene);
+					Zenith_SceneEntityOwnership::MoveEntityToScene(xSourceEntity, xScene);
 				}
 			}
 		}
@@ -573,20 +573,20 @@ void RenderScenesSection(
 	Zenith_EntityID& uDraggedEntityID,
 	Zenith_EntityID& uDropTargetEntityID)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
 
 	// Flag to break out of scene loop (replaces goto)
 	bool bSceneUnloaded = false;
 
-	uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
+	uint32_t uSceneCount = g_xEngine.SceneRegistry().GetLoadedSceneCount();
 	for (uint32_t i = 0; i < uSceneCount && !bSceneUnloaded; ++i)
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetSceneAt(i);
 		if (!xScene.IsValid())
 			continue;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (!pxSceneData)
 			continue;
 
@@ -623,7 +623,7 @@ void RenderRootDropTargetSection()
 		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY"))
 		{
 			Zenith_EntityID xSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
-			Zenith_SceneData* pxSourceData = Zenith_SceneManager::GetSceneDataForEntity(xSourceEntityID);
+			Zenith_SceneData* pxSourceData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xSourceEntityID);
 			if (pxSourceData && pxSourceData->EntityExists(xSourceEntityID))
 			{
 				pxSourceData->GetEntity(xSourceEntityID).SetParent(INVALID_ENTITY_ID);
@@ -646,7 +646,7 @@ void ProcessDeferredReparenting(
 	if (!uDraggedEntityID.IsValid() || !uDropTargetEntityID.IsValid())
 		return;
 
-	Zenith_SceneData* pxDraggedData = Zenith_SceneManager::GetSceneDataForEntity(uDraggedEntityID);
+	Zenith_SceneData* pxDraggedData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uDraggedEntityID);
 	if (pxDraggedData && pxDraggedData->EntityExists(uDraggedEntityID) && uDraggedEntityID != uDropTargetEntityID)
 	{
 		if (!IsAncestorOf(uDraggedEntityID, uDropTargetEntityID))
@@ -671,7 +671,7 @@ void ProcessDeferredEntityDeletion(
 	{
 		uGameCameraEntityID = INVALID_ENTITY_ID;
 	}
-	Zenith_SceneData* pxDeleteData = Zenith_SceneManager::GetSceneDataForEntity(uEntityToDelete);
+	Zenith_SceneData* pxDeleteData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uEntityToDelete);
 	if (pxDeleteData)
 	{
 		pxDeleteData->RemoveEntity(uEntityToDelete);
@@ -687,7 +687,7 @@ void RenderCreateEntityFooter()
 	ImGui::Separator();
 	if (ImGui::Button("+ Create Entity"))
 	{
-		Zenith_Editor::CreateEntity("New Entity");
+		g_xEngine.Editor().CreateEntity("New Entity");
 	}
 }
 

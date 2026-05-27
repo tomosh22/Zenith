@@ -88,14 +88,14 @@ public:
 	static void Reset()
 	{
 		// Destroy existing particles
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		for (auto& xParticle : s_axParticles)
 		{
 			if (xParticle.m_uEntityID.IsValid() && pxSceneData->EntityExists(xParticle.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xParticle.m_uEntityID);
-				Zenith_SceneManager::Destroy(xEntity);
+				Zenith_SceneEntityOwnership::Destroy(xEntity);
 			}
 		}
 		s_axParticles.clear();
@@ -107,8 +107,8 @@ public:
 	// ========================================================================
 	static void Update(float fDt, const Zenith_Maths::Vector3& xPlayerPos, bool bIsRunning, bool bIsGrounded)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		// Spawn dust particles while running on ground
 		if (bIsRunning && bIsGrounded)
@@ -132,7 +132,7 @@ public:
 				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
 					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
-					Zenith_SceneManager::Destroy(xEntity);
+					Zenith_SceneEntityOwnership::Destroy(xEntity);
 				}
 				it = s_axParticles.erase(it);
 			}
@@ -204,7 +204,7 @@ public:
 		}
 
 		// Upload to GPU
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			s_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
 			axGPUParticles.data(),
 			axGPUParticles.size() * sizeof(ParticleGPU));
@@ -242,8 +242,8 @@ private:
 		xParticle.m_fSize = 0.1f + static_cast<float>(rand()) / RAND_MAX * 0.1f;
 
 		// Create entity
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		Zenith_Entity xEntity = s_pxParticlePrefab->Instantiate(pxSceneData, "DustParticle");
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xParticle.m_xPosition);
@@ -276,8 +276,8 @@ private:
 		xParticle.m_fSize = 0.15f;
 
 		// Create entity
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		Zenith_Entity xEntity = s_pxParticlePrefab->Instantiate(pxSceneData, "CollectParticle");
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xParticle.m_xPosition);
@@ -295,8 +295,8 @@ private:
 	// ========================================================================
 	static void UpdateParticle(Particle& xParticle, float fDt)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		if (!xParticle.m_uEntityID.IsValid() || !pxSceneData->EntityExists(xParticle.m_uEntityID))
 		{

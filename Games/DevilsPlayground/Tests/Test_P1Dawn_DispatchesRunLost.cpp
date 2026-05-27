@@ -88,7 +88,7 @@ static bool Step_P1DawnDispatch(int iFrame)
 	switch (g_iPhase)
 	{
 	case kDW_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kDW_WaitScene;
 		return true;
 

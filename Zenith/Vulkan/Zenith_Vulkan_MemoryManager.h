@@ -31,26 +31,30 @@ class Zenith_Vulkan_CommandBuffer;
 constexpr uint64_t g_uStagingPoolSize = 512u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
 
-class Zenith_Vulkan_MemoryManagerImpl;
+#include "Vulkan/Zenith_Vulkan_CommandBuffer.h"
+#include "Collections/Zenith_Vector.h"
 
+// Per-Engine state + behaviour for the Vulkan memory manager. Replaces the
+// static-facade `class Zenith_Vulkan_MemoryManager` (deleted) and the
+// data-only `Zenith_Vulkan_MemoryManager`. Accessed via
+// g_xEngine.VulkanMemory().
 class Zenith_Vulkan_MemoryManager
 {
-	// Phase 6b: the Impl mirrors private nested types (PerFrameStaging,
-	// PendingVRAMDeletion) as engine-owned members.
-	friend class Zenith_Vulkan_MemoryManagerImpl;
 public:
 
 	Zenith_Vulkan_MemoryManager() {}
 	~Zenith_Vulkan_MemoryManager() {
-		
+
 	}
+	Zenith_Vulkan_MemoryManager(const Zenith_Vulkan_MemoryManager&) = delete;
+	Zenith_Vulkan_MemoryManager& operator=(const Zenith_Vulkan_MemoryManager&) = delete;
 
-	static void Initialise();
-	static void Shutdown();
+	void Initialise();
+	void Shutdown();
 
 
-	static void BeginFrame();
-	static void EndFrame(bool bDefer = true);
+	void BeginFrame();
+	void EndFrame(bool bDefer = true);
 
 	// Transient memory aliasing capability query. Backends that can bind
 	// multiple images to disjoint offsets inside one allocation return true;
@@ -58,7 +62,7 @@ public:
 	// build time) return false and the render graph falls back to one
 	// allocation per transient. Vulkan returns true — VMA 3.x exposes the
 	// aliasing primitives used by CreateAliasPoolVRAM / CreateAliasedImageVRAM.
-	static bool SupportsTransientAliasing();
+	bool SupportsTransientAliasing();
 
 	// Memory-class selector for an aliasing pool. DeviceLocal is the only
 	// value used today (all render-graph transients live in VRAM); the
@@ -85,7 +89,7 @@ public:
 	// eMemoryKind defaults to DeviceLocal (the only current use case); pass
 	// HostVisibleCoherent for readback pools once the render graph starts
 	// producing them.
-	static Flux_VRAMHandle CreateAliasPoolVRAM(u_int64 ulSize, u_int64 ulAlignment,
+	Flux_VRAMHandle CreateAliasPoolVRAM(u_int64 ulSize, u_int64 ulAlignment,
 	                                           AliasPoolMemoryKind eMemoryKind = AliasPoolMemoryKind::DeviceLocal);
 
 	// Query the driver for the actual memory requirements of an image that
@@ -95,7 +99,7 @@ public:
 	// (ceil(raw texel bytes) * 2, rounded to 1 MiB). Both outputs are set to
 	// 0 on driver failure; callers should treat 0 as "probe failed, fall back
 	// to heuristic".
-	static void ProbeImageMemoryRequirements(const Flux_SurfaceInfo& xInfo,
+	void ProbeImageMemoryRequirements(const Flux_SurfaceInfo& xInfo,
 	                                         u_int64& ulSizeOut,
 	                                         u_int64& ulAlignmentOut);
 
@@ -105,43 +109,45 @@ public:
 	// caller is responsible for: (a) ensuring the pool is big enough,
 	// (b) ensuring the offset respects the image's alignment requirements
 	// (the VMA call asserts on misalignment).
-	static Flux_VRAMHandle CreateAliasedImageVRAM(const Flux_SurfaceInfo& xInfo,
+	Flux_VRAMHandle CreateAliasedImageVRAM(const Flux_SurfaceInfo& xInfo,
 	                                              Flux_VRAMHandle xPoolHandle,
 	                                              u_int64 ulOffsetInPool);
 
-	// Per-frame end callback registered with Flux_PerFrame at Initialise time.
+	// Per-frame end callback registered with Flux_RendererImpl at Initialise time.
 	// Drives the deferred-VRAM-deletion countdown that used to live inside
 	// EndFrame. Registered AFTER the Vulkan begin-frame callback so it runs
 	// at end-of-frame after any in-flight render submission has been queued.
+	// Kept static so it can be passed as a Flux_RendererImpl::OnFrameEndFunc
+	// callback pointer; the body resolves g_xEngine.VulkanMemory().
 	static void OnFluxPerFrameEnd(u_int uRingIndex, void* pUserData);
 
-	static void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
+	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
 
-	static void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true);
-	static void InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal = true);
-	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
-	static void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
-	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
-	static void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
-	static void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
-	static void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut);
+	void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true);
+	void InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal = true);
+	void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
+	void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
+	void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
+	void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
+	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
+	void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut);
 
-	static void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
-	static void UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset);
+	void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
+	void UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset);
 
 	// Buffer destruction functions - queue VRAM for deferred deletion
-	static void DestroyVertexBuffer(Flux_VertexBuffer& xBuffer);
-	static void DestroyDynamicVertexBuffer(Flux_DynamicVertexBuffer& xBuffer);
-	static void DestroyIndexBuffer(Flux_IndexBuffer& xBuffer);
-	static void DestroyConstantBuffer(Flux_ConstantBuffer& xBuffer);
-	static void DestroyDynamicConstantBuffer(Flux_DynamicConstantBuffer& xBuffer);
-	static void DestroyIndirectBuffer(Flux_IndirectBuffer& xBuffer);
-	static void DestroyReadWriteBuffer(Flux_ReadWriteBuffer& xBuffer);
-	static void DestroyDynamicReadWriteBuffer(Flux_DynamicReadWriteBuffer& xBuffer);
+	void DestroyVertexBuffer(Flux_VertexBuffer& xBuffer);
+	void DestroyDynamicVertexBuffer(Flux_DynamicVertexBuffer& xBuffer);
+	void DestroyIndexBuffer(Flux_IndexBuffer& xBuffer);
+	void DestroyConstantBuffer(Flux_ConstantBuffer& xBuffer);
+	void DestroyDynamicConstantBuffer(Flux_DynamicConstantBuffer& xBuffer);
+	void DestroyIndirectBuffer(Flux_IndirectBuffer& xBuffer);
+	void DestroyReadWriteBuffer(Flux_ReadWriteBuffer& xBuffer);
+	void DestroyDynamicReadWriteBuffer(Flux_DynamicReadWriteBuffer& xBuffer);
 
-	static Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
-	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
-	static Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
+	Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
+	Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
 
 	// Create a persistently mapped host-visible buffer (for scratch buffers, etc.)
 	struct PersistentBuffer
@@ -151,7 +157,7 @@ public:
 		void* m_pMappedPtr;
 		u_int m_uSize;
 	};
-	static PersistentBuffer CreatePersistentlyMappedBuffer(u_int uSize, vk::BufferUsageFlags eUsageFlags);
+	PersistentBuffer CreatePersistentlyMappedBuffer(u_int uSize, vk::BufferUsageFlags eUsageFlags);
 
 	// View creation functions - return Flux view structs with abstract handles.
 	// NOTE: uMipLevel has NO default on any view type that selects a single mip
@@ -164,24 +170,24 @@ public:
 	// the bug. The SRV overloads keep their (uBaseMip=0, uMipCount=1) defaults
 	// because a single-mip view of mip 0 is a genuine common case and the
 	// two-parameter form is unambiguous.
-	static Flux_RenderTargetView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel);
-	static Flux_RenderTargetView CreateRenderTargetViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uMipLevel);
-	static Flux_DepthStencilView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel);
-	static Flux_ShaderResourceView CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
-	static Flux_ShaderResourceView CreateShaderResourceViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
-	static Flux_UnorderedAccessView_Texture CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel);
-	static Flux_UnorderedAccessView_Texture CreateUnorderedAccessViewForSlice(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uSlice, uint32_t uMipLevel);
+	Flux_RenderTargetView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel);
+	Flux_RenderTargetView CreateRenderTargetViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uMipLevel);
+	Flux_DepthStencilView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel);
+	Flux_ShaderResourceView CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
+	Flux_ShaderResourceView CreateShaderResourceViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
+	Flux_UnorderedAccessView_Texture CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel);
+	Flux_UnorderedAccessView_Texture CreateUnorderedAccessViewForSlice(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uSlice, uint32_t uMipLevel);
 
 	// Handle registry system for abstracting Vulkan types from Flux layer
-	static Flux_ImageViewHandle RegisterImageView(vk::ImageView xView);
-	static vk::ImageView GetImageView(Flux_ImageViewHandle xHandle);
-	static void ReleaseImageViewHandle(Flux_ImageViewHandle xHandle);
+	Flux_ImageViewHandle RegisterImageView(vk::ImageView xView);
+	vk::ImageView GetImageView(Flux_ImageViewHandle xHandle);
+	void ReleaseImageViewHandle(Flux_ImageViewHandle xHandle);
 
-	static Flux_BufferDescriptorHandle RegisterBufferDescriptor(const vk::DescriptorBufferInfo& xInfo);
-	static vk::DescriptorBufferInfo GetBufferDescriptor(Flux_BufferDescriptorHandle xHandle);
-	static void ReleaseBufferDescriptorHandle(Flux_BufferDescriptorHandle xHandle);
+	Flux_BufferDescriptorHandle RegisterBufferDescriptor(const vk::DescriptorBufferInfo& xInfo);
+	vk::DescriptorBufferInfo GetBufferDescriptor(Flux_BufferDescriptorHandle xHandle);
+	void ReleaseBufferDescriptorHandle(Flux_BufferDescriptorHandle xHandle);
 
-	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
+	Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 
 	// Deferred deletion system - accepts abstract handles to keep Vulkan types internal.
 	// NOTE: xHandle is taken by reference and auto-invalidated after queuing to prevent double-free.
@@ -190,26 +196,26 @@ public:
 	// all aliased images in it are destroyed before the pool's VkDeviceMemory is freed — otherwise
 	// ProcessDeferredDeletions's RemoveSwap iteration can destroy pool and aliased image in any
 	// order within the same frame, which Vulkan (correctly) rejects.
-	static void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
+	void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
 		Flux_ImageViewHandle xRTV = Flux_ImageViewHandle(), Flux_ImageViewHandle xDSV = Flux_ImageViewHandle(),
 		Flux_ImageViewHandle xSRV = Flux_ImageViewHandle(), Flux_ImageViewHandle xUAV = Flux_ImageViewHandle(),
 		u_int uExtraFrameDelay = 0);
-	static void QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle);
-	static void ProcessDeferredDeletions();
+	void QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle);
+	void ProcessDeferredDeletions();
 
-	static void FlushStagingBuffer();
+	void FlushStagingBuffer();
 
-	static void IncreaseImageMemoryUsage(u_int64 ulSize);
-	static void DecreaseImageMemoryUsage(u_int64 ulSize);
-	static const u_int64* GetImageMemoryUsagePtr();
+	void IncreaseImageMemoryUsage(u_int64 ulSize);
+	void DecreaseImageMemoryUsage(u_int64 ulSize);
+	const u_int64* GetImageMemoryUsagePtr();
 
-	static void IncreaseBufferMemoryUsage(u_int64 ulSize);
-	static void DecreaseBufferMemoryUsage(u_int64 ulSize);
-	static const u_int64* GetBufferMemoryUsagePtr();
+	void IncreaseBufferMemoryUsage(u_int64 ulSize);
+	void DecreaseBufferMemoryUsage(u_int64 ulSize);
+	const u_int64* GetBufferMemoryUsagePtr();
 
-	static void IncreaseMemoryUsage(u_int64 ulSize);
-	static void DecreaseMemoryUsage(u_int64 ulSize);
-	static const u_int64* GetMemoryUsagePtr();
+	void IncreaseMemoryUsage(u_int64 ulSize);
+	void DecreaseMemoryUsage(u_int64 ulSize);
+	const u_int64* GetMemoryUsagePtr();
 
 	// VMA statistics - returns actual allocated GPU memory from VMA
 	struct VMAStats
@@ -218,29 +224,29 @@ public:
 		u_int64 m_ulTotalUsedBytes;
 		u_int64 m_ulAllocationCount;
 	};
-	static VMAStats GetVMAStats();
+	VMAStats GetVMAStats();
 
 	// Direct access to VMA allocator (for advanced buffer creation)
-	static VmaAllocator GetVMAAllocator();
+	VmaAllocator GetVMAAllocator();
 
 	// Determines the VkImageViewType from surface info flags (3D, cube, array, or 2D)
-	static vk::ImageViewType DetermineImageViewType(const Flux_SurfaceInfo& xInfo);
+	vk::ImageViewType DetermineImageViewType(const Flux_SurfaceInfo& xInfo);
 
 private:
 
 	// Common buffer destruction logic - validates handle, queues VRAM deletion
-	static void DestroySimpleBuffer(Flux_VRAMHandle& xHandle);
+	void DestroySimpleBuffer(Flux_VRAMHandle& xHandle);
 
 	// Destroys an image view if the handle is valid, then releases the handle
-	static void DestroyImageViewIfValid(const vk::Device& xDevice, Flux_ImageViewHandle& xHandle);
+	void DestroyImageViewIfValid(const vk::Device& xDevice, Flux_ImageViewHandle& xHandle);
 
-	static void InitialiseStagingBuffer();
+	void InitialiseStagingBuffer();
 
-	static void HandleStagingBufferFull();
+	void HandleStagingBufferFull();
 
 	// Helper for chunked staging uploads when data exceeds staging buffer size
-	static void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);
-	static void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers);
+	void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);
+	void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers);
 
 	// CreateTextureVRAM helpers — extracted to keep the orchestrator small and
 	// to give the s_xMutex invariant a single named owner. Allocation runs
@@ -249,24 +255,24 @@ private:
 	// Patch defaults onto a Flux_SurfaceInfo: derive mip count from extents
 	// when bCreateMips is true, clamp depth/layers to a min of 1 to keep
 	// downstream byte calculations honest.
-	static void NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	void NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, bool bCreateMips);
 
 	// Pure: produce a vk::ImageCreateInfo from the (already normalized) surface
 	// info. Picks 2D vs 3D type, derives the usage mask from the memory flags,
 	// and tags cubemaps with eCubeCompatible. No side effects, so this is safe
 	// to call before the staging-buffer mutex is acquired.
-	static vk::ImageCreateInfo BuildImageCreateInfo(const Flux_SurfaceInfo& xInfo);
+	vk::ImageCreateInfo BuildImageCreateInfo(const Flux_SurfaceInfo& xInfo);
 
 	// Allocate the VkImage via VMA and register it as a Flux_VRAMHandle.
 	// Pure with respect to s_xMutex — does NOT acquire it. Returns an invalid
 	// handle on allocation failure (caller treats as an early-out).
-	static Flux_VRAMHandle AllocateAndRegisterImage(const vk::ImageCreateInfo& xImageInfo,
+	Flux_VRAMHandle AllocateAndRegisterImage(const vk::ImageCreateInfo& xImageInfo,
 		VkImage& xImageOut, VmaAllocation& xAllocationOut);
 
 	// Upload pData to the freshly-allocated image via the right path
 	// (host-visible direct copy / chunked / staging-pool bump-allocate).
 	// Acquires s_xMutex internally; caller MUST NOT hold it on entry.
-	static void UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
+	void UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
 		const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize);
 
 	struct StagingTextureMetadata {
@@ -318,21 +324,21 @@ private:
 		uint32_t         m_uMidFrameFlushCount = 0;
 	};
 	// PerFrameStaging slots (m_axStaging) live on
-	// Zenith_Vulkan_MemoryManagerImpl held by Zenith_Engine. Access via
+	// Zenith_Vulkan_MemoryManager held by Zenith_Engine. Access via
 	// g_xEngine.VulkanMemory().m_axStaging or through CurrentStaging() below.
 
 	// Resolves to the staging slot for the current in-flight frame. Both the
 	// CPU memcpy path and the GPU vkCmdCopyBuffer recording path target the
 	// same slot, so a single accessor centralises the lookup.
-	static PerFrameStaging& CurrentStaging();
+	PerFrameStaging& CurrentStaging();
 
 	// Staging flush helpers (split by allocation type for readability)
-	static void FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc);
-	static void FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc);
+	void FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc);
+	void FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc);
 
 	// Shared mipmap generation via blit chain, then transition all mips to shader-read layout.
 	// For compressed textures (bIsCompressed=true), blitting is skipped (mips must be pre-generated).
-	static void GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed);
+	void GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed);
 
 	// Deferred deletion tracking
 	struct PendingVRAMDeletion {
@@ -346,7 +352,33 @@ private:
 		Flux_ImageViewHandle m_xSRV;
 		Flux_ImageViewHandle m_xUAV;
 	};
-	// Phase 6b: all 11 data members moved to Zenith_Vulkan_MemoryManagerImpl
-	// held by Zenith_Engine. Method bodies reach state via
-	// g_xEngine.VulkanMemory().m_xXxx.
+public:
+	// ===== Data members (was Zenith_Vulkan_MemoryManager) =====
+
+	// Single-buffer-spanning command buffer used to flush staging uploads.
+	Zenith_Vulkan_CommandBuffer m_xCommandBuffer;
+
+	// VMA allocator instance.
+	VmaAllocator                m_xAllocator = nullptr;
+
+	// Per-frame staging slots (buffer offset, allocations, etc.).
+	PerFrameStaging m_axStaging[MAX_FRAMES_IN_FLIGHT];
+
+	// Deferred-deletion queue. Drained per-frame as the deletion clock ticks.
+	Zenith_Vector<PendingVRAMDeletion> m_xPendingDeletions;
+
+	// Memory accounting (read by the editor memory panel).
+	u_int64                     m_ulImageMemoryUsed  = 0;
+	u_int64                     m_ulBufferMemoryUsed = 0;
+	u_int64                     m_ulMemoryUsed       = 0;
+
+	// Mutex guarding the staging ring against worker-thread upload races.
+	Zenith_Mutex                m_xMutex;
+
+	// Handle registries -- abstract Vulkan types behind opaque handle ints
+	// so engine code stays portable across backends.
+	Zenith_Vector<vk::ImageView>            m_xImageViewRegistry;
+	Zenith_Vector<u_int>                    m_xFreeImageViewHandles;
+	Zenith_Vector<vk::DescriptorBufferInfo> m_xBufferDescriptorRegistry;
+	Zenith_Vector<u_int>                    m_xFreeBufferDescHandles;
 };

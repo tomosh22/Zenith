@@ -48,7 +48,7 @@ void DestroyCatCafeDisplayEntity()
 {
 	if (m_xCatCafeDisplayEntity.IsValid())
 	{
-		Zenith_SceneManager::Destroy(m_xCatCafeDisplayEntity);
+		Zenith_SceneEntityOwnership::Destroy(m_xCatCafeDisplayEntity);
 	}
 }
 
@@ -710,7 +710,7 @@ static void OnDailyPuzzleClicked(void* pxUserData)
 	Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 		TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
 
-	Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+	g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 }
 
 void UpdateDailyStreakDisplay()

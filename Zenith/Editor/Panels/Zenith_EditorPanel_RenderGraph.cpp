@@ -4,6 +4,7 @@
 
 #include "Zenith_EditorPanel_RenderGraph.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "imgui.h"
 
@@ -160,7 +161,7 @@ namespace Zenith_EditorPanelRenderGraph
 		ImGui::SetNextWindowSize(ImVec2(700, 500), ImGuiCond_FirstUseEver);
 		if (ImGui::Begin("Render Graph", &s_bVisible))
 		{
-			Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
+			Flux_RenderGraph& xGraph = g_xEngine.FluxRenderer().GetRenderGraph();
 			const bool bCompiled = !xGraph.IsDirty();
 
 			ImGui::Text("Status: ");

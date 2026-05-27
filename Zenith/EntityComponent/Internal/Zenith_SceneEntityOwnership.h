@@ -13,6 +13,7 @@
 // the other internal subsystems use.
 
 #include "EntityComponent/Zenith_Scene.h"
+#include <string>
 
 class Zenith_Entity;
 class Zenith_SceneData;
@@ -20,6 +21,15 @@ class Zenith_SceneData;
 class Zenith_SceneEntityOwnership
 {
 public:
+	//==========================================================================
+	// Entity creation (Phase 5c: migrated from Zenith_SceneEntityOwnership::CreateEntity)
+	//==========================================================================
+
+	// Creates an entity in the current creation target (active scene unless a
+	// SceneCreationTargetScope is in scope). Returns an invalid Zenith_Entity
+	// if no creation target is available or the target scene is not loaded.
+	static Zenith_Entity CreateEntity(const std::string& strName);
+
 	//==========================================================================
 	// Cross-scene entity transfer
 	//==========================================================================

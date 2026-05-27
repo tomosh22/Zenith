@@ -34,7 +34,7 @@
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
@@ -342,7 +342,7 @@ public:
 		bool bWithinApprehendRange = false;
 		if (xCurrentTarget.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
 		{
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xCurrentTarget);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xCurrentTarget);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xTgt = pxScene->TryGetEntity(xCurrentTarget);
@@ -475,7 +475,7 @@ private:
 
 	bool IsPossessedVillager(Zenith_EntityID xCandidate) const
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xCandidate);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xCandidate);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
 		if (!xEnt.IsValid()) return false;
@@ -498,7 +498,7 @@ private:
 	// entities -- the filter only fires on explicit Beggar identity.
 	bool IsBeggarVillager(Zenith_EntityID xCandidate) const
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xCandidate);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xCandidate);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
 		if (!xEnt.IsValid()) return false;

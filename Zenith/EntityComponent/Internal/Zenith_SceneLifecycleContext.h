@@ -52,7 +52,7 @@ namespace Zenith_SceneLifecycleContext
 
 	// Scheduler-owned (after B1); top of the explicit creation-target stack.
 	// Returns Zenith_Scene::INVALID_SCENE when no SceneCreationTargetScope is
-	// active. Read by Zenith_SceneManager::GetDefaultCreationScene() to honour
+	// active. Read by g_xEngine.SceneLifecycle().GetDefaultCreationScene() to honour
 	// Unity's contract that entities created during scene activation /
 	// deserialization land in the loading scene rather than the active scene.
 	Zenith_Scene GetCurrentCreationTarget();

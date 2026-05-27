@@ -4,6 +4,7 @@
 #include "Source/PublicInterfaces.h"
 
 #include "Flux/Flux.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Zenith_GameRenderHook.h"
@@ -115,7 +116,7 @@ void DPFogPass::Init()
 	Zenith_GameRenderHook::RegisterPostFogPass(&SetupDPFog);
 
 	// CRITICAL ORDERING NOTE — boot sequence is:
-	//   1. Flux::LateInitialise() → SetupRenderGraph() → InvokePostFogRegistrations()
+	//   1. g_xEngine.FluxRenderer().LateInitialise() → SetupRenderGraph() → InvokePostFogRegistrations()
 	//   2. Project_RegisterScriptBehaviours() → DPFogPass::Init() → RegisterPostFogPass()
 	// i.e. the post-fog callback list is empty when SetupRenderGraph runs the
 	// first time. Without an explicit rebuild request, our SetupDPFog hook
@@ -124,14 +125,14 @@ void DPFogPass::Init()
 	// init that pick up the late-registered hook — but didn't render at all
 	// in non-tools where no rebuild ever happened). Force the rebuild here so
 	// the graph picks up our callback before the first frame ticks.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 
 #ifdef ZENITH_TOOLS
-	Zenith_DebugVariables::AddFloat({ "DevilsPlayground", "Fog", "Density"          }, s_fDebugDensity,         0.0f, 10.0f);
-	Zenith_DebugVariables::AddFloat({ "DevilsPlayground", "Fog", "ColorR"           }, s_fDebugColorR,          0.0f,  1.0f);
-	Zenith_DebugVariables::AddFloat({ "DevilsPlayground", "Fog", "ColorG"           }, s_fDebugColorG,          0.0f,  1.0f);
-	Zenith_DebugVariables::AddFloat({ "DevilsPlayground", "Fog", "ColorB"           }, s_fDebugColorB,          0.0f,  1.0f);
-	Zenith_DebugVariables::AddFloat({ "DevilsPlayground", "Fog", "HoleRadiusScale"  }, s_fDebugHoleRadiusScale, 0.0f,  2.0f);
+	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "Density"          }, s_fDebugDensity,         0.0f, 10.0f);
+	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorR"           }, s_fDebugColorR,          0.0f,  1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorG"           }, s_fDebugColorG,          0.0f,  1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorB"           }, s_fDebugColorB,          0.0f,  1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "HoleRadiusScale"  }, s_fDebugHoleRadiusScale, 0.0f,  2.0f);
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -152,7 +153,7 @@ void DPFogPass::Shutdown()
 	// Re-engage normal fog technique selection so a follow-on project (or
 	// Editor Stop without restart) doesn't boot with the engine fog system
 	// silently disabled. Guarded against teardown order — see EXT-1.
-	if (Flux::IsRenderGraphValid())
+	if (g_xEngine.FluxRenderer().IsRenderGraphValid())
 	{
 		g_xEngine.Fog().SetExternallyOverridden(false);
 	}

@@ -196,7 +196,7 @@ static void InitialiseDecalIndexBuffer()
 	uint32_t auIndices[36];
 	for (uint32_t u = 0; u < 36; ++u)
 		auIndices[u] = u;
-	Flux_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), g_xEngine.Decals().m_xDecalIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(auIndices, sizeof(auIndices), g_xEngine.Decals().m_xDecalIndexBuffer);
 }
 
 // ===== PIPELINES =====
@@ -267,7 +267,7 @@ void Flux_DecalsImpl::Initialise()
 	const u_int64 ulBufferSize = uMAX_DECALS * sizeof(DecalInstance);
 	Zenith_Vector<DecalInstance> xZeroed(uMAX_DECALS);
 	for (u_int u = 0; u < uMAX_DECALS; ++u) xZeroed.EmplaceBack();
-	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(
+	g_xEngine.VulkanMemory().InitialiseDynamicReadWriteBuffer(
 		xZeroed.GetDataPointer(), ulBufferSize, g_xEngine.Decals().m_xDecalBuffer);
 
 	InitialiseDecalIndexBuffer();
@@ -288,7 +288,7 @@ void Flux_DecalsImpl::Initialise()
 #endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Decals", "Debug Spheres" },
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Decals", "Debug Spheres" },
 		dbg_bDecalDebugSpheres);
 #endif
 
@@ -301,8 +301,8 @@ void Flux_DecalsImpl::Shutdown()
 	if (!m_bInitialised)
 		return;
 
-	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(g_xEngine.Decals().m_xDecalBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Decals().m_xDecalIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicReadWriteBuffer(g_xEngine.Decals().m_xDecalBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Decals().m_xDecalIndexBuffer);
 
 	// Release pipeline + shader GPU resources eagerly while the Vulkan
 	// device is still alive. Static destructors run after Flux::Shutdown
@@ -427,7 +427,7 @@ static void PrepareDecals(void*)
 
 	if (uActive > 0)
 	{
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.Decals().m_xDecalBuffer.GetBuffer().m_xVRAMHandle,
 			s_axDecalStaging,
 			uActive * sizeof(DecalInstance));
@@ -453,8 +453,8 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.Decals().m_pxGraph = &xGraph;
 
 	Flux_TransientTextureDesc xDesc;
-	xDesc.m_uWidth       = Flux_Swapchain::GetWidth();
-	xDesc.m_uHeight      = Flux_Swapchain::GetHeight();
+	xDesc.m_uWidth       = g_xEngine.VulkanSwapchain().GetWidth();
+	xDesc.m_uHeight      = g_xEngine.VulkanSwapchain().GetHeight();
 	xDesc.m_eFormat      = k_eNormalsCopyFormat;
 	xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 	g_xEngine.Decals().m_xNormalsCopyHandle = xGraph.CreateTransient(xDesc);

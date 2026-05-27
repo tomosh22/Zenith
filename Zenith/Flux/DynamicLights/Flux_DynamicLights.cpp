@@ -183,7 +183,7 @@ void Flux_DynamicLightsImpl::Initialise()
 	// Zero-initialize so frame-0 reads don't see garbage.
 	Zenith_Vector<LightInstance> xZeroed(uMAX_LIGHTS);
 	for (u_int u = 0; u < uMAX_LIGHTS; ++u) xZeroed.EmplaceBack();
-	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroed.GetDataPointer(), ulLightBufferSize, g_xEngine.DynamicLights().m_xLightBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicReadWriteBuffer(xZeroed.GetDataPointer(), ulLightBufferSize, g_xEngine.DynamicLights().m_xLightBuffer);
 
 	// Pre-allocate priority sort buffer to avoid per-frame allocs.
 	s_xSortBuffer.Reserve(uMAX_LIGHTS * 2);
@@ -201,7 +201,7 @@ void Flux_DynamicLightsImpl::Shutdown()
 		return;
 	}
 
-	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(g_xEngine.DynamicLights().m_xLightBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicReadWriteBuffer(g_xEngine.DynamicLights().m_xLightBuffer);
 	g_xEngine.DynamicLights().m_uLightCount = 0;
 	g_xEngine.DynamicLights().m_bInitialised = false;
 
@@ -491,9 +491,9 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 	Zenith_Vector<PendingLight> xPending;
 	xPending.Reserve(uMAX_LIGHTS * 2);
 
-	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
+	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.SceneRegistry().GetSceneSlotCount(); ++uSceneSlot)
 	{
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataAtSlot(uSceneSlot);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataAtSlot(uSceneSlot);
 		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading()) continue;
 
 		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
@@ -529,7 +529,7 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 	// compute reads the buffer.
 	if (g_xEngine.DynamicLights().m_uLightCount > 0)
 	{
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.DynamicLights().m_xLightBuffer.GetBuffer().m_xVRAMHandle,
 			s_axLightStaging,
 			g_xEngine.DynamicLights().m_uLightCount * sizeof(LightInstance));

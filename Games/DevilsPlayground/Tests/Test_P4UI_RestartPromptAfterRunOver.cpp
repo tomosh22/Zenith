@@ -115,10 +115,10 @@ namespace
 	Zenith_UI::Zenith_UIText* FindRestartPromptText()
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = Zenith_SceneManager::GetSceneSlotCount();
+		const uint32_t uSlotCount = g_xEngine.SceneRegistry().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetLoadedSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetLoadedSceneDataAtSlot(uSlot);
 			if (pxScene == nullptr) continue;
 			pxScene->Query<Zenith_UIComponent>().ForEach(
 				[&pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
@@ -168,7 +168,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 	switch (g_iPhase)
 	{
 	case kRP_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kRP_WaitScene;
 		return true;
 

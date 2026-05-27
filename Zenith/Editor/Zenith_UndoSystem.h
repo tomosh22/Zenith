@@ -133,10 +133,10 @@ private:
 //
 // Usage:
 //   1. Create command object
-//   2. Call Zenith_UndoSystem::Execute(command)
+//   2. Call g_xEngine.UndoSystem().Execute(command)
 //   3. System executes command and pushes to undo stack
-//   4. User presses Ctrl+Z → Zenith_UndoSystem::Undo()
-//   5. User presses Ctrl+Y → Zenith_UndoSystem::Redo()
+//   4. User presses Ctrl+Z → g_xEngine.UndoSystem().Undo()
+//   5. User presses Ctrl+Y → g_xEngine.UndoSystem().Redo()
 //
 // Thread Safety: NOT thread-safe - must be called from main thread only
 //------------------------------------------------------------------------------
@@ -146,41 +146,42 @@ class Zenith_UndoSystem
 public:
 	// Execute command and add to undo stack
 	// Clears redo stack (branching timeline)
-	static void Execute(Zenith_UndoCommand* pCommand);
+void Execute(Zenith_UndoCommand* pCommand);
 
 	// Undo last command (if available)
 	// Moves command from undo stack to redo stack
-	static void Undo();
+void Undo();
 
 	// Redo last undone command (if available)
 	// Moves command from redo stack to undo stack
-	static void Redo();
+void Redo();
 
 	// Query stack state
-	static bool CanUndo();
-	static bool CanRedo();
+bool CanUndo();
+bool CanRedo();
 
 	// Get description of next undo/redo operation
-	static const char* GetUndoDescription();
-	static const char* GetRedoDescription();
+const char* GetUndoDescription();
+const char* GetRedoDescription();
 
 	// Clear all history (e.g., on scene load)
 	// Frees all command objects
-	static void Clear();
+void Clear();
 
 	// Get stack sizes (for debugging/UI)
-	static u_int GetUndoStackSize();
-	static u_int GetRedoStackSize();
+u_int GetUndoStackSize();
+u_int GetRedoStackSize();
 
 	// Configuration
 	static constexpr u_int MAX_UNDO_STACK_SIZE = 100;
 
-private:
-	// Phase 5.5d: undo / redo stacks moved to Zenith_UndoSystemImpl
-	// (held by Zenith_Engine).
+	// ===== Data members (was Zenith_UndoSystem) =====
+	Zenith_Vector<Zenith_UndoCommand*> m_xUndoStack;
+	Zenith_Vector<Zenith_UndoCommand*> m_xRedoStack;
 
+private:
 	// Helper: Enforce max stack size (remove oldest commands)
-	static void EnforceStackLimit();
+	void EnforceStackLimit();
 };
 
 #endif // ZENITH_TOOLS

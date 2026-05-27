@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
@@ -176,16 +177,16 @@ void Flux_FroxelFogImpl::Initialise()
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Froxel", "Debug Slice Index" }, dbg_uFroxelDebugSlice, 0, 63);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Near Z" }, dbg_fFroxelNearZ, 0.1f, 10.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Far Z" }, dbg_fFroxelFarZ, 50.0f, 1000.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Phase G" }, dbg_fFroxelPhaseG, -1.0f, 1.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Noise Scale" }, dbg_fFroxelNoiseScale, 0.001f, 0.1f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Noise Speed" }, dbg_fFroxelNoiseSpeed, 0.0f, 2.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Base" }, dbg_fFroxelHeightBase, -100.0f, 100.0f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Falloff" }, dbg_fFroxelHeightFalloff, 0.001f, 0.1f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Bias" }, dbg_fVolShadowBias, 0.0001f, 0.01f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Cone Radius" }, dbg_fVolShadowConeRadius, 0.0001f, 0.01f);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Froxel", "Debug Slice Index" }, dbg_uFroxelDebugSlice, 0, 63);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Near Z" }, dbg_fFroxelNearZ, 0.1f, 10.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Far Z" }, dbg_fFroxelFarZ, 50.0f, 1000.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Phase G" }, dbg_fFroxelPhaseG, -1.0f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Noise Scale" }, dbg_fFroxelNoiseScale, 0.001f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Noise Speed" }, dbg_fFroxelNoiseSpeed, 0.0f, 2.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Base" }, dbg_fFroxelHeightBase, -100.0f, 100.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Falloff" }, dbg_fFroxelHeightFalloff, 0.001f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Bias" }, dbg_fVolShadowBias, 0.0001f, 0.01f);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Cone Radius" }, dbg_fVolShadowConeRadius, 0.0001f, 0.01f);
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -264,7 +265,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog constants
 	const Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
-	float fTime = static_cast<float>(Flux::GetFrameCounter()) * 0.016f;
+	float fTime = static_cast<float>(g_xEngine.FluxRenderer().GetFrameCounter()) * 0.016f;
 
 	s_xInjectConstants.m_xFogParams = Zenith_Maths::Vector4(
 		xShared.m_fDensity,
@@ -292,7 +293,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 	);
 	s_xInjectConstants.m_fNearZ = dbg_fFroxelNearZ;
 	s_xInjectConstants.m_fFarZ = dbg_fFroxelFarZ;
-	s_xInjectConstants.m_uFrameIndex = Flux::GetFrameCounter();
+	s_xInjectConstants.m_uFrameIndex = g_xEngine.FluxRenderer().GetFrameCounter();
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.FroxelFog().m_xInjectPipeline);
 

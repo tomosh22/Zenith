@@ -154,13 +154,13 @@ void Flux_HDRImpl::Initialise()
 	{
 		// Histogram buffer (256 bins of u_int).
 		u_int auZeroHistogram[256] = { 0 };
-		Flux_MemoryManager::InitialiseReadWriteBuffer(auZeroHistogram, 256 * sizeof(u_int), g_xEngine.HDR().m_xHistogramBuffer);
+		g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(auZeroHistogram, 256 * sizeof(u_int), g_xEngine.HDR().m_xHistogramBuffer);
 		Zenith_Assert(g_xEngine.HDR().m_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
 			"Flux_HDR: Failed to create histogram buffer");
 
 		// Exposure buffer (4 floats: avgLum, currentExp, targetExp, pad).
 		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
-		Flux_MemoryManager::InitialiseReadWriteBuffer(afInitialExposure, 4 * sizeof(float), g_xEngine.HDR().m_xExposureBuffer);
+		g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(afInitialExposure, 4 * sizeof(float), g_xEngine.HDR().m_xExposureBuffer);
 		Zenith_Assert(g_xEngine.HDR().m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
 			"Flux_HDR: Failed to create exposure buffer");
 	}
@@ -193,8 +193,8 @@ void Flux_HDRImpl::Shutdown()
 	g_xEngine.HDR().m_pxGraph = nullptr;
 
 	// Cleanup auto-exposure compute resources
-	Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.HDR().m_xHistogramBuffer);
-	Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.HDR().m_xExposureBuffer);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.HDR().m_xHistogramBuffer);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.HDR().m_xExposureBuffer);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HDR shut down");
 }
@@ -209,7 +209,7 @@ void Flux_HDRImpl::Reset()
 	if (g_xEngine.HDR().m_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		static u_int auZeroHistogram[256] = { 0 };
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.HDR().m_xHistogramBuffer.GetBuffer().m_xVRAMHandle,
 			auZeroHistogram,
 			256 * sizeof(u_int));
@@ -219,7 +219,7 @@ void Flux_HDRImpl::Reset()
 	if (g_xEngine.HDR().m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.HDR().m_xExposureBuffer.GetBuffer().m_xVRAMHandle,
 			afInitialExposure,
 			4 * sizeof(float));
@@ -248,7 +248,7 @@ static void PreExecuteLuminanceHistogram(void* pUserData)
 	if (bAutoExposureJustEnabled && g_xEngine.HDR().m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.HDR().m_xExposureBuffer.GetBuffer().m_xVRAMHandle,
 			afInitialExposure,
 			4 * sizeof(float));
@@ -258,7 +258,7 @@ static void PreExecuteLuminanceHistogram(void* pUserData)
 	if ((bAutoExposure || dbg_bHDRShowHistogram) && g_xEngine.HDR().m_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		static u_int auZeroHistogram[256] = { 0 };
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.HDR().m_xHistogramBuffer.GetBuffer().m_xVRAMHandle,
 			auZeroHistogram,
 			256 * sizeof(u_int));
@@ -279,8 +279,8 @@ static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUs
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.HDR().m_xLuminanceHistogramPipeline);
 
 	LuminanceConstants xConsts;
-	xConsts.m_uImageWidth = Flux_Swapchain::GetWidth();
-	xConsts.m_uImageHeight = Flux_Swapchain::GetHeight();
+	xConsts.m_uImageWidth = g_xEngine.VulkanSwapchain().GetWidth();
+	xConsts.m_uImageHeight = g_xEngine.VulkanSwapchain().GetHeight();
 	xConsts.m_fMinLogLum = g_xEngine.HDR().m_fMinLogLuminance;
 	xConsts.m_fLogLumRange = g_xEngine.HDR().m_fLogLuminanceRange;
 
@@ -289,8 +289,8 @@ static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUs
 	xBinder.BindSRV(g_xEngine.HDR().m_xLuminanceHistogramShader, "g_xHDRTex", &g_xEngine.HDR().GetHDRSceneTarget().SRV());
 	xBinder.BindUAV_Buffer(g_xEngine.HDR().m_xLuminanceHistogramShader, "g_auHistogram", &g_xEngine.HDR().m_xHistogramBuffer.GetUAV());
 
-	u_int uGroupsX = (Flux_Swapchain::GetWidth() + 15) / 16;
-	u_int uGroupsY = (Flux_Swapchain::GetHeight() + 15) / 16;
+	u_int uGroupsX = (g_xEngine.VulkanSwapchain().GetWidth() + 15) / 16;
+	u_int uGroupsY = (g_xEngine.VulkanSwapchain().GetHeight() + 15) / 16;
 	pxCommandList->AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
 }
 
@@ -315,7 +315,7 @@ static void ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData)
 	xConsts.m_fMaxExposure = g_xEngine.HDR().m_fMaxExposure;
 	xConsts.m_fLowPercentile = 0.05f;
 	xConsts.m_fHighPercentile = 0.95f;
-	xConsts.m_uTotalPixels = Flux_Swapchain::GetWidth() * Flux_Swapchain::GetHeight();
+	xConsts.m_uTotalPixels = g_xEngine.VulkanSwapchain().GetWidth() * g_xEngine.VulkanSwapchain().GetHeight();
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
@@ -331,8 +331,8 @@ static void SubmitHistogramLabels()
 {
 	// Histogram position matches shader: bottom-left corner
 	// fMargin = 0.02, fHistWidth = 0.3, fHistHeight = 0.15
-	const float fScreenWidth = static_cast<float>(Flux_Swapchain::GetWidth());
-	const float fScreenHeight = static_cast<float>(Flux_Swapchain::GetHeight());
+	const float fScreenWidth = static_cast<float>(g_xEngine.VulkanSwapchain().GetWidth());
+	const float fScreenHeight = static_cast<float>(g_xEngine.VulkanSwapchain().GetHeight());
 
 	const float fMargin = 0.02f;
 	const float fHistWidth = 0.3f;
@@ -509,8 +509,8 @@ void Flux_HDRImpl::SetupTransients(Flux_RenderGraph& xGraph)
 	// g_xEngine.HDR().GetHDRSceneTarget() during their SetupRenderGraph, so the handle must
 	// exist before they run.
 	Flux_TransientTextureDesc xHDRDesc;
-	xHDRDesc.m_uWidth = Flux_Swapchain::GetWidth();
-	xHDRDesc.m_uHeight = Flux_Swapchain::GetHeight();
+	xHDRDesc.m_uWidth = g_xEngine.VulkanSwapchain().GetWidth();
+	xHDRDesc.m_uHeight = g_xEngine.VulkanSwapchain().GetHeight();
 	xHDRDesc.m_eFormat = HDR_SCENE_FORMAT;
 	xHDRDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 	g_xEngine.HDR().m_xHDRSceneTargetHandle = xGraph.CreateTransient(xHDRDesc);
@@ -521,8 +521,8 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// g_xEngine.HDR().m_pxGraph already set by SetupTransients(). HDR scene target transient
 	// already created there too.
 
-	u_int uBloomWidth = Flux_Swapchain::GetWidth() / 2;
-	u_int uBloomHeight = Flux_Swapchain::GetHeight() / 2;
+	u_int uBloomWidth = g_xEngine.VulkanSwapchain().GetWidth() / 2;
+	u_int uBloomHeight = g_xEngine.VulkanSwapchain().GetHeight() / 2;
 
 	for (u_int i = 0; i < 5; i++)
 	{
@@ -692,21 +692,21 @@ bool Flux_HDRImpl::IsEnabled()
 #ifdef ZENITH_TOOLS
 void Flux_HDRImpl::RegisterDebugVariables()
 {
-	Zenith_DebugVariables::AddUInt32({ "Flux", "HDR", "DebugMode" }, dbg_uHDRDebugMode, 0, HDR_DEBUG_COUNT - 1);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "Exposure" }, dbg_fHDRExposure, 0.01f, 10.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "BloomIntensity" }, dbg_fHDRBloomIntensity, 0.0f, 2.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "BloomThreshold" }, dbg_fHDRBloomThreshold, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "HDR", "ToneMappingOperator" }, dbg_uHDRToneMappingOperator, 0, TONEMAPPING_COUNT - 1);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "HDR", "ShowHistogram" }, dbg_bHDRShowHistogram);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "HDR", "FreezeExposure" }, dbg_bHDRFreezeExposure);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "AdaptationSpeed" }, dbg_fHDRAdaptationSpeed, 0.1f, 10.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "TargetLuminance" }, dbg_fHDRTargetLuminance, 0.01f, 1.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MinExposure" }, dbg_fHDRMinExposure, 0.01f, 1.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MaxExposure" }, dbg_fHDRMaxExposure, 1.0f, 20.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "HDR", "DebugMode" }, dbg_uHDRDebugMode, 0, HDR_DEBUG_COUNT - 1);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "Exposure" }, dbg_fHDRExposure, 0.01f, 10.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "BloomIntensity" }, dbg_fHDRBloomIntensity, 0.0f, 2.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "BloomThreshold" }, dbg_fHDRBloomThreshold, 0.0f, 5.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "HDR", "ToneMappingOperator" }, dbg_uHDRToneMappingOperator, 0, TONEMAPPING_COUNT - 1);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "HDR", "ShowHistogram" }, dbg_bHDRShowHistogram);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "HDR", "FreezeExposure" }, dbg_bHDRFreezeExposure);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "AdaptationSpeed" }, dbg_fHDRAdaptationSpeed, 0.1f, 10.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "TargetLuminance" }, dbg_fHDRTargetLuminance, 0.01f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "MinExposure" }, dbg_fHDRMinExposure, 0.01f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "HDR", "MaxExposure" }, dbg_fHDRMaxExposure, 1.0f, 20.0f);
 }
 
 // Debug-SRV callbacks — mirror g_xEngine.FluxGraphics().GetDebugSRV_MRTDiffuse. Register
-// via Zenith_DebugVariables::AddTextureCallback in Flux::LateInitialise; the
+// via g_xEngine.DebugVariables().AddTextureCallback in Flux::LateInitialise; the
 // callback is invoked on every ImGui draw so the preview tracks transient
 // rebuilds on resize without leaving a dangling SRV.
 const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_HDRScene()

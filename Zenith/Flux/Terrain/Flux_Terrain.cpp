@@ -240,16 +240,16 @@ void Flux_TerrainImpl::Initialise()
 	// Take a ref-counted copy of the global water normal texture handle (set during init in Zenith_Main).
 	g_xEngine.Terrain().m_xWaterNormalTexture = g_xEngine.FluxGraphics().m_xWaterNormalTexture;
 
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), g_xEngine.Terrain().m_xTerrainConstantsBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
-	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
-	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
-	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
-	Zenith_DebugVariables::AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 12);
-	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 12);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -287,7 +287,7 @@ void Flux_TerrainImpl::ReleaseAssetReferences()
 
 void Flux_TerrainImpl::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Terrain().m_xTerrainConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Terrain().m_xTerrainConstantsBuffer);
 
 	// Manager Shutdown asserts the per-terrain state registry is empty —
 	// any terrain component still alive at engine teardown is a leak that
@@ -305,7 +305,7 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// RequestGraphRebuild on terrain construct/destroy), so the registry walked
 	// here always reflects the current scene's terrain set.
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
 
 	// Pass 0: Reset visible-count buffers. One dispatch per terrain, each
 	// writes a single uint32 to the corresponding visible-count buffer. The
@@ -387,9 +387,9 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	g_xEngine.Terrain().m_uFrameCounter++;
 
 	// Get all terrain components
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(g_xEngine.Terrain().m_xTerrainComponentsToRender);
+	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(g_xEngine.Terrain().m_xTerrainComponentsToRender);
 
-	Flux_MemoryManager::UploadBufferData(g_xEngine.Terrain().m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Terrain().m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
 	// ========== Per-Terrain Streaming + Chunk Data Upload ==========
 	// Each terrain has its own Flux_TerrainStreamingState, so streaming
@@ -399,7 +399,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// uploads happen here in the Prepare phase and become visible to the
 	// compute pass via vkSubmit's implicit host-write-available barrier.
 	// Frame indexing eliminates cross-frame CPU/GPU races on shared memory.
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
 	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
@@ -414,7 +414,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		// covers visibility, and frame indexing prevents cross-frame races).
 		// See SetupRenderGraph for why it isn't in the graph at all.
 	}
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 }
 
 static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
@@ -448,7 +448,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 
 	// Bind the terrain culling compute pipeline once (owned by Flux_Terrain)
 	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.Terrain().m_xCullingPipeline);
@@ -463,7 +463,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 		pxTerrain->UpdateCullingAndLod(*pxCmdList);
 	}
 
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 }
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)

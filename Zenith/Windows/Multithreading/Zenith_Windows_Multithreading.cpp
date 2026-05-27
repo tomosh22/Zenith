@@ -2,9 +2,9 @@
 
 #include "Zenith_Windows_Multithreading.h"
 
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 
 #include <process.h>
 #include <processthreadsapi.h>
@@ -13,15 +13,15 @@
 // don't belong to an Engine, their registration index does). The
 // shared state (thread-ID allocator + main-thread ID) moved to
 // g_xEngine.Threading() in Phase 3a.
-thread_local static char tl_g_acThreadName[Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH]{ 0 };
+thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
 thread_local static u_int tl_g_uThreadID = ~0u;
 
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
 {
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 	EnterCriticalSection(&m_xCriticalSection);
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 }
 
 template<>
@@ -69,7 +69,7 @@ struct ThreadParams
 {
 	Zenith_ThreadFunction m_pfnFunc;
 	const void* m_pUserData;
-	char m_acName[Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH];
+	char m_acName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH];
 };
 
 unsigned long ThreadInit(void* pParams)
@@ -80,7 +80,7 @@ unsigned long ThreadInit(void* pParams)
 	ThreadParams* pxParams = static_cast<ThreadParams*>(pParams);
 
 	// Copy data to local/thread-local storage
-	memcpy(tl_g_acThreadName, pxParams->m_acName, Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH);
+	memcpy(tl_g_acThreadName, pxParams->m_acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH);
 	Zenith_ThreadFunction pfnFunc = pxParams->m_pfnFunc;
 	const void* pUserData = pxParams->m_pUserData;
 
@@ -92,13 +92,13 @@ unsigned long ThreadInit(void* pParams)
 	return 0;
 }
 
-void Zenith_MultithreadingImpl::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
+void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
 {
 	// Allocate params on heap - new thread takes ownership and deletes
 	ThreadParams* pxParams = new ThreadParams;
 	pxParams->m_pfnFunc = pfnFunc;
 	pxParams->m_pUserData = pUserData;
-	strncpy_s(pxParams->m_acName, Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH, szName, _TRUNCATE);
+	strncpy_s(pxParams->m_acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH, szName, _TRUNCATE);
 
 	HANDLE pHandle = ::CreateThread(NULL, 128 * 1024, ThreadInit, pxParams, 0, NULL);
 	Zenith_Assert(pHandle != NULL, "CreateThread failed with error %lu", GetLastError());
@@ -106,7 +106,7 @@ void Zenith_MultithreadingImpl::Platform_CreateThread(const char* szName, Zenith
 	CloseHandle(pHandle);
 }
 
-void Zenith_MultithreadingImpl::Platform_RegisterThread(const bool bMainThread)
+void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
 {
 	// Thread-ID allocator + main-thread tracking live on g_xEngine.Threading()
 	// (Phase 3a). The engine guarantees the impl exists before any
@@ -114,13 +114,13 @@ void Zenith_MultithreadingImpl::Platform_RegisterThread(const bool bMainThread)
 	tl_g_uThreadID = g_xEngine.Threading().AllocateThreadID(bMainThread);
 }
 
-u_int Zenith_MultithreadingImpl::Platform_GetCurrentThreadID()
+u_int Zenith_Multithreading::Platform_GetCurrentThreadID()
 {
 	Zenith_Assert(tl_g_uThreadID != ~0u, "This thread hasn't been registered with RegisterThread");
 	return tl_g_uThreadID;
 }
 
-bool Zenith_MultithreadingImpl::Platform_IsMainThread()
+bool Zenith_Multithreading::Platform_IsMainThread()
 {
 	return tl_g_uThreadID == g_xEngine.Threading().GetMainThreadID();
 }

@@ -3,11 +3,13 @@
 ## Files
 
 ### Core
-- `Zenith_SceneManager.h/cpp` - Static facade over the `Internal/` subsystems below; multi-scene management. The class declaration is split across three sibling headers so the top file stays focused on the public game-facing API:
-  - `Zenith_SceneManager.h` — public API only (Load/Unload/Get*/MoveEntityToScene/callbacks).
-  - `Zenith_SceneManagerInternal.h` — engine-internal section (Initialise / Shutdown / Update / GetSceneData / lifecycle-state read accessors / Fire*Callbacks / private implementation block).
-  - `Zenith_SceneManagerGuards.h` — nested RAII scope-guard types (LifecycleDeferralGuard, PrefabInstantiationGuard, SceneUpdateDeferralGuard, SceneCreationTargetScope).
-  - The two sibling headers are included from inside `class Zenith_SceneManager` so all members remain class-static. Existing call sites resolve unchanged.
+- `Zenith_SceneManager.h/cpp` — **Compatibility shim (Phase 5e)**. Originally a static-facade class wrapping the `Internal/` subsystems; almost every public method body has been migrated to the owning subsystem. The class declaration still exists as 1-line forwarders to `g_xEngine.SceneRegistry/SceneOperations/SceneLifecycle/SceneCallbacks/SceneEntityOwnership` for backwards-compatibility with the remaining call sites. New code should call the subsystem accessors directly.
+  - `Zenith_SceneManager.h` — public API surface (now all 1-line forwarders).
+  - `Zenith_SceneManagerInternal.h` — engine-internal forwarder section.
+  - `Zenith_SceneManagerGuards.h` — alias-only header; the real RAII types live in `Zenith_SceneSystemGuards.h`.
+- **`Zenith_SceneSystemGuards.h/cpp`** (Phase 5e) — top-level RAII scope-guard types: `Zenith_LifecycleDeferralGuard`, `Zenith_PrefabInstantiationGuard`, `Zenith_SceneUpdateDeferralGuard`, `Zenith_SceneCreationTargetScope`. Each mutates state on `Zenith_SceneLifecycleScheduler` (`g_xEngine.SceneLifecycle()`). The `Zenith_SceneManager::*Guard` aliases still work for transitional call sites.
+- **`Zenith_SceneCallbackTypes.h`** (Phase 5e) — top-level callback typedefs: `Zenith_SceneCallbackHandle`, `Zenith_INVALID_SCENE_CALLBACK_HANDLE`, `Zenith_SceneChangedCallback`, `Zenith_SceneLoadedCallback`, `Zenith_SceneUnloadingCallback`, `Zenith_SceneUnloadedCallback`, `Zenith_SceneLoadStartedCallback`, `Zenith_EntityPersistentCallback`. The `Zenith_SceneManager::CallbackHandle` etc. aliases still work for transitional call sites.
+- **`Zenith_SceneSystemBootstrap.h/cpp`** (Phase 5e) — top-level orchestrator free functions: `Zenith_InitialiseSceneSystem()`, `Zenith_ShutdownSceneSystem()`, `Zenith_ResetSceneSystemForNextTest()`. Each coordinates multiple subsystems (Lifecycle / Operations / Registry / Callbacks / EntityStore). Called from `Zenith_Engine` startup/shutdown and the test framework.
 - `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
 - `Zenith_Scene.h/cpp` - Lightweight scene handle struct
 - `Zenith_SceneOperation.h/cpp` - Async scene operation tracking
@@ -19,7 +21,7 @@
 - `Zenith_EventSystem.h/cpp` - Type-safe event dispatcher with deferred queue
 
 ### Internal/
-SceneManager is a thin static facade — most of its work is forwarded to subsystems that live in `Internal/`. Newcomers often miss this directory:
+**Phase 5e: subsystems are the real engine surface; call them via `g_xEngine.X().Y()` accessors.** The `Zenith_SceneManager::Foo` form still works but is a 1-line forwarder. The `Internal/` directory is where the actual work happens:
 
 - `Internal/Zenith_SceneRegistry.h/cpp` - Scene slot table, generation counters, slot freelist
 - `Internal/Zenith_SceneCallbackBus.h/cpp` - Scene event dispatch (Loaded / Unloading / ActiveSceneChanged)
@@ -28,7 +30,7 @@ SceneManager is a thin static facade — most of its work is forwarded to subsys
 - `Internal/Zenith_SceneEntityOwnership.h/cpp` - Entity slot ownership across scene moves
 - `Internal/Zenith_SceneLifecycleContext.h` - Per-frame lifecycle state container
 
-If a SceneManager method is a one-line forwarder, the real implementation lives in the matching `Internal/` file. Use this table to jump directly to the owner:
+Every SceneManager method is now a 1-line forwarder. Use this table to jump directly to the real owner:
 
 | What you're looking for | Owning subsystem |
 |---|---|
@@ -69,7 +71,8 @@ Zenith uses a multi-scene architecture inspired by Unity:
 
 - **Zenith_Scene** - Lightweight handle struct (`int m_iHandle` + `uint32_t m_uGeneration`). Can be copied freely, used to reference scenes. The generation counter lets `IsValid()` detect handles to scene slots that have been unloaded and recycled.
 - **Zenith_SceneData** - Internal class storing entities, components, and metadata. Not accessed directly by game code.
-- **Zenith_SceneManager** - Static manager for scene lifecycle (loading, unloading, queries, events).
+- **Zenith_SceneRegistry / Zenith_SceneOperations / Zenith_SceneLifecycleScheduler / Zenith_SceneCallbackBus / Zenith_SceneEntityOwnership** - Engine subsystems held by `Zenith_Engine`. Accessed via `g_xEngine.SceneRegistry()`, `g_xEngine.SceneOperations()`, etc.
+- **Zenith_SceneManager** (deprecated, Phase 5e compatibility shim) — old static-facade entry point. Every method is now a 1-line forwarder to one of the engine subsystems above. New code should call the subsystem accessor directly.
 - **Zenith_SceneOperation** - Tracks async scene loading progress.
 
 Multiple scenes can be loaded simultaneously (additive loading). One scene is "active" at any time.
@@ -87,26 +90,28 @@ A special scene that is always loaded and never unloaded. Use `MarkEntityPersist
 ### Common Scene Management Patterns
 
 ```cpp
-// Get active scene and create entity
-Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+// Get active scene and create entity (Phase 5e: subsystem accessors)
+Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 Zenith_Entity xEntity(pxSceneData, "MyEntity");
 
 // Load scene additively
-Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene("Levels/Level1.zscen", SCENE_LOAD_ADDITIVE);
+Zenith_Scene xLoaded = g_xEngine.SceneOperations().LoadScene("Levels/Level1.zscen", SCENE_LOAD_ADDITIVE);
 
 // Make entity persistent across scene loads
-Zenith_SceneManager::MarkEntityPersistent(xPlayerEntity);
+Zenith_SceneEntityOwnership::MarkEntityPersistent(xPlayerEntity);
 
 // Move entity between scenes (updates reference in-place, Unity behavior)
-Zenith_SceneManager::MoveEntityToScene(xEntity, xTargetScene);
+Zenith_SceneEntityOwnership::MoveEntityToScene(xEntity, xTargetScene);
 // xEntity now points to the entity in the target scene
 
 // Register for scene events
-Zenith_SceneManager::RegisterSceneLoadedCallback([](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+g_xEngine.SceneCallbacks().RegisterSceneLoaded([](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
     // Handle scene load
 });
 ```
+
+The old `Zenith_SceneManager::Foo(...)` form still resolves (1-line forwarders), but new code should use the subsystem accessors so the eventual deletion of `Zenith_SceneManager` lands cleanly.
 
 ### Component Pools
 Each component type has a dedicated pool with:
