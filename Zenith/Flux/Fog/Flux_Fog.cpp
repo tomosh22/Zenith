@@ -4,6 +4,7 @@
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
@@ -98,10 +99,10 @@ void Flux_FogImpl::Initialise()
 #endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
-	Zenith_DebugVariables::AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
-	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
-	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
+	g_xEngine.DebugVariables().AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
 #endif
 
 	// Note: Fog ambient irradiance ratio is unified at 0.25 in Flux_VolumetricCommon.fxh
@@ -296,8 +297,8 @@ void Flux_FogImpl::SetExternallyOverridden(bool bOverridden)
 
 	// Touch the active graph immediately so the change takes effect this
 	// frame, regardless of whether ApplyTechniqueSelectionToGraph runs.
-	if (!Flux::IsRenderGraphValid()) return;
-	Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
+	if (!g_xEngine.FluxRenderer().IsRenderGraphValid()) return;
+	Flux_RenderGraph& xGraph = g_xEngine.FluxRenderer().GetRenderGraph();
 
 	if (bOverridden)
 	{
@@ -316,6 +317,6 @@ void Flux_FogImpl::SetExternallyOverridden(bool bOverridden)
 void Flux_FogImpl::ReapplyOverrideToCurrentGraph()
 {
 	if (!s_bExternallyOverridden) return;
-	if (!Flux::IsRenderGraphValid()) return;
-	DisableAllFogPasses(Flux::GetRenderGraph());
+	if (!g_xEngine.FluxRenderer().IsRenderGraphValid()) return;
+	DisableAllFogPasses(g_xEngine.FluxRenderer().GetRenderGraph());
 }

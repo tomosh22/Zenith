@@ -29,11 +29,11 @@ void Zenith_EditorTestFixture::SetUp()
 	// and tear it down in TearDown() so each editor/automation test starts
 	// from a clean, known scene state.
 	s_bCreatedTestScene = false;
-	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-	if (!xActive.IsValid() || Zenith_SceneManager::GetSceneData(xActive) == nullptr)
+	Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+	if (!xActive.IsValid() || g_xEngine.SceneRegistry().GetSceneData(xActive) == nullptr)
 	{
-		s_xTestScene = Zenith_SceneManager::CreateEmptyScene("EditorTestFixtureScene");
-		Zenith_SceneManager::SetActiveScene(s_xTestScene);
+		s_xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("EditorTestFixtureScene");
+		g_xEngine.SceneRegistry().SetActiveScene(s_xTestScene);
 		s_bCreatedTestScene = true;
 	}
 
@@ -55,8 +55,8 @@ void Zenith_EditorTestFixture::TearDown()
 	}
 
 	// Clean up created entities (in reverse order to handle hierarchies)
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (pxSceneData != nullptr)
 	{
 		for (auto it = s_axCreatedEntities.rbegin(); it != s_axCreatedEntities.rend(); ++it)
@@ -78,7 +78,7 @@ void Zenith_EditorTestFixture::TearDown()
 	// Unload the test scene we created so the next test starts fresh.
 	if (s_bCreatedTestScene && s_xTestScene.IsValid())
 	{
-		Zenith_SceneManager::UnloadSceneForced(s_xTestScene);
+		g_xEngine.SceneOperations().UnloadSceneForced(s_xTestScene);
 		s_xTestScene = Zenith_Scene();
 		s_bCreatedTestScene = false;
 	}
@@ -88,8 +88,8 @@ void Zenith_EditorTestFixture::TearDown()
 
 Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntity(const std::string& strName)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity(pxSceneData, strName.c_str());
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 	s_axCreatedEntities.push_back(uEntityID);
@@ -102,8 +102,8 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntityWithTransform(
 	const Zenith_Maths::Vector3& xScale)
 {
 	Zenith_EntityID uEntityID = CreateTestEntity(strName);
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
 
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
@@ -120,8 +120,8 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntityWithTransform(
 	const Zenith_Maths::Vector3& xScale)
 {
 	Zenith_EntityID uEntityID = CreateTestEntity(strName);
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
 
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
@@ -134,8 +134,8 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntityWithTransform(
 
 void Zenith_EditorTestFixture::SetupHierarchy(Zenith_EntityID uParent, Zenith_EntityID uChild)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	xChild.SetParent(uParent);
 }
@@ -143,23 +143,23 @@ void Zenith_EditorTestFixture::SetupHierarchy(Zenith_EntityID uParent, Zenith_En
 void Zenith_EditorTestFixture::ResetEditorState()
 {
 	// Clear selection
-	Zenith_Editor::ClearSelection();
+	g_xEngine.Editor().ClearSelection();
 
 	// Ensure we're back in Stopped mode after any test that changed modes
-	if (Zenith_Editor::GetEditorMode() != EditorMode::Stopped)
+	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Stopped)
 	{
-		Zenith_Editor::SetEditorMode(EditorMode::Stopped);
+		g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
 	}
 
 	// Flush any pending scene operations (e.g., scene restore after mode transition)
 	// This ensures scene state is consistent before the next test runs
-	Zenith_Editor::FlushPendingSceneOperations();
+	g_xEngine.Editor().FlushPendingSceneOperations();
 
 	// Reset gizmo mode to translate
-	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Translate);
+	g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Translate);
 
 	// Clear undo/redo history
-	Zenith_UndoSystem::Clear();
+	g_xEngine.UndoSystem().Clear();
 
 	// Reset mock input state
 	Zenith_InputSimulator::ResetAllInputState();
@@ -167,8 +167,8 @@ void Zenith_EditorTestFixture::ResetEditorState()
 
 Zenith_SceneData* Zenith_EditorTestFixture::GetTestScene()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	return Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	return g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 }
 
 #endif // ZENITH_TOOLS

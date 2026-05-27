@@ -75,7 +75,7 @@ namespace
 	Zenith_EntityID ReadPriestBBTarget(Zenith_EntityID xPriestId)
 	{
 		Zenith_SceneData* pxScene =
-			Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
@@ -86,7 +86,7 @@ namespace
 
 	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
@@ -110,7 +110,7 @@ static bool Step_P2BeggarIgnored(int iFrame)
 	switch (g_iPhase)
 	{
 	case kBG_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kBG_WaitScene;
 		return true;
 
@@ -152,9 +152,9 @@ static bool Step_P2BeggarIgnored(int iFrame)
 		// BridgePerceptionToBlackboard rejects it instead.
 		Zenith_PerceptionSystem::RegisterTarget(g_xBeggar, /*hostile=*/true);
 		Zenith_SceneData* pxPriestScene =
-			Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPriest);
 		Zenith_SceneData* pxVillagerScene =
-			Zenith_SceneManager::GetSceneDataForEntity(g_xBeggar);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xBeggar);
 		if (pxPriestScene != nullptr && pxVillagerScene != nullptr)
 		{
 			Zenith_Entity xPriestEnt = pxPriestScene->TryGetEntity(g_xPriest);

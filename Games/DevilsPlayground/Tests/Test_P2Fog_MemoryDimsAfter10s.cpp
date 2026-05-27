@@ -77,8 +77,8 @@ static void Setup_P2MemoryFog()
 	// onto DPFogPass_Behaviour::m_xMemoryReveals. Spin up a scene with
 	// the script attached so the DP_Fog::Record/Get/Tick forwarders
 	// actually do something (no-ops without an Instance()).
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("MemoryFogTest");
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("MemoryFogTest");
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xFogEntity(pxScene, "FogPassEntity");
 	xFogEntity.AddComponent<Zenith_ScriptComponent>()
 		.AddScript<DPFogPass_Behaviour>();
@@ -157,7 +157,7 @@ static void Setup_P2MemoryFog()
 		DP_Fog::GetMemoryRevealCount());
 	std::fflush(stdout);
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 static bool Step_P2MemoryFog(int /*iFrame*/)

@@ -44,8 +44,8 @@ static void Setup_ProcLevelBootstrap()
 	g_bPassed = false;
 	g_szFailureReason = "";
 
-	g_xScene = Zenith_SceneManager::CreateEmptyScene("ProcLevelBootstrapTest");
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(g_xScene);
+	g_xScene = g_xEngine.SceneRegistry().CreateEmptyScene("ProcLevelBootstrapTest");
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
 	if (pxScene == nullptr)
 	{
 		g_szFailureReason = "CreateEmptyScene returned no SceneData";
@@ -188,7 +188,7 @@ static bool Verify_ProcLevelBootstrap()
 	// when the scene unloads).
 	if (g_xScene.IsValid())
 	{
-		Zenith_SceneManager::UnloadScene(g_xScene);
+		g_xEngine.SceneOperations().UnloadScene(g_xScene);
 	}
 
 	if (!g_bPassed)

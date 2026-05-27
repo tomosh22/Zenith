@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
@@ -214,7 +215,7 @@ void Flux_TerrainStreamingManagerImpl::Initialize()
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManagerImpl::Initialize()");
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Streaming" }, dbg_bLogTerrainStreaming);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Log Streaming" }, dbg_bLogTerrainStreaming);
 #endif
 
 	g_xEngine.TerrainStreaming().m_bInitialized = true;
@@ -310,7 +311,7 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Zenith_TerrainComp
 	// New terrain GPU buffers are about to feed into the render graph; the
 	// next graph compile must rebuild SetupRenderGraph so the per-component
 	// Read/Write declarations pick up this terrain's buffers.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOW LOD resident for all %u chunks (zero redundant file reads)", TOTAL_CHUNKS);
 }
@@ -347,7 +348,7 @@ void Flux_TerrainStreamingManagerImpl::UnregisterTerrainBuffers(Zenith_TerrainCo
 
 	// Terrain GPU buffers are about to be queued for deferred deletion; the
 	// next graph compile must drop their references from SetupRenderGraph.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 }
 
 Flux_TerrainStreamingState* Flux_TerrainStreamingManagerImpl::GetStateFor(const Zenith_TerrainComponent* pxComp)
@@ -700,14 +701,14 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	const uint64_t ulIndexOffsetBytes  = static_cast<uint64_t>(uAbsoluteIndexOffset)  * sizeof(uint32_t);
 
 	// Upload to GPU
-	Flux_MemoryManager::UploadBufferDataAtOffset(
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
 		pxOwner->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_pVertexData,
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
-	Flux_MemoryManager::UploadBufferDataAtOffset(
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
 		pxOwner->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_puIndices,
 		ulIndexDataSize,

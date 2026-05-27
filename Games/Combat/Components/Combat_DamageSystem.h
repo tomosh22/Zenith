@@ -20,7 +20,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
 #include <unordered_map>
 
@@ -316,7 +316,7 @@ public:
 			Zenith_Maths::Vector3 xDeathPos(0.0f);
 			// C1: resolve owning scene from the target entity id rather than
 			// assuming it lives in the active scene.
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uTargetID);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uTargetID);
 			if (pxSceneData)
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(uTargetID);
@@ -382,7 +382,7 @@ private:
 		float fForce, float fResistance)
 	{
 		// C1: resolve owning scene from the entity id.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(uEntityID);
 		if (!pxSceneData)
 			return;
 

@@ -173,7 +173,7 @@ void Zenith_Squad::UpdateFormationPositions()
 	// scene. Squads whose leader was moved to the persistent scene (or any
 	// non-active scene) must still compute formation positions.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xLeaderID);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xLeaderID);
 	if (!pxSceneData)
 	{
 		return;
@@ -433,7 +433,7 @@ void Zenith_Squad::Update(float fDt)
 	for (int32_t i = static_cast<int32_t>(m_axMembers.GetSize()) - 1; i >= 0; --i)
 	{
 		Zenith_EntityID xMemberID = m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID;
-		Zenith_SceneData* pxMemberScene = Zenith_SceneManager::GetSceneDataForEntity(xMemberID);
+		Zenith_SceneData* pxMemberScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xMemberID);
 		if (!pxMemberScene)
 		{
 			RemoveMember(xMemberID);
@@ -536,7 +536,7 @@ void Zenith_Squad::DebugDraw() const
 	}
 
 	// Audit §3.18 fix: resolve leader's OWN scene for debug draw.
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xLeaderID);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xLeaderID);
 	if (!pxSceneData)
 	{
 		return;

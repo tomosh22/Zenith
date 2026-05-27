@@ -8,15 +8,16 @@
 #include "GLFW/glfw3.h"
 #endif
 
-// Phase 9: state + behaviour for Input subsystem.
-class Zenith_InputImpl
+// State + behaviour for the Input subsystem. Held on g_xEngine and
+// accessed via g_xEngine.Input().
+class Zenith_Input
 {
 public:
-	Zenith_InputImpl() = default;
-	~Zenith_InputImpl() = default;
+	Zenith_Input() = default;
+	~Zenith_Input() = default;
 
-	Zenith_InputImpl(const Zenith_InputImpl&) = delete;
-	Zenith_InputImpl& operator=(const Zenith_InputImpl&) = delete;
+	Zenith_Input(const Zenith_Input&) = delete;
+	Zenith_Input& operator=(const Zenith_Input&) = delete;
 
 	void BeginFrame();
 

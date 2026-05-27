@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_SelectionSystem.h"
-#include "Zenith_SelectionSystemImpl.h"
+#include "Zenith_SelectionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -78,7 +78,7 @@ void BoundingBox::Transform(const Zenith_Maths::Matrix4& transform)
 	}
 }
 
-// Phase 5.5d: AABB cache lives on Zenith_SelectionSystemImpl held by
+// Phase 5.5d: AABB cache lives on Zenith_SelectionSystem held by
 // Zenith_Engine; reach it via g_xEngine.Selection().m_xEntityBoundingBoxes.
 
 // Helper: Ray-triangle intersection using Möller–Trumbore algorithm
@@ -211,7 +211,7 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 	// CalculateBoundingBox returns a small cube at the transform position when
 	// the entity has no ModelComponent.
 	Zenith_Vector<Zenith_TransformComponent*> xTransforms;
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(xTransforms);
+	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(xTransforms);
 
 	for (u_int i = 0; i < xTransforms.GetSize(); ++i)
 	{
@@ -305,7 +305,7 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
 
 	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
+	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
 
 	for (u_int i = 0; i < xModelComponents.GetSize(); ++i)
 	{
@@ -406,7 +406,7 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	if (!pxEntity) return xBoundingBox;
 
 	// Find the scene that owns this entity (not just active scene)
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(pxEntity->GetEntityID());
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(pxEntity->GetEntityID());
 	if (!pxSceneData) return xBoundingBox;
 
 	const Zenith_EntityID xEntityID = pxEntity->GetEntityID();

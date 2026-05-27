@@ -225,7 +225,7 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 	// Get target position. Audit §3.18 fix: resolve target's OWN scene so
 	// MoveToEntity works for targets in persistent or additively-loaded scenes.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xTargetID);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xTargetID);
 	if (!pxSceneData)
 	{
 		m_eLastStatus = BTNodeStatus::FAILURE;
@@ -440,7 +440,7 @@ BTNodeStatus Zenith_BTAction_FindPrimaryTarget::Execute(Zenith_Entity& xAgent, Z
 		xBlackboard.SetEntityID(m_strOutputKey, xTarget);
 
 		// Also store target position. Audit §3.18 fix: resolve target's OWN scene.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xTarget);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xTarget);
 		if (pxSceneData)
 		{
 			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);

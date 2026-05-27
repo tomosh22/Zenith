@@ -151,8 +151,8 @@ void Flux_SkyboxImpl::Initialise()
 
 	// Atmosphere & solid-colour CB allocations are one-time — kept in
 	// Initialise so hot-reload's BuildPipelines() doesn't leak them.
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), g_xEngine.Skybox().m_xSolidColourConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), g_xEngine.Skybox().m_xSolidColourConstantsBuffer);
 
 	BuildPipelines();
 
@@ -185,8 +185,8 @@ void Flux_SkyboxImpl::ReleaseAssetReferences()
 void Flux_SkyboxImpl::Shutdown()
 {
 	DestroyRenderTargets();
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xSolidColourConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xSolidColourConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
@@ -212,8 +212,8 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 {
 	if (g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
-		Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle);
-		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle,
+		Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle);
+		g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle,
 			g_xEngine.Skybox().m_xTransmittanceLUT.RTV().m_xImageViewHandle, g_xEngine.Skybox().m_xTransmittanceLUT.DSV().m_xImageViewHandle,
 			g_xEngine.Skybox().m_xTransmittanceLUT.SRV().m_xImageViewHandle, g_xEngine.Skybox().m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
 	}
@@ -227,7 +227,7 @@ static void PreExecuteSkybox(void*)
 	if (!xOpts.m_bSkyboxEnabled)
 	{
 		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
-		Flux_MemoryManager::UploadBufferData(g_xEngine.Skybox().m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
+		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Skybox().m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
 	else if (g_xEngine.Skybox().IsAtmosphereEnabled())
 	{
@@ -257,7 +257,7 @@ static void PreExecuteSkybox(void*)
 		s_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
 		s_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
 
-		Flux_MemoryManager::UploadBufferData(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
+		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
 	}
 }
 
@@ -374,15 +374,15 @@ Flux_ShaderResourceView& Flux_SkyboxImpl::GetTransmittanceLUTSRV()
 #ifdef ZENITH_DEBUG_VARIABLES
 void Flux_SkyboxImpl::RegisterDebugVariables()
 {
-	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "DebugMode" }, dbg_uSkyboxDebugMode, 0, SKYBOX_DEBUG_COUNT - 1);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "SunIntensity" }, dbg_fSunIntensity, 1.0f, 100.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "RayleighScale" }, dbg_fRayleighScale, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "MieScale" }, dbg_fMieScale, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "MieG" }, dbg_fMieG, 0.0f, 0.99f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "AerialStrength" }, dbg_fAerialStrength, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "DebugMode" }, dbg_uSkyboxDebugMode, 0, SKYBOX_DEBUG_COUNT - 1);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "SunIntensity" }, dbg_fSunIntensity, 1.0f, 100.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "RayleighScale" }, dbg_fRayleighScale, 0.0f, 5.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "MieScale" }, dbg_fMieScale, 0.0f, 5.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "MieG" }, dbg_fMieG, 0.0f, 0.99f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "AerialStrength" }, dbg_fAerialStrength, 0.0f, 5.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);
 
-	Zenith_DebugVariables::AddTexture({ "Flux", "Skybox", "Textures", "TransmittanceLUT" }, g_xEngine.Skybox().m_xTransmittanceLUT.SRV());
+	g_xEngine.DebugVariables().AddTexture({ "Flux", "Skybox", "Textures", "TransmittanceLUT" }, g_xEngine.Skybox().m_xTransmittanceLUT.SRV());
 }
 #endif

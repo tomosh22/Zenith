@@ -4,15 +4,16 @@
 
 using Zenith_ThreadFunction = void(*)(const void* pUserData);
 
-// Phase 9: state + behaviour for Multithreading subsystem.
-class Zenith_MultithreadingImpl
+// State + behaviour for the Multithreading subsystem. Held on g_xEngine
+// and accessed via g_xEngine.Threading().
+class Zenith_Multithreading
 {
 public:
-	Zenith_MultithreadingImpl() = default;
-	~Zenith_MultithreadingImpl() = default;
+	Zenith_Multithreading() = default;
+	~Zenith_Multithreading() = default;
 
-	Zenith_MultithreadingImpl(const Zenith_MultithreadingImpl&) = delete;
-	Zenith_MultithreadingImpl& operator=(const Zenith_MultithreadingImpl&) = delete;
+	Zenith_Multithreading(const Zenith_Multithreading&) = delete;
+	Zenith_Multithreading& operator=(const Zenith_Multithreading&) = delete;
 
 	void CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData);
 	void RegisterThread(const bool bMainThread = false);

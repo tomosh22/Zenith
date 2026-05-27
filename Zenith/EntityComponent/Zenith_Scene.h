@@ -20,8 +20,8 @@ struct Zenith_EntityID;
  * and accessed through Zenith_SceneManager.
  *
  * Usage:
- *   Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
- *   Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+ *   Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+ *   Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xScene);
  *   Zenith_Entity xEntity(pxData, "MyEntity");  // Creates entity with transform
  */
 struct Zenith_Scene

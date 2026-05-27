@@ -12,11 +12,12 @@
 #include "Core/Zenith_AutomatedTest.h"
 #endif
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "DebugVariables/Zenith_DebugVariablesImpl.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
@@ -27,9 +28,9 @@
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
-#include "Input/Zenith_InputImpl.h"
-#include "Input/Zenith_TouchInputImpl.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Input/Zenith_Input.h"
+#include "Input/Zenith_TouchInput.h"
+#include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 
@@ -82,10 +83,10 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 
 void RenderImGui()
 {
-	Flux_PlatformAPI::ImGuiBeginFrame();
+	g_xEngine.Vulkan().ImGuiBeginFrame();
 	
 	// Render the editor UI (includes docking, viewport, hierarchy, etc.)
-	Zenith_Editor::Render();
+	g_xEngine.Editor().Render();
 	
 	// Also render the old debug tools window for backwards compatibility
 	ImGui::Begin("Zenith Tools");
@@ -102,8 +103,13 @@ void RenderImGui()
 
 	ImGui::End();
 	
-	// Render profiling window
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Profiling::RenderToImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
+	// Render profiling window. Manual begin/end (rather than the
+	// FUNCTION_WRAPPER macro) because RenderToImGui is now a member
+	// function and can't be passed as a free-function-style callable.
+	{
+		Zenith_Profiling::Scope xRenderProfileScope(ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
+		g_xEngine.Profiling().RenderToImGui();
+	}
 	
 	// Finalize ImGui rendering data - this MUST be called before submitting the render task
 	ImGui::Render();
@@ -114,23 +120,23 @@ void RenderImGui()
 static void ExecuteRenderGraph()
 {
 	// Check if any subsystem requested a full graph rebuild
-	if (Flux::ConsumeGraphRebuildRequest())
+	if (g_xEngine.FluxRenderer().ConsumeGraphRebuildRequest())
 	{
-		Flux::SetupRenderGraph();
+		g_xEngine.FluxRenderer().SetupRenderGraph();
 	}
 
-	Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
+	Flux_RenderGraph& xGraph = g_xEngine.FluxRenderer().GetRenderGraph();
 
 	// Forward any debug-variable toggles that affect graph compilation (e.g.
 	// transient aliasing) into the graph each frame. Cheap no-op when unchanged;
 	// triggers MarkDirty on change so editor flips apply immediately instead of
 	// waiting until the next SetupRenderGraph (which only runs on resize).
-	Flux::SyncRenderGraphDebugToggles();
+	g_xEngine.FluxRenderer().SyncRenderGraphDebugToggles();
 
 	// Apply per-subsystem runtime selections (Fog technique, SSR blur,
 	// SSGI denoise, IBL pass enable). Order/rationale lives in
-	// Flux::ApplySubsystemGraphSelections.
-	Flux::ApplySubsystemGraphSelections(xGraph);
+	// Flux_RendererImpl::ApplySubsystemGraphSelections.
+	g_xEngine.FluxRenderer().ApplySubsystemGraphSelections(xGraph);
 
 	xGraph.Compile();
 	xGraph.Execute();
@@ -138,14 +144,19 @@ static void ExecuteRenderGraph()
 
 void Zenith_Core::Zenith_MainLoop()
 {
-	// Flux_PerFrame::BeginFrame fires registered begin-frame callbacks (which
-	// includes the Vulkan backend's wait-fence + reset-pools logic that used
-	// to live behind Flux_PlatformAPI::BeginFrame). The PROFILE index name is
-	// kept the same so the profiler timeline is comparable to pre-extraction
-	// runs.
-	// Flux_PerFrame::BeginFrame is a NOP when no backend callbacks are
-	// registered (i.e. in --headless where Flux::EarlyInitialise was skipped).
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PerFrame::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
+	// BeginFrame fires registered begin-frame callbacks (which includes the
+	// Vulkan backend's wait-fence + reset-pools logic that used to live
+	// behind Flux_PlatformAPI::BeginFrame). The PROFILE index name is kept
+	// the same so the profiler timeline is comparable to pre-extraction
+	// runs. BeginFrame is a NOP when no backend callbacks are registered
+	// (i.e. in --headless where g_xEngine.FluxRenderer().EarlyInitialise
+	// was skipped). Manual begin/end (rather than FUNCTION_WRAPPER macro)
+	// because BeginFrame is now a member function and can't be passed as a
+	// free-function-style callable to the macro.
+	{
+		Zenith_Profiling::Scope xBeginFrameProfile(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
+		g_xEngine.FluxRenderer().BeginFrame();
+	}
 
 	UpdateTimers();
 	g_xEngine.Input().BeginFrame();
@@ -154,16 +165,16 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::BeginFrame();
+		g_xEngine.VulkanMemory().BeginFrame();
 		if (!Flux_Swapchain::BeginFrame())
 		{
-			Flux_MemoryManager::EndFrame(false);
+			g_xEngine.VulkanMemory().EndFrame(false);
 			// Skipped frame still fires end-frame callbacks so the deferred VRAM
 			// deletion clock ticks, but we deliberately DON'T advance the ring
 			// counter — a rapid-resize sequence of consecutive skips would
 			// otherwise wrap the counter past valid fences and shorten the
 			// effective MAX_FRAMES_IN_FLIGHT+1 deferred-deletion grace period.
-			Flux_PerFrame::FireEndCallbacks();
+			g_xEngine.FluxRenderer().FireEndCallbacks();
 			return;
 		}
 	}
@@ -173,7 +184,7 @@ void Zenith_Core::Zenith_MainLoop()
 	// CRITICAL: Update editor BEFORE any game logic or rendering
 	// This is where deferred scene loads happen (from "Open Scene" menu)
 	// Must occur when no render tasks are active to avoid concurrent access to scene data
-	bool bEditorWantsRender = Zenith_Editor::Update();
+	bool bEditorWantsRender = g_xEngine.Editor().Update();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		bSubmitRenderWork = bEditorWantsRender;
@@ -181,7 +192,7 @@ void Zenith_Core::Zenith_MainLoop()
 
 	// Skip physics and scene updates when editor is paused or stopped
 	// Only run game simulation when in Playing mode
-	bool bShouldUpdateGameLogic = (Zenith_Editor::GetEditorMode() == EditorMode::Playing);
+	bool bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
 #else
 	bool bShouldUpdateGameLogic = true;
 #endif
@@ -196,14 +207,14 @@ void Zenith_Core::Zenith_MainLoop()
 	Zenith_AutomatedTestRunner::Tick();
 	// Re-read after Tick() in case it switched the editor into Playing mode.
 	#ifdef ZENITH_TOOLS
-	bShouldUpdateGameLogic = (Zenith_Editor::GetEditorMode() == EditorMode::Playing);
+	bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
 	#endif
 #endif
 
 	if (bShouldUpdateGameLogic)
 	{
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.SceneLifecycle().Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -228,7 +239,7 @@ void Zenith_Core::Zenith_MainLoop()
 		// Queue physics debug visualization only while the editor is stopped,
 		// so play mode doesn't flood the primitives pass.
 		#ifdef ZENITH_TOOLS
-		if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped)
+		if (g_xEngine.Editor().GetEditorMode() == EditorMode::Stopped)
 		{
 			Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws();
 		}
@@ -240,9 +251,9 @@ void Zenith_Core::Zenith_MainLoop()
 		// Mark as updating so UI callbacks (e.g. button click -> LoadSceneByIndex)
 		// defer scene loads instead of destroying scenes mid-iteration
 		{
-			Zenith_SceneManager::SceneUpdateDeferralGuard xUpdateGuard;
+			Zenith_SceneUpdateDeferralGuard xUpdateGuard;
 			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-			Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
+			g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
 			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 			{
 				Zenith_UIComponent* const pxUI = xIt.GetData();
@@ -257,34 +268,41 @@ void Zenith_Core::Zenith_MainLoop()
 		#endif
 
 		#ifdef ZENITH_ASSERT
-		Zenith_SceneManager::SetRenderTasksActive(true);
+		g_xEngine.SceneLifecycle().SetRenderTasksActive(true);
 		#endif
 		ExecuteRenderGraph();
 		#ifdef ZENITH_ASSERT
-		Zenith_SceneManager::SetRenderTasksActive(false);
+		g_xEngine.SceneLifecycle().SetRenderTasksActive(false);
 		#endif
 	}
 
 	// Only wait for scene update if we actually ran it
 	if (bShouldUpdateGameLogic)
 	{
-		Zenith_SceneManager::WaitForUpdateComplete();
+		g_xEngine.SceneLifecycle().WaitForUpdateComplete();
 	}
 
-	// EndFrame prepares memory command buffer for submission and processes deferred deletions
+	// EndFrame prepares memory command buffer for submission and processes deferred deletions.
 	// Deferred deletions use a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished
-	// using resources before they are deleted
+	// using resources before they are deleted. Manual scope (rather than
+	// FUNCTION_WRAPPER macro) because EndFrame is now an instance method.
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_MemoryManager::EndFrame, ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
+		Zenith_Profiling::Scope xMemMgrProfile(ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
+		g_xEngine.VulkanMemory().EndFrame();
 	}
 
 	Zenith_MemoryManagement::EndFrame();
 
-	// Flux_PlatformAPI::EndFrame records render command buffers
+	// Vulkan EndFrame records render command buffers. Manual scope (rather
+	// than FUNCTION_WRAPPER macro) because EndFrame is now an instance
+	// method on Zenith_Vulkan and can't be passed as a callable.
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, bSubmitRenderWork);
+		{
+			Zenith_Profiling::Scope xEndFrameProfile(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
+			g_xEngine.Vulkan().EndFrame(bSubmitRenderWork);
+		}
 
 		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
 	}
@@ -296,8 +314,8 @@ void Zenith_Core::Zenith_MainLoop()
 	// N+1 for the next iteration — matches the old in-swapchain bump.
 	// Flux_PerFrame::EndFrame is a NOP when no backend callbacks are registered.
 	// The ring counter advance is harmless in headless and keeps frame-counting
-	// consistent for any downstream code that reads Flux_PerFrame::GetFrameIndex().
-	Flux_PerFrame::EndFrame();
+	// consistent for any downstream code that reads g_xEngine.FluxRenderer().GetFrameIndex().
+	g_xEngine.FluxRenderer().EndFrame();
 }
 
 #ifdef ZENITH_TESTING

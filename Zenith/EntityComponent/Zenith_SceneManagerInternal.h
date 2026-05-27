@@ -234,34 +234,14 @@ private:
 	static void AddToSceneNameCache(int iHandle, const std::string& strName);
 	static void RemoveFromSceneNameCache(int iHandle);
 
-	// Audit §3.12: AreRenderTasksActive() is a const read used by Zenith_Scene::IsValid()
-	// (see Zenith_Scene.cpp). Previously the getter lived entirely inside
-	// `#ifdef ZENITH_ASSERT`, meaning IsValid() only compiled because MEMORY.md says
-	// ZENITH_ASSERT is always defined — a fragile coupling. The getter now always
-	// exists; the underlying flag and the setter stay debug-only because only the
-	// assert paths flip it.
-#ifdef ZENITH_ASSERT
-	static bool s_bRenderTasksActive;  // Debug-only: true between SubmitRenderTasks and WaitForAllRenderTasks
-	static bool s_bAnimTasksActive;    // Debug-only: true between SubmitTaskArray(animTask) and WaitUntilComplete
-public:
-	static void SetRenderTasksActive(bool b) { s_bRenderTasksActive = b; }
-	static void SetAnimTasksActive(bool b) { s_bAnimTasksActive = b; }
-private:
-#endif
-
-public:
-	// In ZENITH_ASSERT builds: returns the live flag. In non-assert builds:
-	// returns false because no render-task window is ever tracked. Callers treat
-	// "false" as "not in a render-task window" either way, so IsValid() logic
-	// stays correct across configs.
-	static bool AreRenderTasksActive()
-	{
-#ifdef ZENITH_ASSERT
-		return s_bRenderTasksActive;
-#else
-		return false;
-#endif
-	}
+	// Phase 5b: g_xEngine.SceneLifecycle().m_bRenderTasksActive / g_xEngine.SceneLifecycle().m_bAnimTasksActive flags + their
+	// setters / accessor moved to Zenith_SceneLifecycleScheduler. Callers
+	// route through g_xEngine.SceneLifecycle().AreRenderTasksActive() /
+	// SetRenderTasksActive() / SetAnimTasksActive(). The global free
+	// function Zenith_AreRenderTasksActive() (declared in
+	// Zenith_RenderTaskState.h) remains as a header-cycle-break for
+	// template bodies in Zenith_SceneData.h that can't pull in the engine
+	// header directly.
 private:
 
 	//==========================================================================

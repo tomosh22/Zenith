@@ -158,7 +158,7 @@ public:
 				// VisitedVisible -> VisitedDim -> VisitedHidden
 				// states over the next 30 s.
 				Zenith_Maths::Vector3 xVPos;
-				Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+				Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xV = pxScene->TryGetEntity(xId);
@@ -176,8 +176,8 @@ public:
 		// point lights can punch a wider hole. The +m_fLightHoleSlop
 		// margin makes sure fog never re-asserts inside the radius where
 		// the light's contribution is still meaningful.
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene != nullptr)
 		{
 			pxScene->Query<Zenith_LightComponent>().ForEach(

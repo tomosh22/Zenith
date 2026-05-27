@@ -4,6 +4,12 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "EntityComponent/Zenith_Scene.h"
+// NOTE: Zenith_EditorState.h is included AFTER the types it depends on
+// (ContentBrowserEntry, ConsoleLogEntry, EditorMode, etc.) — see below the
+// type definitions.
+#include "Editor/Panels/Zenith_EditorPanel_Viewport.h"   // PendingImGuiTextureDeletion
+#include "Flux/Flux_Types.h"                              // Flux_ImGuiTextureHandle, Flux_ImageViewHandle
+#include "AssetHandling/Zenith_AssetHandle.h"             // MaterialHandle
 #include <vector>
 #include <string>
 #include <unordered_set>
@@ -84,8 +90,22 @@ enum class EditorGizmoMode
 	Scale
 };
 
-namespace Zenith_Editor
+// EditorState includes — must come AFTER ContentBrowserEntry, ConsoleLogEntry,
+// EditorMode, EditorGizmoMode, ContentBrowserViewMode are defined above.
+#include "Editor/Zenith_EditorState.h"
+
+// Per-Engine state + behaviour for the Editor subsystem. Replaces the
+// `namespace Zenith_Editor` facade (deleted) and the data-only
+// `Zenith_Editor` (folded in here). Accessed via g_xEngine.Editor().
+// Compiled only when ZENITH_TOOLS is defined.
+class Zenith_Editor
 {
+public:
+	Zenith_Editor() = default;
+	~Zenith_Editor() = default;
+	Zenith_Editor(const Zenith_Editor&) = delete;
+	Zenith_Editor& operator=(const Zenith_Editor&) = delete;
+
 	void Initialise();
 	void Shutdown();
 	bool Update();
@@ -109,75 +129,18 @@ namespace Zenith_Editor
 	// Multi-Select System
 	//--------------------------------------------------------------------------
 
-	/**
-	 * Select an entity
-	 * @param uEntityID Entity to select
-	 * @param bAddToSelection If true, add to existing selection (Ctrl+click). If false, replace selection.
-	 */
 	void SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection = false);
-
-	/**
-	 * Select a range of entities (for Shift+click in hierarchy)
-	 * Selects all entities between the last selected and the specified entity
-	 * @param uEndEntityID The end point of the range selection
-	 */
 	void SelectRange(Zenith_EntityID uEndEntityID);
-
-	/**
-	 * Toggle selection state of an entity (Ctrl+click)
-	 * If selected, deselect. If not selected, add to selection.
-	 */
 	void ToggleEntitySelection(Zenith_EntityID uEntityID);
-
-	/**
-	 * Clear all selected entities
-	 */
 	void ClearSelection();
-
-	/**
-	 * Check if a specific entity is selected
-	 */
 	bool IsSelected(Zenith_EntityID uEntityID);
-
-	/**
-	 * Get the primary selected entity ID (first in selection, or last clicked)
-	 * Returns INVALID_ENTITY_ID if no selection
-	 */
 	Zenith_EntityID GetSelectedEntityID();
-
-	/**
-	 * Get the primary selected entity (for backwards compatibility and property panel)
-	 */
 	Zenith_Entity* GetSelectedEntity();
-
-	/**
-	 * Get all selected entity IDs
-	 */
 	const std::unordered_set<Zenith_EntityID>& GetSelectedEntityIDs();
-
-	/**
-	 * Get the number of selected entities
-	 */
 	size_t GetSelectionCount();
-
-	/**
-	 * Check if any entities are selected
-	 */
 	bool HasSelection();
-
-	/**
-	 * Check if multiple entities are selected
-	 */
 	bool HasMultiSelection();
-
-	/**
-	 * Get the last clicked entity ID (for range selection)
-	 */
 	Zenith_EntityID GetLastClickedEntityID();
-
-	/**
-	 * Remove an entity from selection
-	 */
 	void DeselectEntity(Zenith_EntityID uEntityID);
 
 	// Viewport
@@ -191,7 +154,7 @@ namespace Zenith_Editor
 	// Console log
 	void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel, Zenith_LogCategory eCategory);
 	void ClearConsole();
-	
+
 	// Material Editor
 	void SelectMaterial(Zenith_MaterialAsset* pMaterial);
 	void ClearMaterialSelection();
@@ -199,56 +162,19 @@ namespace Zenith_Editor
 
 	//--------------------------------------------------------------------------
 	// Editor Operations
-	// Called by BOTH ImGui panel handlers AND the editor automation system.
-	// These encapsulate the multi-step operations that correspond to user
-	// interactions in the editor UI.
 	//--------------------------------------------------------------------------
 
-	/// Corresponds to: Hierarchy panel > right-click > "Create Empty Entity"
-	/// Creates entity, sets non-transient, and selects it (matching editor UI behaviour).
 	Zenith_EntityID CreateEntity(const char* szName);
-
-	/// Corresponds to: clicking an entity by name in the Hierarchy panel.
 	void SelectEntityByName(const char* szName);
-
-	/// Corresponds to: toggling the "Transient" checkbox in Properties panel.
 	void SetSelectedEntityTransient(bool bTransient);
-
-	/// Corresponds to: Properties panel > "Add Component" popup > selecting a component.
 	bool AddComponentToSelected(const char* szDisplayName);
-
-	/// Corresponds to: Properties panel > Camera section > "Set As Main Camera" button.
 	void SetSelectedAsMainCamera();
-
-	/// Append a script slot to the selected entity at runtime (Unity-style: multiple scripts allowed).
-	/// Adds the ScriptComponent if missing. Calls OnAwake on the new behaviour, marks entity awoken.
-	/// Used by editor drag-drop and the "Add Script" popup in the script properties panel.
 	void AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName);
-
-	/// Append a script slot for build-time scene serialization (no lifecycle hooks called).
-	/// Adds the ScriptComponent if missing. Lifecycle dispatched when scene enters Play mode.
-	/// Used by EditorAutomation's ATTACH_SCRIPT action.
 	void AttachScriptForSerializationToSelected(const char* szBehaviourTypeName);
-
-	/// Corresponds to: File > New Scene menu item.
-	/// Creates empty scene, sets active, clears selection.
 	void CreateNewScene(const char* szName);
-
-	/// Corresponds to: File > Save Scene menu item (with specific path).
 	void SaveActiveScene(const char* szPath);
-
-	/// Corresponds to: File > Unload Scene menu item.
-	/// Clears selection, then unloads the active scene.
 	void UnloadActiveScene();
 
-	// SetEditorMode transition helpers — split out so each transition's
-	// scene-state shuffling lives in one place. SetEditorMode owns the mode
-	// state itself; these helpers are pure transition routines.
-	// EnterPlayMode: backup scene → locate game camera → dispatch
-	//   OnAwake/OnEnable/OnStart for every entity. Returns false if no scene
-	//   data is loaded — caller is expected to revert s_eEditorMode.
-	// EnterStopMode: queue the deferred scene-restore from backup. The actual
-	//   load runs in next frame's Update() before any render tasks.
 	bool EnterPlayMode();
 	void EnterStopMode();
 
@@ -263,21 +189,16 @@ namespace Zenith_Editor
 	void RenderViewport();
 	void HandleObjectPicking();
 	void RenderGizmos();
-	void HandleGizmoInteraction();  // New method for Flux_Gizmos integration
+	void HandleGizmoInteraction();
 
-	// Deferred scene operations (extracted from Update)
 	bool ProcessDeferredSceneOperations();
 	bool HandlePendingSceneLoad();
 
-	// FlushPendingSceneOperations branches — split out so each pending
-	// operation lives in one place. All three may run in the same frame
-	// (e.g. save+load), so they're called sequentially from the dispatcher.
 	void WaitForGPUAndFlushDeferred(const char* szReason);
 	void HandlePendingSceneReset();
 	void HandlePendingSceneSave();
 	void HandlePendingSceneLoadDeferred();
 
-	// Editor input (extracted from Update)
 	void UpdateEditorInput();
 
 	// Content Browser
@@ -285,19 +206,14 @@ namespace Zenith_Editor
 	void RefreshDirectoryContents();
 	void NavigateToDirectory(const std::string& strPath);
 	void NavigateToParent();
-	
+
 	// Material Editor
 	void RenderMaterialEditorPanel();
 	void RenderMaterialTextureSlot(const char* szLabel, Zenith_MaterialAsset* pMaterial,
 		const std::string& strCurrentPath,
 		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 
-	// Phase 5.5c: 36 class-static data members + 10 camera statics + 3
-	// file-statics moved off this class onto Zenith_EditorImpl (held by
-	// Zenith_Engine). Method bodies, the 42 external readers, and the
-	// EditorCamera.cpp camera storage now all read/write through
-	// g_xEngine.Editor().m_xXxx.
-	inline constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
+	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
 
 	// Editor theme
 	void ApplyEditorTheme();
@@ -305,15 +221,12 @@ namespace Zenith_Editor
 	// Editor camera control
 	void InitializeEditorCamera();
 	void UpdateEditorCamera(float fDt);
-	// UpdateEditorCamera implementation broken into focused steps so callers
-	// don't have to read 100+ lines of input-handling mixed with scene writes.
 	void UpdateEditorCameraLook();
 	void UpdateEditorCameraMovement(float fDt);
 	void ApplyEditorCameraToScene();
 	void SwitchToEditorCamera();
 	void SwitchToGameCamera();
 	void ResetEditorCameraToDefaults();
-	// Camera data access for Flux_Graphics (delegates to appropriate camera based on mode)
 	void BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix);
 	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOutMatrix);
 	void GetCameraPosition(Zenith_Maths::Vector4& xOutPosition);
@@ -321,6 +234,75 @@ namespace Zenith_Editor
 	float GetCameraFarPlane();
 	float GetCameraFOV();
 	float GetCameraAspectRatio();
-}
+
+	// ===== Data members (was Zenith_Editor) =====
+
+	// Mode flags.
+	EditorMode      m_eEditorMode = EditorMode::Stopped;
+	EditorGizmoMode m_eGizmoMode  = EditorGizmoMode::Translate;
+
+	// Multi-select state.
+	std::unordered_set<Zenith_EntityID> m_xSelectedEntityIDs;
+	Zenith_EntityID m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
+	Zenith_EntityID m_uLastClickedEntityID     = INVALID_ENTITY_ID;
+
+	// Viewport state.
+	Zenith_Maths::Vector2 m_xViewportSize = { 1280, 720 };
+	Zenith_Maths::Vector2 m_xViewportPos  = { 0, 0 };
+	bool                  m_bViewportHovered = false;
+	bool                  m_bViewportFocused = false;
+
+	// Aggregate state container (mid-migration target — pre-existing).
+	Zenith_EditorState    m_xEditorState;
+
+	// Content Browser state.
+	std::string                       m_strCurrentDirectory;
+	std::vector<ContentBrowserEntry>  m_xDirectoryContents;
+	std::vector<ContentBrowserEntry>  m_xFilteredContents;
+	bool                              m_bDirectoryNeedsRefresh = true;
+	char                              m_szSearchBuffer[256]    = "";
+	int                               m_iAssetTypeFilter       = 0;
+	int                               m_iSelectedContentIndex  = -1;
+	float                             m_fThumbnailSize         = 80.0f;
+	std::vector<std::string>          m_axNavigationHistory;
+	int                               m_iHistoryIndex          = -1;
+	ContentBrowserViewMode            m_eViewMode              = ContentBrowserViewMode::Grid;
+
+	// Console state.
+	std::vector<ConsoleLogEntry>      m_xConsoleLogs;
+	bool                              m_bConsoleAutoScroll     = true;
+	bool                              m_bShowConsoleInfo       = true;
+	bool                              m_bShowConsoleWarnings   = true;
+	bool                              m_bShowConsoleErrors     = true;
+	std::bitset<LOG_CATEGORY_COUNT>   m_xCategoryFilters       = std::bitset<LOG_CATEGORY_COUNT>().set();
+
+	// Panel visibility (View menu toggles).
+	bool                              m_bShowHierarchyPanel    = true;
+	bool                              m_bShowPropertiesPanel   = true;
+	bool                              m_bShowConsolePanel      = true;
+
+	// Material Editor state.
+	MaterialHandle                    m_xSelectedMaterial;
+	bool                              m_bShowMaterialEditor    = true;
+
+	// Editor camera state.
+	Zenith_Maths::Vector3             m_xEditorCameraPosition  = { 0, 100, 0 };
+	double                            m_fEditorCameraPitch     = 0.0;
+	double                            m_fEditorCameraYaw       = 0.0;
+	float                             m_fEditorCameraFOV       = 45.0f;
+	float                             m_fEditorCameraNear      = 1.0f;
+	float                             m_fEditorCameraFar       = 2000.0f;
+	Zenith_EntityID                   m_uGameCameraEntity      = INVALID_ENTITY_ID;
+	float                             m_fEditorCameraMoveSpeed = 50.0f;
+	float                             m_fEditorCameraRotateSpeed = 0.1f;
+	bool                              m_bEditorCameraInitialized = false;
+
+	// ImGui texture handle caching for the game viewport.
+	Flux_ImGuiTextureHandle           m_xCachedGameTextureHandle;
+	Flux_ImageViewHandle              m_xCachedImageViewHandle;
+
+	// Deferred-deletion queue for ImGui textures (GPU must finish before freeing).
+	std::vector<PendingImGuiTextureDeletion> m_xPendingDeletions;
+};
 
 #endif // ZENITH_TOOLS

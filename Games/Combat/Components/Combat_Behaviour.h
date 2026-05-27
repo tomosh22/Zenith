@@ -27,7 +27,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
@@ -238,7 +238,7 @@ public:
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				SetGameState(Combat_GameState::PAUSED);
-				Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
+				g_xEngine.SceneRegistry().SetScenePaused(m_xArenaScene, true);
 				UpdateUI();
 				return;
 			}
@@ -269,7 +269,7 @@ public:
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				SetGameState(Combat_GameState::PLAYING);
-				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
+				g_xEngine.SceneRegistry().SetScenePaused(m_xArenaScene, false);
 			}
 			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
@@ -363,7 +363,7 @@ private:
 
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -376,9 +376,9 @@ private:
 		SetHUDVisible(true);
 
 		// Create arena scene
-		m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
-		Zenith_SceneManager::SetActiveScene(m_xArenaScene);
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		m_xArenaScene = g_xEngine.SceneRegistry().CreateEmptyScene("Arena");
+		g_xEngine.SceneRegistry().SetActiveScene(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 
 		Combat_DamageSystem::Initialize();
 
@@ -399,7 +399,7 @@ private:
 		ClearEntityReferences();
 
 		if (m_xArenaScene.IsValid())
-			Zenith_SceneManager::UnloadScene(m_xArenaScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xArenaScene);
 		m_xArenaScene = Zenith_Scene();
 
 		// The per-entity scripts unregister themselves on OnDestroy when the arena scene
@@ -414,7 +414,7 @@ private:
 		s_axDeferredDeathEvents.clear();
 
 		SetGameState(Combat_GameState::MAIN_MENU);
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetGame()
@@ -422,11 +422,11 @@ private:
 		ClearEntityReferences();
 
 		if (m_xArenaScene.IsValid())
-			Zenith_SceneManager::UnloadScene(m_xArenaScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xArenaScene);
 
-		m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
-		Zenith_SceneManager::SetActiveScene(m_xArenaScene);
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		m_xArenaScene = g_xEngine.SceneRegistry().CreateEmptyScene("Arena");
+		g_xEngine.SceneRegistry().SetActiveScene(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 
 		Combat_DamageSystem::Reset();
 		s_uPlayerEntityID = INVALID_ENTITY_ID;
@@ -640,7 +640,7 @@ private:
 		std::uniform_real_distribution<float> xAngleDist(0.0f, 6.28318f);
 		std::uniform_real_distribution<float> xRadiusDist(5.0f, s_fSpawnRadius);
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 
 		for (uint32_t i = 0; i < m_uTotalEnemies; i++)
 		{
@@ -748,7 +748,7 @@ private:
 		if (!m_xArenaScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 
 		Zenith_Maths::Vector3 xHitPos = xEvent.m_xHitPoint;
 		if (glm::length(xHitPos) < 0.001f && pxSceneData->EntityExists(xEvent.m_uTargetEntityID))
@@ -793,11 +793,11 @@ private:
 		{
 			// Timed destruction for dead enemies (corpse auto-cleanup after 3s).
 			// The Combat_EnemyBehaviour's OnDestroy will unregister it from s_axEnemyEntityIDs.
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 			if (pxSceneData && pxSceneData->EntityExists(xEvent.m_uEntityID))
 			{
 				Zenith_Entity xDeadEntity = pxSceneData->GetEntity(xEvent.m_uEntityID);
-				Zenith_SceneManager::Destroy(xDeadEntity, 3.0f);
+				Zenith_SceneEntityOwnership::Destroy(xDeadEntity, 3.0f);
 			}
 		}
 	}
@@ -808,7 +808,7 @@ private:
 
 	void UpdateCamera(float fDt)
 	{
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -816,7 +816,7 @@ private:
 		Zenith_Maths::Vector3 xPlayerPos(0.0f);
 		if (m_xArenaScene.IsValid() && s_uPlayerEntityID != INVALID_ENTITY_ID)
 		{
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 			if (pxSceneData && pxSceneData->EntityExists(s_uPlayerEntityID))
 			{
 				Zenith_Entity xPlayer = pxSceneData->GetEntity(s_uPlayerEntityID);
@@ -983,10 +983,10 @@ private:
 		if (!m_xArenaScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 
 		// Get camera for world-to-screen projection
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -1061,7 +1061,7 @@ private:
 		if (!m_xArenaScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xArenaScene);
 
 		float fAngleOffset = sinf(m_fWallLightTime * fOSCILLATION_SPEED * 2.0f * 3.14159f) * glm::radians(fMAX_ANGLE_DEGREES);
 

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/SSR/Flux_SSRImpl.h"
@@ -239,7 +240,7 @@ void Flux_SSRImpl::Initialise()
 {
 	BuildPipelines();
 
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(
 		&dbg_xSSRConstants, sizeof(SSRConstants), g_xEngine.SSR().m_xSSRConstantsBuffer);
 
 #ifdef ZENITH_TOOLS
@@ -254,33 +255,33 @@ void Flux_SSRImpl::Initialise()
 #endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "DebugMode" }, dbg_uDebugMode, 0, 100);  // Extended range for diagnostic mode 99
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "Intensity" }, dbg_xSSRConstants.m_fIntensity, 0.0f, 2.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "MaxDistance" }, dbg_xSSRConstants.m_fMaxDistance, 1.0f, 100.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "MaxRoughness" }, dbg_xSSRConstants.m_fMaxRoughness, 0.0f, 1.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "Thickness" }, dbg_xSSRConstants.m_fThickness, 0.01f, 1.0f);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StepCount" }, dbg_xSSRConstants.m_uStepCount, 8, 256);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StartMip" }, dbg_xSSRConstants.m_uStartMip, 0, 10);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "ContactHardeningDist" }, dbg_xSSRConstants.m_fContactHardeningDist, 0.5f, 10.0f);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "RaysPerPixel" }, dbg_xSSRConstants.m_uRayCount, 1, 4);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StepCountMin" }, dbg_xSSRConstants.m_uStepCountMin, 4, 64);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "DebugMode" }, dbg_uDebugMode, 0, 100);  // Extended range for diagnostic mode 99
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSR", "Intensity" }, dbg_xSSRConstants.m_fIntensity, 0.0f, 2.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSR", "MaxDistance" }, dbg_xSSRConstants.m_fMaxDistance, 1.0f, 100.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSR", "MaxRoughness" }, dbg_xSSRConstants.m_fMaxRoughness, 0.0f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSR", "Thickness" }, dbg_xSSRConstants.m_fThickness, 0.01f, 1.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "StepCount" }, dbg_xSSRConstants.m_uStepCount, 8, 256);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "StartMip" }, dbg_xSSRConstants.m_uStartMip, 0, 10);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSR", "ContactHardeningDist" }, dbg_xSSRConstants.m_fContactHardeningDist, 0.5f, 10.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "RaysPerPixel" }, dbg_xSSRConstants.m_uRayCount, 1, 4);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "StepCountMin" }, dbg_xSSRConstants.m_uStepCountMin, 4, 64);
 	// Transient-SRV previews use AddTextureCallback so the SRV is re-resolved
 	// through g_xEngine.SSR().m_pxGraph on every ImGui draw. Storing a stale pointer via
 	// AddTexture would go dangling once the graph rebuilds (e.g. on resize).
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarch" },     &DebugGetRayMarchSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarchAux" },  &DebugGetRayMarchAuxSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "Upsampled" },    &DebugGetUpsampledSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "UpsampledAux" }, &DebugGetUpsampledAuxSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "DenoiseH" },     &DebugGetDenoiseHSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "DenoiseHConf" }, &DebugGetDenoiseHConfSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "DenoiseV" },     &DebugGetDenoiseVSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarch" },     &DebugGetRayMarchSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarchAux" },  &DebugGetRayMarchAuxSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "Upsampled" },    &DebugGetUpsampledSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "UpsampledAux" }, &DebugGetUpsampledAuxSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "DenoiseH" },     &DebugGetDenoiseHSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "DenoiseHConf" }, &DebugGetDenoiseHConfSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSR", "Textures", "DenoiseV" },     &DebugGetDenoiseVSRV);
 
 	// Denoise push-constant tuning knobs.
-	Zenith_DebugVariables::AddFloat ({ "Flux", "SSR", "Denoise", "SpatialSigma" },   dbg_xSSRDenoiseConstants.m_fSpatialSigma,   0.5f, 6.0f);
-	Zenith_DebugVariables::AddFloat ({ "Flux", "SSR", "Denoise", "DepthSigma" },     dbg_xSSRDenoiseConstants.m_fDepthSigma,     0.001f, 0.1f);
-	Zenith_DebugVariables::AddFloat ({ "Flux", "SSR", "Denoise", "NormalSigma" },    dbg_xSSRDenoiseConstants.m_fNormalSigma,    0.05f, 1.0f);
-	Zenith_DebugVariables::AddFloat ({ "Flux", "SSR", "Denoise", "RoughnessSigma" }, dbg_xSSRDenoiseConstants.m_fRoughnessSigma, 0.01f, 0.5f);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "Denoise", "KernelRadius" },   dbg_xSSRDenoiseConstants.m_uKernelRadius,   1, 8);
+	g_xEngine.DebugVariables().AddFloat ({ "Flux", "SSR", "Denoise", "SpatialSigma" },   dbg_xSSRDenoiseConstants.m_fSpatialSigma,   0.5f, 6.0f);
+	g_xEngine.DebugVariables().AddFloat ({ "Flux", "SSR", "Denoise", "DepthSigma" },     dbg_xSSRDenoiseConstants.m_fDepthSigma,     0.001f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat ({ "Flux", "SSR", "Denoise", "NormalSigma" },    dbg_xSSRDenoiseConstants.m_fNormalSigma,    0.05f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat ({ "Flux", "SSR", "Denoise", "RoughnessSigma" }, dbg_xSSRDenoiseConstants.m_fRoughnessSigma, 0.01f, 0.5f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "Denoise", "KernelRadius" },   dbg_xSSRDenoiseConstants.m_uKernelRadius,   1, 8);
 #endif
 
 	g_xEngine.SSR().m_bInitialised = true;
@@ -292,7 +293,7 @@ void Flux_SSRImpl::Shutdown()
 	if (!g_xEngine.SSR().m_bInitialised)
 		return;
 
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.SSR().m_xSSRConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.SSR().m_xSSRConstantsBuffer);
 
 	g_xEngine.SSR().m_pxGraph = nullptr;
 	g_xEngine.SSR().m_bInitialised = false;
@@ -304,14 +305,14 @@ static void UpdateSSRConstants()
 	// Update constants from debug variables and HiZ system
 	dbg_xSSRConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSRConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
-	dbg_xSSRConstants.m_uFrameIndex = Flux::GetFrameCounter();
+	dbg_xSSRConstants.m_uFrameIndex = g_xEngine.FluxRenderer().GetFrameCounter();
 
 	// Resolution-based binary search iterations for sub-pixel hit precision.
 	// Half-res ray origins (Phase B) make sub-1/16-pixel precision wasted —
 	// the bilateral upsample reconstructs full-res positions anyway.
 	// 1080p (≤1920): 4 iterations
 	// 1440p / 4K (>1920): 5 iterations
-	u_int uWidth = Flux_Swapchain::GetWidth();
+	u_int uWidth = g_xEngine.VulkanSwapchain().GetWidth();
 	dbg_xSSRConstants.m_uBinarySearchIterations = 4 + (uWidth > 1920 ? 1 : 0);
 
 	// Clamp start mip to valid range
@@ -321,8 +322,8 @@ static void UpdateSSRConstants()
 	// Half-res ray-march output dimensions (matches the half-res transient
 	// created in SetupRenderGraph; both derive from the swapchain so they
 	// stay in sync).
-	const u_int uHalfWidth  = std::max(1u, Flux_Swapchain::GetWidth()  / 2u);
-	const u_int uHalfHeight = std::max(1u, Flux_Swapchain::GetHeight() / 2u);
+	const u_int uHalfWidth  = std::max(1u, g_xEngine.VulkanSwapchain().GetWidth()  / 2u);
+	const u_int uHalfHeight = std::max(1u, g_xEngine.VulkanSwapchain().GetHeight() / 2u);
 	dbg_xSSRConstants.m_fHalfResWidth     = (float)uHalfWidth;
 	dbg_xSSRConstants.m_fHalfResHeight    = (float)uHalfHeight;
 	dbg_xSSRConstants.m_fRcpHalfResWidth  = 1.0f / (float)uHalfWidth;
@@ -333,8 +334,8 @@ static void UpdateSSRConstants()
 	// (size, rcp size) here means the ray-march shader doesn't need to
 	// call GetDimensions in its inner loop (project convention: dims
 	// flow through the CBV).
-	const u_int uFullWidth  = Flux_Swapchain::GetWidth();
-	const u_int uFullHeight = Flux_Swapchain::GetHeight();
+	const u_int uFullWidth  = g_xEngine.VulkanSwapchain().GetWidth();
+	const u_int uFullHeight = g_xEngine.VulkanSwapchain().GetHeight();
 	const u_int uMipCount   = dbg_xSSRConstants.m_uHiZMipCount;
 	for (u_int uMip = 0; uMip < uMipCount && uMip < 12u; ++uMip)
 	{
@@ -356,7 +357,7 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 
 	// First SSR pass of the frame: refresh the CBV. The Resolve (and the
 	// new Upsample) pass binds the same CBV without re-uploading.
-	Flux_MemoryManager::UploadBufferData(
+	g_xEngine.VulkanMemory().UploadBufferData(
 		g_xEngine.SSR().m_xSSRConstantsBuffer.GetBuffer().m_xVRAMHandle,
 		&dbg_xSSRConstants, sizeof(SSRConstants));
 
@@ -463,7 +464,7 @@ static void ExecuteSSRDenoiseV(Flux_CommandList* pxCommandList, void*)
 // Last value seen by ApplyBlurSelectionToGraph — change triggers a graph rebuild.
 // Handle committed at SetupRenderGraph exit. GetReflectionHandle asserts the
 // live toggle still resolves to this handle — otherwise a toggle has happened
-// without a corresponding Flux::RequestGraphRebuild(), which would leave the
+// without a corresponding g_xEngine.FluxRenderer().RequestGraphRebuild(), which would leave the
 // deferred pass's declared Read referencing the stale transient.
 
 void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -476,14 +477,14 @@ void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// pass is a depth-weighted bilateral 2x2 reconstruction to full-res; it
 	// is mandatory so the deferred consumer always reads a full-res image.
 	Flux_TransientTextureDesc xHalfDesc;
-	xHalfDesc.m_uWidth       = std::max(1u, Flux_Swapchain::GetWidth()  / 2u);
-	xHalfDesc.m_uHeight      = std::max(1u, Flux_Swapchain::GetHeight() / 2u);
+	xHalfDesc.m_uWidth       = std::max(1u, g_xEngine.VulkanSwapchain().GetWidth()  / 2u);
+	xHalfDesc.m_uHeight      = std::max(1u, g_xEngine.VulkanSwapchain().GetHeight() / 2u);
 	xHalfDesc.m_eFormat      = SSR_FORMAT;
 	xHalfDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 
 	Flux_TransientTextureDesc xFullDesc = xHalfDesc;
-	xFullDesc.m_uWidth  = Flux_Swapchain::GetWidth();
-	xFullDesc.m_uHeight = Flux_Swapchain::GetHeight();
+	xFullDesc.m_uWidth  = g_xEngine.VulkanSwapchain().GetWidth();
+	xFullDesc.m_uHeight = g_xEngine.VulkanSwapchain().GetHeight();
 
 	g_xEngine.SSR().m_xRayMarchHandle     = xGraph.CreateTransient(xHalfDesc);
 	g_xEngine.SSR().m_xRayMarchAuxHandle  = xGraph.CreateTransient(xHalfDesc);
@@ -558,7 +559,7 @@ void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Commit the handle the deferred pass will now read. GetReflectionHandle
 	// asserts against this value on every call — any runtime toggle without a
-	// matching Flux::RequestGraphRebuild() will trip at the point of the
+	// matching g_xEngine.FluxRenderer().RequestGraphRebuild() will trip at the point of the
 	// mistake, not downstream in Validate() or AssertBoundResourceDeclared.
 	// When denoise is off, deferred reads the upsampled (full-res) output —
 	// never the raw half-res raymarch.
@@ -577,12 +578,12 @@ void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	// deferred pass reading the stale handle (either an orphan Read whose
 	// writer is now disabled, or a valid Read on the wrong transient, with the
 	// execute callback binding an SRV the graph hasn't transitioned).
-	// Flux::RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
+	// g_xEngine.FluxRenderer().RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
 	// on the next frame, so the deferred pass's declared Read resolves to the
 	// handle matching the new m_bSSRRoughnessBlurEnabled value. SetupRenderGraph
 	// above will also re-seed g_xEngine.SSR().m_xCommittedReflectionHandle and re-set the
 	// resolve pass's enable bit.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 }
 
 

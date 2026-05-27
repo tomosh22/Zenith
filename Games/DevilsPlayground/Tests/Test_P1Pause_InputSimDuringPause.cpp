@@ -5,7 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Source/PublicInterfaces.h"
@@ -86,7 +86,7 @@ static bool Step_P1PauseInputSim(int iFrame)
 	switch (g_iPhase)
 	{
 	case kIS_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kIS_WaitController;
 		return true;
 

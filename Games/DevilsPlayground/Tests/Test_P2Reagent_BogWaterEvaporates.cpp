@@ -82,7 +82,7 @@ namespace
 
 	bool IsEntityValid(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		return xEnt.IsValid();
@@ -108,7 +108,7 @@ static bool Step_P2BogWaterEvap(int iFrame)
 	switch (g_iPhase)
 	{
 	case kBV_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kBV_WaitScene;
 		return true;
 
@@ -134,8 +134,8 @@ static bool Step_P2BogWaterEvap(int iFrame)
 
 	case kBV_BuildItem:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kBV_Done; return false; }
 		Zenith_Entity xEnt(pxScene, std::string("Test_BogWaterEvap"));
 		if (!xEnt.IsValid()) { g_iPhase = kBV_Done; return false; }

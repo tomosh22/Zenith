@@ -151,7 +151,7 @@ public:
         m_fCurrentTimestamp = fmod(m_fCurrentTimestamp, m_fDuration);
         CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f), bDebug);
 
-        Flux_MemoryManager::UploadBufferData(m_xBoneBuffer.GetBuffer().m_xVRAMHandle, m_axAnimMatrices, sizeof(m_axAnimMatrices));
+        g_xEngine.VulkanMemory().UploadBufferData(m_xBoneBuffer.GetBuffer().m_xVRAMHandle, m_axAnimMatrices, sizeof(m_axAnimMatrices));
     }
 
 #ifndef ZENITH_TOOLS

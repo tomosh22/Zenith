@@ -9,8 +9,8 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_PhysicsImpl.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Physics/Zenith_Physics.h"
+#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -157,7 +157,7 @@ public:
 
 		// Resolve HUD ammo text (best-effort; HUD entity may not exist yet on
 		// the very first scene build before automation has run).
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 		if (pxSceneData)
 		{
 			Zenith_Entity xHUD = pxSceneData->FindEntityByName("HUD");
@@ -727,7 +727,7 @@ private:
 
 		// Hitscan: raycast from the barrel along the camera forward. Ignore
 		// the player's own collider per the IK precedent in UpdateFootIK.
-		const Zenith_PhysicsImpl::RaycastResult xHit = g_xEngine.Physics().Raycast(
+		const Zenith_Physics::RaycastResult xHit = g_xEngine.Physics().Raycast(
 			xBarrel, xFwd, k_fMaxRange, m_xParentEntity.GetEntityID());
 
 		if (xHit.m_bHit)
@@ -804,7 +804,7 @@ private:
 		const Zenith_Maths::Vector3 xRayOrigin =
 			xPlayerPos - Zenith_Maths::Vector3(0.0f, fCapsuleHalfExtent + fEpsilon, 0.0f);
 		const Zenith_Maths::Vector3 xDown(0.0f, -1.0f, 0.0f);
-		const Zenith_PhysicsImpl::RaycastResult xResult =
+		const Zenith_Physics::RaycastResult xResult =
 			g_xEngine.Physics().Raycast(xRayOrigin, xDown, 0.2f);
 		return xResult.m_bHit;
 	}
@@ -865,7 +865,7 @@ private:
 			const Zenith_Maths::Vector3 xOrigin = xFootPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
 			// Ignore the player's own capsule. Without this, the foot ray (origin
 			// inside the capsule) hits self and the helper clears IK every frame.
-			const Zenith_PhysicsImpl::RaycastResult xHit = g_xEngine.Physics().Raycast(
+			const Zenith_Physics::RaycastResult xHit = g_xEngine.Physics().Raycast(
 				xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1.5f,
 				m_xParentEntity.GetEntityID());
 

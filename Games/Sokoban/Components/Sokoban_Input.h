@@ -10,7 +10,7 @@
  * - Key codes defined in Input/Zenith_KeyCodes.h
  */
 
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Sokoban_GridLogic.h"  // For SokobanDirection enum
 
 /**

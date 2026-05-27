@@ -63,7 +63,7 @@ void Zenith_Vulkan_ComputePipelineBuilder::Build(Zenith_Vulkan_Pipeline& pipelin
 		.setStage(stageInfo)
 		.setLayout(m_xLayout);
 
-	vk::Result result = Zenith_Vulkan::GetDevice().createComputePipelines(
+	vk::Result result = g_xEngine.Vulkan().GetDevice().createComputePipelines(
 		VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelineOut.m_xPipeline);
 
 	if (result != vk::Result::eSuccess)

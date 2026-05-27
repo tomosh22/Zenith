@@ -13,7 +13,7 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <atomic>
 #include <string>
 
@@ -38,7 +38,7 @@ class Zenith_SceneData;
 // placement-new guard and is fully self-contained.
 #include "EntityComponent/Zenith_ComponentPool.h"
 
-// Free-function form of Zenith_SceneManager::AreRenderTasksActive(). Used in
+// Free-function form of g_xEngine.SceneLifecycle().AreRenderTasksActive(). Used in
 // SceneData.h's template assertion bodies so we don't have to drag the full
 // SceneManager.h include in (closing the cycle).
 #include "EntityComponent/Zenith_RenderTaskState.h"
@@ -596,7 +596,7 @@ private:
 // in the T2.4 refactor by:
 //   * Lifting Zenith_ComponentPool* / Zenith_Component concept into
 //     Zenith_ComponentPool.h (this header includes that one above)
-//   * Replacing the template-body call to Zenith_SceneManager::AreRenderTasksActive()
+//   * Replacing the template-body call to g_xEngine.SceneLifecycle().AreRenderTasksActive()
 //     with the free-function forwarder Zenith_AreRenderTasksActive() declared
 //     in Zenith_RenderTaskState.h (also included above)
 // SceneManager.h still includes SceneData.h at the bottom for its template

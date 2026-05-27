@@ -188,9 +188,9 @@ void android_main(android_app* pxApp)
 		// Only run game loop when active and window is ready
 		if (s_bAppActive && s_bWindowReady && s_bEngineInitialised && !s_bDestroyRequested)
 		{
-			Zenith_Profiling::BeginFrame();
+			g_xEngine.Profiling().BeginFrame();
 			Zenith_Core::Zenith_MainLoop();
-			Zenith_Profiling::EndFrame();
+			g_xEngine.Profiling().EndFrame();
 		}
 	}
 

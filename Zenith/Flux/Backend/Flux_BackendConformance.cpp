@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Flux/Flux_RendererImpl.h"
 // Build-time conformance check: the active backend (selected via macro alias
 // in Zenith_PlatformGraphics_Include.h) must satisfy every concept in
 // Flux_Backend.h. If a backend method is renamed, removed, or has its
@@ -14,7 +15,7 @@
 //
 // Required initialisation sequence (not expressible as a concept — document
 // here so a new backend author doesn't discover it via crash):
-//   1. Flux_PerFrame::Initialise()              (resets counter + callback arrays)
+//   1. g_xEngine.FluxRenderer().PerFrameInitialise()              (resets counter + callback arrays)
 //   2. Backend Initialise()                     (backend may register callbacks here)
 //   3. MemoryManager Initialise()               (registers OnFluxPerFrameEnd
 //                                                AFTER the backend's begin-frame
@@ -24,7 +25,7 @@
 // And at shutdown, the reverse order:
 //   1. MemoryManager Shutdown()                 (drains deferred deletions)
 //   2. Backend Shutdown()
-//   3. Flux_PerFrame::Shutdown()                (clears callback arrays)
+//   3. g_xEngine.FluxRenderer().PerFrameShutdown()                (clears callback arrays)
 //
 // Callback-registration ordering inside Initialise is load-bearing: the
 // Vulkan begin-frame callback (fence wait, descriptor pool reset, typed

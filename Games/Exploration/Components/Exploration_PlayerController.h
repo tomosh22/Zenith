@@ -14,7 +14,7 @@
  */
 
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 
 #include <cmath>

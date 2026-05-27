@@ -87,7 +87,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -98,7 +98,7 @@ namespace
 
 	void TeleportTo(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return;
@@ -112,7 +112,7 @@ namespace
 	{
 		bHasInvestigatePosOut = false;
 		xInvestigatePosOut = Zenith_Maths::Vector3(0.0f);
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
@@ -141,7 +141,7 @@ static bool Step_P2BellSoulAudibleAcrossMap(int iFrame)
 	switch (g_iPhase)
 	{
 	case kBA_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kBA_WaitScene;
 		return true;
 
@@ -172,8 +172,8 @@ static bool Step_P2BellSoulAudibleAcrossMap(int iFrame)
 
 	case kBA_BuildBellSoul:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kBA_Done; return false; }
 		Zenith_Entity xEnt(pxScene, std::string("Test_BellSoul_AudibleAcrossMap"));
 		if (!xEnt.IsValid()) { g_iPhase = kBA_Done; return false; }

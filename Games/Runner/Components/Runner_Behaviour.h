@@ -167,7 +167,7 @@ public:
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = RunnerGameState::PAUSED;
-				Zenith_SceneManager::SetScenePaused(m_xGameScene, true);
+				g_xEngine.SceneRegistry().SetScenePaused(m_xGameScene, true);
 				UpdateUI();
 				return;
 			}
@@ -190,7 +190,7 @@ public:
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = RunnerGameState::PLAYING;
-				Zenith_SceneManager::SetScenePaused(m_xGameScene, false);
+				g_xEngine.SceneRegistry().SetScenePaused(m_xGameScene, false);
 			}
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
@@ -277,7 +277,7 @@ private:
 	// ========================================================================
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -289,8 +289,8 @@ private:
 		SetHUDVisible(true);
 
 		// Create game scene
-		m_xGameScene = Zenith_SceneManager::CreateEmptyScene("Run");
-		Zenith_SceneManager::SetActiveScene(m_xGameScene);
+		m_xGameScene = g_xEngine.SceneRegistry().CreateEmptyScene("Run");
+		g_xEngine.SceneRegistry().SetActiveScene(m_xGameScene);
 
 		// Initialize all systems (uses GetActiveScene internally)
 		InitializeGame();
@@ -309,11 +309,11 @@ private:
 
 		if (m_xGameScene.IsValid())
 		{
-			Zenith_SceneManager::UnloadScene(m_xGameScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xGameScene);
 			m_xGameScene = Zenith_Scene();
 		}
 
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetGame()
@@ -326,13 +326,13 @@ private:
 
 		if (m_xGameScene.IsValid())
 		{
-			Zenith_SceneManager::UnloadScene(m_xGameScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xGameScene);
 			m_xGameScene = Zenith_Scene();
 		}
 
 		// Create fresh game scene
-		m_xGameScene = Zenith_SceneManager::CreateEmptyScene("Run");
-		Zenith_SceneManager::SetActiveScene(m_xGameScene);
+		m_xGameScene = g_xEngine.SceneRegistry().CreateEmptyScene("Run");
+		g_xEngine.SceneRegistry().SetActiveScene(m_xGameScene);
 
 		// Re-initialize all systems
 		InitializeGame();
@@ -436,7 +436,7 @@ private:
 		if (!m_xGameScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xGameScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xGameScene);
 		Zenith_Entity xCharacter = Runner::Resources().m_xCharacterPrefab.GetDirect()->Instantiate(pxSceneData, "Runner");
 
 		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
@@ -454,7 +454,7 @@ private:
 		if (!m_xGameScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xGameScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xGameScene);
 		if (!m_uCharacterEntityID.IsValid() || !pxSceneData->EntityExists(m_uCharacterEntityID))
 			return;
 
@@ -528,7 +528,7 @@ private:
 	// ========================================================================
 	void UpdateCamera(float fDt, const Zenith_Maths::Vector3& xPlayerPos)
 	{
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

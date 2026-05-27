@@ -5,7 +5,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <vector>
 #include <cstdint>
 #include <atomic>

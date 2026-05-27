@@ -1,9 +1,10 @@
 #include "Zenith.h"
 
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 //==========================================================================
 // Flux_RenderGraph — execution / command-list recording / recording context
@@ -184,7 +185,7 @@ void Flux_RenderGraph::SubmitRecordedLists()
 				if (itR.GetData().m_xResource.GetVoidPtr() == pDepthRes) { bDepthReadOnly = true; break; }
 			}
 		}
-		Flux::SubmitCommandList(pxPass->m_pxCommandList,
+		g_xEngine.FluxRenderer().SubmitCommandList(pxPass->m_pxCommandList,
 			pxPass->m_axColourAttachments, pxPass->m_uNumColourAttachments,
 			pxPass->m_xDepthStencil,
 			pxPass->m_bClearTargets, bDepthReadOnly, pxPass);

@@ -6,7 +6,7 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIToggle.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include <algorithm>
 
 namespace Zenith_UI {

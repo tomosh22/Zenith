@@ -63,39 +63,39 @@ void Project_InitializeResources()
 void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
-	Zenith_EditorAutomation::AddStep_CreateEntity("MenuManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
-	Zenith_EditorAutomation::AddStep_AddUI();
-	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "TEST");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 72.f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("MenuManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(45.f));
+	g_xEngine.EditorAutomation().AddStep_AddUI();
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("MenuTitle", "TEST");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuTitle", 72.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("MenuPlay", "Play");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- Test gameplay scene (build index 1) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("Test");
-	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("Test");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(45.f));
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- Final scene loading ----
-	Zenith_EditorAutomation::AddStep_LoadInitialScene(&Project_LoadInitialScene);
+	g_xEngine.EditorAutomation().AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
 #endif
 
 void Project_LoadInitialScene()
 {
-	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
+	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
 }

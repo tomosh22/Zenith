@@ -65,7 +65,7 @@ namespace DP_Fog
 			(Zenith_EntityID xHoleId, float fRadius)
 			{
 				if (uWritten >= uMaxHoles) return;
-				Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xHoleId);
+				Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xHoleId);
 				if (pxScene == nullptr) return;
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xHoleId);
 				if (!xEnt.IsValid()) return;

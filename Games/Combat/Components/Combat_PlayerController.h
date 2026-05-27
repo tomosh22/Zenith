@@ -14,8 +14,8 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_PhysicsImpl.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Physics/Zenith_Physics.h"
+#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 
 // ============================================================================

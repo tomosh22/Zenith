@@ -204,8 +204,8 @@ public:
 	 */
 	void UpdateNodeVisuals()
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		for (uint32_t i = 0; i < m_uNodeCount; i++)
 		{

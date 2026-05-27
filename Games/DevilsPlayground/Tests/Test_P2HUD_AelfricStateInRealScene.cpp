@@ -100,7 +100,7 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 	switch (g_iPhase)
 	{
 	case kAS_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kAS_WaitScene;
 		return true;
 

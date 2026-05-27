@@ -60,7 +60,7 @@ void Flux_TextImpl::Initialise()
 	BuildPipelines();
 
 	constexpr bool bDeviceLocal = false;
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), g_xEngine.Text().m_xInstanceBuffer, bDeviceLocal);
+	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), g_xEngine.Text().m_xInstanceBuffer, bDeviceLocal);
 
 	// Load the MSDF font asset. Path resolved via Zenith_AssetRegistry; the
 	// asset itself reads the .zfont header and constructs a procedural texture
@@ -72,7 +72,7 @@ void Flux_TextImpl::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
+	g_xEngine.DebugVariables().AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -99,7 +99,7 @@ void Flux_TextImpl::ReleaseAssetReferences()
 
 void Flux_TextImpl::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Text().m_xInstanceBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Text().m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text shut down");
 }
 
@@ -246,7 +246,7 @@ uint32_t Flux_TextImpl::UploadChars()
 
 	if (xVertices.GetSize() > 0)
 	{
-		Flux_MemoryManager::UploadBufferData(g_xEngine.Text().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
+		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Text().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
 	}
 
 	g_xEngine.Text().m_uTotalCharCount = uCharCount;

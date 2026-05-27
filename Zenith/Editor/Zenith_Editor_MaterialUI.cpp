@@ -4,7 +4,6 @@
 
 #include "Zenith_Editor_MaterialUI.h"
 #include "Zenith_Editor.h"
-#include "Zenith_EditorMaterialUIImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -20,17 +19,19 @@
 // Texture Preview Cache
 //=============================================================================
 
-// Phase 5.5d: texture preview cache lives on Zenith_EditorMaterialUIImpl
+// Phase 5.5d: texture preview cache lives on Zenith_EditorMaterialUI
 // held by Zenith_Engine.
 
 //=============================================================================
 // Implementation
 //=============================================================================
 
-namespace Zenith_Editor_MaterialUI
-{
+// Was `namespace Zenith_Editor_MaterialUI { ... }` wrapping all of these
+// free functions. After the namespace → class collapse, each function is
+// a method on `Zenith_EditorMaterialUI` and needs the class qualifier
+// explicitly.
 
-Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsset* pxTexture)
+Flux_ImGuiTextureHandle Zenith_EditorMaterialUI::GetOrCreateTexturePreviewHandle(const Zenith_TextureAsset* pxTexture)
 {
 	if (!pxTexture || !pxTexture->m_xVRAMHandle.IsValid() || !pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
@@ -62,7 +63,7 @@ Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsse
 	return xHandle;
 }
 
-void ClearTexturePreviewCache()
+void Zenith_EditorMaterialUI::ClearTexturePreviewCache()
 {
 	for (auto& xEntry : g_xEngine.EditorMaterialUI().m_xTexturePreviewCache)
 	{
@@ -71,7 +72,7 @@ void ClearTexturePreviewCache()
 	g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.clear();
 }
 
-std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
+std::string Zenith_EditorMaterialUI::GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
 {
 	switch (eSlot)
 	{
@@ -90,7 +91,7 @@ std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, Texture
 	}
 }
 
-void SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath)
+void Zenith_EditorMaterialUI::SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath)
 {
 	TextureHandle xHandle(strPath);
 	switch (eSlot)
@@ -113,7 +114,7 @@ void SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlo
 	}
 }
 
-const Zenith_TextureAsset* GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
+const Zenith_TextureAsset* Zenith_EditorMaterialUI::GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
 {
 	switch (eSlot)
 	{
@@ -132,7 +133,7 @@ const Zenith_TextureAsset* GetTextureForSlot(Zenith_MaterialAsset& xMaterial, Te
 	}
 }
 
-void RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szIdSuffix)
+void Zenith_EditorMaterialUI::RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szIdSuffix)
 {
 	if (!pxMaterial)
 		return;
@@ -246,14 +247,14 @@ void RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szId
 // slot path is empty (can happen for runtime-loaded textures).
 static void ResolveTextureSlotDisplay(
 	const Zenith_MaterialAsset& xMaterial,
-	TextureSlotType eSlot,
+	Zenith_EditorMaterialUI::TextureSlotType eSlot,
 	std::string& strCurrentPathOut,
 	std::string& strTextureNameOut,
 	const Zenith_TextureAsset*& pxCurrentTextureOut,
 	bool& bHasTextureOut)
 {
-	strCurrentPathOut = GetTexturePathForSlot(xMaterial, eSlot);
-	pxCurrentTextureOut = GetTextureForSlot(const_cast<Zenith_MaterialAsset&>(xMaterial), eSlot);
+	strCurrentPathOut = g_xEngine.EditorMaterialUI().GetTexturePathForSlot(xMaterial, eSlot);
+	pxCurrentTextureOut = g_xEngine.EditorMaterialUI().GetTextureForSlot(const_cast<Zenith_MaterialAsset&>(xMaterial), eSlot);
 
 	if (strCurrentPathOut.empty() && pxCurrentTextureOut && !pxCurrentTextureOut->GetPath().empty())
 	{
@@ -285,8 +286,8 @@ static void ResolveTextureSlotDisplay(
 static void HandleTextureSlotDragDrop(
 	const char* szLabel,
 	Zenith_MaterialAsset& xMaterial,
-	TextureSlotType eSlot,
-	const TextureAssignCallback& pfnOnAssign)
+	Zenith_EditorMaterialUI::TextureSlotType eSlot,
+	const Zenith_EditorMaterialUI::TextureAssignCallback& pfnOnAssign)
 {
 	if (!ImGui::BeginDragDropTarget())
 		return;
@@ -302,14 +303,14 @@ static void HandleTextureSlotDragDrop(
 		}
 		else
 		{
-			SetTexturePathForSlot(xMaterial, eSlot, pFilePayload->m_szFilePath);
+			g_xEngine.EditorMaterialUI().SetTexturePathForSlot(xMaterial, eSlot, pFilePayload->m_szFilePath);
 		}
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialUI] Set %s texture: %s", szLabel, pFilePayload->m_szFilePath);
 	}
 	ImGui::EndDragDropTarget();
 }
 
-void RenderTextureSlot(
+void Zenith_EditorMaterialUI::RenderTextureSlot(
 	const char* szLabel,
 	Zenith_MaterialAsset& xMaterial,
 	TextureSlotType eSlot,
@@ -367,7 +368,7 @@ void RenderTextureSlot(
 	ImGui::PopID();
 }
 
-void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool /*bShowPreview*/)
+void Zenith_EditorMaterialUI::RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool /*bShowPreview*/)
 {
 	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE);
 	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL);
@@ -376,6 +377,5 @@ void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool /*bShowPreview*
 	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE);
 }
 
-} // namespace Zenith_Editor_MaterialUI
-
+// (namespace Zenith_Editor_MaterialUI closing brace removed — class collapse)
 #endif // ZENITH_TOOLS

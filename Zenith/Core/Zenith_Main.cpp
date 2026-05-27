@@ -39,7 +39,7 @@ void Zenith_Core::Zenith_Shutdown()
 // to call one function.
 void Zenith_Core::Zenith_FullShutdown()
 {
-	Zenith_SceneManager::SetMainLoopRunning(false);
+	g_xEngine.SceneLifecycle().SetMainLoopRunning(false);
 	Zenith_Shutdown();
 	delete Zenith_Window::GetInstance();
 }
@@ -65,13 +65,13 @@ void Zenith_Core::Zenith_Main()
 	// B4: signal that the main loop is now running. Read by
 	// LoadSceneBlockingForBootstrap to assert it's only invoked during
 	// bootstrap (Zenith_Init or earlier), never from gameplay code.
-	Zenith_SceneManager::SetMainLoopRunning(true);
+	g_xEngine.SceneLifecycle().SetMainLoopRunning(true);
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{
-		Zenith_Profiling::BeginFrame();
+		g_xEngine.Profiling().BeginFrame();
 		Zenith_Core::Zenith_MainLoop();
-		Zenith_Profiling::EndFrame();
+		g_xEngine.Profiling().EndFrame();
 	}
 
 	Zenith_FullShutdown();

@@ -90,7 +90,7 @@ void Flux_GizmosImpl::Initialise()
 	GenerateScaleGizmoGeometry();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
 #endif
 
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -109,8 +109,8 @@ void Flux_GizmosImpl::Shutdown()
 	{
 		for (uint32_t i = 0; i < xGeometry.GetSize(); ++i)
 		{
-			Flux_MemoryManager::DestroyVertexBuffer(xGeometry.Get(i).m_xVertexBuffer);
-			Flux_MemoryManager::DestroyIndexBuffer(xGeometry.Get(i).m_xIndexBuffer);
+			g_xEngine.VulkanMemory().DestroyVertexBuffer(xGeometry.Get(i).m_xVertexBuffer);
+			g_xEngine.VulkanMemory().DestroyIndexBuffer(xGeometry.Get(i).m_xIndexBuffer);
 		}
 		xGeometry.Clear();
 	};
@@ -185,13 +185,13 @@ void Flux_GizmosImpl::UploadGizmoGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGe
 	xGeom.m_xColor = xColor;
 	xGeom.m_uIndexCount = xIndices.GetSize();
 
-	Flux_MemoryManager::InitialiseVertexBuffer(
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
 		xVertexData.GetDataPointer(),
 		xVertexData.GetSize() * sizeof(float),
 		xGeom.m_xVertexBuffer
 	);
 
-	Flux_MemoryManager::InitialiseIndexBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
 		xIndices.GetDataPointer(),
 		xIndices.GetSize() * sizeof(uint32_t),
 		xGeom.m_xIndexBuffer

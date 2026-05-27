@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Core/Zenith_Engine.h"
 
@@ -57,9 +58,9 @@ void Flux_DeferredShadingImpl::Initialise()
 	BuildPipelines();
 
 	#ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
-	Zenith_DebugVariables::AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
-	Zenith_DebugVariables::AddFloat({ "Render", "DeferredShading", "AmbientFallback" }, dbg_fAmbientFallbackIntensity, 0.0f, 0.2f);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "DeferredShading", "AmbientFallback" }, dbg_fAmbientFallbackIntensity, 0.0f, 0.2f);
 	#endif
 
 #ifdef ZENITH_TOOLS
@@ -232,7 +233,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// SSR / SSGI single-handle declarations. The subsystem decides which of
 	// its internal handles serves as "the output" based on its debug toggles
-	// at SetupRenderGraph time. Runtime toggles trigger Flux::RequestGraphRebuild()
+	// at SetupRenderGraph time. Runtime toggles trigger g_xEngine.FluxRenderer().RequestGraphRebuild()
 	// via ApplyBlurSelectionToGraph / ApplyDenoiseSelectionToGraph, which re-runs
 	// this SetupRenderGraph and re-resolves the handle.
 	if (g_xEngine.SSR().IsInitialised())

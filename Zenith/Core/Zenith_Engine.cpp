@@ -8,23 +8,22 @@
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Core/FrameContext.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
-#include "Profiling/Zenith_ProfilingImpl.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Profiling/Zenith_Profiling.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "DebugVariables/Zenith_DebugVariablesImpl.h"
 #include "EntityComponent/Zenith_EntityStore.h"
-#include "EntityComponent/Internal/Zenith_SceneCallbackBusImpl.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
-#include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
-#include "Input/Zenith_InputImpl.h"
-#include "Input/Zenith_TouchInputImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
+#include "EntityComponent/Internal/Zenith_SceneOperationQueue.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+#include "Input/Zenith_Input.h"
+#include "Input/Zenith_TouchInput.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Vulkan/Zenith_VulkanImpl.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManagerImpl.h"
-#include "Vulkan/Zenith_Vulkan_SwapchainImpl.h"
+#include "Vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Vulkan/Zenith_Vulkan_Swapchain.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
@@ -56,20 +55,20 @@
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystemBootstrap.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
-#include "Editor/Zenith_EditorImpl.h"
+#include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
-#include "Editor/Zenith_EditorAutomationImpl.h"
-#include "Editor/Zenith_EditorMaterialUIImpl.h"
-#include "Editor/Zenith_GizmoImpl.h"
-#include "Editor/Zenith_SelectionSystemImpl.h"
-#include "Editor/Zenith_UndoSystemImpl.h"
+#include "Editor/Zenith_EditorAutomation.h"
+#include "Editor/Zenith_Editor_MaterialUI.h"
+#include "Editor/Zenith_Gizmo.h"
+#include "Editor/Zenith_SelectionSystem.h"
+#include "Editor/Zenith_UndoSystem.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
-#include "Physics/Zenith_PhysicsImpl.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "UnitTests/Zenith_UnitTests.h"
 
 #ifdef ZENITH_WINDOWS
@@ -126,7 +125,7 @@ FrameContext& Zenith_Engine::Frame()
 	return *m_pxFrame;
 }
 
-Zenith_MultithreadingImpl& Zenith_Engine::Threading()
+Zenith_Multithreading& Zenith_Engine::Threading()
 {
 	// NOTE: no assert here. Threading() is read on the IsMainThread
 	// hot path (every Zenith_Assert that gates on main-thread fires
@@ -135,7 +134,7 @@ Zenith_MultithreadingImpl& Zenith_Engine::Threading()
 	return *m_pxThreading;
 }
 
-Zenith_TaskSystemImpl& Zenith_Engine::Tasks()
+Zenith_TaskSystem& Zenith_Engine::Tasks()
 {
 	// No assert: SubmitTask is a hot path, and Zenith_Engine::Initialise
 	// allocates m_pxTasks before g_xEngine.Tasks().Initialise() (the
@@ -143,12 +142,12 @@ Zenith_TaskSystemImpl& Zenith_Engine::Tasks()
 	return *m_pxTasks;
 }
 
-Zenith_ProfilingImpl& Zenith_Engine::Profiling()
+Zenith_Profiling& Zenith_Engine::Profiling()
 {
 	// No assert: BeginProfile / EndProfile sit on the hottest path in
 	// the engine (every ZENITH_PROFILING_FUNCTION_WRAPPER call fires
 	// it). Zenith_Engine::Initialise allocates m_pxProfiling before
-	// Zenith_Profiling::Initialise() so the impl is always available
+	// g_xEngine.Profiling().Initialise() so the impl is always available
 	// once any thread starts profiling.
 	return *m_pxProfiling;
 }
@@ -161,7 +160,7 @@ Zenith_AssetRegistry& Zenith_Engine::Assets()
 	return *m_pxAssets;
 }
 
-Zenith_PhysicsImpl& Zenith_Engine::Physics()
+Zenith_Physics& Zenith_Engine::Physics()
 {
 	Zenith_Assert(m_pxPhysics != nullptr,
 		"Zenith_Engine::Physics() called before Initialise() or after Shutdown(). "
@@ -179,7 +178,7 @@ Zenith_EntityStore& Zenith_Engine::EntityStore()
 	return *m_pxEntityStore;
 }
 
-Zenith_SceneRegistryImpl& Zenith_Engine::SceneRegistry()
+Zenith_SceneRegistry& Zenith_Engine::SceneRegistry()
 {
 	// No assert: SceneRegistry is read every scene-handle resolution and
 	// from inside the per-frame Update pipeline. Allocated alongside the
@@ -188,7 +187,7 @@ Zenith_SceneRegistryImpl& Zenith_Engine::SceneRegistry()
 	return *m_pxSceneRegistry;
 }
 
-Zenith_SceneCallbackBusImpl& Zenith_Engine::SceneCallbacks()
+Zenith_SceneCallbackBus& Zenith_Engine::SceneCallbacks()
 {
 	// No assert: callback registrations happen at static-init time (via
 	// scene system bootstrap) and during gameplay. Allocated alongside
@@ -196,7 +195,7 @@ Zenith_SceneCallbackBusImpl& Zenith_Engine::SceneCallbacks()
 	return *m_pxSceneCallbacks;
 }
 
-Zenith_SceneOperationQueueImpl& Zenith_Engine::SceneOperations()
+Zenith_SceneOperationQueue& Zenith_Engine::SceneOperations()
 {
 	// No assert: operation map / async-job lists are read from the
 	// Update pipeline and from worker-thread completion paths. Allocated
@@ -204,7 +203,7 @@ Zenith_SceneOperationQueueImpl& Zenith_Engine::SceneOperations()
 	return *m_pxSceneOperations;
 }
 
-Zenith_SceneLifecycleSchedulerImpl& Zenith_Engine::SceneLifecycle()
+Zenith_SceneLifecycleScheduler& Zenith_Engine::SceneLifecycle()
 {
 	// No assert: lifecycle flags and the FixedUpdate accumulator are read
 	// every frame from the Update pipeline. Allocated EARLY alongside
@@ -212,7 +211,7 @@ Zenith_SceneLifecycleSchedulerImpl& Zenith_Engine::SceneLifecycle()
 	return *m_pxSceneLifecycle;
 }
 
-Zenith_InputImpl& Zenith_Engine::Input()
+Zenith_Input& Zenith_Engine::Input()
 {
 	// No assert: input is read every frame and from GLFW callbacks (mouse
 	// wheel, key down). Allocated EARLY in Initialise -- the window may
@@ -220,7 +219,7 @@ Zenith_InputImpl& Zenith_Engine::Input()
 	return *m_pxInput;
 }
 
-Zenith_TouchInputImpl& Zenith_Engine::Touch()
+Zenith_TouchInput& Zenith_Engine::Touch()
 {
 	// No assert: touch state is read every frame from gameplay code.
 	// Allocated alongside m_pxInput.
@@ -244,7 +243,7 @@ Flux_GraphicsImpl& Zenith_Engine::FluxGraphics()
 	return *m_pxFluxGraphics;
 }
 
-Zenith_VulkanImpl& Zenith_Engine::Vulkan()
+Zenith_Vulkan& Zenith_Engine::Vulkan()
 {
 	// No assert: Vulkan instance / device / queues / per-frame state are
 	// read from every frame and from Vulkan worker threads. Allocated
@@ -253,12 +252,12 @@ Zenith_VulkanImpl& Zenith_Engine::Vulkan()
 	return *m_pxVulkan;
 }
 
-Zenith_Vulkan_MemoryManagerImpl& Zenith_Engine::VulkanMemory()
+Zenith_Vulkan_MemoryManager& Zenith_Engine::VulkanMemory()
 {
 	return *m_pxVulkanMemory;
 }
 
-Zenith_Vulkan_SwapchainImpl& Zenith_Engine::VulkanSwapchain()
+Zenith_Vulkan_Swapchain& Zenith_Engine::VulkanSwapchain()
 {
 	return *m_pxVulkanSwapchain;
 }
@@ -297,19 +296,19 @@ Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *
 #endif
 
 #ifdef ZENITH_TOOLS
-Zenith_EditorImpl& Zenith_Engine::Editor()
+Zenith_Editor& Zenith_Engine::Editor()
 {
 	// No assert: editor state is read every editor frame and from log
 	// callbacks. Allocated in Initialise.
 	return *m_pxEditor;
 }
 
-Zenith_GizmoImpl&            Zenith_Engine::Gizmo()              { return *m_pxGizmo; }
-Zenith_SelectionSystemImpl&  Zenith_Engine::Selection()          { return *m_pxSelection; }
-Zenith_UndoSystemImpl&       Zenith_Engine::UndoSystem()         { return *m_pxUndoSystem; }
-Zenith_EditorAutomationImpl& Zenith_Engine::EditorAutomation()   { return *m_pxEditorAutomation; }
-Zenith_EditorMaterialUIImpl& Zenith_Engine::EditorMaterialUI()   { return *m_pxEditorMaterialUI; }
-Zenith_DebugVariablesImpl&   Zenith_Engine::DebugVariables()     { return *m_pxDebugVariables; }
+Zenith_Gizmo&            Zenith_Engine::Gizmo()              { return *m_pxGizmo; }
+Zenith_SelectionSystem&  Zenith_Engine::Selection()          { return *m_pxSelection; }
+Zenith_UndoSystem&       Zenith_Engine::UndoSystem()         { return *m_pxUndoSystem; }
+Zenith_EditorAutomation& Zenith_Engine::EditorAutomation()   { return *m_pxEditorAutomation; }
+Zenith_EditorMaterialUI& Zenith_Engine::EditorMaterialUI()   { return *m_pxEditorMaterialUI; }
+Zenith_DebugVariables&   Zenith_Engine::DebugVariables()     { return *m_pxDebugVariables; }
 #endif
 
 void Zenith_Engine::Initialise()
@@ -333,37 +332,37 @@ void Zenith_Engine::Initialise()
 	// EntityStore -- both must exist before Zenith_SceneManager::Initialise
 	// creates the persistent scene.
 	Zenith_Assert(m_pxSceneRegistry == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneRegistry = new Zenith_SceneRegistryImpl();
+	m_pxSceneRegistry = new Zenith_SceneRegistry();
 
 	// Phase 5c: scene callback bus state (6 callback lists + handle
 	// allocator + deferred-removal queue + dispatch-depth + active-scene
 	// suppression flags). Must exist before any subsystem registers a
 	// callback during init.
 	Zenith_Assert(m_pxSceneCallbacks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneCallbacks = new Zenith_SceneCallbackBusImpl();
+	m_pxSceneCallbacks = new Zenith_SceneCallbackBus();
 
 	// Phase 5d: async scene-operation pipeline state (operation map +
 	// load/unload job queues + re-entrancy depth counters). Must exist
 	// before Zenith_SceneManager::Initialise queues any bootstrap loads.
 	Zenith_Assert(m_pxSceneOperations == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneOperations = new Zenith_SceneOperationQueueImpl();
+	m_pxSceneOperations = new Zenith_SceneOperationQueue();
 
 	// Phase 5e: scheduler state (lifecycle-deferral flags, fixed-timestep
 	// accumulator + config, circular-load stacks, build-index plumb,
 	// creation-target stack, main-loop flag, initial-scene-load hook).
 	Zenith_Assert(m_pxSceneLifecycle == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneLifecycle = new Zenith_SceneLifecycleSchedulerImpl();
+	m_pxSceneLifecycle = new Zenith_SceneLifecycleScheduler();
 
 	// Phase 5.5a: per-frame input state (key presses, mouse delta + wheel,
 	// gamepad ring buffers). Allocate EARLY so GLFW callbacks fired by
-	// Flux::EarlyInitialise (which spins up the window) have a live store
+	// g_xEngine.FluxRenderer().EarlyInitialise (which spins up the window) have a live store
 	// to write to.
 	Zenith_Assert(m_pxInput == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxInput = new Zenith_InputImpl();
+	m_pxInput = new Zenith_Input();
 
 	// Phase 5.5b: touch-gesture state. Allocated alongside m_pxInput.
 	Zenith_Assert(m_pxTouch == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxTouch = new Zenith_TouchInputImpl();
+	m_pxTouch = new Zenith_TouchInput();
 
 	// Phase 6a-1: Flux renderer state (frame counter, render graph,
 	// pending command-list queue, per-frame callbacks). Must exist
@@ -381,13 +380,13 @@ void Zenith_Engine::Initialise()
 	// per-frame ring / VRAM registry / pending command buffers / ImGui).
 	// Must exist before Flux::EarlyInitialise -> Zenith_Vulkan::Initialise.
 	Zenith_Assert(m_pxVulkan == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxVulkan = new Zenith_VulkanImpl();
+	m_pxVulkan = new Zenith_Vulkan();
 
 	Zenith_Assert(m_pxVulkanMemory == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxVulkanMemory = new Zenith_Vulkan_MemoryManagerImpl();
+	m_pxVulkanMemory = new Zenith_Vulkan_MemoryManager();
 
 	Zenith_Assert(m_pxVulkanSwapchain == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxVulkanSwapchain = new Zenith_Vulkan_SwapchainImpl();
+	m_pxVulkanSwapchain = new Zenith_Vulkan_Swapchain();
 
 	// Phase 7a: HiZ subsystem state.
 	Zenith_Assert(m_pxHiZ == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
@@ -446,25 +445,25 @@ void Zenith_Engine::Initialise()
 	// EARLY -- Zenith_Log fires AddLogMessage which writes to the console
 	// list, and editor automation runs before the main loop.
 	Zenith_Assert(m_pxEditor == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxEditor = new Zenith_EditorImpl();
+	m_pxEditor = new Zenith_Editor();
 
 	// Phase 5.5d: editor sub-systems (Gizmo / Selection / Undo / Automation
 	// / MaterialUI). Allocate alongside the main editor Impl.
 	Zenith_Assert(m_pxGizmo == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxGizmo = new Zenith_GizmoImpl();
+	m_pxGizmo = new Zenith_Gizmo();
 	Zenith_Assert(m_pxSelection == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSelection = new Zenith_SelectionSystemImpl();
+	m_pxSelection = new Zenith_SelectionSystem();
 	Zenith_Assert(m_pxUndoSystem == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxUndoSystem = new Zenith_UndoSystemImpl();
+	m_pxUndoSystem = new Zenith_UndoSystem();
 	Zenith_Assert(m_pxEditorAutomation == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxEditorAutomation = new Zenith_EditorAutomationImpl();
+	m_pxEditorAutomation = new Zenith_EditorAutomation();
 	Zenith_Assert(m_pxEditorMaterialUI == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxEditorMaterialUI = new Zenith_EditorMaterialUIImpl();
+	m_pxEditorMaterialUI = new Zenith_EditorMaterialUI();
 
 	// Phase 5.7: debug-variable tree. Allocate alongside editor; many
 	// subsystems register vars during their own Initialise.
 	Zenith_Assert(m_pxDebugVariables == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxDebugVariables = new Zenith_DebugVariablesImpl();
+	m_pxDebugVariables = new Zenith_DebugVariables();
 #endif
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
@@ -472,7 +471,7 @@ void Zenith_Engine::Initialise()
 	// g_xEngine.Threading().RegisterThread(true) below, which reads
 	// from g_xEngine.Threading() to issue the main thread's ID.
 	Zenith_Assert(m_pxThreading == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxThreading = new Zenith_MultithreadingImpl();
+	m_pxThreading = new Zenith_Multithreading();
 
 	// Populate graphics options from the game project FIRST
 	// Must happen before any Flux initialisation reads from Zenith_GraphicsOptions::Get()
@@ -485,19 +484,19 @@ void Zenith_Engine::Initialise()
 	// g_xEngine.Threading().RegisterThread(true) below --
 	// RegisterThread transitively calls Zenith_Profiling::RegisterThread
 	// (which reads g_xEngine.Profiling().m_xEvents). The Profiling
-	// impl also has to exist before Zenith_Profiling::Initialise()
+	// impl also has to exist before g_xEngine.Profiling().Initialise()
 	// further down for the same reason.
 	Zenith_Assert(m_pxProfiling == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxProfiling = new Zenith_ProfilingImpl();
+	m_pxProfiling = new Zenith_Profiling();
 
 	g_xEngine.Threading().RegisterThread(true);
-	Zenith_Profiling::Initialise();
+	g_xEngine.Profiling().Initialise();
 
 	// Phase 3b: per-Engine TaskSystem state. Allocate BEFORE
 	// g_xEngine.Tasks().Initialise() below, which spawns worker
 	// threads whose ThreadFunc reads from g_xEngine.Tasks().
 	Zenith_Assert(m_pxTasks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxTasks = new Zenith_TaskSystemImpl();
+	m_pxTasks = new Zenith_TaskSystem();
 
 	g_xEngine.Tasks().Initialise();
 
@@ -539,24 +538,24 @@ void Zenith_Engine::Initialise()
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::EarlyInitialise...");
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux::EarlyInitialise();
+		g_xEngine.FluxRenderer().EarlyInitialise();
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
-	// Phase 4: per-Engine Physics state lives on Zenith_PhysicsImpl.
+	// Phase 4: per-Engine Physics state lives on Zenith_Physics.
 	// Allocate BEFORE g_xEngine.Physics().Initialise() below -- the static
 	// facade now reads/writes g_xEngine.Physics().m_pxXxx for every
 	// piece of state it used to keep as Zenith_Physics::s_*.
 	Zenith_Assert(m_pxPhysics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxPhysics = new Zenith_PhysicsImpl();
+	m_pxPhysics = new Zenith_Physics();
 	g_xEngine.Physics().Initialise();
-	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: SceneManager::Initialise...");
-	Zenith_SceneManager::Initialise();
+	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: scene system bootstrap...");
+	Zenith_InitialiseSceneSystem();
 
 	//#TO_TODO: move somewhere sensible
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::BeginFrame();
-		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
+		g_xEngine.VulkanMemory().BeginFrame();
+		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
 		// Load cubemap texture (pinned)
 		if (Zenith_TextureAsset* pxCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
@@ -578,23 +577,23 @@ void Zenith_Engine::Initialise()
 			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
 		}
 
-		Flux_MemoryManager::EndFrame(false);
+		g_xEngine.VulkanMemory().EndFrame(false);
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux::LateInitialise();
+		g_xEngine.FluxRenderer().LateInitialise();
 	}
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 	Zenith_GraphicsOptions::RegisterDebugVariables();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Zenith_Editor::Initialise();
-		Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
-		Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
-		Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
-		Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
+		g_xEngine.Editor().Initialise();
+		g_xEngine.DebugVariables().AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
+		g_xEngine.DebugVariables().AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
+		g_xEngine.DebugVariables().AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
+		g_xEngine.DebugVariables().AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 	}
 #endif
 
@@ -627,34 +626,34 @@ void Zenith_Engine::Initialise()
 	// Must be inside BeginFrame/EndFrame for GPU resource allocation
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::BeginFrame();
+		g_xEngine.VulkanMemory().BeginFrame();
 	}
 	Project_InitializeResources();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::EndFrame(false);
+		g_xEngine.VulkanMemory().EndFrame(false);
 	}
 
 	// Register automation steps and begin execution (one step per frame in main loop)
 	Project_RegisterEditorAutomationSteps();
-	Zenith_EditorAutomation::Begin();
+	g_xEngine.EditorAutomation().Begin();
 #else
 	// Non-tools: load pre-generated scene files
 	// Run a tools build first to generate .zscen files
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::BeginFrame();
+		g_xEngine.VulkanMemory().BeginFrame();
 	}
-	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	g_xEngine.SceneLifecycle().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
-		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(g_xEngine.SceneLifecycle().m_bIsLoadingScene);
+		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.SceneLifecycle().m_bIsLoadingScene);
 		Project_LoadInitialScene();
 	}
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::EndFrame(false);
+		g_xEngine.VulkanMemory().EndFrame(false);
 	}
-	Zenith_Assert(Zenith_SceneManager::GetActiveScene().IsValid(),
+	Zenith_Assert(g_xEngine.SceneRegistry().GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
 #endif
 
@@ -672,18 +671,18 @@ void Zenith_Engine::Shutdown()
 	// 1. Wait for GPU to finish all pending work
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_PlatformAPI::WaitForGPUIdle();
+		g_xEngine.Vulkan().WaitForGPUIdle();
 	}
 
 #ifdef ZENITH_TOOLS
 	// 2. Shutdown editor (processes pending deletions, cleans up editor state)
-	Zenith_Editor::Shutdown();
+	g_xEngine.Editor().Shutdown();
 #endif
 
-	// 3. Shutdown SceneManager (unloads all scenes, releases resources)
+	// 3. Shutdown scene system (unloads all scenes, releases resources)
 	// Must happen before physics (colliders need to remove bodies) and before
 	// memory manager (model/mesh components hold VRAM handles)
-	Zenith_SceneManager::Shutdown();
+	Zenith_ShutdownSceneSystem();
 
 	// 4. Shutdown physics system. The static facade drains state out of
 	// g_xEngine.Physics().m_pxXxx; engine then reclaims the Impl below
@@ -697,10 +696,10 @@ void Zenith_Engine::Shutdown()
 
 	// 6. Release Flux's asset-system references BEFORE the registry shuts down.
 	// Flux statics hold TextureHandle / MaterialHandle defaults that must drop their
-	// refs while the registry still owns its assets — Flux::Shutdown() runs too late.
+	// refs while the registry still owns its assets — g_xEngine.FluxRenderer().Shutdown() runs too late.
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux::ReleaseAssetReferences();
+		g_xEngine.FluxRenderer().ReleaseAssetReferences();
 	}
 
 	// 7. Shutdown asset registry (unloads all assets). Engine then
@@ -714,7 +713,7 @@ void Zenith_Engine::Shutdown()
 	// 8. Shutdown Flux (all subsystems + graphics + memory manager)
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux::Shutdown();
+		g_xEngine.FluxRenderer().Shutdown();
 	}
 
 	// 9. Shutdown task system (terminates worker threads)
@@ -747,7 +746,7 @@ void Zenith_Engine::Shutdown()
 
 	// 14. Free the per-Engine entity store. Done VERY LATE -- after
 	// SceneManager::Shutdown (step 3), Physics::Shutdown (step 4),
-	// Project_Shutdown (step 5), Flux::Shutdown (step 8) which all
+	// Project_Shutdown (step 5), g_xEngine.FluxRenderer().Shutdown (step 8) which all
 	// may touch entity slots during teardown.
 	delete m_pxEntityStore;
 	m_pxEntityStore = nullptr;
@@ -833,7 +832,7 @@ void Zenith_Engine::Shutdown()
 	m_pxFluxGraphics = nullptr;
 
 	// Free Vulkan backend state last among graphics holders so device-backed
-	// member destructors above can still call Zenith_Vulkan::GetDevice().
+	// member destructors above can still call g_xEngine.Vulkan().GetDevice().
 	delete m_pxVulkanSwapchain;
 	m_pxVulkanSwapchain = nullptr;
 	delete m_pxVulkanMemory;

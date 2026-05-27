@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+#include "Core/ZenithConfig.h"  // FLUX_MAX_MIPS — used by Flux_RenderAttachment below
 #include "Flux/Flux_Enums.h"
+#include <string>
 
 class Flux_VRAMHandle
 {
@@ -268,6 +270,37 @@ struct Flux_DepthStencilView
 {
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
+};
+
+// Lived in Flux.h previously. Hoisted here so backend-level headers that need
+// the complete type (e.g. Zenith_Vulkan_Swapchain.h's m_axColourAttachments
+// value-array member) can use it without pulling Flux.h — Flux.h transitively
+// re-includes Zenith_PlatformGraphics_Include.h which re-includes the
+// swapchain header, forming a cycle.
+struct Flux_RenderAttachment
+{
+	Flux_SurfaceInfo m_xSurfaceInfo;
+
+	Flux_VRAMHandle m_xVRAMHandle;
+
+#ifdef ZENITH_TOOLS
+	std::string m_strName;
+#endif
+
+	Flux_ShaderResourceView m_xSRV;
+	Flux_ShaderResourceView m_axMipSRVs[FLUX_MAX_MIPS];
+	Flux_UnorderedAccessView_Texture m_axUAVs[FLUX_MAX_MIPS];
+	Flux_RenderTargetView m_axRTVs[FLUX_MAX_MIPS];
+	Flux_DepthStencilView m_xDSV;
+
+	Flux_ShaderResourceView& SRV();
+	const Flux_ShaderResourceView& SRV() const;
+	Flux_ShaderResourceView& SRV(u_int uMip);
+	const Flux_ShaderResourceView& SRV(u_int uMip) const;
+	Flux_UnorderedAccessView_Texture& UAV(u_int uMip);
+	Flux_RenderTargetView& RTV(u_int uMip = 0);
+	Flux_DepthStencilView& DSV() { return m_xDSV; }
+	const Flux_DepthStencilView& DSV() const { return m_xDSV; }
 };
 
 struct Flux_ConstantBufferView

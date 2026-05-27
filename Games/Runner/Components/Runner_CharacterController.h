@@ -18,7 +18,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 
 // ============================================================================

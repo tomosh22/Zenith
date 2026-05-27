@@ -22,7 +22,7 @@
  *   Survival_TaskProcessor::WaitForWorldUpdate();
  */
 
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Survival_ResourceNode.h"
 #include "Survival_EventBus.h"

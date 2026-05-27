@@ -86,7 +86,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -112,7 +112,7 @@ static bool Step_P1ApprehendOutOfRange(int iFrame)
 	switch (g_iPhase)
 	{
 	case kOR_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kOR_WaitScene;
 		return true;
 
@@ -176,7 +176,7 @@ static bool Step_P1ApprehendOutOfRange(int iFrame)
 		if (TryGetEntityPos(g_xPriest, xPriestPos))
 		{
 			Zenith_SceneData* pxScene =
-				Zenith_SceneManager::GetSceneDataForEntity(g_xVillager);
+				g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xVillager);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xVillager);

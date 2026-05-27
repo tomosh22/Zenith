@@ -4,6 +4,7 @@
 #ifdef ZENITH_TESTING
 
 #include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystemBootstrap.h"
 
 #include <cstring>
 #include <cmath>
@@ -24,10 +25,10 @@ void Zenith_TestRunner::RegisterTest(Zenith_TestCase* pxCase)
 static void Zenith_TestResetGlobalState()
 {
 #ifdef ZENITH_WINDOWS
-	__try { Zenith_SceneManager::ResetForNextTest(); }
+	__try { Zenith_ResetSceneSystemForNextTest(); }
 	__except (EXCEPTION_EXECUTE_HANDLER) {}
 #else
-	Zenith_SceneManager::ResetForNextTest();
+	Zenith_ResetSceneSystemForNextTest();
 #endif
 }
 

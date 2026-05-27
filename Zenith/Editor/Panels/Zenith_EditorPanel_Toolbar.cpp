@@ -56,15 +56,15 @@ void Zenith_EditorPanelToolbar::RenderPlayModeButtons(EditorMode& eEditorMode, f
 	{
 		if (eEditorMode == EditorMode::Stopped)
 		{
-			Zenith_Editor::SetEditorMode(EditorMode::Playing);
+			g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 		}
 		else if (eEditorMode == EditorMode::Playing)
 		{
-			Zenith_Editor::SetEditorMode(EditorMode::Paused);
+			g_xEngine.Editor().SetEditorMode(EditorMode::Paused);
 		}
 		else if (eEditorMode == EditorMode::Paused)
 		{
-			Zenith_Editor::SetEditorMode(EditorMode::Playing);
+			g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 		}
 	}
 
@@ -72,7 +72,7 @@ void Zenith_EditorPanelToolbar::RenderPlayModeButtons(EditorMode& eEditorMode, f
 
 	if (ImGui::Button("Stop", xButtonSize))
 	{
-		Zenith_Editor::SetEditorMode(EditorMode::Stopped);
+		g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
 	}
 }
 
@@ -88,7 +88,7 @@ void Zenith_EditorPanelToolbar::RenderSceneSelectors(EditorMode& eEditorMode)
 
 	RenderActiveSceneCombo();
 
-	if (Zenith_SceneManager::GetBuildSceneCount() > 0)
+	if (g_xEngine.SceneRegistry().GetBuildSceneCount() > 0)
 	{
 		RenderRegisteredScenesCombo();
 	}
@@ -102,12 +102,12 @@ void Zenith_EditorPanelToolbar::RenderSceneSelectors(EditorMode& eEditorMode)
 //-----------------------------------------------------------------------------
 void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
 
 	// Get active scene name for preview
 	std::string strActiveSceneName = "No Scene";
-	Zenith_SceneData* pxActiveData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_SceneData* pxActiveData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (pxActiveData)
 	{
 		strActiveSceneName = pxActiveData->GetName();
@@ -120,16 +120,16 @@ void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 	ImGui::SetNextItemWidth(200.0f);
 	if (ImGui::BeginCombo("##ActiveScene", strActiveSceneName.c_str()))
 	{
-		uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
+		uint32_t uSceneCount = g_xEngine.SceneRegistry().GetLoadedSceneCount();
 		for (uint32_t i = 0; i < uSceneCount; ++i)
 		{
-			Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
+			Zenith_Scene xScene = g_xEngine.SceneRegistry().GetSceneAt(i);
 			if (!xScene.IsValid())
 				continue;
 			if (xScene == xPersistentScene)
 				continue;
 
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 			if (!pxSceneData)
 				continue;
 
@@ -140,7 +140,7 @@ void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 			bool bIsSelected = (xScene == xActiveScene);
 			if (ImGui::Selectable(strName.c_str(), bIsSelected))
 			{
-				Zenith_SceneManager::SetActiveScene(xScene);
+				g_xEngine.SceneRegistry().SetActiveScene(xScene);
 			}
 			if (bIsSelected)
 				ImGui::SetItemDefaultFocus();
@@ -160,10 +160,10 @@ void Zenith_EditorPanelToolbar::RenderRegisteredScenesCombo()
 	ImGui::SetNextItemWidth(200.0f);
 	if (ImGui::BeginCombo("##RegisteredScenes", "Select scene..."))
 	{
-		uint32_t uRegistrySize = Zenith_SceneManager::GetBuildIndexRegistrySize();
+		uint32_t uRegistrySize = g_xEngine.SceneRegistry().GetBuildIndexRegistrySize();
 		for (uint32_t i = 0; i < uRegistrySize; ++i)
 		{
-			const std::string& strPath = Zenith_SceneManager::GetRegisteredScenePath(static_cast<int>(i));
+			const std::string& strPath = g_xEngine.SceneRegistry().GetRegisteredScenePath(static_cast<int>(i));
 			if (strPath.empty())
 				continue;
 
@@ -178,7 +178,7 @@ void Zenith_EditorPanelToolbar::RenderRegisteredScenesCombo()
 
 			if (ImGui::Selectable(strDisplayName.c_str(), false))
 			{
-				Zenith_Editor::RequestLoadRegisteredScene(static_cast<int>(i));
+				g_xEngine.Editor().RequestLoadRegisteredScene(static_cast<int>(i));
 			}
 
 			if (ImGui::IsItemHovered())
@@ -214,19 +214,19 @@ void Zenith_EditorPanelToolbar::RenderGizmoModeRadios(EditorGizmoMode& eGizmoMod
 
 	if (ImGui::RadioButton("Translate", eGizmoMode == EditorGizmoMode::Translate))
 	{
-		Zenith_Editor::SetGizmoMode(EditorGizmoMode::Translate);
+		g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Translate);
 	}
 	ImGui::SameLine();
 
 	if (ImGui::RadioButton("Rotate", eGizmoMode == EditorGizmoMode::Rotate))
 	{
-		Zenith_Editor::SetGizmoMode(EditorGizmoMode::Rotate);
+		g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Rotate);
 	}
 	ImGui::SameLine();
 
 	if (ImGui::RadioButton("Scale", eGizmoMode == EditorGizmoMode::Scale))
 	{
-		Zenith_Editor::SetGizmoMode(EditorGizmoMode::Scale);
+		g_xEngine.Editor().SetGizmoMode(EditorGizmoMode::Scale);
 	}
 }
 

@@ -4,7 +4,7 @@
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"

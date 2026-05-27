@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include <thread>
@@ -11,13 +11,13 @@ namespace
 {
 	void ThreadFunc(const void*)
 	{
-		// All worker threads share the single Zenith_TaskSystemImpl
+		// All worker threads share the single Zenith_TaskSystem
 		// instance held by g_xEngine. Cache the reference once.
 		g_xEngine.Tasks().RunWorkerLoop();
 	}
 }
 
-void Zenith_TaskSystemImpl::RunWorkerLoop()
+void Zenith_TaskSystem::RunWorkerLoop()
 {
 	do
 	{
@@ -45,10 +45,10 @@ void Zenith_TaskSystemImpl::RunWorkerLoop()
 	m_pxThreadsTerminatedSem->Signal();
 }
 
-void Zenith_TaskSystemImpl::Initialise()
+void Zenith_TaskSystem::Initialise()
 {
 	Zenith_Assert(!m_bInitialized.load(std::memory_order_acquire),
-		"Zenith_TaskSystemImpl::Initialise: Already initialized - call Shutdown first");
+		"Zenith_TaskSystem::Initialise: Already initialized - call Shutdown first");
 
 	// Use hardware thread count minus 1 (reserve main thread)
 	// Minimum of 1 worker thread, maximum of 16
@@ -66,19 +66,19 @@ void Zenith_TaskSystemImpl::Initialise()
 
 	for (u_int u = 0; u < uNumThreads; u++)
 	{
-		char acName[Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH];
-		snprintf(acName, Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH, "Zenith_TaskSystem %u", u);
+		char acName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH];
+		snprintf(acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH, "Zenith_TaskSystem %u", u);
 		g_xEngine.Threading().CreateThread(acName, ThreadFunc, nullptr);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Task System", "Multithreaded" }, dbg_bMultithreaded);
+	g_xEngine.DebugVariables().AddBoolean({ "Task System", "Multithreaded" }, dbg_bMultithreaded);
 #endif
 
 	m_bInitialized.store(true, std::memory_order_release);
 }
 
-void Zenith_TaskSystemImpl::Shutdown()
+void Zenith_TaskSystem::Shutdown()
 {
 	if (!m_bInitialized.load(std::memory_order_acquire))
 	{
@@ -126,7 +126,7 @@ void Zenith_TaskSystemImpl::Shutdown()
 	Zenith_Log(LOG_CATEGORY_TASKSYSTEM, "Task system shutdown complete");
 }
 
-bool Zenith_TaskSystemImpl::TryClaimTask(Zenith_Task* pxTask, const char* szCallerName)
+bool Zenith_TaskSystem::TryClaimTask(Zenith_Task* pxTask, const char* szCallerName)
 {
 	Zenith_Assert(pxTask != nullptr, "%s: Task is null", szCallerName);
 	Zenith_Assert(m_bInitialized.load(std::memory_order_acquire), "%s: TaskSystem not initialized", szCallerName);
@@ -142,7 +142,7 @@ bool Zenith_TaskSystemImpl::TryClaimTask(Zenith_Task* pxTask, const char* szCall
 	return true;
 }
 
-u_int Zenith_TaskSystemImpl::EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount)
+u_int Zenith_TaskSystem::EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount)
 {
 	u_int uEnqueuedCount = 0;
 	{
@@ -171,7 +171,7 @@ u_int Zenith_TaskSystemImpl::EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount)
 	return uEnqueuedCount;
 }
 
-void Zenith_TaskSystemImpl::SubmitTask(Zenith_Task* pxTask)
+void Zenith_TaskSystem::SubmitTask(Zenith_Task* pxTask)
 {
 	if (!TryClaimTask(pxTask, "SubmitTask"))
 	{
@@ -192,7 +192,7 @@ void Zenith_TaskSystemImpl::SubmitTask(Zenith_Task* pxTask)
 	}
 }
 
-void Zenith_TaskSystemImpl::SubmitTaskArray(Zenith_TaskArray* pxTaskArray)
+void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* pxTaskArray)
 {
 	if (!TryClaimTask(pxTaskArray, "SubmitTaskArray"))
 	{

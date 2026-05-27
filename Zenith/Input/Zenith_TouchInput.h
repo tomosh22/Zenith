@@ -11,15 +11,16 @@ enum Zenith_SwipeDirection : uint8_t
 	ZENITH_SWIPE_RIGHT
 };
 
-// Phase 9: state + behaviour for TouchInput subsystem.
-class Zenith_TouchInputImpl
+// State + behaviour for the TouchInput subsystem. Held on g_xEngine
+// and accessed via g_xEngine.Touch().
+class Zenith_TouchInput
 {
 public:
-	Zenith_TouchInputImpl() = default;
-	~Zenith_TouchInputImpl() = default;
+	Zenith_TouchInput() = default;
+	~Zenith_TouchInput() = default;
 
-	Zenith_TouchInputImpl(const Zenith_TouchInputImpl&) = delete;
-	Zenith_TouchInputImpl& operator=(const Zenith_TouchInputImpl&) = delete;
+	Zenith_TouchInput(const Zenith_TouchInput&) = delete;
+	Zenith_TouchInput& operator=(const Zenith_TouchInput&) = delete;
 
 	void Update();
 

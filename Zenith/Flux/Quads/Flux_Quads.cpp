@@ -58,7 +58,7 @@ void Flux_QuadsImpl::Initialise()
 {
 	BuildPipelines();
 
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), g_xEngine.Quads().m_xInstanceBuffer, false);
+	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), g_xEngine.Quads().m_xInstanceBuffer, false);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -73,13 +73,13 @@ void Flux_QuadsImpl::Initialise()
 
 void Flux_QuadsImpl::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Quads().m_xInstanceBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Quads().m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads shut down");
 }
 
 void Flux_QuadsImpl::UploadInstanceData()
 {
-	Flux_MemoryManager::UploadBufferData(g_xEngine.Quads().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, g_xEngine.Quads().m_axQuadsToRender, sizeof(Quad) * g_xEngine.Quads().m_uQuadRenderIndex);
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Quads().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, g_xEngine.Quads().m_axQuadsToRender, sizeof(Quad) * g_xEngine.Quads().m_uQuadRenderIndex);
 }
 
 void Flux_QuadsImpl::Render(void*)

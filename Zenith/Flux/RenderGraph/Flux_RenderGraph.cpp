@@ -3,7 +3,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Hard cap on pass count. Chosen to be generous (current engine sits around
 // 60 passes); a runaway loop registering passes trips the assert before it
@@ -836,7 +836,7 @@ void Flux_RenderGraph::AllocateTransients()
     {
         AliasPool& xPool = m_axAliasPools.Get(p);
         if (xPool.m_ulTotalSize == 0) continue; // pool with no occupants — shouldn't happen but skip safely
-        xPool.m_xPoolVRAM = Flux_MemoryManager::CreateAliasPoolVRAM(xPool.m_ulTotalSize, xPool.m_ulMaxAlignment);
+        xPool.m_xPoolVRAM = g_xEngine.VulkanMemory().CreateAliasPoolVRAM(xPool.m_ulTotalSize, xPool.m_ulMaxAlignment);
         Zenith_Assert(xPool.m_xPoolVRAM.IsValid(),
             "Flux_RenderGraph::AllocateTransients: pool %u alloc failed (size=%llu)",
             p, static_cast<unsigned long long>(xPool.m_ulTotalSize));
@@ -906,7 +906,7 @@ void Flux_RenderGraph::AllocateTransients()
             xInfo.m_uNumLayers   = 1;
             xInfo.m_uMemoryFlags = pxT->m_xDesc.m_uMemoryFlags;
 
-            Flux_VRAMHandle xAliasedVRAM = Flux_MemoryManager::CreateAliasedImageVRAM(
+            Flux_VRAMHandle xAliasedVRAM = g_xEngine.VulkanMemory().CreateAliasedImageVRAM(
                 xInfo, xPool.m_xPoolVRAM, pxT->m_ulAliasOffset);
             Zenith_Assert(xAliasedVRAM.IsValid(),
                 "Flux_RenderGraph::AllocateTransients: aliased image creation failed for transient %u (pool=%u offset=%llu)",
@@ -952,8 +952,8 @@ void Flux_RenderGraph::ReleaseTransientAllocations()
     {
         AliasPool& xPool = m_axAliasPools.Get(p);
         if (!xPool.m_xPoolVRAM.IsValid()) continue;
-        Flux_VRAM* pxPoolVRAM = Flux_PlatformAPI::GetVRAM(xPool.m_xPoolVRAM);
-        Flux_MemoryManager::QueueVRAMDeletion(
+        Flux_VRAM* pxPoolVRAM = g_xEngine.Vulkan().GetVRAM(xPool.m_xPoolVRAM);
+        g_xEngine.VulkanMemory().QueueVRAMDeletion(
             pxPoolVRAM, xPool.m_xPoolVRAM,
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
@@ -989,8 +989,8 @@ void Flux_RenderGraph::DestroyTransients()
     {
         AliasPool& xPool = m_axAliasPools.Get(p);
         if (!xPool.m_xPoolVRAM.IsValid()) continue;
-        Flux_VRAM* pxPoolVRAM = Flux_PlatformAPI::GetVRAM(xPool.m_xPoolVRAM);
-        Flux_MemoryManager::QueueVRAMDeletion(
+        Flux_VRAM* pxPoolVRAM = g_xEngine.Vulkan().GetVRAM(xPool.m_xPoolVRAM);
+        g_xEngine.VulkanMemory().QueueVRAMDeletion(
             pxPoolVRAM, xPool.m_xPoolVRAM,
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
@@ -1138,7 +1138,7 @@ static u_int64 EstimateTransientImageSize(const Flux_TransientTextureDesc& xDesc
     const Flux_SurfaceInfo xInfo = TransientDescToSurfaceInfo(xDesc);
     u_int64 ulProbedSize = 0;
     u_int64 ulProbedAlignment = 0;
-    Flux_MemoryManager::ProbeImageMemoryRequirements(xInfo, ulProbedSize, ulProbedAlignment);
+    g_xEngine.VulkanMemory().ProbeImageMemoryRequirements(xInfo, ulProbedSize, ulProbedAlignment);
 
     ulAlignmentOut = ulProbedAlignment;
     if (ulProbedSize == 0)
@@ -1507,7 +1507,7 @@ void Flux_RenderGraph::AssignAliasingGroups()
     }
 
     const bool bAliasingActive = m_bAliasingEnabled
-        && Flux_MemoryManager::SupportsTransientAliasing();
+        && g_xEngine.VulkanMemory().SupportsTransientAliasing();
     if (!bAliasingActive)
         return;
 

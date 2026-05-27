@@ -115,7 +115,7 @@ static bool Step_P1WalkQuiet(int iFrame)
 	switch (g_iPhase)
 	{
 	case kWQ_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWQ_WaitScene;
 		return true;
 

@@ -53,7 +53,7 @@ void Zenith_MemoryManagement::Initialise()
 #endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddText({ "Memory", "Summary" }, dbg_strDebugText);
+	g_xEngine.DebugVariables().AddText({ "Memory", "Summary" }, dbg_strDebugText);
 #endif
 }
 

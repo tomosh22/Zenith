@@ -44,9 +44,9 @@
 // Flux_RendererImpl held by Zenith_Engine. Static facade methods below
 // forward through g_xEngine.FluxRenderer().m_xXxx.
 
-const uint32_t Flux::GetFrameCounter() { return g_xEngine.FluxRenderer().m_uFrameCounter; }
+const uint32_t Flux_RendererImpl::GetFrameCounter() { return g_xEngine.FluxRenderer().m_uFrameCounter; }
 
-void Flux::SubmitCommandList(const Flux_CommandList* pxCmdList,
+void Flux_RendererImpl::SubmitCommandList(const Flux_CommandList* pxCmdList,
 	const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
 	const Flux_RenderGraph_AttachmentRef& xDepthStencil,
 	bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass)
@@ -65,30 +65,30 @@ void Flux::SubmitCommandList(const Flux_CommandList* pxCmdList,
 	g_xEngine.FluxRenderer().m_xPendingCommandLists.PushBack(xEntry);
 }
 
-void Flux::AddResChangeCallback(void(*pfnCallback)())
+void Flux_RendererImpl::AddResChangeCallback(void(*pfnCallback)())
 {
 	g_xEngine.FluxRenderer().m_xResChangeCallbacks.PushBack(pfnCallback);
 }
 
-void Flux::ClearPendingCommandLists()
+void Flux_RendererImpl::ClearPendingCommandLists()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"ClearPendingCommandLists: main-thread only");
 	g_xEngine.FluxRenderer().m_xPendingCommandLists.Clear();
 }
 
-Flux_RenderGraph& Flux::GetRenderGraph()    { return *g_xEngine.FluxRenderer().m_pxRenderGraph; }
-bool              Flux::IsRenderGraphValid(){ return g_xEngine.FluxRenderer().m_pxRenderGraph != nullptr; }
+Flux_RenderGraph& Flux_RendererImpl::GetRenderGraph()    { return *g_xEngine.FluxRenderer().m_pxRenderGraph; }
+bool              Flux_RendererImpl::IsRenderGraphValid(){ return g_xEngine.FluxRenderer().m_pxRenderGraph != nullptr; }
 
-void Flux::RequestGraphRebuild() { g_xEngine.FluxRenderer().m_bGraphRebuildRequested = true; }
-bool Flux::ConsumeGraphRebuildRequest()
+void Flux_RendererImpl::RequestGraphRebuild() { g_xEngine.FluxRenderer().m_bGraphRebuildRequested = true; }
+bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 {
 	bool b = g_xEngine.FluxRenderer().m_bGraphRebuildRequested;
 	g_xEngine.FluxRenderer().m_bGraphRebuildRequested = false;
 	return b;
 }
 
-Zenith_Vector<Flux_CommandListEntry>& Flux::GetPendingCommandLists()
+Zenith_Vector<Flux_CommandListEntry>& Flux_RendererImpl::GetPendingCommandLists()
 {
 	return g_xEngine.FluxRenderer().m_xPendingCommandLists;
 }
@@ -153,21 +153,21 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 	return xSpec;
 }
 
-void Flux::EarlyInitialise()
+void Flux_RendererImpl::EarlyInitialise()
 {
 	// Flux_PerFrame must initialise BEFORE backend Initialise so backends can
 	// register their begin/end-frame callbacks during their own setup. The
 	// counter starts at 0 and the ring index is correctly defined from the
 	// first call.
-	Flux_PerFrame::Initialise();
+	PerFrameInitialise();
 
-	Flux_PlatformAPI::Initialise();
-	Flux_MemoryManager::Initialise();
-	Flux_PlatformAPI::InitialiseScratchBuffers(); // Must be after memory manager init
+	g_xEngine.Vulkan().Initialise();
+	g_xEngine.VulkanMemory().Initialise();
+	g_xEngine.Vulkan().InitialiseScratchBuffers(); // Must be after memory manager init
 	g_xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
 }
 
-void Flux::LateInitialise()
+void Flux_RendererImpl::LateInitialise()
 {
 	// Subsystem dependency graph (A -> B means A must init before B):
 	//
@@ -183,7 +183,7 @@ void Flux::LateInitialise()
 	//
 	// Independent (no ordering constraint): SSAO, Fog, SDFs, Particles, Quads, Text
 
-	Flux_MemoryManager::BeginFrame();
+	g_xEngine.VulkanMemory().BeginFrame();
 
 #ifdef ZENITH_WINDOWS
 	// Initialize Slang compiler before any shader loading
@@ -194,7 +194,7 @@ void Flux::LateInitialise()
 	Flux_SlangCompiler::AddSearchPath(SHADER_SOURCE_ROOT);
 #endif
 
-	Flux_Swapchain::Initialise();
+	g_xEngine.VulkanSwapchain().Initialise();
 
 #ifdef ZENITH_TOOLS
 	// Bring up the hot-reload watcher BEFORE any subsystem Initialise() so
@@ -209,7 +209,7 @@ void Flux::LateInitialise()
 	g_xEngine.FluxGraphics().Initialise();
 	g_xEngine.HDR().Initialise();  // Must be before DeferredShading - deferred renders to HDR target
 #ifdef ZENITH_TOOLS
-	Flux_PlatformAPI::InitialiseImGui();
+	g_xEngine.Vulkan().InitialiseImGui();
 	g_xEngine.Gizmos().Initialise();
 #endif
 	g_xEngine.Shadows().Initialise();
@@ -234,7 +234,7 @@ void Flux::LateInitialise()
 	g_xEngine.Particles().Initialise();
 	g_xEngine.Quads().Initialise();
 	g_xEngine.Text().Initialise();
-	Flux_MemoryManager::EndFrame(false);
+	g_xEngine.VulkanMemory().EndFrame(false);
 
 	// Create and compile the render graph
 	g_xEngine.FluxRenderer().m_pxRenderGraph = new Flux_RenderGraph();
@@ -252,12 +252,12 @@ void Flux::LateInitialise()
 	// Debug toggle for transient memory aliasing. The graph reads this value
 	// at each SetupRenderGraph invocation and calls SetAliasingEnabled; a
 	// change triggers MarkDirty so the next Compile rebuilds the pool layout.
-	Zenith_DebugVariables::AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
 
 	// Click-to-log button: prints the compiled render-graph pass order. Useful
 	// for newcomers asking "what runs when?" — the answer is the topological
 	// sort of the pass DAG, not the order of AddPass() calls in SetupRenderGraph.
-	Zenith_DebugVariables::AddButton({ "Render", "RenderGraph", "Print Pass Order" }, []() {
+	g_xEngine.DebugVariables().AddButton({ "Render", "RenderGraph", "Print Pass Order" }, []() {
 		if (g_xEngine.FluxRenderer().m_pxRenderGraph != nullptr)
 		{
 			const std::string strOrder = g_xEngine.FluxRenderer().m_pxRenderGraph->GetPassOrderDescription();
@@ -273,22 +273,26 @@ void Flux::LateInitialise()
 	// SetupTransients, which re-runs on resize) and resolve the current SRV
 	// via callback every ImGui draw — rebuilds that invalidate the underlying
 	// TransientResource don't leave a dangling pointer in the tree.
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTDiffuse(); });
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTNormalsAO(); });
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Material" },      [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTMaterial(); });
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "Depth" },             [](){ return g_xEngine.FluxGraphics().GetDebugSRV_Depth(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTDiffuse(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTNormalsAO(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "MRT Material" },      [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTMaterial(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "Depth" },             [](){ return g_xEngine.FluxGraphics().GetDebugSRV_Depth(); });
 	// HDR textures follow Flux_HDR.cpp's established "Flux/HDR/..." convention.
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, [](){ return g_xEngine.HDR().GetDebugSRV_HDRScene(); });
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom0(); });
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom1(); });
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom2(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, [](){ return g_xEngine.HDR().GetDebugSRV_HDRScene(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom0(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom1(); });
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom2(); });
 #endif
 
 	SetupRenderGraph();
-	AddResChangeCallback(SetupRenderGraph);
+	// Free-function wrapper for AddResChangeCallback — pfnCallback is a
+	// `void(*)()` callable, which a member function pointer can't satisfy
+	// directly without an instance bound. The instance is the singleton on
+	// g_xEngine, so a trivial wrapper routes through.
+	AddResChangeCallback(+[](){ g_xEngine.FluxRenderer().SetupRenderGraph(); });
 }
 
-void Flux::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
+void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 {
 	// Order matters here. Both subsystems below run BEFORE Compile() so any
 	// SetPassEnabled / MarkDirty mutations they perform take effect on the
@@ -313,7 +317,7 @@ void Flux::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
 }
 
-void Flux::SyncRenderGraphDebugToggles()
+void Flux_RendererImpl::SyncRenderGraphDebugToggles()
 {
 	if (g_xEngine.FluxRenderer().m_pxRenderGraph == nullptr)
 		return;
@@ -330,7 +334,7 @@ void Flux::SyncRenderGraphDebugToggles()
 #endif
 }
 
-void Flux::SetupRenderGraph()
+void Flux_RendererImpl::SetupRenderGraph()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"SetupRenderGraph: must run on the main thread; pending command lists are accessed without locking here.");
@@ -417,7 +421,7 @@ void Flux::SetupRenderGraph()
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
 }
 
-void Flux::ReleaseAssetReferences()
+void Flux_RendererImpl::ReleaseAssetReferences()
 {
 	// Drop refs to Flux-side assets so Zenith_AssetRegistry::Shutdown can delete them
 	// cleanly. Each subsystem releases the handles it owns.
@@ -433,7 +437,7 @@ void Flux::ReleaseAssetReferences()
 	Zenith_MaterialAsset::ReleaseDefaults();
 }
 
-void Flux::Shutdown()
+void Flux_RendererImpl::Shutdown()
 {
 	delete g_xEngine.FluxRenderer().m_pxRenderGraph;
 	g_xEngine.FluxRenderer().m_pxRenderGraph = nullptr;
@@ -474,7 +478,7 @@ void Flux::Shutdown()
 #ifdef ZENITH_TOOLS
 	Flux_ShaderHotReload::Shutdown();
 	g_xEngine.Gizmos().Shutdown();
-	Flux_PlatformAPI::ShutdownImGui();
+	g_xEngine.Vulkan().ShutdownImGui();
 #endif
 
 	// HDR must shutdown after other render systems that target HDR buffer
@@ -485,20 +489,20 @@ void Flux::Shutdown()
 
 	// Shutdown swapchain-owned file-static shader/pipeline state before the
 	// Vulkan device and memory-manager registries go away.
-	Flux_Swapchain::Shutdown();
+	g_xEngine.VulkanSwapchain().Shutdown();
 
 	// Shutdown memory manager (VMA allocator, handle registries)
-	Flux_MemoryManager::Shutdown();
+	g_xEngine.VulkanMemory().Shutdown();
 
-	// Clear PerFrame callback arrays so a subsequent Flux::Initialise starts
+	// Clear PerFrame callback arrays so a subsequent Flux_RendererImpl::Initialise starts
 	// from a known empty state (matters for unit tests that re-init Flux
 	// within one process). Frame counter is intentionally left alone.
-	Flux_PerFrame::Shutdown();
+	PerFrameShutdown();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux shut down");
 }
 
-void Flux::OnResChange()
+void Flux_RendererImpl::OnResChange()
 {
 	for (u_int i = 0; i < g_xEngine.FluxRenderer().m_xResChangeCallbacks.GetSize(); i++)
 	{
@@ -506,7 +510,7 @@ void Flux::OnResChange()
 	}
 }
 
-bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
+bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 {
 	static_assert(FLUX_NUM_WORKER_THREADS > 0, "FLUX_NUM_WORKER_THREADS must be positive");
 

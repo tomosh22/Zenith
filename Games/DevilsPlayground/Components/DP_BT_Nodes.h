@@ -59,7 +59,7 @@ public:
 			if (fScent >= fThreshold)
 			{
 				Zenith_SceneData* pxScene =
-					Zenith_SceneManager::GetSceneDataForEntity(xScentTarget);
+					g_xEngine.SceneRegistry().GetSceneDataForEntity(xScentTarget);
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xTgt = pxScene->TryGetEntity(xScentTarget);
@@ -258,7 +258,7 @@ public:
 
 		// Resolve target's scene + transform.
 		Zenith_SceneData* pxScene =
-			Zenith_SceneManager::GetSceneDataForEntity(xTarget);
+			g_xEngine.SceneRegistry().GetSceneDataForEntity(xTarget);
 		if (pxScene == nullptr)
 		{
 			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);

@@ -2,7 +2,7 @@
 
 #include "Zenith_Windows_Callstack.h"
 #include "Callstack/Zenith_Callstack.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 
 #include <cstring>
 

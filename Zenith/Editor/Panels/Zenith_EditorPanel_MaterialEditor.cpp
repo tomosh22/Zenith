@@ -122,7 +122,7 @@ void Zenith_EditorPanelMaterialEditor::RenderToolbarSection()
 		Zenith_MaterialAsset* pNewMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		if (pNewMaterial)
 		{
-			Zenith_Editor::SelectMaterial(pNewMaterial);
+			g_xEngine.Editor().SelectMaterial(pNewMaterial);
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Created new material: %s", pNewMaterial->GetName().c_str());
 		}
 	}
@@ -141,7 +141,7 @@ void Zenith_EditorPanelMaterialEditor::RenderToolbarSection()
 			Zenith_MaterialAsset* pMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strFilePath);
 			if (pMaterial)
 			{
-				Zenith_Editor::SelectMaterial(pMaterial);
+				g_xEngine.Editor().SelectMaterial(pMaterial);
 				Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Loaded material: %s", strFilePath.c_str());
 			}
 			else
@@ -205,13 +205,13 @@ void Zenith_EditorPanelMaterialEditor::RenderPropertiesAndTexturesSection(Zenith
 	ImGui::Text("Material Properties");
 
 	// Use shared utility for material properties
-	Zenith_Editor_MaterialUI::RenderMaterialProperties(pMat, "MaterialEditor");
+	g_xEngine.EditorMaterialUI().RenderMaterialProperties(pMat, "MaterialEditor");
 
 	ImGui::Separator();
 	ImGui::Text("Textures");
 
 	// Use shared utility for texture slots (no preview in this panel for cleaner look)
-	Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pMat, false);
+	g_xEngine.EditorMaterialUI().RenderAllTextureSlots(*pMat, false);
 }
 
 //-----------------------------------------------------------------------------

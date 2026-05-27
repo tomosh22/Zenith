@@ -12,7 +12,7 @@
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Scene serialization includes
 #include "EntityComponent/Zenith_Scene.h"
@@ -139,15 +139,15 @@ void Zenith_UnitTests::TestProfiling(){
 	constexpr Zenith_ProfileIndex eIndex0 = ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES;
 	constexpr Zenith_ProfileIndex eIndex1 = ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES;
 
-	Zenith_Profiling::BeginFrame();
+	g_xEngine.Profiling().BeginFrame();
 	
-	Zenith_Profiling::BeginProfile(eIndex0);
-	ZENITH_ASSERT_EQ(Zenith_Profiling::GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
-	Zenith_Profiling::BeginProfile(eIndex1);
-	ZENITH_ASSERT_EQ(Zenith_Profiling::GetCurrentIndex(), eIndex1, "Profiling index wasn't set correctly");
-	Zenith_Profiling::EndProfile(eIndex1);
-	ZENITH_ASSERT_EQ(Zenith_Profiling::GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
-	Zenith_Profiling::EndProfile(eIndex0);
+	g_xEngine.Profiling().BeginProfile(eIndex0);
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
+	g_xEngine.Profiling().BeginProfile(eIndex1);
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentIndex(), eIndex1, "Profiling index wasn't set correctly");
+	g_xEngine.Profiling().EndProfile(eIndex1);
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
+	g_xEngine.Profiling().EndProfile(eIndex0);
 
 	TestData xTest0 = { 0, ~0u }, xTest1 = { 1, ~0u }, xTest2 = { 2, ~0u };
 	Zenith_Task* pxTask0 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Test, &xTest0);
@@ -164,7 +164,7 @@ void Zenith_UnitTests::TestProfiling(){
 	ZENITH_ASSERT_TRUE(xTest1.Validate(), "");
 	ZENITH_ASSERT_TRUE(xTest2.Validate(), "");
 
-	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
+	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = g_xEngine.Profiling().GetEvents();
 	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(g_xEngine.Threading().GetCurrentThreadID());
 	(void)xEvents.at(pxTask0->GetCompletedThreadID());
 	(void)xEvents.at(pxTask1->GetCompletedThreadID());
@@ -178,7 +178,7 @@ void Zenith_UnitTests::TestProfiling(){
 	delete pxTask1;
 	delete pxTask2;
 
-	Zenith_Profiling::EndFrame();
+	g_xEngine.Profiling().EndFrame();
 }
 
 ZENITH_TEST(Core, Vector) { Zenith_UnitTests::TestVector(); }
@@ -1180,8 +1180,8 @@ ZENITH_TEST(ECS, ComponentSerialization) { Zenith_UnitTests::TestComponentSerial
 void Zenith_UnitTests::TestComponentSerialization(){
 
 	// Create a temporary scene through SceneManager
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentSerializationScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestComponentSerializationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Test TransformComponent
 	{
@@ -1270,7 +1270,7 @@ void Zenith_UnitTests::TestComponentSerialization(){
 	}
 
 	// Clean up test scene
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 
 }
 
@@ -1282,8 +1282,8 @@ ZENITH_TEST(ECS, EntitySerialization) { Zenith_UnitTests::TestEntitySerializatio
 void Zenith_UnitTests::TestEntitySerialization(){
 
 	// Create a temporary scene through SceneManager
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestEntitySerializationScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestEntitySerializationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create ground truth entity with multiple components
 	Zenith_Entity xGroundTruthEntity(pxSceneData, "TestEntity");
@@ -1328,7 +1328,7 @@ void Zenith_UnitTests::TestEntitySerialization(){
 	ZENITH_ASSERT_TRUE(xLoadedPos.x == 10.0f && xLoadedPos.y == 20.0f && xLoadedPos.z == 30.0f, "Entity transform position mismatch");
 
 	// Clean up test scene
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 
 }
 
@@ -1342,8 +1342,8 @@ ZENITH_TEST(Scene, SceneSerialization) { Zenith_UnitTests::TestSceneSerializatio
 void Zenith_UnitTests::TestSceneSerialization(){
 
 	// Create a test scene through SceneManager
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestSceneSerializationScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestSceneSerializationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Entity 1: Camera
 	Zenith_Entity xCameraEntity(pxSceneData, "MainCamera");
@@ -1383,7 +1383,7 @@ void Zenith_UnitTests::TestSceneSerialization(){
 
 
 	// Clean up test scene
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 
 }
 
@@ -1402,8 +1402,8 @@ void Zenith_UnitTests::TestSceneRoundTrip(){
 	// STEP 1: CREATE GROUND TRUTH SCENE
 	// ========================================================================
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestSceneRoundTripScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestSceneRoundTripScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create Entity 1: Camera with specific properties
 	Zenith_Entity xCameraEntity(pxSceneData, "MainCamera");
@@ -1462,8 +1462,8 @@ void Zenith_UnitTests::TestSceneRoundTrip(){
 	// STEP 4: LOAD SCENE FROM DISK
 	// ========================================================================
 
-	Zenith_Scene xLoadedScene = Zenith_SceneManager::CreateEmptyScene("LoadedTestScene");
-	Zenith_SceneData* pxLoadedSceneData = Zenith_SceneManager::GetSceneData(xLoadedScene);
+	Zenith_Scene xLoadedScene = g_xEngine.SceneRegistry().CreateEmptyScene("LoadedTestScene");
+	Zenith_SceneData* pxLoadedSceneData = g_xEngine.SceneRegistry().GetSceneData(xLoadedScene);
 	pxLoadedSceneData->LoadFromFile(strTestScenePath);
 
 	// ========================================================================
@@ -1528,8 +1528,8 @@ void Zenith_UnitTests::TestSceneRoundTrip(){
 	// ========================================================================
 
 	// Clean up test scenes
-	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_SceneManager::UnloadScene(xLoadedScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xLoadedScene);
 
 	// Clean up test file
 	std::filesystem::remove(strTestScenePath);
@@ -1542,8 +1542,8 @@ ZENITH_TEST(Scene, SceneDisableDestroyHelpers) { Zenith_UnitTests::TestSceneDisa
 void Zenith_UnitTests::TestSceneDisableDestroyHelpers(){
 
 	// Create a test scene with entities
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestDisableDestroyScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestDisableDestroyScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Test scene should be created");
 
 	// Test DisableEntity with invalid ID — should not crash
@@ -1568,7 +1568,7 @@ void Zenith_UnitTests::TestSceneDisableDestroyHelpers(){
 	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID), "Entity slot should still exist after DestroyEntityComponents");
 
 	// Clean up
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 
 }
 
@@ -6638,8 +6638,8 @@ ZENITH_TEST(ECS, ComponentRemovalIndexUpdate) { Zenith_UnitTests::TestComponentR
 void Zenith_UnitTests::TestComponentRemovalIndexUpdate(){
 
 	// Create a test scene through SceneManager
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentRemovalIndexUpdateScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestComponentRemovalIndexUpdateScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity1(pxSceneData, "Entity1");
 	Zenith_Entity xEntity2(pxSceneData, "Entity2");
 	Zenith_Entity xEntity3(pxSceneData, "Entity3");
@@ -6665,7 +6665,7 @@ void Zenith_UnitTests::TestComponentRemovalIndexUpdate(){
 	xEntity3.GetComponent<Zenith_TransformComponent>().GetPosition(xPos3);
 	ZENITH_ASSERT_TRUE(xPos3.x == xExpectedPos3.x && xPos3.y == xExpectedPos3.y && xPos3.z == xExpectedPos3.z, "TestComponentRemovalIndexUpdate: Entity3 position corrupted after Entity2 removal");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -6674,8 +6674,8 @@ void Zenith_UnitTests::TestComponentRemovalIndexUpdate(){
 ZENITH_TEST(ECS, ComponentSwapAndPop) { Zenith_UnitTests::TestComponentSwapAndPop(); }
 void Zenith_UnitTests::TestComponentSwapAndPop(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentSwapAndPopScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestComponentSwapAndPopScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create 5 entities with transforms
 	Zenith_Entity xEntities[5] = {
@@ -6719,7 +6719,7 @@ void Zenith_UnitTests::TestComponentSwapAndPop(){
 		ZENITH_ASSERT_EQ(xPos.x, static_cast<float>(i * 10), "TestComponentSwapAndPop: Entity position corrupted after second removal");
 	}
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -6728,8 +6728,8 @@ void Zenith_UnitTests::TestComponentSwapAndPop(){
 ZENITH_TEST(Core, MultipleComponentRemoval) { Zenith_UnitTests::TestMultipleComponentRemoval(); }
 void Zenith_UnitTests::TestMultipleComponentRemoval(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestMultipleComponentRemovalScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestMultipleComponentRemovalScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create entities with multiple component types
 	Zenith_Entity xEntity1(pxSceneData, "Entity1");
@@ -6770,7 +6770,7 @@ void Zenith_UnitTests::TestMultipleComponentRemoval(){
 	// Verify Entity3 still has collider with correct data
 	ZENITH_ASSERT_TRUE(xEntity3.HasComponent<Zenith_ColliderComponent>(), "TestMultipleComponentRemoval: Entity3 lost ColliderComponent after camera removal");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -6780,8 +6780,8 @@ ZENITH_TEST(ECS, ComponentRemovalWithManyEntities) { Zenith_UnitTests::TestCompo
 void Zenith_UnitTests::TestComponentRemovalWithManyEntities(){
 
 	constexpr u_int NUM_ENTITIES = 1000;
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentRemovalWithManyEntitiesScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestComponentRemovalWithManyEntitiesScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create many entities
 	std::vector<Zenith_Entity> xEntities;
@@ -6810,7 +6810,7 @@ void Zenith_UnitTests::TestComponentRemovalWithManyEntities(){
 		ZENITH_ASSERT_EQ(xPos.x, static_cast<float>(i), "TestComponentRemovalWithManyEntities: Entity position corrupted");
 	}
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -6819,8 +6819,8 @@ void Zenith_UnitTests::TestComponentRemovalWithManyEntities(){
 ZENITH_TEST(ECS, EntityNameFromScene) { Zenith_UnitTests::TestEntityNameFromScene(); }
 void Zenith_UnitTests::TestEntityNameFromScene(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestEntityNameFromSceneScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestEntityNameFromSceneScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create entity with name
 	Zenith_Entity xEntity(pxSceneData, "TestEntityName");
@@ -6840,7 +6840,7 @@ void Zenith_UnitTests::TestEntityNameFromScene(){
 	ZENITH_ASSERT_EQ(xEntity.GetName(), "RenamedEntity", "TestEntityNameFromScene: First entity name changed after creating second");
 	ZENITH_ASSERT_EQ(xEntity2.GetName(), "SecondEntity", "TestEntityNameFromScene: Second entity has wrong name");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -6851,8 +6851,8 @@ void Zenith_UnitTests::TestEntityNameFromScene(){
 ZENITH_TEST(ECS, EntityCopyPreservesAccess) { Zenith_UnitTests::TestEntityCopyPreservesAccess(); }
 void Zenith_UnitTests::TestEntityCopyPreservesAccess(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestEntityCopyPreservesAccessScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestEntityCopyPreservesAccessScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xOriginal(pxSceneData, "OriginalEntity");
 
 	// Set a position
@@ -6881,7 +6881,7 @@ void Zenith_UnitTests::TestEntityCopyPreservesAccess(){
 	// Verify name access works on copy
 	ZENITH_ASSERT_EQ(xCopy.GetName(), "OriginalEntity", "TestEntityCopyPreservesAccess: Copy cannot access entity name");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 //------------------------------------------------------------------------------
@@ -6927,8 +6927,8 @@ void Zenith_UnitTests::TestComponentMetaRegistration(){
 ZENITH_TEST(ECS, ComponentMetaSerialization) { Zenith_UnitTests::TestComponentMetaSerialization(); }
 void Zenith_UnitTests::TestComponentMetaSerialization(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentMetaSerializationScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestComponentMetaSerializationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity(pxSceneData, "SerializationTestEntity");
 
 	// Set up transform
@@ -6952,7 +6952,7 @@ void Zenith_UnitTests::TestComponentMetaSerialization(){
 	// If we get here without assertion, serialization worked
 	// The deserialization test will verify the data is correct
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -6963,8 +6963,8 @@ void Zenith_UnitTests::TestComponentMetaSerialization(){
 ZENITH_TEST(ECS, ComponentMetaDeserialization) { Zenith_UnitTests::TestComponentMetaDeserialization(); }
 void Zenith_UnitTests::TestComponentMetaDeserialization(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentMetaDeserializationScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestComponentMetaDeserializationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xOriginal(pxSceneData, "OriginalEntity");
 
 	// Set distinctive values
@@ -6989,7 +6989,7 @@ void Zenith_UnitTests::TestComponentMetaDeserialization(){
 	xNew.GetComponent<Zenith_TransformComponent>().GetPosition(xNewPos);
 	ZENITH_ASSERT_TRUE(xNewPos.x == 111.0f && xNewPos.y == 222.0f && xNewPos.z == 333.0f, "TestComponentMetaDeserialization: Deserialized transform position is wrong");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -7058,8 +7058,8 @@ void Zenith_UnitTests::TestLifecycleHookDetection(){
 ZENITH_TEST(ECS, LifecycleOnAwake) { Zenith_UnitTests::TestLifecycleOnAwake(); }
 void Zenith_UnitTests::TestLifecycleOnAwake(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnAwakeScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestLifecycleOnAwakeScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity(pxSceneData, "AwakeTestEntity");
 
 	// Dispatch OnAwake - should complete without crashing
@@ -7069,7 +7069,7 @@ void Zenith_UnitTests::TestLifecycleOnAwake(){
 	// Verify entity is still valid
 	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnAwake: Entity lost TransformComponent after dispatch");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -7078,8 +7078,8 @@ void Zenith_UnitTests::TestLifecycleOnAwake(){
 ZENITH_TEST(ECS, LifecycleOnStart) { Zenith_UnitTests::TestLifecycleOnStart(); }
 void Zenith_UnitTests::TestLifecycleOnStart(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnStartScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestLifecycleOnStartScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity(pxSceneData, "StartTestEntity");
 
 	// Dispatch OnStart - should complete without crashing
@@ -7088,7 +7088,7 @@ void Zenith_UnitTests::TestLifecycleOnStart(){
 	// Verify entity is still valid
 	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnStart: Entity lost TransformComponent after dispatch");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -7097,8 +7097,8 @@ void Zenith_UnitTests::TestLifecycleOnStart(){
 ZENITH_TEST(ECS, LifecycleOnUpdate) { Zenith_UnitTests::TestLifecycleOnUpdate(); }
 void Zenith_UnitTests::TestLifecycleOnUpdate(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnUpdateScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestLifecycleOnUpdateScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity(pxSceneData, "UpdateTestEntity");
 
 	// Dispatch OnUpdate with a delta time - should complete without crashing
@@ -7108,7 +7108,7 @@ void Zenith_UnitTests::TestLifecycleOnUpdate(){
 	// Verify entity is still valid
 	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnUpdate: Entity lost TransformComponent after dispatch");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -7117,8 +7117,8 @@ void Zenith_UnitTests::TestLifecycleOnUpdate(){
 ZENITH_TEST(ECS, LifecycleOnDestroy) { Zenith_UnitTests::TestLifecycleOnDestroy(); }
 void Zenith_UnitTests::TestLifecycleOnDestroy(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnDestroyScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestLifecycleOnDestroyScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity(pxSceneData, "DestroyTestEntity");
 
 	// Set a position before dispatch
@@ -7136,7 +7136,7 @@ void Zenith_UnitTests::TestLifecycleOnDestroy(){
 	xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 	ZENITH_ASSERT_TRUE(xPos.x == 1.0f && xPos.y == 2.0f && xPos.z == 3.0f, "TestLifecycleOnDestroy: Component data corrupted after dispatch");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -7146,8 +7146,8 @@ void Zenith_UnitTests::TestLifecycleOnDestroy(){
 ZENITH_TEST(ECS, LifecycleDispatchOrder) { Zenith_UnitTests::TestLifecycleDispatchOrder(); }
 void Zenith_UnitTests::TestLifecycleDispatchOrder(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleDispatchOrderScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestLifecycleDispatchOrderScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 	Zenith_Entity xEntity(pxSceneData, "OrderTestEntity");
 
 	// Add multiple components
@@ -7165,7 +7165,7 @@ void Zenith_UnitTests::TestLifecycleDispatchOrder(){
 	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleDispatchOrder: Entity lost TransformComponent");
 	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_CameraComponent>(), "TestLifecycleDispatchOrder: Entity lost CameraComponent");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 /**
@@ -7183,8 +7183,8 @@ void Zenith_UnitTests::TestLifecycleDispatchOrder(){
 ZENITH_TEST(ECS, LifecycleEntityCreationDuringCallback) { Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback(); }
 void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Store initial entity count
 	const u_int uInitialCount = pxSceneData->GetEntityCount();
@@ -7245,8 +7245,8 @@ void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback(){
 ZENITH_TEST(Core, DispatchFullLifecycleInit) { Zenith_UnitTests::TestDispatchFullLifecycleInit(); }
 void Zenith_UnitTests::TestDispatchFullLifecycleInit(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create several entities
 	Zenith_Entity xEntity1(pxSceneData, "LifecycleInitEntity1");
@@ -7259,7 +7259,7 @@ void Zenith_UnitTests::TestDispatchFullLifecycleInit(){
 
 	// Call the shared lifecycle init function
 	// This should NOT crash even if callbacks create new entities
-	Zenith_SceneManager::DispatchFullLifecycleInit();
+	g_xEngine.SceneLifecycle().DispatchFullLifecycleInit();
 
 	// Verify all original entities are still valid and accessible
 	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID1), "TestDispatchFullLifecycleInit: Entity1 was invalidated");
@@ -7286,8 +7286,8 @@ ZENITH_TEST(ECS, QuerySingleComponent) { Zenith_UnitTests::TestQuerySingleCompon
 
 void Zenith_UnitTests::TestQuerySingleComponent(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQuerySingleComponentScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestQuerySingleComponentScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create 3 entities with transforms
 	Zenith_Entity xEntity1(pxSceneData, "Entity1");
@@ -7317,15 +7317,15 @@ void Zenith_UnitTests::TestQuerySingleComponent(){
 
 	ZENITH_ASSERT_EQ(uCameraCount, 2, "TestQuerySingleComponent: Expected 2 entities with CameraComponent");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 ZENITH_TEST(ECS, QueryMultipleComponents) { Zenith_UnitTests::TestQueryMultipleComponents(); }
 
 void Zenith_UnitTests::TestQueryMultipleComponents(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryMultipleComponentsScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestQueryMultipleComponentsScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create 3 entities with transforms
 	Zenith_Entity xEntity1(pxSceneData, "Entity1");
@@ -7362,15 +7362,15 @@ void Zenith_UnitTests::TestQueryMultipleComponents(){
 
 	ZENITH_ASSERT_TRUE(bFoundEntity1 && bFoundEntity3, "TestQueryMultipleComponents: Did not find expected entities");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 ZENITH_TEST(ECS, QueryNoMatches) { Zenith_UnitTests::TestQueryNoMatches(); }
 
 void Zenith_UnitTests::TestQueryNoMatches(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryNoMatchesScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestQueryNoMatchesScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create entity with only TransformComponent
 	Zenith_Entity xEntity(pxSceneData, "Entity1");
@@ -7392,15 +7392,15 @@ void Zenith_UnitTests::TestQueryNoMatches(){
 	Zenith_EntityID uFirst = pxSceneData->Query<Zenith_CameraComponent>().First();
 	ZENITH_ASSERT_EQ(uFirst, INVALID_ENTITY_ID, "TestQueryNoMatches: First() should return INVALID_ENTITY_ID for empty query");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 ZENITH_TEST(ECS, QueryCount) { Zenith_UnitTests::TestQueryCount(); }
 
 void Zenith_UnitTests::TestQueryCount(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryCountScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestQueryCountScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create 5 entities
 	Zenith_Entity xEntity1(pxSceneData, "Entity1");
@@ -7426,15 +7426,15 @@ void Zenith_UnitTests::TestQueryCount(){
 	u_int uBothCount = pxSceneData->Query<Zenith_TransformComponent, Zenith_CameraComponent>().Count();
 	ZENITH_ASSERT_EQ(uBothCount, 3, "TestQueryCount: Expected 3 entities with both Transform and Camera");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 ZENITH_TEST(ECS, QueryFirstAndAny) { Zenith_UnitTests::TestQueryFirstAndAny(); }
 
 void Zenith_UnitTests::TestQueryFirstAndAny(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryFirstAndAnyScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("TestQueryFirstAndAnyScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create 3 entities
 	Zenith_Entity xEntity1(pxSceneData, "Entity1");
@@ -7459,7 +7459,7 @@ void Zenith_UnitTests::TestQueryFirstAndAny(){
 	Zenith_EntityID uFirstTransform = pxSceneData->Query<Zenith_TransformComponent>().First();
 	ZENITH_ASSERT_NE(uFirstTransform, INVALID_ENTITY_ID, "TestQueryFirstAndAny: First() should return valid ID for TransformComponent");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 }
 
 //------------------------------------------------------------------------------
@@ -7686,8 +7686,8 @@ ZENITH_TEST(ECS, EntityAddChild) { Zenith_UnitTests::TestEntityAddChild(); }
 
 void Zenith_UnitTests::TestEntityAddChild(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create parent and child entities
 	Zenith_Entity xParent(pxSceneData, "TestParent");
@@ -7719,8 +7719,8 @@ ZENITH_TEST(ECS, EntityRemoveChild) { Zenith_UnitTests::TestEntityRemoveChild();
 
 void Zenith_UnitTests::TestEntityRemoveChild(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create parent and child entities
 	Zenith_Entity xParent(pxSceneData, "TestParent2");
@@ -7751,8 +7751,8 @@ ZENITH_TEST(ECS, EntityGetChildren) { Zenith_UnitTests::TestEntityGetChildren();
 
 void Zenith_UnitTests::TestEntityGetChildren(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create parent with multiple children
 	Zenith_Entity xParent(pxSceneData, "TestParent3");
@@ -7790,8 +7790,8 @@ ZENITH_TEST(ECS, EntityReparenting) { Zenith_UnitTests::TestEntityReparenting();
 
 void Zenith_UnitTests::TestEntityReparenting(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create entities for reparenting test
 	Zenith_Entity xParentA(pxSceneData, "ParentA");
@@ -7824,8 +7824,8 @@ void Zenith_UnitTests::TestEntityChildCleanupOnDelete(){
 	// In a real implementation, deleting a parent would need to handle children
 	// For now we just verify the API works correctly
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xParent(pxSceneData, "DeleteParent");
 	Zenith_Entity xChild(pxSceneData, "DeleteChild");
@@ -7848,8 +7848,8 @@ ZENITH_TEST(ECS, EntityHierarchySerialization) { Zenith_UnitTests::TestEntityHie
 
 void Zenith_UnitTests::TestEntityHierarchySerialization(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create hierarchy
 	Zenith_Entity xParent(pxSceneData, "SerializeParent");
@@ -7901,8 +7901,8 @@ ZENITH_TEST(Prefab, PrefabCreateFromEntity) { Zenith_UnitTests::TestPrefabCreate
 
 void Zenith_UnitTests::TestPrefabCreateFromEntity(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create an entity with a transform component
 	Zenith_Entity xEntity(pxSceneData, "PrefabSource");
@@ -7924,8 +7924,8 @@ ZENITH_TEST(Prefab, PrefabInstantiation) { Zenith_UnitTests::TestPrefabInstantia
 
 void Zenith_UnitTests::TestPrefabInstantiation(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create source entity
 	Zenith_Entity xSource(pxSceneData, "InstantiateSource");
@@ -7959,8 +7959,8 @@ ZENITH_TEST(Prefab, PrefabSaveLoadRoundTrip) { Zenith_UnitTests::TestPrefabSaveL
 
 void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create source entity
 	Zenith_Entity xSource(pxSceneData, "RoundTripSource");
@@ -8061,8 +8061,8 @@ void Zenith_UnitTests::TestPrefabVariantInstantiate(){
 
 	// Variant inheritance regression test: instantiating a variant should produce
 	// an entity with the base prefab's components, NOT an empty entity.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Build a base prefab from an entity with a known position.
 	Zenith_Entity xBaseSource(pxSceneData, "VariantBaseSrc");
@@ -8106,8 +8106,8 @@ void Zenith_UnitTests::TestPrefabVariantCycleRejected(){
 	// loadable through the registry so PrefabHandle::Get resolves), make B a
 	// variant of A, then try to make A a variant of B — which would form
 	// A -> B -> A. CreateAsVariant should refuse.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "CycleSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
@@ -8148,8 +8148,8 @@ void Zenith_UnitTests::TestPrefabVariantOverrideApplies(){
 	// and actually mutates the entity's component field. Uses Transform.Scale
 	// because it's a Vector3 (matches the registered property type) and the
 	// base prefab can be set to a value that's distinguishable from the override.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "OverrideBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
@@ -8191,8 +8191,8 @@ void Zenith_UnitTests::TestPrefabVariantChain(){
 	// Three-level variant chain: A -> B -> C, where B overrides Position and
 	// C overrides Scale. Instantiating C should produce an entity with both
 	// overrides applied on top of A's components.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "ChainBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -8303,8 +8303,8 @@ void Zenith_UnitTests::TestPrefabApplyToEntity(){
 	// ApplyToEntity overlays prefab data onto an existing entity (vs Instantiate
 	// which creates a fresh one). Verifies the apply path runs and writes the
 	// prefab's component values onto the existing entity's components.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Source entity used to author the prefab.
 	Zenith_Entity xSrc(pxSceneData, "ApplySrc");
@@ -8333,8 +8333,8 @@ void Zenith_UnitTests::TestPrefabApplyVariantToEntity(){
 	// ApplyToEntity on a variant: should walk the base chain, apply base data,
 	// then layer overrides on top. Verifies that variants apply correctly via
 	// ApplyToEntity (not just Instantiate).
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "ApplyVariantBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
@@ -8381,8 +8381,8 @@ ZENITH_TEST(Prefab, PrefabMoveConstructor) { Zenith_UnitTests::TestPrefabMoveCon
 void Zenith_UnitTests::TestPrefabMoveConstructor(){
 
 	// Move construction transfers state from source to destination.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "MoveCtorSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(50.0f, 50.0f, 50.0f));
@@ -8406,8 +8406,8 @@ ZENITH_TEST(Prefab, PrefabMoveAssignment) { Zenith_UnitTests::TestPrefabMoveAssi
 
 void Zenith_UnitTests::TestPrefabMoveAssignment(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "MoveAsgnSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(60.0f, 70.0f, 80.0f));
@@ -8434,8 +8434,8 @@ void Zenith_UnitTests::TestPrefabVariantRoundTripWithOverrides(){
 
 	// Critical for editor authoring: variants saved to disk with overrides
 	// must reload with those overrides intact and produce the same entity.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "RoundTripVariantBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
@@ -8500,8 +8500,8 @@ void Zenith_UnitTests::TestPrefabMultipleOverridesSameComponent(){
 
 	// AddOverride dedupes by (component, propertyPath). Two overrides on the
 	// same component but different fields should both apply at instantiation.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "MultiOvBaseSrc");
 	Zenith_Prefab xBase;
@@ -8554,8 +8554,8 @@ void Zenith_UnitTests::TestPrefabClearOverridesReverts(){
 
 	// After ClearOverrides(), instantiating a variant should produce an entity
 	// that matches the base prefab exactly (no override applied).
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "ClearOvBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
@@ -8609,8 +8609,8 @@ ZENITH_TEST(Prefab, PrefabInstantiateNullSceneData) { Zenith_UnitTests::TestPref
 void Zenith_UnitTests::TestPrefabInstantiateNullSceneData(){
 
 	// Instantiate(nullptr, ...) should reject and return an invalid entity.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "NullSceneSrc");
 	Zenith_Prefab xPrefab;
@@ -8627,8 +8627,8 @@ ZENITH_TEST(Prefab, PrefabSelfVariantRejected) { Zenith_UnitTests::TestPrefabSel
 void Zenith_UnitTests::TestPrefabSelfVariantRejected(){
 
 	// Variant of itself: A -> A. Cycle detection should reject this.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "SelfCycleSrc");
 	Zenith_Prefab xA;
@@ -8656,8 +8656,8 @@ void Zenith_UnitTests::TestPrefabInstantiateNamesEntity(){
 
 	// When strEntityName is non-empty, the entity gets that name.
 	// When empty, the entity inherits the prefab's own name.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "NameSrc");
 	Zenith_Prefab xPrefab;
@@ -8683,8 +8683,8 @@ void Zenith_UnitTests::TestPrefabVariantInstantiateLifecycleOnceAtTop(){
 	// during construction; manual dispatch happens once after recursion completes.
 	// Verifies the entity is awoken (not pending-Awake) post-Instantiate, which
 	// is the observable outcome of the single top-level dispatch.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "LifecycleBaseSrc");
 	Zenith_Prefab xBase;
@@ -8724,8 +8724,8 @@ ZENITH_TEST(Prefab, PrefabVariantPositionOverrideSyncsPhysicsBody) { Zenith_Unit
 
 void Zenith_UnitTests::TestPrefabVariantPositionOverrideSyncsPhysicsBody(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Base entity at origin with a capsule collider.
 	Zenith_Entity xSrc(pxSceneData, "PhysSyncBaseSrc");
@@ -8782,8 +8782,8 @@ void Zenith_UnitTests::TestPrefabVariantScaleOverrideRebuildsCollider(){
 	// matches the override (the path that calls SetScale also writes m_xScale).
 	// Combined with the Position test, it gives high confidence the setter
 	// route is being taken for both registered Transform setters.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "ScaleSyncBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
@@ -8858,8 +8858,8 @@ void Zenith_UnitTests::TestPrefabLoadFromDeletedFile(){
 	// Saving then deleting before load: the registry's load path is currently
 	// strict (asserts on missing files) — so testing the unload branch is the
 	// best we can do without modifying production code.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "DeletedFileSrc");
 	Zenith_Prefab xPrefab;
@@ -8938,8 +8938,8 @@ void Zenith_UnitTests::TestPrefabVariantNestedPathSkipped(){
 	// warning instead. We can't directly intercept the warning here, so this
 	// test simply verifies the call returns a valid entity with the base's
 	// values intact (the override is silently dropped).
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	Zenith_Entity xSrc(pxSceneData, "NestedBaseSrc");
 	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
@@ -9151,8 +9151,8 @@ ZENITH_TEST(Core, CircularHierarchyPrevention) { Zenith_UnitTests::TestCircularH
 
 void Zenith_UnitTests::TestCircularHierarchyPrevention(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create A -> B -> C hierarchy
 	Zenith_Entity xA(pxSceneData, "CircularTestA");
@@ -9180,9 +9180,9 @@ void Zenith_UnitTests::TestCircularHierarchyPrevention(){
 	ZENITH_ASSERT_FALSE(xA.HasParent(), "TestCircularHierarchyPrevention: Circular parent should be rejected - A should remain root");
 
 	// Clean up
-	Zenith_SceneManager::DestroyImmediate(xC);
-	Zenith_SceneManager::DestroyImmediate(xB);
-	Zenith_SceneManager::DestroyImmediate(xA);
+	Zenith_SceneEntityOwnership::DestroyImmediate(xC);
+	Zenith_SceneEntityOwnership::DestroyImmediate(xB);
+	Zenith_SceneEntityOwnership::DestroyImmediate(xA);
 
 }
 
@@ -9190,8 +9190,8 @@ ZENITH_TEST(Core, SelfParentingPrevention) { Zenith_UnitTests::TestSelfParenting
 
 void Zenith_UnitTests::TestSelfParentingPrevention(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create an entity
 	Zenith_Entity xEntity(pxSceneData, "SelfParentTest");
@@ -9207,7 +9207,7 @@ void Zenith_UnitTests::TestSelfParentingPrevention(){
 	ZENITH_ASSERT_FALSE(xEntity.HasParent(), "TestSelfParentingPrevention: Self-parenting should be rejected");
 
 	// Clean up
-	Zenith_SceneManager::DestroyImmediate(xEntity);
+	Zenith_SceneEntityOwnership::DestroyImmediate(xEntity);
 
 }
 
@@ -9215,8 +9215,8 @@ ZENITH_TEST(Core, TryGetMainCameraWhenNotSet) { Zenith_UnitTests::TestTryGetMain
 
 void Zenith_UnitTests::TestTryGetMainCameraWhenNotSet(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Remember current camera if any
 	Zenith_EntityID uPreviousCamera = pxSceneData->GetMainCameraEntity();
@@ -9240,8 +9240,8 @@ ZENITH_TEST(Core, DeepHierarchyBuildModelMatrix) { Zenith_UnitTests::TestDeepHie
 
 void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix(){
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Create a hierarchy with multiple levels (not too deep - just testing it works)
 	constexpr u_int DEPTH = 10;
@@ -9285,7 +9285,7 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix(){
 	for (int i = static_cast<int>(DEPTH) - 1; i >= 0; --i)
 	{
 		Zenith_Entity xEntity = pxSceneData->GetEntity(xEntityIDs.Get(i));
-		Zenith_SceneManager::DestroyImmediate(xEntity);
+		Zenith_SceneEntityOwnership::DestroyImmediate(xEntity);
 	}
 
 }
@@ -9299,8 +9299,8 @@ ZENITH_TEST(Core, LocalSceneDestruction) { Zenith_UnitTests::TestLocalSceneDestr
 void Zenith_UnitTests::TestLocalSceneDestruction(){
 
 	// Create a scene through SceneManager (not the active scene)
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("LocalDestructionTestScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("LocalDestructionTestScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create some entities with transforms
 	Zenith_Entity xEntity1(pxSceneData, "LocalEntity1");
@@ -9315,7 +9315,7 @@ void Zenith_UnitTests::TestLocalSceneDestruction(){
 	// Unload the scene - this should NOT crash
 	// The original bug was: TransformComponent::~TransformComponent called GetCurrentScene()
 	// which returned the wrong scene, causing memory corruption
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 
 }
 
@@ -9326,8 +9326,8 @@ void Zenith_UnitTests::TestLocalSceneDestruction(){
 ZENITH_TEST(Core, LocalSceneWithHierarchy) { Zenith_UnitTests::TestLocalSceneWithHierarchy(); }
 void Zenith_UnitTests::TestLocalSceneWithHierarchy(){
 
-	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("LocalHierarchyTestScene");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("LocalHierarchyTestScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
 
 	// Create parent entity
 	Zenith_Entity xParent(pxSceneData, "Parent");
@@ -9351,7 +9351,7 @@ void Zenith_UnitTests::TestLocalSceneWithHierarchy(){
 	// Unload the scene - destructor should handle hierarchy cleanup safely
 	// Without the fix, DetachFromParent/DetachAllChildren would crash trying to
 	// access the global scene instead of this scene
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	g_xEngine.SceneOperations().UnloadScene(xTestScene);
 
 }
 
@@ -10274,8 +10274,8 @@ ZENITH_TEST(Tween, TweenComponentScaleTo) { Zenith_UnitTests::TestTweenComponent
 
 void Zenith_UnitTests::TestTweenComponentScaleTo(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenScaleTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenScaleTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10303,15 +10303,15 @@ void Zenith_UnitTests::TestTweenComponentScaleTo(){
 
 	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Tween should be removed after completion");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenComponentPositionTo) { Zenith_UnitTests::TestTweenComponentPositionTo(); }
 
 void Zenith_UnitTests::TestTweenComponentPositionTo(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenPosTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenPosTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10332,15 +10332,15 @@ void Zenith_UnitTests::TestTweenComponentPositionTo(){
 	xTransform.GetPosition(xPos);
 	ZENITH_ASSERT_LT(glm::abs(xPos.x - 10.0f), 0.01f, "Position X should be ~10.0 at completion");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenComponentMultiple) { Zenith_UnitTests::TestTweenComponentMultiple(); }
 
 void Zenith_UnitTests::TestTweenComponentMultiple(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenMultiTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenMultiTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10364,15 +10364,15 @@ void Zenith_UnitTests::TestTweenComponentMultiple(){
 	ZENITH_ASSERT_LT(glm::abs(xScale.x - 2.0f), 0.01f, "Scale should have reached target");
 	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Both tweens should be complete");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenComponentCallback) { Zenith_UnitTests::TestTweenComponentCallback(); }
 
 void Zenith_UnitTests::TestTweenComponentCallback(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCallbackTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenCallbackTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10391,15 +10391,15 @@ void Zenith_UnitTests::TestTweenComponentCallback(){
 	xTween.OnUpdate(0.5f);
 	ZENITH_ASSERT_TRUE(bCallbackFired, "Callback should have fired on completion");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenComponentLoop) { Zenith_UnitTests::TestTweenComponentLoop(); }
 
 void Zenith_UnitTests::TestTweenComponentLoop(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenLoopTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenLoopTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10421,15 +10421,15 @@ void Zenith_UnitTests::TestTweenComponentLoop(){
 	// Should be interpolating from start again
 	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Looping tween should still be active");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenComponentPingPong) { Zenith_UnitTests::TestTweenComponentPingPong(); }
 
 void Zenith_UnitTests::TestTweenComponentPingPong(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenPingPongTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenPingPongTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10450,15 +10450,15 @@ void Zenith_UnitTests::TestTweenComponentPingPong(){
 	xTransform.GetScale(xScale);
 	ZENITH_ASSERT_LT(glm::abs(xScale.x - 0.5f), 0.1f, "PingPong reverse at halfway should be ~0.5");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenComponentCancel) { Zenith_UnitTests::TestTweenComponentCancel(); }
 
 void Zenith_UnitTests::TestTweenComponentCancel(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCancelTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenCancelTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10474,7 +10474,7 @@ void Zenith_UnitTests::TestTweenComponentCancel(){
 	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "After CancelAll, no tweens should be active");
 	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 0, "Active count should be 0");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 //=============================================================================
@@ -10595,8 +10595,8 @@ ZENITH_TEST(Tween, TweenComponentRotation) { Zenith_UnitTests::TestTweenComponen
 
 void Zenith_UnitTests::TestTweenComponentRotation(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenRotationTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenRotationTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10621,7 +10621,7 @@ void Zenith_UnitTests::TestTweenComponentRotation(){
 	// Y rotation should be approximately 90 degrees
 	ZENITH_ASSERT_LT(glm::abs(xEuler.y - 90.0f), 1.0f, "Y rotation should be ~90 degrees");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 //=============================================================================
@@ -10726,8 +10726,8 @@ ZENITH_TEST(Tween, TweenDelayWithLoop) { Zenith_UnitTests::TestTweenDelayWithLoo
 
 void Zenith_UnitTests::TestTweenDelayWithLoop(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenDelayLoopTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenDelayLoopTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10764,15 +10764,15 @@ void Zenith_UnitTests::TestTweenDelayWithLoop(){
 	ZENITH_ASSERT_LT(glm::abs(xScale.x - 1.2f), 0.05f, "After loop, tween should restart interpolation from beginning (expected ~1.2)");
 	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Looping tween should still be active");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenCallbackReentrant) { Zenith_UnitTests::TestTweenCallbackReentrant(); }
 
 void Zenith_UnitTests::TestTweenCallbackReentrant(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenReentrantTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenReentrantTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10805,15 +10805,15 @@ void Zenith_UnitTests::TestTweenCallbackReentrant(){
 	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "New tween should have been created by callback");
 	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 1, "Should have exactly 1 active tween");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Tween, TweenDuplicatePropertyCancels) { Zenith_UnitTests::TestTweenDuplicatePropertyCancels(); }
 
 void Zenith_UnitTests::TestTweenDuplicatePropertyCancels(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenDuplicateTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenDuplicateTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10836,7 +10836,7 @@ void Zenith_UnitTests::TestTweenDuplicatePropertyCancels(){
 	xTransform.GetScale(xScale);
 	ZENITH_ASSERT_LT(glm::abs(xScale.x - 3.0f), 0.01f, "Should reach target of second tween");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 //=============================================================================
@@ -10897,8 +10897,8 @@ ZENITH_TEST(Core, RotationTweenShortestPath) { Zenith_UnitTests::TestRotationTwe
 
 void Zenith_UnitTests::TestRotationTweenShortestPath(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenRotShortestTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenRotShortestTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -10931,7 +10931,7 @@ void Zenith_UnitTests::TestRotationTweenShortestPath(){
 
 	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Tween should be complete");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Animation, TransitionInterruption) { Zenith_UnitTests::TestTransitionInterruption(); }
@@ -11072,8 +11072,8 @@ ZENITH_TEST(Core, CancelByPropertyKeepsOthers) { Zenith_UnitTests::TestCancelByP
 
 void Zenith_UnitTests::TestCancelByPropertyKeepsOthers(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCancelPropTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenCancelPropTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -11101,7 +11101,7 @@ void Zenith_UnitTests::TestCancelByPropertyKeepsOthers(){
 	xTransform.GetPosition(xPos);
 	ZENITH_ASSERT_LT(glm::abs(xPos.x), 0.01f, "Position should not have changed after cancel");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Animation, CrossFadeWhileTransitioning) { Zenith_UnitTests::TestCrossFadeWhileTransitioning(); }
@@ -11146,8 +11146,8 @@ ZENITH_TEST(Tween, TweenLoopValueReset) { Zenith_UnitTests::TestTweenLoopValueRe
 
 void Zenith_UnitTests::TestTweenLoopValueReset(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenLoopResetTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("TweenLoopResetTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -11176,7 +11176,7 @@ void Zenith_UnitTests::TestTweenLoopValueReset(){
 	xTransform.GetScale(xScale);
 	ZENITH_ASSERT_LT(glm::abs(xScale.x - 1.5f), 0.05f, "Halfway through second loop should be ~1.5");
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 //=============================================================================
@@ -11882,8 +11882,8 @@ ZENITH_TEST(Core, PingPongAsymmetricEasing) { Zenith_UnitTests::TestPingPongAsym
 
 void Zenith_UnitTests::TestPingPongAsymmetricEasing(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("PingPongEasingTest");
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("PingPongEasingTest");
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
 	xEntity.AddComponent<Zenith_TweenComponent>();
 
@@ -11915,7 +11915,7 @@ void Zenith_UnitTests::TestPingPongAsymmetricEasing(){
 	ZENITH_ASSERT_LT(glm::abs(fReverseHalf - 0.75f), 0.05f, "Reverse QuadIn at 0.5 should be ~0.75 (1.0 - 0.25), got %.3f", fReverseHalf);
 
 
-	Zenith_SceneManager::UnloadScene(xScene);
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 }
 
 ZENITH_TEST(Animation, TransitionCompletionFramePose) { Zenith_UnitTests::TestTransitionCompletionFramePose(); }
@@ -12517,7 +12517,7 @@ void Zenith_UnitTests::TestImageViewType3D(){
 	xInfo.m_uDepth = 64;
 	xInfo.m_uNumLayers = 1;
 
-	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfo);
+	vk::ImageViewType eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfo);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e3D, "Expected VK_IMAGE_VIEW_TYPE_3D for 3D texture");
 
 }
@@ -12532,7 +12532,7 @@ void Zenith_UnitTests::TestImageViewTypeCube(){
 	xInfoCube.m_uHeight = 256;
 	xInfoCube.m_uNumLayers = 6;
 
-	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfoCube);
+	vk::ImageViewType eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfoCube);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for cubemap texture");
 
 	Flux_SurfaceInfo xInfoSixLayers;
@@ -12541,7 +12541,7 @@ void Zenith_UnitTests::TestImageViewTypeCube(){
 	xInfoSixLayers.m_uHeight = 256;
 	xInfoSixLayers.m_uNumLayers = 6;
 
-	eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfoSixLayers);
+	eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfoSixLayers);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for 6-layer 2D texture");
 
 }
@@ -12556,7 +12556,7 @@ void Zenith_UnitTests::TestImageViewTypeDefault2D(){
 	xInfo.m_uHeight = 512;
 	xInfo.m_uNumLayers = 1;
 
-	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfo);
+	vk::ImageViewType eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfo);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e2D, "Expected VK_IMAGE_VIEW_TYPE_2D for standard 2D texture");
 
 }
@@ -12569,12 +12569,12 @@ void Zenith_UnitTests::TestDestroySkipsInvalidHandle(){
 	ZENITH_ASSERT_FALSE(xInvalidHandle.IsValid(), "Default-constructed handle should be invalid");
 
 	Flux_VertexBuffer xBuffer;
-	Zenith_Vulkan_MemoryManager::DestroyVertexBuffer(xBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(xBuffer);
 
 	Flux_ImageViewHandle xInvalidViewHandle;
 	ZENITH_ASSERT_FALSE(xInvalidViewHandle.IsValid(), "Default-constructed image view handle should be invalid");
 
-	Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(xInvalidViewHandle);
+	g_xEngine.VulkanMemory().QueueImageViewDeletion(xInvalidViewHandle);
 
 }
 
@@ -12834,18 +12834,18 @@ ZENITH_TEST(Core, GizmoEditsPersistentEntityAcrossSceneLoad) { Zenith_UnitTests:
 void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 
 	// Snapshot active-scene + gizmo target so we can restore after the test.
-	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xSavedActive = g_xEngine.SceneRegistry().GetActiveScene();
 
 	// Create a short-lived scene, spawn an entity, mark it persistent. The entity
 	// now lives in the DontDestroyOnLoad scene, NOT the active scene.
-	Zenith_Scene xTempScene = Zenith_SceneManager::CreateEmptyScene("GizmoPersistHost");
-	Zenith_SceneData* pxTempData = Zenith_SceneManager::GetSceneData(xTempScene);
+	Zenith_Scene xTempScene = g_xEngine.SceneRegistry().CreateEmptyScene("GizmoPersistHost");
+	Zenith_SceneData* pxTempData = g_xEngine.SceneRegistry().GetSceneData(xTempScene);
 	Zenith_Entity xEntity(pxTempData, "GizmoPersistTarget");
-	Zenith_SceneManager::MarkEntityPersistent(xEntity);
+	Zenith_SceneEntityOwnership::MarkEntityPersistent(xEntity);
 
 	// Resolve the entity handle in the persistent scene.
-	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
-	Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistent);
+	Zenith_Scene xPersistent = g_xEngine.SceneRegistry().GetPersistentScene();
+	Zenith_SceneData* pxPersistentData = g_xEngine.SceneRegistry().GetSceneData(xPersistent);
 	Zenith_Entity xPersistentEntity = pxPersistentData->FindEntityByName("GizmoPersistTarget");
 	ZENITH_ASSERT_TRUE(xPersistentEntity.IsValid(), "Persistent entity lookup must succeed before gizmo resolve");
 
@@ -12856,7 +12856,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 
 	// Confirm the active scene is NOT the persistent scene (otherwise this test
 	// would still pass under the buggy pre-fix code).
-	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
 	ZENITH_ASSERT_NE(xActive, xPersistent, "Test setup requires active scene to differ from persistent scene");
 
 	// Fixed behaviour: GetEditableTransform() walks the entity's own scene and
@@ -12872,9 +12872,9 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 
 	// Cleanup: clear target, destroy persistent entity, unload temp scene.
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
-	Zenith_SceneManager::DestroyImmediate(xPersistentEntity);
-	Zenith_SceneManager::UnloadScene(xTempScene);
-	Zenith_SceneManager::SetActiveScene(xSavedActive);
+	Zenith_SceneEntityOwnership::DestroyImmediate(xPersistentEntity);
+	g_xEngine.SceneOperations().UnloadScene(xTempScene);
+	g_xEngine.SceneRegistry().SetActiveScene(xSavedActive);
 
 }
 
@@ -12882,19 +12882,19 @@ ZENITH_TEST(Core, GizmoEditsEntityInAdditiveScene) { Zenith_UnitTests::TestGizmo
 
 void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(){
 
-	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xSavedActive = g_xEngine.SceneRegistry().GetActiveScene();
 
 	// Scene A — will be active.
-	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("GizmoActiveScene");
-	Zenith_SceneManager::SetActiveScene(xSceneA);
+	Zenith_Scene xSceneA = g_xEngine.SceneRegistry().CreateEmptyScene("GizmoActiveScene");
+	g_xEngine.SceneRegistry().SetActiveScene(xSceneA);
 
 	// Scene B — additive, contains the target.
-	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("GizmoAdditiveScene");
-	Zenith_SceneData* pxSceneBData = Zenith_SceneManager::GetSceneData(xSceneB);
+	Zenith_Scene xSceneB = g_xEngine.SceneRegistry().CreateEmptyScene("GizmoAdditiveScene");
+	Zenith_SceneData* pxSceneBData = g_xEngine.SceneRegistry().GetSceneData(xSceneB);
 	Zenith_Entity xTarget(pxSceneBData, "AdditiveTarget");
 
 	// Confirm active scene really is A, not B.
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneA, "Test setup: active scene should be A, target lives in B");
+	ZENITH_ASSERT_EQ(g_xEngine.SceneRegistry().GetActiveScene(), xSceneA, "Test setup: active scene should be A, target lives in B");
 
 	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
@@ -12906,9 +12906,9 @@ void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(){
 	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to Scene B's entity, not Scene A");
 
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
-	Zenith_SceneManager::UnloadScene(xSceneB);
-	Zenith_SceneManager::UnloadScene(xSceneA);
-	Zenith_SceneManager::SetActiveScene(xSavedActive);
+	g_xEngine.SceneOperations().UnloadScene(xSceneB);
+	g_xEngine.SceneOperations().UnloadScene(xSceneA);
+	g_xEngine.SceneRegistry().SetActiveScene(xSavedActive);
 
 }
 
@@ -12916,14 +12916,14 @@ ZENITH_TEST(Core, GizmoDragSurvivesActiveSceneChange) { Zenith_UnitTests::TestGi
 
 void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 
-	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Scene xSavedActive = g_xEngine.SceneRegistry().GetActiveScene();
 
 	// Scene A contains the target; Scene B becomes active mid-"drag".
-	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("GizmoDragSourceScene");
-	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("GizmoDragOtherScene");
-	Zenith_SceneManager::SetActiveScene(xSceneA);
+	Zenith_Scene xSceneA = g_xEngine.SceneRegistry().CreateEmptyScene("GizmoDragSourceScene");
+	Zenith_Scene xSceneB = g_xEngine.SceneRegistry().CreateEmptyScene("GizmoDragOtherScene");
+	g_xEngine.SceneRegistry().SetActiveScene(xSceneA);
 
-	Zenith_SceneData* pxSceneAData = Zenith_SceneManager::GetSceneData(xSceneA);
+	Zenith_SceneData* pxSceneAData = g_xEngine.SceneRegistry().GetSceneData(xSceneA);
 	Zenith_Entity xTarget(pxSceneAData, "DragTarget");
 
 	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
@@ -12933,8 +12933,8 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 	ZENITH_ASSERT_NOT_NULL(pxBefore, "Pre-switch gizmo resolve must succeed");
 
 	// Simulate the active-scene change mid-drag.
-	Zenith_SceneManager::SetActiveScene(xSceneB);
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneB, "Active scene should be B after SetActiveScene");
+	g_xEngine.SceneRegistry().SetActiveScene(xSceneB);
+	ZENITH_ASSERT_EQ(g_xEngine.SceneRegistry().GetActiveScene(), xSceneB, "Active scene should be B after SetActiveScene");
 
 	// Post-switch: gizmo must still resolve to Scene A's entity (Unity parity —
 	// active scene doesn't gate editability).
@@ -12943,9 +12943,9 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 	ZENITH_ASSERT_EQ(pxAfter, pxBefore, "Gizmo transform must be identical across the active-scene switch (same underlying entity)");
 
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
-	Zenith_SceneManager::UnloadScene(xSceneB);
-	Zenith_SceneManager::UnloadScene(xSceneA);
-	Zenith_SceneManager::SetActiveScene(xSavedActive);
+	g_xEngine.SceneOperations().UnloadScene(xSceneB);
+	g_xEngine.SceneOperations().UnloadScene(xSceneA);
+	g_xEngine.SceneRegistry().SetActiveScene(xSavedActive);
 
 }
 
@@ -14021,9 +14021,9 @@ struct Zenith_UnitTests::PerFrameSnapshot
 	u_int                            m_uFrameCounter;
 	u_int                            m_uNumBegin;
 	u_int                            m_uNumEnd;
-	Flux_PerFrame::OnFrameBeginFunc  m_apfnBegin[FLUX_MAX_PERFRAME_CALLBACKS];
+	Flux_RendererImpl::OnFrameBeginFunc  m_apfnBegin[FLUX_MAX_PERFRAME_CALLBACKS];
 	void*                            m_apBeginUser[FLUX_MAX_PERFRAME_CALLBACKS];
-	Flux_PerFrame::OnFrameEndFunc    m_apfnEnd[FLUX_MAX_PERFRAME_CALLBACKS];
+	Flux_RendererImpl::OnFrameEndFunc    m_apfnEnd[FLUX_MAX_PERFRAME_CALLBACKS];
 	void*                            m_apEndUser[FLUX_MAX_PERFRAME_CALLBACKS];
 };
 
@@ -14121,25 +14121,25 @@ ZENITH_TEST(Core, FluxPerFrameFrameCounterAdvances) { Zenith_UnitTests::TestFlux
 void Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(){
 	PerFrameScopedReset xReset;
 
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 0, "Counter starts at 0");
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), 0, "Ring index starts at 0");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 0, "Counter starts at 0");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index starts at 0");
 
 	// BeginFrame does NOT advance the counter — only EndFrame does. This
 	// matches the pre-extraction behaviour where the swapchain bumped its
 	// index inside EndFrame, so the same slot is used by Begin and End of
 	// the same frame.
-	Flux_PerFrame::BeginFrame();
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 0, "BeginFrame does not advance the counter");
+	g_xEngine.FluxRenderer().BeginFrame();
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 0, "BeginFrame does not advance the counter");
 
-	Flux_PerFrame::EndFrame();
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 1, "EndFrame advances the counter by 1");
+	g_xEngine.FluxRenderer().EndFrame();
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 1, "EndFrame advances the counter by 1");
 
 	for (u_int u = 0; u < 5; u++)
 	{
-		Flux_PerFrame::BeginFrame();
-		Flux_PerFrame::EndFrame();
+		g_xEngine.FluxRenderer().BeginFrame();
+		g_xEngine.FluxRenderer().EndFrame();
 	}
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 6, "Five Begin/End pairs advance the counter to 6");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 6, "Five Begin/End pairs advance the counter to 6");
 
 }
 
@@ -14150,21 +14150,21 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps(){
 
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT, "Ring index at counter %u is %u, expected %u", u, Flux_PerFrame::GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
-		Flux_PerFrame::EndFrame();
+		ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT, "Ring index at counter %u is %u, expected %u", u, g_xEngine.FluxRenderer().GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
+		g_xEngine.FluxRenderer().EndFrame();
 	}
 	// After MAX_FRAMES_IN_FLIGHT EndFrames the counter is at MAX, ring index wraps to 0.
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
 
 	// Drive several full cycles and confirm the modulo continues to hold.
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 3 + 1; u++)
 	{
-		Flux_PerFrame::EndFrame();
+		g_xEngine.FluxRenderer().EndFrame();
 	}
 	const u_int uExpectedCounter = MAX_FRAMES_IN_FLIGHT + (MAX_FRAMES_IN_FLIGHT * 3 + 1);
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), uExpectedCounter, "Counter total tracks correctly");
-	ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), uExpectedCounter % MAX_FRAMES_IN_FLIGHT, "Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), uExpectedCounter, "Counter total tracks correctly");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), uExpectedCounter % MAX_FRAMES_IN_FLIGHT, "Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
 
 }
 
@@ -14174,13 +14174,13 @@ void Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(){
 	PerFrameScopedReset xReset;
 
 	g_uTestBeginCallCount = 0;
-	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
 
-	Flux_PerFrame::BeginFrame();
+	g_xEngine.FluxRenderer().BeginFrame();
 	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 1, "Begin callback fires once per BeginFrame");
 
-	Flux_PerFrame::BeginFrame();
-	Flux_PerFrame::BeginFrame();
+	g_xEngine.FluxRenderer().BeginFrame();
+	g_xEngine.FluxRenderer().BeginFrame();
 	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 3, "Begin callback fires every BeginFrame");
 
 }
@@ -14191,12 +14191,12 @@ void Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(){
 	PerFrameScopedReset xReset;
 
 	g_uTestEndCallCount = 0;
-	Flux_PerFrame::RegisterEndFrameCallback(&TestEndCallback_IncCount, nullptr);
+	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&TestEndCallback_IncCount, nullptr);
 
-	Flux_PerFrame::EndFrame();
+	g_xEngine.FluxRenderer().EndFrame();
 	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 1, "End callback fires once per EndFrame");
 
-	Flux_PerFrame::EndFrame();
+	g_xEngine.FluxRenderer().EndFrame();
 	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 2, "End callback fires every EndFrame");
 
 }
@@ -14207,11 +14207,11 @@ void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(){
 	PerFrameScopedReset xReset;
 
 	g_uTestCallOrderCount = 0;
-	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_OrderTagA, nullptr);
-	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_OrderTagB, nullptr);
-	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_OrderTagC, nullptr);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagA, nullptr);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagB, nullptr);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagC, nullptr);
 
-	Flux_PerFrame::BeginFrame();
+	g_xEngine.FluxRenderer().BeginFrame();
 
 	ZENITH_ASSERT_EQ(g_uTestCallOrderCount, 3, "All three begin callbacks fired");
 	ZENITH_ASSERT_EQ(g_auTestCallOrder[0], 'A', "First registered (A) fires first");
@@ -14227,16 +14227,16 @@ void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(){
 
 	int iSentinelOnStack = 0xC0DE;
 	g_pTestLastUserData = nullptr;
-	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, &iSentinelOnStack);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, &iSentinelOnStack);
 
-	Flux_PerFrame::BeginFrame();
+	g_xEngine.FluxRenderer().BeginFrame();
 	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelOnStack, "Begin callback receives the user-data pointer it was registered with");
 
 	int iSentinelTwo = 0xBEEF;
 	g_pTestLastUserData = nullptr;
-	Flux_PerFrame::RegisterEndFrameCallback(&TestEndCallback_IncCount, &iSentinelTwo);
+	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&TestEndCallback_IncCount, &iSentinelTwo);
 
-	Flux_PerFrame::EndFrame();
+	g_xEngine.FluxRenderer().EndFrame();
 	// Both callbacks fired; last one to run wrote g_pTestLastUserData.
 	// Begin fires first inside EndFrame? No — begin callbacks only fire in
 	// BeginFrame. So only the end callback fired here, and it wrote the
@@ -14252,8 +14252,8 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(){
 
 	g_uTestLastBeginRing = UINT32_MAX;
 	g_uTestLastEndRing   = UINT32_MAX;
-	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
-	Flux_PerFrame::RegisterEndFrameCallback  (&TestEndCallback_IncCount,   nullptr);
+	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
+	g_xEngine.FluxRenderer().RegisterEndFrameCallback  (&TestEndCallback_IncCount,   nullptr);
 
 	// Drive a few iterations; callbacks should always observe the same ring
 	// index that GetRingIndex() returns at call time.
@@ -14261,10 +14261,10 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(){
 	{
 		const u_int uExpectedRing = u % MAX_FRAMES_IN_FLIGHT;
 
-		Flux_PerFrame::BeginFrame();
+		g_xEngine.FluxRenderer().BeginFrame();
 		ZENITH_ASSERT_EQ(g_uTestLastBeginRing, uExpectedRing, "Begin callback at frame %u observed ring %u, expected %u", u, g_uTestLastBeginRing, uExpectedRing);
 
-		Flux_PerFrame::EndFrame();
+		g_xEngine.FluxRenderer().EndFrame();
 		ZENITH_ASSERT_EQ(g_uTestLastEndRing, uExpectedRing, "End callback at frame %u observed ring %u, expected %u", u, g_uTestLastEndRing, uExpectedRing);
 	}
 

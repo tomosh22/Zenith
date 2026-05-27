@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/SSGI/Flux_SSGIImpl.h"
@@ -156,32 +157,32 @@ void Flux_SSGIImpl::Initialise()
 #endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "DebugMode" }, dbg_uDebugMode, 0, SSGI_DEBUG_COUNT - 1);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Intensity" }, dbg_xSSGIConstants.m_fIntensity, 0.0f, 2.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "MaxDistance" }, dbg_xSSGIConstants.m_fMaxDistance, 1.0f, 100.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Thickness" }, dbg_xSSGIConstants.m_fThickness, 0.01f, 2.0f);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "StepCount" }, dbg_xSSGIConstants.m_uStepCount, 8, 128);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "StartMip" }, dbg_xSSGIConstants.m_uStartMip, 0, 10);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "RaysPerPixel" }, dbg_xSSGIConstants.m_uRaysPerPixel, 1, 8);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "RoughnessThreshold" }, dbg_xSSGIConstants.m_fRoughnessThreshold, 0.0f, 1.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "DebugMode" }, dbg_uDebugMode, 0, SSGI_DEBUG_COUNT - 1);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "Intensity" }, dbg_xSSGIConstants.m_fIntensity, 0.0f, 2.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "MaxDistance" }, dbg_xSSGIConstants.m_fMaxDistance, 1.0f, 100.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "Thickness" }, dbg_xSSGIConstants.m_fThickness, 0.01f, 2.0f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "StepCount" }, dbg_xSSGIConstants.m_uStepCount, 8, 128);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "StartMip" }, dbg_xSSGIConstants.m_uStartMip, 0, 10);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "RaysPerPixel" }, dbg_xSSGIConstants.m_uRaysPerPixel, 1, 8);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "RoughnessThreshold" }, dbg_xSSGIConstants.m_fRoughnessThreshold, 0.0f, 1.0f);
 	// Raymarch resolution divisor (full / divisor). Triggers a graph rebuild on change.
 	// 2=half, 4=quarter (default), 8=eighth. Quality vs perf knob.
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "ResolutionDivisor" }, g_xEngine.SSGI().m_uRayMarchResolutionDivisor, 2, 8);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "ResolutionDivisor" }, g_xEngine.SSGI().m_uRayMarchResolutionDivisor, 2, 8);
 	// Base 1080p iteration count — UpdateSSGIConstants bumps the bound value
 	// at higher resolutions and clamps to 6.
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "BinarySearchIterations" }, dbg_xSSGIConstants.m_uBinarySearchIterations, 1, 6);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "BinarySearchIterations" }, dbg_xSSGIConstants.m_uBinarySearchIterations, 1, 6);
 	// Transient-SRV previews: AddTextureCallback re-resolves through g_xEngine.SSGI().m_pxGraph
 	// each ImGui draw so the preview survives graph rebuilds (resize, toggle).
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Raw" },      &DebugGetRawSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Resolved" }, &DebugGetResolvedSRV);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Denoised" }, &DebugGetDenoisedSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSGI", "Textures", "Raw" },      &DebugGetRawSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSGI", "Textures", "Resolved" }, &DebugGetResolvedSRV);
+	g_xEngine.DebugVariables().AddTextureCallback({ "Flux", "SSGI", "Textures", "Denoised" }, &DebugGetDenoisedSRV);
 
 	// Denoise debug variables. KernelRadius is per-axis: total separable footprint is (2r+1) along H then V.
-	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "Denoise", "KernelRadius" }, dbg_xSSGIDenoiseConstants.m_uKernelRadius, 1, 8);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "SpatialSigma" }, dbg_xSSGIDenoiseConstants.m_fSpatialSigma, 0.5f, 4.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "DepthSigma" }, dbg_xSSGIDenoiseConstants.m_fDepthSigma, 0.01f, 0.1f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "NormalSigma" }, dbg_xSSGIDenoiseConstants.m_fNormalSigma, 0.1f, 1.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "AlbedoSigma" }, dbg_xSSGIDenoiseConstants.m_fAlbedoSigma, 0.05f, 0.5f);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "Denoise", "KernelRadius" }, dbg_xSSGIDenoiseConstants.m_uKernelRadius, 1, 8);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "Denoise", "SpatialSigma" }, dbg_xSSGIDenoiseConstants.m_fSpatialSigma, 0.5f, 4.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "Denoise", "DepthSigma" }, dbg_xSSGIDenoiseConstants.m_fDepthSigma, 0.01f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "Denoise", "NormalSigma" }, dbg_xSSGIDenoiseConstants.m_fNormalSigma, 0.1f, 1.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "SSGI", "Denoise", "AlbedoSigma" }, dbg_xSSGIDenoiseConstants.m_fAlbedoSigma, 0.05f, 0.5f);
 #endif
 
 	// No resize callback needed — the graph re-creates its transients with
@@ -208,7 +209,7 @@ void Flux_SSGIImpl::Shutdown()
 static u_int ComputeEffectiveBinarySearchIterations()
 {
 	const u_int uBase = dbg_xSSGIConstants.m_uBinarySearchIterations;
-	const u_int uW    = Flux_Swapchain::GetWidth();
+	const u_int uW    = g_xEngine.VulkanSwapchain().GetWidth();
 	const u_int uBumped = uBase + (uW > 1920u ? 1u : 0u) + (uW > 2560u ? 1u : 0u);
 	// Ceiling at 6 — diffuse GI doesn't need finer than ~1/64 px sub-pixel hits.
 	return uBumped > 6u ? 6u : uBumped;
@@ -218,7 +219,7 @@ static void UpdateSSGIConstants()
 {
 	dbg_xSSGIConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSGIConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
-	dbg_xSSGIConstants.m_uFrameIndex = Flux::GetFrameCounter();
+	dbg_xSSGIConstants.m_uFrameIndex = g_xEngine.FluxRenderer().GetFrameCounter();
 
 	// Clamp start mip to valid range
 	if (dbg_xSSGIConstants.m_uStartMip >= dbg_xSSGIConstants.m_uHiZMipCount)
@@ -341,14 +342,14 @@ static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 // Last value seen by ApplyDenoiseSelectionToGraph — change triggers a graph rebuild.
 // Handle committed at SetupRenderGraph exit. GetSSGIHandle asserts the live
 // toggle still resolves to this handle — any runtime toggle without a matching
-// Flux::RequestGraphRebuild() trips at the point of the mistake.
+// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the mistake.
 
 void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.SSGI().m_pxGraph = &xGraph;
 
-	const u_int uFullWidth  = Flux_Swapchain::GetWidth();
-	const u_int uFullHeight = Flux_Swapchain::GetHeight();
+	const u_int uFullWidth  = g_xEngine.VulkanSwapchain().GetWidth();
+	const u_int uFullHeight = g_xEngine.VulkanSwapchain().GetHeight();
 	// Raymarch target resolution = full / g_xEngine.SSGI().m_uRayMarchResolutionDivisor. Track the
 	// value used so ApplyDenoiseSelectionToGraph can detect runtime changes.
 	const u_int uDivisor    = g_xEngine.SSGI().m_uRayMarchResolutionDivisor < 2u ? 2u : g_xEngine.SSGI().m_uRayMarchResolutionDivisor;
@@ -416,7 +417,7 @@ void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Commit the handle the deferred pass will now read. GetSSGIHandle asserts
 	// against this value — any runtime toggle without a matching
-	// Flux::RequestGraphRebuild() trips at the point of the mistake.
+	// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the mistake.
 	g_xEngine.SSGI().m_xCommittedSSGIHandle = bDenoise ? g_xEngine.SSGI().m_xDenoisedHandle : g_xEngine.SSGI().m_xResolvedHandle;
 }
 
@@ -432,7 +433,7 @@ void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	// rationale. MarkDirty() alone would leave Flux_DeferredShading reading the
 	// stale transient handle captured at the previous SetupRenderGraph; same
 	// applies if the raymarch transient's dimensions change.
-	Flux::RequestGraphRebuild();
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 }
 
 

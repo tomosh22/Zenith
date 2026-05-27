@@ -23,7 +23,7 @@ Zenith_SceneData* Zenith_Entity::GetSceneData() const
 		return m_pxCachedSceneData;
 
 	// Slow path: look up SceneData from scene handle and cache it
-	m_pxCachedSceneData = Zenith_SceneManager::GetSceneDataByHandle(xSlot.m_iSceneHandle);
+	m_pxCachedSceneData = g_xEngine.SceneRegistry().GetSceneDataByHandle(xSlot.m_iSceneHandle);
 	m_iCachedSceneHandle = xSlot.m_iSceneHandle;
 	return m_pxCachedSceneData;
 }
@@ -48,7 +48,7 @@ Zenith_Scene Zenith_Entity::GetScene() const
 		return Zenith_Scene::INVALID_SCENE;
 
 	// Use the global slot's current scene handle (survives cross-scene moves)
-	return Zenith_SceneManager::GetSceneFromHandle(xSlot.m_iSceneHandle);
+	return g_xEngine.SceneRegistry().GetSceneFromHandle(xSlot.m_iSceneHandle);
 }
 
 //------------------------------------------------------------------------------
@@ -296,7 +296,7 @@ void Zenith_Entity::SetTransient(bool bTransient)
 
 void Zenith_Entity::DontDestroyOnLoad()
 {
-	Zenith_SceneManager::MarkEntityPersistent(*this);
+	Zenith_SceneEntityOwnership::MarkEntityPersistent(*this);
 }
 
 //------------------------------------------------------------------------------
@@ -417,10 +417,10 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 
 void Zenith_Entity::Destroy()
 {
-	Zenith_SceneManager::Destroy(*this);
+	Zenith_SceneEntityOwnership::Destroy(*this);
 }
 
 void Zenith_Entity::DestroyImmediate()
 {
-	Zenith_SceneManager::DestroyImmediate(*this);
+	Zenith_SceneEntityOwnership::DestroyImmediate(*this);
 }

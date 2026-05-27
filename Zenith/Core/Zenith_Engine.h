@@ -39,26 +39,26 @@ class Flux_GrassImpl;
 class Flux_PrimitivesImpl;
 class Flux_HDRImpl;
 class Flux_TerrainImpl;
-class Zenith_VulkanImpl;
-class Zenith_Vulkan_MemoryManagerImpl;
-class Zenith_Vulkan_SwapchainImpl;
-class Zenith_DebugVariablesImpl;
-class Zenith_EditorAutomationImpl;
-class Zenith_EditorImpl;
-class Zenith_EditorMaterialUIImpl;
-class Zenith_GizmoImpl;
-class Zenith_InputImpl;
-class Zenith_SelectionSystemImpl;
-class Zenith_TouchInputImpl;
-class Zenith_UndoSystemImpl;
-class Zenith_MultithreadingImpl;
-class Zenith_PhysicsImpl;
-class Zenith_ProfilingImpl;
-class Zenith_SceneCallbackBusImpl;
-class Zenith_SceneLifecycleSchedulerImpl;
-class Zenith_SceneOperationQueueImpl;
-class Zenith_SceneRegistryImpl;
-class Zenith_TaskSystemImpl;
+class Zenith_Vulkan;
+class Zenith_Vulkan_MemoryManager;
+class Zenith_Vulkan_Swapchain;
+class Zenith_DebugVariables;
+class Zenith_EditorAutomation;
+class Zenith_Editor;
+class Zenith_EditorMaterialUI;
+class Zenith_Gizmo;
+class Zenith_Input;
+class Zenith_SelectionSystem;
+class Zenith_TouchInput;
+class Zenith_UndoSystem;
+class Zenith_Multithreading;
+class Zenith_Physics;
+class Zenith_Profiling;
+class Zenith_SceneCallbackBus;
+class Zenith_SceneLifecycleScheduler;
+class Zenith_SceneOperationQueue;
+class Zenith_SceneRegistry;
+class Zenith_TaskSystem;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
 // state. Phase 0 introduces the class and moves the bootstrap ordering
@@ -105,23 +105,23 @@ public:
 	//   - Calling any accessor before its Initialise phase is undefined;
 	//     see Initialise() for the ordering.
 	FrameContext& Frame();
-	Zenith_MultithreadingImpl& Threading();
-	Zenith_TaskSystemImpl& Tasks();
-	Zenith_ProfilingImpl& Profiling();
+	Zenith_Multithreading& Threading();
+	Zenith_TaskSystem& Tasks();
+	Zenith_Profiling& Profiling();
 	Zenith_AssetRegistry& Assets();
-	Zenith_PhysicsImpl& Physics();
+	Zenith_Physics& Physics();
 	Zenith_EntityStore& EntityStore();
-	Zenith_SceneRegistryImpl& SceneRegistry();
-	Zenith_SceneCallbackBusImpl& SceneCallbacks();
-	Zenith_SceneOperationQueueImpl& SceneOperations();
-	Zenith_SceneLifecycleSchedulerImpl& SceneLifecycle();
-	Zenith_InputImpl& Input();
-	Zenith_TouchInputImpl& Touch();
+	Zenith_SceneRegistry& SceneRegistry();
+	Zenith_SceneCallbackBus& SceneCallbacks();
+	Zenith_SceneOperationQueue& SceneOperations();
+	Zenith_SceneLifecycleScheduler& SceneLifecycle();
+	Zenith_Input& Input();
+	Zenith_TouchInput& Touch();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
-	Zenith_VulkanImpl& Vulkan();
-	Zenith_Vulkan_MemoryManagerImpl& VulkanMemory();
-	Zenith_Vulkan_SwapchainImpl& VulkanSwapchain();
+	Zenith_Vulkan& Vulkan();
+	Zenith_Vulkan_MemoryManager& VulkanMemory();
+	Zenith_Vulkan_Swapchain& VulkanSwapchain();
 	Flux_HiZImpl& HiZ();
 	Flux_StaticMeshesImpl& StaticMeshes();
 	Flux_AnimatedMeshesImpl& AnimatedMeshes();
@@ -159,18 +159,18 @@ public:
 	Flux_GizmosImpl& Gizmos();
 #endif
 #ifdef ZENITH_TOOLS
-	Zenith_EditorImpl& Editor();
+	Zenith_Editor& Editor();
 	// True when Initialise() has run far enough to have allocated the
 	// editor Impl. Lets call sites that fire during static init (e.g.
 	// component-registration logs) gracefully skip writing to a not-yet-
 	// allocated console buffer.
 	bool HasEditor() const { return m_pxEditor != nullptr; }
-	Zenith_GizmoImpl& Gizmo();
-	Zenith_SelectionSystemImpl& Selection();
-	Zenith_UndoSystemImpl& UndoSystem();
-	Zenith_EditorAutomationImpl& EditorAutomation();
-	Zenith_EditorMaterialUIImpl& EditorMaterialUI();
-	Zenith_DebugVariablesImpl& DebugVariables();
+	Zenith_Gizmo& Gizmo();
+	Zenith_SelectionSystem& Selection();
+	Zenith_UndoSystem& UndoSystem();
+	Zenith_EditorAutomation& EditorAutomation();
+	Zenith_EditorMaterialUI& EditorMaterialUI();
+	Zenith_DebugVariables& DebugVariables();
 #endif
 
 private:
@@ -179,23 +179,23 @@ private:
 	// static-init cost. Each is allocated in Initialise() and deleted
 	// in Shutdown().
 	FrameContext*              m_pxFrame       = nullptr;
-	Zenith_MultithreadingImpl* m_pxThreading   = nullptr;
-	Zenith_TaskSystemImpl*     m_pxTasks       = nullptr;
-	Zenith_ProfilingImpl*      m_pxProfiling   = nullptr;
+	Zenith_Multithreading* m_pxThreading   = nullptr;
+	Zenith_TaskSystem*     m_pxTasks       = nullptr;
+	Zenith_Profiling*      m_pxProfiling   = nullptr;
 	Zenith_AssetRegistry*        m_pxAssets         = nullptr;
-	Zenith_PhysicsImpl*          m_pxPhysics        = nullptr;
+	Zenith_Physics*          m_pxPhysics        = nullptr;
 	Zenith_EntityStore*          m_pxEntityStore    = nullptr;
-	Zenith_SceneRegistryImpl*           m_pxSceneRegistry   = nullptr;
-	Zenith_SceneCallbackBusImpl*        m_pxSceneCallbacks  = nullptr;
-	Zenith_SceneOperationQueueImpl*     m_pxSceneOperations = nullptr;
-	Zenith_SceneLifecycleSchedulerImpl* m_pxSceneLifecycle  = nullptr;
-	Zenith_InputImpl*                   m_pxInput           = nullptr;
-	Zenith_TouchInputImpl*              m_pxTouch           = nullptr;
+	Zenith_SceneRegistry*           m_pxSceneRegistry   = nullptr;
+	Zenith_SceneCallbackBus*        m_pxSceneCallbacks  = nullptr;
+	Zenith_SceneOperationQueue*     m_pxSceneOperations = nullptr;
+	Zenith_SceneLifecycleScheduler* m_pxSceneLifecycle  = nullptr;
+	Zenith_Input*                   m_pxInput           = nullptr;
+	Zenith_TouchInput*              m_pxTouch           = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*                  m_pxFluxGraphics    = nullptr;
-	Zenith_VulkanImpl*                  m_pxVulkan          = nullptr;
-	Zenith_Vulkan_MemoryManagerImpl*    m_pxVulkanMemory    = nullptr;
-	Zenith_Vulkan_SwapchainImpl*        m_pxVulkanSwapchain = nullptr;
+	Zenith_Vulkan*                  m_pxVulkan          = nullptr;
+	Zenith_Vulkan_MemoryManager*    m_pxVulkanMemory    = nullptr;
+	Zenith_Vulkan_Swapchain*        m_pxVulkanSwapchain = nullptr;
 	Flux_HiZImpl*                       m_pxHiZ              = nullptr;
 	Flux_StaticMeshesImpl*              m_pxStaticMeshes     = nullptr;
 	Flux_AnimatedMeshesImpl*            m_pxAnimatedMeshes   = nullptr;
@@ -229,13 +229,13 @@ private:
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
 #endif
 #ifdef ZENITH_TOOLS
-	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
-	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;
-	Zenith_SelectionSystemImpl*         m_pxSelection          = nullptr;
-	Zenith_UndoSystemImpl*              m_pxUndoSystem         = nullptr;
-	Zenith_EditorAutomationImpl*        m_pxEditorAutomation   = nullptr;
-	Zenith_EditorMaterialUIImpl*        m_pxEditorMaterialUI   = nullptr;
-	Zenith_DebugVariablesImpl*          m_pxDebugVariables     = nullptr;
+	Zenith_Editor*                  m_pxEditor             = nullptr;
+	Zenith_Gizmo*                   m_pxGizmo              = nullptr;
+	Zenith_SelectionSystem*         m_pxSelection          = nullptr;
+	Zenith_UndoSystem*              m_pxUndoSystem         = nullptr;
+	Zenith_EditorAutomation*        m_pxEditorAutomation   = nullptr;
+	Zenith_EditorMaterialUI*        m_pxEditorMaterialUI   = nullptr;
+	Zenith_DebugVariables*          m_pxDebugVariables     = nullptr;
 #endif
 };
 

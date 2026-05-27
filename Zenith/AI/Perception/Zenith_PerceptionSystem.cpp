@@ -3,7 +3,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -127,7 +127,7 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 		// updates when the attacker lived in a non-active scene (persistent entity,
 		// additively-loaded scene, etc.). Ref: Unity's GameObject.scene contract —
 		// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xAttacker);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAttacker);
 		if (pxSceneData)
 		{
 			Zenith_Entity xAttackerEntity = pxSceneData->TryGetEntity(xAttacker);
@@ -305,7 +305,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 
 		// Audit §3.18 fix: resolve agent's OWN scene — supports agents in any
 		// loaded scene, not just the active one.
-		Zenith_SceneData* pxAgentScene = Zenith_SceneManager::GetSceneDataForEntity(xAgentID);
+		Zenith_SceneData* pxAgentScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAgentID);
 		if (!pxAgentScene)
 		{
 			continue;
@@ -348,7 +348,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			// Audit §3.18 fix: resolve each target's own scene — cross-scene
 			// perception (e.g. a persistent player entity, or a target in an
 			// additively-loaded scene) now works as Unity would expect.
-			Zenith_SceneData* pxTargetScene = Zenith_SceneManager::GetSceneDataForEntity(xTargetID);
+			Zenith_SceneData* pxTargetScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xTargetID);
 			if (!pxTargetScene)
 			{
 				continue;
@@ -429,7 +429,7 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
 		AgentPerceptionData& xData = xPair.second;
 
-		Zenith_SceneData* pxAgentScene = Zenith_SceneManager::GetSceneDataForEntity(xAgentID);
+		Zenith_SceneData* pxAgentScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAgentID);
 		if (!pxAgentScene)
 		{
 			continue;
@@ -534,7 +534,7 @@ bool Zenith_PerceptionSystem::CheckLineOfSight(const Zenith_Maths::Vector3& xFro
 		return true;  // Same position, assume clear LOS
 	}
 
-	Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(xFrom, xDirection, fDistance);
+	Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(xFrom, xDirection, fDistance);
 
 	// If we didn't hit anything, line of sight is clear
 	if (!xResult.m_bHit)

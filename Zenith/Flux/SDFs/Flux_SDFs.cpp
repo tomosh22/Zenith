@@ -58,7 +58,7 @@ void Flux_SDFsImpl::Initialise()
 {
 	BuildPipelines();
 
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), g_xEngine.SDFs().m_xSpheresBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), g_xEngine.SDFs().m_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif
@@ -76,7 +76,7 @@ void Flux_SDFsImpl::Initialise()
 
 void Flux_SDFsImpl::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.SDFs().m_xSpheresBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.SDFs().m_xSpheresBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs shut down");
 }
 
@@ -95,7 +95,7 @@ void UploadSpheres()
 		xSphere.m_xColour = Zenith_Maths::Vector4(0., 1., 0., 1.);
 	}
 
-	Flux_MemoryManager::UploadBufferData(g_xEngine.SDFs().m_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.SDFs().m_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
 }
 
 void Flux_SDFsImpl::Render(void*)

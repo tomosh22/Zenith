@@ -79,11 +79,11 @@ protected:
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xInput.IsValid())
 		{
-			Zenith_SceneData* pxInputScene = Zenith_SceneManager::GetSceneDataForEntity(xInput);
+			Zenith_SceneData* pxInputScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xInput);
 			if (pxInputScene != nullptr)
 			{
 				Zenith_Entity xInputEnt = pxInputScene->TryGetEntity(xInput);
-				if (xInputEnt.IsValid()) Zenith_SceneManager::Destroy(xInputEnt);
+				if (xInputEnt.IsValid()) Zenith_SceneEntityOwnership::Destroy(xInputEnt);
 			}
 		}
 
@@ -143,7 +143,7 @@ protected:
 private:
 	Zenith_EntityID SpawnOutputItem()
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(
 			m_xParentEntity.GetEntityID());
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 

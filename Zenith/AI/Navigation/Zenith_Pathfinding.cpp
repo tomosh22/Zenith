@@ -2,7 +2,7 @@
 #include "AI/Navigation/Zenith_Pathfinding.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include <queue>
 #include <unordered_set>
 #include <algorithm>

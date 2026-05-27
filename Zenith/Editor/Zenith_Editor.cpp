@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
-#include "Editor/Zenith_EditorImpl.h"
+#include "Flux/Flux_RendererImpl.h"
+#include "Editor/Zenith_Editor.h"
 #pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
@@ -22,7 +23,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 	case 1: xLevel = ConsoleLogEntry::LogLevel::Warning; break;
 	case 2: xLevel = ConsoleLogEntry::LogLevel::Error; break;
 	}
-	Zenith_Editor::AddLogMessage(szMessage, xLevel, eCategory);
+	g_xEngine.Editor().AddLogMessage(szMessage, xLevel, eCategory);
 }
 
 #include "Zenith_EditorAutomation.h"
@@ -42,7 +43,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
@@ -128,24 +129,24 @@ std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaultExt, c
 }
 #endif // _WIN32
 
-// Phase 5.5c: editor state lives on Zenith_EditorImpl held by Zenith_Engine.
+// Phase 5.5c: editor state lives on Zenith_Editor held by Zenith_Engine.
 // The static definitions that used to live here -- 31 Zenith_Editor::s_* class
 // statics + the file-static g_xEngine.Editor().m_xEditorState + g_xEngine.Editor().m_xCachedGameTextureHandle +
 // g_xEngine.Editor().m_xCachedImageViewHandle + g_xEngine.Editor().m_xPendingDeletions -- moved onto the Impl
 // (m_xXxx members). Inline getter forwarders below.
 
-EditorMode Zenith_Editor::GetEditorMode() { return g_xEngine.Editor().m_eEditorMode; }
-Zenith_EntityID Zenith_Editor::GetSelectedEntityID() { return g_xEngine.Editor().m_uPrimarySelectedEntityID; }
-const std::unordered_set<Zenith_EntityID>& Zenith_Editor::GetSelectedEntityIDs() { return g_xEngine.Editor().m_xSelectedEntityIDs; }
-size_t Zenith_Editor::GetSelectionCount() { return g_xEngine.Editor().m_xSelectedEntityIDs.size(); }
-bool Zenith_Editor::HasSelection() { return !g_xEngine.Editor().m_xSelectedEntityIDs.empty(); }
-bool Zenith_Editor::HasMultiSelection() { return g_xEngine.Editor().m_xSelectedEntityIDs.size() > 1; }
-Zenith_EntityID Zenith_Editor::GetLastClickedEntityID() { return g_xEngine.Editor().m_uLastClickedEntityID; }
-Zenith_Maths::Vector2 Zenith_Editor::GetViewportPos() { return g_xEngine.Editor().m_xViewportPos; }
-Zenith_Maths::Vector2 Zenith_Editor::GetViewportSize() { return g_xEngine.Editor().m_xViewportSize; }
-EditorGizmoMode Zenith_Editor::GetGizmoMode() { return g_xEngine.Editor().m_eGizmoMode; }
-void Zenith_Editor::SetGizmoMode(EditorGizmoMode eMode) { g_xEngine.Editor().m_eGizmoMode = eMode; }
-Zenith_MaterialAsset* Zenith_Editor::GetSelectedMaterial() { return g_xEngine.Editor().m_xSelectedMaterial.GetDirect(); }
+EditorMode Zenith_Editor::GetEditorMode() { return Zenith_Editor::m_eEditorMode; }
+Zenith_EntityID Zenith_Editor::GetSelectedEntityID() { return Zenith_Editor::m_uPrimarySelectedEntityID; }
+const std::unordered_set<Zenith_EntityID>& Zenith_Editor::GetSelectedEntityIDs() { return Zenith_Editor::m_xSelectedEntityIDs; }
+size_t Zenith_Editor::GetSelectionCount() { return Zenith_Editor::m_xSelectedEntityIDs.size(); }
+bool Zenith_Editor::HasSelection() { return !Zenith_Editor::m_xSelectedEntityIDs.empty(); }
+bool Zenith_Editor::HasMultiSelection() { return Zenith_Editor::m_xSelectedEntityIDs.size() > 1; }
+Zenith_EntityID Zenith_Editor::GetLastClickedEntityID() { return Zenith_Editor::m_uLastClickedEntityID; }
+Zenith_Maths::Vector2 Zenith_Editor::GetViewportPos() { return Zenith_Editor::m_xViewportPos; }
+Zenith_Maths::Vector2 Zenith_Editor::GetViewportSize() { return Zenith_Editor::m_xViewportSize; }
+EditorGizmoMode Zenith_Editor::GetGizmoMode() { return Zenith_Editor::m_eGizmoMode; }
+void Zenith_Editor::SetGizmoMode(EditorGizmoMode eMode) { Zenith_Editor::m_eGizmoMode = eMode; }
+Zenith_MaterialAsset* Zenith_Editor::GetSelectedMaterial() { return Zenith_Editor::m_xSelectedMaterial.GetDirect(); }
 
 void Zenith_Editor::ApplyEditorTheme()
 {
@@ -290,8 +291,8 @@ void Zenith_Editor::Initialise()
 	// Material system is now managed by Zenith_AssetRegistry
 
 	// Initialize editor subsystems
-	Zenith_SelectionSystem::Initialise();
-	Zenith_Gizmo::Initialise();
+	g_xEngine.Selection().Initialise();
+	g_xEngine.Gizmo().Initialise();
 	// Zenith_AnimationStateMachineEditor::Initialize();  // TEMPORARILY DISABLED
 
 	// Initialize editor camera
@@ -325,8 +326,8 @@ void Zenith_Editor::Shutdown()
 	// Shutdown editor subsystems
 	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
 	g_xEngine.Gizmos().Shutdown();
-	Zenith_Gizmo::Shutdown();
-	Zenith_SelectionSystem::Shutdown();
+	g_xEngine.Gizmo().Shutdown();
+	g_xEngine.Selection().Shutdown();
 }
 
 bool Zenith_Editor::Update()
@@ -367,9 +368,9 @@ bool Zenith_Editor::Update()
 	// frame tick — matching real editor behaviour (one action = one mouse click).
 	// Returns early to skip editor camera sync and other editor logic — those
 	// should only fire after automation completes and the real scene is loaded.
-	if (Zenith_EditorAutomation::IsRunning())
+	if (g_xEngine.EditorAutomation().IsRunning())
 	{
-		Zenith_EditorAutomation::ExecuteNextStep();
+		g_xEngine.EditorAutomation().ExecuteNextStep();
 		return true;
 	}
 
@@ -381,8 +382,8 @@ bool Zenith_Editor::Update()
 	{
 		s_bFirstFrameAfterInit = false;
 
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			// Initialize editor camera from game camera position
@@ -408,7 +409,7 @@ bool Zenith_Editor::Update()
 	}
 
 	// Update bounding boxes for all entities (needed for selection)
-	Zenith_SelectionSystem::UpdateBoundingBoxes();
+	g_xEngine.Selection().UpdateBoundingBoxes();
 
 	// Update editor camera controls (when not playing)
 	UpdateEditorCamera(1.0f / 60.0f);  // Assume 60fps for now, could use actual delta time
@@ -436,7 +437,7 @@ bool Zenith_Editor::Update()
 	HandleGizmoInteraction();
 
 	// Handle object picking (only when not manipulating gizmo)
-	if (!g_xEngine.Gizmos().IsInteracting() && !Zenith_Gizmo::IsManipulating())
+	if (!g_xEngine.Gizmos().IsInteracting() && !g_xEngine.Gizmo().IsManipulating())
 	{
 		HandleObjectPicking();
 	}
@@ -456,22 +457,22 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		// W14: Render graph now synchronously completes recording during Execute(),
 		// so no CPU-side wait is needed — go straight to GPU idle.
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
-		Flux_PlatformAPI::WaitForGPUIdle();
+		g_xEngine.Vulkan().WaitForGPUIdle();
 
 		// Force process any pending deferred deletions
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
+			g_xEngine.VulkanMemory().ProcessDeferredDeletions();
 		}
 
 		// CRITICAL: Clear any pending command lists before resetting scene
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		Flux::ClearPendingCommandLists();
+		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
 		// Safe to reset now - no render tasks active, GPU idle, old resources deleted
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		if (pxSceneData)
 		{
 			pxSceneData->Reset();
@@ -488,7 +489,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		ResetEditorCameraToDefaults();
 
 		// Clear undo/redo history as entity IDs are now invalid
-		Zenith_UndoSystem::Clear();
+		g_xEngine.UndoSystem().Clear();
 
 		return false;
 	}
@@ -501,8 +502,8 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		try
 		{
 			// Safe to save now - no render tasks are accessing scene data
-			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+			Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 			if (pxSceneData)
 			{
 				pxSceneData->SaveToFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
@@ -529,22 +530,22 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = false;
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
-		Flux_PlatformAPI::WaitForGPUIdle();
+		g_xEngine.Vulkan().WaitForGPUIdle();
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
+			g_xEngine.VulkanMemory().ProcessDeferredDeletions();
 		}
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		Flux::ClearPendingCommandLists();
+		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
-		Zenith_SceneManager::LoadSceneByIndexBlocking_ToolsOnly(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndexBlocking_ToolsOnly(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex);
 
 		ClearSelection();
-		Zenith_UndoSystem::Clear();
+		g_xEngine.UndoSystem().Clear();
 		g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 
 		return false;
@@ -555,18 +556,18 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	{
 		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = false;
 
-		Flux_PlatformAPI::WaitForGPUIdle();
+		g_xEngine.Vulkan().WaitForGPUIdle();
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
+			g_xEngine.VulkanMemory().ProcessDeferredDeletions();
 		}
-		Flux::ClearPendingCommandLists();
+		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
-		Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneBlocking_ToolsOnly(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.c_str());
 
 		ClearSelection();
-		Zenith_UndoSystem::Clear();
+		g_xEngine.UndoSystem().Clear();
 		g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.clear();
 
@@ -582,21 +583,21 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 
 	// W14: Render graph Execute() is now synchronous on the main thread, so only GPU idle is needed.
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
-	Flux_PlatformAPI::WaitForGPUIdle();  // GPU synchronization
+	g_xEngine.Vulkan().WaitForGPUIdle();  // GPU synchronization
 
 	// Force process any pending deferred deletions to ensure old descriptors are destroyed
 	// Without this, descriptor handles might collide between old/new scenes
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Flux_MemoryManager::ProcessDeferredDeletions();
+		g_xEngine.VulkanMemory().ProcessDeferredDeletions();
 	}
 
 	// CRITICAL: Clear any pending command lists before loading scene
 	// This prevents stale command list entries from previous frames that may
 	// contain pointers to resources that are about to be destroyed
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-	Flux::ClearPendingCommandLists();
+	g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
 	// Safe to load now - no render tasks active, GPU idle, old resources deleted
 
@@ -611,39 +612,39 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		// This clears Flux system state (registered meshes, particles, etc.)
 		// so entity destructors don't interact with stale render system references.
 		// Matches the SCENE_LOAD_SINGLE cleanup order (ResetAllRenderSystems -> UnloadAllNonPersistent).
-		Zenith_SceneManager::ResetAllRenderSystems();
+		g_xEngine.SceneOperations().ResetAllRenderSystems();
 
-		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+		Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
 
 		// 2. Force-unload all non-persistent scenes. Uses UnloadSceneForced to bypass
 		// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
 		// game scene remains and UnloadScene would silently refuse to unload it.
 		Zenith_Vector<Zenith_Scene> axScenesToUnload;
-		uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
+		uint32_t uSceneCount = g_xEngine.SceneRegistry().GetLoadedSceneCount();
 		for (uint32_t i = 0; i < uSceneCount; ++i)
 		{
-			Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
+			Zenith_Scene xScene = g_xEngine.SceneRegistry().GetSceneAt(i);
 			if (!xScene.IsValid()) continue;
 			if (xScene == xPersistentScene) continue;
 			axScenesToUnload.PushBack(xScene);
 		}
 		for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
 		{
-			Zenith_SceneManager::UnloadSceneForced(axScenesToUnload.Get(i));
+			g_xEngine.SceneOperations().UnloadSceneForced(axScenesToUnload.Get(i));
 		}
 
 		// 3. Reset persistent scene entities (destroys all entities, clears component pools)
-		Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistentScene);
+		Zenith_SceneData* pxPersistentData = g_xEngine.SceneRegistry().GetSceneData(xPersistentScene);
 		if (pxPersistentData)
 		{
 			pxPersistentData->Reset();
 		}
 
 		// 4. Create fresh scene with the original name and restore metadata
-		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName);
-		Zenith_SceneManager::SetActiveScene(xRestoredScene);
+		Zenith_Scene xRestoredScene = g_xEngine.SceneRegistry().CreateEmptyScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName);
+		g_xEngine.SceneRegistry().SetActiveScene(xRestoredScene);
 
-		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
+		Zenith_SceneData* pxRestoredData = g_xEngine.SceneRegistry().GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
 			pxRestoredData->Editor_SetPath(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
@@ -652,8 +653,8 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	}
 
 	// Load the scene file into the active scene (backup restore or explicit scene load)
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
 		pxSceneData->LoadFromFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
@@ -664,7 +665,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	ClearSelection();
 
 	// Clear undo/redo history as entity IDs are now invalid
-	Zenith_UndoSystem::Clear();
+	g_xEngine.UndoSystem().Clear();
 
 	// Clear game camera entity pointer as it's now invalid (entity from old scene)
 	g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
@@ -724,13 +725,13 @@ void Zenith_Editor::UpdateEditorInput()
 		// Ctrl+Z: Undo
 		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Z))
 		{
-			Zenith_UndoSystem::Undo();
+			g_xEngine.UndoSystem().Undo();
 		}
 
 		// Ctrl+Y: Redo
 		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Y))
 		{
-			Zenith_UndoSystem::Redo();
+			g_xEngine.UndoSystem().Redo();
 		}
 	}
 }
@@ -849,7 +850,7 @@ void Zenith_Editor::HandleObjectPicking()
 	BuildProjectionMatrix(xProjMatrix);
 
 	// Convert screen position to world-space ray
-	Zenith_Maths::Vector3 xRayDir = Zenith_Gizmo::ScreenToWorldRay(
+	Zenith_Maths::Vector3 xRayDir = g_xEngine.Gizmo().ScreenToWorldRay(
 		xViewportMousePos,
 		{ 0, 0 },  // Viewport relative, so offset is 0
 		g_xEngine.Editor().m_xViewportSize,
@@ -863,7 +864,7 @@ void Zenith_Editor::HandleObjectPicking()
 	Zenith_Maths::Vector3 xRayOrigin(xCameraPos.x, xCameraPos.y, xCameraPos.z);
 
 	// Perform raycast to find entity under mouse - now returns EntityID
-	Zenith_EntityID uHitEntityID = Zenith_SelectionSystem::RaycastSelect(xRayOrigin, xRayDir);
+	Zenith_EntityID uHitEntityID = g_xEngine.Selection().RaycastSelect(xRayOrigin, xRayDir);
 
 	if (uHitEntityID != INVALID_ENTITY_ID)
 	{
@@ -899,7 +900,7 @@ void Zenith_Editor::RenderGizmos()
 	// Gizmos are now part of the render graph - no separate task submission needed
 
 	// Optionally render selection bounding box for visual feedback
-	// Zenith_SelectionSystem::RenderSelectedBoundingBox(pxSelectedEntity);
+	// g_xEngine.Selection().RenderSelectedBoundingBox(pxSelectedEntity);
 }
 
 void Zenith_Editor::HandleGizmoInteraction()
@@ -943,7 +944,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	}
 
 	// Convert screen position to world-space ray
-	Zenith_Maths::Vector3 xRayDir = Zenith_Gizmo::ScreenToWorldRay(
+	Zenith_Maths::Vector3 xRayDir = g_xEngine.Gizmo().ScreenToWorldRay(
 		xViewportMousePos,
 		{ 0, 0 },
 		g_xEngine.Editor().m_xViewportSize,
@@ -1004,8 +1005,8 @@ bool Zenith_Editor::EnterPlayMode()
 	// (procedural meshes) that can't serialise, and behaviour scripts will
 	// regenerate them in OnStart (running below). Including them would
 	// duplicate after OnStart re-creates them on restore.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: No active scene data, cannot enter Play Mode");
@@ -1168,17 +1169,17 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 	}
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
-	Flux_MemoryManager::BeginFrame();
-	Flux_MemoryManager::EndFrame(false);  // synchronous, do not defer
+	g_xEngine.VulkanMemory().BeginFrame();
+	g_xEngine.VulkanMemory().EndFrame(false);  // synchronous, do not defer
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for GPU idle before %s...", szReason);
-	Flux_PlatformAPI::WaitForGPUIdle();
+	g_xEngine.Vulkan().WaitForGPUIdle();
 
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Flux_MemoryManager::ProcessDeferredDeletions();
+		g_xEngine.VulkanMemory().ProcessDeferredDeletions();
 	}
-	Flux::ClearPendingCommandLists();
+	g_xEngine.FluxRenderer().ClearPendingCommandLists();
 }
 
 // Pending scene reset: flush GPU, reset the active scene's entities, clear
@@ -1190,8 +1191,8 @@ void Zenith_Editor::HandlePendingSceneReset()
 
 	WaitForGPUAndFlushDeferred("scene reset");
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
 		pxSceneData->Reset();
@@ -1201,7 +1202,7 @@ void Zenith_Editor::HandlePendingSceneReset()
 	ClearSelection();
 	g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 	ResetEditorCameraToDefaults();
-	Zenith_UndoSystem::Clear();
+	g_xEngine.UndoSystem().Clear();
 }
 
 // Pending scene save: write the active scene's contents to disk.
@@ -1212,8 +1213,8 @@ void Zenith_Editor::HandlePendingSceneSave()
 
 	try
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		if (pxSceneData)
 		{
 			pxSceneData->SaveToFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
@@ -1245,38 +1246,38 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 	if (bIsBackupRestore)
 	{
 		// 1. Reset all Flux render systems BEFORE destroying entities.
-		Zenith_SceneManager::ResetAllRenderSystems();
+		g_xEngine.SceneOperations().ResetAllRenderSystems();
 
-		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+		Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
 
 		// 2. Force-unload all non-persistent scenes. UnloadSceneForced bypasses
 		// the "last scene" guard — after SCENE_LOAD_SINGLE during play only one
 		// game scene remains and UnloadScene would silently refuse to unload it.
 		Zenith_Vector<Zenith_Scene> axScenesToUnload;
-		const uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
+		const uint32_t uSceneCount = g_xEngine.SceneRegistry().GetLoadedSceneCount();
 		for (uint32_t i = 0; i < uSceneCount; ++i)
 		{
-			Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
+			Zenith_Scene xScene = g_xEngine.SceneRegistry().GetSceneAt(i);
 			if (!xScene.IsValid() || xScene == xPersistentScene) continue;
 			axScenesToUnload.PushBack(xScene);
 		}
 		for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
 		{
-			Zenith_SceneManager::UnloadSceneForced(axScenesToUnload.Get(i));
+			g_xEngine.SceneOperations().UnloadSceneForced(axScenesToUnload.Get(i));
 		}
 
 		// 3. Reset persistent scene entities (clears component pools).
-		Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistentScene);
+		Zenith_SceneData* pxPersistentData = g_xEngine.SceneRegistry().GetSceneData(xPersistentScene);
 		if (pxPersistentData)
 		{
 			pxPersistentData->Reset();
 		}
 
 		// 4. Create a fresh scene with the original name and restore metadata.
-		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName);
-		Zenith_SceneManager::SetActiveScene(xRestoredScene);
+		Zenith_Scene xRestoredScene = g_xEngine.SceneRegistry().CreateEmptyScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName);
+		g_xEngine.SceneRegistry().SetActiveScene(xRestoredScene);
 
-		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
+		Zenith_SceneData* pxRestoredData = g_xEngine.SceneRegistry().GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
 			pxRestoredData->Editor_SetPath(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
@@ -1284,8 +1285,8 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		}
 	}
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
 		pxSceneData->LoadFromFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
@@ -1293,7 +1294,7 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
 	ClearSelection();
-	Zenith_UndoSystem::Clear();
+	g_xEngine.UndoSystem().Clear();
 	g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 
 	if (bIsBackupRestore)
@@ -1378,8 +1379,8 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 	// Clear existing selection for shift+click (standard behavior)
 	g_xEngine.Editor().m_xSelectedEntityIDs.clear();
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (!pxSceneData)
 	{
 		return;
@@ -1484,7 +1485,7 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 		return nullptr;
 
 	// Search all loaded scenes for the entity (not just active scene)
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(g_xEngine.Editor().m_uPrimarySelectedEntityID);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xEngine.Editor().m_uPrimarySelectedEntityID);
 	if (!pxSceneData)
 	{
 		// Entity no longer exists in any scene - remove from selection
@@ -1506,8 +1507,8 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 
 Zenith_EntityID Zenith_Editor::CreateEntity(const char* szName)
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Assert(pxData, "No active scene data");
 
 	Zenith_Entity xEntity(pxData, szName);
@@ -1521,8 +1522,8 @@ Zenith_EntityID Zenith_Editor::CreateEntity(const char* szName)
 
 void Zenith_Editor::SelectEntityByName(const char* szName)
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Assert(pxData, "No active scene data");
 
 	Zenith_Entity xEntity = pxData->FindEntityByName(szName);
@@ -1569,7 +1570,7 @@ void Zenith_Editor::SetSelectedAsMainCamera()
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	Zenith_Assert(pxEntity, "No entity selected");
 
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(pxEntity->GetEntityID());
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(pxEntity->GetEntityID());
 	Zenith_Assert(pxSceneData, "Entity not in any scene");
 	if (!pxSceneData)
 	{
@@ -1626,8 +1627,8 @@ void Zenith_Editor::AttachScriptForSerializationToSelected(const char* szBehavio
 
 void Zenith_Editor::CreateNewScene(const char* szName)
 {
-	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene(szName);
-	Zenith_SceneManager::SetActiveScene(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene(szName);
+	g_xEngine.SceneRegistry().SetActiveScene(xScene);
 	ClearSelection();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Created scene '%s'", szName);
@@ -1635,8 +1636,8 @@ void Zenith_Editor::CreateNewScene(const char* szName)
 
 void Zenith_Editor::SaveActiveScene(const char* szPath)
 {
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 	Zenith_Assert(pxData, "No active scene data");
 
 	pxData->SaveToFile(szPath);
@@ -1646,8 +1647,8 @@ void Zenith_Editor::SaveActiveScene(const char* szPath)
 void Zenith_Editor::UnloadActiveScene()
 {
 	ClearSelection();
-	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	g_xEngine.SceneOperations().UnloadScene(xScene);
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Unloaded active scene");
 }

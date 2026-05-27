@@ -1,45 +1,15 @@
 #pragma once
 
-// State location note (post-Phase-6a-1):
-//   The static methods in this header preserve the historic API surface, but
-//   the actual data members live on Flux_RendererImpl / Flux_GraphicsImpl,
-//   reachable via g_xEngine.FluxRenderer() / g_xEngine.FluxGraphics().
-//   Static methods are thin forwards. To find where a piece of state lives,
-//   search Flux_RendererImpl.h / Flux_GraphicsImpl.h first.
-
 #include "Collections/Zenith_Vector.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_CommandList.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 
 // Flux_SurfaceInfo and view structs (Flux_ShaderResourceView, Flux_*View)
 // moved to Flux_Types.h (cycle break: MemoryManager.h -> Flux.h -> PlatformGraphics -> MemoryManager.h).
 
-struct Flux_RenderAttachment
-{
-	Flux_SurfaceInfo m_xSurfaceInfo;
-
-	Flux_VRAMHandle m_xVRAMHandle;
-
-#ifdef ZENITH_TOOLS
-	std::string m_strName;
-#endif
-
-	Flux_ShaderResourceView m_xSRV;
-	Flux_ShaderResourceView m_axMipSRVs[FLUX_MAX_MIPS];
-	Flux_UnorderedAccessView_Texture m_axUAVs[FLUX_MAX_MIPS];
-	Flux_RenderTargetView m_axRTVs[FLUX_MAX_MIPS];
-	Flux_DepthStencilView m_xDSV;
-
-	Flux_ShaderResourceView& SRV();
-	const Flux_ShaderResourceView& SRV() const;
-	Flux_ShaderResourceView& SRV(u_int uMip);
-	const Flux_ShaderResourceView& SRV(u_int uMip) const;
-	Flux_UnorderedAccessView_Texture& UAV(u_int uMip);
-	Flux_RenderTargetView& RTV(u_int uMip = 0);
-	Flux_DepthStencilView& DSV() { return m_xDSV; }
-	const Flux_DepthStencilView& DSV() const { return m_xDSV; }
-};
+// Flux_RenderAttachment moved to Flux_Types.h to break the include cycle
+// between Flux.h and Zenith_Vulkan_Swapchain.h (via PlatformGraphics_Include).
 
 struct Flux_RenderAttachmentCube
 {
@@ -380,94 +350,13 @@ struct Flux_WorkDistribution
 
 class Flux_RenderGraph;
 
-class Flux
-{
-public:
-	Flux() = delete;
-	~Flux() = delete;
-	static void EarlyInitialise();
-	static void LateInitialise();
-
-	// Release all asset-system references held by Flux statics (texture/material/etc.
-	// handles in Flux_Graphics, Flux_Text, Flux_Particles, Flux_Terrain, Flux_VolumeFog,
-	// plus Zenith_MaterialAsset's own defaults). Called between Project_Shutdown and
-	// Zenith_AssetRegistry::Shutdown so handles release while the registry still owns
-	// its assets — putting these Clears inside subsystem Shutdown() runs too late
-	// because Flux::Shutdown() executes AFTER the registry has been torn down.
-	static void ReleaseAssetReferences();
-
-	static void Shutdown();
-
-	static const uint32_t GetFrameCounter();
-
-	// Submit a command list for Vulkan recording. Only called from
-	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread —
-	// the source pass pointer carries the precomputed prologue barriers
-	// (pxPass->m_xPrologueBarriers) the platform layer emits via
-	// ImageTransition right before the pass executes. No bypass path exists.
-	static void SubmitCommandList(const Flux_CommandList* pxCmdList,
-		const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
-		const Flux_RenderGraph_AttachmentRef& xDepthStencil,
-		bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass);
-
-	// Prepare frame for rendering - distributes work across worker threads
-	// Returns false if there is no work to do
-	static bool PrepareFrame(Flux_WorkDistribution& xOutDistribution);
-
-	static void AddResChangeCallback(void(*pfnCallback)());
-	static void OnResChange();
-
-	// Clear all pending command lists. CALLER GUARANTEES that no worker thread
-	// is currently submitting (i.e. graph Execute is not in flight) and that
-	// the GPU has finished consuming the previous frame's lists. Called from:
-	//   - Main thread between frames during res change / scene transition.
-	// This function intentionally does NOT take s_xPendingCommandListMutex
-	// because the contract above means there is no contender to lock against.
-	static void ClearPendingCommandLists();
-
-	static Flux_RenderGraph& GetRenderGraph();
-	static bool IsRenderGraphValid();
-	static void SetupRenderGraph();
-
-	// Called every frame from Zenith_Core::ExecuteRenderGraph before Compile.
-	// Forwards the current value of debug variables that the render graph
-	// cares about (e.g. transient aliasing toggle) into the graph via their
-	// respective setters; the setters MarkDirty on change, so toggling the
-	// editor variable mid-frame takes effect on the next Compile rather
-	// than waiting for the next SetupRenderGraph (which only runs on resize).
-	static void SyncRenderGraphDebugToggles();
-
-	// Called every frame from Zenith_Core::ExecuteRenderGraph before Compile.
-	// Forwards per-subsystem runtime selections (Fog technique, SSR blur,
-	// SSGI denoise, IBL pass enable set) into the graph. Each call may
-	// SetPassEnabled / MarkDirty so that editor-toggle changes take effect
-	// on the same frame. Order is load-bearing: Fog before IBL, SSR/SSGI
-	// before IBL — see the function body for the MarkDirty-propagation
-	// rationale.
-	//
-	// Narrow by design: this is the four subsystem selection-apply calls
-	// only. SyncRenderGraphDebugToggles() is *also* pre-compile graph-state
-	// work and could reasonably be folded in alongside, but that is a
-	// separate consolidation question (see plan).
-	static void ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph);
-
-	// Request a full graph rebuild (Clear + SetupRenderGraph) at the start of
-	// the next frame. Safe to call from execute callbacks — the rebuild is
-	// deferred until before the next Compile()/Execute() cycle.
-	static void RequestGraphRebuild();
-	static bool ConsumeGraphRebuildRequest();
-
-	// Public access to pending command lists for platform layer.
-	// Inserted in topological order by Flux_RenderGraph::Execute Phase 2 only.
-	static Zenith_Vector<Flux_CommandListEntry>& GetPendingCommandLists();
-private:
-	friend class Zenith_Vulkan;  // Flux_PlatformAPI alias resolves to this
-
-	// Phase 6a-1: 5 static data members moved off this class onto
-	// Flux_RendererImpl held by Zenith_Engine. The static method API
-	// stays unchanged; bodies live in Flux.cpp and route through
-	// g_xEngine.FluxRenderer().m_xXxx.
-};
+// The Flux renderer's public surface moved off the `class Flux` static
+// facade onto `Flux_RendererImpl` (held by g_xEngine.FluxRenderer()).
+// Migrate Flux::X(...) → g_xEngine.FluxRenderer().X(...). The Impl is
+// declared in Flux_RendererImpl.h; including this header keeps you on
+// the same include footprint as before, but you'll also want
+//   #include "Flux/Flux_RendererImpl.h"
+// in TUs that call the methods.
 
 struct Flux_PipelineSpecification
 {

@@ -5,7 +5,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 
@@ -65,8 +65,8 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 
 	// Check if this entity's scene is the current active scene
 	// If not, we're likely in a test scenario with a local scene being destroyed
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxActiveSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_SceneData* pxActiveSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 	if (pxOwningSceneData != pxActiveSceneData)
 	{
 		// Different scene - skip hierarchy cleanup to avoid accessing wrong scene data

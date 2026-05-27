@@ -548,9 +548,9 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 
 	xBuilder.CopyToGeometry(xGeometryOut);
 	xGeometryOut.GenerateLayoutAndVertexData();
-	Flux_MemoryManager::InitialiseVertexBuffer(
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
 		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
@@ -681,9 +681,9 @@ static void GenerateCatMesh(Flux_MeshGeometry& xGeometryOut)
 	// Finalize
 	xBuilder.CopyToGeometry(xGeometryOut);
 	xGeometryOut.GenerateLayoutAndVertexData();
-	Flux_MemoryManager::InitialiseVertexBuffer(
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
 		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
@@ -695,9 +695,9 @@ static void FinalizeMesh(MeshBuilder& xBuilder, Flux_MeshGeometry& xGeometry)
 {
 	xBuilder.CopyToGeometry(xGeometry);
 	xGeometry.GenerateLayoutAndVertexData();
-	Flux_MemoryManager::InitialiseVertexBuffer(
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
 		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
 		xGeometry.GetIndexData(), xGeometry.GetIndexDataSize(), xGeometry.m_xIndexBuffer);
 }
 
@@ -1059,9 +1059,9 @@ static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometr
 
 	// Generate interleaved vertex data and upload to GPU
 	xGeometry.GenerateLayoutAndVertexData();
-	Flux_MemoryManager::InitialiseVertexBuffer(
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
 		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
 		xGeometry.GetIndexData(), xGeometry.GetIndexDataSize(), xGeometry.m_xIndexBuffer);
 
 	return true;
@@ -1421,8 +1421,8 @@ static void InitializeTilePuzzleResources()
 	// Use the persistent scene here: InitializeResources runs before the initial scene
 	// loads, and (post-A6) GetActiveScene returns INVALID until that happens. These
 	// template entities are destroyed immediately after capture into the Zenith_Prefab.
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetPersistentScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 	// Cell prefab (floor tiles)
 	{
@@ -1430,7 +1430,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Prefab* pxCell = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCell->CreateFromEntity(xCellTemplate, "Cell");
 		Resources().m_xCellPrefab.Set(pxCell);
-		Zenith_SceneManager::Destroy(xCellTemplate);
+		Zenith_SceneEntityOwnership::Destroy(xCellTemplate);
 	}
 
 	// Shape cube prefab (for multi-cube shapes)
@@ -1439,7 +1439,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Prefab* pxShapeCube = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxShapeCube->CreateFromEntity(xShapeCubeTemplate, "ShapeCube");
 		Resources().m_xShapeCubePrefab.Set(pxShapeCube);
-		Zenith_SceneManager::Destroy(xShapeCubeTemplate);
+		Zenith_SceneEntityOwnership::Destroy(xShapeCubeTemplate);
 	}
 
 	// Cat prefab (spheres)
@@ -1448,7 +1448,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Prefab* pxCat = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCat->CreateFromEntity(xCatTemplate, "Cat");
 		Resources().m_xCatPrefab.Set(pxCat);
-		Zenith_SceneManager::Destroy(xCatTemplate);
+		Zenith_SceneEntityOwnership::Destroy(xCatTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -1861,1086 +1861,1086 @@ namespace TilePuzzleUI
 void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
-	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 12.f, 0.f);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(-1.5f);
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
-	Zenith_EditorAutomation::AddStep_SetCameraAspect(9.f / 16.f);
-	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
-	Zenith_EditorAutomation::AddStep_AddUI();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(0.f, 12.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(-1.5f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(45.f));
+	g_xEngine.EditorAutomation().AddStep_SetCameraAspect(9.f / 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
+	g_xEngine.EditorAutomation().AddStep_AddUI();
 
 	// Main menu background
-	Zenith_EditorAutomation::AddStep_CreateUIRect("MenuBackground");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuBackground", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
-	Zenith_EditorAutomation::AddStep_SetUIColor("MenuBackground", 0.06f, 0.06f, 0.12f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIGradientColor("MenuBackground", 0.10f, 0.06f, 0.18f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("MenuBackground");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuBackground", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuBackground", 0.06f, 0.06f, 0.12f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIGradientColor("MenuBackground", 0.10f, 0.06f, 0.18f, 1.f);
 
 	// Menu title (standalone, not in button group to avoid glyph correction offset)
-	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "Paws & Pins");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", TilePuzzleUI::fMENU_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("MenuTitle", 2.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUITextShadowColor("MenuTitle", 0.f, 0.f, 0.f, 0.5f);
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -419.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("MenuTitle", "Paws & Pins");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuTitle", TilePuzzleUI::fMENU_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("MenuTitle", 2.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadowColor("MenuTitle", 0.f, 0.f, 0.f, 0.5f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuTitle", 0.f, -419.f);
 
 	// Menu subtitle (standalone, positioned below title)
-	Zenith_EditorAutomation::AddStep_CreateUIText("MenuSubtitle", "A Cat Puzzle Game");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuSubtitle", TilePuzzleUI::fMENU_SUBTITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("MenuSubtitle", 0.6f, 0.6f, 0.8f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuSubtitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("MenuSubtitle", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUITextShadowColor("MenuSubtitle", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuSubtitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuSubtitle", 0.f, -375.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("MenuSubtitle", "A Cat Puzzle Game");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuSubtitle", TilePuzzleUI::fMENU_SUBTITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuSubtitle", 0.6f, 0.6f, 0.8f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("MenuSubtitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("MenuSubtitle", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadowColor("MenuSubtitle", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuSubtitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuSubtitle", 0.f, -375.f);
 
 	// Menu layout group (vertical stack of buttons only)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("MenuButtonGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuButtonGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuButtonGroup", 0.f, 60.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("MenuButtonGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("MenuButtonGroup", TilePuzzleUI::fMENU_BTN_SPACING);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("MenuButtonGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("MenuButtonGroup", true);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("MenuButtonGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuButtonGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuButtonGroup", 0.f, 60.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("MenuButtonGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("MenuButtonGroup", TilePuzzleUI::fMENU_BTN_SPACING);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("MenuButtonGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("MenuButtonGroup", true);
 
 	// Continue button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ContinueButton", "Continue");
-	Zenith_EditorAutomation::AddStep_SetUISize("ContinueButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ContinueButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ContinueButton", 0.18f, 0.30f, 0.55f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ContinueButton", 0.22f, 0.36f, 0.65f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ContinueButton", 0.12f, 0.22f, 0.42f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("ContinueButton", 12.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("ContinueButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("ContinueButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("ContinueButton", 0.30f, 0.45f, 0.70f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("ContinueButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("ContinueButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("ContinueButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("ContinueButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ContinueButton", "Continue");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ContinueButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ContinueButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ContinueButton", 0.18f, 0.30f, 0.55f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ContinueButton", 0.22f, 0.36f, 0.65f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("ContinueButton", 0.12f, 0.22f, 0.42f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("ContinueButton", 12.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("ContinueButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("ContinueButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("ContinueButton", 0.30f, 0.45f, 0.70f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("ContinueButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("ContinueButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("ContinueButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("ContinueButton", 0.f, 0.f, 0.f, 0.4f);
 
 	// Level Select button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("LevelSelectButton", "Level Select");
-	Zenith_EditorAutomation::AddStep_SetUISize("LevelSelectButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("LevelSelectButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("LevelSelectButton", 0.18f, 0.30f, 0.55f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("LevelSelectButton", 0.22f, 0.36f, 0.65f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("LevelSelectButton", 0.12f, 0.22f, 0.42f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("LevelSelectButton", 12.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("LevelSelectButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("LevelSelectButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("LevelSelectButton", 0.30f, 0.45f, 0.70f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("LevelSelectButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("LevelSelectButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("LevelSelectButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("LevelSelectButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("LevelSelectButton", "Level Select");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("LevelSelectButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("LevelSelectButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("LevelSelectButton", 0.18f, 0.30f, 0.55f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("LevelSelectButton", 0.22f, 0.36f, 0.65f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("LevelSelectButton", 0.12f, 0.22f, 0.42f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("LevelSelectButton", 12.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("LevelSelectButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("LevelSelectButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("LevelSelectButton", 0.30f, 0.45f, 0.70f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("LevelSelectButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("LevelSelectButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("LevelSelectButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("LevelSelectButton", 0.f, 0.f, 0.f, 0.4f);
 
 	// Pinball button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballButton", "Pinball");
-	Zenith_EditorAutomation::AddStep_SetUISize("PinballButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballButton", 0.18f, 0.35f, 0.40f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballButton", 0.22f, 0.42f, 0.48f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballButton", 0.12f, 0.26f, 0.30f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("PinballButton", 12.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("PinballButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("PinballButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("PinballButton", 0.30f, 0.50f, 0.55f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("PinballButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("PinballButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("PinballButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("PinballButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("PinballButton", "Pinball");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("PinballButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("PinballButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("PinballButton", 0.18f, 0.35f, 0.40f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("PinballButton", 0.22f, 0.42f, 0.48f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("PinballButton", 0.12f, 0.26f, 0.30f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("PinballButton", 12.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("PinballButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("PinballButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("PinballButton", 0.30f, 0.50f, 0.55f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("PinballButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("PinballButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("PinballButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("PinballButton", 0.f, 0.f, 0.f, 0.4f);
 
 	// Reset Save button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ResetSaveButton", "Reset Save");
-	Zenith_EditorAutomation::AddStep_SetUISize("ResetSaveButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ResetSaveButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ResetSaveButton", 0.45f, 0.15f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ResetSaveButton", 0.55f, 0.20f, 0.20f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ResetSaveButton", 0.35f, 0.10f, 0.10f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("ResetSaveButton", 12.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("ResetSaveButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("ResetSaveButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("ResetSaveButton", 0.60f, 0.25f, 0.25f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("ResetSaveButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("ResetSaveButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("ResetSaveButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("ResetSaveButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ResetSaveButton", "Reset Save");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ResetSaveButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ResetSaveButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ResetSaveButton", 0.45f, 0.15f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ResetSaveButton", 0.55f, 0.20f, 0.20f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("ResetSaveButton", 0.35f, 0.10f, 0.10f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("ResetSaveButton", 12.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("ResetSaveButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("ResetSaveButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("ResetSaveButton", 0.60f, 0.25f, 0.25f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("ResetSaveButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("ResetSaveButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("ResetSaveButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("ResetSaveButton", 0.f, 0.f, 0.f, 0.4f);
 
 	// Cat Cafe button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeButton", "Cat Cafe");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeButton", 0.45f, 0.22f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeButton", 0.55f, 0.28f, 0.42f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("CatCafeButton", 0.35f, 0.16f, 0.28f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("CatCafeButton", 12.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("CatCafeButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("CatCafeButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("CatCafeButton", 0.60f, 0.35f, 0.50f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("CatCafeButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("CatCafeButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("CatCafeButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("CatCafeButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("CatCafeButton", "Cat Cafe");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CatCafeButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("CatCafeButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("CatCafeButton", 0.45f, 0.22f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("CatCafeButton", 0.55f, 0.28f, 0.42f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("CatCafeButton", 0.35f, 0.16f, 0.28f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("CatCafeButton", 12.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("CatCafeButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("CatCafeButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("CatCafeButton", 0.60f, 0.35f, 0.50f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("CatCafeButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("CatCafeButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("CatCafeButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("CatCafeButton", 0.f, 0.f, 0.f, 0.4f);
 
 	// Daily Puzzle button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("DailyPuzzleButton", "Daily Puzzle");
-	Zenith_EditorAutomation::AddStep_SetUISize("DailyPuzzleButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("DailyPuzzleButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("DailyPuzzleButton", 0.22f, 0.38f, 0.22f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("DailyPuzzleButton", 0.28f, 0.48f, 0.28f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("DailyPuzzleButton", 0.16f, 0.28f, 0.16f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("DailyPuzzleButton", 12.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("DailyPuzzleButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("DailyPuzzleButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("DailyPuzzleButton", 0.35f, 0.55f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("DailyPuzzleButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("DailyPuzzleButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("DailyPuzzleButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("DailyPuzzleButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("DailyPuzzleButton", "Daily Puzzle");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("DailyPuzzleButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("DailyPuzzleButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("DailyPuzzleButton", 0.22f, 0.38f, 0.22f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("DailyPuzzleButton", 0.28f, 0.48f, 0.28f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("DailyPuzzleButton", 0.16f, 0.28f, 0.16f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("DailyPuzzleButton", 12.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("DailyPuzzleButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("DailyPuzzleButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("DailyPuzzleButton", 0.35f, 0.55f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("DailyPuzzleButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("DailyPuzzleButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("DailyPuzzleButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("DailyPuzzleButton", 0.f, 0.f, 0.f, 0.4f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "ContinueButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "LevelSelectButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "PinballButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "ResetSaveButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "CatCafeButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "DailyPuzzleButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "ContinueButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "LevelSelectButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "PinballButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "ResetSaveButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "CatCafeButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "DailyPuzzleButton");
 
 	// Top-right counters area (vertical stack: coins pill, stars pill)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TopRightCounters");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TopRightCounters", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TopRightCounters", -14.f, 14.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("TopRightCounters", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("TopRightCounters", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("TopRightCounters", static_cast<int>(Zenith_UI::ChildAlignment::UpperRight));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("TopRightCounters", true);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("TopRightCounters");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TopRightCounters", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TopRightCounters", -14.f, 14.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("TopRightCounters", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("TopRightCounters", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("TopRightCounters", static_cast<int>(Zenith_UI::ChildAlignment::UpperRight));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("TopRightCounters", true);
 
 	// Coin pill (icon + text with pill background)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("CoinGroup");
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("CoinGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("CoinGroup", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("CoinGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("CoinGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("CoinGroup", 10.f, 10.f, 10.f, 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("CoinGroup", 0.05f, 0.05f, 0.10f, 0.6f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("CoinGroup", 16.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("CoinGroup", 0.2f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("CoinGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("CoinGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("CoinGroup", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("CoinGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("CoinGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutPadding("CoinGroup", 10.f, 10.f, 10.f, 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundColor("CoinGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundCornerRadius("CoinGroup", 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundBorder("CoinGroup", 0.2f, 0.2f, 0.3f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIImage("CoinIcon");
-	Zenith_EditorAutomation::AddStep_SetUISize("CoinIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CoinIcon", 1.f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("CoinIcon",
+	g_xEngine.EditorAutomation().AddStep_CreateUIImage("CoinIcon");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CoinIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CoinIcon", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIImageTexturePath("CoinIcon",
 		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CoinText", "0");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CoinText", TilePuzzleUI::fPILL_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CoinText", "0");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CoinText", TilePuzzleUI::fPILL_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("CoinGroup", "CoinIcon");
-	Zenith_EditorAutomation::AddStep_AddUIChild("CoinGroup", "CoinText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CoinGroup", "CoinIcon");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CoinGroup", "CoinText");
 
 	// Star pill (icon + text with pill background)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("StarGroup");
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("StarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("StarGroup", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("StarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("StarGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("StarGroup", 10.f, 10.f, 10.f, 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("StarGroup", 0.05f, 0.05f, 0.10f, 0.6f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("StarGroup", 16.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("StarGroup", 0.2f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("StarGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("StarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("StarGroup", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("StarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("StarGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutPadding("StarGroup", 10.f, 10.f, 10.f, 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundColor("StarGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundCornerRadius("StarGroup", 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundBorder("StarGroup", 0.2f, 0.2f, 0.3f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIImage("StarIcon");
-	Zenith_EditorAutomation::AddStep_SetUISize("StarIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIColor("StarIcon", 1.f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("StarIcon",
+	g_xEngine.EditorAutomation().AddStep_CreateUIImage("StarIcon");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("StarIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("StarIcon", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIImageTexturePath("StarIcon",
 		GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TotalStarsText", "0 / 300");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TotalStarsText", TilePuzzleUI::fPILL_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TotalStarsText", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TotalStarsText", "0 / 300");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TotalStarsText", TilePuzzleUI::fPILL_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TotalStarsText", 1.f, 0.85f, 0.2f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("StarGroup", "StarIcon");
-	Zenith_EditorAutomation::AddStep_AddUIChild("StarGroup", "TotalStarsText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("StarGroup", "StarIcon");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("StarGroup", "TotalStarsText");
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("TopRightCounters", "CoinGroup");
-	Zenith_EditorAutomation::AddStep_AddUIChild("TopRightCounters", "StarGroup");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TopRightCounters", "CoinGroup");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TopRightCounters", "StarGroup");
 
 	// Lives layout group (top-left of menu): icon + text with pill background
 	// Lives area — vertical stack: pill (icon+text), timer, refill button
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("LivesArea");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("LivesArea", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("LivesArea", 14.f, 14.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("LivesArea", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("LivesArea", 6.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("LivesArea", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("LivesArea", true);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("LivesArea");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("LivesArea", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("LivesArea", 14.f, 14.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("LivesArea", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("LivesArea", 6.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("LivesArea", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("LivesArea", true);
 
 	// Lives pill — horizontal icon + text with background
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("LivesGroup");
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("LivesGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("LivesGroup", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("LivesGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("LivesGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("LivesGroup", 10.f, 10.f, 10.f, 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("LivesGroup", 0.05f, 0.05f, 0.10f, 0.6f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("LivesGroup", 16.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("LivesGroup", 0.2f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("LivesGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("LivesGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("LivesGroup", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("LivesGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("LivesGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutPadding("LivesGroup", 10.f, 10.f, 10.f, 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundColor("LivesGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundCornerRadius("LivesGroup", 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundBorder("LivesGroup", 0.2f, 0.2f, 0.3f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIImage("HeartIcon");
-	Zenith_EditorAutomation::AddStep_SetUISize("HeartIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIColor("HeartIcon", 1.f, 0.3f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HeartIcon",
+	g_xEngine.EditorAutomation().AddStep_CreateUIImage("HeartIcon");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("HeartIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("HeartIcon", 1.f, 0.3f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIImageTexturePath("HeartIcon",
 		GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "5/5");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesText", TilePuzzleUI::fPILL_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("LivesText", "5/5");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("LivesText", TilePuzzleUI::fPILL_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("LivesGroup", "HeartIcon");
-	Zenith_EditorAutomation::AddStep_AddUIChild("LivesGroup", "LivesText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LivesGroup", "HeartIcon");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LivesGroup", "LivesText");
 
 	// Lives timer text (shown when lives are regenerating)
-	Zenith_EditorAutomation::AddStep_CreateUIText("LivesTimerText", "");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesTimerText", TilePuzzleUI::fSMALL_LABEL_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("LivesTimerText", 0.8f, 0.5f, 0.5f, 0.8f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("LivesTimerText", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("LivesTimerText", "");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("LivesTimerText", TilePuzzleUI::fSMALL_LABEL_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("LivesTimerText", 0.8f, 0.5f, 0.5f, 0.8f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("LivesTimerText", false);
 
 	// Lives Refill button (hidden by default)
-	Zenith_EditorAutomation::AddStep_CreateUIButton("RefillLivesButton", "Refill (50)");
-	Zenith_EditorAutomation::AddStep_SetUISize("RefillLivesButton", TilePuzzleUI::fREFILL_BTN_W, TilePuzzleUI::fREFILL_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("RefillLivesButton", TilePuzzleUI::fREFILL_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("RefillLivesButton", 0.50f, 0.20f, 0.20f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("RefillLivesButton", 0.60f, 0.30f, 0.30f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("RefillLivesButton", 0.35f, 0.12f, 0.12f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("RefillLivesButton", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("RefillLivesButton", 3.f, 3.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("RefillLivesButton", 0.f, 0.f, 0.f, 0.3f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("RefillLivesButton", 0.65f, 0.32f, 0.32f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("RefillLivesButton", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("RefillLivesButton", 0.12f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("RefillLivesButton", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("RefillLivesButton", 0.f, 0.f, 0.f, 0.4f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("RefillLivesButton", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("RefillLivesButton", "Refill (50)");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("RefillLivesButton", TilePuzzleUI::fREFILL_BTN_W, TilePuzzleUI::fREFILL_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("RefillLivesButton", TilePuzzleUI::fREFILL_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("RefillLivesButton", 0.50f, 0.20f, 0.20f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("RefillLivesButton", 0.60f, 0.30f, 0.30f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("RefillLivesButton", 0.35f, 0.12f, 0.12f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius("RefillLivesButton", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow("RefillLivesButton", 3.f, 3.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonShadowColor("RefillLivesButton", 0.f, 0.f, 0.f, 0.3f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderColor("RefillLivesButton", 0.65f, 0.32f, 0.32f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonBorderThickness("RefillLivesButton", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration("RefillLivesButton", 0.12f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadow("RefillLivesButton", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonTextShadowColor("RefillLivesButton", 0.f, 0.f, 0.f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("RefillLivesButton", false);
 
 	// Hint token pill (icon + text with pill background) — above lives
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("HintTokenGroup");
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("HintTokenGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("HintTokenGroup", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("HintTokenGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("HintTokenGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("HintTokenGroup", 10.f, 10.f, 10.f, 2.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("HintTokenGroup", 0.05f, 0.05f, 0.10f, 0.6f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("HintTokenGroup", 16.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("HintTokenGroup", 0.2f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("HintTokenGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("HintTokenGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("HintTokenGroup", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("HintTokenGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("HintTokenGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutPadding("HintTokenGroup", 10.f, 10.f, 10.f, 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundColor("HintTokenGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundCornerRadius("HintTokenGroup", 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundBorder("HintTokenGroup", 0.2f, 0.2f, 0.3f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIImage("HintTokenIcon");
-	Zenith_EditorAutomation::AddStep_SetUISize("HintTokenIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIColor("HintTokenIcon", 0.4f, 0.85f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HintTokenIcon",
+	g_xEngine.EditorAutomation().AddStep_CreateUIImage("HintTokenIcon");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("HintTokenIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("HintTokenIcon", 0.4f, 0.85f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIImageTexturePath("HintTokenIcon",
 		GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("HintTokenText", "0");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("HintTokenText", TilePuzzleUI::fPILL_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("HintTokenText", 0.4f, 0.85f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("HintTokenText", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("HintTokenText", "0");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("HintTokenText", TilePuzzleUI::fPILL_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("HintTokenText", 0.4f, 0.85f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("HintTokenText", 1.f, 1.f, true);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("HintTokenGroup", "HintTokenIcon");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HintTokenGroup", "HintTokenText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HintTokenGroup", "HintTokenIcon");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HintTokenGroup", "HintTokenText");
 
 	// Add children of the vertical LivesArea (hint tokens on top, then lives)
-	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "HintTokenGroup");
-	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "LivesGroup");
-	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "LivesTimerText");
-	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "RefillLivesButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LivesArea", "HintTokenGroup");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LivesArea", "LivesGroup");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LivesArea", "LivesTimerText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LivesArea", "RefillLivesButton");
 
 	// Daily streak (bottom-left) — vertical layout with pill background
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("StreakGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("StreakGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("StreakGroup", 14.f, -14.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("StreakGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("StreakGroup", 2.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("StreakGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("StreakGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("StreakGroup", 10.f, 6.f, 10.f, 6.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("StreakGroup", 0.05f, 0.05f, 0.10f, 0.6f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("StreakGroup", 14.f);
-	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("StreakGroup", 0.2f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("StreakGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("StreakGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("StreakGroup", 14.f, -14.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("StreakGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("StreakGroup", 2.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("StreakGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("StreakGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutPadding("StreakGroup", 10.f, 6.f, 10.f, 6.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundColor("StreakGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundCornerRadius("StreakGroup", 14.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIBackgroundBorder("StreakGroup", 0.2f, 0.2f, 0.3f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("DailyStreakLabel", "Streak");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("DailyStreakLabel", TilePuzzleUI::fSTREAK_LABEL_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("DailyStreakLabel", 0.5f, 0.7f, 0.5f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("DailyStreakLabel", "Streak");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("DailyStreakLabel", TilePuzzleUI::fSTREAK_LABEL_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("DailyStreakLabel", 0.5f, 0.7f, 0.5f, 0.7f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("DailyStreakText", "0 days");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("DailyStreakText", TilePuzzleUI::fSTREAK_VALUE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("DailyStreakText", 0.6f, 0.8f, 0.6f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("DailyStreakText", "0 days");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("DailyStreakText", TilePuzzleUI::fSTREAK_VALUE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("DailyStreakText", 0.6f, 0.8f, 0.6f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("StreakGroup", "DailyStreakLabel");
-	Zenith_EditorAutomation::AddStep_AddUIChild("StreakGroup", "DailyStreakText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("StreakGroup", "DailyStreakLabel");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("StreakGroup", "DailyStreakText");
 
 	// Text shadows on HUD texts
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("CoinText", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("LivesText", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("DailyStreakLabel", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("DailyStreakText", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("CoinText", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("LivesText", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("DailyStreakLabel", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("DailyStreakText", 1.f, 1.f, true);
 
 	// Version text
-	Zenith_EditorAutomation::AddStep_CreateUIText("VersionText", "v1.0");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VersionText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VersionText", 0.f, -8.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("VersionText", TilePuzzleUI::fVERSION_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("VersionText", 0.4f, 0.4f, 0.5f, 0.4f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("VersionText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("VersionText", "v1.0");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("VersionText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("VersionText", 0.f, -8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("VersionText", TilePuzzleUI::fVERSION_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("VersionText", 0.4f, 0.4f, 0.5f, 0.4f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("VersionText", static_cast<int>(Zenith_UI::TextAlignment::Center));
 
 	// ---- Cat Cafe UI elements (starts hidden) ----
 
 	// Cat Cafe title
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeTitle", "Cat Cafe");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeTitle", 0.f, 30.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeTitle", TilePuzzleUI::fSCREEN_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeTitle", 1.f, 0.8f, 0.6f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("CatCafeTitle", 2.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeTitle", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeTitle", "Cat Cafe");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeTitle", 0.f, 30.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeTitle", TilePuzzleUI::fSCREEN_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeTitle", 1.f, 0.8f, 0.6f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("CatCafeTitle", 2.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeTitle", false);
 
 	// Cat Cafe count
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeCount", "0 / 100 cats rescued");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeCount", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeCount", 0.f, TilePuzzleUI::fCAFE_COUNT_Y);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeCount", TilePuzzleUI::fCAFE_COUNT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeCount", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeCount", 0.8f, 0.8f, 0.8f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeCount", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeCount", "0 / 100 cats rescued");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeCount", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeCount", 0.f, TilePuzzleUI::fCAFE_COUNT_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeCount", TilePuzzleUI::fCAFE_COUNT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeCount", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeCount", 0.8f, 0.8f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeCount", false);
 
 	// Cat collection progress bar (background + fill)
-	Zenith_EditorAutomation::AddStep_CreateUIRect("CatProgressBg");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatProgressBg", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatProgressBg", 0.f, TilePuzzleUI::fCAT_PROGRESS_Y);
-	Zenith_EditorAutomation::AddStep_SetUISize("CatProgressBg", TilePuzzleUI::fCAT_PROGRESS_W, TilePuzzleUI::fCAT_PROGRESS_H);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatProgressBg", 0.15f, 0.15f, 0.2f, 0.8f);
-	Zenith_EditorAutomation::AddStep_SetUICornerRadius("CatProgressBg", 6.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatProgressBg", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("CatProgressBg");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatProgressBg", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatProgressBg", 0.f, TilePuzzleUI::fCAT_PROGRESS_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CatProgressBg", TilePuzzleUI::fCAT_PROGRESS_W, TilePuzzleUI::fCAT_PROGRESS_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatProgressBg", 0.15f, 0.15f, 0.2f, 0.8f);
+	g_xEngine.EditorAutomation().AddStep_SetUICornerRadius("CatProgressBg", 6.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatProgressBg", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIRect("CatProgressFill");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatProgressFill", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatProgressFill", 0.f, TilePuzzleUI::fCAT_PROGRESS_Y);
-	Zenith_EditorAutomation::AddStep_SetUISize("CatProgressFill", TilePuzzleUI::fCAT_PROGRESS_W, TilePuzzleUI::fCAT_PROGRESS_H);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatProgressFill", 1.f, 0.7f, 0.2f, 0.9f);
-	Zenith_EditorAutomation::AddStep_SetUICornerRadius("CatProgressFill", 6.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatProgressFill", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("CatProgressFill");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatProgressFill", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatProgressFill", 0.f, TilePuzzleUI::fCAT_PROGRESS_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CatProgressFill", TilePuzzleUI::fCAT_PROGRESS_W, TilePuzzleUI::fCAT_PROGRESS_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatProgressFill", 1.f, 0.7f, 0.2f, 0.9f);
+	g_xEngine.EditorAutomation().AddStep_SetUICornerRadius("CatProgressFill", 6.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatProgressFill", false);
 
 	// Cat cafe single-cat info display
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeInfoName", "");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeInfoName", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeInfoName", 0.f, 340.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeInfoName", 32.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeInfoName", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeInfoName", 1.f, 1.f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("CatCafeInfoName", 2.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeInfoName", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeInfoName", "");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeInfoName", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeInfoName", 0.f, 340.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeInfoName", 32.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeInfoName", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeInfoName", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("CatCafeInfoName", 2.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeInfoName", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeInfoBreed", "");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeInfoBreed", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeInfoBreed", 0.f, 385.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeInfoBreed", 22.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeInfoBreed", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeInfoBreed", 0.75f, 0.75f, 0.8f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("CatCafeInfoBreed", 1.f, 1.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeInfoBreed", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeInfoBreed", "");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeInfoBreed", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeInfoBreed", 0.f, 385.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeInfoBreed", 22.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeInfoBreed", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeInfoBreed", 0.75f, 0.75f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("CatCafeInfoBreed", 1.f, 1.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeInfoBreed", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeInfoLevel", "");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeInfoLevel", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeInfoLevel", 0.f, 415.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeInfoLevel", 20.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeInfoLevel", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeInfoLevel", 1.f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeInfoLevel", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeInfoLevel", "");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeInfoLevel", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeInfoLevel", 0.f, 415.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeInfoLevel", 20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeInfoLevel", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeInfoLevel", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeInfoLevel", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeEmpty", "No cats rescued yet!");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeEmpty", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeEmpty", 0.f, 0.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeEmpty", 28.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeEmpty", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeEmpty", 0.7f, 0.7f, 0.75f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeEmpty", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeEmpty", "No cats rescued yet!");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeEmpty", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeEmpty", 0.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeEmpty", 28.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeEmpty", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeEmpty", 0.7f, 0.7f, 0.75f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeEmpty", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeSwipeHint", "< Swipe to browse >");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeSwipeHint", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeSwipeHint", 0.f, 460.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeSwipeHint", 18.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeSwipeHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeSwipeHint", 0.5f, 0.5f, 0.55f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeSwipeHint", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatCafeSwipeHint", "< Swipe to browse >");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeSwipeHint", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeSwipeHint", 0.f, 460.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatCafeSwipeHint", 18.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("CatCafeSwipeHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatCafeSwipeHint", 0.5f, 0.5f, 0.55f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeSwipeHint", false);
 
 	// Cat Cafe navigation layout group (< Back >)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("CatCafeNavGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeNavGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeNavGroup", 0.f, -40.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("CatCafeNavGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("CatCafeNavGroup", 10.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("CatCafeNavGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("CatCafeNavGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeNavGroup", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("CatCafeNavGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CatCafeNavGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CatCafeNavGroup", 0.f, -40.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("CatCafeNavGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("CatCafeNavGroup", 10.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("CatCafeNavGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("CatCafeNavGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("CatCafeNavGroup", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafePrevPage", "<");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafePrevPage", TilePuzzleUI::fCAFE_NAV_BTN_SIZE, TilePuzzleUI::fCAFE_NAV_BTN_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafePrevPage", TilePuzzleUI::fCAFE_NAV_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafePrevPage", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafePrevPage", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("CatCafePrevPage", "<");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CatCafePrevPage", TilePuzzleUI::fCAFE_NAV_BTN_SIZE, TilePuzzleUI::fCAFE_NAV_BTN_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("CatCafePrevPage", TilePuzzleUI::fCAFE_NAV_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("CatCafePrevPage", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("CatCafePrevPage", 0.25f, 0.3f, 0.45f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeBackButton", "Back");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeBackButton", TilePuzzleUI::fCAFE_BACK_BTN_W, TilePuzzleUI::fCAFE_NAV_BTN_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeBackButton", TilePuzzleUI::fCAFE_BACK_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeBackButton", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeBackButton", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("CatCafeBackButton", "Back");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CatCafeBackButton", TilePuzzleUI::fCAFE_BACK_BTN_W, TilePuzzleUI::fCAFE_NAV_BTN_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("CatCafeBackButton", TilePuzzleUI::fCAFE_BACK_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("CatCafeBackButton", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("CatCafeBackButton", 0.25f, 0.3f, 0.45f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeNextPage", ">");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeNextPage", TilePuzzleUI::fCAFE_NAV_BTN_SIZE, TilePuzzleUI::fCAFE_NAV_BTN_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeNextPage", TilePuzzleUI::fCAFE_NAV_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeNextPage", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeNextPage", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("CatCafeNextPage", ">");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("CatCafeNextPage", TilePuzzleUI::fCAFE_NAV_BTN_SIZE, TilePuzzleUI::fCAFE_NAV_BTN_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("CatCafeNextPage", TilePuzzleUI::fCAFE_NAV_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("CatCafeNextPage", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("CatCafeNextPage", 0.25f, 0.3f, 0.45f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("CatCafeNavGroup", "CatCafePrevPage");
-	Zenith_EditorAutomation::AddStep_AddUIChild("CatCafeNavGroup", "CatCafeBackButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("CatCafeNavGroup", "CatCafeNextPage");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CatCafeNavGroup", "CatCafePrevPage");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CatCafeNavGroup", "CatCafeBackButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CatCafeNavGroup", "CatCafeNextPage");
 
 	// Level select background (starts hidden)
-	Zenith_EditorAutomation::AddStep_CreateUIRect("LevelSelectBg");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
-	Zenith_EditorAutomation::AddStep_SetUIColor("LevelSelectBg", 0.06f, 0.06f, 0.12f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIGradientColor("LevelSelectBg", 0.10f, 0.06f, 0.18f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectBg", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("LevelSelectBg");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("LevelSelectBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("LevelSelectBg", 0.06f, 0.06f, 0.12f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIGradientColor("LevelSelectBg", 0.10f, 0.06f, 0.18f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("LevelSelectBg", false);
 
 	// Level select title (starts hidden)
-	Zenith_EditorAutomation::AddStep_CreateUIText("LevelSelectTitle", "Select Level");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectTitle", 0.f, -260.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LevelSelectTitle", TilePuzzleUI::fLEVEL_SELECT_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("LevelSelectTitle", 1.f, 1.f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("LevelSelectTitle", 2.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectTitle", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("LevelSelectTitle", "Select Level");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("LevelSelectTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("LevelSelectTitle", 0.f, -260.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("LevelSelectTitle", TilePuzzleUI::fLEVEL_SELECT_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("LevelSelectTitle", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("LevelSelectTitle", 2.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("LevelSelectTitle", false);
 
 	// Page text (starts hidden)
-	Zenith_EditorAutomation::AddStep_CreateUIText("PageText", "Page 1 / 5");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("PageText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("PageText", 0.f, -200.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("PageText", TilePuzzleUI::fPAGE_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("PageText", 0.7f, 0.7f, 0.8f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("PageText", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("PageText", "Page 1 / 5");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("PageText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("PageText", 0.f, -200.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("PageText", TilePuzzleUI::fPAGE_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("PageText", 0.7f, 0.7f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("PageText", false);
 
 	// Star progress text (starts hidden)
-	Zenith_EditorAutomation::AddStep_CreateUIText("LevelSelectStarProgress", "Stars: 0 / 300");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectStarProgress", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectStarProgress", 0.f, -240.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LevelSelectStarProgress", TilePuzzleUI::fSTAR_PROGRESS_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("LevelSelectStarProgress", 1.0f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectStarProgress", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("LevelSelectStarProgress", "Stars: 0 / 300");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("LevelSelectStarProgress", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("LevelSelectStarProgress", 0.f, -240.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("LevelSelectStarProgress", TilePuzzleUI::fSTAR_PROGRESS_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("LevelSelectStarProgress", 1.0f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("LevelSelectStarProgress", false);
 
 	// Level select grid (4x5)
 	for (uint32_t u = 0; u < 20; ++u)
 	{
 		float fX = (static_cast<float>(u % 5) - 2.f) * TilePuzzleUI::fLEVEL_GRID_X_SPACING;
 		float fY = -50.f + (static_cast<float>(u / 5) - 1.5f) * TilePuzzleUI::fLEVEL_GRID_Y_SPACING;
-		Zenith_EditorAutomation::AddStep_CreateUIButton(s_aszLevelBtnNames[u], s_aszLevelLabels[u]);
-		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszLevelBtnNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszLevelBtnNames[u], fX, fY);
-		Zenith_EditorAutomation::AddStep_SetUISize(s_aszLevelBtnNames[u], TilePuzzleUI::fLEVEL_BTN_W, TilePuzzleUI::fLEVEL_BTN_H);
-		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(s_aszLevelBtnNames[u], TilePuzzleUI::fLEVEL_BTN_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor(s_aszLevelBtnNames[u], 0.2f, 0.3f, 0.5f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor(s_aszLevelBtnNames[u], 0.3f, 0.4f, 0.6f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor(s_aszLevelBtnNames[u], 0.1f, 0.15f, 0.3f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius(s_aszLevelBtnNames[u], 8.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonShadow(s_aszLevelBtnNames[u], 2.f, 2.f, 1.f, true);
-		Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration(s_aszLevelBtnNames[u], 0.10f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszLevelBtnNames[u], false);
+		g_xEngine.EditorAutomation().AddStep_CreateUIButton(s_aszLevelBtnNames[u], s_aszLevelLabels[u]);
+		g_xEngine.EditorAutomation().AddStep_SetUIAnchor(s_aszLevelBtnNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		g_xEngine.EditorAutomation().AddStep_SetUIPosition(s_aszLevelBtnNames[u], fX, fY);
+		g_xEngine.EditorAutomation().AddStep_SetUISize(s_aszLevelBtnNames[u], TilePuzzleUI::fLEVEL_BTN_W, TilePuzzleUI::fLEVEL_BTN_H);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize(s_aszLevelBtnNames[u], TilePuzzleUI::fLEVEL_BTN_FONT);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor(s_aszLevelBtnNames[u], 0.2f, 0.3f, 0.5f, 1.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor(s_aszLevelBtnNames[u], 0.3f, 0.4f, 0.6f, 1.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor(s_aszLevelBtnNames[u], 0.1f, 0.15f, 0.3f, 1.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonCornerRadius(s_aszLevelBtnNames[u], 8.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonShadow(s_aszLevelBtnNames[u], 2.f, 2.f, 1.f, true);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonTransitionDuration(s_aszLevelBtnNames[u], 0.10f);
+		g_xEngine.EditorAutomation().AddStep_SetUIVisible(s_aszLevelBtnNames[u], false);
 	}
 
 	// Level select navigation layout group (< Back >)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("LevelSelectNavGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectNavGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectNavGroup", 0.f, TilePuzzleUI::fLEVEL_NAV_Y);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("LevelSelectNavGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("LevelSelectNavGroup", 50.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("LevelSelectNavGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("LevelSelectNavGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectNavGroup", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("LevelSelectNavGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("LevelSelectNavGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("LevelSelectNavGroup", 0.f, TilePuzzleUI::fLEVEL_NAV_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("LevelSelectNavGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("LevelSelectNavGroup", 50.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("LevelSelectNavGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("LevelSelectNavGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("LevelSelectNavGroup", false);
 
 	// PrevPage button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("PrevPageButton", "<");
-	Zenith_EditorAutomation::AddStep_SetUISize("PrevPageButton", TilePuzzleUI::fNAV_BTN_W, TilePuzzleUI::fNAV_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PrevPageButton", TilePuzzleUI::fNAV_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PrevPageButton", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PrevPageButton", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("PrevPageButton", "<");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("PrevPageButton", TilePuzzleUI::fNAV_BTN_W, TilePuzzleUI::fNAV_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("PrevPageButton", TilePuzzleUI::fNAV_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("PrevPageButton", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("PrevPageButton", 0.25f, 0.3f, 0.45f, 1.f);
 
 	// Back button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("BackButton", "Back");
-	Zenith_EditorAutomation::AddStep_SetUISize("BackButton", TilePuzzleUI::fNAV_BACK_BTN_W, TilePuzzleUI::fNAV_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("BackButton", TilePuzzleUI::fNAV_BACK_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("BackButton", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("BackButton", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("BackButton", "Back");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("BackButton", TilePuzzleUI::fNAV_BACK_BTN_W, TilePuzzleUI::fNAV_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("BackButton", TilePuzzleUI::fNAV_BACK_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("BackButton", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("BackButton", 0.25f, 0.3f, 0.45f, 1.f);
 
 	// NextPage button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("NextPageButton", ">");
-	Zenith_EditorAutomation::AddStep_SetUISize("NextPageButton", TilePuzzleUI::fNAV_BTN_W, TilePuzzleUI::fNAV_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextPageButton", TilePuzzleUI::fNAV_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextPageButton", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextPageButton", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("NextPageButton", ">");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("NextPageButton", TilePuzzleUI::fNAV_BTN_W, TilePuzzleUI::fNAV_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("NextPageButton", TilePuzzleUI::fNAV_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("NextPageButton", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("NextPageButton", 0.25f, 0.3f, 0.45f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("LevelSelectNavGroup", "PrevPageButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("LevelSelectNavGroup", "BackButton");
-	Zenith_EditorAutomation::AddStep_AddUIChild("LevelSelectNavGroup", "NextPageButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LevelSelectNavGroup", "PrevPageButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LevelSelectNavGroup", "BackButton");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("LevelSelectNavGroup", "NextPageButton");
 
 	// Level select nav buttons focus navigation (horizontal)
-	Zenith_EditorAutomation::AddStep_SetUINavigation("PrevPageButton", nullptr, nullptr, nullptr, "BackButton");
-	Zenith_EditorAutomation::AddStep_SetUINavigation("BackButton", nullptr, nullptr, "PrevPageButton", "NextPageButton");
-	Zenith_EditorAutomation::AddStep_SetUINavigation("NextPageButton", nullptr, nullptr, "BackButton", nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("PrevPageButton", nullptr, nullptr, nullptr, "BackButton");
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("BackButton", nullptr, nullptr, "PrevPageButton", "NextPageButton");
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("NextPageButton", nullptr, nullptr, "BackButton", nullptr);
 
 	// ---- Settings Button (main menu, gear icon) ----
-	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsButton", "Settings");
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsButton", 0.25f, 0.25f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsButton", 0.35f, 0.35f, 0.4f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("SettingsButton", 0.15f, 0.15f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "SettingsButton");
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("SettingsButton", "Settings");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SettingsButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("SettingsButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("SettingsButton", 0.25f, 0.25f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("SettingsButton", 0.35f, 0.35f, 0.4f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("SettingsButton", 0.15f, 0.15f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "SettingsButton");
 
 	// ---- Achievements Button (main menu) ----
-	Zenith_EditorAutomation::AddStep_CreateUIButton("AchievementsButton", "Achievements");
-	Zenith_EditorAutomation::AddStep_SetUISize("AchievementsButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("AchievementsButton", TilePuzzleUI::fMENU_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("AchievementsButton", 0.4f, 0.35f, 0.1f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("AchievementsButton", 0.5f, 0.45f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("AchievementsButton", 0.3f, 0.25f, 0.08f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "AchievementsButton");
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("AchievementsButton", "Achievements");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("AchievementsButton", TilePuzzleUI::fMENU_BTN_W, TilePuzzleUI::fMENU_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("AchievementsButton", TilePuzzleUI::fMENU_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("AchievementsButton", 0.4f, 0.35f, 0.1f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("AchievementsButton", 0.5f, 0.45f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("AchievementsButton", 0.3f, 0.25f, 0.08f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("MenuButtonGroup", "AchievementsButton");
 
 	// Main menu focus navigation (vertical)
-	Zenith_EditorAutomation::AddStep_SetUINavigation("ContinueButton", nullptr, "LevelSelectButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("LevelSelectButton", "ContinueButton", "PinballButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("PinballButton", "LevelSelectButton", "ResetSaveButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("ResetSaveButton", "PinballButton", "CatCafeButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("CatCafeButton", "ResetSaveButton", "DailyPuzzleButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("DailyPuzzleButton", "CatCafeButton", "SettingsButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SettingsButton", "DailyPuzzleButton", "AchievementsButton", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("AchievementsButton", "SettingsButton", nullptr, nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("ContinueButton", nullptr, "LevelSelectButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("LevelSelectButton", "ContinueButton", "PinballButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("PinballButton", "LevelSelectButton", "ResetSaveButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("ResetSaveButton", "PinballButton", "CatCafeButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("CatCafeButton", "ResetSaveButton", "DailyPuzzleButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("DailyPuzzleButton", "CatCafeButton", "SettingsButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SettingsButton", "DailyPuzzleButton", "AchievementsButton", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("AchievementsButton", "SettingsButton", nullptr, nullptr, nullptr);
 
 	// ---- Settings Screen UI elements (starts hidden) ----
 
 	// Settings background
-	Zenith_EditorAutomation::AddStep_CreateUIRect("SettingsBg");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
-	Zenith_EditorAutomation::AddStep_SetUIColor("SettingsBg", 0.06f, 0.06f, 0.12f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIGradientColor("SettingsBg", 0.10f, 0.06f, 0.18f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsBg", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("SettingsBg");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("SettingsBg", 0.06f, 0.06f, 0.12f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIGradientColor("SettingsBg", 0.10f, 0.06f, 0.18f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsBg", false);
 
 	// Settings title
-	Zenith_EditorAutomation::AddStep_CreateUIText("SettingsTitle", "Settings");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsTitle", 0.f, 40.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("SettingsTitle", TilePuzzleUI::fSCREEN_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("SettingsTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("SettingsTitle", 1.f, 1.f, 1.f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUITextShadow("SettingsTitle", 2.f, 2.f, true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsTitle", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("SettingsTitle", "Settings");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("SettingsTitle", 0.f, 40.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("SettingsTitle", TilePuzzleUI::fSCREEN_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("SettingsTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("SettingsTitle", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUITextShadow("SettingsTitle", 2.f, 2.f, true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsTitle", false);
 
 	// Settings toggles
-	Zenith_EditorAutomation::AddStep_CreateUIToggle("SettingsSoundBtn", "Sound");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsSoundBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsSoundBtn", 0.f, -60.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsSoundBtn", TilePuzzleUI::fTOGGLE_W, TilePuzzleUI::fTOGGLE_H);
-	Zenith_EditorAutomation::AddStep_SetUIToggleOnColor("SettingsSoundBtn", 0.2f, 0.4f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIToggleOffColor("SettingsSoundBtn", 0.3f, 0.15f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsSoundBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIToggle("SettingsSoundBtn", "Sound");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsSoundBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("SettingsSoundBtn", 0.f, -60.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SettingsSoundBtn", TilePuzzleUI::fTOGGLE_W, TilePuzzleUI::fTOGGLE_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIToggleOnColor("SettingsSoundBtn", 0.2f, 0.4f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIToggleOffColor("SettingsSoundBtn", 0.3f, 0.15f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsSoundBtn", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIToggle("SettingsMusicBtn", "Music");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsMusicBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsMusicBtn", 0.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsMusicBtn", TilePuzzleUI::fTOGGLE_W, TilePuzzleUI::fTOGGLE_H);
-	Zenith_EditorAutomation::AddStep_SetUIToggleOnColor("SettingsMusicBtn", 0.2f, 0.4f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIToggleOffColor("SettingsMusicBtn", 0.3f, 0.15f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsMusicBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIToggle("SettingsMusicBtn", "Music");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsMusicBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("SettingsMusicBtn", 0.f, 20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SettingsMusicBtn", TilePuzzleUI::fTOGGLE_W, TilePuzzleUI::fTOGGLE_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIToggleOnColor("SettingsMusicBtn", 0.2f, 0.4f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIToggleOffColor("SettingsMusicBtn", 0.3f, 0.15f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsMusicBtn", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIToggle("SettingsHapticsBtn", "Haptics");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsHapticsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsHapticsBtn", 0.f, 100.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsHapticsBtn", TilePuzzleUI::fTOGGLE_W, TilePuzzleUI::fTOGGLE_H);
-	Zenith_EditorAutomation::AddStep_SetUIToggleOnColor("SettingsHapticsBtn", 0.2f, 0.4f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIToggleOffColor("SettingsHapticsBtn", 0.3f, 0.15f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsHapticsBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIToggle("SettingsHapticsBtn", "Haptics");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsHapticsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("SettingsHapticsBtn", 0.f, 100.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SettingsHapticsBtn", TilePuzzleUI::fTOGGLE_W, TilePuzzleUI::fTOGGLE_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIToggleOnColor("SettingsHapticsBtn", 0.2f, 0.4f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIToggleOffColor("SettingsHapticsBtn", 0.3f, 0.15f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsHapticsBtn", false);
 
 	// Credits button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsCreditsBtn", "Credits");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsCreditsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsCreditsBtn", 0.f, 170.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsCreditsBtn", TilePuzzleUI::fSETTINGS_BTN_W, TilePuzzleUI::fSETTINGS_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsCreditsBtn", TilePuzzleUI::fSETTINGS_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsCreditsBtn", 0.2f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsCreditsBtn", 0.3f, 0.3f, 0.42f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("SettingsCreditsBtn", 0.14f, 0.14f, 0.22f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsCreditsBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("SettingsCreditsBtn", "Credits");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsCreditsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("SettingsCreditsBtn", 0.f, 170.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SettingsCreditsBtn", TilePuzzleUI::fSETTINGS_BTN_W, TilePuzzleUI::fSETTINGS_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("SettingsCreditsBtn", TilePuzzleUI::fSETTINGS_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("SettingsCreditsBtn", 0.2f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("SettingsCreditsBtn", 0.3f, 0.3f, 0.42f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("SettingsCreditsBtn", 0.14f, 0.14f, 0.22f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsCreditsBtn", false);
 
 	// Settings back button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsBackBtn", "Back");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsBackBtn", 0.f, 240.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsBackBtn", TilePuzzleUI::fSETTINGS_BTN_W, TilePuzzleUI::fSETTINGS_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsBackBtn", TilePuzzleUI::fSETTINGS_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsBackBtn", 0.15f, 0.2f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsBackBtn", 0.25f, 0.3f, 0.45f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("SettingsBackBtn", 0.12f, 0.15f, 0.25f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsBackBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("SettingsBackBtn", "Back");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("SettingsBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("SettingsBackBtn", 0.f, 240.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SettingsBackBtn", TilePuzzleUI::fSETTINGS_BTN_W, TilePuzzleUI::fSETTINGS_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("SettingsBackBtn", TilePuzzleUI::fSETTINGS_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("SettingsBackBtn", 0.15f, 0.2f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("SettingsBackBtn", 0.25f, 0.3f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("SettingsBackBtn", 0.12f, 0.15f, 0.25f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SettingsBackBtn", false);
 
 	// Settings focus navigation (vertical)
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SettingsSoundBtn", nullptr, "SettingsMusicBtn", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SettingsMusicBtn", "SettingsSoundBtn", "SettingsHapticsBtn", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SettingsHapticsBtn", "SettingsMusicBtn", "SettingsCreditsBtn", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SettingsCreditsBtn", "SettingsHapticsBtn", "SettingsBackBtn", nullptr, nullptr);
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SettingsBackBtn", "SettingsCreditsBtn", nullptr, nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SettingsSoundBtn", nullptr, "SettingsMusicBtn", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SettingsMusicBtn", "SettingsSoundBtn", "SettingsHapticsBtn", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SettingsHapticsBtn", "SettingsMusicBtn", "SettingsCreditsBtn", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SettingsCreditsBtn", "SettingsHapticsBtn", "SettingsBackBtn", nullptr, nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SettingsBackBtn", "SettingsCreditsBtn", nullptr, nullptr, nullptr);
 
 	// ---- Confirm Dialog Overlay ----
-	Zenith_EditorAutomation::AddStep_CreateUIOverlay("ConfirmOverlay");
-	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("ConfirmOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("ConfirmOverlay", TilePuzzleUI::fCONFIRM_OVERLAY_W, TilePuzzleUI::fCONFIRM_OVERLAY_H);
+	g_xEngine.EditorAutomation().AddStep_CreateUIOverlay("ConfirmOverlay");
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayDimColor("ConfirmOverlay", 0.f, 0.f, 0.f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayContentSize("ConfirmOverlay", TilePuzzleUI::fCONFIRM_OVERLAY_W, TilePuzzleUI::fCONFIRM_OVERLAY_H);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("ConfirmText", "Are you sure?");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmText", 0.f, 30.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("ConfirmText", TilePuzzleUI::fCONFIRM_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("ConfirmText", 1.f, 1.f, 0.9f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("ConfirmText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("ConfirmText", "Are you sure?");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("ConfirmText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("ConfirmText", 0.f, 30.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("ConfirmText", TilePuzzleUI::fCONFIRM_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("ConfirmText", 1.f, 1.f, 0.9f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("ConfirmText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("ConfirmOverlay", "ConfirmText");
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmCancelBtn", "Cancel");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmCancelBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmCancelBtn", 30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmCancelBtn", 0.25f, 0.25f, 0.3f, 0.9f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmCancelBtn", 0.35f, 0.35f, 0.42f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ConfirmCancelBtn", 0.18f, 0.18f, 0.22f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmCancelBtn");
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ConfirmCancelBtn", "Cancel");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("ConfirmCancelBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("ConfirmCancelBtn", 30.f, -20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ConfirmCancelBtn", 0.25f, 0.25f, 0.3f, 0.9f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ConfirmCancelBtn", 0.35f, 0.35f, 0.42f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("ConfirmCancelBtn", 0.18f, 0.18f, 0.22f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("ConfirmOverlay", "ConfirmCancelBtn");
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmAcceptBtn", "Accept");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmAcceptBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmAcceptBtn", -30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmAcceptBtn", 0.5f, 0.15f, 0.15f, 0.9f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ConfirmAcceptBtn", 0.35f, 0.1f, 0.1f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmAcceptBtn");
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ConfirmAcceptBtn", "Accept");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("ConfirmAcceptBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("ConfirmAcceptBtn", -30.f, -20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ConfirmAcceptBtn", 0.5f, 0.15f, 0.15f, 0.9f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("ConfirmAcceptBtn", 0.35f, 0.1f, 0.1f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("ConfirmOverlay", "ConfirmAcceptBtn");
 
 	// ---- Tutorial Overlay ----
-	Zenith_EditorAutomation::AddStep_CreateUIOverlay("TutorialOverlay");
-	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+	g_xEngine.EditorAutomation().AddStep_CreateUIOverlay("TutorialOverlay");
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialText", " ");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("TutorialText", 750.f, 100.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TutorialText", " ");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("TutorialText", 750.f, 100.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialText");
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHintText", "Tap to continue");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TutorialHintText", "Tap to continue");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
 	// ---- Credits Overlay ----
-	Zenith_EditorAutomation::AddStep_CreateUIOverlay("CreditsOverlay");
-	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("CreditsOverlay", 0.f, 0.f, 0.f, 0.8f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("CreditsOverlay", TilePuzzleUI::fCREDITS_OVERLAY_W, TilePuzzleUI::fCREDITS_OVERLAY_H);
+	g_xEngine.EditorAutomation().AddStep_CreateUIOverlay("CreditsOverlay");
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayDimColor("CreditsOverlay", 0.f, 0.f, 0.f, 0.8f);
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayContentSize("CreditsOverlay", TilePuzzleUI::fCREDITS_OVERLAY_W, TilePuzzleUI::fCREDITS_OVERLAY_H);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CreditsTitleText", "Paws & Pins v1.0");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CreditsTitleText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CreditsTitleText", 0.f, 30.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CreditsTitleText", TilePuzzleUI::fCREDITS_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CreditsTitleText", 1.f, 0.9f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("CreditsOverlay", "CreditsTitleText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CreditsTitleText", "Paws & Pins v1.0");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CreditsTitleText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CreditsTitleText", 0.f, 30.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CreditsTitleText", TilePuzzleUI::fCREDITS_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CreditsTitleText", 1.f, 0.9f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CreditsOverlay", "CreditsTitleText");
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CreditsLine1", "Built with Zenith Engine");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CreditsLine1", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CreditsLine1", 0.f, 80.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CreditsLine1", TilePuzzleUI::fCREDITS_LINE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CreditsLine1", 0.8f, 0.8f, 0.9f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("CreditsOverlay", "CreditsLine1");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CreditsLine1", "Built with Zenith Engine");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CreditsLine1", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CreditsLine1", 0.f, 80.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CreditsLine1", TilePuzzleUI::fCREDITS_LINE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CreditsLine1", 0.8f, 0.8f, 0.9f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CreditsOverlay", "CreditsLine1");
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CreditsLine2", "A Cat Puzzle Game");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CreditsLine2", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CreditsLine2", 0.f, 120.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CreditsLine2", TilePuzzleUI::fCREDITS_LINE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CreditsLine2", 0.8f, 0.8f, 0.9f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("CreditsOverlay", "CreditsLine2");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CreditsLine2", "A Cat Puzzle Game");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CreditsLine2", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CreditsLine2", 0.f, 120.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CreditsLine2", TilePuzzleUI::fCREDITS_LINE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CreditsLine2", 0.8f, 0.8f, 0.9f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CreditsOverlay", "CreditsLine2");
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CreditsDismissText", "Tap anywhere to dismiss");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CreditsDismissText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CreditsDismissText", 0.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CreditsDismissText", TilePuzzleUI::fCREDITS_LINE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CreditsDismissText", 0.6f, 0.6f, 0.6f, 0.7f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("CreditsOverlay", "CreditsDismissText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CreditsDismissText", "Tap anywhere to dismiss");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("CreditsDismissText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("CreditsDismissText", 0.f, -20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CreditsDismissText", TilePuzzleUI::fCREDITS_LINE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CreditsDismissText", 0.6f, 0.6f, 0.6f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("CreditsOverlay", "CreditsDismissText");
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AttachScript("TilePuzzle_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AttachScript("TilePuzzle_Behaviour");
 
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- TilePuzzle gameplay scene (build index 1) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("TilePuzzle");
-	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 12.f, 0.f);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(-1.5f);
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
-	Zenith_EditorAutomation::AddStep_SetCameraAspect(9.f / 16.f);
-	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
-	Zenith_EditorAutomation::AddStep_AddUI();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("TilePuzzle");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(0.f, 12.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(-1.5f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(45.f));
+	g_xEngine.EditorAutomation().AddStep_SetCameraAspect(9.f / 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
+	g_xEngine.EditorAutomation().AddStep_AddUI();
 
 	// ---- Gameplay HUD (GDD section 7.4) ----
 
 	// Top info group: level number, move counter, cats remaining (centered)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("HUDInfoGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("HUDInfoGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("HUDInfoGroup", 0.f, 15.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("HUDInfoGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("HUDInfoGroup", 4.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("HUDInfoGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("HUDInfoGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("HUDInfoGroup", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("HUDInfoGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("HUDInfoGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("HUDInfoGroup", 0.f, 15.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("HUDInfoGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("HUDInfoGroup", 4.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("HUDInfoGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("HUDInfoGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("HUDInfoGroup", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("LevelText", "Level 1");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LevelText", TilePuzzleUI::fHUD_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("LevelText", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("LevelText", "Level 1");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("LevelText", TilePuzzleUI::fHUD_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("LevelText", 1.f, 1.f, 1.f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("MovesText", "Moves: 0");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("MovesText", TilePuzzleUI::fHUD_BODY_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("MovesText", 0.6f, 0.8f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("MovesText", "Moves: 0");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MovesText", TilePuzzleUI::fHUD_BODY_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("MovesText", 0.6f, 0.8f, 1.f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CatsText", "Cats: 0 / 3");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatsText", TilePuzzleUI::fHUD_BODY_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatsText", 0.6f, 0.8f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("CatsText", "Cats: 0 / 3");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("CatsText", TilePuzzleUI::fHUD_BODY_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("CatsText", 0.6f, 0.8f, 1.f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDInfoGroup", "LevelText");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDInfoGroup", "MovesText");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDInfoGroup", "CatsText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDInfoGroup", "LevelText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDInfoGroup", "MovesText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDInfoGroup", "CatsText");
 
 	// Coin display (top-right): icon + coin count
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("HUDCoinGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("HUDCoinGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("HUDCoinGroup", -15.f, 15.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("HUDCoinGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("HUDCoinGroup", 6.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("HUDCoinGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("HUDCoinGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("HUDCoinGroup", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("HUDCoinGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("HUDCoinGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("HUDCoinGroup", -15.f, 15.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("HUDCoinGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("HUDCoinGroup", 6.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("HUDCoinGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("HUDCoinGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("HUDCoinGroup", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIImage("HUDCoinIcon");
-	Zenith_EditorAutomation::AddStep_SetUISize("HUDCoinIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
-	Zenith_EditorAutomation::AddStep_SetUIColor("HUDCoinIcon", 1.f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HUDCoinIcon",
+	g_xEngine.EditorAutomation().AddStep_CreateUIImage("HUDCoinIcon");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("HUDCoinIcon", TilePuzzleUI::fICON_SIZE, TilePuzzleUI::fICON_SIZE);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("HUDCoinIcon", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIImageTexturePath("HUDCoinIcon",
 		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("HUDCoinsText", "0");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("HUDCoinsText", TilePuzzleUI::fHUD_BODY_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("HUDCoinsText", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("HUDCoinsText", "0");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("HUDCoinsText", TilePuzzleUI::fHUD_BODY_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("HUDCoinsText", 1.f, 0.85f, 0.2f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDCoinGroup", "HUDCoinIcon");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDCoinGroup", "HUDCoinsText");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDCoinGroup", "HUDCoinIcon");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDCoinGroup", "HUDCoinsText");
 
 	// Bottom action buttons (GDD: Reset, Undo, Hint, Skip, Menu)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("HUDButtonGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("HUDButtonGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("HUDButtonGroup", 0.f, -15.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("HUDButtonGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("HUDButtonGroup", 8.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("HUDButtonGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("HUDButtonGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("HUDButtonGroup", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("HUDButtonGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("HUDButtonGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("HUDButtonGroup", 0.f, -15.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("HUDButtonGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("HUDButtonGroup", 8.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("HUDButtonGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("HUDButtonGroup", true);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("HUDButtonGroup", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuBtn", "Menu");
-	Zenith_EditorAutomation::AddStep_SetUISize("MenuBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("MenuBtn", TilePuzzleUI::fHUD_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("MenuBtn", 0.2f, 0.25f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("MenuBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("MenuBtn", "Menu");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("MenuBtn", TilePuzzleUI::fHUD_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("MenuBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("MenuBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ResetBtn", "Reset");
-	Zenith_EditorAutomation::AddStep_SetUISize("ResetBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ResetBtn", TilePuzzleUI::fHUD_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ResetBtn", 0.2f, 0.25f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ResetBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ResetBtn", "Reset");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ResetBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ResetBtn", TilePuzzleUI::fHUD_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ResetBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ResetBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("UndoBtn", "Undo");
-	Zenith_EditorAutomation::AddStep_SetUISize("UndoBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("UndoBtn", TilePuzzleUI::fHUD_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("UndoBtn", 0.2f, 0.25f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("UndoBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("UndoBtn", "Undo");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("UndoBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("UndoBtn", TilePuzzleUI::fHUD_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("UndoBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("UndoBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("HintBtn", "Hint");
-	Zenith_EditorAutomation::AddStep_SetUISize("HintBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("HintBtn", TilePuzzleUI::fHUD_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("HintBtn", 0.2f, 0.25f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("HintBtn", 0.3f, 0.35f, 0.5f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonIcon("HintBtn",
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("HintBtn", "Hint");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("HintBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("HintBtn", TilePuzzleUI::fHUD_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("HintBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("HintBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonIcon("HintBtn",
 		GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonIconSize("HintBtn", TilePuzzleUI::fHUD_BTN_ICON, TilePuzzleUI::fHUD_BTN_ICON);
-	Zenith_EditorAutomation::AddStep_SetUIButtonIconPlacement("HintBtn",
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonIconSize("HintBtn", TilePuzzleUI::fHUD_BTN_ICON, TilePuzzleUI::fHUD_BTN_ICON);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonIconPlacement("HintBtn",
 		static_cast<int>(Zenith_UI::Zenith_UIButton::IconPlacement::LEFT));
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("SkipBtn", "Skip");
-	Zenith_EditorAutomation::AddStep_SetUISize("SkipBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SkipBtn", TilePuzzleUI::fHUD_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SkipBtn", 0.5f, 0.15f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SkipBtn", 0.65f, 0.2f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("SkipBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("SkipBtn", "Skip");
+	g_xEngine.EditorAutomation().AddStep_SetUISize("SkipBtn", TilePuzzleUI::fHUD_BTN_W, TilePuzzleUI::fHUD_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("SkipBtn", TilePuzzleUI::fHUD_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("SkipBtn", 0.5f, 0.15f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("SkipBtn", 0.65f, 0.2f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("SkipBtn", false);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "MenuBtn");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "ResetBtn");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "UndoBtn");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "HintBtn");
-	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "SkipBtn");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDButtonGroup", "MenuBtn");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDButtonGroup", "ResetBtn");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDButtonGroup", "UndoBtn");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDButtonGroup", "HintBtn");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("HUDButtonGroup", "SkipBtn");
 
 	// HUD buttons focus navigation (horizontal)
-	Zenith_EditorAutomation::AddStep_SetUINavigation("MenuBtn", nullptr, nullptr, nullptr, "ResetBtn");
-	Zenith_EditorAutomation::AddStep_SetUINavigation("ResetBtn", nullptr, nullptr, "MenuBtn", "UndoBtn");
-	Zenith_EditorAutomation::AddStep_SetUINavigation("UndoBtn", nullptr, nullptr, "ResetBtn", "HintBtn");
-	Zenith_EditorAutomation::AddStep_SetUINavigation("HintBtn", nullptr, nullptr, "UndoBtn", "SkipBtn");
-	Zenith_EditorAutomation::AddStep_SetUINavigation("SkipBtn", nullptr, nullptr, "HintBtn", nullptr);
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("MenuBtn", nullptr, nullptr, nullptr, "ResetBtn");
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("ResetBtn", nullptr, nullptr, "MenuBtn", "UndoBtn");
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("UndoBtn", nullptr, nullptr, "ResetBtn", "HintBtn");
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("HintBtn", nullptr, nullptr, "UndoBtn", "SkipBtn");
+	g_xEngine.EditorAutomation().AddStep_SetUINavigation("SkipBtn", nullptr, nullptr, "HintBtn", nullptr);
 
 	// ---- Confirm Dialog Overlay (gameplay scene) ----
-	Zenith_EditorAutomation::AddStep_CreateUIOverlay("ConfirmOverlay");
-	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("ConfirmOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("ConfirmOverlay", TilePuzzleUI::fCONFIRM_OVERLAY_W, TilePuzzleUI::fCONFIRM_OVERLAY_H);
+	g_xEngine.EditorAutomation().AddStep_CreateUIOverlay("ConfirmOverlay");
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayDimColor("ConfirmOverlay", 0.f, 0.f, 0.f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayContentSize("ConfirmOverlay", TilePuzzleUI::fCONFIRM_OVERLAY_W, TilePuzzleUI::fCONFIRM_OVERLAY_H);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("ConfirmText", "Are you sure?");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmText", 0.f, 30.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("ConfirmText", TilePuzzleUI::fCONFIRM_TEXT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("ConfirmText", 1.f, 1.f, 0.9f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("ConfirmText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("ConfirmText", "Are you sure?");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("ConfirmText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("ConfirmText", 0.f, 30.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("ConfirmText", TilePuzzleUI::fCONFIRM_TEXT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("ConfirmText", 1.f, 1.f, 0.9f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("ConfirmText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("ConfirmOverlay", "ConfirmText");
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmCancelBtn", "Cancel");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmCancelBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmCancelBtn", 30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmCancelBtn", 0.25f, 0.25f, 0.3f, 0.9f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmCancelBtn", 0.35f, 0.35f, 0.42f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ConfirmCancelBtn", 0.18f, 0.18f, 0.22f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmCancelBtn");
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ConfirmCancelBtn", "Cancel");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("ConfirmCancelBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("ConfirmCancelBtn", 30.f, -20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ConfirmCancelBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ConfirmCancelBtn", 0.25f, 0.25f, 0.3f, 0.9f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ConfirmCancelBtn", 0.35f, 0.35f, 0.42f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("ConfirmCancelBtn", 0.18f, 0.18f, 0.22f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("ConfirmOverlay", "ConfirmCancelBtn");
 
-	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmAcceptBtn", "Accept");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmAcceptBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmAcceptBtn", -30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmAcceptBtn", 0.5f, 0.15f, 0.15f, 0.9f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ConfirmAcceptBtn", 0.35f, 0.1f, 0.1f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmAcceptBtn");
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("ConfirmAcceptBtn", "Accept");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("ConfirmAcceptBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("ConfirmAcceptBtn", -30.f, -20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_W, TilePuzzleUI::fOVERLAY_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("ConfirmAcceptBtn", TilePuzzleUI::fOVERLAY_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("ConfirmAcceptBtn", 0.5f, 0.15f, 0.15f, 0.9f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("ConfirmAcceptBtn", 0.35f, 0.1f, 0.1f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("ConfirmOverlay", "ConfirmAcceptBtn");
 
 	// ---- Tutorial Overlay (gameplay scene) ----
-	Zenith_EditorAutomation::AddStep_CreateUIOverlay("TutorialOverlay");
-	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+	g_xEngine.EditorAutomation().AddStep_CreateUIOverlay("TutorialOverlay");
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialText", " ");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("TutorialText", 750.f, 100.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TutorialText", " ");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("TutorialText", 750.f, 100.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialText");
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHintText", "Tap to continue");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TutorialHintText", "Tap to continue");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
 	// ---- Victory Overlay UI elements (starts hidden) ----
 
 	// Victory background
-	Zenith_EditorAutomation::AddStep_CreateUIRect("VictoryBg");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryBg", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryBg", 0.f, 0.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("VictoryBg", TilePuzzleUI::fVICTORY_BG_W, TilePuzzleUI::fVICTORY_BG_H);
-	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryBg", 0.05f, 0.05f, 0.15f, 0.9f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryBg", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("VictoryBg");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("VictoryBg", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("VictoryBg", 0.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("VictoryBg", TilePuzzleUI::fVICTORY_BG_W, TilePuzzleUI::fVICTORY_BG_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("VictoryBg", 0.05f, 0.05f, 0.15f, 0.9f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("VictoryBg", false);
 
 	// Victory title
-	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryTitle", "Level Complete!");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryTitle", 0.f, TilePuzzleUI::fVICTORY_TITLE_Y);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryTitle", TilePuzzleUI::fVICTORY_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryTitle", 1.f, 1.f, 0.5f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryTitle", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("VictoryTitle", "Level Complete!");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("VictoryTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("VictoryTitle", 0.f, TilePuzzleUI::fVICTORY_TITLE_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("VictoryTitle", TilePuzzleUI::fVICTORY_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("VictoryTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("VictoryTitle", 1.f, 1.f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("VictoryTitle", false);
 
 	// Victory stars
-	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryStars", "- - -");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryStars", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryStars", 0.f, TilePuzzleUI::fVICTORY_STARS_Y);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryStars", TilePuzzleUI::fVICTORY_STARS_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryStars", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryStars", 1.f, 0.85f, 0.1f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStars", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("VictoryStars", "- - -");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("VictoryStars", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("VictoryStars", 0.f, TilePuzzleUI::fVICTORY_STARS_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("VictoryStars", TilePuzzleUI::fVICTORY_STARS_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("VictoryStars", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("VictoryStars", 1.f, 0.85f, 0.1f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("VictoryStars", false);
 
 	// Victory content vertical layout group (holds stars, text, coins)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("VictoryContentGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryContentGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryContentGroup", 0.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("VictoryContentGroup", TilePuzzleUI::fVICTORY_CONTENT_W, TilePuzzleUI::fVICTORY_CONTENT_H);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("VictoryContentGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("VictoryContentGroup", TilePuzzleUI::fVICTORY_CONTENT_SPACING);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("VictoryContentGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand("VictoryContentGroup", true, false);
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("VictoryContentGroup", false);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryContentGroup", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("VictoryContentGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("VictoryContentGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("VictoryContentGroup", 0.f, 20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("VictoryContentGroup", TilePuzzleUI::fVICTORY_CONTENT_W, TilePuzzleUI::fVICTORY_CONTENT_H);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("VictoryContentGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("VictoryContentGroup", TilePuzzleUI::fVICTORY_CONTENT_SPACING);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("VictoryContentGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildForceExpand("VictoryContentGroup", true, false);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("VictoryContentGroup", false);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("VictoryContentGroup", false);
 
 	// Victory star images layout group (3 stars for rating display)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("VictoryStarGroup");
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("VictoryStarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("VictoryStarGroup", TilePuzzleUI::fVICTORY_STAR_SPACING);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("VictoryStarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("VictoryStarGroup", true);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("VictoryStarGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("VictoryStarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("VictoryStarGroup", TilePuzzleUI::fVICTORY_STAR_SPACING);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("VictoryStarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("VictoryStarGroup", true);
 
 	{
 		static const char* s_aszVictoryStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
 		for (uint32_t u = 0; u < 3; ++u)
 		{
-			Zenith_EditorAutomation::AddStep_CreateUIImage(s_aszVictoryStarNames[u]);
-			Zenith_EditorAutomation::AddStep_SetUISize(s_aszVictoryStarNames[u], TilePuzzleUI::fVICTORY_STAR_SIZE, TilePuzzleUI::fVICTORY_STAR_SIZE);
-			Zenith_EditorAutomation::AddStep_SetUIColor(s_aszVictoryStarNames[u], 1.f, 0.85f, 0.1f, 1.f);
-			Zenith_EditorAutomation::AddStep_SetUIImageTexturePath(s_aszVictoryStarNames[u],
+			g_xEngine.EditorAutomation().AddStep_CreateUIImage(s_aszVictoryStarNames[u]);
+			g_xEngine.EditorAutomation().AddStep_SetUISize(s_aszVictoryStarNames[u], TilePuzzleUI::fVICTORY_STAR_SIZE, TilePuzzleUI::fVICTORY_STAR_SIZE);
+			g_xEngine.EditorAutomation().AddStep_SetUIColor(s_aszVictoryStarNames[u], 1.f, 0.85f, 0.1f, 1.f);
+			g_xEngine.EditorAutomation().AddStep_SetUIImageTexturePath(s_aszVictoryStarNames[u],
 				GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
-			Zenith_EditorAutomation::AddStep_AddUIChild("VictoryStarGroup", s_aszVictoryStarNames[u]);
+			g_xEngine.EditorAutomation().AddStep_AddUIChild("VictoryStarGroup", s_aszVictoryStarNames[u]);
 		}
 	}
-	Zenith_EditorAutomation::AddStep_AddUIChild("VictoryContentGroup", "VictoryStarGroup");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("VictoryContentGroup", "VictoryStarGroup");
 
 	// Victory cat text
-	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCatText", "Cat rescued!");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryCatText", TilePuzzleUI::fVICTORY_CAT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCatText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCatText", 0.9f, 0.7f, 0.5f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("VictoryContentGroup", "VictoryCatText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("VictoryCatText", "Cat rescued!");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("VictoryCatText", TilePuzzleUI::fVICTORY_CAT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("VictoryCatText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("VictoryCatText", 0.9f, 0.7f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("VictoryContentGroup", "VictoryCatText");
 
 	// Victory coins text
-	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCoinsText", "+10 coins");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryCoinsText", TilePuzzleUI::fVICTORY_COINS_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCoinsText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCoinsText", 1.f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_AddUIChild("VictoryContentGroup", "VictoryCoinsText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("VictoryCoinsText", "+10 coins");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("VictoryCoinsText", TilePuzzleUI::fVICTORY_COINS_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("VictoryCoinsText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("VictoryCoinsText", 1.f, 0.85f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("VictoryContentGroup", "VictoryCoinsText");
 
 	// Next Level button (created last so it renders on top of VictoryBg overlay)
-	Zenith_EditorAutomation::AddStep_CreateUIButton("NextLevelBtn", "Next Level");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("NextLevelBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("NextLevelBtn", 0.f, TilePuzzleUI::fNEXT_LEVEL_BTN_Y);
-	Zenith_EditorAutomation::AddStep_SetUISize("NextLevelBtn", TilePuzzleUI::fNEXT_LEVEL_BTN_W, TilePuzzleUI::fNEXT_LEVEL_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextLevelBtn", TilePuzzleUI::fNEXT_LEVEL_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextLevelBtn", 0.15f, 0.4f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("NextLevelBtn", 0.1f, 0.3f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("NextLevelBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("NextLevelBtn", "Next Level");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("NextLevelBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("NextLevelBtn", 0.f, TilePuzzleUI::fNEXT_LEVEL_BTN_Y);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("NextLevelBtn", TilePuzzleUI::fNEXT_LEVEL_BTN_W, TilePuzzleUI::fNEXT_LEVEL_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("NextLevelBtn", TilePuzzleUI::fNEXT_LEVEL_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("NextLevelBtn", 0.15f, 0.4f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("NextLevelBtn", 0.1f, 0.3f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("NextLevelBtn", false);
 
 	// Elimination particle emitter
-	Zenith_EditorAutomation::AddStep_CreateEntity("EliminationEmitter");
-	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
-	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("Elimination");
-	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("EliminationEmitter");
+	g_xEngine.EditorAutomation().AddStep_AddParticleEmitter();
+	g_xEngine.EditorAutomation().AddStep_SetParticleConfigByName("Elimination");
+	g_xEngine.EditorAutomation().AddStep_SetParticleEmitting(false);
 
 	// Victory confetti particle emitter
-	Zenith_EditorAutomation::AddStep_CreateEntity("VictoryConfettiEmitter");
-	Zenith_EditorAutomation::AddStep_SetTransformPosition(0.f, 8.f, 0.f);
-	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
-	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("VictoryConfetti");
-	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("VictoryConfettiEmitter");
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(0.f, 8.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_AddParticleEmitter();
+	g_xEngine.EditorAutomation().AddStep_SetParticleConfigByName("VictoryConfetti");
+	g_xEngine.EditorAutomation().AddStep_SetParticleEmitting(false);
 
 	// Re-select GameManager for the script step
-	Zenith_EditorAutomation::AddStep_SelectEntity("GameManager");
+	g_xEngine.EditorAutomation().AddStep_SelectEntity("GameManager");
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AttachScript("TilePuzzle_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AttachScript("TilePuzzle_Behaviour");
 
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- Pinball scene (build index 2) ----
-	Zenith_EditorAutomation::AddStep_CreateScene("Pinball");
-	Zenith_EditorAutomation::AddStep_CreateEntity("PinballManager");
-	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 4.f, -12.f);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(0.f);
-	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
-	Zenith_EditorAutomation::AddStep_SetCameraAspect(9.f / 16.f);
-	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
-	Zenith_EditorAutomation::AddStep_AddUI();
+	g_xEngine.EditorAutomation().AddStep_CreateScene("Pinball");
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("PinballManager");
+	g_xEngine.EditorAutomation().AddStep_AddCamera();
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(0.f, 4.f, -12.f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(0.f);
+	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(45.f));
+	g_xEngine.EditorAutomation().AddStep_SetCameraAspect(9.f / 16.f);
+	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
+	g_xEngine.EditorAutomation().AddStep_AddUI();
 
 	// Pinball score layout group (score + high score, vertical stack)
-	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("PinballScoreGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballScoreGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballScoreGroup", -30.f, TilePuzzleUI::fPB_TOP_PADDING + 30.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("PinballScoreGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("PinballScoreGroup", 0.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("PinballScoreGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperRight));
-	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("PinballScoreGroup", true);
+	g_xEngine.EditorAutomation().AddStep_CreateUILayoutGroup("PinballScoreGroup");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("PinballScoreGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("PinballScoreGroup", -30.f, TilePuzzleUI::fPB_TOP_PADDING + 30.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutDirection("PinballScoreGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutSpacing("PinballScoreGroup", 0.f);
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutChildAlignment("PinballScoreGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperRight));
+	g_xEngine.EditorAutomation().AddStep_SetUILayoutFitToContent("PinballScoreGroup", true);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("PinballScore", "Score: 0");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("PinballScore", TilePuzzleUI::fPB_SCORE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("PinballScore", 1.f, 1.f, 1.f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("PinballScore", "Score: 0");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("PinballScore", TilePuzzleUI::fPB_SCORE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("PinballScore", 1.f, 1.f, 1.f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("PinballHighScore", "Total: 0");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("PinballHighScore", TilePuzzleUI::fPB_HIGH_SCORE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("PinballHighScore", 0.7f, 0.7f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("PinballHighScore", "Total: 0");
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("PinballHighScore", TilePuzzleUI::fPB_HIGH_SCORE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("PinballHighScore", 0.7f, 0.7f, 0.8f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("PinballScoreGroup", "PinballScore");
-	Zenith_EditorAutomation::AddStep_AddUIChild("PinballScoreGroup", "PinballHighScore");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("PinballScoreGroup", "PinballScore");
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("PinballScoreGroup", "PinballHighScore");
 
 	// Back button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballBackBtn", "Menu");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballBackBtn", 20.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("PinballBackBtn", TilePuzzleUI::fPB_BACK_BTN_W, TilePuzzleUI::fPB_BACK_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballBackBtn", TilePuzzleUI::fPB_BACK_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballBackBtn", 0.2f, 0.25f, 0.35f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballBackBtn", 0.3f, 0.35f, 0.5f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballBackBtn", 0.12f, 0.15f, 0.25f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("PinballBackBtn", "Menu");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("PinballBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("PinballBackBtn", 20.f, -20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("PinballBackBtn", TilePuzzleUI::fPB_BACK_BTN_W, TilePuzzleUI::fPB_BACK_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("PinballBackBtn", TilePuzzleUI::fPB_BACK_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("PinballBackBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("PinballBackBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("PinballBackBtn", 0.12f, 0.15f, 0.25f, 1.f);
 
 	// Launch hint
-	Zenith_EditorAutomation::AddStep_CreateUIText("PinballLaunchHint", "Drag plunger to launch");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballLaunchHint", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballLaunchHint", 0.f, -30.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("PinballLaunchHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("PinballLaunchHint", TilePuzzleUI::fPB_LAUNCH_HINT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("PinballLaunchHint", 0.6f, 0.6f, 0.7f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("PinballLaunchHint", "Drag plunger to launch");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("PinballLaunchHint", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("PinballLaunchHint", 0.f, -30.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("PinballLaunchHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("PinballLaunchHint", TilePuzzleUI::fPB_LAUNCH_HINT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("PinballLaunchHint", 0.6f, 0.6f, 0.7f, 1.f);
 
 	// ---- Gate Select Screen (replaces raw SubmitQuad/SubmitText rendering) ----
-	Zenith_EditorAutomation::AddStep_CreateUIRect("GateSelectBg");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("GateSelectBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
-	Zenith_EditorAutomation::AddStep_SetUIColor("GateSelectBg", 0.08f, 0.08f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("GateSelectBg", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIRect("GateSelectBg");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("GateSelectBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("GateSelectBg", 0.08f, 0.08f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("GateSelectBg", false);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("GateSelectTitle", "Select Gate");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("GateSelectTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("GateSelectTitle", 0.f, 40.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("GateSelectTitle", TilePuzzleUI::fGATE_SELECT_TITLE_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("GateSelectTitle", 1.f, 0.9f, 0.5f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("GateSelectTitle", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("GateSelectTitle", "Select Gate");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("GateSelectTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("GateSelectTitle", 0.f, 40.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("GateSelectTitle", TilePuzzleUI::fGATE_SELECT_TITLE_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("GateSelectTitle", 1.f, 0.9f, 0.5f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("GateSelectTitle", false);
 
 	// Static string arrays for gate buttons (safe for deferred const char* in automation actions)
 	static const char* s_aszGateBtnNames[10] = {
@@ -2954,8 +2954,8 @@ void Project_RegisterEditorAutomationSteps()
 	// 10 gate buttons (5x2 grid)
 	for (int i = 0; i < 10; ++i)
 	{
-		Zenith_EditorAutomation::AddStep_CreateUIButton(s_aszGateBtnNames[i], s_aszGateBtnLabels[i]);
-		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszGateBtnNames[i], static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+		g_xEngine.EditorAutomation().AddStep_CreateUIButton(s_aszGateBtnNames[i], s_aszGateBtnLabels[i]);
+		g_xEngine.EditorAutomation().AddStep_SetUIAnchor(s_aszGateBtnNames[i], static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
 
 		int iCol = i % 5;
 		int iRow = i / 5;
@@ -2966,77 +2966,77 @@ void Project_RegisterEditorAutomationSteps()
 		float fOffsetX = -fGridW * 0.5f + static_cast<float>(iCol) * (fBtnW + fGap) + fBtnW * 0.5f;
 		float fOffsetY = 100.f + static_cast<float>(iRow) * (fBtnH + fGap);
 
-		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszGateBtnNames[i], fOffsetX, fOffsetY);
-		Zenith_EditorAutomation::AddStep_SetUISize(s_aszGateBtnNames[i], fBtnW, fBtnH);
-		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(s_aszGateBtnNames[i], TilePuzzleUI::fGATE_BTN_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor(s_aszGateBtnNames[i], 0.3f, 0.3f, 0.3f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor(s_aszGateBtnNames[i], 0.4f, 0.4f, 0.5f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor(s_aszGateBtnNames[i], 0.2f, 0.2f, 0.25f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszGateBtnNames[i], false);
+		g_xEngine.EditorAutomation().AddStep_SetUIPosition(s_aszGateBtnNames[i], fOffsetX, fOffsetY);
+		g_xEngine.EditorAutomation().AddStep_SetUISize(s_aszGateBtnNames[i], fBtnW, fBtnH);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize(s_aszGateBtnNames[i], TilePuzzleUI::fGATE_BTN_FONT);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor(s_aszGateBtnNames[i], 0.3f, 0.3f, 0.3f, 1.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor(s_aszGateBtnNames[i], 0.4f, 0.4f, 0.5f, 1.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor(s_aszGateBtnNames[i], 0.2f, 0.2f, 0.25f, 1.f);
+		g_xEngine.EditorAutomation().AddStep_SetUIVisible(s_aszGateBtnNames[i], false);
 	}
 
 	// Freeplay button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("GateFreeplayBtn", "Freeplay");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("GateFreeplayBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("GateFreeplayBtn", 0.f, 310.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("GateFreeplayBtn", TilePuzzleUI::fGATE_ACTION_BTN_W, TilePuzzleUI::fGATE_ACTION_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("GateFreeplayBtn", TilePuzzleUI::fGATE_ACTION_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("GateFreeplayBtn", 0.5f, 0.3f, 0.6f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("GateFreeplayBtn", 0.6f, 0.4f, 0.7f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("GateFreeplayBtn", 0.35f, 0.2f, 0.45f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("GateFreeplayBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("GateFreeplayBtn", "Freeplay");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("GateFreeplayBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("GateFreeplayBtn", 0.f, 310.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("GateFreeplayBtn", TilePuzzleUI::fGATE_ACTION_BTN_W, TilePuzzleUI::fGATE_ACTION_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("GateFreeplayBtn", TilePuzzleUI::fGATE_ACTION_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("GateFreeplayBtn", 0.5f, 0.3f, 0.6f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("GateFreeplayBtn", 0.6f, 0.4f, 0.7f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("GateFreeplayBtn", 0.35f, 0.2f, 0.45f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("GateFreeplayBtn", false);
 
 	// Gate select back button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("GateBackBtn", "Back");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("GateBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("GateBackBtn", 0.f, -35.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("GateBackBtn", TilePuzzleUI::fGATE_BACK_BTN_W, TilePuzzleUI::fGATE_BACK_BTN_H);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("GateBackBtn", TilePuzzleUI::fGATE_ACTION_BTN_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("GateBackBtn", 0.4f, 0.2f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("GateBackBtn", 0.55f, 0.3f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("GateBackBtn", 0.3f, 0.15f, 0.15f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("GateBackBtn", false);
+	g_xEngine.EditorAutomation().AddStep_CreateUIButton("GateBackBtn", "Back");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("GateBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("GateBackBtn", 0.f, -35.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("GateBackBtn", TilePuzzleUI::fGATE_BACK_BTN_W, TilePuzzleUI::fGATE_BACK_BTN_H);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("GateBackBtn", TilePuzzleUI::fGATE_ACTION_BTN_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonNormalColor("GateBackBtn", 0.4f, 0.2f, 0.2f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonHoverColor("GateBackBtn", 0.55f, 0.3f, 0.3f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIButtonPressedColor("GateBackBtn", 0.3f, 0.15f, 0.15f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIVisible("GateBackBtn", false);
 
 	// ---- Tutorial Overlay (pinball scene) ----
-	Zenith_EditorAutomation::AddStep_CreateUIOverlay("TutorialOverlay");
-	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+	g_xEngine.EditorAutomation().AddStep_CreateUIOverlay("TutorialOverlay");
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
+	g_xEngine.EditorAutomation().AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialText", " ");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("TutorialText", 750.f, 100.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TutorialText", " ");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("TutorialText", 750.f, 100.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialText");
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHintText", "Tap to continue");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
-	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("TutorialHintText", "Tap to continue");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
+	g_xEngine.EditorAutomation().AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
+	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AttachScript("Pinball_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AttachScript("Pinball_Behaviour");
 
-	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
-	Zenith_EditorAutomation::AddStep_UnloadScene();
+	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
+	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
 	// ---- Final scene loading ----
-	Zenith_EditorAutomation::AddStep_LoadInitialScene(&Project_LoadInitialScene);
+	g_xEngine.EditorAutomation().AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
 #endif
 
 void Project_LoadInitialScene()
 {
-	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
+	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
+	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (TilePuzzle_HasAutoTestFlag())
@@ -3046,18 +3046,18 @@ void Project_LoadInitialScene()
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "====================================");
 
 		// Create an entity in the active scene with the autotest behaviour
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
 
 		Zenith_Entity xTestEntity(pxSceneData, "AutoTestRunner");
-		Zenith_SceneManager::MarkEntityPersistent(xTestEntity);
+		Zenith_SceneEntityOwnership::MarkEntityPersistent(xTestEntity);
 		Zenith_ScriptComponent& xScript = xTestEntity.AddComponent<Zenith_ScriptComponent>();
 		xScript.AddScript<TilePuzzle_AutoTest>();
 
 #ifdef ZENITH_TOOLS
 		// Switch editor to Playing mode so SceneManager::Update runs
 		// (Stopped mode skips scene updates, preventing OnStart/OnUpdate)
-		Zenith_Editor::SetEditorMode(EditorMode::Playing);
+		g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 #endif
 	}
 #endif

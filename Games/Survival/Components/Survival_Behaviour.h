@@ -453,7 +453,7 @@ private:
 	{
 		// C1: resolve owning scene from the player's entity id rather than
 		// assuming it lives in the active scene (player may be persistent).
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_uPlayerEntityID);
 		if (!pxSceneData)
 			return;
 
@@ -614,8 +614,8 @@ private:
 
 	void FindSceneEntities()
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		// Find player entity
 		Zenith_Entity xPlayer = pxSceneData->FindEntityByName("Player");
@@ -634,8 +634,8 @@ private:
 		static constexpr uint32_t s_uRockCount = 10;
 		static constexpr uint32_t s_uBerryCount = 8;
 
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		// Find and register all tree entities
 		for (uint32_t i = 0; i < s_uTreeCount; i++)
@@ -731,7 +731,7 @@ private:
 
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	void StartGame()
@@ -740,9 +740,9 @@ private:
 		SetHUDVisible(true);
 
 		// Create world scene
-		m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
-		Zenith_SceneManager::SetActiveScene(m_xWorldScene);
-		Zenith_SceneData* pxWorldData = Zenith_SceneManager::GetSceneData(m_xWorldScene);
+		m_xWorldScene = g_xEngine.SceneRegistry().CreateEmptyScene("World");
+		g_xEngine.SceneRegistry().SetActiveScene(m_xWorldScene);
+		Zenith_SceneData* pxWorldData = g_xEngine.SceneRegistry().GetSceneData(m_xWorldScene);
 
 		// Create world content (ground, player, resource nodes)
 		Survival_CreateWorldContent(pxWorldData);
@@ -769,11 +769,11 @@ private:
 		// Unload the world scene (destroys all world entities)
 		if (m_xWorldScene.IsValid())
 		{
-			Zenith_SceneManager::UnloadScene(m_xWorldScene);
+			g_xEngine.SceneOperations().UnloadScene(m_xWorldScene);
 			m_xWorldScene = Zenith_Scene();
 		}
 
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void SetMenuVisible(bool bVisible)
@@ -831,7 +831,7 @@ private:
 
 		// Reset player position
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_uPlayerEntityID);
 		if (pxSceneData)
 		{
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);

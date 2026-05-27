@@ -2,7 +2,7 @@
 
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -18,7 +18,7 @@
 #ifdef ZENITH_TOOLS
 // Defined out-of-line so the inline private MarkEntityStarted doesn't have
 // to be reordered; the public Editor_-prefixed entry point simply forwards.
-// Used by Zenith_Editor::EnterStopMode (namespace, no longer a friend).
+// Used by g_xEngine.Editor().EnterStopMode (namespace, no longer a friend).
 void Zenith_SceneData::Editor_MarkEntityStarted(Zenith_EntityID xID)
 {
 	MarkEntityStarted(xID);
@@ -43,7 +43,7 @@ void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 		xSlot.m_bActiveInHierarchyDirty = true;
 
 		// Queue children for invalidation
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataByHandle(xSlot.m_iSceneHandle);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataByHandle(xSlot.m_iSceneHandle);
 		if (!pxSceneData) continue;
 		if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(xCurrentID)) continue;
 
@@ -177,7 +177,7 @@ void Zenith_SceneData::ResetEntitiesOnly()
 		"unload is not supported. "
 		"#TODO: auto-promote same-scene self-unload to async.");
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
-	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
 		"Reset(): scene mutation while render tasks are reading — render-task invariant violated");
 	m_bIsBeingDestroyed = true;
 
@@ -293,7 +293,7 @@ Zenith_EntityID Zenith_SceneData::CreateEntity()
 	// assertion to "main thread OR AreRenderTasksActive()". That relaxation is
 	// sound only if the main thread never mutates scene storage while render
 	// tasks are in flight. Enforce that invariant here.
-	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
 		"CreateEntity: scene mutation while render tasks are reading — render-task invariant violated");
 	u_int uIndex = 0;
 	u_int uGeneration = 0;
@@ -376,7 +376,7 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RemoveEntity must be called from main thread");
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
-	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
 		"RemoveEntity: scene mutation while render tasks are reading — render-task invariant violated");
 	if (!EntityExists(xID))
 	{
@@ -483,7 +483,7 @@ Zenith_EntityID Zenith_SceneData::GetMainCameraEntity() const
 {
 	// Read-only: m_xMainCameraEntity is stable during render/animation tasks
 	// (main thread does not modify it while worker threads are running)
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::s_bRenderTasksActive,
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().m_bRenderTasksActive,
 		"GetMainCameraEntity must be called from main thread or during render task execution");
 	return m_xMainCameraEntity;
 }
@@ -816,7 +816,7 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 	// If OnAwake tries to load this same scene, it will be detected as circular
 	if (!m_strPath.empty())
 	{
-		Zenith_SceneManager::PushLifecycleContext(m_strPath);
+		g_xEngine.SceneLifecycle().PushLifecycleContext(m_strPath);
 	}
 
 	// Phase 1: OnAwake for all entities (Unity fires sceneLoaded after Awake and OnEnable but before Start)
@@ -859,7 +859,7 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 	// Remove from lifecycle context after awake completes
 	if (!m_strPath.empty())
 	{
-		Zenith_SceneManager::PopLifecycleContext(m_strPath);
+		g_xEngine.SceneLifecycle().PopLifecycleContext(m_strPath);
 	}
 }
 
@@ -1028,7 +1028,7 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 	// since Start was already dispatched by this (source) scene.
 	if (xSlot.m_iSceneHandle != m_iHandle)
 	{
-		Zenith_SceneData* pxTargetData = Zenith_SceneManager::GetSceneDataByHandle(xSlot.m_iSceneHandle);
+		Zenith_SceneData* pxTargetData = g_xEngine.SceneRegistry().GetSceneDataByHandle(xSlot.m_iSceneHandle);
 		if (pxTargetData)
 		{
 			// Remove from target's pending list and decrement count

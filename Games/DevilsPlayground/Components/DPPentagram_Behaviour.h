@@ -44,13 +44,13 @@ protected:
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xItem.IsValid())
 		{
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xItem);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xItem);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
 				if (xEnt.IsValid())
 				{
-					Zenith_SceneManager::Destroy(xEnt);
+					Zenith_SceneEntityOwnership::Destroy(xEnt);
 				}
 			}
 		}

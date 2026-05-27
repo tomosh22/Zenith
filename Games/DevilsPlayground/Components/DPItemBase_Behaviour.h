@@ -68,7 +68,7 @@ public:
 			{
 				m_fEvaporateRemaining = 0.0f;
 				Zenith_SceneData* pxScene =
-					Zenith_SceneManager::GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+					g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xEnt = pxScene->TryGetEntity(m_xParentEntity.GetEntityID());
@@ -84,7 +84,7 @@ public:
 						Zenith_EventDispatcher::Get().Dispatch(
 							DP_OnItemEvaporated{
 								m_xParentEntity.GetEntityID(), m_eTag, xPos });
-						Zenith_SceneManager::Destroy(xEnt);
+						Zenith_SceneEntityOwnership::Destroy(xEnt);
 					}
 				}
 				return;
@@ -114,7 +114,7 @@ public:
 
 		Zenith_Maths::Vector3 xMyPos = DP_Items::GetItemWorldPos(m_xParentEntity.GetEntityID());
 
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xVillager);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
 		if (!xV.IsValid()) return;

@@ -80,7 +80,7 @@ static bool IsAuraEmitting()
 	const Zenith_EntityID xAura = DP_Particles::GetEmitterEntityForTest(
 		DP_Particles::Kind::HighScentAura);
 	if (!xAura.IsValid()) return false;
-	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xAura);
+	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAura);
 	if (pxScene == nullptr) return false;
 	Zenith_Entity xEnt = pxScene->TryGetEntity(xAura);
 	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return false;
@@ -104,7 +104,7 @@ static bool Step_P5ScentBias(int iFrame)
 	switch (g_iPhase)
 	{
 	case kSP_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kSP_WaitScene;
 		return true;
 
@@ -125,7 +125,7 @@ static bool Step_P5ScentBias(int iFrame)
 	{
 		// Teleport villager to a known position so the bias check is
 		// deterministic.
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xVillager);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xVillager);
 		if (pxScene == nullptr) { g_iPhase = kSP_Done; return false; }
 		Zenith_Entity xV = pxScene->TryGetEntity(g_xVillager);
 		if (!xV.IsValid()) { g_iPhase = kSP_Done; return false; }
@@ -184,7 +184,7 @@ static bool Step_P5ScentBias(int iFrame)
 			});
 		if (xPriest.IsValid())
 		{
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xPriest);
+			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriest);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xP = pxScene->TryGetEntity(xPriest);

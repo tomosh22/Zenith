@@ -1,8 +1,8 @@
 #include "Zenith.h"
 
 #include "Profiling/Zenith_Profiling.h"
-#include "Profiling/Zenith_ProfilingImpl.h"
 
+#include "Core/Zenith_Engine.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux.h"
 
@@ -870,4 +870,19 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 	}
 
 	fprintf(pFile, "\n");
+}
+
+// ===== Bridge forwarders (documented header-include-cycle break) =====
+// These let header-inline code (Zenith_Profiling::Scope ctor/dtor and the
+// ZENITH_PROFILING_FUNCTION_WRAPPER macro body) call into the engine-owned
+// instance without dragging Zenith_Engine.h into Zenith_Profiling.h.
+// See Zenith_Profiling.h for the matching declarations.
+void Zenith_Profiling_Detail::BeginProfile(Zenith_ProfileIndex eIndex, const char* szLabel)
+{
+	g_xEngine.Profiling().BeginProfile(eIndex, szLabel);
+}
+
+void Zenith_Profiling_Detail::EndProfile(Zenith_ProfileIndex eIndex)
+{
+	g_xEngine.Profiling().EndProfile(eIndex);
 }

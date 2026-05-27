@@ -221,27 +221,27 @@ void Flux_InstanceGroup::InitialiseGPUBuffers()
 
 	// Transform buffer (mat4 per instance)
 	const size_t ulTransformSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(nullptr, ulTransformSize, m_xTransformBuffer);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, ulTransformSize, m_xTransformBuffer);
 
 	// Animation data buffer
 	const size_t ulAnimDataSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(nullptr, ulAnimDataSize, m_xAnimDataBuffer);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, ulAnimDataSize, m_xAnimDataBuffer);
 
 	// Visible index buffer (worst case: all visible)
 	const size_t ulVisibleIndexSize = m_uCapacity * sizeof(uint32_t);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(nullptr, ulVisibleIndexSize, m_xVisibleIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, ulVisibleIndexSize, m_xVisibleIndexBuffer);
 
 	// Bounds buffer (single bounding sphere, replicated conceptually but stored once)
 	// Actually we store per-instance bounds in case we want per-instance bounds later
 	const size_t ulBoundsSize = sizeof(Flux_InstanceBounds);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(&m_xBounds, ulBoundsSize, m_xBoundsBuffer);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(&m_xBounds, ulBoundsSize, m_xBoundsBuffer);
 
 	// Indirect draw command buffer
-	Flux_MemoryManager::InitialiseIndirectBuffer(sizeof(Flux_DrawIndexedIndirectCommand), m_xIndirectBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(sizeof(Flux_DrawIndexedIndirectCommand), m_xIndirectBuffer);
 
 	// Visible count buffer (single uint32 for atomic counter)
 	uint32_t uZero = 0;
-	Flux_MemoryManager::InitialiseReadWriteBuffer(&uZero, sizeof(uint32_t), m_xVisibleCountBuffer);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(&uZero, sizeof(uint32_t), m_xVisibleCountBuffer);
 
 	m_bBuffersInitialised = true;
 	m_bTransformsDirty = true;
@@ -257,22 +257,22 @@ void Flux_InstanceGroup::DestroyGPUBuffers()
 
 	// Queue buffers for deferred deletion
 	if (m_xTransformBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		Flux_MemoryManager::DestroyReadWriteBuffer(m_xTransformBuffer);
+		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xTransformBuffer);
 
 	if (m_xAnimDataBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		Flux_MemoryManager::DestroyReadWriteBuffer(m_xAnimDataBuffer);
+		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xAnimDataBuffer);
 
 	if (m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		Flux_MemoryManager::DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
+		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
 
 	if (m_xBoundsBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		Flux_MemoryManager::DestroyReadWriteBuffer(m_xBoundsBuffer);
+		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xBoundsBuffer);
 
 	if (m_xIndirectBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		Flux_MemoryManager::DestroyIndirectBuffer(m_xIndirectBuffer);
+		g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xIndirectBuffer);
 
 	if (m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		Flux_MemoryManager::DestroyReadWriteBuffer(m_xVisibleCountBuffer);
+		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xVisibleCountBuffer);
 
 	m_bBuffersInitialised = false;
 }
@@ -286,7 +286,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	if (m_bTransformsDirty)
 	{
 		const size_t ulSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			m_xTransformBuffer.GetBuffer().m_xVRAMHandle,
 			m_axTransforms.data(),
 			ulSize);
@@ -297,7 +297,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	if (m_bAnimDataDirty)
 	{
 		const size_t ulSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			m_xAnimDataBuffer.GetBuffer().m_xVRAMHandle,
 			m_axAnimData.data(),
 			ulSize);
@@ -322,7 +322,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 		if (auVisibleIndices.GetSize() > 0)
 		{
 			const size_t ulSize = static_cast<size_t>(auVisibleIndices.GetSize()) * sizeof(uint32_t);
-			Flux_MemoryManager::UploadBufferData(
+			g_xEngine.VulkanMemory().UploadBufferData(
 				m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle,
 				auVisibleIndices.GetDataPointer(),
 				ulSize);
@@ -345,7 +345,7 @@ void Flux_InstanceGroup::ResetVisibleCount()
 
 	// Reset the atomic counter to 0 for culling pass
 	uint32_t uZero = 0;
-	Flux_MemoryManager::UploadBufferData(
+	g_xEngine.VulkanMemory().UploadBufferData(
 		m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle,
 		&uZero,
 		sizeof(uint32_t));
@@ -361,7 +361,7 @@ void Flux_InstanceGroup::ResetVisibleCount()
 		xCmd.m_iVertexOffset = 0;
 		xCmd.m_uFirstInstance = 0;
 
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			m_xIndirectBuffer.GetBuffer().m_xVRAMHandle,
 			&xCmd,
 			sizeof(xCmd));

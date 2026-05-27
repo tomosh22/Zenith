@@ -31,15 +31,16 @@
 
 class Zenith_CameraComponent;
 
-// Phase 9: state + behaviour for Physics subsystem.
-class Zenith_PhysicsImpl
+// State + behaviour for the Physics subsystem. Held on g_xEngine and
+// accessed via g_xEngine.Physics().
+class Zenith_Physics
 {
 public:
-	Zenith_PhysicsImpl() = default;
-	~Zenith_PhysicsImpl() = default;
+	Zenith_Physics() = default;
+	~Zenith_Physics() = default;
 
-	Zenith_PhysicsImpl(const Zenith_PhysicsImpl&) = delete;
-	Zenith_PhysicsImpl& operator=(const Zenith_PhysicsImpl&) = delete;
+	Zenith_Physics(const Zenith_Physics&) = delete;
+	Zenith_Physics& operator=(const Zenith_Physics&) = delete;
 
 	void Initialise();
 	void Update(float fDt);

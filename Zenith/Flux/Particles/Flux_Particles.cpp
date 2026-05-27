@@ -82,8 +82,8 @@ void Flux_ParticlesImpl::Initialise()
 	BuildPipelines();
 
 	// Allocate instance buffers for both blend modes
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAlpha, false);
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAdditive, false);
+	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAlpha, false);
+	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAdditive, false);
 
 	// Load default particle texture (pinned)
 	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
@@ -123,8 +123,8 @@ void Flux_ParticlesImpl::ReleaseAssetReferences()
 void Flux_ParticlesImpl::Shutdown()
 {
 	g_xEngine.ParticleGPU().Shutdown();
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAlpha);
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAdditive);
+	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAlpha);
+	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAdditive);
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
 }
 
@@ -134,9 +134,9 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
 
 	// Query all particle emitter components from ALL loaded scenes
-	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
+	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.SceneRegistry().GetSceneSlotCount(); ++uSceneSlot)
 	{
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataAtSlot(uSceneSlot);
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataAtSlot(uSceneSlot);
 		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading())
 		{
 			continue;
@@ -178,7 +178,7 @@ static void UploadInstanceData()
 {
 	if (g_xEngine.Particles().m_uAlphaInstanceCount > 0)
 	{
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.Particles().m_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
 			g_xEngine.Particles().m_axAlphaInstances,
 			g_xEngine.Particles().m_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
@@ -186,7 +186,7 @@ static void UploadInstanceData()
 	}
 	if (g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
 	{
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.Particles().m_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
 			g_xEngine.Particles().m_axAdditiveInstances,
 			g_xEngine.Particles().m_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)

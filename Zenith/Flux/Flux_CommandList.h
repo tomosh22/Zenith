@@ -457,7 +457,7 @@ public:
 
 	void IterateCommands(Flux_CommandBuffer* pxCmdBuf) const
 	{
-		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
+		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
 #ifdef ZENITH_FLUX_PROFILING
 		pxCmdBuf->BeginDebugMarker(m_szName);
 #endif
@@ -482,7 +482,7 @@ public:
 #ifdef ZENITH_FLUX_PROFILING
 		pxCmdBuf->EndDebugMarker();
 #endif
-		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
+		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
 	}
 
 	// Reset no longer carries clear state — that lives on the render-graph pass.

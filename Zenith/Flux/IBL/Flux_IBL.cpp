@@ -506,12 +506,12 @@ float Flux_IBLImpl::GetForcedRoughness() const { return dbg_fIBLForcedRoughness;
 #ifdef ZENITH_TOOLS
 void Flux_IBLImpl::RegisterDebugVariables()
 {
-	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ShowBRDFLUT" }, dbg_bIBLShowBRDFLUT);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ForceRoughness" }, dbg_bIBLForceRoughness);
-	Zenith_DebugVariables::AddFloat({ "Flux", "IBL", "ForcedRoughness" }, dbg_fIBLForcedRoughness, 0.0f, 1.0f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "RegenerateBRDFLUT" }, dbg_bIBLRegenerateBRDFLUT);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "IBL", "ShowBRDFLUT" }, dbg_bIBLShowBRDFLUT);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "IBL", "ForceRoughness" }, dbg_bIBLForceRoughness);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "IBL", "ForcedRoughness" }, dbg_fIBLForcedRoughness, 0.0f, 1.0f);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "IBL", "RegenerateBRDFLUT" }, dbg_bIBLRegenerateBRDFLUT);
 
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, g_xEngine.IBL().m_xBRDFLUT.SRV());
+	g_xEngine.DebugVariables().AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, g_xEngine.IBL().m_xBRDFLUT.SRV());
 	// Irradiance and Prefiltered maps are cubemaps (VK_IMAGE_VIEW_TYPE_CUBE).
 	// ImGui's shader expects 2D textures, so these can't be displayed directly.
 	// TODO: create per-face 2D SRVs for cubemap debug display.

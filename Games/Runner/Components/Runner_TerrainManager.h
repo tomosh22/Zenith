@@ -90,14 +90,14 @@ public:
 	static void Reset()
 	{
 		// Destroy existing chunks
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		for (auto& xChunk : s_axChunks)
 		{
 			if (xChunk.m_uEntityID.IsValid() && pxSceneData->EntityExists(xChunk.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xChunk.m_uEntityID);
-				Zenith_SceneManager::Destroy(xEntity);
+				Zenith_SceneEntityOwnership::Destroy(xEntity);
 			}
 		}
 		s_axChunks.clear();
@@ -116,8 +116,8 @@ public:
 	// ========================================================================
 	static void Update(float fPlayerZ)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 
 		// Check if we need to spawn new chunks ahead
 		if (!s_axChunks.empty())
@@ -139,7 +139,7 @@ public:
 			if (s_axChunks.front().m_uEntityID.IsValid() && pxSceneData->EntityExists(s_axChunks.front().m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(s_axChunks.front().m_uEntityID);
-				Zenith_SceneManager::Destroy(xEntity);
+				Zenith_SceneEntityOwnership::Destroy(xEntity);
 			}
 			s_axChunks.erase(s_axChunks.begin());
 		}
@@ -232,8 +232,8 @@ private:
 		xChunk.m_fHeight = sin(fProgress * 3.14159f * 2.0f) * s_xConfig.m_fHeightVariation;
 
 		// Create ground entity
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
 		Zenith_Entity xGround = s_pxGroundPrefab->Instantiate(pxSceneData, "Ground");
 
 		// Position: center of chunk, below player level

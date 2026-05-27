@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -37,8 +38,8 @@ static Flux_RenderAttachment& GetHiZBuffer()
 // it consistent with the current framebuffer size.
 static void UpdateMipCountFromSwapchain()
 {
-	const u_int uWidth  = Flux_Swapchain::GetWidth();
-	const u_int uHeight = Flux_Swapchain::GetHeight();
+	const u_int uWidth  = g_xEngine.VulkanSwapchain().GetWidth();
+	const u_int uHeight = g_xEngine.VulkanSwapchain().GetHeight();
 	g_xEngine.HiZ().m_uMipCount = static_cast<u_int>(floor(log2(static_cast<float>(std::max(uWidth, uHeight))))) + 1;
 	g_xEngine.HiZ().m_uMipCount = std::min(g_xEngine.HiZ().m_uMipCount, Flux_HiZImpl::uHIZ_MAX_MIPS);
 }
@@ -71,7 +72,7 @@ void Flux_HiZImpl::Initialise()
 
 	// Resize callback: recompute mip count. The graph owns the transient
 	// image and re-creates it with new dimensions on the next SetupRenderGraph.
-	Flux::AddResChangeCallback([]()
+	g_xEngine.FluxRenderer().AddResChangeCallback([]()
 	{
 		UpdateMipCountFromSwapchain();
 	});
@@ -106,8 +107,8 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xHiZ.m_xComputePipeline);
 
-	u_int uWidth = Flux_Swapchain::GetWidth();
-	u_int uHeight = Flux_Swapchain::GetHeight();
+	u_int uWidth = g_xEngine.VulkanSwapchain().GetWidth();
+	u_int uHeight = g_xEngine.VulkanSwapchain().GetHeight();
 
 	// Calculate output dimensions for this mip
 	u_int uMipWidth = std::max(1u, uWidth >> uMip);
@@ -158,8 +159,8 @@ void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	UpdateMipCountFromSwapchain();
 
 	Flux_TransientTextureDesc xHiZDesc;
-	xHiZDesc.m_uWidth       = Flux_Swapchain::GetWidth();
-	xHiZDesc.m_uHeight      = Flux_Swapchain::GetHeight();
+	xHiZDesc.m_uWidth       = g_xEngine.VulkanSwapchain().GetWidth();
+	xHiZDesc.m_uHeight      = g_xEngine.VulkanSwapchain().GetHeight();
 	xHiZDesc.m_eFormat      = HIZ_FORMAT;
 	xHiZDesc.m_uNumMips     = m_uMipCount;
 	xHiZDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__UNORDERED_ACCESS) | (1u << MEMORY_FLAGS__SHADER_READ);

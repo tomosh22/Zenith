@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/Flux_RendererImpl.h"
 
 // Concept: swapchain / presentation. Static methods on the backend swapchain
 // type (aliased as Flux_Swapchain). Returns engine-typed values only —
@@ -8,18 +9,20 @@
 // bool indicating "frame is ready to render" (false on transient acquire
 // failures like resize).
 //
-// GetCurrentFrameIndex now reads from Flux_PerFrame::GetRingIndex() so the
+// GetCurrentFrameIndex now reads from g_xEngine.FluxRenderer().GetRingIndex() so the
 // engine has one source of truth for the per-frame ring slot — backends
 // must mirror this contract: GetCurrentFrameIndex returns the value that
-// matches Flux_PerFrame::GetRingIndex() at call time.
+// matches g_xEngine.FluxRenderer().GetRingIndex() at call time.
 
 template <typename T>
-concept FluxBackendPresentation = requires
+concept FluxBackendPresentation = requires(T t)
 {
-	{ T::Initialise()                                                          } -> std::same_as<void>;
+	{ t.Initialise()                                                           } -> std::same_as<void>;
+	// BeginFrame and EndFrame stay static — main loop calls them via
+	// Flux_Swapchain::BeginFrame() in the swapchain-acquire-failed branch.
 	{ T::BeginFrame()                                                          } -> std::same_as<bool>;
 	{ T::EndFrame()                                                            } -> std::same_as<void>;
-	{ T::GetWidth()                                                            } -> std::same_as<uint32_t>;
-	{ T::GetHeight()                                                           } -> std::same_as<uint32_t>;
-	{ T::GetCurrentFrameIndex()                                                } -> std::same_as<uint32_t>;
+	{ t.GetWidth()                                                             } -> std::same_as<uint32_t>;
+	{ t.GetHeight()                                                            } -> std::same_as<uint32_t>;
+	{ t.GetCurrentFrameIndex()                                                 } -> std::same_as<uint32_t>;
 };

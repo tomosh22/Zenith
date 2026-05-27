@@ -2,6 +2,9 @@
 
 #include "Collections/Zenith_Vector.h"
 
+#include <chrono>
+#include <unordered_map>
+
 enum Zenith_ProfileIndex
 {
 	ZENITH_PROFILE_INDEX__TOTAL_FRAME,
@@ -208,18 +211,30 @@ static const char* g_aszProfileNames[]
 };
 static_assert(COUNT_OF(g_aszProfileNames) == ZENITH_PROFILE_INDEX__COUNT, "g_aszProfileNames mismatch");
 
-#define ZENITH_PROFILING_FUNCTION_WRAPPER(x, eProfile, ...) \
-Zenith_Profiling::BeginProfile(eProfile); \
-x(__VA_ARGS__); \
-Zenith_Profiling::EndProfile(eProfile);
-
-// Phase 9: Zenith_Profiling converted from class-with-static-methods to a
-// namespace. Methods are free functions that delegate to the engine-owned
-// Zenith_ProfilingImpl. Macro-driven API surface (ZENITH_PROFILING_FUNCTION_WRAPPER,
-// Scope RAII helper, Task's inline DoTask) keep their existing call sites --
-// the Zenith_Profiling:: qualifier still works for both classes and namespaces.
-namespace Zenith_Profiling
+// Private bridge — declared first so inline header code below (the Scope
+// RAII ctor/dtor and the ZENITH_PROFILING_FUNCTION_WRAPPER macro body)
+// can reach the engine-owned instance without needing Zenith_Engine.h
+// here, which would cycle. Definitions live in Zenith_Profiling.cpp
+// where g_xEngine is visible. This is a documented header-include-cycle
+// break, NOT a re-introduced static facade.
+namespace Zenith_Profiling_Detail
 {
+	void BeginProfile(Zenith_ProfileIndex eIndex, const char* szLabel);
+	void EndProfile(Zenith_ProfileIndex eIndex);
+}
+
+// State + behaviour for the Profiling subsystem. Held on g_xEngine and
+// accessed via g_xEngine.Profiling(). Nested types Event and Scope are
+// preserved on the class so existing call sites
+// (Zenith_Profiling::Event / Zenith_Profiling::Scope) compile unchanged.
+class Zenith_Profiling
+{
+public:
+	Zenith_Profiling() = default;
+	~Zenith_Profiling() = default;
+	Zenith_Profiling(const Zenith_Profiling&) = delete;
+	Zenith_Profiling& operator=(const Zenith_Profiling&) = delete;
+
 	struct Event
 	{
 		Event(const std::chrono::time_point<std::chrono::high_resolution_clock>& xBegin, const std::chrono::time_point<std::chrono::high_resolution_clock>& xEnd, const Zenith_ProfileIndex eIndex, const u_int uDepth, const char* szLabel = nullptr)
@@ -264,11 +279,15 @@ namespace Zenith_Profiling
 
 	const Zenith_ProfileIndex GetCurrentIndex();
 
-	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& GetEvents();
+	const std::unordered_map<u_int, Zenith_Vector<Event>>& GetEvents();
 
 	void ClearEvents();
 	void WriteTextReport(FILE* pFile);
 
+	// Nested RAII helper. Ctor/dtor are inline; they route through the
+	// _Detail:: bridge above so this class type does not need to be
+	// complete-at-use for the member call to compile (the type IS the
+	// enclosing class — chicken-and-egg).
 	class Scope
 	{
 	public:
@@ -276,13 +295,42 @@ namespace Zenith_Profiling
 		Scope(Zenith_ProfileIndex eIndex)
 			: m_eIndex(eIndex)
 		{
-			Zenith_Profiling::BeginProfile(eIndex);
+			Zenith_Profiling_Detail::BeginProfile(eIndex, nullptr);
 		}
 		~Scope()
 		{
-			Zenith_Profiling::EndProfile(m_eIndex);
+			Zenith_Profiling_Detail::EndProfile(m_eIndex);
 		}
 	private:
 		Zenith_ProfileIndex m_eIndex;
 	};
-}
+
+	// Public data members. Mirror of the former Zenith_ProfilingImpl —
+	// kept public because Zenith_Profiling.cpp accesses them directly
+	// from the method bodies (and a private/getter wrapper would add
+	// nothing). The 5 thread-local profile-stack variables stay as
+	// file-scope statics in the .cpp; they're per-OS-thread, not
+	// per-Engine.
+	std::unordered_map<u_int, Zenith_Vector<Event>> m_xEvents;
+	std::unordered_map<u_int, Zenith_Vector<Event>> m_xPreviousFrameEvents;
+	Zenith_Mutex_NoProfiling                        m_xEventsMutex;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_xFrameStart;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_xFrameEnd;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_xPreviousFrameStart;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_xPreviousFrameEnd;
+
+	// Pause latch. Toggled at frame boundaries by EndFrame so the
+	// recorded final frame is internally consistent vs. the ImGui
+	// checkbox toggling mid-frame. See Zenith_Profiling.cpp for the
+	// dbg_bPauseRequested coupling logic.
+	bool m_bPauseEffective = false;
+};
+
+// Function-wrapper macro. The bridge forwarders are used (not the class
+// methods) because the macro body is included into TUs that have not
+// included Zenith_Engine.h — pulling the engine header into every
+// caller of this macro would balloon the include graph.
+#define ZENITH_PROFILING_FUNCTION_WRAPPER(x, eProfile, ...) \
+	Zenith_Profiling_Detail::BeginProfile(eProfile, nullptr); \
+	x(__VA_ARGS__); \
+	Zenith_Profiling_Detail::EndProfile(eProfile);

@@ -4,7 +4,7 @@
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "AssetHandling/Zenith_FontAsset.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -80,7 +80,7 @@ void Zenith_UIToggle::SetIsOn(bool bOn)
 void Zenith_UIToggle::ResetInteractionStateForEditor()
 {
 #ifdef ZENITH_TOOLS
-	if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped
+	if (g_xEngine.Editor().GetEditorMode() == EditorMode::Stopped
 #ifdef ZENITH_INPUT_SIMULATOR
 		&& !Zenith_InputSimulator::IsEnabled()
 #endif

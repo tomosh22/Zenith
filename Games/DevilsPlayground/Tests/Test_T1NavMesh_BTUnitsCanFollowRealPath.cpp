@@ -82,14 +82,14 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kBT_Start:
-		g_xScene = Zenith_SceneManager::CreateEmptyScene("BTUnitsCanFollowRealPath");
-		Zenith_SceneManager::SetActiveScene(g_xScene);
+		g_xScene = g_xEngine.SceneRegistry().CreateEmptyScene("BTUnitsCanFollowRealPath");
+		g_xEngine.SceneRegistry().SetActiveScene(g_xScene);
 		g_iPhase = kBT_BuildScene;
 		return true;
 
 	case kBT_BuildScene:
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kBT_Done; return false; }
 
 		// Floor: 20m x 0.2m x 20m centred at origin. Scale = full box size.
@@ -115,7 +115,7 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 
 	case kBT_Generate:
 	{
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kBT_Done; return false; }
 		NavMeshGenerationConfig xCfg{};
 		xCfg.m_fAgentRadius = 0.2f;

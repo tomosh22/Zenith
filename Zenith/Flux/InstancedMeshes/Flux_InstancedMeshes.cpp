@@ -14,7 +14,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -139,7 +139,7 @@ void Flux_InstancedMeshesImpl::Initialise()
 	BuildPipelines();
 
 	// One-time setup that hot-reload must NOT repeat (would leak VRAM).
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
 	g_xEngine.InstancedMeshes().m_bCullingInitialized = true;
 
 #ifdef ZENITH_TOOLS
@@ -161,7 +161,7 @@ void Flux_InstancedMeshesImpl::Initialise()
 void Flux_InstancedMeshesImpl::Shutdown()
 {
 	ClearAllGroups();
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes shutdown");
 }
 
@@ -293,7 +293,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 		xCullingConstants.m_fPadding = 0.0f;
 
 		// Upload culling constants
-		Flux_MemoryManager::UploadBufferData(
+		g_xEngine.VulkanMemory().UploadBufferData(
 			g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle,
 			&xCullingConstants,
 			sizeof(xCullingConstants));

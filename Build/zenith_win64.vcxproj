@@ -108,7 +108,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -172,7 +172,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;OPENDDLPARSER_BUILD;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;OPENDDLPARSER_BUILD;SHADER_SOURCE_ROOT="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\freetype\include;..\tools\middleware\msdf-atlas-gen;..\tools\middleware\msdf-atlas-gen\msdfgen;..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -236,7 +236,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -300,7 +300,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;OPENDDLPARSER_BUILD;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;OPENDDLPARSER_BUILD;SHADER_SOURCE_ROOT="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/.claude/worktrees/heuristic-dubinsky-b1c5f3/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\freetype\include;..\tools\middleware\msdf-atlas-gen;..\tools\middleware\msdf-atlas-gen\msdfgen;..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -372,9 +372,6 @@
     <ClInclude Include="..\Middleware\imgui-docking\imstb_rectpack.h" />
     <ClInclude Include="..\Middleware\imgui-docking\imstb_textedit.h" />
     <ClInclude Include="..\Middleware\imgui-docking\imstb_truetype.h" />
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h" />
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h" />
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h" />
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.h" />
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeToBuffer.h" />
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec\NodeCodecQuadTreeHalfFloat.h" />
@@ -1106,7 +1103,7 @@
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h" />
-    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.h" />
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h" />
@@ -1122,7 +1119,6 @@
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
-    <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariablesImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h" />
@@ -1137,17 +1133,11 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.Tests.inl" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomationImpl.h" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_EditorImpl.h" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_EditorMaterialUIImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_GizmoImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystemImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystemImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
@@ -1161,15 +1151,11 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBusImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleContext.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleSchedulerImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueueImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistryImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
@@ -1180,6 +1166,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneCallbackTypes.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.Tests.inl" />
@@ -1187,6 +1174,8 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerInternal.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystemBootstrap.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystemGuards.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
@@ -1361,23 +1350,21 @@
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h" />
-    <ClInclude Include="..\Zenith\Input\Zenith_InputImpl.h" />
+    <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
-    <ClInclude Include="..\Zenith\Input\Zenith_TouchInputImpl.h" />
+    <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl" />
-    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsImpl.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
-    <ClInclude Include="..\Zenith\Profiling\Zenith_ProfilingImpl.h" />
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
-    <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.h" />
     <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIButton.h" />
@@ -1400,16 +1387,13 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h" />
-    <ClInclude Include="..\Zenith\Vulkan\Zenith_VulkanImpl.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h" />
-    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManagerImpl.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Internal.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Platform.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />
-    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_SwapchainImpl.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.h" />
     <ClInclude Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.h" />
     <ClInclude Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
@@ -2398,7 +2382,6 @@
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp" />
     <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
-    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">Create</PrecompiledHeader>
@@ -2463,6 +2446,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneSystemBootstrap.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneSystemGuards.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp" />
@@ -2536,7 +2521,7 @@
     <ClCompile Include="..\Zenith\Prefab\Zenith_Prefab.cpp" />
     <ClCompile Include="..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp" />
-    <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.cpp" />
+    <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UICanvas.cpp" />

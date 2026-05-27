@@ -5,22 +5,22 @@
 #include "Zenith_Gizmo.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-#include "Editor/Zenith_GizmoImpl.h"
+#include "Editor/Zenith_Gizmo.h"
 
-// Phase 5.5d: gizmo state lives on Zenith_GizmoImpl held by Zenith_Engine.
+// Phase 5.5d: gizmo state lives on Zenith_Gizmo held by Zenith_Engine.
 
-void Zenith_Gizmo::SetSnapEnabled(bool enabled) { g_xEngine.Gizmo().m_bSnapEnabled = enabled; }
-bool Zenith_Gizmo::IsSnapEnabled()              { return g_xEngine.Gizmo().m_bSnapEnabled; }
-void Zenith_Gizmo::SetSnapValue(float value)    { g_xEngine.Gizmo().m_fSnapValue = value; }
-float Zenith_Gizmo::GetSnapValue()              { return g_xEngine.Gizmo().m_fSnapValue; }
-bool Zenith_Gizmo::IsManipulating()             { return g_xEngine.Gizmo().m_bIsManipulating; }
+void Zenith_Gizmo::SetSnapEnabled(bool enabled) { Zenith_Gizmo::m_bSnapEnabled = enabled; }
+bool Zenith_Gizmo::IsSnapEnabled()              { return Zenith_Gizmo::m_bSnapEnabled; }
+void Zenith_Gizmo::SetSnapValue(float value)    { Zenith_Gizmo::m_fSnapValue = value; }
+float Zenith_Gizmo::GetSnapValue()              { return Zenith_Gizmo::m_fSnapValue; }
+bool Zenith_Gizmo::IsManipulating()             { return Zenith_Gizmo::m_bIsManipulating; }
 
 void Zenith_Gizmo::Initialise()
 {

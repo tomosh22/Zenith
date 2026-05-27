@@ -4,7 +4,7 @@
  *
  * MVP-1.1 (post round-1):
  *   On Esc the controller toggles a UI text element named "PauseOverlay"
- *   AND calls `Zenith_SceneManager::SetScenePaused` on the gameplay scene
+ *   AND calls `g_xEngine.SceneRegistry().SetScenePaused` on the gameplay scene
  *   so every entity OnUpdate (DPVillager life timer, Priest BT, ...) halts.
  *
  *   To keep this very controller running while the gameplay scene is paused
@@ -30,7 +30,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_EventSystem.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "UI/Zenith_UIText.h"
 
@@ -62,7 +62,7 @@ public:
 		// First-time wiring: capture the gameplay scene then migrate to the
 		// persistent scene so we keep ticking while the gameplay scene is paused.
 		m_xGameplayScene = m_xParentEntity.GetScene();
-		Zenith_SceneManager::MarkEntityPersistent(m_xParentEntity);
+		Zenith_SceneEntityOwnership::MarkEntityPersistent(m_xParentEntity);
 		s_pxPersistentInstance = this;
 
 		// MVP-4.3.2: mirror DPHUDController's run-over flag so the R/Q
@@ -140,7 +140,7 @@ public:
 		// overlay but skip the pause call -- nothing to pause.
 		if (m_xGameplayScene.IsValid())
 		{
-			Zenith_SceneManager::SetScenePaused(m_xGameplayScene, m_bShown);
+			g_xEngine.SceneRegistry().SetScenePaused(m_xGameplayScene, m_bShown);
 		}
 
 		// Telemetry-v3: surface the toggle transition so the visualiser
@@ -226,7 +226,7 @@ private:
 #endif
 		ResetAllRunStateBeforeReload();
 		// Reload gameplay scene (build index 1 = GameLevel).
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	void HandleQuit()
@@ -236,7 +236,7 @@ private:
 #endif
 		ResetAllRunStateBeforeReload();
 		// Load front-end (build index 0).
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void UnsubscribeRunOverEvents()
@@ -266,7 +266,7 @@ private:
 		}
 		if (m_xGameplayScene.IsValid())
 		{
-			Zenith_SceneManager::SetScenePaused(m_xGameplayScene, false);
+			g_xEngine.SceneRegistry().SetScenePaused(m_xGameplayScene, false);
 		}
 		m_bShown = false;
 	}

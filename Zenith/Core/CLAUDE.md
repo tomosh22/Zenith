@@ -126,14 +126,14 @@ g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
 `g_xEngine` is `constinit`-eligible: its default constructor and destructor are trivial. All subsystem state is held as **raw pointers to forward-declared `*Impl` classes**, allocated explicitly in `Zenith_Engine::Initialise()` and deleted in `Zenith_Engine::Shutdown()`. This means:
 
 - No work happens at static-init time — no chance of the static-init-order-fiasco that the old `g_*` module variables were vulnerable to.
-- The engine header (`Zenith_Engine.h`) forward-declares every subsystem `*Impl` class; full headers stay out of the engine header to keep its include footprint small. Accessor bodies (`Zenith_TaskSystemImpl& Tasks() { return *m_pxTasks; }`) live in `Zenith_Engine.cpp` where the full subsystem headers are available.
+- The engine header (`Zenith_Engine.h`) forward-declares every subsystem class; full headers stay out of the engine header to keep its include footprint small. Accessor bodies (`Zenith_TaskSystem& Tasks() { return *m_pxTasks; }`) live in `Zenith_Engine.cpp` where the full subsystem headers are available.
 - Subsystem boot/teardown order lives in `Zenith_Engine::Initialise/Shutdown`, replacing the old `Zenith_Init` / `Zenith_Shutdown` free functions. The order matters — load-bearing comments in those functions encode dependency rules.
 
 ### Subsystem Class Convention
 
 Each mutable subsystem now has an `*Impl` class:
 
-- `Zenith_PhysicsImpl`, `Zenith_TaskSystemImpl`, `Zenith_AssetRegistry`, `Flux_RendererImpl`, etc.
+- `Zenith_Physics`, `Zenith_TaskSystem`, `Zenith_AssetRegistry`, `Flux_RendererImpl`, etc. (Phase 1+ renames are dropping the `Impl` suffix incrementally.)
 - Public surface uses the historical name (`Zenith_Physics`, `Zenith_Profiling`, ...) as either a thin namespace of free functions that forward to `g_xEngine.X()`, or — for trivially-replaceable static facades — was deleted entirely.
 
 When migrating a call site, prefer `g_xEngine.X().Y()` directly over a forwarder. The forwarders exist as a transitional convenience and were swept down to zero in Phase 9.

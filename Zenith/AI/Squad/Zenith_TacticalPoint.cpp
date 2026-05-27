@@ -4,7 +4,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -50,7 +50,7 @@ bool Zenith_TacticalPointSystem::GetEntityPosition(Zenith_EntityID xEntity, Zeni
 	// often reference agents and owners that may live in the persistent scene
 	// or additively-loaded scenes.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xEntity);
+	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xEntity);
 	if (!pxSceneData)
 	{
 		return false;
@@ -142,7 +142,7 @@ static float ScoreOverwatchPoint(const Zenith_TacticalPoint& xPoint, const void*
 	Zenith_Maths::Vector3 xEyeLevel = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f);
 	Zenith_Maths::Vector3 xDirection = pxCtx->m_xAreaToWatch - xEyeLevel;
 	float fCheckDist = Zenith_Maths::Length(xDirection);
-	Zenith_PhysicsImpl::RaycastResult xRayResult = g_xEngine.Physics().Raycast(xEyeLevel, xDirection, fCheckDist);
+	Zenith_Physics::RaycastResult xRayResult = g_xEngine.Physics().Raycast(xEyeLevel, xDirection, fCheckDist);
 	float fLOSScore = xRayResult.m_bHit ? 0.0f : 1.0f;  // Full score if clear LOS, zero if blocked
 
 	float fDistFromAgent = Zenith_Maths::Length(xPoint.m_xPosition - pxCtx->m_xAgentPos);
@@ -271,7 +271,7 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if occupied entity still exists
 		if (xPoint.m_xOccupiedBy.IsValid())
 		{
-			Zenith_SceneData* pxOccupantScene = Zenith_SceneManager::GetSceneDataForEntity(xPoint.m_xOccupiedBy);
+			Zenith_SceneData* pxOccupantScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPoint.m_xOccupiedBy);
 			bool bValid = false;
 			if (pxOccupantScene)
 			{
@@ -288,7 +288,7 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if owner entity (dynamic points) still exists
 		if ((xPoint.m_uFlags & TACPOINT_FLAG_DYNAMIC) && xPoint.m_xOwnerEntity.IsValid())
 		{
-			Zenith_SceneData* pxOwnerScene = Zenith_SceneManager::GetSceneDataForEntity(xPoint.m_xOwnerEntity);
+			Zenith_SceneData* pxOwnerScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPoint.m_xOwnerEntity);
 			bool bValid = false;
 			if (pxOwnerScene)
 			{
@@ -588,7 +588,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 			}
 
 			// Raycast downward to find ground
-			Zenith_PhysicsImpl::RaycastResult xGroundResult = g_xEngine.Physics().Raycast(
+			Zenith_Physics::RaycastResult xGroundResult = g_xEngine.Physics().Raycast(
 				xPos + Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f),
 				Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
 				5.0f);
@@ -604,7 +604,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 			// Raycast horizontally toward center to check for cover geometry
 			Zenith_Maths::Vector3 xToCenter = Zenith_Maths::Normalize(xCenter - xGroundPos);
 			Zenith_Maths::Vector3 xCoverCheckStart = xGroundPos + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-			Zenith_PhysicsImpl::RaycastResult xCoverResult = g_xEngine.Physics().Raycast(
+			Zenith_Physics::RaycastResult xCoverResult = g_xEngine.Physics().Raycast(
 				xCoverCheckStart, xToCenter, 2.0f);
 
 			TacticalPointType eCoverType = TacticalPointType::COVER_HALF;
@@ -612,7 +612,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 			{
 				// Check if cover is tall (full cover) or short (half cover)
 				Zenith_Maths::Vector3 xHighCheck = xGroundPos + Zenith_Maths::Vector3(0.0f, 1.8f, 0.0f);
-				Zenith_PhysicsImpl::RaycastResult xHighResult = g_xEngine.Physics().Raycast(
+				Zenith_Physics::RaycastResult xHighResult = g_xEngine.Physics().Raycast(
 					xHighCheck, xToCenter, 2.0f);
 				eCoverType = xHighResult.m_bHit ? TacticalPointType::COVER_FULL : TacticalPointType::COVER_HALF;
 			}
@@ -966,7 +966,7 @@ float Zenith_TacticalPointSystem::EvaluateCoverFromThreat(
 
 	if (fCheckDist > 0.001f)
 	{
-		Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(xEyeLevel, xDirection, fCheckDist);
+		Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(xEyeLevel, xDirection, fCheckDist);
 		if (xResult.m_bHit)
 		{
 			// Something is blocking line of sight to threat

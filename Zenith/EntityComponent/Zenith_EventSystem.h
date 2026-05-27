@@ -2,7 +2,7 @@
 
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "EntityComponent/Zenith_SceneData.h"
 
 //------------------------------------------------------------------------------

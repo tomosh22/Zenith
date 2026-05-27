@@ -103,7 +103,7 @@ namespace
 	void TeleportVillager(const Zenith_Maths::Vector3& xPos)
 	{
 		if (!g_xPVVillager.IsValid()) return;
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xPVVillager);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPVVillager);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xV = pxScene->TryGetEntity(g_xPVVillager);
 		if (!xV.IsValid()) return;
@@ -115,7 +115,7 @@ namespace
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
 		if (!g_xPVPentagram.IsValid()) return xPos;
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xPVPentagram);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPVPentagram);
 		if (pxScene == nullptr) return xPos;
 		Zenith_Entity xP = pxScene->TryGetEntity(g_xPVPentagram);
 		if (!xP.IsValid()) return xPos;
@@ -147,7 +147,7 @@ static bool Step_PentagramVictory(int iFrame)
 	switch (g_iPVPhase)
 	{
 	case kPV_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPVPhase = kPV_WaitScene;
 		return true;
 

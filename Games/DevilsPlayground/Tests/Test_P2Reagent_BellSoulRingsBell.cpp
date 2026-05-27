@@ -114,7 +114,7 @@ static bool Step_P2BellSoulRings(int iFrame)
 	switch (g_iPhase)
 	{
 	case kBS_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kBS_WaitScene;
 		return true;
 
@@ -140,8 +140,8 @@ static bool Step_P2BellSoulRings(int iFrame)
 
 	case kBS_BuildItem:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kBS_Done; return false; }
 		Zenith_Entity xEnt(pxScene, std::string("Test_BellSoul"));
 		if (!xEnt.IsValid()) { g_iPhase = kBS_Done; return false; }
@@ -164,7 +164,7 @@ static bool Step_P2BellSoulRings(int iFrame)
 	{
 		DP_Player::SetPossessedVillager(g_xVillager);
 		// Teleport villager onto BellSoul spawn position.
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xVillager);
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xVillager);
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xVillager);

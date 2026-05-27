@@ -5,6 +5,8 @@
 #include "Maths/Zenith_Maths.h"
 #include "EntityComponent/Zenith_Scene.h"
 
+#include <unordered_map>
+
 class Zenith_Entity;
 
 struct BoundingBox
@@ -35,34 +37,38 @@ struct BoundingBox
 class Zenith_SelectionSystem
 {
 public:
-	static void Initialise();
-	static void Shutdown();
+void Initialise();
+void Shutdown();
 	
 	// Update bounding boxes for all entities
-	static void UpdateBoundingBoxes();
+void UpdateBoundingBoxes();
 	
 	// Get bounding box for an entity
-	static BoundingBox GetEntityBoundingBox(Zenith_Entity* pxEntity);
+BoundingBox GetEntityBoundingBox(Zenith_Entity* pxEntity);
 	
 	// Raycast to select entities - returns EntityID to avoid memory management issues
-	static Zenith_EntityID RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
+Zenith_EntityID RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
 	
 	// Debug rendering
-	static void RenderBoundingBoxes();
-	static void RenderSelectedBoundingBox(Zenith_Entity* pxEntity);
+void RenderBoundingBoxes();
+void RenderSelectedBoundingBox(Zenith_Entity* pxEntity);
 
 private:
-	static BoundingBox CalculateBoundingBox(Zenith_Entity* pxEntity);
+BoundingBox CalculateBoundingBox(Zenith_Entity* pxEntity);
 
 	// Test a single candidate hit for RaycastSelect. Returns true iff the model
 	// was hit (either by its physics mesh or, as fallback, its cached AABB),
 	// with the hit distance stored in fOutDistance. fMaxDistance lets callers
 	// early-out when already beyond the closest known hit.
-	static bool TestEntityHit(class Zenith_ModelComponent* pxModel,
+bool TestEntityHit(class Zenith_ModelComponent* pxModel,
 		const Zenith_Maths::Vector3& xRayOrigin,
 		const Zenith_Maths::Vector3& xRayDir,
 		float fMaxDistance,
 		float& fOutDistance);
+
+public:
+	// ===== Data members (was Zenith_SelectionSystem) =====
+	std::unordered_map<Zenith_EntityID, BoundingBox> m_xEntityBoundingBoxes;
 };
 
 #endif // ZENITH_TOOLS

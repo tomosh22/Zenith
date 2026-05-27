@@ -280,7 +280,7 @@ public:
 	 */
 	void RepositionCamera(uint32_t uGridWidth, uint32_t uGridHeight)
 	{
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

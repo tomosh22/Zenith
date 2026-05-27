@@ -26,7 +26,7 @@ namespace
 		if (!xEntityScene.IsValid())
 			return;
 
-		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+		Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
 		const char* szSceneName = (xEntityScene == xPersistentScene)
 			? "DontDestroyOnLoad"
 			: xEntityScene.GetName().c_str();
@@ -94,7 +94,7 @@ namespace
 				bAnyAvailable = true;
 				if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
 				{
-					Zenith_Editor::AddComponentToSelected(xEntry.m_strDisplayName.c_str());
+					g_xEngine.Editor().AddComponentToSelected(xEntry.m_strDisplayName.c_str());
 				}
 			}
 		}

@@ -26,7 +26,7 @@ void Zenith_SceneOperation::SetPriority(int iPriority)
 		return;
 	}
 	m_iPriority = iPriority;
-	Zenith_SceneManager::NotifyAsyncJobPriorityChanged();
+	g_xEngine.SceneOperations().NotifyAsyncJobPriorityChanged();
 }
 
 void Zenith_SceneOperation::FireCompletionCallback()

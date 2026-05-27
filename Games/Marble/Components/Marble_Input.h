@@ -12,7 +12,7 @@
  * - Marble uses IsKeyHeld for smooth physics-based movement
  */
 
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Maths/Zenith_Maths.h"
 

@@ -8,7 +8,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "TaskSystem/Zenith_TaskSystemImpl.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include <random>
@@ -73,8 +73,8 @@ void CreateGrassBladeMesh()
 		1, 3, 2
 	};
 
-	Flux_MemoryManager::InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
 }
 
 static void ExecuteRender(Flux_CommandList* pxCmdList, void* pUserData);
@@ -113,7 +113,7 @@ void Flux_GrassImpl::Initialise()
 	BuildPipelines();
 
 	// Initialize constants buffer
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), g_xEngine.Grass().m_xGrassConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), g_xEngine.Grass().m_xGrassConstantsBuffer);
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
@@ -131,9 +131,9 @@ void Flux_GrassImpl::Initialise()
 void Flux_GrassImpl::Shutdown()
 {
 	DestroyBuffers();
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Grass().m_xGrassConstantsBuffer);
-	Flux_MemoryManager::DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Grass().m_xGrassConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass shut down");
 }
 
@@ -150,7 +150,7 @@ void Flux_GrassImpl::CreateBuffers()
 	// Create instance buffer for grass blade data
 	u_int uBufferSize = GrassConfig::uMAX_TOTAL_INSTANCES * sizeof(GrassBladeInstance);
 
-	Flux_MemoryManager::InitialiseReadWriteBuffer(nullptr, uBufferSize, g_xEngine.Grass().m_xInstanceBuffer);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, uBufferSize, g_xEngine.Grass().m_xInstanceBuffer);
 	g_xEngine.Grass().m_uAllocatedInstances = GrassConfig::uMAX_TOTAL_INSTANCES;
 }
 
@@ -158,7 +158,7 @@ void Flux_GrassImpl::DestroyBuffers()
 {
 	if (g_xEngine.Grass().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.Grass().m_xInstanceBuffer);
+		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.Grass().m_xInstanceBuffer);
 	}
 }
 
@@ -221,7 +221,7 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 		GrassConfig::fLOD2_DISTANCE,
 		g_xEngine.Grass().m_fMaxDistance);
 
-	Flux_MemoryManager::UploadBufferData(g_xEngine.Grass().m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
+	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Grass().m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
 
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Grass().m_xGrassPipeline);
 	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xGrassBladeMesh.m_xVertexBuffer);
@@ -360,7 +360,7 @@ void Flux_GrassImpl::UploadInstanceData()
 	}
 
 	// Upload to GPU
-	Flux_MemoryManager::UploadBufferData(
+	g_xEngine.VulkanMemory().UploadBufferData(
 		g_xEngine.Grass().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
 		g_xEngine.Grass().m_axAllInstances.GetDataPointer(),
 		static_cast<size_t>(uUploadSize));
@@ -630,12 +630,12 @@ float Flux_GrassImpl::GetBufferUsageMB() const { return (g_xEngine.Grass().m_uVi
 #ifdef ZENITH_TOOLS
 void Flux_GrassImpl::RegisterDebugVariables()
 {
-	Zenith_DebugVariables::AddUInt32({ "Flux", "Grass", "DebugMode" }, dbg_uGrassDebugMode, 0, GRASS_DEBUG_COUNT - 1);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Grass", "DensityScale" }, dbg_fGrassDensityScale, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Grass", "MaxDistance" }, dbg_fGrassMaxDistance, 50.0f, 500.0f);
-	Zenith_DebugVariables::AddFloat({ "Flux", "Grass", "WindStrength" }, dbg_fGrassWindStrength, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "ShowChunkGrid" }, dbg_bGrassShowChunkGrid);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "FreezeLOD" }, dbg_bGrassFreezeLOD);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "Grass", "ForcedLOD" }, dbg_uGrassForcedLOD, 0, 3);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Grass", "DebugMode" }, dbg_uGrassDebugMode, 0, GRASS_DEBUG_COUNT - 1);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Grass", "DensityScale" }, dbg_fGrassDensityScale, 0.0f, 5.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Grass", "MaxDistance" }, dbg_fGrassMaxDistance, 50.0f, 500.0f);
+	g_xEngine.DebugVariables().AddFloat({ "Flux", "Grass", "WindStrength" }, dbg_fGrassWindStrength, 0.0f, 5.0f);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "Grass", "ShowChunkGrid" }, dbg_bGrassShowChunkGrid);
+	g_xEngine.DebugVariables().AddBoolean({ "Flux", "Grass", "FreezeLOD" }, dbg_bGrassFreezeLOD);
+	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Grass", "ForcedLOD" }, dbg_uGrassForcedLOD, 0, 3);
 }
 #endif

@@ -43,7 +43,7 @@ static void Setup_T1NavMeshGeneratorPerf()
 {
 	g_iPhase = kGP_Start;
 	g_bPassed = false;
-	Zenith_Profiling::ClearEvents();
+	g_xEngine.Profiling().ClearEvents();
 }
 
 static bool Step_T1NavMeshGeneratorPerf(int iFrame)
@@ -51,7 +51,7 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 	switch (g_iPhase)
 	{
 	case kGP_Start:
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kGP_WaitScene;
 		return true;
 
@@ -64,8 +64,8 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 	{
 		// Scan every entity with a static collider, log its AABB. The goal
 		// is to find outliers that stretch the navmesh bounding box.
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kGP_Done; return false; }
 
 		const Zenith_Vector<Zenith_EntityID>& axIds = pxScene->GetActiveEntities();
@@ -127,8 +127,8 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 
 	case kGP_Generate:
 	{
-		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kGP_Done; return false; }
 
 		NavMeshGenerationConfig xCfg{};
@@ -143,7 +143,7 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 			xMs.count(), uPolyCount);
 		std::printf("[T1NavMeshPerf] ---- profiling report ----\n");
 		std::fflush(stdout);
-		Zenith_Profiling::WriteTextReport(stdout);
+		g_xEngine.Profiling().WriteTextReport(stdout);
 		std::printf("[T1NavMeshPerf] ---- end profiling ----\n");
 		std::fflush(stdout);
 

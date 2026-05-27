@@ -394,7 +394,7 @@ bool Zenith_AutomatedTestRunner::Tick()
 	case HarnessPhase::WaitForAutomationComplete:
 	{
 #ifdef ZENITH_TOOLS
-		if (!Zenith_EditorAutomation::IsComplete()) return true;
+		if (!g_xEngine.EditorAutomation().IsComplete()) return true;
 #endif
 		s_xRunner.m_ePhase = HarnessPhase::WaitForSceneLoaded;
 		return true;
@@ -406,14 +406,14 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// completion, so checking active scene validity is a reasonable proxy
 		// for "Awake done". For robustness we also wait one extra frame so
 		// late-bound asset callbacks settle.
-		if (!Zenith_SceneManager::GetActiveScene().IsValid()) return true;
+		if (!g_xEngine.SceneRegistry().GetActiveScene().IsValid()) return true;
 		s_xRunner.m_ePhase = HarnessPhase::EnterPlayingMode;
 		return true;
 	}
 	case HarnessPhase::EnterPlayingMode:
 	{
 #ifdef ZENITH_TOOLS
-		Zenith_Editor::SetEditorMode(EditorMode::Playing);
+		g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 #endif
 		s_xRunner.m_ePhase = HarnessPhase::FlushFirstFrameOnStart;
 		return true;
@@ -606,7 +606,7 @@ bool Zenith_AutomatedTestRunner::Tick()
 
 		if (s_xRunner.m_iBetweenTestsFrame < 0)
 		{
-			Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+			g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 			s_xRunner.m_iBetweenTestsFrame = 0;
 			return true;
 		}
@@ -630,12 +630,12 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// future refactor introduces deferred destruction, the gate
 		// will simply wait longer rather than letting a test's Setup
 		// observe stale entity slots.
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
 		const bool bSceneReady =
 			xActive.IsValid()
-			&& Zenith_SceneManager::GetSceneData(xActive) != nullptr;
+			&& g_xEngine.SceneRegistry().GetSceneData(xActive) != nullptr;
 		const bool bDestructionDrained =
-			!Zenith_SceneManager::HasPendingDestructions();
+			!g_xEngine.SceneOperations().HasPendingDestructions();
 		if ((!bSceneReady || !bDestructionDrained)
 			&& s_xRunner.m_iBetweenTestsFrame < kMaxSettleFrames)
 		{

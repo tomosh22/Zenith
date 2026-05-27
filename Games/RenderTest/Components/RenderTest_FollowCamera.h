@@ -5,7 +5,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 // Platform aggregator: pulls in the active platform's Zenith_Window (GLFW on
 // Windows, ANativeWindow stub on Android). Direct inclusion of the Windows
@@ -51,7 +51,7 @@ public:
 
 		// Cache the player entity so OnLateUpdate doesn't re-search by name
 		// every frame. Asserts only if the entity is missing.
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 		if (pxSceneData)
 		{
 			Zenith_Entity xPlayer = pxSceneData->FindEntityByName("Player");
@@ -82,7 +82,7 @@ public:
 		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
 			return;
 
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 		if (!pxSceneData)
 			return;
 

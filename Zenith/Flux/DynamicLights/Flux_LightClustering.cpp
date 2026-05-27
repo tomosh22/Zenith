@@ -62,11 +62,11 @@ void Flux_LightClusteringImpl::Initialise()
 	// cluster loop in the fragment shader will run zero iterations.
 	Zenith_Vector<u_int> xZeroedCounts(uCLUSTER_COUNT);
 	for (u_int u = 0; u < uCLUSTER_COUNT; ++u) xZeroedCounts.PushBack(0);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(xZeroedCounts.GetDataPointer(), ulCountBufferSize, g_xEngine.LightClustering().m_xClusterLightCounts);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(xZeroedCounts.GetDataPointer(), ulCountBufferSize, g_xEngine.LightClustering().m_xClusterLightCounts);
 
 	Zenith_Vector<u_int> xZeroedIndices(uCLUSTER_COUNT * uMAX_LIGHTS_PER_CLUSTER);
 	for (u_int u = 0; u < uCLUSTER_COUNT * uMAX_LIGHTS_PER_CLUSTER; ++u) xZeroedIndices.PushBack(0);
-	Flux_MemoryManager::InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, g_xEngine.LightClustering().m_xClusterLightIndices);
+	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, g_xEngine.LightClustering().m_xClusterLightIndices);
 
 	BuildPipelines();
 
@@ -87,8 +87,8 @@ void Flux_LightClusteringImpl::Shutdown()
 {
 	if (!m_bInitialised) return;
 
-	Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightCounts);
-	Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightIndices);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightCounts);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightIndices);
 
 	m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering shut down");

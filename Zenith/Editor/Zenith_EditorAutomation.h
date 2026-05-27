@@ -9,7 +9,7 @@
 //
 // Replaces Project_CreateScenes() with a sequence of atomic editor actions.
 // Each step simulates a single user interaction (button click, field edit).
-// Execution is driven by Zenith_Editor::Update() — one step per frame with
+// Execution is driven by g_xEngine.Editor().Update() — one step per frame with
 // full frame ticking (rendering, physics, scene updates) between steps.
 //
 // High-level operations (scene create/save/unload, entity create/select,
@@ -216,168 +216,168 @@ public:
 	//--------------------------------------------------------------------------
 	// Execution
 	//--------------------------------------------------------------------------
-	static void Begin();
-	static bool IsRunning();
-	static bool IsComplete();
-	static void ExecuteNextStep();
-	static void Reset();
+void Begin();
+bool IsRunning();
+bool IsComplete();
+void ExecuteNextStep();
+void Reset();
 
 	//--------------------------------------------------------------------------
 	// Scene Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateScene(const char* szName);
-	static void AddStep_SaveScene(const char* szPath);
-	static void AddStep_UnloadScene();
+void AddStep_CreateScene(const char* szName);
+void AddStep_SaveScene(const char* szPath);
+void AddStep_UnloadScene();
 
 	//--------------------------------------------------------------------------
 	// Entity Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateEntity(const char* szName);
-	static void AddStep_SelectEntity(const char* szName);
-	static void AddStep_SetEntityTransient(bool bTransient);
+void AddStep_CreateEntity(const char* szName);
+void AddStep_SelectEntity(const char* szName);
+void AddStep_SetEntityTransient(bool bTransient);
 
 	//--------------------------------------------------------------------------
 	// Component Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_AddComponent(const char* szDisplayName);
+void AddStep_AddComponent(const char* szDisplayName);
 
 	// Convenience wrappers for common components
-	static void AddStep_AddCamera() { AddStep_AddComponent("Camera"); }
-	static void AddStep_AddUI() { AddStep_AddComponent("UI"); }
+void AddStep_AddCamera() { AddStep_AddComponent("Camera"); }
+void AddStep_AddUI() { AddStep_AddComponent("UI"); }
 	// AddStep_AddScript removed - use AddStep_AttachScript("Foo_Behaviour") instead.
 	// AttachScript implicitly adds the ScriptComponent if missing.
-	static void AddStep_AddParticleEmitter() { AddStep_AddComponent("ParticleEmitter"); }
-	static void AddStep_AddCollider() { AddStep_AddComponent("Collider"); }
-	static void AddStep_AddModel() { AddStep_AddComponent("Model"); }
-	static void AddStep_AddAnimator() { AddStep_AddComponent("Animator"); }
+void AddStep_AddParticleEmitter() { AddStep_AddComponent("ParticleEmitter"); }
+void AddStep_AddCollider() { AddStep_AddComponent("Collider"); }
+void AddStep_AddModel() { AddStep_AddComponent("Model"); }
+void AddStep_AddAnimator() { AddStep_AddComponent("Animator"); }
 
 	//--------------------------------------------------------------------------
 	// Camera Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetCameraPosition(float fX, float fY, float fZ);
-	static void AddStep_SetCameraPitch(float fPitch);
-	static void AddStep_SetCameraYaw(float fYaw);
-	static void AddStep_SetCameraFOV(float fFOV);
-	static void AddStep_SetCameraNear(float fNear);
-	static void AddStep_SetCameraFar(float fFar);
-	static void AddStep_SetCameraAspect(float fAspect);
-	static void AddStep_SetAsMainCamera();
+void AddStep_SetCameraPosition(float fX, float fY, float fZ);
+void AddStep_SetCameraPitch(float fPitch);
+void AddStep_SetCameraYaw(float fYaw);
+void AddStep_SetCameraFOV(float fFOV);
+void AddStep_SetCameraNear(float fNear);
+void AddStep_SetCameraFar(float fFar);
+void AddStep_SetCameraAspect(float fAspect);
+void AddStep_SetAsMainCamera();
 
 	//--------------------------------------------------------------------------
 	// Transform Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetTransformPosition(float fX, float fY, float fZ);
-	static void AddStep_SetTransformScale(float fX, float fY, float fZ);
+void AddStep_SetTransformPosition(float fX, float fY, float fZ);
+void AddStep_SetTransformScale(float fX, float fY, float fZ);
 	// Yaw-only rotation (radians) around the Y axis. Sufficient for the
 	// common "place an actor flat on the ground at angle θ" pattern that
 	// dominates DP scene authoring (UE author rotations imported as yaw).
-	static void AddStep_SetTransformYaw(float fYawRadians);
+void AddStep_SetTransformYaw(float fYawRadians);
 
 	// Light component field edits. Apply to the selected entity's
 	// Zenith_LightComponent — set after AddStep_AddComponent("Light").
-	static void AddStep_SetLightIntensity(float fLumens);
-	static void AddStep_SetLightRange(float fMetres);
-	static void AddStep_SetLightColor(float fR, float fG, float fB);
+void AddStep_SetLightIntensity(float fLumens);
+void AddStep_SetLightRange(float fMetres);
+void AddStep_SetLightColor(float fR, float fG, float fB);
 
 	//--------------------------------------------------------------------------
 	// UI Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateUIText(const char* szName, const char* szText);
-	static void AddStep_CreateUIButton(const char* szName, const char* szText);
-	static void AddStep_CreateUIRect(const char* szName);
-	static void AddStep_CreateUIImage(const char* szName);
-	static void AddStep_SetUIImageTexturePath(const char* szElement, const char* szTexturePath);
-	static void AddStep_SetUIAnchor(const char* szElement, int iPreset);
-	static void AddStep_SetUIPosition(const char* szElement, float fX, float fY);
-	static void AddStep_SetUISize(const char* szElement, float fW, float fH);
-	static void AddStep_SetUIFontSize(const char* szElement, float fSize);
-	static void AddStep_SetUIColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIAlignment(const char* szElement, int iAlignment);
-	static void AddStep_SetUIVisible(const char* szElement, bool bVisible);
+void AddStep_CreateUIText(const char* szName, const char* szText);
+void AddStep_CreateUIButton(const char* szName, const char* szText);
+void AddStep_CreateUIRect(const char* szName);
+void AddStep_CreateUIImage(const char* szName);
+void AddStep_SetUIImageTexturePath(const char* szElement, const char* szTexturePath);
+void AddStep_SetUIAnchor(const char* szElement, int iPreset);
+void AddStep_SetUIPosition(const char* szElement, float fX, float fY);
+void AddStep_SetUISize(const char* szElement, float fW, float fH);
+void AddStep_SetUIFontSize(const char* szElement, float fSize);
+void AddStep_SetUIColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIAlignment(const char* szElement, int iAlignment);
+void AddStep_SetUIVisible(const char* szElement, bool bVisible);
 
 	//--------------------------------------------------------------------------
 	// UI Layout Group Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateUILayoutGroup(const char* szName);
-	static void AddStep_AddUIChild(const char* szParent, const char* szChild);
-	static void AddStep_SetUILayoutDirection(const char* szElement, int iDirection);
-	static void AddStep_SetUILayoutSpacing(const char* szElement, float fSpacing);
-	static void AddStep_SetUILayoutChildAlignment(const char* szElement, int iAlignment);
-	static void AddStep_SetUILayoutPadding(const char* szElement, float fL, float fT, float fR, float fB);
-	static void AddStep_SetUILayoutFitToContent(const char* szElement, bool bFit);
-	static void AddStep_SetUILayoutChildForceExpand(const char* szElement, bool bWidth, bool bHeight);
-	static void AddStep_SetUILayoutReverse(const char* szElement, bool bReverse);
+void AddStep_CreateUILayoutGroup(const char* szName);
+void AddStep_AddUIChild(const char* szParent, const char* szChild);
+void AddStep_SetUILayoutDirection(const char* szElement, int iDirection);
+void AddStep_SetUILayoutSpacing(const char* szElement, float fSpacing);
+void AddStep_SetUILayoutChildAlignment(const char* szElement, int iAlignment);
+void AddStep_SetUILayoutPadding(const char* szElement, float fL, float fT, float fR, float fB);
+void AddStep_SetUILayoutFitToContent(const char* szElement, bool bFit);
+void AddStep_SetUILayoutChildForceExpand(const char* szElement, bool bWidth, bool bHeight);
+void AddStep_SetUILayoutReverse(const char* szElement, bool bReverse);
 
 	//--------------------------------------------------------------------------
 	// UI Toggle Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateUIToggle(const char* szName, const char* szText);
-	static void AddStep_SetUIToggleOnColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIToggleOffColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_CreateUIToggle(const char* szName, const char* szText);
+void AddStep_SetUIToggleOnColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIToggleOffColor(const char* szElement, float fR, float fG, float fB, float fA);
 
 	//--------------------------------------------------------------------------
 	// UI Overlay Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateUIOverlay(const char* szName);
-	static void AddStep_SetUIOverlayDimColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIOverlayContentSize(const char* szElement, float fW, float fH);
+void AddStep_CreateUIOverlay(const char* szName);
+void AddStep_SetUIOverlayDimColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIOverlayContentSize(const char* szElement, float fW, float fH);
 
 	//--------------------------------------------------------------------------
 	// UI Focus Navigation Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetUINavigation(const char* szElement, const char* szUp, const char* szDown, const char* szLeft, const char* szRight);
+void AddStep_SetUINavigation(const char* szElement, const char* szUp, const char* szDown, const char* szLeft, const char* szRight);
 
 	//--------------------------------------------------------------------------
 	// UI ScrollView Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_CreateUIScrollView(const char* szName);
-	static void AddStep_SetUIScrollViewContentSize(const char* szElement, float fW, float fH);
+void AddStep_CreateUIScrollView(const char* szName);
+void AddStep_SetUIScrollViewContentSize(const char* szElement, float fW, float fH);
 
 	//--------------------------------------------------------------------------
 	// UI Button Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetUIButtonNormalColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIButtonHoverColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIButtonPressedColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIButtonFontSize(const char* szElement, float fSize);
-	static void AddStep_SetUIButtonIcon(const char* szElement, const char* szTexturePath);
-	static void AddStep_SetUIButtonIconSize(const char* szElement, float fW, float fH);
-	static void AddStep_SetUIButtonIconPlacement(const char* szElement, int iPlacement);
+void AddStep_SetUIButtonNormalColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonHoverColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonPressedColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonFontSize(const char* szElement, float fSize);
+void AddStep_SetUIButtonIcon(const char* szElement, const char* szTexturePath);
+void AddStep_SetUIButtonIconSize(const char* szElement, float fW, float fH);
+void AddStep_SetUIButtonIconPlacement(const char* szElement, int iPlacement);
 
 	//--------------------------------------------------------------------------
 	// UIElement Background Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetUIBackgroundColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIBackgroundCornerRadius(const char* szElement, float fRadius);
-	static void AddStep_SetUIBackgroundBorder(const char* szElement, float fR, float fG, float fB, float fThickness);
+void AddStep_SetUIBackgroundColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIBackgroundCornerRadius(const char* szElement, float fRadius);
+void AddStep_SetUIBackgroundBorder(const char* szElement, float fR, float fG, float fB, float fThickness);
 
 	//--------------------------------------------------------------------------
 	// UIRect Styling Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetUICornerRadius(const char* szElement, float fRadius);
-	static void AddStep_SetUIGradientColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled);
-	static void AddStep_SetUIShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIRectBorder(const char* szElement, float fR, float fG, float fB, float fThickness);
+void AddStep_SetUICornerRadius(const char* szElement, float fRadius);
+void AddStep_SetUIGradientColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled);
+void AddStep_SetUIShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIRectBorder(const char* szElement, float fR, float fG, float fB, float fThickness);
 
 	//--------------------------------------------------------------------------
 	// UIText Shadow Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetUITextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled);
-	static void AddStep_SetUITextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUITextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled);
+void AddStep_SetUITextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
 
 	//--------------------------------------------------------------------------
 	// UIButton Styling Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetUIButtonCornerRadius(const char* szElement, float fRadius);
-	static void AddStep_SetUIButtonShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled);
-	static void AddStep_SetUIButtonShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIButtonGradientColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIButtonBorderColor(const char* szElement, float fR, float fG, float fB, float fA);
-	static void AddStep_SetUIButtonBorderThickness(const char* szElement, float fThickness);
-	static void AddStep_SetUIButtonTransitionDuration(const char* szElement, float fDuration);
-	static void AddStep_SetUIButtonTextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled);
-	static void AddStep_SetUIButtonTextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonCornerRadius(const char* szElement, float fRadius);
+void AddStep_SetUIButtonShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled);
+void AddStep_SetUIButtonShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonGradientColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonBorderColor(const char* szElement, float fR, float fG, float fB, float fA);
+void AddStep_SetUIButtonBorderThickness(const char* szElement, float fThickness);
+void AddStep_SetUIButtonTransitionDuration(const char* szElement, float fDuration);
+void AddStep_SetUIButtonTextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled);
+void AddStep_SetUIButtonTextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
 
 	//--------------------------------------------------------------------------
 	// Script Step Helpers
@@ -386,45 +386,45 @@ public:
 	// entity. The behaviour type name resolves deterministically to "game:Scripts/<TypeName>.zscript".
 	// Like the old AddStep_SetBehaviourForSerialization, this does NOT call OnAwake -
 	// lifecycle is dispatched on first frame / Play mode entry.
-	static void AddStep_AttachScript(const char* szBehaviourTypeName);
+void AddStep_AttachScript(const char* szBehaviourTypeName);
 
 	//--------------------------------------------------------------------------
 	// Particle Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetParticleConfig(Flux_ParticleEmitterConfig* pxConfig);
-	static void AddStep_SetParticleConfigByName(const char* szConfigName);
-	static void AddStep_SetParticleEmitting(bool bEmitting);
+void AddStep_SetParticleConfig(Flux_ParticleEmitterConfig* pxConfig);
+void AddStep_SetParticleConfigByName(const char* szConfigName);
+void AddStep_SetParticleEmitting(bool bEmitting);
 
 	//--------------------------------------------------------------------------
 	// Collider Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_AddColliderShape(int iVolumeType, int iBodyType);
+void AddStep_AddColliderShape(int iVolumeType, int iBodyType);
 
 	//--------------------------------------------------------------------------
 	// Model Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial);
+void AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial);
 
 	// Load a .zmodel into the selected entity's ModelComponent. Survives
 	// SaveScene/LoadScene because serialization writes the model GUID/path.
 	// szPath must point to static storage — same lifetime contract as every
 	// other const char* automation arg.
-	static void AddStep_LoadModel(const char* szPath);
+void AddStep_LoadModel(const char* szPath);
 
 	// Override the material at slot iIndex on the selected entity's loaded
 	// ModelInstance. Apply AFTER AddStep_LoadModel so the slot exists.
-	static void AddStep_SetModelMaterial(int iIndex, Zenith_MaterialAsset* pxMaterial);
+void AddStep_SetModelMaterial(int iIndex, Zenith_MaterialAsset* pxMaterial);
 
 	//--------------------------------------------------------------------------
 	// Terrain Step Helpers
 	//--------------------------------------------------------------------------
 	// Set one of the four terrain material slots on the selected entity's
 	// Zenith_TerrainComponent. Slot must be in [0, 4).
-	static void AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial);
+void AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial);
 
 	// Set the splatmap texture path on the selected entity's Zenith_TerrainComponent.
 	// szPath must point to static storage.
-	static void AddStep_SetTerrainSplatmapPath(const char* szPath);
+void AddStep_SetTerrainSplatmapPath(const char* szPath);
 
 	//--------------------------------------------------------------------------
 	// Prefab Variant Step Helpers
@@ -445,13 +445,13 @@ public:
 	// Capture the currently-selected entity into a prefab and save it to disk.
 	// The prefab's logical name (used by Instantiate when no override is given)
 	// is szPrefabName; the file is written to szSavePath.
-	static void AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath);
+void AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath);
 
 	// Create a new variant prefab inheriting from szBasePath and save it to
 	// szSavePath. The base must already exist on disk (typically created by a
 	// preceding AddStep_CreatePrefabFromSelected). Variant authoring failures
 	// (cycle detection, missing base) assert.
-	static void AddStep_CreatePrefabVariant(
+void AddStep_CreatePrefabVariant(
 		const char* szVariantName,
 		const char* szBasePath,
 		const char* szSavePath);
@@ -461,7 +461,7 @@ public:
 	// flat-name property reflection — see ComponentMeta.h for the supported
 	// property names (currently "Position", "Rotation", "Scale" on Transform,
 	// "Color"/"Intensity"/etc. on Light, and so on).
-	static void AddStep_AddPrefabVariantOverrideVec3(
+void AddStep_AddPrefabVariantOverrideVec3(
 		const char* szPrefabPath,
 		const char* szComponentName,
 		const char* szPropertyName,
@@ -471,7 +471,7 @@ public:
 	// it into the active scene. The new entity is selected so subsequent
 	// transform/component steps target it. Pass an empty entity name to fall
 	// back to the prefab's own name.
-	static void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName);
+void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers
@@ -483,18 +483,22 @@ public:
 	// load defers OnAwake/OnEnable until DispatchFullLifecycleInit fires.
 	// Replaces the SetInitialSceneLoadCallback + SetLoadingScene(true) +
 	// Custom + SetLoadingScene(false) sequence.
-	static void AddStep_LoadInitialScene(void (*pfnCallback)());
+void AddStep_LoadInitialScene(void (*pfnCallback)());
 
 	//--------------------------------------------------------------------------
 	// Custom Step (for game-specific operations)
 	//--------------------------------------------------------------------------
-	static void AddStep_Custom(void (*pfnFunc)());
+void AddStep_Custom(void (*pfnFunc)());
+
+public:
+	// ===== Data members (was Zenith_EditorAutomation) =====
+	Zenith_Vector<Zenith_EditorAction> m_axActions;
+	uint32_t                           m_uCurrentAction = 0;
+	bool                               m_bRunning       = false;
+	bool                               m_bComplete      = false;
 
 private:
-	static void ExecuteAction(const Zenith_EditorAction& xAction);
-
-	// Phase 5.5d: action queue + run state moved to
-	// Zenith_EditorAutomationImpl (held by Zenith_Engine).
+	void ExecuteAction(const Zenith_EditorAction& xAction);
 };
 
 #endif // ZENITH_TOOLS
