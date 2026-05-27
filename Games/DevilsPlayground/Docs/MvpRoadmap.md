@@ -2,6 +2,8 @@
 
 **Document purpose:** The single-source-of-truth task sequence for the MVP. Autonomous agents pick the next un-checked task and execute. Every task is small enough to land in one session (target: ≤ 4 hours of agent work), test-first, mergeable independently.
 
+**Last verified against `master` HEAD:** 2026-05-27. Phase 3 (assets, all entries) and the HUMAN_GATE in §4.3 (Tomos plays demo end-to-end) remain the only outstanding gates. The 24-archetype parameterised-test task in §0.2 is deliberately deferred behind Phase 3 (the 20 post-MVP archetypes guarded by `#ifdef DP_POST_MVP_ARCHETYPES` exist as test stubs only). The session-close helper in §0.3 is unticked but functionally moot under the 2026-05-15 direct-to-master operating mode — no formal session-close step exists; agents update `Status.md` / `DecisionLog.md` inline during the PR they ship. All other ticked tasks confirmed shipped against current code.
+
 **Status discipline:** Tasks are atomic. Check ✅ when **the PR is merged AND CI is green AND Status.md is updated**. Never check a task on a partial implementation.
 
 **Pre-task ritual:** Every task starts with

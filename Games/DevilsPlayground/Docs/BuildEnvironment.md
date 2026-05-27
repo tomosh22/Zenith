@@ -83,7 +83,7 @@ cd C:\dev\Zenith
 .\Tools\run_dp_tests.ps1 -Headless
 ```
 
-Expected: **122 tests run** (verified 2026-05-16 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`); current master suite is fully green in headless mode. The runner exits 0 if all pass, 1 if any fail. Each per-test JSON now includes a `durationMs` field and the runner prints the slowest-10 after every batch.
+Expected: **133 `ZENITH_AUTOMATED_TEST_REGISTER` invocations across 113 .cpp files** at HEAD (verified 2026-05-27 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`); some are `#ifdef ZENITH_INPUT_SIMULATOR`-gated, so the actual runtime test count depends on the build config. The runner exits 0 if all pass, 1 if any fail. Each per-test JSON now includes a `durationMs` field and the runner prints the slowest-10 after every batch. **Pass-rate caveat (2026-05-27):** see [Status.md](../../../Games/DevilsPlayground/Docs/Status.md) Tests line — a local headless run at HEAD with uncommitted working-tree changes reported failures + an apparent mid-batch hang; treat the canonical pass-rate as "see latest green CI" rather than a local-run snapshot until the root cause is investigated.
 
 Filter to a specific test during dev:
 
@@ -91,7 +91,7 @@ Filter to a specific test during dev:
 .\Tools\run_dp_tests.ps1 -Filter "Possession" -Headless
 ```
 
-**Note:** the `-Tier`, `-FailFast`, `-AssertionsLog` flags referenced in `TestPlan.md` §7 do not currently exist in `Tools/run_dp_tests.ps1`. MVP-0.0.4 adds them.
+**Note:** the `-Tier`, `-FailFast`, `-AssertionsLog` flags referenced in `TestPlan.md` §7 are all live in `Tools/run_dp_tests.ps1` (shipped in MVP-0.0.4 PR #8, 2026-05-12).
 
 ---
 
@@ -103,7 +103,7 @@ The `.github/workflows/dp-pr.yml` and `dp-tests.yml` workflows run on each PR. T
 - A cached Vulkan SDK installer (the GitHub Actions Vulkan setup is a known slow step).
 - `gh` is pre-installed on GitHub-hosted runners.
 
-**MVP-0.0.2 / MVP-0.0.3** author these workflows. They are *not* yet in the repo — the current `.github/workflows/msbuild.yml` builds `Games/Test`, which is wrong for DP.
+**MVP-0.0.2** (PR #5) shipped `.github/workflows/dp-pr.yml` (the `dp-build` required check); **MVP-0.0.3** (PR #7 skeleton + PR #15 re-add) shipped `.github/workflows/dp-tests.yml` (the `dp-tests` required check). Both are live as of 2026-05-13 and gate every PR to `master` per [CIPolicy.md](CIPolicy.md). The legacy `complexity.yml` runs alongside as the `complexity-gate` check. The doc-lint workflow shipped 2026-05-13 (MVP-0.3.2, PR #24).
 
 ---
 

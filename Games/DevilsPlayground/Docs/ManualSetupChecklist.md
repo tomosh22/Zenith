@@ -39,7 +39,7 @@
   cd ..
   .\Tools\run_dp_tests.ps1 -Headless
   ```
-  Result: the **122** registered tests run; current master suite is fully green in headless mode. What matters is **the build itself succeeds** so the orchestrator can run + extend it.
+  Result: the **133** `ZENITH_AUTOMATED_TEST_REGISTER` invocations are discovered + run (some `#ifdef ZENITH_INPUT_SIMULATOR`-gated; the actual runtime count depends on build config). What matters is **the build itself succeeds** so the orchestrator can run + extend it; pass-rate is tracked separately in [BuildEnvironment.md §5](BuildEnvironment.md#5-first-test-run) + [Status.md](Status.md).
 
 ## C. GitHub repository configuration (web UI work)
 

@@ -63,7 +63,7 @@ Every system, asset, and test in this scope exists to support that sentence. Eve
 | Door variants | **2** (single + double) | 6 |
 | Chest variants | **1** (placeholder) | 4 |
 | Noise machine variants | **1** (placeholder) | 3 |
-| Level | **1** — the existing `GameLevel` scene | Full Vexholme (200×200 m, 6 districts) |
+| Level | **1** — `ProcLevel` (procgen, bit-deterministic per `DP_PROCGEN_SEED`) | Full Vexholme (200×200 m, 6 districts) |
 | Distractions, charms | **0** (post-MVP) | Music box, tin whistle, tinder, rowan, salt, St. George medal |
 | Cutscenes | **0** (post-MVP) | 14 |
 
@@ -163,10 +163,10 @@ When someone asks "what does the MVP look like?" the answer is:
 
 - A single `.exe` for Windows x64 Debug Tools build, in `Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe`.
 - Boots to a main menu (text-only).
-- Click Play. Loads the GameLevel scene.
-- 30-second possession timer. Real priest with apprehend. Real navmesh with door-blocking. Real pause on Esc.
-- 5 reagents on the map. 4 archetypes of villagers (Mixamo-rigged, colour-tagged).
-- Win = inscribe all 5 reagents at the pentagram.
+- Click Play. Loads the `ProcLevel` scene (procgen, bit-deterministic; the hand-authored `GameLevel` + UE-bridge pipeline was retired 2026-05-19, PR #117).
+- Possession timer: 45 s Farmhand / Devout, 37.5 s Beggar, 22.5 s Child — the per-archetype tuning ratified 2026-05-22; reverts to GDD's canonical 30 s once the bot test bar can pass at those numbers. Real priest with apprehend. Real navmesh with door-blocking. Real pause on Esc.
+- 5 reagent slots on the map; the 2026-05-22 balance pass set `night.reagents_required_for_victory = 3` (3-of-5) as the canonical MVP value — set the tuning value back to 5 for the strict 5/5 GDD spec. 4 archetypes of villagers (placeholder S0 mesh tinted per archetype; Mixamo skinning still HUMAN_GATE on Mixamo login per MVP-3.0.1).
+- Win = inscribe `reagents_required_for_victory` reagents at the pentagram.
 - Lose = apprehended, or dawn (10-minute internal timer), or no villagers left.
 - All ~50 MVP tests green in CI.
 
