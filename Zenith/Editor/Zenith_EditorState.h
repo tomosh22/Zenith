@@ -2,7 +2,6 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Editor/Zenith_Editor.h"
 #include "AssetHandling/Zenith_AssetHandle.h"  // MaterialHandle
 #include <vector>
 #include <string>

@@ -43,20 +43,6 @@ void Flux_RenderGraph::ValidateOrphanedReads() const
         const ResourceTraffic& xTraffic = it.GetValue();
         if (xTraffic.m_xReaders.GetSize() == 0 || xTraffic.m_xWriters.GetSize() != 0) continue;
 
-        // Buffers registered via MarkBufferHostWritten are produced outside the
-        // graph (host uploads), so a Read with no graph-side writer is legitimate.
-        // Skip the orphaned-read assertion for these.
-        bool bExternallyWritten = false;
-        for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
-        {
-            if (static_cast<void*>(m_xExternallyWrittenBuffers.Get(u)) == pKey)
-            {
-                bExternallyWritten = true;
-                break;
-            }
-        }
-        if (bExternallyWritten) continue;
-
         const Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pKey);
         const char* sz = (pxRes != nullptr) ? pxRes->m_xResource.GetName().c_str() : "<unknown>";
         Zenith_Error(LOG_CATEGORY_RENDERER, "Flux_RenderGraph: resource '%s' (ptr=%p) read but never written. Reader passes:",

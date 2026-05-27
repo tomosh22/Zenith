@@ -121,16 +121,6 @@ void Flux_RenderGraph::Execute()
 		m_bEnabledMaskDirty = false;
 	}
 	CallPrepareCallbacks();
-	// Prepare callbacks may have called MarkBufferHostWritten (for buffers
-	// host-uploaded this frame). If so, re-run SynthesizeBarriers so the next
-	// reader of each marked buffer gets a TransferWrite→ShaderRead barrier.
-	// The host-written list is consumed inside SynthesizeBarriers — it stays
-	// empty across frames where no host upload happens, so this is a no-op
-	// in the common case.
-	if (m_xHostWrittenBuffers.GetSize() > 0)
-	{
-		SynthesizeBarriers();
-	}
 	RecordCommandLists();
 	SubmitRecordedLists();
 }
