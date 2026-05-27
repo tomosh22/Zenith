@@ -85,15 +85,7 @@ public:
 	// the metadata as part of deserialisation.
 	void ResetEntitiesOnly();
 
-	// Full reset: entity teardown PLUS metadata cleared — name/path emptied, build index
-	// reset to -1, flags cleared. The scene becomes indistinguishable from a freshly
-	// constructed Zenith_SceneData. Used by the destructor and by callers that want
-	// the "make this scene feel brand new" semantics.
-	void ResetAll();
-
-	// Back-compat alias for existing call sites that predate the split. Same behaviour
-	// as ResetAll. Prefer the explicit names above for new code.
-	void Reset() { ResetAll(); }
+	void Reset();
 
 	//==========================================================================
 	// Read-Only Scene Properties

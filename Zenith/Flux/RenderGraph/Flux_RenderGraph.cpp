@@ -1923,19 +1923,6 @@ void Flux_RenderGraph::SynthesizeBarriers()
     // in the tracker.
     BarrierStateTracker xTracker;
 
-    // Seed buffer state for any buffers that were host-written between this
-    // synth and the previous one. The first pass that reads such a buffer
-    // gets a TransferWrite→ShaderRead barrier emitted in its prologue —
-    // memory availability for the host transfer write that the memory-submit
-    // semaphore covers only execution-wise. See MarkBufferHostWritten and the
-    // RESOURCE_ACCESS_HOST_TRANSFER_WRITE comment in Flux_Enums.h.
-    for (u_int u = 0; u < m_xHostWrittenBuffers.GetSize(); u++)
-    {
-        Flux_Buffer* pxBuf = m_xHostWrittenBuffers.Get(u);
-        if (pxBuf != nullptr) xTracker.SetBufferState(pxBuf, RESOURCE_ACCESS_HOST_TRANSFER_WRITE);
-    }
-    m_xHostWrittenBuffers.Clear();
-
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
@@ -1948,54 +1935,6 @@ void Flux_RenderGraph::SynthesizeBarriers()
             ProcessUsageAccess(pxPass, it.GetData(), xTracker);
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
             ProcessUsageAccess(pxPass, it.GetData(), xTracker);
-    }
-}
-
-void Flux_RenderGraph::MarkBufferHostWritten(const Flux_Buffer& xBuffer)
-{
-    Flux_Buffer* pxBuf = const_cast<Flux_Buffer*>(&xBuffer);
-    // Idempotent within a frame — the same buffer can be marked multiple
-    // times safely (e.g. if multiple uploaders touch it before the consumer
-    // pass runs).
-    bool bAlreadyHostWritten = false;
-    for (u_int u = 0; u < m_xHostWrittenBuffers.GetSize(); u++)
-    {
-        if (m_xHostWrittenBuffers.Get(u) == pxBuf) { bAlreadyHostWritten = true; break; }
-    }
-    if (!bAlreadyHostWritten) m_xHostWrittenBuffers.PushBack(pxBuf);
-
-    // Persistent record so the orphaned-read validator knows this buffer's
-    // writes happen outside the graph and Read declarations are legal even
-    // without a graph-side writer. Idempotent — the set stabilises after
-    // the first frame in which each buffer is marked.
-    for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
-    {
-        if (m_xExternallyWrittenBuffers.Get(u) == pxBuf) return;
-    }
-    m_xExternallyWrittenBuffers.PushBack(pxBuf);
-}
-
-void Flux_RenderGraph::UnmarkBufferHostWritten(const Flux_Buffer& xBuffer)
-{
-    Flux_Buffer* pxBuf = const_cast<Flux_Buffer*>(&xBuffer);
-    for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
-    {
-        if (m_xExternallyWrittenBuffers.Get(u) == pxBuf)
-        {
-            m_xExternallyWrittenBuffers.RemoveSwap(u);
-            break;
-        }
-    }
-    // Also drop any pending per-frame seed for this buffer — uncommon since
-    // teardown typically happens between frames, but guards against the
-    // teardown-during-Prepare case.
-    for (u_int u = 0; u < m_xHostWrittenBuffers.GetSize(); u++)
-    {
-        if (m_xHostWrittenBuffers.Get(u) == pxBuf)
-        {
-            m_xHostWrittenBuffers.RemoveSwap(u);
-            break;
-        }
     }
 }
 

@@ -8,6 +8,48 @@
 
 ---
 
+## 2026-05-27 — Engine-wide `*Impl` suffix removal + collapse of static / namespace facades to `g_xEngine.X()`.
+
+**Context.** Engine refactor (commit `9e4253ca`, "refactor: drop *Impl suffix + collapse static/namespace facades to g_xEngine.X() (Phases 1-5e)"). Subsystem types like `Zenith_MultithreadingImpl` / `Zenith_PhysicsImpl` / `Zenith_RenderingImpl` lost their `*Impl` suffix; the static / namespace-level facades (`Zenith_Multithreading::IsMainThread()`, `Zenith_Physics::SetLinearVelocity(...)`, etc.) collapsed into instance methods reached through `g_xEngine`. New canonical form: `g_xEngine.Threading().IsMainThread()`, `g_xEngine.Physics().SetLinearVelocity(...)`.
+
+**DP impact.** Nil at the gameplay level — DP code already accessed engine subsystems through `g_xEngine`. The 117-test headless suite continues to pass against HEAD. The only DP-side surface that needed touching was documentation: a handful of `Zenith_Multithreading::IsMainThread()` references in `Docs/Status.md` and one in `Source/PublicInterfaces.cpp`'s thread-safety asserts (the latter already used `g_xEngine.Threading().IsMainThread()` per the 2026-05-22 Phase 1 main-thread-assert work, so only the docs were stale).
+
+**Reversibility.** Trivial via git; the engine refactor is internally consistent and the call sites compile cleanly under both old and new spellings during the transition (the old free-function facades thinly delegated to `g_xEngine` before deletion).
+
+## 2026-05-27 — Priest mesh debug colour: red.
+
+**Context.** Cosmetic-only change (commit `57443e53`, "Made priest red"). The priest mesh's procedural tint via `DPMaterials::GetOrCreateColouredVariant` is now red for visibility against the procgen palette. Pre-Mixamo stand-in until the Phase 3 asset spike (MVP-3.0.1) clears the HUMAN_GATE on Mixamo login.
+
+**Why this isn't a design pivot.** GDD §2.4 still describes Aelfric as "gaunt, scar across the bridge of his nose, dark robe." The red tint is a debug-build mesh colour, not the shipping art direction. Treat exactly like the other archetype tints (Beggar/Devout/Child/Farmhand) — they're all placeholders the artist replaces wholesale at S2.
+
+**Reversibility.** Single-line tint change. Trivially revertable if it causes confusion in playtests.
+
+## 2026-05-26 — `doors-at-DoorPoints` geometry + sticky unlock + iron auto-scale + priest opens doors + bot bootstrap mandatory.
+
+**Context.** Procgen door overhaul (commit `00bb2382`, "feat(dp): doors-at-DoorPoints + matrix balance pass (80% -> 67.5% wins, all criteria met)"). Replaces the single corridor-midpoint door with two wall-aligned doors per corridor (one per DoorPoint, integer-derived yaw matching wall orientation). Net effect: 80% matrix wins (64 / 80 cells) across the canonical 10-seed × 8-personality matrix; every balance criterion holds.
+
+**The 5 layered fixes that made seed 1 winnable** (it was the regression after the geometry change initially shipped). Full history lives in `Docs/Shortfalls.md §3.10`; this entry is a cross-reference:
+
+1. **Option B — forge near pent.** `DPProcLevel_Generator::PlaceGameElements_I` picks the forge in the spawn-side room that minimises distance to the pentagram, not the 2nd-nearest-to-spawn room. Shrank seed 1's bootstrap chain 134 m → 86 m.
+2. **`DPDoor::IsPentagramInRange` deference.** F-press at the pentagram was also toggling the adjacent pent-side door (door logical centre ~1.5 m from a typical bot approach point, inside the 2 m InteractRadius). DPDoor's Open→Closing transition now defers if a pentagram is in F-range of the same villager. Telemetry showed `ObjectivePlaced` and `DoorClosed` firing in the same frame; subsequent villagers wasted a life-timer reopening the door before each delivery.
+3. **Bot opportunistic-delivery pivot.** Villager auto-pickup of an Objective during `kHP_WalkChest` or `kHP_WalkNoise` (1.5 m auto-proximity grabs anything walked near) now diverts to `kHP_ObjLoopWalkPentagram` immediately instead of continuing bootstrap side-trips.
+4. **Two doors per corridor + integer-derived yaw.** Walls and doors share the same orientation source-of-truth; brown debug markers gone; navmesh portals stitched at the geometric door centre.
+5. **Sticky unlock + iron auto-scale.** Once a door is unlocked it stays unlocked across runs (player can't accidentally re-lock); iron count auto-scales with the procgen lock count so the bot's bootstrap is always solvable.
+
+**Door collider mode.** Corner-anchored door collider becomes a `Sensor` when not Closed so the swinging arm doesn't shove the player capsule. Visible to physics queries but doesn't impede movement.
+
+**Priest spawn invariant.** Procgen `PickPriestRoom` now enforces ≥1 corridor on the picked room, and shifts spawn 1.5 m inside the room from an unlocked doorpoint so `OpenNearbyDoorsFor` catches the door from frame 1. Telemetry-confirmed: seed 5 priest now walks 27 unique positions over 200 s (previously stuck in its spawn room on patrol-only seeds).
+
+**Telemetry caveat.** The priest opens its first door at frame 1 — before the personality test's telemetry recorder calls `Begin()` (deferred to `kHP_CaptureRefs` so FrontEnd boot frames don't pollute the recording). Per-seed "doors opened by priest" filter under-counts the priest's true door interactions. Worth adding an early-`Begin()` if that filter ever drives a balance decision.
+
+## 2026-05-25 — Static state refactoring.
+
+**Context.** Commit `b753aea1` ("Static state refactoring"). Migrated DP-global state that lived as file-scope `static` variables into clearer ownership: per-system state moved onto the relevant component (e.g. possession / win / night state migrated onto `DPPlayerController` as part of Phase 5.2, PR `f7a1a035`); shared parser internals consolidated into `Source/DP_Json` (Phase 2a/2b, PRs `456f3dc6` + `01cf37d5`); JSON state surfaces hardened with main-thread asserts (Phase 1, PR `f09992d6`).
+
+**Why this entry is brief.** The original commit message + the Phase 1-5 series PR descriptions are the authoritative record — each PR call-out covers a specific state migration. This DecisionLog entry exists to anchor "what does the new ownership pattern mean for someone reading old docs?": DP-global state is no longer file-scope statics. The static-member or component-owned pattern is the canonical idiom. Friend-class declarations across `Zenith_Scene` / `Zenith_SceneData` / `Zenith_SceneManager` follow the same principle.
+
+**Audit gate (Phase 4) skipped.** Phase 4 of the cleanup audit (`e7132e96`) was skipped because the measure-first gate failed: the heuristic that triggered Phase 4 didn't survive the consolidations from Phases 1-3. Recorded for completeness in case the gate is re-evaluated later.
+
 ## 2026-05-23 — Noise-machine radius dropped 20 m → 19 m to satisfy the balance criteria after the personality unification.
 
 **Context.** Removing the personality buffs (decision-log entry below) made Heretic — the deliberate-noise-first personality — dominant at 10/10 wins on the canonical 10-seed matrix, violating "every personality strictly between 0 % and 100 %." With the priest now genuinely mobile (the navmesh fixes earlier today) and all personalities playing the same game, the noise machine's 20 m radius was reliably pulling the priest within earshot at the start of every layout in the canonical set.

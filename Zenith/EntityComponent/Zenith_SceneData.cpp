@@ -67,7 +67,7 @@ Zenith_SceneData::~Zenith_SceneData()
 	// Destructor uses ResetAll so any lingering metadata is scrubbed — matters in
 	// tests that inspect scene state after shutdown, and defensively guards against
 	// a later refactor that recycles SceneData memory.
-	ResetAll();
+	Reset();
 }
 
 void Zenith_SceneData::DisableEntity(Zenith_EntityID xID)
@@ -208,7 +208,7 @@ void Zenith_SceneData::ResetEntitiesOnly()
 	m_bIsBeingDestroyed = false;
 }
 
-void Zenith_SceneData::ResetAll()
+void Zenith_SceneData::Reset()
 {
 	// Entity teardown first — keeps the existing invariants around lifecycle dispatch,
 	// render-task safety, and cache invalidation intact.

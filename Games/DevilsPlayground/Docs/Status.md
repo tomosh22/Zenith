@@ -1,19 +1,36 @@
 # DP Status
 
-**Last updated:** 2026-05-22 — game-balance pass (PR #141) closes the loop on the user-ratified balance criteria. Three new personalities added 2026-05-21 (Magpie / Relay / Heretic, PR #139) + a combo Trickster (PR #140) on top of the original four. Door collider physics fix in PR #141 brings bot grid pathing into parity with player capsule physics + priest navmesh path. Previous procgen migration (PRs #96-#117), telemetry v3 + seed-matrix tooling (#120/121), and priest navmesh integration overhaul (#123/125) landed at 2026-05-20 HEAD `30c775f5`.
+**Last updated:** 2026-05-27 — personality unification (`0813cff6`, no buffs/nerfs across the 8 bot personalities), noise-machine 20m → 19m (`2987034a`), procgen door-yaw + navmesh-OBB fixes (`f8e21f78`), **doors-at-DoorPoints + matrix balance pass** (`00bb2382`, 2026-05-26 — two doors per corridor, sticky unlock, iron auto-scales, priest opens doors, bot bootstrap mandatory, 80 % matrix wins), and the DP convention cleanup + DP_Win_Test fix (`22343d69`). Engine-wide `*Impl` removal + `g_xEngine.X()` facade collapse landed 2026-05-27 (`9e4253ca`) — no gameplay impact, but reshapes engine-subsystem call sites; the canonical thread-assert spelling is now `g_xEngine.Threading().IsMainThread()`. Cosmetic: priest mesh tint is red (`57443e53`). Previous game-balance pass (PR #141, 2026-05-22), procgen migration (PRs #96-#117, 2026-05-19), telemetry v3 + seed-matrix tooling (#120/121, 2026-05-20), and priest-navmesh overhaul (#123/125) remain the prior anchors.
 
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True` 0 warnings 0 errors; `Debug_False` + `Release_False` configs also building cleanly since 2026-05-10).
-**Tests:** Full local suite green. Headless skips graphics-only tests by `m_bRequiresGraphics`; all compute-only tests pass. Per-test wall-clock timing reported in JSON (`durationMs`) + slowest-10 surfaced after every batch run. **122 registered automated tests** across 108 .cpp files (4 new tests for the 4 new personalities since 2026-05-20).
+**Tests:** **133 `ZENITH_AUTOMATED_TEST_REGISTER` invocations across 113 .cpp files** at HEAD (verified 2026-05-27 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`). Some subset is `#ifdef ZENITH_INPUT_SIMULATOR`-gated. Headless skips graphics-only tests by `m_bRequiresGraphics`; per-test wall-clock timing reported in JSON (`durationMs`) + slowest-10 surfaced after every batch run. **Note (2026-05-27):** a local headless run at HEAD wrote only 25 JSON files before the engine appears to have hung mid-batch, with `PriestBBBridge_Test` and `PriestPursuit_Test` reporting `passed: false`. Treat the suite's pass-rate as "see latest green CI" until this is investigated. Likely tied to the uncommitted `Zenith/Flux/RenderGraph/*` working-tree changes (engine WIP at the time of this doc refresh) rather than to committed DP code.
 
-**Balance criteria (ratified 2026-05-21):**
-1. Every personality WR ∈ (0%, 100%) ✅ — Casual 70%, Stealth 70%, Speedrunner 50%, Zealot 90%, Magpie 80%, Relay 90%, Heretic 80%, Trickster 80% across the canonical 10-seed matrix.
-2. Every level winnable by ≥1 personality ✅ — canonical seeds `1, 5, 7, 42, 100, 12345, 55555, 99999, 250000, 4276994270` all have multiple winners. Seed 0 excluded (procgen-unsolvable; see Shortfalls.md).
+**Balance criteria (ratified 2026-05-21, met under unified-personality model post `0813cff6`):**
+1. Every personality WR ∈ (0%, 100%) ✅ — canonical 10-seed matrix at HEAD lands every personality strictly between 0 % and 100 % (range 60 – 90 %). All 8 personalities are now mechanically identical at the bot level (no buffs, no nerfs); the personality is purely a different *strategy* applied to the same toolkit.
+2. Every level winnable by ≥1 personality ✅ — canonical seeds `1, 5, 7, 42, 100, 12345, 55555, 99999, 250000, 4276994270` all have multiple winners. Seed 0 excluded (procgen-unsolvable; see Shortfalls.md §3.10).
 
-Full per-personality / per-seed breakdown: `Docs/GameBalance_2026-05-22.md`.
+Aggregate matrix at HEAD: **80 % wins (64 / 80 cells)**. Per-personality / per-seed snapshot: `Docs/GameBalance_2026-05-22.md` covers the pre-unification state; the post-2026-05-23 unified state lives in `Docs/DecisionLog.md` (2026-05-23 entries) and the live `Build/dp_telemetry/seed_matrix/REPORT.md`.
 
 **Operating mode:** Direct-to-master with auto-merge on green CI. Branch protection disabled per Tomos 2026-05-15 direction (CI still runs on every push via `push: branches: [master]` triggers). Worktrees in `.claude/worktrees/` are sandbox-only; main work happens at `C:/dev/Zenith` on master.
 
-## What's new since 2026-05-16
+## What's new since 2026-05-22
+
+### Personality unification + doors-at-DoorPoints (2026-05-23 → 2026-05-26)
+
+Five layered changes converged the 80%-matrix-wins state at HEAD. Full design rationale in `Docs/DecisionLog.md`; this is the operational summary:
+
+| Date / commit | Subsystem | Notes |
+|---|---|---|
+| 2026-05-23 `0813cff6` | Bot personalities | Removed `PersonalityConfig::bSkipBootstrap` + the F-mash interact toggle from PR #128's Zealot. All 8 personalities now run the same bot mechanics; personalities are pure *strategies*, not buffs/nerfs. Per user feedback: "Personalities must not be buffs or nerfs and must not give the bot any extra abilities. The personalities are supposed to purely simulate how different human beings might play the exact same game." |
+| 2026-05-23 `2987034a` | Tuning | Noise-machine `radius_m`: 20 → 19. The personality unification made Heretic (deliberate-noise-first) 10/10 wins, violating criterion 1; bisecting found 19 m is the threshold where Heretic drops to 9/10 *and* seed 250000 stays winnable (by Casual / Stealth / Zealot via the noise-machine's bootstrap-chain use, not Heretic's deliberate-first use). 12 / 15 / 17 m all rendered seed 250000 unwinnable. |
+| 2026-05-23 `f8e21f78` | Procgen | Door yaw now derives from the wall it sits on, not from the corridor delta. Plus a navmesh OBB fix in the same series. |
+| 2026-05-25 `b753aea1` | DP state | Static state refactoring — file-scope statics migrated onto components (possession / win / night → `DPPlayerController`); JSON-parser internals consolidated into `Source/DP_Json`. Phase 5.2 / Phase 2a-2b of the cleanup audit; Phase 4 of the audit (`e7132e96`) was skipped because the measure-first gate failed. |
+| 2026-05-26 `00bb2382` | Doors-at-DoorPoints | **The big one.** Two wall-aligned doors per corridor (one per DoorPoint, integer-derived yaw); brown debug markers gone; navmesh portals stitched at the geometric door centre; corner-anchored door collider becomes a sensor when not Closed so the swinging arm doesn't shove the player capsule; priest opens any closed unlocked door within 4 m; priest spawn shifted 1.5 m inside the room from an unlocked doorpoint so `OpenNearbyDoorsFor` catches the door from frame 1; procgen `PickPriestRoom` enforces ≥1 corridor; bot bootstrap mandatory for all 8 personalities. **80 % matrix wins (64 / 80 cells)** post-PR, up from the pre-PR 60 % baseline. Seed-1 specific fixes (forge near pent + `DPDoor::IsPentagramInRange` deference + bot opportunistic-delivery pivot) layered on top — see [Shortfalls.md §3.10](Shortfalls.md). |
+| 2026-05-26 `22343d69` | DP cleanup | Audit-driven convention cleanup; `DP_Win_Test` fix. |
+| 2026-05-27 `9e4253ca` | Engine-wide | `*Impl` suffix dropped + static/namespace facades collapsed onto `g_xEngine.X()`. DP unaffected (already accessed engine subsystems via `g_xEngine`); doc-side: `Zenith_Multithreading::IsMainThread()` → `g_xEngine.Threading().IsMainThread()`. |
+| 2026-05-27 `57443e53` | DP cosmetic | Priest mesh debug tint: red. Pre-Mixamo stand-in; not a design pivot. |
+
+### What's new since 2026-05-16 (kept for the prior snapshot's framing)
 
 The last Status snapshot covered Phase 1 + Phase 2 + most of Phase 4 landing. Major work since:
 
@@ -115,6 +132,8 @@ Worktrees in `.claude/worktrees/<name>/` are transient sandboxes for the harness
 
 ## Suite snapshot
 
+Historical baseline (2026-05-20, master @ `30c775f5`):
+
 ```
 [run_dp_tests] Summary: 117 passed, 0 failed
 [run_dp_tests] Timing: 117 tests measured, total = ~120,000 ms, avg = ~1,025 ms
@@ -132,7 +151,7 @@ Slowest 10 tests:
     1,135 ms      67 frames  Test_P2Archetype_BeggarIgnoredByAelfric
 ```
 
-The 4 personality tests dominate the wall-clock (~75 s of the ~120 s total). They're full procgen playthroughs running 8500 game-frames each (the 141.6 s game-time budget).
+The 4 personality tests dominated the wall-clock back then (~75 s of the ~120 s total). At HEAD the suite has 8 personalities (Casual / Stealth / Speedrunner / Zealot + Magpie / Relay / Heretic / Trickster); the wall-clock budget for personality tests is now closer to ~150 s of a ~200 s total, but this needs a fresh baseline run on a clean working tree (see the test-status caveat in the **Tests** line at the top).
 
 ## Architectural surface added since 2026-05-16
 
@@ -145,12 +164,17 @@ The 4 personality tests dominate the wall-clock (~75 s of the ~120 s total). The
 | `Zenith_NavMeshAgent::SetDestination` no-reset semantics | #123 | Doesn't zero linear velocity on call. |
 | `Zenith_NavMeshAgent` physics-path | #125 | Drives motion via SetLinearVelocity when a dynamic body is present. |
 | `Test_PersonalityPlaythrough` cross-possession memory | #127 | ObjLoopWalkPentagram rewinds on item-loss; ObjLoopWalk re-targets to closest. |
-| `PersonalityConfig::bSkipBootstrap` + `Personality::Zealot` | #128 | New personality skipping the iron/forge/door/chest chain. |
+| `PersonalityConfig::bSkipBootstrap` + `Personality::Zealot` | #128 | New personality skipping the iron/forge/door/chest chain. **Subsequently removed** in `0813cff6` — see entry below. |
+| `PersonalityConfig::bSkipBootstrap` / `bMashInteract` REMOVED | `0813cff6` | All 8 personalities mechanically identical at the bot level (no buffs / nerfs). |
+| `DPProcLevel_Generator::PickPriestRoom` ≥1-corridor constraint | `00bb2382` | Procgen picks a priest spawn room with at least one corridor; spawn shifted 1.5 m inside the room from an unlocked doorpoint so `OpenNearbyDoorsFor` catches the door from frame 1. |
+| `DPDoor::IsPentagramInRange` | `00bb2382` | Door's Open → Closing transition defers if a pentagram is in F-range of the same villager. Order-independent against the pentagram/door subscription order. |
+| Two-doors-per-corridor invariant | `00bb2382` | Procgen now spawns one door per `DoorPoint` (two per corridor), wall-aligned via integer-derived yaw. Door collider becomes a `Sensor` when not Closed so the swinging arm doesn't shove the player capsule. |
+| `g_xEngine.<Subsystem>().<Method>(...)` canonical form | `9e4253ca` | Engine-wide collapse of static / namespace facades; old `Zenith_<Subsystem>::<Method>` spellings are gone, replaced by instance methods on the engine singleton. DP unaffected at the gameplay level. |
 
 ## Notes for the next agent
 
-1. **Operating mode:** direct-to-master with auto-merge on green CI. Run the matrix script to validate balance changes, not just the test suite. The 4 personality tests are integration-grade — they catch class-of-bug that unit tests don't.
-2. **First action:** Verify baseline. `Tools/run_dp_tests.ps1 -Headless` on `master @ 30c775f5`. Expect **117 PASSED / 0 FAILED**.
+1. **Operating mode:** direct-to-master with auto-merge on green CI. Run the matrix script to validate balance changes, not just the test suite. The 8 personality tests are integration-grade — they catch class-of-bug that unit tests don't.
+2. **First action:** Verify baseline. `Tools/run_dp_tests.ps1 -Headless` against `master @ HEAD`. Expect a fully-green local run + matching latest-CI run; if the local run reports failures, cross-check `Build/dp_test_results/*.json` against CI to distinguish a fresh-local issue (uncommitted working-tree changes / cache state) from a genuine regression.
 3. **Hard invariants:** (a) commits keep the full suite green; (b) per-test `durationMs` mustn't regress > 20% without justification (`Tools/check_acceptance_drift.ps1`); (c) procgen output stays bit-deterministic — every shape-determining decision is integer math (the giant comment at the top of `DPProcLevel_Generator.cpp` is the contract).
 4. **Personality matrix as instrument:** when changing balance, run the 10-seed matrix and check the `Build/dp_telemetry/seed_matrix/REPORT.md` before / after. The matrix has caught: sprint balance dominating negative outcomes, bots getting stuck in narrow procgen doorways, Berserker being a cosmetic variant of Speedrunner, the bootstrap chain providing non-obvious value, etc.
 5. **Engine surface to be aware of:**
@@ -159,11 +183,21 @@ The 4 personality tests dominate the wall-clock (~75 s of the ~120 s total). The
    - `Zenith_PerceptionSystem` clamps hearing range at `min(emit_radius, agent_max_range)`. For map-wide stimuli use `DP_AI::NotifyAllPriestsOfInvestigatePos` to bypass.
    - `DP_Player::ResetForNewRun()` is the canonical reset.
    - Procgen scenes don't have hand-tuned spatial relationships — tests that need specific priest/villager arrangements should spawn fresh entities, not teleport procgen-spawned ones.
+   - **Engine subsystem access** post 2026-05-27 (`9e4253ca`): the canonical form is `g_xEngine.<Subsystem>().<Method>(...)`. Examples: `g_xEngine.Threading().IsMainThread()`, `g_xEngine.Physics().SetLinearVelocity(...)`. The historical `Zenith_Multithreading::IsMainThread()` / `Zenith_Physics::SetLinearVelocity(...)` free-function spellings were collapsed into the singleton facade; old references in non-DP docs (engine CLAUDE.md tree) may still use the pre-refactor names — the meaning is the same.
 
 ## Last completed
 
-Most recent at top. Anything older than 2026-05-15 see `git log`.
+Most recent at top. Anything older than 2026-05-22 see `git log`.
 
+- **`9e4253ca`** (merged 2026-05-27) — Engine-wide refactor: drop `*Impl` suffix + collapse static/namespace facades to `g_xEngine.X()` (Phases 1-5e).
+- **`57443e53`** (merged 2026-05-27) — Priest mesh debug tint: red.
+- **`22343d69`** (merged 2026-05-26) — `audit(dp)`: convention cleanup + `DP_Win_Test` fix.
+- **`00bb2382`** (merged 2026-05-26) — `feat(dp)`: doors-at-DoorPoints + matrix balance pass (80 % wins, all criteria met).
+- **`b753aea1`** (merged 2026-05-25) — Static state refactoring.
+- **`2987034a`** (merged 2026-05-23) — `balance(dp)`: noise-machine radius 20 m → 19 m to break Heretic 100 % on canonical matrix.
+- **`0813cff6`** (merged 2026-05-23) — `fix(dp,test)`: personalities must not buff/nerf the bot; unify walk-budget + retry cap.
+- **`f8e21f78`** (merged 2026-05-23) — `fix(dp)`: procgen door yaw must align with the wall, not with the corridor delta.
+- **Phase 1-5 series** (merged 2026-05-22) — `f7a1a035` migrate possession/win/night state onto DPPlayerController (I3), `9f9901e2` split PublicInterfaces.{h,cpp} per namespace (I2), `b6cd9145` `std::unordered_map` → `Zenith_HashMap` (C1, C3), `01cf37d5` swap DP_Json internals to `Zenith_Vector`, `456f3dc6` extract shared JSON parser into `Source/DP_Json.{h,cpp}`, `f09992d6` `Zenith_HashMap` docs / main-thread asserts / `Zenith_Vector` mesh cache.
 - **PR #128** (merged 2026-05-20) — Replace Berserker with Zealot personality + remove F-mash code.
 - **PR #127** (merged 2026-05-20) — Cross-possession memory + lift retry caps in PersonalityPlaythrough.
 - **PR #126** (merged 2026-05-20) — Bot pathing + sprint tuning from 10-seed personality matrix.

@@ -37,9 +37,11 @@ Test to validate: instrument the bot's starting position on each possession, plu
 
 **Status:** asked 2026-05-20. Acting on best guess.
 
+**Update 2026-05-27:** the 2026-05-26 doors-at-DoorPoints PR (`00bb2382`) addressed hypothesis 1 indirectly via the `kHP_WalkChest` / `kHP_WalkNoise` opportunistic-delivery pivot — villagers that auto-pick-up an Objective while traversing the bootstrap chain now divert straight to the pentagram instead of continuing side-trips. Under the unified-personality model (post `0813cff6`, all 8 personalities mechanically identical at the bot level), the canonical 10-seed matrix at HEAD sits at 80% wins (64/80) with Zealot at 70% / Speedrunner at 60%. The original framing "Zealot delivers fewer objectives despite skipping bootstrap" is no longer a clean comparison — bootstrap is now mandatory for *all* personalities so the gap is closed by construction. **Question recharacterised:** does the bootstrap-skipped variant (cf. the deprecated `bSkipBootstrap` flag from the PR #128 era) still have a *theoretical* place in DP's design, e.g. as a stress test for "what if the bot were dumb"? Acting on best guess: no — the bootstrap is now the canonical bot path, full stop.
+
 ---
 
-### ⚠️ Q-2026-05-20-BAL01 — `reagents_required_for_victory` 5 → 3 for MVP playtest builds?
+### ✅ Q-2026-05-20-BAL01 — `reagents_required_for_victory` 5 → 3 for MVP playtest builds?
 
 **Context:** The current MVP-DoD requires 5 objective deliveries to win. In the latest matrix (PR #128), only 2-3 of 40 cells reach 5; the win condition is genuinely difficult for the bot. Reducing to 3 would put ~18/40 cells over the win bar -- a more sensitive instrument for balance changes, plus easier on a human playtester running through quick demo loops.
 
@@ -49,7 +51,7 @@ The GDD §1 spec is 5 reagents per Night for the shipping game. The question is 
 
 **Cost of getting it wrong:** low. Tuning value; trivially reversible.
 
-**Status:** asked 2026-05-20. Acting on best guess.
+**Status:** RESOLVED 2026-05-22 via PR #141. The game-balance pass landed `night.reagents_required_for_victory = 3` as the canonical MVP value (see `CLAUDE.md` L7-8: "win condition is `popcount(collected_mask) >= night.reagents_required_for_victory` (currently 3-of-5)"). Old 5/5 behaviour remains reachable by setting the tuning value to 5; no `MVP_PLAYTEST` define was needed — the value lives in `Config/Tuning.json` where matrix runs / playtests can override without a rebuild. The env-var override proposed in the best-guess was a heavier mechanism than necessary; the JSON tuning value already does the job.
 
 ---
 
@@ -135,7 +137,7 @@ I tried emitting all six box faces. Polygon count was unchanged (1681 polygons, 
 
 ---
 
-### ⚠️ Q-2026-05-12-003 — Worktree-based orchestrator sessions hit a long tail of missing-binary problems.
+### ✅ Q-2026-05-12-003 — Worktree-based orchestrator sessions hit a long tail of missing-binary problems.
 
 **Context:** The Claude Code harness placed this orchestrator session in `.claude/worktrees/wizardly-payne-c210e5/`. Operating from the worktree, I had to copy these from the main repo to make the build/test pipeline work:
 
@@ -155,7 +157,7 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 **Cost of getting it wrong:** moderate. ~30 minutes of this session burned on copying binaries.
 
-**Status:** asked 2026-05-12. Acting on best guess.
+**Status:** RESOLVED 2026-05-12 via OrchestratorPlaybook Invariant 2 ("No git worktrees. All work happens on the main repo's checkout at `C:\dev\Zenith\` on `master` with per-task feature branches"). This invariant was ratified in the round-2 peer review reconciliation; the "prefer the main repo" guidance in the best-guess became a hard constraint. The harness still occasionally drops sessions into `.claude/worktrees/<name>/` — when that happens, the orchestrator treats the worktree as a transient sandbox per Status.md L87 and operates against `C:\dev\Zenith\` directly. No `dp_session_init.ps1` was needed; the invariant in OrchestratorPlaybook is the canonical guidance.
 
 ---
 
@@ -220,7 +222,7 @@ Verified locally on 2026-05-13: `--headless` + non-graphics → PASS, `--headles
 
 ---
 
-### ⚠️ Q-2026-05-12-007 (original framing — kept for historical context) — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
+### ✅ Q-2026-05-12-007 (original framing — kept for historical context) — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
 
 **Context:** MVP-0.0.3 attempted to land `.github/workflows/dp-tests.yml` as a PR gate. The workflow's build / DLL-provisioning pieces all worked (vcpkg packages cached, Vulkan SDK 1.3.290.0 installed, Slang v2026.1 fetched, OpenCV 4.10.0 DLL fetched, MSBuild green). What FAILS is **running the exe** on the GitHub windows-latest runner:
 
