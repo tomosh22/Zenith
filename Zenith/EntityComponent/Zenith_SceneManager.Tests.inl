@@ -13156,7 +13156,7 @@ void Zenith_SceneTests::TestB7_ResetAll_ClearsMetadata(){
 	pxData->m_strPath = "B7_ClearAll_Path";
 	pxData->m_iBuildIndex = 99;
 
-	pxData->ResetAll();
+	pxData->Reset();
 
 	ZENITH_ASSERT_TRUE(pxData->GetName().empty(), "Name must be cleared by ResetAll");
 	ZENITH_ASSERT_TRUE(pxData->GetPath().empty(), "Path must be cleared by ResetAll");
