@@ -219,7 +219,15 @@ static void UpdateSSGIConstants()
 {
 	dbg_xSSGIConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSGIConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
-	dbg_xSSGIConstants.m_uFrameIndex = g_xEngine.FluxRenderer().GetFrameCounter();
+	// SSGI has no temporal accumulation, so rotating the blue-noise field per
+	// frame produces visible shimmer rather than integrating across frames.
+	// The blue noise itself is still useful for spatial dithering, multi-ray
+	// spread, and feeding the spatial DenoiseH/V passes — only the per-frame
+	// rotation has no consumer. Pin to 0 so each pixel samples a stable
+	// rotation every frame. (Was implicitly 0 historically because
+	// Flux::GetFrameCounter() returned 0 forever — db34fcd2 fixed the
+	// underlying counter and surfaced this latent design mismatch.)
+	dbg_xSSGIConstants.m_uFrameIndex = 0;
 
 	// Clamp start mip to valid range
 	if (dbg_xSSGIConstants.m_uStartMip >= dbg_xSSGIConstants.m_uHiZMipCount)

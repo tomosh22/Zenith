@@ -305,7 +305,15 @@ static void UpdateSSRConstants()
 	// Update constants from debug variables and HiZ system
 	dbg_xSSRConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSRConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
-	dbg_xSSRConstants.m_uFrameIndex = g_xEngine.FluxRenderer().GetFrameCounter();
+	// SSR has no temporal accumulation, so rotating the blue-noise field per
+	// frame produces visible shimmer rather than integrating across frames.
+	// The blue noise itself is still useful for spatial dithering, multi-ray
+	// spread, and feeding the spatial DenoiseH/V passes — only the per-frame
+	// rotation has no consumer. Pin to 0 so each pixel samples a stable
+	// rotation every frame. (Was implicitly 0 historically because
+	// Flux::GetFrameCounter() returned 0 forever — db34fcd2 fixed the
+	// underlying counter and surfaced this latent design mismatch.)
+	dbg_xSSRConstants.m_uFrameIndex = 0;
 
 	// Resolution-based binary search iterations for sub-pixel hit precision.
 	// Half-res ray origins (Phase B) make sub-1/16-pixel precision wasted —
