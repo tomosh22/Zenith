@@ -19,7 +19,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -1017,11 +1017,11 @@ private:
 		if (TilePuzzle_IsGateLevel(pxSelf->m_uCurrentLevelNumber, &uGateIndex))
 		{
 			TilePuzzle::g_uPinballRequestedGate = uGateIndex;
-			g_xEngine.SceneOperations().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+			g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 		}
 		else
 		{
-			g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+			g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		}
 	}
 
@@ -1063,11 +1063,11 @@ private:
 		if (TilePuzzle_IsGateLevel(pxData->uLevelNumber, &uGateIndex))
 		{
 			TilePuzzle::g_uPinballRequestedGate = uGateIndex;
-			g_xEngine.SceneOperations().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+			g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 		}
 		else
 		{
-			g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+			g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		}
 	}
 
@@ -1167,8 +1167,8 @@ private:
 		ShowScreen(SCREEN_HUD);
 
 		// Create puzzle scene for level entities
-		m_xPuzzleScene = g_xEngine.SceneRegistry().CreateEmptyScene("Puzzle");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xPuzzleScene);
+		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		LoadLevelFromFile();
 	}
@@ -1183,12 +1183,12 @@ private:
 		if (m_xPuzzleScene.IsValid())
 		{
 			ClearEntityReferences();
-			g_xEngine.SceneOperations().UnloadScene(m_xPuzzleScene);
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
 		}
 
 		// Create fresh puzzle scene
-		m_xPuzzleScene = g_xEngine.SceneRegistry().CreateEmptyScene("Puzzle");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xPuzzleScene);
+		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		LoadLevelFromFile();
 	}
@@ -1214,11 +1214,11 @@ private:
 		if (m_xPuzzleScene.IsValid())
 		{
 			ClearEntityReferences();
-			g_xEngine.SceneOperations().UnloadScene(m_xPuzzleScene);
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
 			m_xPuzzleScene = Zenith_Scene();
 		}
 
-		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void OnLevelCompleted()
@@ -2254,7 +2254,7 @@ private:
 			return;
 
 		TilePuzzleColor eColor = m_xCurrentLevel.axShapes[iShapeIndex].eColor;
-		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene) : nullptr;
+		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? g_xEngine.Scenes().GetSceneData(m_xPuzzleScene) : nullptr;
 		if (!pxScene) return;
 
 		for (uint32_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
@@ -2277,7 +2277,7 @@ private:
 
 		// Reset scale on highlighted cats to their original size
 		float fBaseScale = s_fCatRadius * 2.0f;
-		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene) : nullptr;
+		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? g_xEngine.Scenes().GetSceneData(m_xPuzzleScene) : nullptr;
 		if (pxScene)
 		{
 			for (uint32_t uIdx : m_auHighlightedCatIndices)
@@ -2300,7 +2300,7 @@ private:
 		if (!m_bTargetHighlightActive)
 			return;
 
-		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene) : nullptr;
+		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? g_xEngine.Scenes().GetSceneData(m_xPuzzleScene) : nullptr;
 		if (!pxScene) return;
 
 		// Pulsing scale: oscillate between 1.0x and 1.5x of cat base scale over 0.6s period
@@ -2779,11 +2779,11 @@ private:
 			if (m_xPuzzleScene.IsValid())
 			{
 				ClearEntityReferences();
-				g_xEngine.SceneOperations().UnloadScene(m_xPuzzleScene);
+				g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
 				m_xPuzzleScene = Zenith_Scene();
 			}
 			TilePuzzle::g_uPinballRequestedGate = uGateIndex;
-			g_xEngine.SceneOperations().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+			g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 			return;
 		}
 
@@ -2978,14 +2978,14 @@ private:
 
 		if (m_xPuzzleScene.IsValid())
 		{
-			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 			if (pxSceneData && xShape.xEntityID.IsValid() && pxSceneData->EntityExists(xShape.xEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
 				if (xEntity.IsValid())
 				{
 					Zenith_TweenComponent::ScaleTo(xEntity, Zenith_Maths::Vector3(0.0f), s_fEliminationDuration, EASING_BACK_IN);
-					Zenith_SceneEntityOwnership::Destroy(xEntity, s_fEliminationDuration + 0.01f);
+					g_xEngine.Scenes().Destroy(xEntity, s_fEliminationDuration + 0.01f);
 				}
 			}
 		}
@@ -3017,7 +3017,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -3088,7 +3088,7 @@ private:
 					xTween.TweenScaleFromTo(xPopScale, Zenith_Maths::Vector3(0.0f), 0.2f, EASING_BACK_IN);
 					xTween.SetDelay(0.08f);
 
-					Zenith_SceneEntityOwnership::Destroy(xCatEntity, s_fEliminationDuration + 0.01f);
+					g_xEngine.Scenes().Destroy(xCatEntity, s_fEliminationDuration + 0.01f);
 				}
 			}
 
@@ -3160,7 +3160,7 @@ private:
 					// Scale bounce to celebrate unlock
 					if (m_xPuzzleScene.IsValid())
 					{
-						Zenith_SceneData* pxSD = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+						Zenith_SceneData* pxSD = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 						if (pxSD && pxSD->EntityExists(xShape.xEntityID))
 						{
 							Zenith_Entity xShapeEntity = pxSD->GetEntity(xShape.xEntityID);
@@ -3265,7 +3265,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -3292,7 +3292,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData || !TilePuzzle::Resources().m_xCellPrefab.GetDirect() || !TilePuzzle::Resources().m_xCellPrefab.GetDirect()->IsValid())
 		{
 			return;
@@ -3384,7 +3384,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -3606,7 +3606,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -3852,7 +3852,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -3890,7 +3890,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -3912,7 +3912,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 
@@ -4354,7 +4354,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxSceneData)
 			return;
 

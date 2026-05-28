@@ -3,7 +3,7 @@
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_Physics.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
@@ -103,7 +103,7 @@ static void ResetPhysicsState()
 	// leaves stale BodyIDs that trip asserts on next access. The assertion includes
 	// the live count so a trip points straight at the failing test.
 	Zenith_Vector<Zenith_ColliderComponent*> axLiveColliders;
-	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(axLiveColliders);
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(axLiveColliders);
 	ZENITH_ASSERT_EQ(axLiveColliders.GetSize(), 0, "ResetPhysicsState: %u live ColliderComponent(s) detected across all loaded scenes. "
 		"Tearing down the Jolt PhysicsSystem now would leave every one of them with a stale "
 		"BodyID and trip a Jolt assertion on next dtor or method call. Destroy or unload any "
@@ -175,8 +175,8 @@ static Zenith_Maths::Vector3 GetBodyPosition(const Zenith_ColliderComponent& xCo
 //==============================================================================
 ZENITH_TEST(Physics, DynamicBodyFallsUnderGravity)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Gravity");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Gravity");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "FallSphere",
@@ -190,12 +190,12 @@ ZENITH_TEST(Physics, DynamicBodyFallsUnderGravity)
 	ZENITH_ASSERT_LT(xPos.y, 6.0f, "TestDynamicBodyFallsUnderGravity: Sphere should have fallen below Y=6 (got %f)", xPos.y);
 	ZENITH_ASSERT_GT(xPos.y, 4.0f, "TestDynamicBodyFallsUnderGravity: Sphere should not be below Y=4 after 1s (got %f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, StaticBodyDoesNotFall)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_StaticNoFall");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_StaticNoFall");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xBox = CreatePhysicsBox(pxSceneData, "StaticBox",
@@ -208,12 +208,12 @@ ZENITH_TEST(Physics, StaticBodyDoesNotFall)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 5.0f, 0.01f, "TestStaticBodyDoesNotFall: Static body should remain at Y=5 (got %f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, GravityDisabledBodyStaysStill)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_NoGravity");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_NoGravity");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "NoGravSphere",
@@ -226,12 +226,12 @@ ZENITH_TEST(Physics, GravityDisabledBodyStaysStill)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 10.0f, 0.01f, "TestGravityDisabledBodyStaysStill: Body should remain at Y=10 (got %f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, GravityReenabledBodyFalls)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_ReenableGrav");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_ReenableGrav");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ReGravSphere",
@@ -249,7 +249,7 @@ ZENITH_TEST(Physics, GravityReenabledBodyFalls)
 	Zenith_Maths::Vector3 xPosAfter = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_LT(xPosAfter.y, 10.0f, "TestGravityReenabledBodyFalls: Body should have fallen after re-enabling gravity (got %f)", xPosAfter.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -257,8 +257,8 @@ ZENITH_TEST(Physics, GravityReenabledBodyFalls)
 //==============================================================================
 ZENITH_TEST(Physics, SetLinearVelocity)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_LinVel");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_LinVel");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "VelSphere",
@@ -273,12 +273,12 @@ ZENITH_TEST(Physics, SetLinearVelocity)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_TRUE(xPos.x > 4.5f && xPos.x < 5.5f, "TestSetLinearVelocity: Expected X~5.0, got %f", xPos.x);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, GetLinearVelocityMatchesSet)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_GetLinVel");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_GetLinVel");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "GetVelSphere",
@@ -293,12 +293,12 @@ ZENITH_TEST(Physics, GetLinearVelocityMatchesSet)
 	ZENITH_ASSERT_EQ_FLOAT(xVel.y, 4.0f, 0.01f, "TestGetLinearVelocityMatchesSet: Expected vy=4, got %f", xVel.y);
 	ZENITH_ASSERT_EQ_FLOAT(xVel.z, 5.0f, 0.01f, "TestGetLinearVelocityMatchesSet: Expected vz=5, got %f", xVel.z);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, SetAngularVelocity)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_AngVel");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_AngVel");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "AngVelSphere",
@@ -312,12 +312,12 @@ ZENITH_TEST(Physics, SetAngularVelocity)
 	Zenith_Maths::Vector3 xAngVel = g_xEngine.Physics().GetAngularVelocity(xCollider.GetBodyID());
 	ZENITH_ASSERT_GT(std::abs(xAngVel.y), 0.1f, "TestSetAngularVelocity: Angular velocity Y should be non-zero (got %f)", xAngVel.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, GetAngularVelocityMatchesSet)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_GetAngVel");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_GetAngVel");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "GetAngVelSphere",
@@ -332,12 +332,12 @@ ZENITH_TEST(Physics, GetAngularVelocityMatchesSet)
 	ZENITH_ASSERT_EQ_FLOAT(xAngVel.y, 2.0f, 0.1f, "TestGetAngularVelocityMatchesSet: Expected wy=2, got %f", xAngVel.y);
 	ZENITH_ASSERT_EQ_FLOAT(xAngVel.z, 3.0f, 0.1f, "TestGetAngularVelocityMatchesSet: Expected wz=3, got %f", xAngVel.z);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, ZeroVelocityNoMovement)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_ZeroVel");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_ZeroVel");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ZeroVelSphere",
@@ -354,7 +354,7 @@ ZENITH_TEST(Physics, ZeroVelocityNoMovement)
 	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 5.0f, 0.01f, "TestZeroVelocityNoMovement: Y should remain 5 (got %f)", xPos.y);
 	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 5.0f, 0.01f, "TestZeroVelocityNoMovement: Z should remain 5 (got %f)", xPos.z);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -362,8 +362,8 @@ ZENITH_TEST(Physics, ZeroVelocityNoMovement)
 //==============================================================================
 ZENITH_TEST(Physics, AddForceAcceleratesBody)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Force");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Force");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ForceSphere",
@@ -384,12 +384,12 @@ ZENITH_TEST(Physics, AddForceAcceleratesBody)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_GT(xPos.x, 0.0f, "TestAddForceAcceleratesBody: X position should have increased (got %f)", xPos.x);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, AddImpulseInstantVelocityChange)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Impulse");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Impulse");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ImpulseSphere",
@@ -407,12 +407,12 @@ ZENITH_TEST(Physics, AddImpulseInstantVelocityChange)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_GT(xPos.y, 9.0f, "TestAddImpulseInstantVelocityChange: Body should have moved upward (got Y=%f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, ForceAccumulatesOverFrames)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_ForceAccum");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_ForceAccum");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Body A: apply force for 30 frames
@@ -443,12 +443,12 @@ ZENITH_TEST(Physics, ForceAccumulatesOverFrames)
 	// Body B had force applied for twice as long, so velocity should be roughly double
 	ZENITH_ASSERT_GT(xVelB.x, xVelA.x * 1.5f, "TestForceAccumulatesOverFrames: 60-frame body should be faster than 30-frame body (A=%f, B=%f)", xVelA.x, xVelB.x);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, ImpulseOnStaticBodyNoEffect)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_ImpulseStatic");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_ImpulseStatic");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xBox = CreatePhysicsBox(pxSceneData, "StaticImpulseBox",
@@ -462,7 +462,7 @@ ZENITH_TEST(Physics, ImpulseOnStaticBodyNoEffect)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 5.0f, 0.01f, "TestImpulseOnStaticBodyNoEffect: Static body should remain at Y=5 (got %f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -470,8 +470,8 @@ ZENITH_TEST(Physics, ImpulseOnStaticBodyNoEffect)
 //==============================================================================
 ZENITH_TEST(Physics, DynamicHitsStaticFloor)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_DynHitsFloor");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_DynHitsFloor");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Static floor at Y=0
@@ -492,12 +492,12 @@ ZENITH_TEST(Physics, DynamicHitsStaticFloor)
 	ZENITH_ASSERT_GT(xPos.y, 0.0f, "TestDynamicHitsStaticFloor: Sphere should be above the floor (got Y=%f)", xPos.y);
 	ZENITH_ASSERT_LT(xPos.y, 3.0f, "TestDynamicHitsStaticFloor: Sphere should have fallen near the floor (got Y=%f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, TwoDynamicBodiesCollide)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_TwoDynCollide");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_TwoDynCollide");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Two spheres approaching each other horizontally
@@ -525,12 +525,12 @@ ZENITH_TEST(Physics, TwoDynamicBodiesCollide)
 	ZENITH_ASSERT_LT(xPosA.x, 4.0f, "TestTwoDynamicBodiesCollide: SphereA should not have passed through (X=%f)", xPosA.x);
 	ZENITH_ASSERT_GT(xPosB.x, -4.0f, "TestTwoDynamicBodiesCollide: SphereB should not have passed through (X=%f)", xPosB.x);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, StaticStaticNoCollision)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_StaticStatic");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_StaticStatic");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Two overlapping static boxes - should not collide (layer filter: NON_MOVING vs NON_MOVING = false)
@@ -544,12 +544,12 @@ ZENITH_TEST(Physics, StaticStaticNoCollision)
 	// If this doesn't crash, the test passes
 	StepPhysics(10);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, SphereOnBoxCollision)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_SphereOnBox");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_SphereOnBox");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Static floor - AABB with scale (10, 0.5, 10), center at Y=0
@@ -570,7 +570,7 @@ ZENITH_TEST(Physics, SphereOnBoxCollision)
 	ZENITH_ASSERT_GT(xPos.y, 0.2f, "TestSphereOnBoxCollision: Sphere should be above floor surface (got Y=%f)", xPos.y);
 	ZENITH_ASSERT_LT(xPos.y, 2.0f, "TestSphereOnBoxCollision: Sphere should have settled near floor (got Y=%f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -578,8 +578,8 @@ ZENITH_TEST(Physics, SphereOnBoxCollision)
 //==============================================================================
 ZENITH_TEST(Physics, CollisionEnterCallback)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_CollEnter");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_CollEnter");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 	PhysicsTestBehaviour::ResetCounters();
 
@@ -599,12 +599,12 @@ ZENITH_TEST(Physics, CollisionEnterCallback)
 
 	ZENITH_ASSERT_GT(PhysicsTestBehaviour::s_uCollisionEnterCount, 0, "TestCollisionEnterCallback: Expected collision enter count > 0, got %u", PhysicsTestBehaviour::s_uCollisionEnterCount);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, CollisionStayCallback)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_CollStay");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_CollStay");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 	PhysicsTestBehaviour::ResetCounters();
 
@@ -624,12 +624,12 @@ ZENITH_TEST(Physics, CollisionStayCallback)
 
 	ZENITH_ASSERT_GT(PhysicsTestBehaviour::s_uCollisionStayCount, 0, "TestCollisionStayCallback: Expected collision stay count > 0, got %u", PhysicsTestBehaviour::s_uCollisionStayCount);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, CollisionExitCallback)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_CollExit");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_CollExit");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 	PhysicsTestBehaviour::ResetCounters();
 
@@ -657,12 +657,12 @@ ZENITH_TEST(Physics, CollisionExitCallback)
 
 	ZENITH_ASSERT_GT(PhysicsTestBehaviour::s_uCollisionExitCount, 0, "TestCollisionExitCallback: Expected collision exit count > 0, got %u", PhysicsTestBehaviour::s_uCollisionExitCount);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, CollisionEventBothEntitiesReceive)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_CollBoth");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_CollBoth");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 	PhysicsTestBehaviour::ResetCounters();
 
@@ -682,7 +682,7 @@ ZENITH_TEST(Physics, CollisionEventBothEntitiesReceive)
 	// Both entities should receive OnCollisionEnter, so count >= 2
 	ZENITH_ASSERT_GE(PhysicsTestBehaviour::s_uCollisionEnterCount, 2, "TestCollisionEventBothEntitiesReceive: Expected collision enter count >= 2 (got %u)", PhysicsTestBehaviour::s_uCollisionEnterCount);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -690,8 +690,8 @@ ZENITH_TEST(Physics, CollisionEventBothEntitiesReceive)
 //==============================================================================
 ZENITH_TEST(Physics, RaycastHitsSphere)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_RayHit");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_RayHit");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	CreatePhysicsSphere(pxSceneData, "Target",
@@ -707,12 +707,12 @@ ZENITH_TEST(Physics, RaycastHitsSphere)
 
 	ZENITH_ASSERT_TRUE(xResult.m_bHit, "TestRaycastHitsSphere: Raycast should have hit the sphere");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, RaycastMissesNoBody)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_RayMiss");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_RayMiss");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	(void)pxSceneData;
 	ResetPhysicsState();
 
@@ -724,12 +724,12 @@ ZENITH_TEST(Physics, RaycastMissesNoBody)
 
 	ZENITH_ASSERT_FALSE(xResult.m_bHit, "TestRaycastMissesNoBody: Raycast should not hit anything in empty scene");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, RaycastReturnsHitPoint)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_RayPoint");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_RayPoint");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Sphere at origin with radius 1
@@ -748,12 +748,12 @@ ZENITH_TEST(Physics, RaycastReturnsHitPoint)
 	ZENITH_ASSERT_LT(xResult.m_xHitPoint.z, 0.0f, "TestRaycastReturnsHitPoint: Hit point Z should be negative (near side), got %f", xResult.m_xHitPoint.z);
 	ZENITH_ASSERT_TRUE(xResult.m_fDistance > 8.0f && xResult.m_fDistance < 10.0f, "TestRaycastReturnsHitPoint: Distance should be ~9 (got %f)", xResult.m_fDistance);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, RaycastReturnsHitEntity)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_RayEntity");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_RayEntity");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xTarget = CreatePhysicsSphere(pxSceneData, "Target",
@@ -770,12 +770,12 @@ ZENITH_TEST(Physics, RaycastReturnsHitEntity)
 	ZENITH_ASSERT_TRUE(xResult.m_bHit, "TestRaycastReturnsHitEntity: Should hit sphere");
 	ZENITH_ASSERT_EQ(xResult.m_xHitEntity, xExpectedID, "TestRaycastReturnsHitEntity: Hit entity ID should match target");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, RaycastMaxDistanceRespected)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_RayMaxDist");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_RayMaxDist");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Sphere at Z=20
@@ -798,7 +798,7 @@ ZENITH_TEST(Physics, RaycastMaxDistanceRespected)
 		25.0f);
 	ZENITH_ASSERT_TRUE(xLongResult.m_bHit, "TestRaycastMaxDistanceRespected: Long ray should hit");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -806,8 +806,8 @@ ZENITH_TEST(Physics, RaycastMaxDistanceRespected)
 //==============================================================================
 ZENITH_TEST(Physics, LockRotationPreventsAngularVelocity)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_LockRot");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_LockRot");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "LockRotSphere",
@@ -824,12 +824,12 @@ ZENITH_TEST(Physics, LockRotationPreventsAngularVelocity)
 	float fTotalAngVel = std::abs(xAngVel.x) + std::abs(xAngVel.y) + std::abs(xAngVel.z);
 	ZENITH_ASSERT_LT(fTotalAngVel, 1.0f, "TestLockRotationPreventsAngularVelocity: Angular velocity should be near zero (got total=%f)", fTotalAngVel);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, ColliderHasValidBodyAfterAdd)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_ValidBody");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_ValidBody");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 
 	Zenith_Entity xEntity(pxSceneData, "ValidBodyEntity");
 	Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
@@ -838,12 +838,12 @@ ZENITH_TEST(Physics, ColliderHasValidBodyAfterAdd)
 	ZENITH_ASSERT_TRUE(xCollider.HasValidBody(), "TestColliderHasValidBodyAfterAdd: Collider should have valid body");
 	ZENITH_ASSERT_FALSE(xCollider.GetBodyID().IsInvalid(), "TestColliderHasValidBodyAfterAdd: Body ID should not be invalid");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, ColliderBodyIDMatchesJolt)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_BodyIDJolt");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_BodyIDJolt");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 
 	Zenith_Entity xEntity(pxSceneData, "JoltBodyEntity");
 	Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
@@ -854,12 +854,12 @@ ZENITH_TEST(Physics, ColliderBodyIDMatchesJolt)
 	bool bIsAdded = xBI.IsAdded(xCollider.GetBodyID());
 	ZENITH_ASSERT_TRUE(bIsAdded, "TestColliderBodyIDMatchesJolt: Body should be added to Jolt physics system");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, RebuildColliderPreservesVelocity)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Rebuild");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Rebuild");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "RebuildSphere",
@@ -875,7 +875,7 @@ ZENITH_TEST(Physics, RebuildColliderPreservesVelocity)
 	Zenith_Maths::Vector3 xVelAfter = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 	ZENITH_ASSERT_EQ_FLOAT(xVelAfter.x, 5.0f, 0.5f, "TestRebuildColliderPreservesVelocity: Velocity X should be preserved (~5, got %f)", xVelAfter.x);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -883,8 +883,8 @@ ZENITH_TEST(Physics, RebuildColliderPreservesVelocity)
 //==============================================================================
 ZENITH_TEST(Physics, AABBColliderCreation)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_AABB");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_AABB");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 
 	Zenith_Entity xEntity(pxSceneData, "AABBEntity");
 	Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
@@ -893,12 +893,12 @@ ZENITH_TEST(Physics, AABBColliderCreation)
 	ZENITH_ASSERT_TRUE(xCollider.HasValidBody(), "TestAABBColliderCreation: AABB collider should have valid body");
 	ZENITH_ASSERT_EQ(xCollider.GetRigidBodyType(), RIGIDBODY_TYPE_DYNAMIC, "TestAABBColliderCreation: Should be dynamic");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, SphereColliderCreation)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Sphere");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Sphere");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 
 	Zenith_Entity xEntity(pxSceneData, "SphereEntity");
 	Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
@@ -906,12 +906,12 @@ ZENITH_TEST(Physics, SphereColliderCreation)
 
 	ZENITH_ASSERT_TRUE(xCollider.HasValidBody(), "TestSphereColliderCreation: Sphere collider should have valid body");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, CapsuleColliderCreation)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Capsule");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Capsule");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 
 	Zenith_Entity xEntity(pxSceneData, "CapsuleEntity");
 	Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
@@ -919,12 +919,12 @@ ZENITH_TEST(Physics, CapsuleColliderCreation)
 
 	ZENITH_ASSERT_TRUE(xCollider.HasValidBody(), "TestCapsuleColliderCreation: Capsule collider should have valid body");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, CapsuleExplicitDimensions)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_ExplCapsule");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_ExplCapsule");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 
 	Zenith_Entity xEntity(pxSceneData, "ExplCapsuleEntity");
 	Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
@@ -932,7 +932,7 @@ ZENITH_TEST(Physics, CapsuleExplicitDimensions)
 
 	ZENITH_ASSERT_TRUE(xCollider.HasValidBody(), "TestCapsuleExplicitDimensions: Explicit capsule should have valid body");
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 
 //==============================================================================
@@ -940,8 +940,8 @@ ZENITH_TEST(Physics, CapsuleExplicitDimensions)
 //==============================================================================
 ZENITH_TEST(Physics, FixedTimestepOneStep)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_OneStep");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_OneStep");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "StepSphere",
@@ -958,12 +958,12 @@ ZENITH_TEST(Physics, FixedTimestepOneStep)
 	ZENITH_ASSERT_LT(xPos.y, 10.0f, "TestFixedTimestepOneStep: Body should have moved slightly (got %f)", xPos.y);
 	ZENITH_ASSERT_GT(xPos.y, 9.9f, "TestFixedTimestepOneStep: Body should not have moved much in 1 step (got %f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, AccumulatorDoesNotOverStep)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_NoOverStep");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_NoOverStep");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "NoOverStepSphere",
@@ -983,12 +983,12 @@ ZENITH_TEST(Physics, AccumulatorDoesNotOverStep)
 	Zenith_Maths::Vector3 xPosAfter = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_LT(xPosAfter.y, 10.0f, "TestAccumulatorDoesNotOverStep: Body should have moved after accumulator crossed threshold (got %f)", xPosAfter.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
 ZENITH_TEST(Physics, ResetClearsPhysicsState)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Reset");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Reset");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Create a body and step
@@ -997,7 +997,7 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 	StepPhysics(10);
 
 	// Unload scene first (destroys collider components which remove bodies)
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 
 	// Reset physics (Shutdown + Initialise)
 	g_xEngine.Physics().Reset();
@@ -1006,8 +1006,8 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 	ZENITH_ASSERT_NOT_NULL(g_xEngine.Physics().m_pxPhysicsSystem, "TestResetClearsPhysicsState: Physics system should be valid after Reset");
 
 	// Create a new body and verify it works
-	Zenith_Scene xTestScene2 = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_Reset2");
-	Zenith_SceneData* pxSceneData2 = g_xEngine.SceneRegistry().GetSceneData(xTestScene2);
+	Zenith_Scene xTestScene2 = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_Reset2");
+	Zenith_SceneData* pxSceneData2 = g_xEngine.Scenes().GetSceneData(xTestScene2);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere2 = CreatePhysicsSphere(pxSceneData2, "ResetSphere2",
@@ -1019,7 +1019,7 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider2);
 	ZENITH_ASSERT_LT(xPos.y, 10.0f, "TestResetClearsPhysicsState: New body should simulate after Reset (got Y=%f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene2);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene2);
 }
 
 //==============================================================================
@@ -1027,8 +1027,8 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 //==============================================================================
 ZENITH_TEST(Physics, UnloadSceneDestroysPhysicsBodies)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_UnloadClean");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_UnloadClean");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Create several physics bodies
@@ -1041,11 +1041,11 @@ ZENITH_TEST(Physics, UnloadSceneDestroysPhysicsBodies)
 	StepPhysics(10);
 
 	// Unload scene - should destroy all bodies without crashing
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 
 	// Verify physics still works with a fresh scene
-	Zenith_Scene xTestScene2 = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_UnloadClean2");
-	Zenith_SceneData* pxSceneData2 = g_xEngine.SceneRegistry().GetSceneData(xTestScene2);
+	Zenith_Scene xTestScene2 = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_UnloadClean2");
+	Zenith_SceneData* pxSceneData2 = g_xEngine.Scenes().GetSceneData(xTestScene2);
 	ResetPhysicsState();
 
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData2, "PostUnloadSphere",
@@ -1057,15 +1057,15 @@ ZENITH_TEST(Physics, UnloadSceneDestroysPhysicsBodies)
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_LT(xPos.y, 5.0f, "TestUnloadSceneDestroysPhysicsBodies: Physics should work after unload (got Y=%f)", xPos.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene2);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene2);
 }
 ZENITH_TEST(Physics, MultipleScenePhysicsIndependence)
 {
-	Zenith_Scene xSceneA = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_SceneA");
-	Zenith_SceneData* pxSceneDataA = g_xEngine.SceneRegistry().GetSceneData(xSceneA);
+	Zenith_Scene xSceneA = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_SceneA");
+	Zenith_SceneData* pxSceneDataA = g_xEngine.Scenes().GetSceneData(xSceneA);
 
-	Zenith_Scene xSceneB = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_SceneB");
-	Zenith_SceneData* pxSceneDataB = g_xEngine.SceneRegistry().GetSceneData(xSceneB);
+	Zenith_Scene xSceneB = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_SceneB");
+	Zenith_SceneData* pxSceneDataB = g_xEngine.Scenes().GetSceneData(xSceneB);
 	ResetPhysicsState();
 
 	// Sphere in scene A
@@ -1087,14 +1087,14 @@ ZENITH_TEST(Physics, MultipleScenePhysicsIndependence)
 	ZENITH_ASSERT_LT(xPosB.y, 10.0f, "TestMultipleScenePhysicsIndependence: Sphere B should have fallen (Y=%f)", xPosB.y);
 
 	// Unload scene A
-	g_xEngine.SceneOperations().UnloadSceneForced(xSceneA);
+	g_xEngine.Scenes().UnloadSceneForced(xSceneA);
 
 	// Scene B's sphere should still work
 	StepPhysics(30);
 	Zenith_Maths::Vector3 xPosBAfter = GetBodyPosition(xColliderB);
 	ZENITH_ASSERT_LT(xPosBAfter.y, xPosB.y, "TestMultipleScenePhysicsIndependence: Sphere B should still fall after A unloaded (before=%f, after=%f)", xPosB.y, xPosBAfter.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xSceneB);
+	g_xEngine.Scenes().UnloadSceneForced(xSceneB);
 }
 
 //==============================================================================
@@ -1102,8 +1102,8 @@ ZENITH_TEST(Physics, MultipleScenePhysicsIndependence)
 //==============================================================================
 ZENITH_TEST(Physics, GravityOffThenImpulseLaunch)
 {
-	Zenith_Scene xTestScene = g_xEngine.SceneRegistry().CreateEmptyScene("PhysicsTest_GravImpulseLaunch");
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTestScene);
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("PhysicsTest_GravImpulseLaunch");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
 
 	// Create a dynamic sphere at Y=5 with gravity OFF (simulating a ball resting on a plunger)
@@ -1138,5 +1138,5 @@ ZENITH_TEST(Physics, GravityOffThenImpulseLaunch)
 	Zenith_Maths::Vector3 xPosFallen = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_LT(xPosFallen.y, 5.0f, "TestGravityOffThenImpulseLaunch: Ball should fall below Y=5 after gravity takes over (got %f)", xPosFallen.y);
 
-	g_xEngine.SceneOperations().UnloadSceneForced(xTestScene);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }

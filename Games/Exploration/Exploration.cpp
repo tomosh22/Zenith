@@ -8,7 +8,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -746,7 +746,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

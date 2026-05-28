@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -925,12 +925,6 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleContext.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
@@ -941,16 +935,8 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneCallbackTypes.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.Tests.inl" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerGuards.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerInternal.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystemBootstrap.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystemGuards.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystem.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
@@ -1924,11 +1910,11 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Callbacks.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_EntityOwnership.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Lifecycle.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Operations.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Registry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp" />
@@ -1936,10 +1922,6 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneSystemBootstrap.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneSystemGuards.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp" />

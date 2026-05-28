@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Source/PublicInterfaces.h"
@@ -70,7 +70,7 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 	switch (g_iPhase)
 	{
 	case kI_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kI_WaitInteractables;
 		return true;
 
@@ -129,8 +129,8 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 		// Procgen doesn't currently spawn DPDoubleDoor (only single-leaf
 		// doors). Build one at runtime in the active scene so its OnAwake
 		// fires + reads the DP_Tuning constants we want to verify.
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene == nullptr) { g_iPhase = kI_Done; return false; }
 
 		Zenith_Entity xDoor(pxScene, std::string("TuningTestDoubleDoor"));

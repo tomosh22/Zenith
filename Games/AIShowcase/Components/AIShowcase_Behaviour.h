@@ -25,7 +25,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -189,11 +189,11 @@ public:
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = AIShowcaseGameState::PLAYING;
-				g_xEngine.SceneRegistry().SetScenePaused(m_xArenaScene, false);
+				g_xEngine.Scenes().SetScenePaused(m_xArenaScene, false);
 			}
 			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
-				g_xEngine.SceneRegistry().SetScenePaused(m_xArenaScene, false);
+				g_xEngine.Scenes().SetScenePaused(m_xArenaScene, false);
 				ReturnToMenu();
 				return;
 			}
@@ -271,7 +271,7 @@ private:
 
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	void StartGame()
@@ -280,8 +280,8 @@ private:
 		SetHUDVisible(true);
 
 		// Create arena scene
-		m_xArenaScene = g_xEngine.SceneRegistry().CreateEmptyScene("Arena");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xArenaScene);
+		m_xArenaScene = g_xEngine.Scenes().CreateEmptyScene("Arena");
+		g_xEngine.Scenes().SetActiveScene(m_xArenaScene);
 
 		// Initialize arena content
 		InitializeArena();
@@ -297,7 +297,7 @@ private:
 	{
 		CleanupArena();
 
-		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetDemo()
@@ -310,8 +310,8 @@ private:
 		Zenith_TacticalPointSystem::Initialise();
 
 		// Create fresh arena scene
-		m_xArenaScene = g_xEngine.SceneRegistry().CreateEmptyScene("Arena");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xArenaScene);
+		m_xArenaScene = g_xEngine.Scenes().CreateEmptyScene("Arena");
+		g_xEngine.Scenes().SetActiveScene(m_xArenaScene);
 
 		// Reinitialize everything
 		InitializeArena();
@@ -353,7 +353,7 @@ private:
 		// Unload arena scene
 		if (m_xArenaScene.IsValid())
 		{
-			g_xEngine.SceneOperations().UnloadScene(m_xArenaScene);
+			g_xEngine.Scenes().UnloadScene(m_xArenaScene);
 			m_xArenaScene = Zenith_Scene();
 		}
 	}
@@ -392,8 +392,8 @@ private:
 	// ========================================================================
 	void InitializeArena()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		// Create floor
 		CreateFloor(pxSceneData);
@@ -517,8 +517,8 @@ private:
 	// ========================================================================
 	void InitializePlayer()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		Zenith_Entity xPlayer(pxSceneData, "Player");
 		xPlayer.SetTransient(false);
@@ -546,8 +546,8 @@ private:
 	// ========================================================================
 	void InitializeEnemySquads()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		// Create Squad Alpha
 		m_pxSquadAlpha = Zenith_SquadManager::CreateSquad("Alpha");
@@ -649,8 +649,8 @@ private:
 	// ========================================================================
 	void GenerateNavMesh()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		NavMeshGenerationConfig xConfig;
 		xConfig.m_fAgentRadius = 0.4f;
@@ -687,7 +687,7 @@ private:
 		for (uint32_t u = 0; u < m_uObstacleCount; ++u)
 		{
 			// C1: resolve owning scene from the obstacle's entity id.
-			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_axObstacleIDs[u]);
+			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_axObstacleIDs[u]);
 			if (!pxSceneData)
 				continue;
 
@@ -762,7 +762,7 @@ private:
 		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 		{
 			m_eGameState = AIShowcaseGameState::PAUSED;
-			g_xEngine.SceneRegistry().SetScenePaused(m_xArenaScene, true);
+			g_xEngine.Scenes().SetScenePaused(m_xArenaScene, true);
 			UpdateUI();
 			return;
 		}
@@ -775,7 +775,7 @@ private:
 		}
 
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xPlayerEntity);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xPlayerEntity);
 		if (!pxSceneData)
 			return;
 
@@ -880,8 +880,8 @@ private:
 	{
 		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_AGENT_UPDATE);
 
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		// Phase 1: Determine destinations for all agents (sets m_bPathPending = true)
 		// This must happen BEFORE batch pathfinding so that pending requests exist
@@ -1075,8 +1075,8 @@ private:
 	void DrawPerceptionVisualization()
 	{
 #ifdef ZENITH_TOOLS
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		static constexpr float s_fHearingRange = 15.0f;  // Match EmitSoundStimulus radius
 
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
@@ -1161,8 +1161,8 @@ private:
 		if (!Zenith_AIDebugVariables::s_bDrawAgentPaths && !Zenith_AIDebugVariables::s_bDrawPathWaypoints)
 			return;
 
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{

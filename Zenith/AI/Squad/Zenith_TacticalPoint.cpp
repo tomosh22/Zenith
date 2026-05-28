@@ -1,8 +1,9 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 
@@ -50,7 +51,7 @@ bool Zenith_TacticalPointSystem::GetEntityPosition(Zenith_EntityID xEntity, Zeni
 	// often reference agents and owners that may live in the persistent scene
 	// or additively-loaded scenes.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xEntity);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xEntity);
 	if (!pxSceneData)
 	{
 		return false;
@@ -271,7 +272,7 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if occupied entity still exists
 		if (xPoint.m_xOccupiedBy.IsValid())
 		{
-			Zenith_SceneData* pxOccupantScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPoint.m_xOccupiedBy);
+			Zenith_SceneData* pxOccupantScene = g_xEngine.Scenes().GetSceneDataForEntity(xPoint.m_xOccupiedBy);
 			bool bValid = false;
 			if (pxOccupantScene)
 			{
@@ -288,7 +289,7 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if owner entity (dynamic points) still exists
 		if ((xPoint.m_uFlags & TACPOINT_FLAG_DYNAMIC) && xPoint.m_xOwnerEntity.IsValid())
 		{
-			Zenith_SceneData* pxOwnerScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPoint.m_xOwnerEntity);
+			Zenith_SceneData* pxOwnerScene = g_xEngine.Scenes().GetSceneDataForEntity(xPoint.m_xOwnerEntity);
 			bool bValid = false;
 			if (pxOwnerScene)
 			{

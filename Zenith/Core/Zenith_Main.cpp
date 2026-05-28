@@ -3,7 +3,8 @@
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
@@ -39,7 +40,7 @@ void Zenith_Core::Zenith_Shutdown()
 // to call one function.
 void Zenith_Core::Zenith_FullShutdown()
 {
-	g_xEngine.SceneLifecycle().SetMainLoopRunning(false);
+	g_xEngine.Scenes().SetMainLoopRunning(false);
 	Zenith_Shutdown();
 	delete Zenith_Window::GetInstance();
 }
@@ -63,9 +64,9 @@ void Zenith_Core::Zenith_Main()
 #endif
 
 	// B4: signal that the main loop is now running. Read by
-	// LoadSceneBlockingForBootstrap to assert it's only invoked during
+	// LoadScene to assert it's only invoked during
 	// bootstrap (Zenith_Init or earlier), never from gameplay code.
-	g_xEngine.SceneLifecycle().SetMainLoopRunning(true);
+	g_xEngine.Scenes().SetMainLoopRunning(true);
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{

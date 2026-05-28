@@ -1,12 +1,10 @@
 #include "Zenith.h"
-
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
@@ -1535,9 +1533,9 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	{
 		Zenith_Assert(xAction.m_szArg1, "Null prefab path for INSTANTIATE_PREFAB");
 
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_Assert(xActiveScene.IsValid(), "INSTANTIATE_PREFAB requires an active scene");
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Assert(pxSceneData, "Active scene data was null in INSTANTIATE_PREFAB");
 
 		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1);
@@ -1562,9 +1560,9 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		// Register the initial-scene-load callback so the editor's Play/Stop
 		// cycle can re-run it later. Then invoke it once under a lifecycle
 		// deferral guard so DispatchFullLifecycleInit owns Awake/OnEnable order.
-		g_xEngine.SceneLifecycle().SetInitialSceneLoadCallback(xAction.m_pfnFunc);
+		g_xEngine.Scenes().SetInitialSceneLoadCallback(xAction.m_pfnFunc);
 		{
-			Zenith_LifecycleDeferralGuard xGuard(g_xEngine.SceneLifecycle().m_bIsLoadingScene);
+			Zenith_LifecycleDeferralGuard xGuard(g_xEngine.Scenes().m_bIsLoadingScene);
 			xAction.m_pfnFunc();
 		}
 		break;

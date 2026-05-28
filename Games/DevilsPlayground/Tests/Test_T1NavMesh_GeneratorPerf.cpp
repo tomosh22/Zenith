@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -51,7 +51,7 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 	switch (g_iPhase)
 	{
 	case kGP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kGP_WaitScene;
 		return true;
 
@@ -64,8 +64,8 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 	{
 		// Scan every entity with a static collider, log its AABB. The goal
 		// is to find outliers that stretch the navmesh bounding box.
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kGP_Done; return false; }
 
 		const Zenith_Vector<Zenith_EntityID>& axIds = pxScene->GetActiveEntities();
@@ -127,8 +127,8 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 
 	case kGP_Generate:
 	{
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kGP_Done; return false; }
 
 		NavMeshGenerationConfig xCfg{};

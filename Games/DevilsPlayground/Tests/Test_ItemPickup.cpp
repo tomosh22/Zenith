@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Source/PublicInterfaces.h"
 #include "Components/DPVillager_Behaviour.h"
@@ -60,7 +60,7 @@ static bool Step_ItemPickup(int iFrame)
 	switch (g_iIPPhase)
 	{
 	case kIP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iIPPhase = kIP_WaitScene;
 		return true;
 
@@ -126,7 +126,7 @@ static bool Step_ItemPickup(int iFrame)
 		// SetPosition. The collider's body position is updated separately
 		// inside the engine, so for skeleton-grade we just do the raw move.
 		Zenith_Maths::Vector3 xItemPos = DP_Items::GetItemWorldPos(g_xIPItem);
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xIPVillager);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xIPVillager);
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xV = pxScene->TryGetEntity(g_xIPVillager);

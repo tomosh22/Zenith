@@ -2,7 +2,7 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Query.h"
 
 #include <cstdint>
@@ -20,8 +20,8 @@ namespace DP_Query
 	template<typename T, typename Fn>
 	void ForEachScriptInActiveScene(Fn&& fn)
 	{
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 		pxScene->Query<Zenith_ScriptComponent>().ForEach(
 			[&fn](Zenith_EntityID xId, Zenith_ScriptComponent& xScript)
@@ -39,10 +39,10 @@ namespace DP_Query
 	template<typename T, typename Fn>
 	void ForEachScriptInLoadedScenes(Fn&& fn)
 	{
-		const uint32_t uSlotCount = g_xEngine.SceneRegistry().GetSceneSlotCount();
+		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetLoadedSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
 			if (pxScene == nullptr) continue;
 			pxScene->Query<Zenith_ScriptComponent>().ForEach(
 				[&fn](Zenith_EntityID xId, Zenith_ScriptComponent& xScript)

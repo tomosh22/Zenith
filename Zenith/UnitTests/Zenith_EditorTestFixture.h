@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"

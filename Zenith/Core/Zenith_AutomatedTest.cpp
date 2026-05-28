@@ -9,7 +9,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Input/Zenith_InputSimulator.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
 #ifdef ZENITH_TOOLS
@@ -406,7 +406,7 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// completion, so checking active scene validity is a reasonable proxy
 		// for "Awake done". For robustness we also wait one extra frame so
 		// late-bound asset callbacks settle.
-		if (!g_xEngine.SceneRegistry().GetActiveScene().IsValid()) return true;
+		if (!g_xEngine.Scenes().GetActiveScene().IsValid()) return true;
 		s_xRunner.m_ePhase = HarnessPhase::EnterPlayingMode;
 		return true;
 	}
@@ -606,7 +606,7 @@ bool Zenith_AutomatedTestRunner::Tick()
 
 		if (s_xRunner.m_iBetweenTestsFrame < 0)
 		{
-			g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 			s_xRunner.m_iBetweenTestsFrame = 0;
 			return true;
 		}
@@ -630,12 +630,12 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// future refactor introduces deferred destruction, the gate
 		// will simply wait longer rather than letting a test's Setup
 		// observe stale entity slots.
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 		const bool bSceneReady =
 			xActive.IsValid()
-			&& g_xEngine.SceneRegistry().GetSceneData(xActive) != nullptr;
+			&& g_xEngine.Scenes().GetSceneData(xActive) != nullptr;
 		const bool bDestructionDrained =
-			!g_xEngine.SceneOperations().HasPendingDestructions();
+			!g_xEngine.Scenes().HasPendingDestructions();
 		if ((!bSceneReady || !bDestructionDrained)
 			&& s_xRunner.m_iBetweenTestsFrame < kMaxSettleFrames)
 		{

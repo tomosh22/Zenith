@@ -1,5 +1,4 @@
 #include "Zenith.h"
-
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Survival/Components/Survival_Behaviour.h"
 #include "Survival/Components/Survival_Config.h"
@@ -15,7 +14,7 @@
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "UI/Zenith_UIButton.h"
 
@@ -417,8 +416,8 @@ static void InitializeSurvivalResources()
 	// Create prefabs for runtime instantiation.
 	// Use the persistent scene here: InitializeResources runs before the initial scene
 	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetPersistentScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Player prefab
 	{
@@ -426,7 +425,7 @@ static void InitializeSurvivalResources()
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
-		Zenith_SceneEntityOwnership::Destroy(xPlayerTemplate);
+		g_xEngine.Scenes().Destroy(xPlayerTemplate);
 	}
 
 	// Tree prefab (resource node)
@@ -435,7 +434,7 @@ static void InitializeSurvivalResources()
 		Zenith_Prefab* pxTree = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxTree->CreateFromEntity(xTreeTemplate, "Tree");
 		Resources().m_xTreePrefab.Set(pxTree);
-		Zenith_SceneEntityOwnership::Destroy(xTreeTemplate);
+		g_xEngine.Scenes().Destroy(xTreeTemplate);
 	}
 
 	// Rock prefab (resource node)
@@ -444,7 +443,7 @@ static void InitializeSurvivalResources()
 		Zenith_Prefab* pxRock = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxRock->CreateFromEntity(xRockTemplate, "Rock");
 		Resources().m_xRockPrefab.Set(pxRock);
-		Zenith_SceneEntityOwnership::Destroy(xRockTemplate);
+		g_xEngine.Scenes().Destroy(xRockTemplate);
 	}
 
 	// Berry bush prefab (resource node)
@@ -453,7 +452,7 @@ static void InitializeSurvivalResources()
 		Zenith_Prefab* pxBerry = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBerry->CreateFromEntity(xBerryTemplate, "BerryBush");
 		Resources().m_xBerryBushPrefab.Set(pxBerry);
-		Zenith_SceneEntityOwnership::Destroy(xBerryTemplate);
+		g_xEngine.Scenes().Destroy(xBerryTemplate);
 	}
 
 	// Dropped item prefab
@@ -462,7 +461,7 @@ static void InitializeSurvivalResources()
 		Zenith_Prefab* pxDropped = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxDropped->CreateFromEntity(xDroppedItemTemplate, "DroppedItem");
 		Resources().m_xDroppedItemPrefab.Set(pxDropped);
-		Zenith_SceneEntityOwnership::Destroy(xDroppedItemTemplate);
+		g_xEngine.Scenes().Destroy(xDroppedItemTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -833,7 +832,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

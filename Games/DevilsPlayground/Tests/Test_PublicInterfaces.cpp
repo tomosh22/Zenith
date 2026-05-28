@@ -64,8 +64,8 @@ static void Setup_HeldItem()
 	// Internal_RegisterItemTag / SetHeldItem has to load a scene with
 	// both scripts attached -- otherwise the registration silently
 	// no-ops. Spin up a one-entity scene with both scripts attached.
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("HeldItemTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("HeldItemTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
 	Zenith_ScriptComponent& xScripts =
 		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
@@ -100,7 +100,7 @@ static void Setup_HeldItem()
 	DP_EXPECT(DP_Player::GetHeldItemTag(xVillager)    == DP_ItemTag::None,    "double-remove safe");
 
 	DP_Items::Internal_UnregisterItemTag(xItemKey);
-	g_xEngine.SceneOperations().UnloadScene(xScene);
+	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
 static bool Step_HeldItem(int /*iFrame*/)            { return false; /* one-shot */ }
@@ -142,8 +142,8 @@ static void Setup_FindByTag()
 	// 2) Spin up an in-memory scene with a DPItemManager attached
 	// (creates DPItemManager_Behaviour::Instance()) + a real item
 	// entity to register against.
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("FindByTagTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("FindByTagTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
 	xManagerEntity.AddComponent<Zenith_ScriptComponent>()
 		.AddScript<DPItemManager_Behaviour>();
@@ -176,7 +176,7 @@ static void Setup_FindByTag()
 	DP_Items::Internal_RegisterItemTag(xIron, DP_ItemTag::Iron);
 	const Zenith_EntityID xHit2 = DP_Items::FindItemByTag(DP_ItemTag::Iron);
 	DP_EXPECT(xHit2.IsValid(), "re-register before unload -> valid");
-	g_xEngine.SceneOperations().UnloadScene(xScene);
+	g_xEngine.Scenes().UnloadScene(xScene);
 	const Zenith_EntityID xMissAfterUnload = DP_Items::FindItemByTag(DP_ItemTag::Iron);
 	DP_EXPECT(!xMissAfterUnload.IsValid(),
 		"scene-unload -> manager destroyed -> FindItemByTag returns invalid "
@@ -214,8 +214,8 @@ static void Setup_Win()
 	// Collected / Reset have to spin up a scene with the controller
 	// attached -- otherwise every call silently no-ops on a null
 	// Instance() and the assertions all fail. Mirrors Setup_HeldItem.
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("WinTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("WinTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
 	Zenith_ScriptComponent& xScripts =
 		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
@@ -281,7 +281,7 @@ static void Setup_Win()
 
 	Zenith_EventDispatcher::Get().Unsubscribe(g_xVictoryHandle);
 	g_xVictoryHandle = INVALID_EVENT_HANDLE;
-	g_xEngine.SceneOperations().UnloadScene(xScene);
+	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
 static bool Step_Win(int)                            { return false; }
@@ -306,8 +306,8 @@ static void Setup_Fog()
 	// onto DPFogPass_Behaviour::m_xFogHoles. Tests now need that
 	// script attached to a scene entity for any of the DP_Fog::*
 	// forwarders to take effect (no-ops otherwise).
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("FogTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("FogTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xFogEntity(pxScene, "FogPassEntity");
 	xFogEntity.AddComponent<Zenith_ScriptComponent>()
 		.AddScript<DPFogPass_Behaviour>();
@@ -331,7 +331,7 @@ static void Setup_Fog()
 	DP_Fog::ClearAllFogHoles();
 	DP_EXPECT(DP_Fog::GetFogHoleCount() == 0, "after clear");
 
-	g_xEngine.SceneOperations().UnloadScene(xScene);
+	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
 static bool Step_Fog(int)                            { return false; }
@@ -356,8 +356,8 @@ static void Setup_Unlock()
 	// item-tag + held-item registrations below to take effect (see
 	// Setup_HeldItem's matching comment for the 2026-05-17 ownership-
 	// refactor rationale).
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("UnlockTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("UnlockTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
 	Zenith_ScriptComponent& xScripts =
 		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
@@ -394,7 +394,7 @@ static void Setup_Unlock()
 	DP_Player::RemoveHeldItem(xVillager);
 	DP_Items::Internal_UnregisterItemTag(xKeyItem);
 	DP_Items::Internal_UnregisterItemTag(xSkelItem);
-	g_xEngine.SceneOperations().UnloadScene(xScene);
+	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
 static bool Step_Unlock(int)                         { return false; }

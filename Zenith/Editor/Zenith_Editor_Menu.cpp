@@ -7,7 +7,7 @@
 #include "Zenith_UndoSystem.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 
 #include "Panels/Zenith_EditorPanel_Memory.h"
@@ -66,13 +66,13 @@ void Zenith_Editor::RenderFileMenu()
 			//
 			// Safe to call directly from the menu callback because RenderImGui runs after
 			// all render tasks have completed (see Zenith_Editor.cpp's main-loop comment).
-			Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
+			Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 			if (xActiveScene.IsValid())
 			{
-				g_xEngine.SceneOperations().UnloadSceneForced(xActiveScene);
+				g_xEngine.Scenes().UnloadSceneForced(xActiveScene);
 			}
-			Zenith_Scene xNewScene = g_xEngine.SceneRegistry().CreateEmptyScene("Untitled");
-			g_xEngine.SceneRegistry().SetActiveScene(xNewScene);
+			Zenith_Scene xNewScene = g_xEngine.Scenes().CreateEmptyScene("Untitled");
+			g_xEngine.Scenes().SetActiveScene(xNewScene);
 
 			ClearSelection();
 			g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
@@ -102,7 +102,7 @@ void Zenith_Editor::RenderFileMenu()
 				ZENITH_SCENE_EXT + 1);
 			if (!strFilePath.empty())
 			{
-				g_xEngine.SceneOperations().LoadSceneBlocking_ToolsOnly(strFilePath, SCENE_LOAD_ADDITIVE);
+				g_xEngine.Scenes().LoadScene(strFilePath, SCENE_LOAD_ADDITIVE);
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded additively: %s", strFilePath.c_str());
 			}
 #endif
@@ -118,8 +118,8 @@ void Zenith_Editor::RenderFileMenu()
 			if (!strFilePath.empty())
 			{
 				// Safe to call directly - no render tasks active
-				Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-				Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+				Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+				Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 				if (pxSceneData)
 				{
 					pxSceneData->SaveToFile(strFilePath);

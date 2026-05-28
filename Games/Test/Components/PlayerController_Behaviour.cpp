@@ -6,7 +6,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "UI/Zenith_UI.h"
@@ -82,8 +82,8 @@ void PlayerController_Behaviour::Shoot()
 		return;
 	}
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Destroy old bullet in this slot to prevent entity leak
 	if (s_axBulletEntities[s_uCurrentBulletIndex].IsValid())
@@ -297,8 +297,8 @@ void PlayerController_Behaviour::FindHUDElements()
 		return;
 
 	// Find the HUD entity by name
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xHUDEntity = pxSceneData->FindEntityByName("HUD");
 	if (!xHUDEntity.IsValid())
 	{

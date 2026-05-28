@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Core.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Source/PublicInterfaces.h"
@@ -18,7 +18,7 @@
 // next N frames. Press Esc again and assert the timer resumes.
 //
 // This exercises the contract added in MVP-1.1.2: DPPauseMenuController
-// calls g_xEngine.SceneRegistry().SetScenePaused on the gameplay scene, which
+// calls g_xEngine.Scenes().SetScenePaused on the gameplay scene, which
 // gates entity OnUpdates -- including DPVillager::TickLife.
 // ============================================================================
 
@@ -73,7 +73,7 @@ static bool Step_P1PauseTimer(int iFrame)
 	switch (g_iPhase)
 	{
 	case kP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kP_WaitScene;
 		g_iFrameInPhase = 0;
 		return true;

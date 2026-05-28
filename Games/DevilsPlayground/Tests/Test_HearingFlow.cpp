@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -62,7 +62,7 @@ static bool Step_HearingFlow(int iFrame)
 	switch (g_iHFPhase)
 	{
 	case kHF_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iHFPhase = kHF_WaitScene;
 		return true;
 
@@ -86,7 +86,7 @@ static bool Step_HearingFlow(int iFrame)
 			// Place the synthetic noise 2m in front of the priest so it
 			// always lies inside the priest's 35 m hearing radius regardless
 			// of the priest's authored position.
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPriest);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);

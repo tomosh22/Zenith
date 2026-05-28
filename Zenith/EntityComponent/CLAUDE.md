@@ -3,13 +3,10 @@
 ## Files
 
 ### Core
-- `Zenith_SceneManager.h/cpp` — **Compatibility shim (Phase 5e)**. Originally a static-facade class wrapping the `Internal/` subsystems; almost every public method body has been migrated to the owning subsystem. The class declaration still exists as 1-line forwarders to `g_xEngine.SceneRegistry/SceneOperations/SceneLifecycle/SceneCallbacks/SceneEntityOwnership` for backwards-compatibility with the remaining call sites. New code should call the subsystem accessors directly.
-  - `Zenith_SceneManager.h` — public API surface (now all 1-line forwarders).
-  - `Zenith_SceneManagerInternal.h` — engine-internal forwarder section.
-  - `Zenith_SceneManagerGuards.h` — alias-only header; the real RAII types live in `Zenith_SceneSystemGuards.h`.
-- **`Zenith_SceneSystemGuards.h/cpp`** (Phase 5e) — top-level RAII scope-guard types: `Zenith_LifecycleDeferralGuard`, `Zenith_PrefabInstantiationGuard`, `Zenith_SceneUpdateDeferralGuard`, `Zenith_SceneCreationTargetScope`. Each mutates state on `Zenith_SceneLifecycleScheduler` (`g_xEngine.SceneLifecycle()`). The `Zenith_SceneManager::*Guard` aliases still work for transitional call sites.
-- **`Zenith_SceneCallbackTypes.h`** (Phase 5e) — top-level callback typedefs: `Zenith_SceneCallbackHandle`, `Zenith_INVALID_SCENE_CALLBACK_HANDLE`, `Zenith_SceneChangedCallback`, `Zenith_SceneLoadedCallback`, `Zenith_SceneUnloadingCallback`, `Zenith_SceneUnloadedCallback`, `Zenith_SceneLoadStartedCallback`, `Zenith_EntityPersistentCallback`. The `Zenith_SceneManager::CallbackHandle` etc. aliases still work for transitional call sites.
-- **`Zenith_SceneSystemBootstrap.h/cpp`** (Phase 5e) — top-level orchestrator free functions: `Zenith_InitialiseSceneSystem()`, `Zenith_ShutdownSceneSystem()`, `Zenith_ResetSceneSystemForNextTest()`. Each coordinates multiple subsystems (Lifecycle / Operations / Registry / Callbacks / EntityStore). Called from `Zenith_Engine` startup/shutdown and the test framework.
+- **`Zenith_SceneSystem.h/cpp`** — public scene-system surface. Static methods only (e.g. `Zenith_SceneSystem::LoadScene`, `LoadSceneByIndex`, `UnloadScene`, plus `InitialiseSubsystems` / `ShutdownSubsystems` / `ResetForNextTest` bootstrap orchestrators). Hosts the `Zenith_SceneSystem.Tests.inl` regression suite (13k+ lines covering every subsystem).
+- `Zenith_SceneManager.h` — vestigial transitional include manifold. Pulls in `Zenith_SceneSystemGuards.h`, `Zenith_SceneCallbackTypes.h`, and the four internal subsystem headers so the ~190 files that still `#include "Zenith_SceneManager.h"` keep building. No class, no symbols — delete the include from your TU and switch to `Zenith_SceneSystem.h` plus the specific subsystem header(s) you need.
+- **`Zenith_SceneSystemGuards.h/cpp`** — top-level RAII scope-guard types: `Zenith_LifecycleDeferralGuard`, `Zenith_PrefabInstantiationGuard`, `Zenith_SceneUpdateDeferralGuard`, `Zenith_SceneCreationTargetScope`. Each mutates state on `g_xEngine.SceneLifecycle()`.
+- **`Zenith_SceneCallbackTypes.h`** — top-level callback typedefs: `Zenith_SceneCallbackHandle`, `Zenith_INVALID_SCENE_CALLBACK_HANDLE`, `Zenith_SceneChangedCallback`, `Zenith_SceneLoadedCallback`, `Zenith_SceneUnloadingCallback`, `Zenith_SceneUnloadedCallback`, `Zenith_SceneLoadStartedCallback`, `Zenith_EntityPersistentCallback`. Also defines the `SCENE_LOAD_*` enum and `Zenith_SceneOperationID` alias.
 - `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
 - `Zenith_Scene.h/cpp` - Lightweight scene handle struct
 - `Zenith_SceneOperation.h/cpp` - Async scene operation tracking
@@ -21,7 +18,7 @@
 - `Zenith_EventSystem.h/cpp` - Type-safe event dispatcher with deferred queue
 
 ### Internal/
-**Phase 5e: subsystems are the real engine surface; call them via `g_xEngine.X().Y()` accessors.** The `Zenith_SceneManager::Foo` form still works but is a 1-line forwarder. The `Internal/` directory is where the actual work happens:
+The five engine subsystems are the real surface; call them via `g_xEngine.X().Y()` accessors. `Zenith_SceneSystem` owns the small set of cross-subsystem orchestration helpers (bootstrap, sync `LoadScene` staging swap) but does NOT shadow every per-subsystem method.
 
 - `Internal/Zenith_SceneRegistry.h/cpp` - Scene slot table, generation counters, slot freelist
 - `Internal/Zenith_SceneCallbackBus.h/cpp` - Scene event dispatch (Loaded / Unloading / ActiveSceneChanged)
@@ -30,7 +27,7 @@
 - `Internal/Zenith_SceneEntityOwnership.h/cpp` - Entity slot ownership across scene moves
 - `Internal/Zenith_SceneLifecycleContext.h` - Per-frame lifecycle state container
 
-Every SceneManager method is now a 1-line forwarder. Use this table to jump directly to the real owner:
+Use this table to jump to the owning subsystem for a given concern:
 
 | What you're looking for | Owning subsystem |
 |---|---|
@@ -72,7 +69,7 @@ Zenith uses a multi-scene architecture inspired by Unity:
 - **Zenith_Scene** - Lightweight handle struct (`int m_iHandle` + `uint32_t m_uGeneration`). Can be copied freely, used to reference scenes. The generation counter lets `IsValid()` detect handles to scene slots that have been unloaded and recycled.
 - **Zenith_SceneData** - Internal class storing entities, components, and metadata. Not accessed directly by game code.
 - **Zenith_SceneRegistry / Zenith_SceneOperations / Zenith_SceneLifecycleScheduler / Zenith_SceneCallbackBus / Zenith_SceneEntityOwnership** - Engine subsystems held by `Zenith_Engine`. Accessed via `g_xEngine.SceneRegistry()`, `g_xEngine.SceneOperations()`, etc.
-- **Zenith_SceneManager** (deprecated, Phase 5e compatibility shim) — old static-facade entry point. Every method is now a 1-line forwarder to one of the engine subsystems above. New code should call the subsystem accessor directly.
+- **Zenith_SceneSystem** - Public scene-system static class. Hosts the bootstrap orchestrators (`InitialiseSubsystems` / `ShutdownSubsystems` / `ResetForNextTest`) and a small set of `LoadScene*` / `UnloadScene` convenience methods. Most new call sites still target the subsystem accessor directly.
 - **Zenith_SceneOperation** - Tracks async scene loading progress.
 
 Multiple scenes can be loaded simultaneously (additive loading). One scene is "active" at any time.
@@ -111,7 +108,7 @@ g_xEngine.SceneCallbacks().RegisterSceneLoaded([](Zenith_Scene xScene, Zenith_Sc
 });
 ```
 
-The old `Zenith_SceneManager::Foo(...)` form still resolves (1-line forwarders), but new code should use the subsystem accessors so the eventual deletion of `Zenith_SceneManager` lands cleanly.
+The `Zenith_SceneManager` class is gone. The remaining `Zenith_SceneManager.h` is an empty include manifold kept for transitional convenience; new code should target the subsystem accessors directly.
 
 ### Component Pools
 Each component type has a dedicated pool with:
@@ -253,7 +250,7 @@ Each entity has at most one `Zenith_ScriptComponent`, but the component can hold
 - Event system provides thread-safe `QueueEvent()` for cross-thread event dispatch
 
 **Scene Loading Reset Order:**
-When `Zenith_SceneManager::LoadScene()` loads a scene in `SCENE_LOAD_SINGLE` mode, systems are reset in this order:
+When `g_xEngine.SceneOperations().LoadScene()` loads a scene in `SCENE_LOAD_SINGLE` mode, systems are reset in this order:
 1. Flux render systems (Terrain, StaticMeshes, AnimatedMeshes, etc.)
 2. `SceneData::Reset()` - Destroys all entities and their components
 3. `Zenith_Physics::Reset()` - Clears physics world
@@ -296,12 +293,10 @@ The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_C
 
 ### SceneManager.h ↔ SceneData.h: cycle broken (T2.4)
 
-The historical cycle (`SceneData.h` ↔ `SceneManager.h`, both including each other at the bottom for mutual template body references) has been broken. The dependency is now strictly **one-way**: `SceneManager.h → SceneData.h`.
+The historical cycle (`SceneData.h` ↔ `SceneManager.h`, both including each other at the bottom for mutual template body references) was broken in T2.4 and is no longer a concern — the `Zenith_SceneManager` class itself is gone (only the empty include-manifold header remains).
 
-The break was achieved by lifting both sources of the back-edge out of `SceneData.h`:
+For context, the break was achieved by lifting the back-edge sources out of `SceneData.h`:
 
-1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentHandle<T>`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This new header carries its own placement-new guard and is fully self-contained (it includes `Zenith_Entity.h`, `Zenith_Vector`, and the memory-management headers internally).
+1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentHandle<T>`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This header is self-contained.
 
-2. **Render-task-active check** — `SceneData.h`'s template assertions used to call `Zenith_SceneManager::AreRenderTasksActive()`, which forced the SceneManager.h include. Replaced with the free-function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` and defined in `Zenith_SceneManager.cpp` as a one-line forwarder to the unchanged static class accessor. The static accessor and the underlying `s_bRenderTasksActive` flag still live in `Zenith_SceneManagerInternal.h` — only the template-body call sites in SceneData.h were retargeted (~4 sites). The qualified `Zenith_SceneManager::AreRenderTasksActive()` form continues to work at every other call site (~20 elsewhere across SceneRegistry.cpp, Query.h, SceneOperationQueue.cpp, etc.).
-
-`SceneManager.h` still includes `SceneData.h` at the bottom (line ~938) so its own template bodies can call into `Zenith_SceneData::AppendAllOfComponentType<T>`. That direction of the dependency is necessary and stays.
+2. **Render-task-active check** — `SceneData.h`'s template assertions now call the free function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` (defined in `Zenith_SceneLifecycleScheduler.cpp`).

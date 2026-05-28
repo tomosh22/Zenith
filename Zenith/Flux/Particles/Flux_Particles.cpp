@@ -13,7 +13,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -134,9 +134,9 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
 
 	// Query all particle emitter components from ALL loaded scenes
-	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.SceneRegistry().GetSceneSlotCount(); ++uSceneSlot)
+	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataAtSlot(uSceneSlot);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
 		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading())
 		{
 			continue;

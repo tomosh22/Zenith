@@ -14,7 +14,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -214,7 +214,7 @@ void Zenith_Core::Zenith_MainLoop()
 	if (bShouldUpdateGameLogic)
 	{
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
-		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.SceneLifecycle().Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Scenes().Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -247,18 +247,31 @@ void Zenith_Core::Zenith_MainLoop()
 
 		// Render UI components - submits to Flux_Quads and Flux_Text
 		// Must happen before SubmitRenderTasks() which submits those systems
-		// Collects from ALL loaded scenes (persistent entity UI + game scene UI)
-		// Mark as updating so UI callbacks (e.g. button click -> LoadSceneByIndex)
-		// defer scene loads instead of destroying scenes mid-iteration
+		// Collects from ALL loaded scenes (persistent entity UI + game scene UI).
+		//
+		// Two-pass: all Updates first (button clicks queue scene loads), then
+		// the guard scope closes which drains any pending load, then we
+		// re-collect components and Render. Without the split the click's
+		// canvas would paint once more before the deferred load tears it
+		// down — the "buttons persist for a frame" symptom.
 		{
 			Zenith_SceneUpdateDeferralGuard xUpdateGuard;
 			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-			g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
+			g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
 			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 			{
-				Zenith_UIComponent* const pxUI = xIt.GetData();
-				pxUI->Update(g_xEngine.Frame().GetDt());
-				pxUI->Render();
+				xIt.GetData()->Update(g_xEngine.Frame().GetDt());
+			}
+		}
+		// Guard destructor above drained any deferred LoadScene — scene may
+		// have swapped here. Re-collect post-drain so we render the new
+		// scene's UI, not the destroyed one.
+		{
+			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
+			g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
+			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
+			{
+				xIt.GetData()->Render();
 			}
 		}
 
@@ -268,18 +281,18 @@ void Zenith_Core::Zenith_MainLoop()
 		#endif
 
 		#ifdef ZENITH_ASSERT
-		g_xEngine.SceneLifecycle().SetRenderTasksActive(true);
+		g_xEngine.Scenes().SetRenderTasksActive(true);
 		#endif
 		ExecuteRenderGraph();
 		#ifdef ZENITH_ASSERT
-		g_xEngine.SceneLifecycle().SetRenderTasksActive(false);
+		g_xEngine.Scenes().SetRenderTasksActive(false);
 		#endif
 	}
 
 	// Only wait for scene update if we actually ran it
 	if (bShouldUpdateGameLogic)
 	{
-		g_xEngine.SceneLifecycle().WaitForUpdateComplete();
+		g_xEngine.Scenes().WaitForUpdateComplete();
 	}
 
 	// EndFrame prepares memory command buffer for submission and processes deferred deletions.

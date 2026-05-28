@@ -6,7 +6,7 @@
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 
 #include "../Components/DPFogPass_Behaviour.h"
@@ -65,7 +65,7 @@ namespace DP_Fog
 			(Zenith_EntityID xHoleId, float fRadius)
 			{
 				if (uWritten >= uMaxHoles) return;
-				Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xHoleId);
+				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xHoleId);
 				if (pxScene == nullptr) return;
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xHoleId);
 				if (!xEnt.IsValid()) return;

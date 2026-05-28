@@ -22,7 +22,7 @@
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "UI/Zenith_UIButton.h"
@@ -271,7 +271,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/AIShowcase" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/AIShowcase" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

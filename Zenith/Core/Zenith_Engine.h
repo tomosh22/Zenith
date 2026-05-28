@@ -54,10 +54,7 @@ class Zenith_UndoSystem;
 class Zenith_Multithreading;
 class Zenith_Physics;
 class Zenith_Profiling;
-class Zenith_SceneCallbackBus;
-class Zenith_SceneLifecycleScheduler;
-class Zenith_SceneOperationQueue;
-class Zenith_SceneRegistry;
+class Zenith_SceneSystem;
 class Zenith_TaskSystem;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
@@ -111,10 +108,7 @@ public:
 	Zenith_AssetRegistry& Assets();
 	Zenith_Physics& Physics();
 	Zenith_EntityStore& EntityStore();
-	Zenith_SceneRegistry& SceneRegistry();
-	Zenith_SceneCallbackBus& SceneCallbacks();
-	Zenith_SceneOperationQueue& SceneOperations();
-	Zenith_SceneLifecycleScheduler& SceneLifecycle();
+	Zenith_SceneSystem& Scenes();
 	Zenith_Input& Input();
 	Zenith_TouchInput& Touch();
 	Flux_RendererImpl& FluxRenderer();
@@ -174,6 +168,11 @@ public:
 #endif
 
 private:
+	// Internal scene-subsystem accessors. The public surface is Scenes()
+	// (returns Zenith_SceneSystem); Zenith_SceneSystem is friended so its
+	// Registry()/Operations()/Lifecycle()/Callbacks() sub-accessors can
+	// reach the per-subsystem instances without going through a public
+	// engine accessor. Removed from the public surface to enforce the
 	// Subsystem members. Raw pointers to forward-declared types so the
 	// default ctor/dtor stay trivial and the constinit global has zero
 	// static-init cost. Each is allocated in Initialise() and deleted
@@ -185,10 +184,7 @@ private:
 	Zenith_AssetRegistry*        m_pxAssets         = nullptr;
 	Zenith_Physics*          m_pxPhysics        = nullptr;
 	Zenith_EntityStore*          m_pxEntityStore    = nullptr;
-	Zenith_SceneRegistry*           m_pxSceneRegistry   = nullptr;
-	Zenith_SceneCallbackBus*        m_pxSceneCallbacks  = nullptr;
-	Zenith_SceneOperationQueue*     m_pxSceneOperations = nullptr;
-	Zenith_SceneLifecycleScheduler* m_pxSceneLifecycle  = nullptr;
+	Zenith_SceneSystem*             m_pxScenes          = nullptr;
 	Zenith_Input*                   m_pxInput           = nullptr;
 	Zenith_TouchInput*              m_pxTouch           = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;

@@ -5,7 +5,7 @@
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_SelectionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -211,7 +211,7 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 	// CalculateBoundingBox returns a small cube at the transform position when
 	// the entity has no ModelComponent.
 	Zenith_Vector<Zenith_TransformComponent*> xTransforms;
-	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(xTransforms);
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(xTransforms);
 
 	for (u_int i = 0; i < xTransforms.GetSize(); ++i)
 	{
@@ -305,7 +305,7 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
 
 	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
-	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
 
 	for (u_int i = 0; i < xModelComponents.GetSize(); ++i)
 	{
@@ -406,7 +406,7 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	if (!pxEntity) return xBoundingBox;
 
 	// Find the scene that owns this entity (not just active scene)
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(pxEntity->GetEntityID());
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(pxEntity->GetEntityID());
 	if (!pxSceneData) return xBoundingBox;
 
 	const Zenith_EntityID xEntityID = pxEntity->GetEntityID();

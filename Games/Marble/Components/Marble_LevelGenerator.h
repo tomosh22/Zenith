@@ -16,7 +16,7 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -124,13 +124,13 @@ public:
 	 */
 	static void DestroyLevel(LevelEntities& xEntities)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		if (xEntities.uBallEntityID.IsValid() && pxSceneData->EntityExists(xEntities.uBallEntityID))
 		{
 			Zenith_Entity xEntity = pxSceneData->GetEntity(xEntities.uBallEntityID);
-			Zenith_SceneEntityOwnership::Destroy(xEntity);
+			g_xEngine.Scenes().Destroy(xEntity);
 			xEntities.uBallEntityID = INVALID_ENTITY_ID;
 		}
 
@@ -139,7 +139,7 @@ public:
 			if (pxSceneData->EntityExists(uID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
-				Zenith_SceneEntityOwnership::Destroy(xEntity);
+				g_xEngine.Scenes().Destroy(xEntity);
 			}
 		}
 		xEntities.axPlatformEntityIDs.clear();
@@ -149,7 +149,7 @@ public:
 			if (pxSceneData->EntityExists(uID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
-				Zenith_SceneEntityOwnership::Destroy(xEntity);
+				g_xEngine.Scenes().Destroy(xEntity);
 			}
 		}
 		xEntities.axCollectibleEntityIDs.clear();
@@ -157,7 +157,7 @@ public:
 		if (xEntities.uGoalEntityID.IsValid() && pxSceneData->EntityExists(xEntities.uGoalEntityID))
 		{
 			Zenith_Entity xEntity = pxSceneData->GetEntity(xEntities.uGoalEntityID);
-			Zenith_SceneEntityOwnership::Destroy(xEntity);
+			g_xEngine.Scenes().Destroy(xEntity);
 			xEntities.uGoalEntityID = INVALID_ENTITY_ID;
 		}
 	}
@@ -180,8 +180,8 @@ private:
 		const Zenith_Maths::Vector3& xPos,
 		const Zenith_Maths::Vector3& xScale)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Entity xPlatform = pxPrefab->Instantiate(pxSceneData, "Platform");
 
 		// 1. Set transform first
@@ -207,8 +207,8 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Entity xGoal = pxPrefab->Instantiate(pxSceneData, "Goal");
 
 		Zenith_TransformComponent& xTransform = xGoal.GetComponent<Zenith_TransformComponent>();
@@ -231,8 +231,8 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Entity xBall = pxPrefab->Instantiate(pxSceneData, "Ball");
 
 		Zenith_TransformComponent& xTransform = xBall.GetComponent<Zenith_TransformComponent>();
@@ -255,8 +255,8 @@ private:
 		Flux_MeshGeometry* pxMesh,
 		Zenith_MaterialAsset* pxMaterial)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		// Place collectibles above platforms
 		std::uniform_int_distribution<size_t> xPlatformDist(0, xEntities.axPlatformEntityIDs.size() - 1);

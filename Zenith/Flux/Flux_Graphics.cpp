@@ -164,7 +164,7 @@ bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 		return true;
 	}
 #endif
-	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 	if (pxCamera)
 	{
 		pxCamera->BuildViewMatrix(xConstants.m_xViewMat);
@@ -250,7 +250,7 @@ float Flux_GraphicsImpl::GetNearPlane()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraNearPlane();
 #else
-	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetNearPlane() : 0.1f;
 #endif
 }
@@ -259,7 +259,7 @@ float Flux_GraphicsImpl::GetFarPlane()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraFarPlane();
 #else
-	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetFarPlane() : 1000.0f;
 #endif
 }
@@ -269,7 +269,7 @@ float Flux_GraphicsImpl::GetFOV()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraFOV();
 #else
-	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetFOV() : 1.0472f;
 #endif
 }
@@ -279,7 +279,7 @@ float Flux_GraphicsImpl::GetAspectRatio()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraAspectRatio();
 #else
-	Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+	Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 	return pxCamera ? pxCamera->GetAspectRatio() : 1.7778f;
 #endif
 }

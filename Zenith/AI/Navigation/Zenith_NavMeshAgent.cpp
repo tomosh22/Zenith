@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Zenith_AIDebugVariables.h"

@@ -1,5 +1,4 @@
 #include "Zenith.h"
-
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Sokoban/Components/Sokoban_Behaviour.h"
 #include "Sokoban/Components/Sokoban_Config.h"
@@ -14,7 +13,7 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -84,8 +83,8 @@ static void InitializeSokobanResources()
 	// The behaviour adds ModelComponent with correct material at instantiation
 	// Use the persistent scene here: InitializeResources runs before the initial scene
 	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetPersistentScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Tile prefab - basic entity (ModelComponent added at runtime with correct material)
 	{
@@ -96,7 +95,7 @@ static void InitializeSokobanResources()
 		pxTile->CreateFromEntity(xTileTemplate, "Tile");
 		Resources().m_xTilePrefab.Set(pxTile);
 
-		Zenith_SceneEntityOwnership::Destroy(xTileTemplate);
+		g_xEngine.Scenes().Destroy(xTileTemplate);
 	}
 
 	// Box prefab - basic entity
@@ -108,7 +107,7 @@ static void InitializeSokobanResources()
 		pxBox->CreateFromEntity(xBoxTemplate, "Box");
 		Resources().m_xBoxPrefab.Set(pxBox);
 
-		Zenith_SceneEntityOwnership::Destroy(xBoxTemplate);
+		g_xEngine.Scenes().Destroy(xBoxTemplate);
 	}
 
 	// Player prefab - basic entity
@@ -120,7 +119,7 @@ static void InitializeSokobanResources()
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
 
-		Zenith_SceneEntityOwnership::Destroy(xPlayerTemplate);
+		g_xEngine.Scenes().Destroy(xPlayerTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -352,7 +351,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Sokoban" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Sokoban" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

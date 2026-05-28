@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 
 #include "Components/DPMainMenuController_Behaviour.h"
 #include "Components/DPPauseMenuController_Behaviour.h"
@@ -101,7 +101,7 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 		// Step 3-6 require the persistent pause-menu instance. Load
 		// GameLevel and wait a few frames for OnStart to migrate the
 		// singleton.
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kPM_WaitForPersistentInstance;
 		return true;
 

@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
@@ -52,7 +52,7 @@ static bool IsAuraEmitting(DP_Particles::Kind eKind)
 {
 	const Zenith_EntityID xId = DP_Particles::GetEmitterEntityForTest(eKind);
 	if (!xId.IsValid()) return false;
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 	if (pxScene == nullptr) return false;
 	Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return false;
@@ -76,7 +76,7 @@ static bool Step_P5ArchetypeTelegraphs(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kP_WaitScene;
 		g_iWait = 0;
 		return true;

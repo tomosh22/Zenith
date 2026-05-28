@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -72,7 +72,7 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 	switch (g_iPhase)
 	{
 	case kFS_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFS_WaitScene;
 		return true;
 
@@ -94,8 +94,8 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 
 	case kFS_BuildForge:
 	{
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFS_Done; return false; }
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
 			[](Zenith_EntityID xId, DPVillager_Behaviour&)
@@ -123,8 +123,8 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 
 	case kFS_BuildInput:
 	{
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFS_Done; return false; }
 		Zenith_Entity xInput(pxScene, std::string("ForgeIntake_Iron"));
 		if (!xInput.IsValid()) { g_iPhase = kFS_Done; return false; }

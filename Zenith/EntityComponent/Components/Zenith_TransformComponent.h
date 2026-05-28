@@ -1,6 +1,6 @@
 #pragma once
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Maths/Zenith_Maths.h"
 
 // Forward declarations for RegisterProperties() — full definition lives in

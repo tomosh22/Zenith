@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Collections/Zenith_Vector.h"
@@ -75,7 +75,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -128,7 +128,7 @@ static bool Step_P1ScentDecays(int iFrame)
 	switch (g_iPhase)
 	{
 	case kSD_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kSD_WaitScene;
 		return true;
 

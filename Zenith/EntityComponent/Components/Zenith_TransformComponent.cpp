@@ -65,8 +65,8 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 
 	// Check if this entity's scene is the current active scene
 	// If not, we're likely in a test scenario with a local scene being destroyed
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxActiveSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxActiveSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxOwningSceneData != pxActiveSceneData)
 	{
 		// Different scene - skip hierarchy cleanup to avoid accessing wrong scene data

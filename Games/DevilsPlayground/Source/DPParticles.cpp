@@ -1,9 +1,8 @@
 #include "Zenith.h"
-
 #include "Source/DPParticles.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
@@ -532,7 +531,7 @@ namespace DP_Particles
 			if (iKind < 0 || iKind >= kNumKinds) return;
 			Zenith_EntityID xEmitterId = g_axEmitterEntities[iKind];
 			if (!xEmitterId.IsValid()) return;
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xEmitterId);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xEmitterId);
 			if (pxScene == nullptr) return;
 			Zenith_Entity xEnt = pxScene->TryGetEntity(xEmitterId);
 			if (!xEnt.IsValid()) return;
@@ -545,7 +544,7 @@ namespace DP_Particles
 				xEmitter.SetEmitting(false);
 				return;
 			}
-			Zenith_SceneData* pxVilScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xVillager);
+			Zenith_SceneData* pxVilScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 			if (pxVilScene == nullptr)
 			{
 				xEmitter.SetEmitting(false);
@@ -629,8 +628,8 @@ namespace DP_Particles
 		// scene-switches (which is the same pattern Sokoban uses).
 		// That way a between-tests scene reload doesn't strand the
 		// emitter entities on the unloaded gameplay scene.
-		Zenith_Scene xPersistent = g_xEngine.SceneRegistry().GetPersistentScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xPersistent);
+		Zenith_Scene xPersistent = g_xEngine.Scenes().GetPersistentScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistent);
 		if (pxSceneData == nullptr) return;
 
 		for (int i = 0; i < kNumKinds; ++i)
@@ -657,8 +656,8 @@ namespace DP_Particles
 
 	void ClearEmitterEntities()
 	{
-		Zenith_Scene xPersistent = g_xEngine.SceneRegistry().GetPersistentScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xPersistent);
+		Zenith_Scene xPersistent = g_xEngine.Scenes().GetPersistentScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistent);
 		for (int i = 0; i < kNumKinds; ++i)
 		{
 			if (pxSceneData != nullptr)
@@ -666,7 +665,7 @@ namespace DP_Particles
 				Zenith_Entity xEnt = pxSceneData->TryGetEntity(g_axEmitterEntities[i]);
 				if (xEnt.IsValid())
 				{
-					Zenith_SceneEntityOwnership::Destroy(xEnt);
+					g_xEngine.Scenes().Destroy(xEnt);
 				}
 			}
 			g_axEmitterEntities[i] = INVALID_ENTITY_ID;
@@ -685,7 +684,7 @@ namespace DP_Particles
 		// but the lookup is scene-agnostic via GetSceneDataForEntity.
 		Zenith_EntityID xId = g_axEmitterEntities[iKind];
 		if (!xId.IsValid()) return;
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxSceneData == nullptr) return;
 		Zenith_Entity xEnt = pxSceneData->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return;
@@ -705,7 +704,7 @@ namespace DP_Particles
 	void BurstAtEntity(Kind eKind, Zenith_EntityID xEntity)
 	{
 		if (!xEntity.IsValid()) return;
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xEntity);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xEntity);
 		if (pxSceneData == nullptr) return;
 		Zenith_Entity xEnt = pxSceneData->TryGetEntity(xEntity);
 		if (!xEnt.IsValid()) return;

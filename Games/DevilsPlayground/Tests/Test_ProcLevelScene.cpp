@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
@@ -67,7 +67,7 @@ static void Setup_ProcLevelScene()
 
 	// Build index 1 is the authored ProcLevel scene (see
 	// DevilsPlayground.cpp::Project_LoadInitialScene).
-	g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 }
 
 static bool Step_ProcLevelScene(int /*iFrame*/)

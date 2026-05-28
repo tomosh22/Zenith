@@ -14,7 +14,7 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -117,15 +117,15 @@ public:
 	static void Reset()
 	{
 		// Destroy existing entities
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		for (auto& xColl : s_axCollectibles)
 		{
 			if (xColl.m_uEntityID.IsValid() && pxSceneData->EntityExists(xColl.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xColl.m_uEntityID);
-				Zenith_SceneEntityOwnership::Destroy(xEntity);
+				g_xEngine.Scenes().Destroy(xEntity);
 			}
 		}
 		s_axCollectibles.clear();
@@ -135,7 +135,7 @@ public:
 			if (xObs.m_uEntityID.IsValid() && pxSceneData->EntityExists(xObs.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xObs.m_uEntityID);
-				Zenith_SceneEntityOwnership::Destroy(xEntity);
+				g_xEngine.Scenes().Destroy(xEntity);
 			}
 		}
 		s_axObstacles.clear();
@@ -171,8 +171,8 @@ public:
 	static CollectionResult CheckCollectibles(const Zenith_Maths::Vector3& xPlayerPos, float fPlayerRadius)
 	{
 		CollectionResult xResult;
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		for (auto& xColl : s_axCollectibles)
 		{
@@ -202,7 +202,7 @@ public:
 				xResult.m_uCollectedCount++;
 
 				// Destroy entity
-				Zenith_SceneEntityOwnership::Destroy(xEntity);
+				g_xEngine.Scenes().Destroy(xEntity);
 				xColl.m_uEntityID = INVALID_ENTITY_ID;
 			}
 		}
@@ -348,8 +348,8 @@ private:
 			return;
 		}
 
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Entity xColl = s_pxCollectiblePrefab->Instantiate(pxSceneData, "Collectible");
 
 		Zenith_TransformComponent& xTransform = xColl.GetComponent<Zenith_TransformComponent>();
@@ -375,8 +375,8 @@ private:
 			return;
 		}
 
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Entity xObs = s_pxObstaclePrefab->Instantiate(pxSceneData, "Obstacle");
 
 		// Size based on type
@@ -414,8 +414,8 @@ private:
 	// ========================================================================
 	static void AnimateCollectibles(float fDt)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		for (auto& xColl : s_axCollectibles)
 		{
@@ -451,8 +451,8 @@ private:
 	// ========================================================================
 	static void RemovePassedEntities(float fPlayerZ)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		float fRemoveThreshold = fPlayerZ - 20.0f;
 
 		// Remove passed collectibles
@@ -463,7 +463,7 @@ private:
 				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
 					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
-					Zenith_SceneEntityOwnership::Destroy(xEntity);
+					g_xEngine.Scenes().Destroy(xEntity);
 				}
 				it = s_axCollectibles.erase(it);
 			}
@@ -481,7 +481,7 @@ private:
 				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
 					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
-					Zenith_SceneEntityOwnership::Destroy(xEntity);
+					g_xEngine.Scenes().Destroy(xEntity);
 				}
 				it = s_axObstacles.erase(it);
 			}

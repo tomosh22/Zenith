@@ -6,7 +6,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"

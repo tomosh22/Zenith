@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -78,7 +78,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kFEP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 		g_iPhase = kFEP_LoadFE;
 		g_iWaitFrames = 0;
 		return true;
@@ -86,8 +86,8 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	case kFEP_LoadFE:
 	{
 		++g_iWaitFrames;
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxData)
 		{
 			g_bFrontEndLoaded = true;
@@ -102,7 +102,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		// Verified FrontEnd is alive. Now trigger the Play button's exact
 		// callback. We don't need to actually click — DPMainMenuController's
 		// callback is just LoadSceneByIndex(1, SINGLE).
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFEP_TriggerPlay;
 		g_iWaitFrames = 0;
 		return true;
@@ -131,8 +131,8 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	case kFEP_Verify:
 	{
 		// Probe the rendering-relevant state.
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxData != nullptr)
 		{
 			Zenith_CameraComponent* pxCam = pxData->TryGetMainCamera();
@@ -178,7 +178,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
 			[&](Zenith_EntityID xId, DPVillager_Behaviour&)
 			{
-				Zenith_SceneData* pxSceneV = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+				Zenith_SceneData* pxSceneV = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 				if (!pxSceneV) return;
 				Zenith_Entity xEnt = pxSceneV->TryGetEntity(xId);
 				if (!xEnt.IsValid()) return;

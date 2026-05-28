@@ -1,31 +1,26 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-
 //------------------------------------------------------------------------------
 // Scene Data Access
 //------------------------------------------------------------------------------
 
 Zenith_SceneData* Zenith_Entity::GetSceneData() const
 {
+	// Phase 6a: cache removed. The accessor already has to read the slot to
+	// validate (index bounds, occupancy, generation), so the prior cache hit
+	// saved at most one vector lookup. Re-resolving every time eliminates the
+	// "cache returns pointer to unloaded scene" failure mode (which helped the
+	// reported Play→Menu→Stop→Play→Menu bug stay invisible until GetComponent)
+	// and lets Zenith_Entity be a true value-type handle with no mutable state.
 	if (!m_xEntityID.IsValid()) return nullptr;
 	if (m_xEntityID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return nullptr;
-
 	const Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
 		return nullptr;
-
-	// Fast path: compare cached int handle (never dereference stale pointer)
-	if (m_pxCachedSceneData && m_iCachedSceneHandle == xSlot.m_iSceneHandle)
-		return m_pxCachedSceneData;
-
-	// Slow path: look up SceneData from scene handle and cache it
-	m_pxCachedSceneData = g_xEngine.SceneRegistry().GetSceneDataByHandle(xSlot.m_iSceneHandle);
-	m_iCachedSceneHandle = xSlot.m_iSceneHandle;
-	return m_pxCachedSceneData;
+	return g_xEngine.Scenes().GetSceneDataByHandle(xSlot.m_iSceneHandle);
 }
 
 //------------------------------------------------------------------------------
@@ -48,7 +43,7 @@ Zenith_Scene Zenith_Entity::GetScene() const
 		return Zenith_Scene::INVALID_SCENE;
 
 	// Use the global slot's current scene handle (survives cross-scene moves)
-	return g_xEngine.SceneRegistry().GetSceneFromHandle(xSlot.m_iSceneHandle);
+	return g_xEngine.Scenes().GetSceneFromHandle(xSlot.m_iSceneHandle);
 }
 
 //------------------------------------------------------------------------------
@@ -58,15 +53,15 @@ Zenith_Scene Zenith_Entity::GetScene() const
 // Constructor from SceneData pointer and EntityID (used by SceneData::GetEntity)
 Zenith_Entity::Zenith_Entity(Zenith_SceneData* pxSceneData, Zenith_EntityID xID)
 	: m_xEntityID(xID)
-	, m_pxCachedSceneData(pxSceneData)
-	, m_iCachedSceneHandle(pxSceneData->m_iHandle)
 {
 	Zenith_Assert(pxSceneData != nullptr, "Entity created with null scene data");
+	// Phase 6a: scene-data pointer no longer cached. GetSceneData re-resolves
+	// from the slot's m_iSceneHandle on every call. The pxSceneData parameter
+	// is retained for API stability but only the assertion uses it now.
+	(void)pxSceneData;
 }
 
 Zenith_Entity::Zenith_Entity(Zenith_SceneData* pxSceneData, const std::string& strName)
-	: m_pxCachedSceneData(pxSceneData)
-	, m_iCachedSceneHandle(pxSceneData->m_iHandle)
 {
 	Zenith_Assert(pxSceneData != nullptr, "Entity created with null scene data");
 
@@ -296,7 +291,7 @@ void Zenith_Entity::SetTransient(bool bTransient)
 
 void Zenith_Entity::DontDestroyOnLoad()
 {
-	Zenith_SceneEntityOwnership::MarkEntityPersistent(*this);
+	g_xEngine.Scenes().MarkEntityPersistent(*this);
 }
 
 //------------------------------------------------------------------------------
@@ -417,10 +412,10 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 
 void Zenith_Entity::Destroy()
 {
-	Zenith_SceneEntityOwnership::Destroy(*this);
+	g_xEngine.Scenes().Destroy(*this);
 }
 
 void Zenith_Entity::DestroyImmediate()
 {
-	Zenith_SceneEntityOwnership::DestroyImmediate(*this);
+	g_xEngine.Scenes().DestroyImmediate(*this);
 }

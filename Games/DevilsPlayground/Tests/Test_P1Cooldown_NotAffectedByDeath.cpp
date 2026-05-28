@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -86,7 +86,7 @@ static bool Step_P1CooldownDeath(int iFrame)
 	switch (g_iPhase)
 	{
 	case kND_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kND_WaitScene;
 		return true;
 
@@ -135,7 +135,7 @@ static bool Step_P1CooldownDeath(int iFrame)
 		// m_bIsPossessed flag and bumped m_fRemainingLife back to
 		// m_fMaxLife (the "freshly-possessed transition" handler). Now
 		// the test can shrink life without it being clobbered.
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xA);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xA);
 		if (pxScene == nullptr) { g_iPhase = kND_Done; return false; }
 		Zenith_Entity xEnt = pxScene->TryGetEntity(g_xA);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) { g_iPhase = kND_Done; return false; }

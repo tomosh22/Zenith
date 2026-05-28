@@ -19,7 +19,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -280,7 +280,7 @@ public:
 	 */
 	void RepositionCamera(uint32_t uGridWidth, uint32_t uGridHeight)
 	{
-		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

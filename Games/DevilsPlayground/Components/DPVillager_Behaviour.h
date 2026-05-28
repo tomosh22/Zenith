@@ -17,7 +17,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_Input.h"
@@ -475,7 +475,7 @@ private:
 		// otherwise (gym map without camera entity).
 		Zenith_Maths::Vector3 xRight(1.0f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xForward(0.0f, 0.0f, 1.0f);
-		if (Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes())
+		if (Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes())
 		{
 			pxCam->GetFacingDir(xForward);
 			xForward.y = 0.0f;
@@ -632,7 +632,7 @@ private:
 		}
 
 		// First-time creation: spawn a small cube on top of the villager.
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 		if (pxScene == nullptr) return;
 
 		if (!m_xHeldItemVisual.IsValid())
@@ -694,7 +694,7 @@ private:
 	void PositionHeldItemVisual()
 	{
 		if (!m_xHeldItemVisual.IsValid()) return;
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xHeldItemVisual);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(m_xHeldItemVisual);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xVisual = pxScene->TryGetEntity(m_xHeldItemVisual);
 		if (!xVisual.IsValid()) return;
@@ -717,11 +717,11 @@ private:
 		Zenith_EntityID xHandle = m_xHeldItemVisual;
 		m_xHeldItemVisual = INVALID_ENTITY_ID;
 
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xHandle);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xHandle);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xVisual = pxScene->TryGetEntity(xHandle);
 		if (!xVisual.IsValid()) return;
-		Zenith_SceneEntityOwnership::Destroy(xVisual);
+		g_xEngine.Scenes().Destroy(xVisual);
 	}
 
 	void OnDestroy() ZENITH_FINAL override

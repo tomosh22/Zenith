@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
@@ -56,7 +56,7 @@ namespace
 
 	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
@@ -80,7 +80,7 @@ static bool Step_P1SprintNoDrain(int iFrame)
 	switch (g_iPhase)
 	{
 	case kSN_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kSN_WaitScene;
 		return true;
 

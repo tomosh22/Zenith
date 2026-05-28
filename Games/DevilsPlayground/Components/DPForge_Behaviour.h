@@ -18,7 +18,7 @@
 #include "Components/DPItemBase_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_AudioBus.h"
@@ -79,11 +79,11 @@ protected:
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xInput.IsValid())
 		{
-			Zenith_SceneData* pxInputScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xInput);
+			Zenith_SceneData* pxInputScene = g_xEngine.Scenes().GetSceneDataForEntity(xInput);
 			if (pxInputScene != nullptr)
 			{
 				Zenith_Entity xInputEnt = pxInputScene->TryGetEntity(xInput);
-				if (xInputEnt.IsValid()) Zenith_SceneEntityOwnership::Destroy(xInputEnt);
+				if (xInputEnt.IsValid()) g_xEngine.Scenes().Destroy(xInputEnt);
 			}
 		}
 
@@ -143,7 +143,7 @@ protected:
 private:
 	Zenith_EntityID SpawnOutputItem()
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(
 			m_xParentEntity.GetEntityID());
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 

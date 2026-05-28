@@ -1,18 +1,14 @@
 #include "Zenith.h"
 
-#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 
 //=============================================================================
 // Path canonicaliser. Used by GetSceneByPath internally and exposed as a
-// public static helper via Zenith_SceneRegistry::CanonicalisePath() so the
+// public static helper via Zenith_SceneSystem::CanonicalisePath() so the
 // LoadScene paths can share the same logic without re-implementing it.
 //=============================================================================
-std::string Zenith_SceneRegistry::CanonicalisePath(const std::string& strPath)
+std::string Zenith_SceneSystem::CanonicalisePath(const std::string& strPath)
 {
 	std::string strResult = strPath;
 
@@ -60,81 +56,68 @@ std::string Zenith_SceneRegistry::CanonicalisePath(const std::string& strPath)
 }
 
 //=============================================================================
-// Zenith_SceneRegistry — implementations and static-storage definitions.
+// Zenith_SceneSystem — implementations and static-storage definitions.
 //
 // State is owned by this class post-A2b. Manager TUs reference
-// Zenith_SceneRegistry::s_* directly. The friend-class name-injection issue
+// Zenith_SceneSystem::s_* directly. The friend-class name-injection issue
 // that blocked the earlier A2b attempt is sidestepped by:
 //   1. Registry.h has no #include of manager.h (one-way include).
 //   2. manager.h includes registry.h BEFORE SceneData.h, so SceneData's in-class
-//      `friend class Zenith_SceneRegistry` refers to the already-complete class
+//      `friend class Zenith_SceneSystem` refers to the already-complete class
 //      rather than injecting an incomplete forward declaration.
 //   3. The manager's GetAllOfComponentTypeFromAllScenes template uses public
 //      registry accessors (GetSceneSlotCount / GetLoadedSceneDataAtSlot) so it
 //      doesn't depend on storage layout.
 //=============================================================================
 
-// Phase 5b: registry state lives on Zenith_SceneRegistry
+// Registry state lives on Zenith_SceneSystem
 // (held by Zenith_Engine as m_pxSceneRegistry). Every method body below
-// reads/writes through g_xEngine.SceneRegistry().m_xXxx.
+// reads/writes through g_xEngine.Scenes().m_xXxx.
 
-void Zenith_SceneRegistry::Shutdown()
-{
-	Zenith_SceneRegistry& xR = g_xEngine.SceneRegistry();
-	for (u_int i = 0; i < xR.m_axScenes.GetSize(); ++i)
-	{
-		delete xR.m_axScenes.Get(i);
-	}
-	xR.m_axScenes.Clear();
-	xR.m_axSceneGenerations.Clear();
-	xR.m_axFreeHandles.Clear();
-	xR.m_axBuildIndexToPath.Clear();
-	xR.m_axLoadedSceneNames.Clear();
-	xR.m_iActiveSceneHandle = -1;
-	xR.m_iPersistentSceneHandle = -1;
-	xR.m_ulNextLoadTimestamp = 1;
-}
+// Shutdown body merged into Internal/Zenith_SceneSystem_Lifecycle.cpp's
+// combined Shutdown — it tears down lifecycle / callbacks / registry slots
+// in the right order in one place.
 
 //=============================================================================
 // Slot management
 //=============================================================================
 
-int Zenith_SceneRegistry::AllocateSceneHandle()
+int Zenith_SceneSystem::AllocateSceneHandle()
 {
-	if (g_xEngine.SceneRegistry().m_axFreeHandles.GetSize() > 0)
+	if (g_xEngine.Scenes().m_axFreeHandles.GetSize() > 0)
 	{
-		int iHandle = g_xEngine.SceneRegistry().m_axFreeHandles.GetBack();
-		g_xEngine.SceneRegistry().m_axFreeHandles.PopBack();
+		int iHandle = g_xEngine.Scenes().m_axFreeHandles.GetBack();
+		g_xEngine.Scenes().m_axFreeHandles.PopBack();
 		return iHandle;
 	}
-	int iNewHandle = static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize());
-	g_xEngine.SceneRegistry().m_axSceneGenerations.PushBack(1);
+	int iNewHandle = static_cast<int>(g_xEngine.Scenes().m_axScenes.GetSize());
+	g_xEngine.Scenes().m_axSceneGenerations.PushBack(1);
 	return iNewHandle;
 }
 
-void Zenith_SceneRegistry::FreeSceneHandle(int iHandle)
+void Zenith_SceneSystem::FreeSceneHandle(int iHandle)
 {
-	if (iHandle < 0 || iHandle >= static_cast<int>(g_xEngine.SceneRegistry().m_axSceneGenerations.GetSize()))
+	if (iHandle < 0 || iHandle >= static_cast<int>(g_xEngine.Scenes().m_axSceneGenerations.GetSize()))
 	{
 		return;
 	}
 
 	// D1: double-free guard. Callers must `delete pxSceneData` and null the slot
 	// BEFORE calling FreeSceneHandle — otherwise the generation bump here releases
-	// the handle while the live scene data is still reachable via g_xEngine.SceneRegistry().m_axScenes,
+	// the handle while the live scene data is still reachable via g_xEngine.Scenes().m_axScenes,
 	// corrupting subsequent loads into the same slot.
-	Zenith_Assert(iHandle >= static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize()) ||
-	              g_xEngine.SceneRegistry().m_axScenes.Get(iHandle) == nullptr,
+	Zenith_Assert(iHandle >= static_cast<int>(g_xEngine.Scenes().m_axScenes.GetSize()) ||
+	              g_xEngine.Scenes().m_axScenes.Get(iHandle) == nullptr,
 		"FreeSceneHandle(%d): scene data is still non-null — caller forgot to delete + null before releasing the handle",
 		iHandle);
 
 	RemoveFromSceneNameCache(iHandle);
 
-	uint32_t& uGen = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
+	uint32_t& uGen = g_xEngine.Scenes().m_axSceneGenerations.Get(iHandle);
 	if (uGen < UINT32_MAX - 1)
 	{
 		uGen++;
-		g_xEngine.SceneRegistry().m_axFreeHandles.PushBack(iHandle);
+		g_xEngine.Scenes().m_axFreeHandles.PushBack(iHandle);
 	}
 	else
 	{
@@ -142,29 +125,29 @@ void Zenith_SceneRegistry::FreeSceneHandle(int iHandle)
 	}
 }
 
-uint32_t Zenith_SceneRegistry::GetSceneSlotCount()
+uint32_t Zenith_SceneSystem::GetSceneSlotCount()
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"GetSceneSlotCount must be called from main thread or during render task execution");
-	return g_xEngine.SceneRegistry().m_axScenes.GetSize();
+	return g_xEngine.Scenes().m_axScenes.GetSize();
 }
 
-Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataAtSlot(uint32_t uIndex)
+Zenith_SceneData* Zenith_SceneSystem::GetSceneDataAtSlot(uint32_t uIndex)
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"GetSceneDataAtSlot must be called from main thread or during render task execution");
-	if (uIndex >= g_xEngine.SceneRegistry().m_axScenes.GetSize())
+	if (uIndex >= g_xEngine.Scenes().m_axScenes.GetSize())
 		return nullptr;
-	return g_xEngine.SceneRegistry().m_axScenes.Get(uIndex);
+	return g_xEngine.Scenes().m_axScenes.Get(uIndex);
 }
 
-Zenith_SceneData* Zenith_SceneRegistry::GetLoadedSceneDataAtSlot(uint32_t uIndex)
+Zenith_SceneData* Zenith_SceneSystem::GetLoadedSceneDataAtSlot(uint32_t uIndex)
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"GetLoadedSceneDataAtSlot must be called from main thread or during render task execution");
-	if (uIndex >= g_xEngine.SceneRegistry().m_axScenes.GetSize())
+	if (uIndex >= g_xEngine.Scenes().m_axScenes.GetSize())
 		return nullptr;
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(uIndex);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().m_axScenes.Get(uIndex);
 	if (!pxData || !pxData->IsLoaded() || pxData->IsUnloading())
 		return nullptr;
 	return pxData;
@@ -174,7 +157,7 @@ Zenith_SceneData* Zenith_SceneRegistry::GetLoadedSceneDataAtSlot(uint32_t uIndex
 // Scene handle/data resolution
 //=============================================================================
 
-Zenith_Scene Zenith_SceneRegistry::MakeInvalidScene()
+Zenith_Scene Zenith_SceneSystem::MakeInvalidScene()
 {
 	Zenith_Scene xScene;
 	xScene.m_iHandle = -1;
@@ -182,31 +165,31 @@ Zenith_Scene Zenith_SceneRegistry::MakeInvalidScene()
 	return xScene;
 }
 
-Zenith_SceneData* Zenith_SceneRegistry::GetSceneData(Zenith_Scene xScene)
+Zenith_SceneData* Zenith_SceneSystem::GetSceneData(Zenith_Scene xScene)
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"GetSceneData must be called from the main thread or during render task execution");
-	if (xScene.m_iHandle < 0 || xScene.m_iHandle >= static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize()))
+	if (xScene.m_iHandle < 0 || xScene.m_iHandle >= static_cast<int>(g_xEngine.Scenes().m_axScenes.GetSize()))
 	{
 		return nullptr;
 	}
-	if (xScene.m_uGeneration != g_xEngine.SceneRegistry().m_axSceneGenerations.Get(xScene.m_iHandle))
+	if (xScene.m_uGeneration != g_xEngine.Scenes().m_axSceneGenerations.Get(xScene.m_iHandle))
 	{
 		return nullptr;
 	}
-	return g_xEngine.SceneRegistry().m_axScenes.Get(xScene.m_iHandle);
+	return g_xEngine.Scenes().m_axScenes.Get(xScene.m_iHandle);
 }
 
-Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataByHandle(int iHandle)
+Zenith_SceneData* Zenith_SceneSystem::GetSceneDataByHandle(int iHandle)
 {
-	if (iHandle < 0 || iHandle >= static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize()))
+	if (iHandle < 0 || iHandle >= static_cast<int>(g_xEngine.Scenes().m_axScenes.GetSize()))
 	{
 		return nullptr;
 	}
-	return g_xEngine.SceneRegistry().m_axScenes.Get(iHandle);
+	return g_xEngine.Scenes().m_axScenes.Get(iHandle);
 }
 
-Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataForEntity(Zenith_EntityID xID)
+Zenith_SceneData* Zenith_SceneSystem::GetSceneDataForEntity(Zenith_EntityID xID)
 {
 	if (!xID.IsValid()) return nullptr;
 	if (xID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return nullptr;
@@ -215,15 +198,15 @@ Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataForEntity(Zenith_EntityID xI
 	return GetSceneDataByHandle(xSlot.m_iSceneHandle);
 }
 
-Zenith_Scene Zenith_SceneRegistry::GetSceneFromHandle(int iHandle)
+Zenith_Scene Zenith_SceneSystem::GetSceneFromHandle(int iHandle)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneFromHandle must be called from main thread");
 	Zenith_Scene xScene;
 	xScene.m_iHandle = iHandle;
 	xScene.m_uGeneration = 0;
-	if (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axSceneGenerations.GetSize()))
+	if (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.Scenes().m_axSceneGenerations.GetSize()))
 	{
-		xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
+		xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(iHandle);
 	}
 	return xScene;
 }
@@ -232,35 +215,35 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneFromHandle(int iHandle)
 // Scene queries
 //=============================================================================
 
-Zenith_Scene Zenith_SceneRegistry::GetActiveScene()
+Zenith_Scene Zenith_SceneSystem::GetActiveScene()
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"GetActiveScene must be called from main thread or during render task execution");
-	const int iHandle = g_xEngine.SceneRegistry().m_iActiveSceneHandle;
+	const int iHandle = g_xEngine.Scenes().m_iActiveSceneHandle;
 	Zenith_Scene xScene;
 	xScene.m_iHandle = iHandle;
-	if (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axSceneGenerations.GetSize()))
+	if (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.Scenes().m_axSceneGenerations.GetSize()))
 	{
-		xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
+		xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(iHandle);
 	}
 	return xScene;
 }
 
-Zenith_Scene Zenith_SceneRegistry::GetSceneAt(uint32_t uIndex)
+Zenith_Scene Zenith_SceneSystem::GetSceneAt(uint32_t uIndex)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneAt must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
 
 	uint32_t uCurrent = 0;
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		if (!IsSceneVisibleToUser(i, g_xEngine.SceneRegistry().m_axScenes.Get(i)))
+		if (!IsSceneVisibleToUser(i, g_xEngine.Scenes().m_axScenes.Get(i)))
 			continue;
 
 		if (uCurrent == uIndex)
 		{
 			xScene.m_iHandle = static_cast<int>(i);
-			xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(i);
+			xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(i);
 			return xScene;
 		}
 		uCurrent++;
@@ -268,38 +251,38 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneAt(uint32_t uIndex)
 	return xScene;
 }
 
-Zenith_Scene Zenith_SceneRegistry::GetSceneByBuildIndex(int iBuildIndex)
+Zenith_Scene Zenith_SceneSystem::GetSceneByBuildIndex(int iBuildIndex)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneByBuildIndex must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
-		if (pxData && pxData->m_iBuildIndex == iBuildIndex && pxData->m_bIsLoaded && !pxData->m_bIsUnloading)
+		Zenith_SceneData* pxData = g_xEngine.Scenes().m_axScenes.Get(i);
+		if (pxData && pxData->m_iBuildIndex == iBuildIndex && pxData->IsLoaded() && !pxData->IsUnloading())
 		{
 			xScene.m_iHandle = static_cast<int>(i);
-			xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(i);
+			xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(i);
 			return xScene;
 		}
 	}
 	return xScene;
 }
 
-Zenith_Scene Zenith_SceneRegistry::GetSceneByName(const std::string& strName)
+Zenith_Scene Zenith_SceneSystem::GetSceneByName(const std::string& strName)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneByName must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
 	int iFirstMatchHandle = -1;
 	bool bAmbiguous = false;
 
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axLoadedSceneNames.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axLoadedSceneNames.GetSize(); ++i)
 	{
-		const SceneNameEntry& xEntry = g_xEngine.SceneRegistry().m_axLoadedSceneNames.Get(i);
+		const SceneNameEntry& xEntry = g_xEngine.Scenes().m_axLoadedSceneNames.Get(i);
 		const int iHandle = xEntry.m_iHandle;
 
-		Zenith_SceneData* pxData = (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize()))
-			? g_xEngine.SceneRegistry().m_axScenes.Get(iHandle) : nullptr;
-		if (!pxData || !pxData->m_bIsLoaded || pxData->m_bIsUnloading) continue;
+		Zenith_SceneData* pxData = (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.Scenes().m_axScenes.GetSize()))
+			? g_xEngine.Scenes().m_axScenes.Get(iHandle) : nullptr;
+		if (!pxData || !pxData->IsLoaded() || pxData->IsUnloading()) continue;
 
 		const std::string& strSceneName = xEntry.m_strName;
 		bool bMatched = false;
@@ -343,16 +326,16 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneByName(const std::string& strName)
 	if (iFirstMatchHandle >= 0)
 	{
 		xScene.m_iHandle = iFirstMatchHandle;
-		xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iFirstMatchHandle);
+		xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(iFirstMatchHandle);
 	}
 	return xScene;
 }
 
 // Caller passes an already-canonicalized scene path. The public
-// g_xEngine.SceneRegistry().GetSceneByPath forwarder runs the canonicalization
+// g_xEngine.Scenes().GetSceneByPath forwarder runs the canonicalization
 // (it lives in Zenith_SceneManager.cpp's file-static CanonicalizeScenePath
 // helper alongside the LoadScene path validation that uses the same helper).
-Zenith_Scene Zenith_SceneRegistry::GetSceneByPath(const std::string& strPath)
+Zenith_Scene Zenith_SceneSystem::GetSceneByPath(const std::string& strPath)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneByPath must be called from main thread");
 	// Canonicalise first so callers don't have to (matches Unity's
@@ -360,48 +343,48 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneByPath(const std::string& strPath)
 	const std::string strCanonical = CanonicalisePath(strPath);
 	Zenith_Scene xScene = MakeInvalidScene();
 
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
-		if (pxData && pxData->m_bIsLoaded && !pxData->m_bIsUnloading && pxData->m_strPath == strCanonical)
+		Zenith_SceneData* pxData = g_xEngine.Scenes().m_axScenes.Get(i);
+		if (pxData && pxData->IsLoaded() && !pxData->IsUnloading() && pxData->m_strPath == strCanonical)
 		{
 			xScene.m_iHandle = static_cast<int>(i);
-			xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(i);
+			xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(i);
 			return xScene;
 		}
 	}
 	return xScene;
 }
 
-uint32_t Zenith_SceneRegistry::GetLoadedSceneCount()
+uint32_t Zenith_SceneSystem::GetLoadedSceneCount()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetLoadedSceneCount must be called from main thread");
 	uint32_t uCount = 0;
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		if (IsSceneVisibleToUser(i, g_xEngine.SceneRegistry().m_axScenes.Get(i))) uCount++;
+		if (IsSceneVisibleToUser(i, g_xEngine.Scenes().m_axScenes.Get(i))) uCount++;
 	}
 	return uCount;
 }
 
-uint32_t Zenith_SceneRegistry::GetTotalSceneCount()
+uint32_t Zenith_SceneSystem::GetTotalSceneCount()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetTotalSceneCount must be called from main thread");
 	uint32_t uCount = 0;
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		if (g_xEngine.SceneRegistry().m_axScenes.Get(i)) uCount++;
+		if (g_xEngine.Scenes().m_axScenes.Get(i)) uCount++;
 	}
 	return uCount;
 }
 
-uint32_t Zenith_SceneRegistry::GetBuildSceneCount()
+uint32_t Zenith_SceneSystem::GetBuildSceneCount()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetBuildSceneCount must be called from main thread");
 	uint32_t uCount = 0;
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axBuildIndexToPath.GetSize(); ++i)
 	{
-		if (!g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(i).empty()) uCount++;
+		if (!g_xEngine.Scenes().m_axBuildIndexToPath.Get(i).empty()) uCount++;
 	}
 	return uCount;
 }
@@ -410,19 +393,19 @@ uint32_t Zenith_SceneRegistry::GetBuildSceneCount()
 // Active / persistent
 //=============================================================================
 
-int Zenith_SceneRegistry::SelectNewActiveScene(int iExcludeHandle)
+int Zenith_SceneSystem::SelectNewActiveScene(int iExcludeHandle)
 {
 	int iBestHandle = -1;
 	int iBestBuildIndex = -1;
 	uint64_t ulBestTimestamp = 0;
 
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		if (static_cast<int>(i) == g_xEngine.SceneRegistry().m_iPersistentSceneHandle) continue;
+		if (static_cast<int>(i) == g_xEngine.Scenes().m_iPersistentSceneHandle) continue;
 		if (static_cast<int>(i) == iExcludeHandle) continue;
 
-		Zenith_SceneData* pxCandidate = g_xEngine.SceneRegistry().m_axScenes.Get(i);
-		if (!pxCandidate || !pxCandidate->m_bIsLoaded || pxCandidate->m_bIsUnloading) continue;
+		Zenith_SceneData* pxCandidate = g_xEngine.Scenes().m_axScenes.Get(i);
+		if (!pxCandidate || !pxCandidate->IsLoaded() || pxCandidate->IsUnloading()) continue;
 
 		if (pxCandidate->m_iBuildIndex >= 0)
 		{
@@ -448,49 +431,49 @@ int Zenith_SceneRegistry::SelectNewActiveScene(int iExcludeHandle)
 	return iBestHandle;
 }
 
-Zenith_Scene Zenith_SceneRegistry::GetPersistentScene()
+Zenith_Scene Zenith_SceneSystem::GetPersistentScene()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetPersistentScene must be called from main thread");
-	return GetSceneFromHandle(g_xEngine.SceneRegistry().m_iPersistentSceneHandle);
+	return GetSceneFromHandle(g_xEngine.Scenes().m_iPersistentSceneHandle);
 }
 
 //=============================================================================
 // Visibility / update predicates
 //=============================================================================
 
-bool Zenith_SceneRegistry::IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_SceneData* pxData)
+bool Zenith_SceneSystem::IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_SceneData* pxData)
 {
-	if (!pxData || !pxData->m_bIsLoaded || !pxData->m_bIsActivated || pxData->m_bIsUnloading)
+	if (!pxData || !pxData->IsLoaded() || !pxData->IsActivated() || pxData->IsUnloading())
 		return false;
-	if (static_cast<int>(uSlotIndex) == g_xEngine.SceneRegistry().m_iPersistentSceneHandle && pxData->GetEntityCount() == 0)
+	if (static_cast<int>(uSlotIndex) == g_xEngine.Scenes().m_iPersistentSceneHandle && pxData->GetEntityCount() == 0)
 		return false;
 	return true;
 }
 
-bool Zenith_SceneRegistry::IsSceneUpdatable(const Zenith_SceneData* pxData)
+bool Zenith_SceneSystem::IsSceneUpdatable(const Zenith_SceneData* pxData)
 {
-	return pxData && pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading && !pxData->IsPaused();
+	return pxData && pxData->IsLoaded() && pxData->IsActivated() && !pxData->IsUnloading() && !pxData->IsPaused();
 }
 
 //=============================================================================
 // Name cache
 //=============================================================================
 
-void Zenith_SceneRegistry::AddToSceneNameCache(int iHandle, const std::string& strName)
+void Zenith_SceneSystem::AddToSceneNameCache(int iHandle, const std::string& strName)
 {
 	SceneNameEntry xEntry;
 	xEntry.m_strName = strName;
 	xEntry.m_iHandle = iHandle;
-	g_xEngine.SceneRegistry().m_axLoadedSceneNames.PushBack(std::move(xEntry));
+	g_xEngine.Scenes().m_axLoadedSceneNames.PushBack(std::move(xEntry));
 }
 
-void Zenith_SceneRegistry::RemoveFromSceneNameCache(int iHandle)
+void Zenith_SceneSystem::RemoveFromSceneNameCache(int iHandle)
 {
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axLoadedSceneNames.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axLoadedSceneNames.GetSize(); ++i)
 	{
-		if (g_xEngine.SceneRegistry().m_axLoadedSceneNames.Get(i).m_iHandle == iHandle)
+		if (g_xEngine.Scenes().m_axLoadedSceneNames.Get(i).m_iHandle == iHandle)
 		{
-			g_xEngine.SceneRegistry().m_axLoadedSceneNames.RemoveSwap(i);
+			g_xEngine.Scenes().m_axLoadedSceneNames.RemoveSwap(i);
 			return;
 		}
 	}
@@ -500,38 +483,38 @@ void Zenith_SceneRegistry::RemoveFromSceneNameCache(int iHandle)
 // Build-index registry
 //=============================================================================
 
-void Zenith_SceneRegistry::RegisterSceneBuildIndex(int iBuildIndex, const std::string& strPath)
+void Zenith_SceneSystem::RegisterSceneBuildIndex(int iBuildIndex, const std::string& strPath)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RegisterSceneBuildIndex must be called from main thread");
 	Zenith_Assert(iBuildIndex >= 0, "RegisterSceneBuildIndex: Build index must be non-negative");
 
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
-	if (uBuildIndex < g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize()
-		&& !g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex).empty()
-		&& g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex) != strPath)
+	if (uBuildIndex < g_xEngine.Scenes().m_axBuildIndexToPath.GetSize()
+		&& !g_xEngine.Scenes().m_axBuildIndexToPath.Get(uBuildIndex).empty()
+		&& g_xEngine.Scenes().m_axBuildIndexToPath.Get(uBuildIndex) != strPath)
 	{
 		Zenith_Assert(false,
 			"RegisterSceneBuildIndex: Build index %d already registered for '%s', cannot register for '%s'",
-			iBuildIndex, g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex).c_str(), strPath.c_str());
+			iBuildIndex, g_xEngine.Scenes().m_axBuildIndexToPath.Get(uBuildIndex).c_str(), strPath.c_str());
 		Zenith_Error(LOG_CATEGORY_SCENE,
 			"RegisterSceneBuildIndex: Build index %d already registered - ignoring duplicate", iBuildIndex);
 		return;
 	}
-	while (g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize() <= uBuildIndex)
-		g_xEngine.SceneRegistry().m_axBuildIndexToPath.PushBack(std::string());
-	g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex) = strPath;
+	while (g_xEngine.Scenes().m_axBuildIndexToPath.GetSize() <= uBuildIndex)
+		g_xEngine.Scenes().m_axBuildIndexToPath.PushBack(std::string());
+	g_xEngine.Scenes().m_axBuildIndexToPath.Get(uBuildIndex) = strPath;
 	Zenith_Log(LOG_CATEGORY_SCENE, "Registered scene build index %d -> %s", iBuildIndex, strPath.c_str());
 }
 
-void Zenith_SceneRegistry::ClearBuildIndexRegistry()
+void Zenith_SceneSystem::ClearBuildIndexRegistry()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "ClearBuildIndexRegistry must be called from main thread");
-	g_xEngine.SceneRegistry().m_axBuildIndexToPath.Clear();
+	g_xEngine.Scenes().m_axBuildIndexToPath.Clear();
 
 	uint32_t uScenesCleared = 0;
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
+		Zenith_SceneData* pxData = g_xEngine.Scenes().m_axScenes.Get(i);
 		if (pxData && pxData->m_iBuildIndex >= 0)
 		{
 			pxData->m_iBuildIndex = -1;
@@ -549,11 +532,10 @@ namespace
 }
 
 //=============================================================================
-// Scene creation / activation / pausing — real bodies migrated from
-// Zenith_SceneManager.cpp during Phase 5e.
+// Scene creation / activation / pausing
 //=============================================================================
 
-Zenith_Scene Zenith_SceneRegistry::CreateScene(const std::string& strName)
+Zenith_Scene Zenith_SceneSystem::CreateScene(const std::string& strName)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateScene must be called from main thread");
 
@@ -574,55 +556,54 @@ Zenith_Scene Zenith_SceneRegistry::CreateScene(const std::string& strName)
 	return CreateEmptyScene(strName, true);
 }
 
-Zenith_Scene Zenith_SceneRegistry::CreateEmptyScene(const std::string& strName, bool bAllowSetActive)
+Zenith_Scene Zenith_SceneSystem::CreateEmptyScene(const std::string& strName, bool bAllowSetActive)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateEmptyScene must be called from main thread");
-	Zenith_Assert(!g_xEngine.SceneLifecycle().m_bRenderTasksActive, "CreateEmptyScene: scene mutation while render tasks are reading — render-task invariant violated");
+	Zenith_Assert(!g_xEngine.Scenes().m_bRenderTasksActive, "CreateEmptyScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	int iHandle = AllocateSceneHandle();
 
 	Zenith_SceneData* pxSceneData = new Zenith_SceneData();
 	pxSceneData->m_strName = strName;
 	pxSceneData->m_iHandle = iHandle;
-	pxSceneData->m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
-	pxSceneData->m_bIsLoaded = true;
+	pxSceneData->m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(iHandle);
+	pxSceneData->TransitionTo(Zenith_SceneData::SCENE_STATE_LOADING);
 	// B.9: mirror the sync/async load progression — scene is created as
 	// "loaded-but-not-activated" so any probe attached before the final flip
 	// (e.g. via SceneLoadStarted or the soon-to-fire ActiveSceneChanged) observes
 	// the same transient state as the disk-load paths. The flip to true happens
 	// below, after the slot is wired up and ready for entity creation, but BEFORE
 	// the optional auto-activate and BEFORE returning to the caller.
-	pxSceneData->m_bIsActivated = false;
-	pxSceneData->m_ulLoadTimestamp = g_xEngine.SceneRegistry().m_ulNextLoadTimestamp++;
+	pxSceneData->m_ulLoadTimestamp = g_xEngine.Scenes().m_ulNextLoadTimestamp++;
 
 	// Ensure vector is large enough
-	while (g_xEngine.SceneRegistry().m_axScenes.GetSize() <= static_cast<u_int>(iHandle))
+	while (g_xEngine.Scenes().m_axScenes.GetSize() <= static_cast<u_int>(iHandle))
 	{
-		g_xEngine.SceneRegistry().m_axScenes.PushBack(nullptr);
+		g_xEngine.Scenes().m_axScenes.PushBack(nullptr);
 	}
-	g_xEngine.SceneRegistry().m_axScenes.Get(iHandle) = pxSceneData;
+	g_xEngine.Scenes().m_axScenes.Get(iHandle) = pxSceneData;
 	AddToSceneNameCache(iHandle, strName);
 
 	// B.9: flip to activated now that the slot is fully published — empty scenes
 	// have no entity lifecycle to dispatch, so there's nothing to wait for.
-	pxSceneData->m_bIsActivated = true;
+	pxSceneData->TransitionTo(Zenith_SceneData::SCENE_STATE_LOADED);
 
 	// A6: Auto-activate only if caller opts in AND no active scene already exists.
 	// Initialise() passes false when creating the persistent DontDestroyOnLoad scene
 	// so it never becomes the fallback active.
-	if (bAllowSetActive && g_xEngine.SceneRegistry().m_iActiveSceneHandle < 0)
+	if (bAllowSetActive && g_xEngine.Scenes().m_iActiveSceneHandle < 0)
 	{
-		Zenith_Assert(!g_xEngine.SceneLifecycle().m_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-		g_xEngine.SceneRegistry().m_iActiveSceneHandle = iHandle;
+		Zenith_Assert(!g_xEngine.Scenes().m_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
+		g_xEngine.Scenes().m_iActiveSceneHandle = iHandle;
 	}
 
 	Zenith_Scene xScene;
 	xScene.m_iHandle = iHandle;
-	xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
+	xScene.m_uGeneration = g_xEngine.Scenes().m_axSceneGenerations.Get(iHandle);
 	return xScene;
 }
 
-bool Zenith_SceneRegistry::SetActiveScene(Zenith_Scene xScene)
+bool Zenith_SceneSystem::SetActiveScene(Zenith_Scene xScene)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetActiveScene must be called from main thread");
 
@@ -633,20 +614,20 @@ bool Zenith_SceneRegistry::SetActiveScene(Zenith_Scene xScene)
 
 	// A6: the persistent scene is a container for DontDestroyOnLoad entities only;
 	// it must never be the "active" scene (matches Unity's DontDestroyOnLoad semantics).
-	if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
+	if (xScene.m_iHandle == g_xEngine.Scenes().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "SetActiveScene: Cannot set the persistent scene as active (DontDestroyOnLoad is a container, not a real scene)");
 		return false;
 	}
 
 	Zenith_SceneData* pxSceneData = GetSceneData(xScene);
-	if (!pxSceneData || !pxSceneData->m_bIsLoaded)
+	if (!pxSceneData || !pxSceneData->IsLoaded())
 	{
 		return false;
 	}
 
 	// Cannot set a scene as active if it's being unloaded
-	if (pxSceneData->m_bIsUnloading)
+	if (pxSceneData->IsUnloading())
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "Cannot set unloading scene as active");
 		return false;
@@ -659,13 +640,13 @@ bool Zenith_SceneRegistry::SetActiveScene(Zenith_Scene xScene)
 		return true;
 	}
 
-	Zenith_Assert(!g_xEngine.SceneLifecycle().m_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-	g_xEngine.SceneRegistry().m_iActiveSceneHandle = xScene.m_iHandle;
-	g_xEngine.SceneCallbacks().FireActiveSceneChanged(xCurrent, xScene);
+	Zenith_Assert(!g_xEngine.Scenes().m_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
+	g_xEngine.Scenes().m_iActiveSceneHandle = xScene.m_iHandle;
+	g_xEngine.Scenes().FireActiveSceneChanged(xCurrent, xScene);
 	return true;
 }
 
-void Zenith_SceneRegistry::SetScenePaused(Zenith_Scene xScene, bool bPaused)
+void Zenith_SceneSystem::SetScenePaused(Zenith_Scene xScene, bool bPaused)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetScenePaused must be called from main thread");
 
@@ -676,7 +657,7 @@ void Zenith_SceneRegistry::SetScenePaused(Zenith_Scene xScene, bool bPaused)
 	}
 }
 
-bool Zenith_SceneRegistry::IsScenePaused(Zenith_Scene xScene)
+bool Zenith_SceneSystem::IsScenePaused(Zenith_Scene xScene)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsScenePaused must be called from main thread");
 
@@ -684,9 +665,9 @@ bool Zenith_SceneRegistry::IsScenePaused(Zenith_Scene xScene)
 	return pxSceneData ? pxSceneData->IsPaused() : false;
 }
 
-Zenith_CameraComponent* Zenith_SceneRegistry::FindMainCameraAcrossScenes()
+Zenith_CameraComponent* Zenith_SceneSystem::FindMainCameraAcrossScenes()
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().m_bRenderTasksActive, "FindMainCameraAcrossScenes must be called from main thread or during render task execution");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().m_bRenderTasksActive, "FindMainCameraAcrossScenes must be called from main thread or during render task execution");
 	// Try active scene first (common case).
 	Zenith_SceneData* pxActiveData = GetSceneData(GetActiveScene());
 	if (pxActiveData)
@@ -697,9 +678,9 @@ Zenith_CameraComponent* Zenith_SceneRegistry::FindMainCameraAcrossScenes()
 	}
 
 	// Search all loaded scenes (finds camera in persistent scene, etc.)
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
+		Zenith_SceneData* pxData = g_xEngine.Scenes().m_axScenes.Get(i);
 		if (pxData && pxData->IsLoaded() && !pxData->IsUnloading())
 		{
 			Zenith_CameraComponent* pxCamera = pxData->TryGetMainCamera();
@@ -711,33 +692,33 @@ Zenith_CameraComponent* Zenith_SceneRegistry::FindMainCameraAcrossScenes()
 	return nullptr;
 }
 
-const std::string& Zenith_SceneRegistry::GetRegisteredScenePath(int iBuildIndex)
+const std::string& Zenith_SceneSystem::GetRegisteredScenePath(int iBuildIndex)
 {
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
-	if (iBuildIndex >= 0 && uBuildIndex < g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize())
+	if (iBuildIndex >= 0 && uBuildIndex < g_xEngine.Scenes().m_axBuildIndexToPath.GetSize())
 	{
-		return g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex);
+		return g_xEngine.Scenes().m_axBuildIndexToPath.Get(uBuildIndex);
 	}
 	return s_strEmptyBuildPath;
 }
 
-uint32_t Zenith_SceneRegistry::GetBuildIndexRegistrySize()
+uint32_t Zenith_SceneSystem::GetBuildIndexRegistrySize()
 {
-	return g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize();
+	return g_xEngine.Scenes().m_axBuildIndexToPath.GetSize();
 }
 
 //=============================================================================
 // RenameScene (atomic name-cache update)
 //=============================================================================
 
-bool Zenith_SceneRegistry::RenameScene(Zenith_Scene xScene, const std::string& strNewName)
+bool Zenith_SceneSystem::RenameScene(Zenith_Scene xScene, const std::string& strNewName)
 {
-	// E.18 / finding 3.15: the scene-name cache (g_xEngine.SceneRegistry().m_axLoadedSceneNames) is an O(1) lookup
+	// E.18 / finding 3.15: the scene-name cache (g_xEngine.Scenes().m_axLoadedSceneNames) is an O(1) lookup
 	// shortcut for GetSceneByName. Before this API, renaming via friend access to
 	// pxSceneData->m_strName left the cache stale — lookups by old name still hit, by
 	// new name missed. Now cache and data move together.
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RenameScene must be called from main thread");
-	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.Scenes().AreRenderTasksActive(),
 		"RenameScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xScene.IsValid())
@@ -746,7 +727,7 @@ bool Zenith_SceneRegistry::RenameScene(Zenith_Scene xScene, const std::string& s
 		return false;
 	}
 
-	if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
+	if (xScene.m_iHandle == g_xEngine.Scenes().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "RenameScene: cannot rename the persistent scene");
 		return false;
@@ -761,11 +742,11 @@ bool Zenith_SceneRegistry::RenameScene(Zenith_Scene xScene, const std::string& s
 
 	pxSceneData->m_strName = strNewName;
 
-	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axLoadedSceneNames.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.Scenes().m_axLoadedSceneNames.GetSize(); ++i)
 	{
-		if (g_xEngine.SceneRegistry().m_axLoadedSceneNames.Get(i).m_iHandle == xScene.m_iHandle)
+		if (g_xEngine.Scenes().m_axLoadedSceneNames.Get(i).m_iHandle == xScene.m_iHandle)
 		{
-			g_xEngine.SceneRegistry().m_axLoadedSceneNames.Get(i).m_strName = strNewName;
+			g_xEngine.Scenes().m_axLoadedSceneNames.Get(i).m_strName = strNewName;
 			pxSceneData->MarkDirty();
 			return true;
 		}

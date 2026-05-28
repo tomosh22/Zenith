@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
@@ -50,7 +50,7 @@ namespace
 	template<typename T>
 	T* GetScript(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
@@ -59,7 +59,7 @@ namespace
 
 	bool TrySetEntityPosition(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
@@ -126,7 +126,7 @@ static bool Step_UnlockedOpens(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -246,7 +246,7 @@ static bool Step_CloseReopen(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
@@ -436,7 +436,7 @@ static bool Step_StickyUnlock(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 

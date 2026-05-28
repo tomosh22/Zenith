@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Core.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Components/DPVillager_Behaviour.h"
 
@@ -66,7 +66,7 @@ static bool Step_LifeTimer(int iFrame)
 	switch (g_iLTPhase)
 	{
 	case kLT_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iLTPhase = kLT_WaitScene;
 		return true;
 

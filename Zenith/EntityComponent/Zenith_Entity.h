@@ -70,11 +70,10 @@ class Zenith_TransformComponent;
  * EntitySlot and accessed through this handle. This eliminates the
  * synchronization bugs that occurred when entity state was duplicated.
  *
- * THREADING: A single Zenith_Entity instance is NOT safe to share across
- * threads. The scene-data pointer and scene-handle fields are mutable and
- * refreshed lazily by const accessors (IsValid / GetSceneData) when an
- * entity moves between scenes, so concurrent reads on the same instance
- * can race. Copy the handle per-thread, or re-resolve from EntityID.
+ * THREADING: Zenith_Entity has no mutable state — GetSceneData() re-resolves
+ * the SceneData pointer from the entity slot on every call. Safe to share
+ * across threads as long as the underlying scene system isn't being mutated
+ * concurrently (engine-wide invariant: scene mutation is main-thread only).
  *
  * Usage:
  *   Zenith_Entity xEntity = pxSceneData->GetEntity(entityID);
@@ -259,6 +258,4 @@ private:
 	static void PropagateHierarchyEnabled(Zenith_SceneData* pxSceneData, Zenith_EntityID xParentID, bool bBecomingActive);
 
 	Zenith_EntityID m_xEntityID;
-	mutable Zenith_SceneData* m_pxCachedSceneData = nullptr;  // Cached for fast path in GetSceneData()
-	mutable int m_iCachedSceneHandle = -1;  // Cached handle for safe validation (avoids dereferencing stale pointer)
 };

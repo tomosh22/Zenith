@@ -6,7 +6,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -491,9 +491,9 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 	Zenith_Vector<PendingLight> xPending;
 	xPending.Reserve(uMAX_LIGHTS * 2);
 
-	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.SceneRegistry().GetSceneSlotCount(); ++uSceneSlot)
+	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataAtSlot(uSceneSlot);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
 		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading()) continue;
 
 		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()

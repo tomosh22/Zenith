@@ -28,7 +28,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "UI/Zenith_UIButton.h"
@@ -172,7 +172,7 @@ public:
 			if (Marble_Input::WasPausePressed())
 			{
 				m_eGameState = MarbleGameState::PAUSED;
-				g_xEngine.SceneRegistry().SetScenePaused(m_xLevelScene, true);
+				g_xEngine.Scenes().SetScenePaused(m_xLevelScene, true);
 				UpdateUI();
 				return;
 			}
@@ -206,7 +206,7 @@ public:
 			if (Marble_Input::WasPausePressed())
 			{
 				m_eGameState = MarbleGameState::PLAYING;
-				g_xEngine.SceneRegistry().SetScenePaused(m_xLevelScene, false);
+				g_xEngine.Scenes().SetScenePaused(m_xLevelScene, false);
 			}
 			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
@@ -289,7 +289,7 @@ private:
 	// ========================================================================
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -301,8 +301,8 @@ private:
 		SetHUDVisible(true);
 
 		// Create level scene
-		m_xLevelScene = g_xEngine.SceneRegistry().CreateEmptyScene("Level");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xLevelScene);
+		m_xLevelScene = g_xEngine.Scenes().CreateEmptyScene("Level");
+		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
 
 		// Generate level (uses GetActiveScene internally)
 		Marble_LevelGenerator::GenerateLevel(
@@ -332,11 +332,11 @@ private:
 
 		if (m_xLevelScene.IsValid())
 		{
-			g_xEngine.SceneOperations().UnloadScene(m_xLevelScene);
+			g_xEngine.Scenes().UnloadScene(m_xLevelScene);
 			m_xLevelScene = Zenith_Scene();
 		}
 
-		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetLevel()
@@ -345,13 +345,13 @@ private:
 
 		if (m_xLevelScene.IsValid())
 		{
-			g_xEngine.SceneOperations().UnloadScene(m_xLevelScene);
+			g_xEngine.Scenes().UnloadScene(m_xLevelScene);
 			m_xLevelScene = Zenith_Scene();
 		}
 
 		// Create fresh level scene
-		m_xLevelScene = g_xEngine.SceneRegistry().CreateEmptyScene("Level");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xLevelScene);
+		m_xLevelScene = g_xEngine.Scenes().CreateEmptyScene("Level");
+		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
 
 		// Generate level
 		Marble_LevelGenerator::GenerateLevel(
@@ -439,7 +439,7 @@ private:
 	{
 		if (!m_xLevelScene.IsValid())
 			return;
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xLevelScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
@@ -450,7 +450,7 @@ private:
 		Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
 
 		// Get camera from persistent scene
-		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -476,7 +476,7 @@ private:
 	{
 		if (!m_xLevelScene.IsValid())
 			return;
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xLevelScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
@@ -497,11 +497,11 @@ private:
 	{
 		if (!m_xLevelScene.IsValid())
 			return;
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xLevelScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
-		Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -519,7 +519,7 @@ private:
 	{
 		if (!m_xLevelScene.IsValid())
 			return;
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(m_xLevelScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 

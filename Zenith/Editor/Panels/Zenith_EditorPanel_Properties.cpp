@@ -6,7 +6,7 @@
 #include "Editor/Zenith_Editor.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -26,7 +26,7 @@ namespace
 		if (!xEntityScene.IsValid())
 			return;
 
-		Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
+		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
 		const char* szSceneName = (xEntityScene == xPersistentScene)
 			? "DontDestroyOnLoad"
 			: xEntityScene.GetName().c_str();

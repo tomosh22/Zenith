@@ -1,9 +1,8 @@
 #include "Zenith.h"
-
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -196,7 +195,7 @@ namespace
 	template<typename T>
 	T* GetScript(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
@@ -205,7 +204,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
@@ -215,7 +214,7 @@ namespace
 
 	void TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
@@ -240,7 +239,7 @@ namespace
 	// authored on the GameManager entity in the active gameplay scene,
 	// but DPPauseMenuController_Behaviour::OnStart migrates its parent
 	// entity (and the PauseOverlay text element on it) to the persistent
-	// scene via `Zenith_SceneEntityOwnership::MarkEntityPersistent` so the
+	// scene via `g_xEngine.Scenes().MarkEntityPersistent` so the
 	// controller keeps ticking while the gameplay scene is paused.
 	//
 	// Originally this helper only walked the active scene -- the
@@ -250,10 +249,10 @@ namespace
 	Zenith_UI::Zenith_UIText* FindHudText(const char* szName)
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = g_xEngine.SceneRegistry().GetSceneSlotCount();
+		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetLoadedSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
 			if (pxScene == nullptr) continue;
 			pxScene->Query<Zenith_UIComponent>().ForEach(
 				[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
@@ -340,7 +339,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// Phase 1: scene load.
 	// ----------------------------------------------------------------------
 	case kFP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFP_WaitForLoad;
 		g_iWait = 0;
 		return true;
@@ -439,7 +438,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		// Snapshot camera position BEFORE possession — must not change
 		// after possess + move (bird's-eye camera does not follow).
-		if (Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes())
+		if (Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes())
 		{
 			pxCam->GetPosition(g_xCamPosBeforePossess);
 		}
@@ -517,7 +516,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kFP_AssertOrbitCamera:
 	{
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		Zenith_Maths::Vector3 xVPos(0.0f);
 		if (pxCam) pxCam->GetPosition(g_xCamPosAfterMove);
 		TryGetEntityPos(g_xVillager, xVPos);
@@ -663,8 +662,8 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kFP_ForgeSetup:
 	{
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (!pxScene) { g_iPhase = kFP_Done; return false; }
 
 		Zenith_Entity xForge(pxScene, std::string("FullPlaythrough_Forge"));
@@ -746,7 +745,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		if (g_iWait < 5) return true;
 
 		// Read the priest's blackboard for the investigate-pos flag.
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPriest);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
 		if (pxScene)
 		{
 			Zenith_Entity xPriestEnt = pxScene->TryGetEntity(g_xPriest);

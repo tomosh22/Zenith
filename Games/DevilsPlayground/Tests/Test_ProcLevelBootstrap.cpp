@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
@@ -44,8 +44,8 @@ static void Setup_ProcLevelBootstrap()
 	g_bPassed = false;
 	g_szFailureReason = "";
 
-	g_xScene = g_xEngine.SceneRegistry().CreateEmptyScene("ProcLevelBootstrapTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
+	g_xScene = g_xEngine.Scenes().CreateEmptyScene("ProcLevelBootstrapTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 	if (pxScene == nullptr)
 	{
 		g_szFailureReason = "CreateEmptyScene returned no SceneData";
@@ -188,7 +188,7 @@ static bool Verify_ProcLevelBootstrap()
 	// when the scene unloads).
 	if (g_xScene.IsValid())
 	{
-		g_xEngine.SceneOperations().UnloadScene(g_xScene);
+		g_xEngine.Scenes().UnloadScene(g_xScene);
 	}
 
 	if (!g_bPassed)

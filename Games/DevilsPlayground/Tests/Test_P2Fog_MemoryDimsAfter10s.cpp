@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
@@ -77,8 +77,8 @@ static void Setup_P2MemoryFog()
 	// onto DPFogPass_Behaviour::m_xMemoryReveals. Spin up a scene with
 	// the script attached so the DP_Fog::Record/Get/Tick forwarders
 	// actually do something (no-ops without an Instance()).
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().CreateEmptyScene("MemoryFogTest");
-	Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("MemoryFogTest");
+	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xFogEntity(pxScene, "FogPassEntity");
 	xFogEntity.AddComponent<Zenith_ScriptComponent>()
 		.AddScript<DPFogPass_Behaviour>();
@@ -157,7 +157,7 @@ static void Setup_P2MemoryFog()
 		DP_Fog::GetMemoryRevealCount());
 	std::fflush(stdout);
 
-	g_xEngine.SceneOperations().UnloadScene(xScene);
+	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
 static bool Step_P2MemoryFog(int /*iFrame*/)

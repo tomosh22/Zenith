@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Zenith_Query.h"
@@ -63,15 +63,15 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;
 		return true;
 
 	case kWait:
 	{
 		++g_iWait;
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene)
 		{
 			int iLights = 0;
@@ -105,8 +105,8 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 3) return true;
 
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene)
 		{
 			pxScene->Query<Zenith_LightComponent>().ForEach(

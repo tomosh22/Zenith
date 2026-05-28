@@ -4,7 +4,7 @@
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -406,7 +406,7 @@ ZENITH_TEST(Automation, SetAsMainCameraStep)
 	Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(pxEntity->GetEntityID());
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(pxEntity->GetEntityID());
 	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Entity should be in a scene");
 	ZENITH_ASSERT_EQ(pxSceneData->GetMainCameraEntity(), pxEntity->GetEntityID(), "Entity should be the main camera");
 
@@ -488,7 +488,7 @@ ZENITH_TEST(Automation, CreateSaveUnloadCycle)
 
 	// Step 1: Create scene
 	g_xEngine.EditorAutomation().ExecuteNextStep();
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Active scene should be valid after CreateScene step");
 
 	// Step 2: Create entity
@@ -822,10 +822,10 @@ ZENITH_TEST(Automation, SceneSaveLoadRoundTrip)
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(szSavePath), "Scene file should exist after save");
 
 	// Load the saved scene and verify contents survived serialization
-	Zenith_Scene xLoadedScene = g_xEngine.SceneOperations().LoadSceneBlockingForBootstrap(szSavePath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoadedScene = g_xEngine.Scenes().LoadScene(szSavePath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xLoadedScene.IsValid(), "Loaded scene should be valid");
 
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xLoadedScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xLoadedScene);
 	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Should have scene data");
 
 	Zenith_Entity xEntity = pxSceneData->FindEntityByName("RTEntity");
@@ -842,7 +842,7 @@ ZENITH_TEST(Automation, SceneSaveLoadRoundTrip)
 	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 3.f, 0.001f, "Camera pos Z should survive round-trip");
 
 	// Cleanup
-	g_xEngine.SceneOperations().UnloadScene(xLoadedScene);
+	g_xEngine.Scenes().UnloadScene(xLoadedScene);
 	std::filesystem::remove(szSavePath);
 
 	g_xEngine.EditorAutomation().Reset();

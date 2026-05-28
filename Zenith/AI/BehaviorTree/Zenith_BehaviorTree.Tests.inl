@@ -4,7 +4,7 @@
 #include "AI/BehaviorTree/Zenith_BTComposites.h"
 #include "AI/BehaviorTree/Zenith_BTDecorators.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 
 // ============================================================================
 // Helper: Mock BT Node for testing
@@ -31,8 +31,8 @@ public:
 // ============================================================================
 ZENITH_TEST(AI, BTSequenceAllSuccess) { Zenith_UnitTests::TestBTSequenceAllSuccess(); }
 void Zenith_UnitTests::TestBTSequenceAllSuccess(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -49,8 +49,8 @@ void Zenith_UnitTests::TestBTSequenceAllSuccess(){
 ZENITH_TEST(AI, BTSequenceFirstFails) { Zenith_UnitTests::TestBTSequenceFirstFails(); }
 
 void Zenith_UnitTests::TestBTSequenceFirstFails(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -69,8 +69,8 @@ void Zenith_UnitTests::TestBTSequenceFirstFails(){
 ZENITH_TEST(AI, BTSequenceRunning) { Zenith_UnitTests::TestBTSequenceRunning(); }
 
 void Zenith_UnitTests::TestBTSequenceRunning(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -87,8 +87,8 @@ void Zenith_UnitTests::TestBTSequenceRunning(){
 ZENITH_TEST(AI, BTSelectorFirstSucceeds) { Zenith_UnitTests::TestBTSelectorFirstSucceeds(); }
 
 void Zenith_UnitTests::TestBTSelectorFirstSucceeds(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -107,8 +107,8 @@ void Zenith_UnitTests::TestBTSelectorFirstSucceeds(){
 ZENITH_TEST(AI, BTSelectorAllFail) { Zenith_UnitTests::TestBTSelectorAllFail(); }
 
 void Zenith_UnitTests::TestBTSelectorAllFail(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -125,8 +125,8 @@ void Zenith_UnitTests::TestBTSelectorAllFail(){
 ZENITH_TEST(AI, BTSelectorRunning) { Zenith_UnitTests::TestBTSelectorRunning(); }
 
 void Zenith_UnitTests::TestBTSelectorRunning(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -142,8 +142,8 @@ void Zenith_UnitTests::TestBTSelectorRunning(){
 ZENITH_TEST(AI, BTParallelRequireOne) { Zenith_UnitTests::TestBTParallelRequireOne(); }
 
 void Zenith_UnitTests::TestBTParallelRequireOne(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -160,8 +160,8 @@ void Zenith_UnitTests::TestBTParallelRequireOne(){
 ZENITH_TEST(AI, BTParallelRequireAll) { Zenith_UnitTests::TestBTParallelRequireAll(); }
 
 void Zenith_UnitTests::TestBTParallelRequireAll(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -180,8 +180,8 @@ ZENITH_TEST(AI, BTParallelAllRunning) { Zenith_UnitTests::TestBTParallelAllRunni
 void Zenith_UnitTests::TestBTParallelAllRunning(){
 	// Every child returns RUNNING → neither policy met → Parallel returns RUNNING
 	// (rather than the default-to-FAILURE fallback for "all complete").
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -203,8 +203,8 @@ void Zenith_UnitTests::TestBTParallelNeitherPolicyMet(){
 	// fall through to the default-FAILURE case (was an edge case before the
 	// refactor; the extracted SuccessPolicyMet/FailurePolicyMet predicates
 	// preserve it).
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -222,8 +222,8 @@ ZENITH_TEST(AI, BTParallelRequireOneAbortsRunning) { Zenith_UnitTests::TestBTPar
 void Zenith_UnitTests::TestBTParallelRequireOneAbortsRunning(){
 	// REQUIRE_ONE success should abort any remaining RUNNING children so the
 	// scheduler doesn't keep ticking them on the next frame.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -251,8 +251,8 @@ void Zenith_UnitTests::TestBTParallelRequireOneSuccessWinsOverSimultaneousFailur
 	// (success check runs first in Execute). The refactor preserved this order
 	// by splitting TickChildrenAndTally → SuccessPolicyMet → FailurePolicyMet,
 	// but no existing test pinned the simultaneous-mixed-outcome case.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -269,8 +269,8 @@ void Zenith_UnitTests::TestBTParallelRequireOneSuccessWinsOverSimultaneousFailur
 ZENITH_TEST(AI, BTInverter) { Zenith_UnitTests::TestBTInverter(); }
 
 void Zenith_UnitTests::TestBTInverter(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -297,8 +297,8 @@ void Zenith_UnitTests::TestBTInverter(){
 ZENITH_TEST(AI, BTRepeaterCount) { Zenith_UnitTests::TestBTRepeaterCount(); }
 
 void Zenith_UnitTests::TestBTRepeaterCount(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -320,8 +320,8 @@ void Zenith_UnitTests::TestBTRepeaterCount(){
 ZENITH_TEST(AI, BTCooldown) { Zenith_UnitTests::TestBTCooldown(); }
 
 void Zenith_UnitTests::TestBTCooldown(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
@@ -343,8 +343,8 @@ void Zenith_UnitTests::TestBTCooldown(){
 ZENITH_TEST(AI, BTSucceeder) { Zenith_UnitTests::TestBTSucceeder(); }
 
 void Zenith_UnitTests::TestBTSucceeder(){
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 

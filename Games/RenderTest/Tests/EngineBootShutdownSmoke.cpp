@@ -5,7 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
 
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 
 // Phase 1 of the Zenith_Engine refactor: headless boot/shutdown smoke
 // test. Hosted in RenderTest because RenderTest is the primary
@@ -35,7 +35,7 @@ namespace
 		// Sanity: an active scene exists after the harness's bootstrap
 		// path. If this fires, the boot sequence Phase 0 migrated
 		// returned control with the scene system in a bad state.
-		const Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
+		const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 		Zenith_Assert(xActive.IsValid(),
 			"Phase 1 smoke: no active scene after engine boot.");
 	}

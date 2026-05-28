@@ -1,7 +1,8 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 
@@ -127,7 +128,7 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 		// updates when the attacker lived in a non-active scene (persistent entity,
 		// additively-loaded scene, etc.). Ref: Unity's GameObject.scene contract —
 		// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAttacker);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xAttacker);
 		if (pxSceneData)
 		{
 			Zenith_Entity xAttackerEntity = pxSceneData->TryGetEntity(xAttacker);
@@ -305,7 +306,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 
 		// Audit §3.18 fix: resolve agent's OWN scene — supports agents in any
 		// loaded scene, not just the active one.
-		Zenith_SceneData* pxAgentScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAgentID);
+		Zenith_SceneData* pxAgentScene = g_xEngine.Scenes().GetSceneDataForEntity(xAgentID);
 		if (!pxAgentScene)
 		{
 			continue;
@@ -348,7 +349,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			// Audit §3.18 fix: resolve each target's own scene — cross-scene
 			// perception (e.g. a persistent player entity, or a target in an
 			// additively-loaded scene) now works as Unity would expect.
-			Zenith_SceneData* pxTargetScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xTargetID);
+			Zenith_SceneData* pxTargetScene = g_xEngine.Scenes().GetSceneDataForEntity(xTargetID);
 			if (!pxTargetScene)
 			{
 				continue;
@@ -429,7 +430,7 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
 		AgentPerceptionData& xData = xPair.second;
 
-		Zenith_SceneData* pxAgentScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xAgentID);
+		Zenith_SceneData* pxAgentScene = g_xEngine.Scenes().GetSceneDataForEntity(xAgentID);
 		if (!pxAgentScene)
 		{
 			continue;

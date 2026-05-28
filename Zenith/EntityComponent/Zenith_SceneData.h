@@ -38,7 +38,7 @@ class Zenith_SceneData;
 // placement-new guard and is fully self-contained.
 #include "EntityComponent/Zenith_ComponentPool.h"
 
-// Free-function form of g_xEngine.SceneLifecycle().AreRenderTasksActive(). Used in
+// Free-function form of g_xEngine.Scenes().AreRenderTasksActive(). Used in
 // SceneData.h's template assertion bodies so we don't have to drag the full
 // SceneManager.h include in (closing the cycle).
 #include "EntityComponent/Zenith_RenderTaskState.h"
@@ -81,11 +81,14 @@ public:
 
 	// Destroys every entity + component pool in the scene but leaves scene metadata
 	// (name, path, build index, isLoaded, isActivated, wasLoadedAdditively, unsaved-changes
-	// flag) untouched. This is the correct call for LoadFromFile, which will overwrite
-	// the metadata as part of deserialisation.
-	void ResetEntitiesOnly();
-
+	// flag) untouched. The safe default — use this when you want a clean scene
+	// that stays in the registry as a loaded scene.
 	void Reset();
+
+	// Destroys entities AND scrubs all scene metadata (name/path/buildIndex,
+	// m_bIsLoaded, etc.). Refuses to run on the persistent scene. Intended for
+	// tests that explicitly inspect the scrubbed state + the SceneData destructor.
+	void ScrubAndReset();
 
 	//==========================================================================
 	// Read-Only Scene Properties
@@ -107,11 +110,29 @@ public:
 	void Editor_SetBuildIndex(int iBuildIndex) { m_iBuildIndex = iBuildIndex; }
 	void Editor_MarkEntityStarted(Zenith_EntityID xID);
 #endif
-	bool IsLoaded() const { return m_bIsLoaded; }
-	bool IsActivated() const { return m_bIsActivated; }
-	bool IsUnloading() const { return m_bIsUnloading; }
+	// Scene load state. The historical bool trio (m_bIsLoaded / m_bIsActivated /
+	// m_bIsUnloading) was collapsed into one byte so the half-loaded scene that
+	// caused the Play→Menu crash is now unrepresentable. Use the bool getters or
+	// GetLoadState() to query, TransitionTo() to mutate.
+	enum LoadState : uint8_t
+	{
+		SCENE_STATE_DESTROYED = 0,  // ScrubAndReset has run
+		SCENE_STATE_LOADING,        // exists, lifecycle dispatch pending
+		SCENE_STATE_LOADED,         // steady state
+	};
+	LoadState GetLoadState() const { return m_eLoadState; }
+	bool IsLoaded()    const { return m_eLoadState != SCENE_STATE_DESTROYED; }
+	bool IsActivated() const { return m_eLoadState == SCENE_STATE_LOADED; }
+	// IsUnloading() preserved for API parity but always false — async unload was
+	// retired with the rest of the async pipeline. Readers' branches were left
+	// in place rather than churned because they cost nothing at runtime.
+	bool IsUnloading() const { return false; }
 	bool WasLoadedAdditively() const { return m_bWasLoadedAdditively; }
 	bool IsPaused() const { return m_bIsPaused; }
+
+	// Transition state with a legal-edge assert. Catches the persistent-scene
+	// regression at the cause site rather than several frames downstream.
+	void TransitionTo(LoadState eNew);
 
 	//==========================================================================
 	// Dirty Tracking (Editor)
@@ -263,11 +284,7 @@ private:
 	//==========================================================================
 
 	friend class Zenith_Entity;
-	friend class Zenith_SceneManager;
-	friend class Zenith_SceneRegistry;            // A2: registry methods read scene-data privates (m_bIsLoaded, m_strPath, ...)
-	friend class Zenith_SceneOperationQueue;      // A3: queue runs Awake/Enable dispatch and reads loaded-state privates
-	friend class Zenith_SceneLifecycleScheduler;  // A4: scheduler iterates loaded scenes and dispatches lifecycle
-	friend class Zenith_SceneEntityOwnership;     // A5: entity-ownership methods mutate active/pending-start/timed-destruction lists
+	friend class Zenith_SceneSystem;              // merged registry / operations / lifecycle / callbacks / entity-ownership all reach scene-data privates
 	friend class Zenith_SceneTests;
 	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;
@@ -333,11 +350,11 @@ private:
 #ifdef ZENITH_TOOLS
 	bool m_bHasUnsavedChanges = false;
 #endif
-	bool m_bIsLoaded = false;
-	bool m_bIsActivated = true;  // False during async load until Awake/OnEnable complete (Unity: scene.isLoaded is false until activated)
+	// Initial state matches the historical default (m_bIsLoaded=false,
+	// m_bIsActivated=true) — the constructor body promotes to LOADED.
+	LoadState m_eLoadState = SCENE_STATE_DESTROYED;
 	bool m_bWasLoadedAdditively = false;
 	bool m_bIsPaused = false;  // When true, Update is skipped for this scene
-	bool m_bIsUnloading = false;  // True during async unload - scene partially destroyed
 	uint64_t m_ulLoadTimestamp = 0;  // For selecting most recently loaded scene when active is unloaded
 
 	//==========================================================================
@@ -497,7 +514,7 @@ private:
 	void DisableEntity(Zenith_EntityID xID);
 	void DestroyEntityComponents(Zenith_EntityID xID);
 
-	// ResetEntitiesOnly helpers — each is called exactly once from that function.
+	// Reset() helpers — each is called exactly once from that function.
 	// Builds the destruction-order hierarchy: roots first (via depth-first expansion),
 	// then any active entities the walk missed (no-transform or detached).
 	void CollectResetHierarchy(Zenith_Vector<Zenith_EntityID>& axHierarchyOut);
@@ -588,7 +605,7 @@ private:
 // in the T2.4 refactor by:
 //   * Lifting Zenith_ComponentPool* / Zenith_Component concept into
 //     Zenith_ComponentPool.h (this header includes that one above)
-//   * Replacing the template-body call to g_xEngine.SceneLifecycle().AreRenderTasksActive()
+//   * Replacing the template-body call to g_xEngine.Scenes().AreRenderTasksActive()
 //     with the free-function forwarder Zenith_AreRenderTasksActive() declared
 //     in Zenith_RenderTaskState.h (also included above)
 // SceneManager.h still includes SceneData.h at the bottom for its template

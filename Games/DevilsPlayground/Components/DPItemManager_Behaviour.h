@@ -19,7 +19,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Components/DPItemSpawn_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
@@ -105,8 +105,8 @@ public:
 	{
 		// Active scene; if it's not loaded yet just bail (e.g. test harness
 		// will retry on a later boot).
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 
 		// Walk every DPItemSpawn_Behaviour and create an item entity for it.

@@ -18,7 +18,7 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -264,7 +264,7 @@ static bool RenderTest_AssertNoResidencyAlternation(const RenderTest_ResidencySn
 static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 {
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
 
 	bool bPass = true;
 	const bool bStreamingWarm = uFrame >= 60;
@@ -368,9 +368,9 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 // Helper: find the player entity in the active scene by name.
 static Zenith_Entity RenderTest_FindPlayerEntity()
 {
-	Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
+	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 	if (!xScene.IsValid()) return Zenith_Entity();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 	if (!pxSceneData) return Zenith_Entity();
 	return pxSceneData->FindEntityByName("Player");
 }
@@ -636,7 +636,7 @@ private:
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)
 	{
 		Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-		g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+		g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
 		axSnapshots.Clear();
 		for (u_int u = 0; u < xTerrains.GetSize(); u++)
 		{
@@ -1464,8 +1464,8 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 
 	// Global Flux_Terrain debug flags + editor mode are runtime state that
 	// affects the loaded scene's rendering. Apply them here so they take effect

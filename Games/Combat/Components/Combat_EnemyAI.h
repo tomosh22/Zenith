@@ -12,7 +12,7 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -122,7 +122,7 @@ public:
 	void Update(float fDt)
 	{
 		// C1: resolve owning scene from the enemy's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_uEntityID);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
 		if (!pxSceneData)
 			return;
 

@@ -235,6 +235,9 @@ void Zenith_UICanvas::Update(float fDt)
 
     UpdateFocusNavigation();
 
+    // SceneUpdateDeferralGuard around the outer Zenith_UIComponent iteration
+    // ensures LoadScene calls fired from button callbacks defer until the
+    // guard scope closes — m_xRootElements stays stable through this pass.
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
         Zenith_UIElement* pxElement = xIt.GetData();

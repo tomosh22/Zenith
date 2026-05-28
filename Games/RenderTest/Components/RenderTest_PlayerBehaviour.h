@@ -7,7 +7,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_Input.h"
@@ -157,7 +157,7 @@ public:
 
 		// Resolve HUD ammo text (best-effort; HUD entity may not exist yet on
 		// the very first scene build before automation has run).
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 		if (pxSceneData)
 		{
 			Zenith_Entity xHUD = pxSceneData->FindEntityByName("HUD");

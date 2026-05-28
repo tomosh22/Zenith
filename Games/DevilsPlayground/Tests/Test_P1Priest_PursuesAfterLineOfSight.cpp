@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
@@ -58,7 +58,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -69,7 +69,7 @@ namespace
 
 	bool TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -81,7 +81,7 @@ namespace
 	Zenith_EntityID ReadPriestBBTarget(Zenith_EntityID xPriestId)
 	{
 		Zenith_SceneData* pxScene =
-			g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
+			g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
@@ -106,7 +106,7 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 	switch (g_iPhase)
 	{
 	case kLS_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kLS_WaitScene;
 		return true;
 

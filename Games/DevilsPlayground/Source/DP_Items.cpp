@@ -1,11 +1,10 @@
 #include "Zenith.h"
-
 #include "DP_Items.h"
 #include "DP_Player.h"
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 
 #include "../Components/DPItemManager_Behaviour.h"
@@ -24,7 +23,7 @@ namespace DP_Items
 
 	Vec3 GetItemWorldPos(Zenith_EntityID xItem)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xItem);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
 		if (pxScene == nullptr) return Vec3(0.0f);
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
 		if (!xEnt.IsValid()) return Vec3(0.0f);
@@ -50,13 +49,13 @@ namespace DP_Items
 			DP_Player::RemoveHeldItem(xVillager);
 			if (xItem.IsValid())
 			{
-				Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xItem);
+				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
 					if (xEnt.IsValid())
 					{
-						Zenith_SceneEntityOwnership::Destroy(xEnt);
+						g_xEngine.Scenes().Destroy(xEnt);
 					}
 				}
 			}

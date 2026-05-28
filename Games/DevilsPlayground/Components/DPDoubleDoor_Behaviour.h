@@ -10,7 +10,7 @@
 #include "Components/DPInteractable_Behaviour.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 #include "Source/DP_Tuning.h"
@@ -86,7 +86,7 @@ private:
 	{
 		if (szName == nullptr) return nullptr;
 		const Zenith_Vector<Zenith_EntityID>& xChildren = m_xParentEntity.GetChildEntityIDs();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(
 			m_xParentEntity.GetEntityID());
 		if (pxScene == nullptr) return nullptr;
 		for (u_int u = 0; u < xChildren.GetSize(); ++u)

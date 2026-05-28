@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
@@ -75,7 +75,7 @@ static bool Step_P2FogLightAddsHole(int iFrame)
 	switch (g_iPhase)
 	{
 	case kFL_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kFL_WaitScene;
 		return true;
 
@@ -110,8 +110,8 @@ static bool Step_P2FogLightAddsHole(int iFrame)
 		// disagree on what's in scope.
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
 			[](Zenith_EntityID, DPVillager_Behaviour&) { ++g_iVillagerCount; });
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene != nullptr)
 		{
 			pxScene->Query<Zenith_LightComponent>().ForEach(

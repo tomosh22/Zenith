@@ -12,7 +12,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Flux_ModelInstance.h"
@@ -68,7 +68,7 @@ public:
 			{
 				m_fEvaporateRemaining = 0.0f;
 				Zenith_SceneData* pxScene =
-					g_xEngine.SceneRegistry().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+					g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xEnt = pxScene->TryGetEntity(m_xParentEntity.GetEntityID());
@@ -84,7 +84,7 @@ public:
 						Zenith_EventDispatcher::Get().Dispatch(
 							DP_OnItemEvaporated{
 								m_xParentEntity.GetEntityID(), m_eTag, xPos });
-						Zenith_SceneEntityOwnership::Destroy(xEnt);
+						g_xEngine.Scenes().Destroy(xEnt);
 					}
 				}
 				return;
@@ -114,7 +114,7 @@ public:
 
 		Zenith_Maths::Vector3 xMyPos = DP_Items::GetItemWorldPos(m_xParentEntity.GetEntityID());
 
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xVillager);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
 		if (!xV.IsValid()) return;

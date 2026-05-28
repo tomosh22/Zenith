@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_AudioBus.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
@@ -115,7 +115,7 @@ static bool Step_P1WalkQuiet(int iFrame)
 	switch (g_iPhase)
 	{
 	case kWQ_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWQ_WaitScene;
 		return true;
 

@@ -16,7 +16,7 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -59,7 +59,7 @@ public:
 			if (fScent >= fThreshold)
 			{
 				Zenith_SceneData* pxScene =
-					g_xEngine.SceneRegistry().GetSceneDataForEntity(xScentTarget);
+					g_xEngine.Scenes().GetSceneDataForEntity(xScentTarget);
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xTgt = pxScene->TryGetEntity(xScentTarget);
@@ -258,7 +258,7 @@ public:
 
 		// Resolve target's scene + transform.
 		Zenith_SceneData* pxScene =
-			g_xEngine.SceneRegistry().GetSceneDataForEntity(xTarget);
+			g_xEngine.Scenes().GetSceneDataForEntity(xTarget);
 		if (pxScene == nullptr)
 		{
 			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);

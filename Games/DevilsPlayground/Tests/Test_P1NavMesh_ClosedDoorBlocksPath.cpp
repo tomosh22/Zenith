@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -102,14 +102,14 @@ static bool Step_P1NavMeshClosedDoorBlocksPath(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kCD_Start:
-		g_xScene = g_xEngine.SceneRegistry().CreateEmptyScene("NavMeshClosedDoorTest");
-		g_xEngine.SceneRegistry().SetActiveScene(g_xScene);
+		g_xScene = g_xEngine.Scenes().CreateEmptyScene("NavMeshClosedDoorTest");
+		g_xEngine.Scenes().SetActiveScene(g_xScene);
 		g_iPhase = kCD_BuildScene;
 		return true;
 
 	case kCD_BuildScene:
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kCD_Done; return false; }
 
 		// Floor: 11m wide × 12m deep, top surface y=0.1. Width is matched
@@ -141,7 +141,7 @@ static bool Step_P1NavMeshClosedDoorBlocksPath(int /*iFrame*/)
 
 	case kCD_Generate:
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kCD_Done; return false; }
 		NavMeshGenerationConfig xCfg{}; // engine defaults match production
 		g_pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xCfg);

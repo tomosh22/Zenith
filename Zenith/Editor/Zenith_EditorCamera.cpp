@@ -6,7 +6,7 @@
 #include "Zenith_Editor.h"
 #include "Zenith_Editor.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
 
@@ -53,8 +53,8 @@ void Zenith_Editor::InitializeEditorCamera()
 
 	// Initialize editor camera from scene's main camera if available
 	// Otherwise use default values
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 	{
 		try
@@ -148,8 +148,8 @@ void Zenith_Editor::ApplyEditorCameraToScene()
 	if (g_xEngine.Editor().m_uGameCameraEntity == INVALID_ENTITY_ID)
 		return;
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (!pxSceneData)
 		return;
 
@@ -188,8 +188,8 @@ void Zenith_Editor::SwitchToEditorCamera()
 		return;
 	}
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Cannot switch to editor camera - no active scene");
@@ -243,8 +243,8 @@ void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 	// In Playing mode, use the scene's camera (game controls it)
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			pxSceneData->GetMainCamera().BuildViewMatrix(xOutMatrix);
@@ -281,8 +281,8 @@ void Zenith_Editor::GetCameraPosition(Zenith_Maths::Vector4& xOutPosition)
 	// In Playing mode, use the scene's camera (game controls it)
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			pxSceneData->GetMainCamera().GetPosition(xOutPosition);
@@ -302,8 +302,8 @@ float Zenith_Editor::GetCameraNearPlane()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			return pxSceneData->GetMainCamera().GetNearPlane();
@@ -322,8 +322,8 @@ float Zenith_Editor::GetCameraFarPlane()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			return pxSceneData->GetMainCamera().GetFarPlane();
@@ -342,8 +342,8 @@ float Zenith_Editor::GetCameraFOV()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			return pxSceneData->GetMainCamera().GetFOV();
@@ -362,8 +362,8 @@ float Zenith_Editor::GetCameraAspectRatio()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
 			return pxSceneData->GetMainCamera().GetAspectRatio();

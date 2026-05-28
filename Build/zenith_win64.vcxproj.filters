@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_android.cpp">
@@ -712,21 +712,6 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
@@ -746,18 +731,6 @@
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneSystemBootstrap.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneSystemGuards.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
@@ -1078,7 +1051,21 @@
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
-  </ItemGroup>
+      <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Callbacks.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_EntityOwnership.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Lifecycle.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Operations.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Registry.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile></ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Middleware\imgui-docking\backends\imgui_impl_android.h">
       <Filter>Middleware\imgui-docking\backends</Filter>
@@ -3459,24 +3446,6 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.h">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleContext.h">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -3507,34 +3476,10 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneCallbackTypes.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.Tests.inl">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerGuards.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerInternal.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystemBootstrap.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystemGuards.h">
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystem.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">

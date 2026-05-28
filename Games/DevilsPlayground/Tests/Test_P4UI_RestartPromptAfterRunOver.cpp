@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -115,10 +115,10 @@ namespace
 	Zenith_UI::Zenith_UIText* FindRestartPromptText()
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = g_xEngine.SceneRegistry().GetSceneSlotCount();
+		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetLoadedSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
 			if (pxScene == nullptr) continue;
 			pxScene->Query<Zenith_UIComponent>().ForEach(
 				[&pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
@@ -168,7 +168,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 	switch (g_iPhase)
 	{
 	case kRP_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kRP_WaitScene;
 		return true;
 

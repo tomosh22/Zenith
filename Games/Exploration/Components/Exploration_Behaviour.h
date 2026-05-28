@@ -30,7 +30,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "UI/Zenith_UIButton.h"
@@ -171,7 +171,7 @@ public:
 			}
 
 			// Get camera from persistent scene
-			Zenith_CameraComponent* pxCamera = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+			Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 			if (!pxCamera)
 				return;
 
@@ -346,7 +346,7 @@ private:
 	// ========================================================================
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -358,8 +358,8 @@ private:
 		SetHUDVisible(true);
 
 		// Create terrain + trees in the current scene
-		Zenith_Scene xCurrentScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xCurrentScene);
+		Zenith_Scene xCurrentScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xCurrentScene);
 		Exploration_CreateWorldContent(pxSceneData);
 
 		m_eGameState = ExplorationGameState::PLAYING;
@@ -368,7 +368,7 @@ private:
 	void ReturnToMenu()
 	{
 		Exploration_CleanupWorldContent();
-		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================

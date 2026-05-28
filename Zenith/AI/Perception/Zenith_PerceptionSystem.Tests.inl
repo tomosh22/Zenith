@@ -1,7 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 // ============================================================================
@@ -11,8 +11,8 @@ ZENITH_TEST(AI, SightConeInRange) { Zenith_UnitTests::TestSightConeInRange(); }
 void Zenith_UnitTests::TestSightConeInRange(){
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xTarget(pxSceneData, "Target");
 
@@ -49,8 +49,8 @@ ZENITH_TEST(AI, SightConeOutOfRange) { Zenith_UnitTests::TestSightConeOutOfRange
 void Zenith_UnitTests::TestSightConeOutOfRange(){
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xTarget(pxSceneData, "Target");
 
@@ -84,8 +84,8 @@ ZENITH_TEST(AI, SightConeOutOfFOV) { Zenith_UnitTests::TestSightConeOutOfFOV(); 
 void Zenith_UnitTests::TestSightConeOutOfFOV(){
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xTarget(pxSceneData, "Target");
 
@@ -132,8 +132,8 @@ ZENITH_TEST(AI, SightAwarenessGain) { Zenith_UnitTests::TestSightAwarenessGain()
 void Zenith_UnitTests::TestSightAwarenessGain(){
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xTarget(pxSceneData, "Target");
 
@@ -170,8 +170,8 @@ ZENITH_TEST(AI, HearingStimulusInRange) { Zenith_UnitTests::TestHearingStimulusI
 void Zenith_UnitTests::TestHearingStimulusInRange(){
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xSource(pxSceneData, "SoundSource");
 
@@ -211,8 +211,8 @@ ZENITH_TEST(AI, HearingStimulusOutOfRange) { Zenith_UnitTests::TestHearingStimul
 void Zenith_UnitTests::TestHearingStimulusOutOfRange(){
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xSource(pxSceneData, "SoundSource");
 
@@ -247,8 +247,8 @@ void Zenith_UnitTests::TestMemoryRememberTarget(){
 	// Test that last known position is stored
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xAgent(pxSceneData, "Agent");
 	Zenith_Entity xTarget(pxSceneData, "Target");
 

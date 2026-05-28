@@ -913,7 +913,7 @@ private:
 		// Search all loaded scenes for the GameManager entity
 		for (uint32_t uSlot = 0; uSlot < 16; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataAtSlot(uSlot);
 			if (!pxScene)
 				continue;
 
@@ -1745,7 +1745,7 @@ private:
 	{
 		for (uint32_t uSlot = 0; uSlot < 16; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataAtSlot(uSlot);
 			if (!pxScene)
 				continue;
 			Zenith_Entity xEntity = pxScene->FindEntityByName("PinballManager");
@@ -1765,7 +1765,7 @@ private:
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Entering pinball for gate %u...", m_uFullGameNextGate);
 		TilePuzzle::g_uPinballRequestedGate = m_uFullGameNextGate;
-		g_xEngine.SceneOperations().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 		m_uWaitFrames = 0;
 		m_ePhase = PHASE_FULL_GAME_PINBALL_WAIT;
 		m_uFrameDelay = 10;
@@ -2015,7 +2015,7 @@ private:
 			// Log ball position every 60 frames (first few launches only)
 			if (m_uPinballLaunchCount <= 3 && m_uPinballPlayingFrames % 60 == 0)
 			{
-				Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(pxPinball->m_xPinballScene);
+				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(pxPinball->m_xPinballScene);
 				if (pxScene && pxPinball->m_xBallEntityID.IsValid() && pxScene->EntityExists(pxPinball->m_xBallEntityID))
 				{
 					Zenith_Entity xBall = pxScene->GetEntity(pxPinball->m_xBallEntityID);

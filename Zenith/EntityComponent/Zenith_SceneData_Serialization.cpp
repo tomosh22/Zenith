@@ -1,5 +1,4 @@
 #include "Zenith.h"
-
 // Scene save/load split out of Zenith_SceneData.cpp so the god-file stays
 // focused on lifecycle + dispatch. All serialization logic for
 // Zenith_SceneData lives here: SaveToFile, LoadFromFile, LoadFromDataStream,
@@ -10,7 +9,7 @@
 // been replaced by the EntityComponent/Internal/ subsystem TUs.)
 
 #include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
@@ -96,7 +95,7 @@ bool Zenith_SceneData::ValidateFileHeader(const std::string& strFilename)
 bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 {
 	// Note: Flux render systems and Physics reset are now handled by
-	// g_xEngine.SceneOperations().LoadScene() for SINGLE mode loads only.
+	// g_xEngine.Scenes().LoadScene() for SINGLE mode loads only.
 	// This allows LoadFromFile to be used for ADDITIVE loads without
 	// destroying render data from other loaded scenes.
 	//
@@ -105,18 +104,18 @@ bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 	// from CreateEmptyScene (entity count = 0). Any non-SceneManager caller that
 	// reaches this with live entities is almost certainly bypassing the lifecycle
 	// (no SceneUnloading/SceneUnloaded callbacks, no active-scene handling, no
-	// physics reset) and should route via g_xEngine.SceneOperations().LoadScene instead.
+	// physics reset) and should route via g_xEngine.Scenes().LoadScene instead.
 	Zenith_Assert(m_xActiveEntities.GetSize() == 0,
 		"Zenith_SceneData::LoadFromFile: scene is not empty (entityCount=%u). "
-		"Call g_xEngine.SceneOperations().LoadScene / LoadSceneAsync to route through the "
-		"full lifecycle, or call ResetEntitiesOnly() first if you intentionally want "
+		"Call g_xEngine.Scenes().LoadScene / LoadSceneAsync to route through the "
+		"full lifecycle, or call Reset() first if you intentionally want "
 		"to skip the callbacks.", m_xActiveEntities.GetSize());
-	// B.7: use ResetEntitiesOnly, not ResetAll. We're about to overwrite name/path/
-	// buildIndex via deserialization + the caller's assignments — wiping them first
-	// would race with SceneManager::LoadScene which sets m_strPath before calling
-	// this (see LoadScene line ~846). B.8 asserts the caller already cleared the
+	// B.7: use Reset (the safe variant), not ScrubAndReset. We're about to overwrite
+	// name/path/buildIndex via deserialization + the caller's assignments — wiping
+	// them first would race with LoadScene which sets m_strPath before calling this.
+	// The "scene is not empty" assert above ensures the caller already cleared the
 	// entity table, so this call is effectively "defensive cleanup of partial state".
-	ResetEntitiesOnly();
+	Reset();
 
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strFilename.c_str());
@@ -134,7 +133,7 @@ bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 	}
 
 	// Lifecycle dispatch (OnAwake/OnEnable/OnStart) is handled by
-	// g_xEngine.SceneOperations().LoadScene() after this method returns.
+	// g_xEngine.Scenes().LoadScene() after this method returns.
 	// Do NOT dispatch here to avoid double-dispatch.
 
 	// Only set path if not already set by caller (LoadScene sets canonical path before calling this)
@@ -142,7 +141,7 @@ bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 	{
 		m_strPath = strFilename;
 	}
-	m_bIsLoaded = true;
+	TransitionTo(SCENE_STATE_LOADED);
 	ClearDirty();
 	return true;
 }
@@ -204,7 +203,7 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
 	// LoadFromDataStream creates entities + components en masse; if render
 	// tasks are actively reading, those reads would see half-populated scenes.
-	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.Scenes().AreRenderTasksActive(),
 		"LoadFromDataStream: scene mutation while render tasks are reading — render-task invariant violated");
 	// B.8: same gate as LoadFromFile. Deserializing over a populated scene would
 	// blindly append new entities without any OnDestroy/SceneUnloading/etc. fires
@@ -212,7 +211,7 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	// freshly-created scene data; tests intentionally start from CreateEmptyScene.
 	Zenith_Assert(m_xActiveEntities.GetSize() == 0,
 		"Zenith_SceneData::LoadFromDataStream: scene is not empty (entityCount=%u). "
-		"Load against a fresh scene (CreateEmptyScene) or call ResetEntitiesOnly() first.",
+		"Load against a fresh scene (CreateEmptyScene) or call Reset() first.",
 		m_xActiveEntities.GetSize());
 
 	// B1: route GetDefaultCreationScene-aware APIs at the scene being deserialized
@@ -295,7 +294,9 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 		}
 	}
 
-	m_bIsLoaded = true;
+	// NOTE: Scene stays in SCENE_STATE_LOADING here. The caller (LoadScene)
+	// transitions to LOADED only after Awake/OnEnable dispatch, so
+	// IsActivated() correctly reports false while lifecycle is running.
 	ClearDirty();
 	return true;
 }

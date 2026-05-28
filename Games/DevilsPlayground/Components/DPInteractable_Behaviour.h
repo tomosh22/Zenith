@@ -11,7 +11,7 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Maths/Zenith_Maths.h"
@@ -131,7 +131,7 @@ protected:
 	virtual bool IsVillagerInRange(Zenith_EntityID xVillager) const
 	{
 		if (!xVillager.IsValid()) return false;
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xVillager);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
 		if (!xV.IsValid()) return false;

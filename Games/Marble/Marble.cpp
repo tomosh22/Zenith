@@ -1,5 +1,4 @@
 #include "Zenith.h"
-
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Marble/Components/Marble_Behaviour.h"
 #include "Marble/Components/Marble_Config.h"
@@ -8,7 +7,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -181,8 +180,8 @@ static void InitializeMarbleResources()
 	// (ColliderComponent creates physics bodies - must be added after transform is set)
 	// Use the persistent scene here: InitializeResources runs before the initial scene
 	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetPersistentScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Ball prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
@@ -192,7 +191,7 @@ static void InitializeMarbleResources()
 		pxBall->CreateFromEntity(xBallTemplate, "Ball");
 		Resources().m_xBallPrefab.Set(pxBall);
 
-		Zenith_SceneEntityOwnership::Destroy(xBallTemplate);
+		g_xEngine.Scenes().Destroy(xBallTemplate);
 	}
 
 	// Platform prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
@@ -203,7 +202,7 @@ static void InitializeMarbleResources()
 		pxPlatform->CreateFromEntity(xPlatformTemplate, "Platform");
 		Resources().m_xPlatformPrefab.Set(pxPlatform);
 
-		Zenith_SceneEntityOwnership::Destroy(xPlatformTemplate);
+		g_xEngine.Scenes().Destroy(xPlatformTemplate);
 	}
 
 	// Goal prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
@@ -214,7 +213,7 @@ static void InitializeMarbleResources()
 		pxGoal->CreateFromEntity(xGoalTemplate, "Goal");
 		Resources().m_xGoalPrefab.Set(pxGoal);
 
-		Zenith_SceneEntityOwnership::Destroy(xGoalTemplate);
+		g_xEngine.Scenes().Destroy(xGoalTemplate);
 	}
 
 	// Collectible prefab - basic entity (ModelComponent added at runtime, no collider - uses distance check)
@@ -225,7 +224,7 @@ static void InitializeMarbleResources()
 		pxCollectible->CreateFromEntity(xCollectibleTemplate, "Collectible");
 		Resources().m_xCollectiblePrefab.Set(pxCollectible);
 
-		Zenith_SceneEntityOwnership::Destroy(xCollectibleTemplate);
+		g_xEngine.Scenes().Destroy(xCollectibleTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -388,7 +387,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Marble" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Marble" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

@@ -13,10 +13,7 @@
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_EntityStore.h"
-#include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
-#include "EntityComponent/Internal/Zenith_SceneOperationQueue.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_TouchInput.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -54,8 +51,6 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneSystemBootstrap.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -178,37 +173,13 @@ Zenith_EntityStore& Zenith_Engine::EntityStore()
 	return *m_pxEntityStore;
 }
 
-Zenith_SceneRegistry& Zenith_Engine::SceneRegistry()
+Zenith_SceneSystem& Zenith_Engine::Scenes()
 {
-	// No assert: SceneRegistry is read every scene-handle resolution and
-	// from inside the per-frame Update pipeline. Allocated alongside the
-	// EntityStore VERY EARLY in Initialise so it's live before
-	// Zenith_SceneManager::Initialise creates the persistent scene.
-	return *m_pxSceneRegistry;
-}
-
-Zenith_SceneCallbackBus& Zenith_Engine::SceneCallbacks()
-{
-	// No assert: callback registrations happen at static-init time (via
-	// scene system bootstrap) and during gameplay. Allocated alongside
-	// SceneRegistry / EntityStore VERY EARLY in Initialise.
-	return *m_pxSceneCallbacks;
-}
-
-Zenith_SceneOperationQueue& Zenith_Engine::SceneOperations()
-{
-	// No assert: operation map / async-job lists are read from the
-	// Update pipeline and from worker-thread completion paths. Allocated
-	// EARLY in Initialise alongside the other scene-system subsystems.
-	return *m_pxSceneOperations;
-}
-
-Zenith_SceneLifecycleScheduler& Zenith_Engine::SceneLifecycle()
-{
-	// No assert: lifecycle flags and the FixedUpdate accumulator are read
-	// every frame from the Update pipeline. Allocated EARLY alongside
-	// the other scene-system Impls.
-	return *m_pxSceneLifecycle;
+	// One scene-system instance. Allocated VERY EARLY in Initialise so it's
+	// live before any subsystem touches scene state. Holds all scene state
+	// directly (registry / operations / lifecycle / callbacks / entity-
+	// ownership all merged in — no per-subsystem pointers any more).
+	return *m_pxScenes;
 }
 
 Zenith_Input& Zenith_Engine::Input()
@@ -331,27 +302,10 @@ void Zenith_Engine::Initialise()
 	// persistent handles, build-index map, name cache). Allocated alongside
 	// EntityStore -- both must exist before Zenith_SceneManager::Initialise
 	// creates the persistent scene.
-	Zenith_Assert(m_pxSceneRegistry == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneRegistry = new Zenith_SceneRegistry();
-
-	// Phase 5c: scene callback bus state (6 callback lists + handle
-	// allocator + deferred-removal queue + dispatch-depth + active-scene
-	// suppression flags). Must exist before any subsystem registers a
-	// callback during init.
-	Zenith_Assert(m_pxSceneCallbacks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneCallbacks = new Zenith_SceneCallbackBus();
-
-	// Phase 5d: async scene-operation pipeline state (operation map +
-	// load/unload job queues + re-entrancy depth counters). Must exist
-	// before Zenith_SceneManager::Initialise queues any bootstrap loads.
-	Zenith_Assert(m_pxSceneOperations == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneOperations = new Zenith_SceneOperationQueue();
-
-	// Phase 5e: scheduler state (lifecycle-deferral flags, fixed-timestep
-	// accumulator + config, circular-load stacks, build-index plumb,
-	// creation-target stack, main-loop flag, initial-scene-load hook).
-	Zenith_Assert(m_pxSceneLifecycle == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxSceneLifecycle = new Zenith_SceneLifecycleScheduler();
+	// G1: scene system holds all four internal subsystems as members.
+	// Must exist before any subsystem registers a callback during init.
+	Zenith_Assert(m_pxScenes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxScenes = new Zenith_SceneSystem();
 
 	// Phase 5.5a: per-frame input state (key presses, mouse delta + wheel,
 	// gamepad ring buffers). Allocate EARLY so GLFW callbacks fired by
@@ -549,7 +503,7 @@ void Zenith_Engine::Initialise()
 	m_pxPhysics = new Zenith_Physics();
 	g_xEngine.Physics().Initialise();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: scene system bootstrap...");
-	Zenith_InitialiseSceneSystem();
+	Zenith_SceneSystem::InitialiseSubsystems();
 
 	//#TO_TODO: move somewhere sensible
 	if (!Zenith_CommandLine::IsHeadless())
@@ -644,16 +598,16 @@ void Zenith_Engine::Initialise()
 	{
 		g_xEngine.VulkanMemory().BeginFrame();
 	}
-	g_xEngine.SceneLifecycle().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
-		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.SceneLifecycle().m_bIsLoadingScene);
+		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().m_bIsLoadingScene);
 		Project_LoadInitialScene();
 	}
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		g_xEngine.VulkanMemory().EndFrame(false);
 	}
-	Zenith_Assert(g_xEngine.SceneRegistry().GetActiveScene().IsValid(),
+	Zenith_Assert(g_xEngine.Scenes().GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
 #endif
 
@@ -682,7 +636,7 @@ void Zenith_Engine::Shutdown()
 	// 3. Shutdown scene system (unloads all scenes, releases resources)
 	// Must happen before physics (colliders need to remove bodies) and before
 	// memory manager (model/mesh components hold VRAM handles)
-	Zenith_ShutdownSceneSystem();
+	Zenith_SceneSystem::ShutdownSubsystems();
 
 	// 4. Shutdown physics system. The static facade drains state out of
 	// g_xEngine.Physics().m_pxXxx; engine then reclaims the Impl below
@@ -751,27 +705,11 @@ void Zenith_Engine::Shutdown()
 	delete m_pxEntityStore;
 	m_pxEntityStore = nullptr;
 
-	// 15. Free the scene-registry state. SceneManager::Shutdown above
-	// already drained the slot table; just reclaim the holder.
-	delete m_pxSceneRegistry;
-	m_pxSceneRegistry = nullptr;
-
-	// 16. Free the scene callback bus state. SceneCallbackBus::Shutdown
-	// (called from SceneManager::Shutdown) already cleared the lists.
-	delete m_pxSceneCallbacks;
-	m_pxSceneCallbacks = nullptr;
-
-	// 17. Free the scene-operation queue state. SceneOperationQueue::Shutdown
-	// (called from SceneManager::Shutdown) already waited for and freed
-	// all in-flight load tasks + unload jobs + operation entries.
-	delete m_pxSceneOperations;
-	m_pxSceneOperations = nullptr;
-
-	// 18. Free the scheduler state. SceneLifecycleScheduler::Shutdown
-	// (called from SceneManager::Shutdown) already cleared all flags and
-	// terminated the animation update task.
-	delete m_pxSceneLifecycle;
-	m_pxSceneLifecycle = nullptr;
+	// 15. Free the scene system. ShutdownSubsystems above already drained
+	// the slot table, cleared callback lists, terminated the animation task,
+	// etc.; this just reclaims the holder + the 4 internal members.
+	delete m_pxScenes;
+	m_pxScenes = nullptr;
 
 	// 19. Free per-frame input state. Done LATE -- some Flux/window
 	// teardown paths can fire one last GLFW callback.

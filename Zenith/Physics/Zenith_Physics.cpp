@@ -384,8 +384,8 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 
 		// Look up each entity's owning scene from the global entity slot
 		// Entities in a collision pair may be in different scenes
-		Zenith_SceneData* pxSceneData1 = g_xEngine.SceneRegistry().GetSceneDataForEntity(xEvent.uEntityID1);
-		Zenith_SceneData* pxSceneData2 = g_xEngine.SceneRegistry().GetSceneDataForEntity(xEvent.uEntityID2);
+		Zenith_SceneData* pxSceneData1 = g_xEngine.Scenes().GetSceneDataForEntity(xEvent.uEntityID1);
+		Zenith_SceneData* pxSceneData2 = g_xEngine.Scenes().GetSceneDataForEntity(xEvent.uEntityID2);
 
 		// Check if entities still exist in their respective scenes (may have been destroyed between queueing and processing)
 		if (!pxSceneData1 || !pxSceneData2)
@@ -779,7 +779,7 @@ Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector
 		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
 	}
 
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataForEntity(xIgnoreEntity);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xIgnoreEntity);
 	if (!pxSceneData)
 	{
 		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());

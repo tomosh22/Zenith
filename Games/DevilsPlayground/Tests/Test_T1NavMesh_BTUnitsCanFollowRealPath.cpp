@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -82,14 +82,14 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kBT_Start:
-		g_xScene = g_xEngine.SceneRegistry().CreateEmptyScene("BTUnitsCanFollowRealPath");
-		g_xEngine.SceneRegistry().SetActiveScene(g_xScene);
+		g_xScene = g_xEngine.Scenes().CreateEmptyScene("BTUnitsCanFollowRealPath");
+		g_xEngine.Scenes().SetActiveScene(g_xScene);
 		g_iPhase = kBT_BuildScene;
 		return true;
 
 	case kBT_BuildScene:
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kBT_Done; return false; }
 
 		// Floor: 20m x 0.2m x 20m centred at origin. Scale = full box size.
@@ -115,7 +115,7 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 
 	case kBT_Generate:
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(g_xScene);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kBT_Done; return false; }
 		NavMeshGenerationConfig xCfg{};
 		xCfg.m_fAgentRadius = 0.2f;

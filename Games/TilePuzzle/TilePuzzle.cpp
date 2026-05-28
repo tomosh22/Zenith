@@ -1,12 +1,11 @@
 #include "Zenith.h"
-
 #include "Core/Zenith_GraphicsOptions.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Behaviour.h"
 #include "TilePuzzle/Components/Pinball_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -1421,8 +1420,8 @@ static void InitializeTilePuzzleResources()
 	// Use the persistent scene here: InitializeResources runs before the initial scene
 	// loads, and (post-A6) GetActiveScene returns INVALID until that happens. These
 	// template entities are destroyed immediately after capture into the Zenith_Prefab.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetPersistentScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Cell prefab (floor tiles)
 	{
@@ -1430,7 +1429,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Prefab* pxCell = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCell->CreateFromEntity(xCellTemplate, "Cell");
 		Resources().m_xCellPrefab.Set(pxCell);
-		Zenith_SceneEntityOwnership::Destroy(xCellTemplate);
+		g_xEngine.Scenes().Destroy(xCellTemplate);
 	}
 
 	// Shape cube prefab (for multi-cube shapes)
@@ -1439,7 +1438,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Prefab* pxShapeCube = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxShapeCube->CreateFromEntity(xShapeCubeTemplate, "ShapeCube");
 		Resources().m_xShapeCubePrefab.Set(pxShapeCube);
-		Zenith_SceneEntityOwnership::Destroy(xShapeCubeTemplate);
+		g_xEngine.Scenes().Destroy(xShapeCubeTemplate);
 	}
 
 	// Cat prefab (spheres)
@@ -1448,7 +1447,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Prefab* pxCat = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCat->CreateFromEntity(xCatTemplate, "Cat");
 		Resources().m_xCatPrefab.Set(pxCat);
-		Zenith_SceneEntityOwnership::Destroy(xCatTemplate);
+		g_xEngine.Scenes().Destroy(xCatTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -3033,10 +3032,10 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (TilePuzzle_HasAutoTestFlag())
@@ -3046,11 +3045,11 @@ void Project_LoadInitialScene()
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "====================================");
 
 		// Create an entity in the active scene with the autotest behaviour
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 
 		Zenith_Entity xTestEntity(pxSceneData, "AutoTestRunner");
-		Zenith_SceneEntityOwnership::MarkEntityPersistent(xTestEntity);
+		g_xEngine.Scenes().MarkEntityPersistent(xTestEntity);
 		Zenith_ScriptComponent& xScript = xTestEntity.AddComponent<Zenith_ScriptComponent>();
 		xScript.AddScript<TilePuzzle_AutoTest>();
 

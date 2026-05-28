@@ -8,7 +8,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "FileAccess/Zenith_FileAccess.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "AssetHandling/Zenith_ModelAsset.h"

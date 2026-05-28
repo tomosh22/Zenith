@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Telemetry/Zenith_Telemetry.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -793,7 +793,7 @@ namespace
 	template<typename T>
 	T* GetScript(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
@@ -802,7 +802,7 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
@@ -821,7 +821,7 @@ namespace
 		eIntent    = DPTelemetry::PriestIntent::Idle;
 		xTargetPos = Zenith_Maths::Vector3(0.0f);
 
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriestId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
 		if (!pxScene) return;
 		Zenith_Entity xPriest = pxScene->TryGetEntity(xPriestId);
 		if (!xPriest.IsValid()) return;
@@ -1088,8 +1088,8 @@ namespace
 	void ScanSceneObstacles(Zenith_Vector<Zenith_Telemetry::SceneObstacle>& xOutObs)
 	{
 		xOutObs.Clear();
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 
 		uint32_t uIncluded = 0;
@@ -1180,10 +1180,10 @@ namespace
 	Zenith_UI::Zenith_UIText* FindHudText(const char* szName)
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = g_xEngine.SceneRegistry().GetSceneSlotCount();
+		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetLoadedSceneDataAtSlot(uSlot);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
 			if (pxScene == nullptr) continue;
 			pxScene->Query<Zenith_UIComponent>().ForEach(
 				[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
@@ -1200,7 +1200,7 @@ namespace
 	// (mirrors its NDC convention exactly: clip.y/clip.w not flipped).
 	bool WorldToScreen(const Zenith_Maths::Vector3& xWorld, double& fOutX, double& fOutY)
 	{
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (!pxCam) return false;
 
 		Zenith_Window* pxWindow = Zenith_Window::GetInstance();
@@ -1230,7 +1230,7 @@ namespace
 	// DPVillager_Behaviour::TickMovement so WASD inputs land where we expect).
 	bool GetCameraHorizontalBasis(Zenith_Maths::Vector3& xForward, Zenith_Maths::Vector3& xRight)
 	{
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (!pxCam) return false;
 		pxCam->GetFacingDir(xForward);
 		xForward.y = 0.0f;
@@ -2366,7 +2366,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	case kHP_Start:
 		// Every personality loads the same gameplay scene (procgen
 		// ProcLevel at build index 1).
-		g_xEngine.SceneOperations().LoadSceneByIndex(
+		g_xEngine.Scenes().LoadSceneByIndex(
 			static_cast<int>(kPersonalitySceneIndex), SCENE_LOAD_SINGLE);
 		g_iPhase = kHP_WaitGameLevel;
 		g_iWait = 0;
@@ -2470,7 +2470,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			(void)pxOrbit;  // orbit lives on GameManager, not the villager — defensive
 		}
 		// Look up the orbit on the camera's owning entity (GameManager).
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (pxCam)
 		{
 			// We don't expose orbit yaw directly; sample the camera's yaw as a
@@ -2542,7 +2542,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 30) return true;
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_Q, false);
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (pxCam) g_fYawAfterQ = static_cast<float>(pxCam->GetYaw());
 
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_E, true);
@@ -2556,7 +2556,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 30) return true;
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_E, false);
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (pxCam) g_fYawAfterE = static_cast<float>(pxCam->GetYaw());
 
 		// Mouse wheel zoom in (+ tightens orbit radius).
@@ -2570,7 +2570,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 2) return true;
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (pxCam)
 		{
 			Zenith_Maths::Vector3 xCamPos;
@@ -2590,7 +2590,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 2) return true;
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (pxCam)
 		{
 			Zenith_Maths::Vector3 xCamPos;
@@ -3221,7 +3221,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (g_iWait < kFrames) return true;
 		if (g_xPriest.IsValid())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPriest);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
 			if (pxScene)
 			{
 				Zenith_Entity xP = pxScene->TryGetEntity(g_xPriest);

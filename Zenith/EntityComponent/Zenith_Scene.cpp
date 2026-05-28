@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 //------------------------------------------------------------------------------
@@ -11,18 +11,18 @@
 
 bool Zenith_Scene::IsValid() const
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"IsValid must be called from main thread or during render task execution");
 	// Check if handle is in valid range and generation matches
 	// GetSceneData performs the generation check internally
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	return pxData != nullptr;
 }
 
 int Zenith_Scene::GetBuildIndex() const
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetBuildIndex must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr)
 	{
 		return -1;
@@ -34,7 +34,7 @@ int Zenith_Scene::GetBuildIndex() const
 bool Zenith_Scene::HasUnsavedChanges() const
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "HasUnsavedChanges must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr)
 	{
 		return false;
@@ -46,7 +46,7 @@ bool Zenith_Scene::HasUnsavedChanges() const
 bool Zenith_Scene::IsLoaded() const
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsLoaded must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr)
 	{
 		return false;
@@ -75,7 +75,7 @@ bool Zenith_Scene::IsLoaded() const
 bool Zenith_Scene::WasLoadedAdditively() const
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "WasLoadedAdditively must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr)
 	{
 		return false;
@@ -88,7 +88,7 @@ const std::string& Zenith_Scene::GetName() const
 {
 	static const std::string s_strEmpty;
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetName must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr)
 	{
 		return s_strEmpty;
@@ -100,7 +100,7 @@ const std::string& Zenith_Scene::GetPath() const
 {
 	static const std::string s_strEmpty;
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetPath must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr)
 	{
 		return s_strEmpty;
@@ -111,7 +111,7 @@ const std::string& Zenith_Scene::GetPath() const
 uint32_t Zenith_Scene::GetRootEntityCount() const
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetRootEntityCount must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr || !pxData->IsLoaded())
 	{
 		return 0;
@@ -123,7 +123,7 @@ uint32_t Zenith_Scene::GetRootEntityCount() const
 void Zenith_Scene::GetRootEntities(Zenith_Vector<Zenith_Entity>& axOut) const
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetRootEntities must be called from main thread");
-	Zenith_SceneData* pxData = g_xEngine.SceneRegistry().GetSceneData(*this);
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(*this);
 	if (pxData == nullptr || !pxData->IsLoaded())
 	{
 		return;

@@ -5,7 +5,6 @@
  */
 
 #include "Components/DPInteractable_Behaviour.h"
-
 class DPPentagram_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
 {
 	friend class Zenith_ScriptComponent;
@@ -44,13 +43,13 @@ protected:
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xItem.IsValid())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xItem);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
 				if (xEnt.IsValid())
 				{
-					Zenith_SceneEntityOwnership::Destroy(xEnt);
+					g_xEngine.Scenes().Destroy(xEnt);
 				}
 			}
 		}

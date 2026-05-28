@@ -12,7 +12,7 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "UI/Zenith_UIButton.h"
 
 class DPMainMenuController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
@@ -59,7 +59,7 @@ public:
 private:
 	static void OnPlayClicked(void* /*pUserData*/)
 	{
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	static void OnQuitClicked(void* /*pUserData*/)

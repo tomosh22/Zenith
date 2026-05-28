@@ -1,5 +1,4 @@
 #include "Zenith.h"
-
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Combat/Components/Combat_Behaviour.h"
 #include "Combat/Components/Combat_Config.h"
@@ -11,7 +10,7 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -532,8 +531,8 @@ static void InitializeCombatResources()
 	// runs before the initial scene is loaded, and (post-A6) GetActiveScene returns INVALID
 	// until that happens. The persistent scene is always available and these template
 	// entities are destroyed before any gameplay begins.
-	Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xPersistentScene);
+	Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistentScene);
 
 	// Player prefab
 	{
@@ -541,7 +540,7 @@ static void InitializeCombatResources()
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
-		Zenith_SceneEntityOwnership::Destroy(xPlayerTemplate);
+		g_xEngine.Scenes().Destroy(xPlayerTemplate);
 	}
 
 	// Enemy prefab + three Scale variants demonstrating the variant override system.
@@ -554,7 +553,7 @@ static void InitializeCombatResources()
 		Zenith_Prefab* pxEnemy = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxEnemy->CreateFromEntity(xEnemyTemplate, "Enemy");
 		Resources().m_xEnemyPrefab.Set(pxEnemy);
-		Zenith_SceneEntityOwnership::Destroy(xEnemyTemplate);
+		g_xEngine.Scenes().Destroy(xEnemyTemplate);
 
 		// Persist the base to disk so PrefabHandle("EnemyBase.zpfb") resolves
 		// through the registry. Cheap relative-path write; the file is owned by
@@ -587,7 +586,7 @@ static void InitializeCombatResources()
 		Zenith_Prefab* pxArena = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxArena->CreateFromEntity(xArenaTemplate, "Arena");
 		Resources().m_xArenaPrefab.Set(pxArena);
-		Zenith_SceneEntityOwnership::Destroy(xArenaTemplate);
+		g_xEngine.Scenes().Destroy(xArenaTemplate);
 	}
 
 	// ArenaWall prefab with collider and particle emitter
@@ -608,7 +607,7 @@ static void InitializeCombatResources()
 		Zenith_Prefab* pxWall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxWall->CreateFromEntity(xWallTemplate, "ArenaWall");
 		Resources().m_xArenaWallPrefab.Set(pxWall);
-		Zenith_SceneEntityOwnership::Destroy(xWallTemplate);
+		g_xEngine.Scenes().Destroy(xWallTemplate);
 	}
 
 	// Create hit spark particle config
@@ -782,7 +781,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

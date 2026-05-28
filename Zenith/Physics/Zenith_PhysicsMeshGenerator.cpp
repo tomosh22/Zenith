@@ -747,7 +747,7 @@ iter, fCellSize,
 void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()
 {
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
 
 	for (uint32_t i = 0; i < xModels.GetSize(); i++)
 	{
@@ -766,7 +766,7 @@ void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()
 	// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
 
 	Zenith_Vector<Zenith_ColliderComponent*> xColliders;
-	g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(xColliders);
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(xColliders);
 
 	for (uint32_t i = 0; i < xColliders.GetSize(); i++)
 	{

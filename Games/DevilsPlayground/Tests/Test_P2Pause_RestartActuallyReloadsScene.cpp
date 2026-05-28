@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Components/DPPauseMenuController_Behaviour.h"
@@ -70,8 +70,8 @@ namespace
 
 	void MakeSyntheticItem(Zenith_EntityID& xOut)
 	{
-		Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneData(xScene);
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xEnt(pxScene, std::string("Test_PauseRestart_Item"));
 		if (!xEnt.IsValid()) return;
@@ -98,7 +98,7 @@ static bool Step_P2PauseRestart(int iFrame)
 	switch (g_iPhase)
 	{
 	case kRR_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kRR_WaitScene;
 		return true;
 

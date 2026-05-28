@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
@@ -49,7 +49,7 @@ namespace
 
 	Priest_Behaviour* FindPriestScript(Zenith_EntityID xPriest)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xPriest);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriest);
 		if (!xEnt.IsValid()) return nullptr;
@@ -74,7 +74,7 @@ static bool Step_PriestBBBridge(int iFrame)
 	switch (g_iBBPhase)
 	{
 	case kBB_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iBBPhase = kBB_WaitScene;
 		return true;
 
@@ -93,7 +93,7 @@ static bool Step_PriestBBBridge(int iFrame)
 
 			// Place noise close to the priest so it falls inside the 25m
 			// hearing radius regardless of authored positions.
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPriest);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
@@ -146,7 +146,7 @@ static bool Step_PriestBBBridge(int iFrame)
 			return false;
 		}
 
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(g_xPriest);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
 		if (pxScene == nullptr)
 		{
 			g_iBBPhase = kBB_Done;

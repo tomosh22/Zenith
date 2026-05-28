@@ -1,8 +1,6 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -43,7 +41,7 @@ void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 		xSlot.m_bActiveInHierarchyDirty = true;
 
 		// Queue children for invalidation
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneDataByHandle(xSlot.m_iSceneHandle);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataByHandle(xSlot.m_iSceneHandle);
 		if (!pxSceneData) continue;
 		if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(xCurrentID)) continue;
 
@@ -58,15 +56,37 @@ void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 
 Zenith_SceneData::Zenith_SceneData()
 {
-	// Scene is ready for use immediately after construction
-	m_bIsLoaded = true;
+	// Scene is ready for use immediately after construction.
+	m_eLoadState = SCENE_STATE_LOADED;
+}
+
+void Zenith_SceneData::TransitionTo(Zenith_SceneData::LoadState eNew)
+{
+	// Legal edges (everything else asserts):
+	//   DESTROYED → LOADING   (re-init from a scrubbed slot)
+	//   LOADING   → LOADED    (lifecycle dispatch complete)
+	//   LOADED    → LOADING   (a re-load of an already-active scene)
+	//   any state → DESTROYED (ScrubAndReset)
+	const bool bLegal =
+		(eNew == SCENE_STATE_DESTROYED) ||
+		(m_eLoadState == SCENE_STATE_DESTROYED && eNew == SCENE_STATE_LOADING) ||
+		(m_eLoadState == SCENE_STATE_LOADING   && eNew == SCENE_STATE_LOADED)   ||
+		(m_eLoadState == SCENE_STATE_LOADED    && eNew == SCENE_STATE_LOADING)  ||
+		(m_eLoadState == eNew);
+	Zenith_Assert(bLegal,
+		"Zenith_SceneData::TransitionTo: illegal transition from %d to %d (scene '%s' handle=%d)",
+		static_cast<int>(m_eLoadState), static_cast<int>(eNew),
+		m_strName.c_str(), m_iHandle);
+	m_eLoadState = eNew;
 }
 
 Zenith_SceneData::~Zenith_SceneData()
 {
-	// Destructor uses ResetAll so any lingering metadata is scrubbed — matters in
-	// tests that inspect scene state after shutdown, and defensively guards against
-	// a later refactor that recycles SceneData memory.
+	// Tear down entities only — the metadata fields go away with the object
+	// when it's freed, so there's nothing to scrub. ScrubAndReset() would also
+	// assert we are NOT the persistent scene, but the persistent scene's
+	// destructor IS a legitimate shutdown path (SceneRegistry::Shutdown deletes
+	// every slot).
 	Reset();
 }
 
@@ -165,19 +185,19 @@ void Zenith_SceneData::ClearSceneStateAfterReset()
 	m_bRootEntitiesDirty = true;
 }
 
-void Zenith_SceneData::ResetEntitiesOnly()
+void Zenith_SceneData::Reset()
 {
 	// C8: Entity reset destroys every entity in the scene — doing that mid-Update
 	// corrupts iteration of m_xActiveEntities. Same-scene self-unload is not
 	// supported; use LoadScene(SINGLE) or LoadSceneAsync to transition between
 	// scenes and let the scene manager tear the old one down.
 	Zenith_Assert(!m_bIsUpdating,
-		"ResetEntitiesOnly() called during Update — unload your scene via LoadScene(SINGLE) or "
+		"Reset() called during Update — unload your scene via LoadScene(SINGLE) or "
 		"LoadSceneAsync, not from within OnUpdate/OnFixedUpdate. Same-scene self-"
 		"unload is not supported. "
 		"#TODO: auto-promote same-scene self-unload to async.");
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
-	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.Scenes().AreRenderTasksActive(),
 		"Reset(): scene mutation while render tasks are reading — render-task invariant violated");
 	m_bIsBeingDestroyed = true;
 
@@ -208,28 +228,40 @@ void Zenith_SceneData::ResetEntitiesOnly()
 	m_bIsBeingDestroyed = false;
 }
 
-void Zenith_SceneData::Reset()
+void Zenith_SceneData::ScrubAndReset()
 {
+	// Refuse to scrub the persistent scene's metadata. ScrubAndReset() clears
+	// m_bIsLoaded + name + path + build index — leaving the persistent scene
+	// reachable via m_axScenes but flagged unloaded, which crashes the next
+	// MarkEntityPersistent caller in GetComponent. The destructor is the only
+	// legitimate caller for the persistent scene (engine shutdown), and the
+	// destructor never runs while the persistent scene is alive in m_axScenes —
+	// FreeSceneHandle nulls the slot first.
+	Zenith_Assert(m_iHandle != g_xEngine.Scenes().m_iPersistentSceneHandle,
+		"Zenith_SceneData::ScrubAndReset: refusing to wipe persistent scene metadata. "
+		"Use Reset() instead — ScrubAndReset() transitions to DESTROYED and clears "
+		"name/path/buildIndex, leaving the persistent scene reachable but flagged "
+		"unloaded. The next MarkEntityPersistent caller would land an entity in a "
+		"half-dead scene and the following GetComponent would assert.");
+
 	// Entity teardown first — keeps the existing invariants around lifecycle dispatch,
 	// render-task safety, and cache invalidation intact.
-	ResetEntitiesOnly();
+	Reset();
 
 	// Then scrub scene-level metadata so the SceneData looks brand-new. Matters
-	// specifically when a non-SceneManager caller (or a test) reuses the same
+	// specifically when a non-scene-system caller (or a test) reuses the same
 	// SceneData* across loads; without this, name/path/buildIndex would leak from
-	// the previous scene. LoadFromFile deliberately calls ResetEntitiesOnly (not
-	// this) because it will overwrite these fields itself.
+	// the previous scene. LoadFromFile deliberately calls Reset (the safe variant)
+	// because it will overwrite these fields itself.
+	// Leave m_iHandle / m_uGeneration alone: the SceneRegistry owns those and a
+	// reset is not a handle-release event. FreeSceneHandle is the authoritative
+	// handle-invalidation path.
 	m_strName.clear();
 	m_strPath.clear();
 	m_iBuildIndex = -1;
-	// Leave m_iHandle / m_uGeneration alone: the SceneManager owns those and a
-	// reset is not a handle-release event. FreeSceneHandle is the authoritative
-	// handle-invalidation path.
-	m_bIsLoaded = false;
-	m_bIsActivated = false;
+	TransitionTo(SCENE_STATE_DESTROYED);
 	m_bWasLoadedAdditively = false;
 	m_bIsPaused = false;
-	m_bIsUnloading = false;
 	m_ulLoadTimestamp = 0;
 #ifdef ZENITH_TOOLS
 	m_bHasUnsavedChanges = false;
@@ -293,7 +325,7 @@ Zenith_EntityID Zenith_SceneData::CreateEntity()
 	// assertion to "main thread OR AreRenderTasksActive()". That relaxation is
 	// sound only if the main thread never mutates scene storage while render
 	// tasks are in flight. Enforce that invariant here.
-	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.Scenes().AreRenderTasksActive(),
 		"CreateEntity: scene mutation while render tasks are reading — render-task invariant violated");
 	u_int uIndex = 0;
 	u_int uGeneration = 0;
@@ -376,7 +408,7 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RemoveEntity must be called from main thread");
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
-	Zenith_Assert(!g_xEngine.SceneLifecycle().AreRenderTasksActive(),
+	Zenith_Assert(!g_xEngine.Scenes().AreRenderTasksActive(),
 		"RemoveEntity: scene mutation while render tasks are reading — render-task invariant violated");
 	if (!EntityExists(xID))
 	{
@@ -483,7 +515,7 @@ Zenith_EntityID Zenith_SceneData::GetMainCameraEntity() const
 {
 	// Read-only: m_xMainCameraEntity is stable during render/animation tasks
 	// (main thread does not modify it while worker threads are running)
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.SceneLifecycle().m_bRenderTasksActive,
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().m_bRenderTasksActive,
 		"GetMainCameraEntity must be called from main thread or during render task execution");
 	return m_xMainCameraEntity;
 }
@@ -519,6 +551,17 @@ void Zenith_SceneData::MarkForDestruction(Zenith_EntityID xID)
 
 	// Already marked - prevent double-marking and infinite recursion (use global slot flag)
 	if (g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bMarkedForDestruction) return;
+
+	// Phase 8: if this entity is still PENDING_START, cancel that first. Otherwise
+	// the destruction marker transitions the slot out of PENDING_START while
+	// leaving its EntityID in m_axPendingStartEntities — DispatchPendingStarts
+	// then iterates the vector, looks up the now-FREE/DESTROYING slot, and
+	// silently skips. The bookkeeping silently diverges; cancelling here keeps
+	// vector + slot state coherent.
+	if (g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).IsPendingStart())
+	{
+		CancelPendingStart(xID);
+	}
 
 	// Mark children's flags (so scripts can't interact with them), but only push the root
 	// entity to m_xPendingDestruction. RemoveEntity handles children recursively.
@@ -790,7 +833,7 @@ void Zenith_SceneData::DispatchImmediateLifecycleForRuntime(Zenith_EntityID xID)
 {
 	// Unity parity: Awake/OnEnable fire immediately when an entity is created at runtime.
 	// During scene loading and prefab instantiation, lifecycle is dispatched in batch.
-	if (g_xEngine.SceneLifecycle().m_bIsLoadingScene || g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating)
+	if (g_xEngine.Scenes().m_bIsLoadingScene || g_xEngine.Scenes().m_bIsPrefabInstantiating)
 		return;
 
 	DispatchAwakeForEntity(xID);
@@ -816,7 +859,7 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 	// If OnAwake tries to load this same scene, it will be detected as circular
 	if (!m_strPath.empty())
 	{
-		g_xEngine.SceneLifecycle().PushLifecycleContext(m_strPath);
+		g_xEngine.Scenes().PushLifecycleContext(m_strPath);
 	}
 
 	// Phase 1: OnAwake for all entities (Unity fires sceneLoaded after Awake and OnEnable but before Start)
@@ -859,7 +902,7 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 	// Remove from lifecycle context after awake completes
 	if (!m_strPath.empty())
 	{
-		g_xEngine.SceneLifecycle().PopLifecycleContext(m_strPath);
+		g_xEngine.Scenes().PopLifecycleContext(m_strPath);
 	}
 }
 
@@ -1028,7 +1071,7 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 	// since Start was already dispatched by this (source) scene.
 	if (xSlot.m_iSceneHandle != m_iHandle)
 	{
-		Zenith_SceneData* pxTargetData = g_xEngine.SceneRegistry().GetSceneDataByHandle(xSlot.m_iSceneHandle);
+		Zenith_SceneData* pxTargetData = g_xEngine.Scenes().GetSceneDataByHandle(xSlot.m_iSceneHandle);
 		if (pxTargetData)
 		{
 			// Remove from target's pending list and decrement count

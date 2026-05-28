@@ -15,7 +15,7 @@
  */
 
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
@@ -154,7 +154,7 @@ namespace Exploration_TerrainExplorer
 	inline Zenith_TerrainComponent* GetFirstTerrainComponent()
 	{
 		Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-		g_xEngine.SceneRegistry().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+		g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
 		return xTerrains.GetSize() > 0 ? xTerrains.Get(0) : nullptr;
 	}
 

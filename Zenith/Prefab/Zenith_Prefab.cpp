@@ -1,8 +1,7 @@
 #include "Zenith.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-
+#include "EntityComponent/Zenith_SceneSystem.h"
 namespace
 {
 	// Resolve a PrefabHandle to its concrete Zenith_Prefab*, handling both
@@ -395,7 +394,7 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 
 Zenith_Entity Zenith_Prefab::Instantiate(const std::string& strEntityName) const
 {
-	const Zenith_Scene xTarget = g_xEngine.SceneLifecycle().GetDefaultCreationScene();
+	const Zenith_Scene xTarget = g_xEngine.Scenes().GetDefaultCreationScene();
 	if (!xTarget.IsValid())
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB,
@@ -405,7 +404,7 @@ Zenith_Entity Zenith_Prefab::Instantiate(const std::string& strEntityName) const
 		return Zenith_Entity();
 	}
 
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xTarget);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTarget);
 	if (!pxSceneData)
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB,

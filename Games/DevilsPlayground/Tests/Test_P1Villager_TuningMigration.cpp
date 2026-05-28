@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Components/DPVillager_Behaviour.h"
@@ -57,7 +57,7 @@ static bool Step_P1Villager_TuningMigration(int iFrame)
 	switch (g_iPhase)
 	{
 	case kS_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kS_WaitVillager;
 		return true;
 

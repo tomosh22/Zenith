@@ -1,5 +1,4 @@
 #include "Zenith.h"
-
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Runner/Components/Runner_Behaviour.h"
 #include "Runner/Components/Runner_Config.h"
@@ -7,7 +6,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -374,8 +373,8 @@ static void InitializeRunnerResources()
 	// Create prefabs for runtime instantiation.
 	// Use the persistent scene here: InitializeResources runs before the initial scene
 	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetPersistentScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Character prefab
 	{
@@ -383,7 +382,7 @@ static void InitializeRunnerResources()
 		Zenith_Prefab* pxChar = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxChar->CreateFromEntity(xCharTemplate, "Runner");
 		Resources().m_xCharacterPrefab.Set(pxChar);
-		Zenith_SceneEntityOwnership::Destroy(xCharTemplate);
+		g_xEngine.Scenes().Destroy(xCharTemplate);
 	}
 
 	// Ground prefab
@@ -392,7 +391,7 @@ static void InitializeRunnerResources()
 		Zenith_Prefab* pxGround = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxGround->CreateFromEntity(xGroundTemplate, "Ground");
 		Resources().m_xGroundPrefab.Set(pxGround);
-		Zenith_SceneEntityOwnership::Destroy(xGroundTemplate);
+		g_xEngine.Scenes().Destroy(xGroundTemplate);
 	}
 
 	// Obstacle prefab
@@ -401,7 +400,7 @@ static void InitializeRunnerResources()
 		Zenith_Prefab* pxObstacle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxObstacle->CreateFromEntity(xObstacleTemplate, "Obstacle");
 		Resources().m_xObstaclePrefab.Set(pxObstacle);
-		Zenith_SceneEntityOwnership::Destroy(xObstacleTemplate);
+		g_xEngine.Scenes().Destroy(xObstacleTemplate);
 	}
 
 	// Collectible prefab
@@ -410,7 +409,7 @@ static void InitializeRunnerResources()
 		Zenith_Prefab* pxCollectible = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCollectible->CreateFromEntity(xCollectibleTemplate, "Collectible");
 		Resources().m_xCollectiblePrefab.Set(pxCollectible);
-		Zenith_SceneEntityOwnership::Destroy(xCollectibleTemplate);
+		g_xEngine.Scenes().Destroy(xCollectibleTemplate);
 	}
 
 	// Particle prefab
@@ -419,7 +418,7 @@ static void InitializeRunnerResources()
 		Zenith_Prefab* pxParticle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxParticle->CreateFromEntity(xParticleTemplate, "Particle");
 		Resources().m_xParticlePrefab.Set(pxParticle);
-		Zenith_SceneEntityOwnership::Destroy(xParticleTemplate);
+		g_xEngine.Scenes().Destroy(xParticleTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -591,7 +590,7 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
-	g_xEngine.SceneRegistry().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Runner" ZENITH_SCENE_EXT);
-	g_xEngine.SceneOperations().LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Runner" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

@@ -10,7 +10,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_Input.h"
@@ -222,7 +222,7 @@ public:
 			if (xPossessed.IsValid())
 			{
 				Zenith_SceneData* pxScene =
-					g_xEngine.SceneRegistry().GetSceneDataForEntity(xPossessed);
+					g_xEngine.Scenes().GetSceneDataForEntity(xPossessed);
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xV = pxScene->TryGetEntity(xPossessed);
@@ -270,7 +270,7 @@ private:
 	{
 		if (!DP_Input::ReadPossessClickPressed()) return;
 
-		Zenith_CameraComponent* pxCam = g_xEngine.SceneRegistry().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
 		if (pxCam == nullptr) return;
 
 		// Pick the villager whose world position projects closest to the
@@ -309,7 +309,7 @@ private:
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
 			[&](Zenith_EntityID xId, DPVillager_Behaviour&)
 			{
-				Zenith_SceneData* pxS = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+				Zenith_SceneData* pxS = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 				if (pxS == nullptr) return;
 				Zenith_Entity xEnt = pxS->TryGetEntity(xId);
 				if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
@@ -355,7 +355,7 @@ private:
 		// Read the villager's foot position (transform origin == feet by
 		// authoring convention -- the visible mesh is centred ~1 m above).
 		Zenith_SceneData* pxVScene =
-			g_xEngine.SceneRegistry().GetSceneDataForEntity(xVillager);
+			g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxVScene == nullptr) return;
 		Zenith_Entity xV = pxVScene->TryGetEntity(xVillager);
 		if (!xV.IsValid() || !xV.HasComponent<Zenith_TransformComponent>()) return;
@@ -365,7 +365,7 @@ private:
 		// Resolve the item entity (may be in a different scene if
 		// MoveEntityToScene was used -- defensive scene lookup).
 		Zenith_SceneData* pxIScene =
-			g_xEngine.SceneRegistry().GetSceneDataForEntity(xItem);
+			g_xEngine.Scenes().GetSceneDataForEntity(xItem);
 		if (pxIScene == nullptr) return;
 		Zenith_Entity xI = pxIScene->TryGetEntity(xItem);
 		if (!xI.IsValid() || !xI.HasComponent<Zenith_TransformComponent>()) return;

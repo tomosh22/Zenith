@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "EntityComponent/Zenith_EventSystem.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Collections/Zenith_Vector.h"
 
@@ -106,7 +106,7 @@ static bool Step_P1NoVessels(int iFrame)
 	switch (g_iPhase)
 	{
 	case kNV_Start:
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kNV_WaitScene;
 		return true;
 
@@ -147,7 +147,7 @@ static bool Step_P1NoVessels(int iFrame)
 		for (uint32_t u = 0; u < axVillagers.GetSize(); ++u)
 		{
 			Zenith_EntityID xId = axVillagers.Get(u);
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 			if (pxScene == nullptr) continue;
 			Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 			if (!xEnt.IsValid()) continue;

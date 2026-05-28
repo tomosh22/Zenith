@@ -342,7 +342,7 @@ public:
 		bool bWithinApprehendRange = false;
 		if (xCurrentTarget.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xCurrentTarget);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCurrentTarget);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xTgt = pxScene->TryGetEntity(xCurrentTarget);
@@ -475,7 +475,7 @@ private:
 
 	bool IsPossessedVillager(Zenith_EntityID xCandidate) const
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xCandidate);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
 		if (!xEnt.IsValid()) return false;
@@ -498,7 +498,7 @@ private:
 	// entities -- the filter only fires on explicit Beggar identity.
 	bool IsBeggarVillager(Zenith_EntityID xCandidate) const
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xCandidate);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
 		if (!xEnt.IsValid()) return false;

@@ -5,7 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DPMaterials.h"
 
@@ -53,7 +53,7 @@ static bool Step_Materials(int iFrame)
 {
 	if (iFrame == 0)
 	{
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_bSceneTriggered = true;
 		return true;
 	}
@@ -61,8 +61,8 @@ static bool Step_Materials(int iFrame)
 	// Wait a few frames for the scene load to settle.
 	if (!g_bSceneLoaded)
 	{
-		Zenith_Scene xActive = g_xEngine.SceneRegistry().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xActive);
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxSceneData != nullptr)
 		{
 			g_bSceneLoaded = true;

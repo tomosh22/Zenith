@@ -4,7 +4,7 @@
 
 #include "Zenith_EditorPanel_Toolbar.h"
 
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -88,7 +88,7 @@ void Zenith_EditorPanelToolbar::RenderSceneSelectors(EditorMode& eEditorMode)
 
 	RenderActiveSceneCombo();
 
-	if (g_xEngine.SceneRegistry().GetBuildSceneCount() > 0)
+	if (g_xEngine.Scenes().GetBuildSceneCount() > 0)
 	{
 		RenderRegisteredScenesCombo();
 	}
@@ -102,12 +102,12 @@ void Zenith_EditorPanelToolbar::RenderSceneSelectors(EditorMode& eEditorMode)
 //-----------------------------------------------------------------------------
 void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 {
-	Zenith_Scene xActiveScene = g_xEngine.SceneRegistry().GetActiveScene();
-	Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
 
 	// Get active scene name for preview
 	std::string strActiveSceneName = "No Scene";
-	Zenith_SceneData* pxActiveData = g_xEngine.SceneRegistry().GetSceneData(xActiveScene);
+	Zenith_SceneData* pxActiveData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxActiveData)
 	{
 		strActiveSceneName = pxActiveData->GetName();
@@ -120,16 +120,16 @@ void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 	ImGui::SetNextItemWidth(200.0f);
 	if (ImGui::BeginCombo("##ActiveScene", strActiveSceneName.c_str()))
 	{
-		uint32_t uSceneCount = g_xEngine.SceneRegistry().GetLoadedSceneCount();
+		uint32_t uSceneCount = g_xEngine.Scenes().GetLoadedSceneCount();
 		for (uint32_t i = 0; i < uSceneCount; ++i)
 		{
-			Zenith_Scene xScene = g_xEngine.SceneRegistry().GetSceneAt(i);
+			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
 			if (!xScene.IsValid())
 				continue;
 			if (xScene == xPersistentScene)
 				continue;
 
-			Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 			if (!pxSceneData)
 				continue;
 
@@ -140,7 +140,7 @@ void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 			bool bIsSelected = (xScene == xActiveScene);
 			if (ImGui::Selectable(strName.c_str(), bIsSelected))
 			{
-				g_xEngine.SceneRegistry().SetActiveScene(xScene);
+				g_xEngine.Scenes().SetActiveScene(xScene);
 			}
 			if (bIsSelected)
 				ImGui::SetItemDefaultFocus();
@@ -160,10 +160,10 @@ void Zenith_EditorPanelToolbar::RenderRegisteredScenesCombo()
 	ImGui::SetNextItemWidth(200.0f);
 	if (ImGui::BeginCombo("##RegisteredScenes", "Select scene..."))
 	{
-		uint32_t uRegistrySize = g_xEngine.SceneRegistry().GetBuildIndexRegistrySize();
+		uint32_t uRegistrySize = g_xEngine.Scenes().GetBuildIndexRegistrySize();
 		for (uint32_t i = 0; i < uRegistrySize; ++i)
 		{
-			const std::string& strPath = g_xEngine.SceneRegistry().GetRegisteredScenePath(static_cast<int>(i));
+			const std::string& strPath = g_xEngine.Scenes().GetRegisteredScenePath(static_cast<int>(i));
 			if (strPath.empty())
 				continue;
 

@@ -23,7 +23,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -392,7 +392,7 @@ private:
 
 	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		g_xEngine.SceneOperations().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -405,8 +405,8 @@ private:
 		SetHUDVisible(true);
 
 		// Create puzzle scene for level entities
-		m_xPuzzleScene = g_xEngine.SceneRegistry().CreateEmptyScene("Puzzle");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xPuzzleScene);
+		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		m_eState = SokobanGameState::PLAYING;
 		GenerateNewLevel();
@@ -418,12 +418,12 @@ private:
 		if (m_xPuzzleScene.IsValid())
 		{
 			m_xRenderer.ClearEntityIDs();
-			g_xEngine.SceneOperations().UnloadScene(m_xPuzzleScene);
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
 		}
 
 		// Create fresh puzzle scene
-		m_xPuzzleScene = g_xEngine.SceneRegistry().CreateEmptyScene("Puzzle");
-		g_xEngine.SceneRegistry().SetActiveScene(m_xPuzzleScene);
+		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		m_eState = SokobanGameState::PLAYING;
 		GenerateNewLevel();
@@ -435,7 +435,7 @@ private:
 		if (m_xPuzzleScene.IsValid())
 		{
 			m_xRenderer.ClearEntityIDs();
-			g_xEngine.SceneOperations().UnloadScene(m_xPuzzleScene);
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
 			m_xPuzzleScene = Zenith_Scene();
 		}
 
@@ -445,7 +445,7 @@ private:
 		m_bBoxAnimating = false;
 		StopDustParticles();
 
-		g_xEngine.SceneOperations().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -614,8 +614,8 @@ private:
 	void UpdateDustParticles()
 	{
 		// Dust emitter is in the persistent scene (DontDestroyOnLoad)
-		Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xPersistentScene);
+		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistentScene);
 
 		if (!pxSceneData ||
 			Sokoban::Resources().m_uDustEmitterID == INVALID_ENTITY_ID ||
@@ -649,8 +649,8 @@ private:
 
 	void StopDustParticles()
 	{
-		Zenith_Scene xPersistentScene = g_xEngine.SceneRegistry().GetPersistentScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xPersistentScene);
+		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistentScene);
 
 		if (!pxSceneData ||
 			Sokoban::Resources().m_uDustEmitterID == INVALID_ENTITY_ID ||
@@ -697,7 +697,7 @@ private:
 		if (!m_xPuzzleScene.IsValid())
 			return;
 
-		Zenith_SceneData* pxPuzzleData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxPuzzleData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		if (!pxPuzzleData)
 			return;
 
@@ -749,7 +749,7 @@ private:
 		m_fPlayerVisualY = static_cast<float>(m_uPlayerY);
 
 		// Create 3D entities in the puzzle scene
-		Zenith_SceneData* pxPuzzleData = g_xEngine.SceneRegistry().GetSceneData(m_xPuzzleScene);
+		Zenith_SceneData* pxPuzzleData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
 		m_xRenderer.Create3DLevel(
 			m_uGridWidth, m_uGridHeight,
 			m_aeTiles, m_abBoxes, m_abTargets,

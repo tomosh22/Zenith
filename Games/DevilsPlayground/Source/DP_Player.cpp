@@ -10,7 +10,7 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
@@ -29,7 +29,7 @@ namespace
 	// passed a stale handle after the villager was destroyed).
 	bool TryGetVillagerPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return false;
@@ -151,7 +151,7 @@ namespace DP_Player
 		DPVillager_Behaviour* pxCandidateVillager = nullptr;
 		if (xId.IsValid())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.SceneRegistry().GetSceneDataForEntity(xId);
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
@@ -352,11 +352,11 @@ namespace DP_Player
 				});
 		}
 
-		const uint32_t uSlotCount = g_xEngine.SceneRegistry().GetSceneSlotCount();
+		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
 			Zenith_SceneData* pxScene =
-				g_xEngine.SceneRegistry().GetLoadedSceneDataAtSlot(uSlot);
+				g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
 			if (pxScene == nullptr) continue;
 			pxScene->Query<Zenith_AIAgentComponent>().ForEach(
 				[xHighestId]
