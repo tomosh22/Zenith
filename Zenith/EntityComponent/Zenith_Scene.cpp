@@ -54,21 +54,15 @@ bool Zenith_Scene::IsLoaded() const
 	// Unity parity (audit §3.3): IsLoaded is true once Awake/OnEnable have completed,
 	// and remains true during SceneUnloading callbacks so subscribers can still
 	// enumerate entities. Unity's Scene.isLoaded stays true until the scene is
-	// actually removed from the SceneManager — not while it's being unloaded.
+	// actually removed from the manager — not while it's being torn down.
 	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.Scene-isLoaded.html
 	//
-	// State transitions:
-	//   - SceneManager::LoadScene(SINGLE/ADDITIVE) sync path: creates with IsActivated=false,
-	//     flips to true AFTER Awake/OnEnable complete, BEFORE SceneLoaded callback.
-	//   - SceneManager::LoadSceneAsync sync path: same progression inside Phase 2.
-	//   - CreateEmptyScene / LoadScene(ADDITIVE_WITHOUT_LOADING): same progression (false
-	//     during construction, flipped to true before any callbacks fire).
-	//   - UnloadSceneAsync: sets m_bIsUnloading=true as a re-entry / SetActiveScene
-	//     rejection guard, but does NOT gate IsLoaded here — callbacks registered for
-	//     SceneUnloading still observe IsLoaded==true.
-	// Handlers registered with SceneLoadStarted observe IsLoaded==false; handlers
-	// registered with SceneLoaded and SceneUnloading observe IsLoaded==true; handlers
-	// registered with SceneUnloaded observe IsLoaded==false (scene data is null).
+	// LoadScene is synchronous: a scene is created in SCENE_STATE_LOADING
+	// (IsActivated()==false), then flipped to SCENE_STATE_LOADED after Awake/OnEnable
+	// complete and BEFORE the SceneLoaded callback fires (this holds for the SINGLE,
+	// ADDITIVE, and ADDITIVE_WITHOUT_LOADING paths alike). So handlers registered with
+	// SceneLoaded and SceneUnloading observe IsLoaded==true; handlers registered with
+	// SceneUnloaded observe IsLoaded==false (scene data is already null).
 	return pxData->IsLoaded() && pxData->IsActivated();
 }
 

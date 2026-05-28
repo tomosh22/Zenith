@@ -237,7 +237,7 @@ void Zenith_SceneData::ScrubAndReset()
 	// legitimate caller for the persistent scene (engine shutdown), and the
 	// destructor never runs while the persistent scene is alive in m_axScenes —
 	// FreeSceneHandle nulls the slot first.
-	Zenith_Assert(m_iHandle != g_xEngine.Scenes().m_iPersistentSceneHandle,
+	Zenith_Assert(m_iHandle != g_xEngine.Scenes().GetPersistentSceneHandle(),
 		"Zenith_SceneData::ScrubAndReset: refusing to wipe persistent scene metadata. "
 		"Use Reset() instead — ScrubAndReset() transitions to DESTROYED and clears "
 		"name/path/buildIndex, leaving the persistent scene reachable but flagged "
@@ -515,7 +515,7 @@ Zenith_EntityID Zenith_SceneData::GetMainCameraEntity() const
 {
 	// Read-only: m_xMainCameraEntity is stable during render/animation tasks
 	// (main thread does not modify it while worker threads are running)
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().m_bRenderTasksActive,
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || g_xEngine.Scenes().AreRenderTasksActive(),
 		"GetMainCameraEntity must be called from main thread or during render task execution");
 	return m_xMainCameraEntity;
 }
@@ -833,7 +833,7 @@ void Zenith_SceneData::DispatchImmediateLifecycleForRuntime(Zenith_EntityID xID)
 {
 	// Unity parity: Awake/OnEnable fire immediately when an entity is created at runtime.
 	// During scene loading and prefab instantiation, lifecycle is dispatched in batch.
-	if (g_xEngine.Scenes().m_bIsLoadingScene || g_xEngine.Scenes().m_bIsPrefabInstantiating)
+	if (g_xEngine.Scenes().IsLoadingScene() || g_xEngine.Scenes().IsPrefabInstantiating())
 		return;
 
 	DispatchAwakeForEntity(xID);
@@ -1116,7 +1116,7 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 //==========================================================================
 // Serialization
 //
-// SaveToFile, ValidateFileHeader, LoadFromFile, ReadEntityFromDataStream,
-// and LoadFromDataStream now live in Zenith_SceneData_Serialization.cpp.
+// SaveToFile, LoadFromFile, ReadEntityFromDataStream, and LoadFromDataStream
+// now live in Zenith_SceneData_Serialization.cpp.
 //==========================================================================
 

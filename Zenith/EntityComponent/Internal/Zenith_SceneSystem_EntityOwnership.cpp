@@ -4,12 +4,12 @@
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 //==========================================================================
-// Zenith_SceneSystem — implementations.
+// Zenith_SceneSystem — cross-scene entity moves, scene merges,
+// DontDestroyOnLoad promotion, and entity destruction.
 //
-// Cross-scene entity moves, scene merges, DontDestroyOnLoad promotion, and
-// entity destruction. Public Zenith_SceneManager methods forward into this
-// class. Entity-state mutation reads/writes Zenith_SceneData privates via
-// `friend class Zenith_SceneSystem`.
+// These are static members (Unity-style Object.Destroy / DontDestroyOnLoad
+// surface), so they reach the singleton through g_xEngine.Scenes(). Entity-state
+// mutation reads/writes Zenith_SceneData privates via `friend class Zenith_SceneSystem`.
 //==========================================================================
 
 Zenith_Entity Zenith_SceneSystem::CreateEntity(const std::string& strName)
@@ -267,11 +267,10 @@ void Zenith_SceneSystem::MarkEntityPersistent(Zenith_Entity& xEntity)
 	Zenith_Scene xPersistent = g_xEngine.Scenes().GetPersistentScene();
 
 	// Precondition: the destination scene must be loaded. Without this guard,
-	// a previously-Reset persistent scene (m_bIsLoaded=false but still in
-	// m_axScenes) would silently accept the move and defer the failure to the
-	// next GetComponent call on the moved entity — typically in a different
-	// frame and unrelated stack trace. See plan:
-	// ~/.claude/plans/in-devilsplayground-after-hitting-peaceful-wren.md
+	// a previously-Reset persistent scene (not loaded but still in m_axScenes)
+	// would silently accept the move and defer the failure to the next
+	// GetComponent call on the moved entity — typically in a different frame
+	// and unrelated stack trace.
 	Zenith_SceneData* pxPersistentData = g_xEngine.Scenes().GetSceneData(xPersistent);
 	Zenith_Assert(pxPersistentData && pxPersistentData->IsLoaded(),
 		"MarkEntityPersistent: persistent scene is not loaded (m_bIsLoaded=false). "

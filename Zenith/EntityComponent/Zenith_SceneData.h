@@ -53,7 +53,7 @@ template<typename... Ts> class Zenith_Query;
  * It was previously the internals of Zenith_Scene before the multi-scene refactor.
  *
  * Zenith_Scene is now a lightweight handle; this class holds the real data.
- * Managed by Zenith_SceneManager.
+ * Managed by Zenith_SceneSystem (g_xEngine.Scenes()).
  */
 class Zenith_SceneData
 {
@@ -260,9 +260,8 @@ public:
 
 	// Scene file header constants — single source of truth for all call sites that
 	// write, read, or validate a .zscen binary. Bumping the format version? Update
-	// uSCENE_VERSION_CURRENT here and the three call sites below:
-	//   SaveToFile, LoadFromDataStream, ValidateFileHeader (this file), plus the
-	//   async Phase 2 header check in Zenith_SceneManager::ProcessPendingAsyncLoads.
+	// uSCENE_VERSION_CURRENT here and the call sites that reference it:
+	//   SaveToFile, LoadFromDataStream.
 	// All of them reference these constants — no magic numbers elsewhere.
 	static constexpr u_int uSCENE_MAGIC                 = 0x5A53434E;
 	static constexpr u_int uSCENE_VERSION_CURRENT       = 5;
@@ -271,12 +270,6 @@ public:
 	void SaveToFile(const std::string& strFilename, bool bIncludeTransient = false);
 	bool LoadFromFile(const std::string& strFilename);
 	bool LoadFromDataStream(Zenith_DataStream& xStream);
-
-	// Zero-side-effect peek at a scene file's header. Returns true when the file exists,
-	// is large enough, has the correct magic, and has a supported version. Used by
-	// LoadScene(SINGLE) to validate the new file BEFORE destroying the current world,
-	// so a failed load cannot leave the engine scene-less.
-	static bool ValidateFileHeader(const std::string& strFilename);
 
 private:
 	//==========================================================================
@@ -601,16 +594,16 @@ private:
 	Zenith_Vector<Zenith_ComponentPoolBase*> m_xComponents;
 };
 
-// Structural note: the SceneData.h ↔ SceneManager.h textual cycle was broken
-// in the T2.4 refactor by:
+// Structural note: the SceneData.h ↔ scene-system-header textual cycle was
+// broken in the T2.4 refactor by:
 //   * Lifting Zenith_ComponentPool* / Zenith_Component concept into
 //     Zenith_ComponentPool.h (this header includes that one above)
 //   * Replacing the template-body call to g_xEngine.Scenes().AreRenderTasksActive()
 //     with the free-function forwarder Zenith_AreRenderTasksActive() declared
 //     in Zenith_RenderTaskState.h (also included above)
-// SceneManager.h still includes SceneData.h at the bottom for its template
-// bodies' calls into Zenith_SceneData::AppendAllOfComponentType<T>; that
-// dependency is now one-way.
+// Zenith_SceneSystem.h still includes SceneData.h at the bottom for its
+// GetAllOfComponentTypeFromAllScenes template body's calls into
+// Zenith_SceneData::AppendAllOfComponentType<T>; that dependency is now one-way.
 
 //==============================================================================
 // Template Implementations

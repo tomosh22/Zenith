@@ -8,12 +8,13 @@
 // internal subsystem classes any more — Registry / OperationQueue / Lifecycle-
 // Scheduler / CallbackBus / EntityOwnership all merged in.
 //
-// Implementation lives in:
-//   Zenith_SceneSystem.cpp                        — bootstrap + LoadScene
-//   Internal/Zenith_SceneSystem_Registry.cpp      — slot table + queries
-//   Internal/Zenith_SceneSystem_Operations.cpp    — unload + render reset
-//   Internal/Zenith_SceneSystem_Lifecycle.cpp     — Update pipeline
-//   Internal/Zenith_SceneSystem_Callbacks.cpp     — callback bus
+// Implementation is split across the Internal/ TUs (there is no
+// Zenith_SceneSystem.cpp — bootstrap and LoadScene live in the Lifecycle and
+// Operations files respectively):
+//   Internal/Zenith_SceneSystem_Registry.cpp        — slot table + queries + path canonicalise
+//   Internal/Zenith_SceneSystem_Operations.cpp      — LoadScene / Unload + render reset
+//   Internal/Zenith_SceneSystem_Lifecycle.cpp       — bootstrap, Update pipeline, RAII guard bodies
+//   Internal/Zenith_SceneSystem_Callbacks.cpp       — callback bus
 //   Internal/Zenith_SceneSystem_EntityOwnership.cpp — cross-scene entity moves
 // =============================================================================
 
@@ -119,6 +120,9 @@ public:
 
 	int SelectNewActiveScene(int iExcludeHandle = -1);
 	Zenith_Scene GetPersistentScene();
+	// Raw handle of the persistent ("DontDestroyOnLoad") scene, for internal
+	// collaborators (e.g. Zenith_SceneData asserts) that only need to compare handles.
+	int GetPersistentSceneHandle() const { return m_iPersistentSceneHandle; }
 	bool SetActiveScene(Zenith_Scene xScene);
 	void SetScenePaused(Zenith_Scene xScene, bool bPaused);
 	bool IsScenePaused(Zenith_Scene xScene);
@@ -183,9 +187,7 @@ public:
 	// Update pipeline + lifecycle-deferral state
 	//==========================================================================
 
-	void Initialise();
 	void Update(float fDt);
-	void WaitForUpdateComplete();
 
 	void PushLifecycleContext(const std::string& strCanonicalPath);
 	void PopLifecycleContext(const std::string& strCanonicalPath);
@@ -221,7 +223,6 @@ public:
 	}
 #ifdef ZENITH_ASSERT
 	void SetRenderTasksActive(bool b) { m_bRenderTasksActive = b; }
-	void SetAnimTasksActive(bool b)   { m_bAnimTasksActive = b; }
 #endif
 
 	//==========================================================================
@@ -254,6 +255,11 @@ public:
 
 private:
 	friend class ActiveSceneChangeSuppressionScope;
+	// RAII guards (declared below the class) mutate private lifecycle flags
+	// directly in their ctor/dtor bodies.
+	friend struct Zenith_PrefabInstantiationGuard;
+	friend struct Zenith_SceneUpdateDeferralGuard;
+	friend struct Zenith_SceneCreationTargetScope;
 	void SetActiveSceneSuppressed(bool b);
 	void ClearDeferredOldActive();
 public:
@@ -315,8 +321,29 @@ public:
 		Zenith_Vector<CallbackEntry<TCallback>> m_axEntries;
 	};
 
+private:
 	//==========================================================================
-	// Data members (was Zenith_SceneRegistry)
+	// Callback-bus internal helpers (were anonymous-namespace free functions in
+	// Zenith_SceneSystem_Callbacks.cpp; now members so the state they touch can
+	// stay private). Templated bodies are instantiated only within that TU.
+	//==========================================================================
+
+	bool           IsCallbackHandleInUse(CallbackHandle ulHandle) const;
+	CallbackHandle AllocateCallbackHandle();
+	bool           IsCallbackPendingRemoval(CallbackHandle ulHandle) const;
+	void           ProcessPendingCallbackRemovals();
+
+	template<typename TCallback>
+	CallbackHandle Register(CallbackList<TCallback>& xList, TCallback pfn);
+	template<typename TCallback>
+	bool Unregister(CallbackList<TCallback>& xList, CallbackHandle ulHandle);
+	template<typename TCallback, typename... Args>
+	void Fire(CallbackList<TCallback>& xList, Args&&... args);
+
+	//==========================================================================
+	// Data members — engine-internal state. Private; the implementation TUs all
+	// define members of this one class, so they reach these directly. External
+	// code goes through the public accessors (e.g. MutableLifecycleLoadingFlagForGuard).
 	//==========================================================================
 
 	Zenith_Vector<Zenith_SceneData*>     m_axScenes;
@@ -366,7 +393,6 @@ public:
 
 #ifdef ZENITH_ASSERT
 	bool                          m_bRenderTasksActive = false;
-	bool                          m_bAnimTasksActive   = false;
 #endif
 
 	//==========================================================================

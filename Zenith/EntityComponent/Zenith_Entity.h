@@ -8,7 +8,6 @@
 class Zenith_SceneData;
 class Zenith_DataStream;
 struct Zenith_Scene;
-class Zenith_SceneManager;
 
 //--------------------------------------------------------------------------
 // Zenith_EntityID - Unity-style entity identifier with generation counter

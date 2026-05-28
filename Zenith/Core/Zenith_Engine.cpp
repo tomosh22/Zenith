@@ -298,12 +298,10 @@ void Zenith_Engine::Initialise()
 	Zenith_Assert(m_pxEntityStore == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxEntityStore = new Zenith_EntityStore();
 
-	// Phase 5b: scene-registry state (slot table, generations, active /
-	// persistent handles, build-index map, name cache). Allocated alongside
-	// EntityStore -- both must exist before Zenith_SceneManager::Initialise
+	// Scene system state (slot table, generations, active / persistent handles,
+	// build-index map, name cache, callbacks, lifecycle). Allocated alongside
+	// EntityStore -- both must exist before Zenith_SceneSystem::InitialiseSubsystems
 	// creates the persistent scene.
-	// G1: scene system holds all four internal subsystems as members.
-	// Must exist before any subsystem registers a callback during init.
 	Zenith_Assert(m_pxScenes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxScenes = new Zenith_SceneSystem();
 
@@ -600,7 +598,7 @@ void Zenith_Engine::Initialise()
 	}
 	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
-		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().m_bIsLoadingScene);
+		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();
 	}
 	if (!Zenith_CommandLine::IsHeadless())

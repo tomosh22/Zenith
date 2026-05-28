@@ -2,11 +2,10 @@
 // Scene save/load split out of Zenith_SceneData.cpp so the god-file stays
 // focused on lifecycle + dispatch. All serialization logic for
 // Zenith_SceneData lives here: SaveToFile, LoadFromFile, LoadFromDataStream,
-// ValidateFileHeader, ReadEntityFromDataStream.
+// ReadEntityFromDataStream.
 //
-// (Originally one of several peer-split files alongside the Phase A
-// pre-extraction Zenith_SceneManager_*.cpp set; those siblings have since
-// been replaced by the EntityComponent/Internal/ subsystem TUs.)
+// (A peer split of Zenith_SceneData.cpp; the scene-system logic itself lives
+// in the EntityComponent/Internal/Zenith_SceneSystem_*.cpp TUs.)
 
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneSystem.h"
@@ -61,35 +60,6 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 	xStream.WriteToFile(strFilename.c_str());
 
 	ClearDirty();
-}
-
-bool Zenith_SceneData::ValidateFileHeader(const std::string& strFilename)
-{
-	if (!Zenith_FileAccess::FileExists(strFilename.c_str()))
-	{
-		return false;
-	}
-
-	// Peek only the 8-byte header (magic + version) — avoids a full-file
-	// allocation + read just to reject corrupt / unsupported files.
-	u_int auHeader[2] = { 0, 0 };
-	if (!Zenith_FileAccess::ReadPrefix(strFilename.c_str(), auHeader, sizeof(auHeader)))
-	{
-		return false;
-	}
-
-	const u_int uMagicNumber = auHeader[0];
-	const u_int uVersion = auHeader[1];
-
-	if (uMagicNumber != uSCENE_MAGIC)
-	{
-		return false;
-	}
-	if (uVersion > uSCENE_VERSION_CURRENT || uVersion < uSCENE_VERSION_MIN_SUPPORTED)
-	{
-		return false;
-	}
-	return true;
 }
 
 bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)

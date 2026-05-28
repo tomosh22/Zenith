@@ -19,7 +19,7 @@
 // access component setters directly — matching what the properties panel
 // does after ImGui widget interaction. Scene-level operations that have
 // no ImGui UI equivalent (RegisterSceneBuildIndex, LoadSceneByIndex,
-// LoadInitialScene) call Zenith_SceneManager directly.
+// LoadInitialScene) call Zenith_SceneSystem (g_xEngine.Scenes()) directly.
 //=============================================================================
 
 // Forward declarations

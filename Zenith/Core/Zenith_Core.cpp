@@ -289,12 +289,6 @@ void Zenith_Core::Zenith_MainLoop()
 		#endif
 	}
 
-	// Only wait for scene update if we actually ran it
-	if (bShouldUpdateGameLogic)
-	{
-		g_xEngine.Scenes().WaitForUpdateComplete();
-	}
-
 	// EndFrame prepares memory command buffer for submission and processes deferred deletions.
 	// Deferred deletions use a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished
 	// using resources before they are deleted. Manual scope (rather than

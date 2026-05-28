@@ -1562,7 +1562,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		// deferral guard so DispatchFullLifecycleInit owns Awake/OnEnable order.
 		g_xEngine.Scenes().SetInitialSceneLoadCallback(xAction.m_pfnFunc);
 		{
-			Zenith_LifecycleDeferralGuard xGuard(g_xEngine.Scenes().m_bIsLoadingScene);
+			Zenith_LifecycleDeferralGuard xGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 			xAction.m_pfnFunc();
 		}
 		break;

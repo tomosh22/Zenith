@@ -14,10 +14,10 @@ struct Zenith_EntityID;
  * Zenith_Scene - Lightweight scene handle
  *
  * This is a VALUE TYPE that can be freely copied. It only holds an integer handle
- * that references scene data managed by Zenith_SceneManager.
+ * that references scene data managed by Zenith_SceneSystem (g_xEngine.Scenes()).
  *
  * All scene state (entities, components, metadata) is stored in Zenith_SceneData
- * and accessed through Zenith_SceneManager.
+ * and accessed through Zenith_SceneSystem.
  *
  * Usage:
  *   Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();

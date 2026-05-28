@@ -1,119 +1,105 @@
 # Scene system internals
 
-This document describes the post-refactor architecture of the scene system —
-five internal subsystem TUs under `Zenith/EntityComponent/Internal/` plus a
-slim public facade (`Zenith_SceneManager`).
+The scene system is **one class** — `Zenith_SceneSystem` — reached everywhere via
+`g_xEngine.Scenes()`. The former five subsystems (Registry, OperationQueue,
+LifecycleScheduler, CallbackBus, EntityOwnership) were merged into it; there are
+no per-subsystem classes or accessors any more. Scene loading is **fully
+synchronous** — the old async operation-queue pipeline was retired.
 
-## Subsystem boundaries
+## File layout
 
-```
-                       Zenith_SceneManager           ← public facade
-                       (~ thin forwarders, RAII guard
-                        types, blocking helpers)
-                              │
-            ┌─────────────────┼─────────────────────┬─────────────────┐
-            │                 │                     │                 │
-            ▼                 ▼                     ▼                 ▼
-   Zenith_SceneRegistry  Zenith_SceneCallbackBus  Zenith_SceneOperationQueue  Zenith_SceneLifecycleScheduler
-        │                                                                        │
-        │                                                                        │
-        └────────────────────────── Zenith_SceneEntityOwnership ─────────────────┘
-                            (cross-scene moves, persistence,
-                             destruction)
-```
+The class is declared in `EntityComponent/Zenith_SceneSystem.h`. Its
+implementation is split across translation units purely for file size — every
+function below is a member of the same `Zenith_SceneSystem`:
 
-| Subsystem | Owns |
-|-----------|------|
-| **`Zenith_SceneCallbackBus`** | Six callback lists, handle allocator, deferred-removal queue, fire-depth counter, `ActiveSceneChangeSuppressionScope`. |
-| **`Zenith_SceneRegistry`** | Slot table, generations, freelist, persistent + active scene handles, name cache, build-index registry, scene queries, `RenameScene`. |
-| **`Zenith_SceneOperationQueue`** | Operation map, async load + unload jobs, Phase 1 / Phase 2 phase machines, queue-stall predicate, async config knobs, `CompletePriorOperationsForBlockingLoad`. |
-| **`Zenith_SceneLifecycleScheduler`** | Per-frame `Update`, fixed-timestep accumulator, lifecycle-deferral flags (`s_bIsLoadingScene`, `s_bIsPrefabInstantiating`, `s_bIsUpdating`, `s_bIsMainLoopRunning`), two circular-load stacks, animation task globals, creation-target stack. |
-| **`Zenith_SceneEntityOwnership`** | `MoveEntityToScene`, `MoveEntityInternal`, `MergeScenes`, `MarkEntityPersistent`, `Destroy*`. |
+| TU | Owns |
+|----|------|
+| `Internal/Zenith_SceneSystem_Registry.cpp` | Slot table, generations, freelist, persistent/active handles, name cache, build-index registry, scene queries, `CreateEmptyScene`/`CreateScene`, `SetActiveScene`, `RenameScene`, `CanonicalisePath`. |
+| `Internal/Zenith_SceneSystem_Operations.cpp` | `LoadScene`/`LoadSceneByIndex`, `UnloadScene`/`UnloadSceneForced`, bulk teardown (`UnloadAllNonPersistent` + helpers), render-system reset. |
+| `Internal/Zenith_SceneSystem_Lifecycle.cpp` | Bootstrap (`InitialiseSubsystems`/`ShutdownSubsystems`/`ResetForNextTest`), per-frame `Update`, fixed-timestep accumulator, circular-load stacks, creation-target stack, the RAII guard bodies, `Shutdown`. |
+| `Internal/Zenith_SceneSystem_Callbacks.cpp` | Four callback lists, handle allocator, deferred-removal queue, fire-depth counter, `ActiveSceneChangeSuppressionScope`, the composite `FireUnloadCallbacksAndSelectNewActive`. |
+| `Internal/Zenith_SceneSystem_EntityOwnership.cpp` | `CreateEntity`, `MoveEntityToScene`/`MoveEntityInternal`, `MergeScenes`, `MarkEntityPersistent`, `Destroy*`. |
 
-## Cross-subsystem boundary contract
+There is **no** `Zenith_SceneSystem.cpp`.
 
-Two rules govern how the subsystems talk to each other:
+## State access convention
 
-1. **All cross-subsystem reads go through `Zenith_SceneLifecycleContext`**
-   (`Internal/Zenith_SceneLifecycleContext.h`). It is the single read-side
-   surface — a free-function namespace with accessors like `IsLoadingScene()`,
-   `IsUpdating()`, `IsMainLoopRunning()`, `GetCurrentCreationTarget()`,
-   `IsActiveSceneSuppressed()`. No subsystem reads another's private statics.
+All data members are **private**. Because every implementation TU defines
+members of the same class, they reach the state directly:
 
-2. **All cross-subsystem writes go through public RAII types declared on
-   `Zenith_SceneManager`**:
-   - `LifecycleDeferralGuard` — save/restore on a `bool&` (test framework + bootstrap)
-   - `PrefabInstantiationGuard` — `s_bIsPrefabInstantiating` save/restore
-   - `SceneUpdateDeferralGuard` — `s_bIsUpdating` save/restore
-   - `PendingBuildIndexGuard` — `s_iPendingBuildIndex` save/restore
-   - `ActiveSceneChangeSuppressionScope` — bus-owned suppression with required `Complete()`/`Cancel()`
-   - `SceneCreationTargetScope` — push/pop on the creation-target stack
+- **Instance methods** (Registry / Operations / Lifecycle / Callbacks) use bare
+  `m_xXxx` / `Foo()` — `this` already is the singleton.
+- **Static methods** (the entity-ownership API — `Destroy`, `MarkEntityPersistent`,
+  …, plus the bootstrap orchestrators) have no `this`, so they reach the
+  singleton through `g_xEngine.Scenes().m_xXxx`. These are static to mirror
+  Unity's `Object.Destroy` / `DontDestroyOnLoad` free-function surface.
+- **External code** never touches the members. The one controlled hole is
+  `MutableLifecycleLoadingFlagForGuard()`, which hands the bootstrap a `bool&`
+  for a `Zenith_LifecycleDeferralGuard`.
 
-This means every cross-subsystem state mutation is visible at its call site as
-an RAII declaration, not an opaque boolean flip.
+`Zenith_SceneData` declares `friend class Zenith_SceneSystem` so the system can
+reach scene-data privates. The RAII guard structs are friended so their
+ctor/dtor bodies can flip the lifecycle flags.
 
-## `LoadScene` contract (post-B4)
+## `LoadScene` contract (synchronous)
 
-`Zenith_SceneManager::LoadScene(path, mode)` and `LoadSceneByIndex(idx, mode)`
-are **queue-and-defer**. They:
+`LoadScene(path, mode)` does everything before returning a real `Zenith_Scene`:
 
-1. Validate the path / index.
-2. Call `Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()`
-   to flush any in-flight async load + unload ops (Unity flush-prior-async
-   semantic — top-level only; skipped under re-entrancy).
-3. Queue the load via `LoadSceneAsync*`.
-4. Stash the resulting op-id in `s_ulLastDeferredLoadOp`.
-5. Return `Zenith_Scene::INVALID_SCENE`.
+1. Validate the path; reject if empty / missing / circular.
+2. If called **re-entrantly** (`m_bIsUpdating` or `m_bIsLoadingScene` set), stash
+   the request in `m_xPendingLoad` and return `INVALID_SCENE`. The stash drains
+   once the outer pass unwinds — via `Zenith_SceneUpdateDeferralGuard`'s
+   destructor, the `Update` post-amble, or `LoadScene`'s own post-dispatch drain.
+   Only the most recent request survives (chained loads collapse to the last).
+3. For `SCENE_LOAD_SINGLE`: tear the old world down **first** — reset render
+   systems, `UnloadAllNonPersistent`, `UnloadUnusedAssets`, then `Physics::Reset`
+   (physics last, so collider destructors still have a world to remove bodies
+   from). Wrapped in an `ActiveSceneChangeSuppressionScope` so subscribers see
+   one `old → new` transition, not the intermediate `old → INVALID`.
+4. Create the new scene, deserialise into the post-reset subsystems, dispatch
+   `Awake → OnEnable`, flip to `SCENE_STATE_LOADED`, fire `SceneLoaded`. `Start`
+   runs on the first subsequent `Update` (Unity timing).
+5. Clear `m_bIsLoadingScene` and drain any stashed request.
 
-The new scene's lifecycle (`Awake → OnEnable → SceneLoaded`) fires during a
-subsequent `Zenith_SceneManager::Update` tick, inside Phase 1 / Phase 2 of the
-queue's job machine.
+`LoadSceneByIndex` saves/restores `m_iPendingBuildIndex` around a `LoadScene`
+call so the new scene gets stamped with the build index.
 
-### Recovering the result
+`LoadScene(SINGLE)` only checks that the file **exists** before tearing down the
+current world — it does **not** pre-validate the contents. A file that exists but
+fails to deserialise (corrupt body, unsupported version) is caught *after*
+teardown: the half-built scene is rolled back (`UnloadSceneForced`) and
+`INVALID_SCENE` is returned, but the previous world is already gone, so the
+engine is left scene-less. Don't rely on SINGLE being atomic across a bad file —
+validate up front, or stage via ADDITIVE, if that matters.
 
-| Caller context | API |
-|----------------|-----|
-| **Pre-main-loop bootstrap** (per-game `Project_LoadInitialScene`) | `LoadSceneBlockingForBootstrap` / `LoadSceneByIndexBlockingForBootstrap` — pumps `Update` internally; returns a real `Zenith_Scene`. Asserts it's only invoked when `IsBootstrapLoadContext()` holds (pre-main-loop **or** inside a `LifecycleDeferralGuard`). |
-| **Editor commands** (Open Scene menu, Play/Stop transitions) | `LoadSceneBlocking_ToolsOnly` / `LoadSceneByIndexBlocking_ToolsOnly` — same pumping behaviour, no main-loop guard, compiled out of non-tools builds. |
-| **Gameplay** (script `OnUpdate`, UI button callbacks) | `LoadScene` queues; recover via `GetLastDeferredLoadOp()` and `GetOperation(opId)->GetResultScene()` once `IsComplete()` is true. |
-| **Async-aware code paths** | `LoadSceneAsync*` directly; retain the operation id. |
+## Re-entrancy & callback safety
 
-### Re-entrancy
+- **Callback bus**: registering during a `Fire` warns and does not fire for the
+  in-flight event; unregistering during a `Fire` is queued to
+  `m_axCallbacksPendingRemoval` and applied when the outermost `Fire` returns.
+  Dispatch depth is capped (16) to surface runaway recursion.
+- **Circular load**: `m_axCurrentlyLoadingPaths` (set during the file read) and
+  `m_axLifecycleLoadStack` (pushed around `Awake` dispatch) both feed
+  `IsCircularLoadDependency`, catching a scene that tries to load itself from a
+  ctor or an `OnAwake`.
+- **Active-scene suppression**: `ActiveSceneChangeSuppressionScope` must be
+  resolved with `Complete()` or `Cancel()`; the destructor asserts otherwise and
+  defensively clears the flag in release.
 
-`CompletePriorOperationsForBlockingLoad` and the blocking helpers' internal
-pump both early-return when:
+## Unity-parity invariants worth knowing
 
-- `Zenith_SceneOperationQueue::s_uProcessingAsyncLoadsDepth > 0` (we're inside
-  `ProcessPendingAsyncLoads`, e.g. dispatching a `SceneLoaded` callback), or
-- `Zenith_SceneLifecycleContext::IsUpdating()` (we're inside the engine's
-  `Update` tick).
-
-In those contexts the queue is mid-process; pumping it again would re-enter
-the firing op's Phase 2. The new op is still queued and recoverable via
-`GetLastDeferredLoadOp()` — the helper just degrades to the queue-and-defer
-contract instead of forcing a synchronous result.
-
-## Other Unity-parity invariants worth knowing
-
-- **`SCENE_LOAD_SINGLE` auto-fires `UnloadUnusedAssets()`** after
-  `UnloadAllNonPersistent` and before `Physics::Reset`, in both the sync sync
-  teardown path (`PerformSingleModeTeardownAndSwap`-equivalent inside Phase 2)
-  and the async Phase 1 SINGLE branch.
-- **AsyncOperation queue stalls behind an activation-paused load head**
-  (`SetActivationAllowed(false)` at progress 0.9). Both `ProcessPendingAsyncLoads`
-  (for behind-the-head jobs at index `> 0`) and `ProcessPendingAsyncUnloads`
-  (entire pass) gate on `IsAsyncQueueBlockedByActivationPausedHead()`.
-- **`MarkEntityPersistent` is strict root-only.** Non-root callers are rejected
-  with a logged error and no scene change. Callers wanting subtree promotion
-  walk to the hierarchy root first; the editor hierarchy panel does this when
-  the user picks "Move to DontDestroyOnLoad" on a non-root entity.
-- **`SceneCreationTargetScope` drives `GetDefaultCreationScene()`.** While a
-  scope is open (around scene load, deserialization, and activation),
-  `Zenith_SceneManager::CreateEntity(name)` and `Zenith_Prefab::Instantiate(name)`
-  target the loading scene rather than the active scene.
-- **`GetSceneDataForEntity(uID)` is the correct ownership predicate.**
-  `Zenith_SceneData::EntityExists(uID)` reads the process-wide slot table —
-  it does **not** prove the slot is owned by the receiving scene. Always
-  resolve through the manager helper or `Zenith_Entity::GetScene()` /
-  `Zenith_Entity::GetSceneData()` for ownership checks across multi-scene
-  setups.
+- **`SCENE_LOAD_SINGLE` auto-fires `UnloadUnusedAssets()`** between teardown and
+  the new scene's load.
+- **The persistent ("DontDestroyOnLoad") scene** is created un-activated and can
+  never be the active scene. `MarkEntityPersistent` is strict root-only; non-root
+  callers are rejected with a logged error (walk to the root yourself first).
+- **`SceneCreationTargetScope` drives `GetDefaultCreationScene()`.** While open
+  (around scene load + deserialisation), `CreateEntity(name)` and
+  `Zenith_Prefab::Instantiate(name)` target the loading scene, not the active one.
+- **`GetSceneDataForEntity(id)` is the correct cross-scene ownership predicate.**
+  `Zenith_SceneData::EntityExists(id)` only reads the process-wide slot table — it
+  does not prove the slot is owned by a particular scene.
+- **Entity destruction is deferred to the next `Update`** (`Destroy` marks;
+  `ProcessPendingDestructions` drains). `DestroyImmediate` is synchronous.
+  `HasPendingDestructions()` reports whether any loaded scene still has marked-
+  but-not-drained entities (timed `Destroy(e, delay)` is excluded).

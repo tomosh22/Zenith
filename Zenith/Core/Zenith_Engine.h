@@ -168,15 +168,12 @@ public:
 #endif
 
 private:
-	// Internal scene-subsystem accessors. The public surface is Scenes()
-	// (returns Zenith_SceneSystem); Zenith_SceneSystem is friended so its
-	// Registry()/Operations()/Lifecycle()/Callbacks() sub-accessors can
-	// reach the per-subsystem instances without going through a public
-	// engine accessor. Removed from the public surface to enforce the
-	// Subsystem members. Raw pointers to forward-declared types so the
-	// default ctor/dtor stay trivial and the constinit global has zero
-	// static-init cost. Each is allocated in Initialise() and deleted
-	// in Shutdown().
+	// Subsystem members. The scene system is a single Zenith_SceneSystem
+	// instance exposed via Scenes() — there are no per-subsystem accessors
+	// (Registry/Operations/Lifecycle/Callbacks were all merged into it).
+	// Raw pointers to forward-declared types so the default ctor/dtor stay
+	// trivial and the constinit global has zero static-init cost. Each is
+	// allocated in Initialise() and deleted in Shutdown().
 	FrameContext*              m_pxFrame       = nullptr;
 	Zenith_Multithreading* m_pxThreading   = nullptr;
 	Zenith_TaskSystem*     m_pxTasks       = nullptr;

@@ -3,42 +3,40 @@
 ## Files
 
 ### Core
-- **`Zenith_SceneSystem.h/cpp`** — public scene-system surface. Static methods only (e.g. `Zenith_SceneSystem::LoadScene`, `LoadSceneByIndex`, `UnloadScene`, plus `InitialiseSubsystems` / `ShutdownSubsystems` / `ResetForNextTest` bootstrap orchestrators). Hosts the `Zenith_SceneSystem.Tests.inl` regression suite (13k+ lines covering every subsystem).
-- `Zenith_SceneManager.h` — vestigial transitional include manifold. Pulls in `Zenith_SceneSystemGuards.h`, `Zenith_SceneCallbackTypes.h`, and the four internal subsystem headers so the ~190 files that still `#include "Zenith_SceneManager.h"` keep building. No class, no symbols — delete the include from your TU and switch to `Zenith_SceneSystem.h` plus the specific subsystem header(s) you need.
-- **`Zenith_SceneSystemGuards.h/cpp`** — top-level RAII scope-guard types: `Zenith_LifecycleDeferralGuard`, `Zenith_PrefabInstantiationGuard`, `Zenith_SceneUpdateDeferralGuard`, `Zenith_SceneCreationTargetScope`. Each mutates state on `g_xEngine.SceneLifecycle()`.
-- **`Zenith_SceneCallbackTypes.h`** — top-level callback typedefs: `Zenith_SceneCallbackHandle`, `Zenith_INVALID_SCENE_CALLBACK_HANDLE`, `Zenith_SceneChangedCallback`, `Zenith_SceneLoadedCallback`, `Zenith_SceneUnloadingCallback`, `Zenith_SceneUnloadedCallback`, `Zenith_SceneLoadStartedCallback`, `Zenith_EntityPersistentCallback`. Also defines the `SCENE_LOAD_*` enum and `Zenith_SceneOperationID` alias.
+- **`Zenith_SceneSystem.h`** — the single scene API, reached via `g_xEngine.Scenes()`. One class (`Zenith_SceneSystem`) that merged the former Registry / OperationQueue / LifecycleScheduler / CallbackBus / EntityOwnership subsystems. The header also inlines the `SCENE_LOAD_*` enum, the callback typedefs (`Zenith_SceneChangedCallback`, `Zenith_SceneLoadedCallback`, `Zenith_SceneUnloadingCallback`, `Zenith_SceneUnloadedCallback`), and the RAII guard types (`Zenith_LifecycleDeferralGuard`, `Zenith_PrefabInstantiationGuard`, `Zenith_SceneUpdateDeferralGuard`, `Zenith_SceneCreationTargetScope`). There is **no** `Zenith_SceneSystem.cpp` — the implementation lives in the `Internal/` TUs (below). The regression suite is `Zenith/UnitTests/Zenith_SceneTests.h`.
 - `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
+- `Zenith_SceneData_Serialization.cpp` - `Zenith_SceneData` save/load (`.zscen` read / write / validate)
 - `Zenith_Scene.h/cpp` - Lightweight scene handle struct
-- `Zenith_SceneOperation.h/cpp` - Async scene operation tracking
 - `Zenith_Entity.h/cpp` - Entity wrapper class (scene pointer + entity ID + parent ID + child entity vector)
 - `Zenith_Entity.inl` - Template bodies for `AddComponent` / `GetComponent` / etc. (included from Zenith_Scene.h)
+- `Zenith_EntityStore.h` - Process-wide entity slot storage (slots, generations, component maps), owned by `Zenith_Engine`
 - `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations + property reflection
+- `Zenith_ComponentPool.h` - Per-type component pool, `Zenith_ComponentHandle<T>`, and the `Zenith_Component` concept
 - `Zenith_ComponentRegistry.h/cpp` - Component type registration for editor UI
 - `Zenith_Query.h` - Multi-component entity queries
 - `Zenith_EventSystem.h/cpp` - Type-safe event dispatcher with deferred queue
+- `Zenith_RenderTaskState.h` - Free-function forwarder for the render-tasks-active flag (breaks a header cycle)
 
 ### Internal/
-The five engine subsystems are the real surface; call them via `g_xEngine.X().Y()` accessors. `Zenith_SceneSystem` owns the small set of cross-subsystem orchestration helpers (bootstrap, sync `LoadScene` staging swap) but does NOT shadow every per-subsystem method.
+`Zenith_SceneSystem` is one class whose implementation is split across these TUs purely for file size — every function in them is a member of `Zenith_SceneSystem`. State lives as **private members** of the single instance; instance methods reach it directly, the `static` entity-ownership / bootstrap methods reach it via `g_xEngine.Scenes()`.
 
-- `Internal/Zenith_SceneRegistry.h/cpp` - Scene slot table, generation counters, slot freelist
-- `Internal/Zenith_SceneCallbackBus.h/cpp` - Scene event dispatch (Loaded / Unloading / ActiveSceneChanged)
-- `Internal/Zenith_SceneOperationQueue.h/cpp` - Async load/unload operation queue
-- `Internal/Zenith_SceneLifecycleScheduler.h/cpp` - OnAwake / OnEnable / OnStart / OnUpdate dispatch
-- `Internal/Zenith_SceneEntityOwnership.h/cpp` - Entity slot ownership across scene moves
-- `Internal/Zenith_SceneLifecycleContext.h` - Per-frame lifecycle state container
+- `Internal/Zenith_SceneSystem_Registry.cpp` - Slot table, generations, freelist, name cache, build-index registry, scene queries, creation/activation, `CanonicalisePath`
+- `Internal/Zenith_SceneSystem_Operations.cpp` - `LoadScene` / `LoadSceneByIndex`, unload + bulk teardown, render-system reset
+- `Internal/Zenith_SceneSystem_Lifecycle.cpp` - Bootstrap, per-frame `Update`, fixed-timestep, circular-load stacks, RAII guard bodies, `Shutdown`
+- `Internal/Zenith_SceneSystem_Callbacks.cpp` - Loaded / Unloading / Unloaded / ActiveSceneChanged dispatch + `ActiveSceneChangeSuppressionScope`
+- `Internal/Zenith_SceneSystem_EntityOwnership.cpp` - `MoveEntityToScene`, `MergeScenes`, `MarkEntityPersistent`, `Destroy*` (cross-scene entity moves)
 
-Use this table to jump to the owning subsystem for a given concern:
+Use this table to jump to the owning TU for a given concern:
 
-| What you're looking for | Owning subsystem |
+| What you're looking for | TU |
 |---|---|
-| Scene slot table, scene-name lookup, generation counters | `Zenith_SceneRegistry` |
-| Scene callbacks (`SceneLoaded`, `SceneUnloading`, `ActiveSceneChanged`, `EntityPersistent`, `SceneLoadStarted`) | `Zenith_SceneCallbackBus` |
-| Async load/unload operation queue, `Zenith_SceneOperationID`, async config knobs | `Zenith_SceneOperationQueue` |
-| Per-frame `Update`, OnAwake / OnEnable / OnStart / OnUpdate / OnLateUpdate / OnFixedUpdate dispatch, lifecycle deferral flags, fixed-timestep accumulator | `Zenith_SceneLifecycleScheduler` |
-| `MoveEntityToScene`, `MarkEntityPersistent`, entity slot ownership across scene moves, `DontDestroyOnLoad` | `Zenith_SceneEntityOwnership` |
-| Per-frame lifecycle state container (read-side surface for the scheduler) | `Zenith_SceneLifecycleContext` |
+| Scene slot table, scene-name lookup, generation counters, scene queries | `..._Registry.cpp` |
+| Scene callbacks (`SceneLoaded`, `SceneUnloading`, `SceneUnloaded`, `ActiveSceneChanged`) | `..._Callbacks.cpp` |
+| `LoadScene` / `UnloadScene`, render reset | `..._Operations.cpp` |
+| Per-frame `Update`, lifecycle-deferral flags, fixed-timestep accumulator, bootstrap | `..._Lifecycle.cpp` |
+| `MoveEntityToScene`, `MarkEntityPersistent`, `DontDestroyOnLoad`, `Destroy*` | `..._EntityOwnership.cpp` |
 
-The full boundary contracts (which subsystem may write what state, the LoadScene queue-and-defer flow, re-entrancy rules, Unity-parity invariants) are in [Internal/ARCHITECTURE.md](Internal/ARCHITECTURE.md).
+The full design (synchronous LoadScene flow, re-entrancy rules, state-access convention, Unity-parity invariants) is in [Internal/ARCHITECTURE.md](Internal/ARCHITECTURE.md).
 
 ### Components (in Components/ subdirectory)
 - `Zenith_TransformComponent` - Position, rotation, scale
@@ -68,11 +66,9 @@ Zenith uses a multi-scene architecture inspired by Unity:
 
 - **Zenith_Scene** - Lightweight handle struct (`int m_iHandle` + `uint32_t m_uGeneration`). Can be copied freely, used to reference scenes. The generation counter lets `IsValid()` detect handles to scene slots that have been unloaded and recycled.
 - **Zenith_SceneData** - Internal class storing entities, components, and metadata. Not accessed directly by game code.
-- **Zenith_SceneRegistry / Zenith_SceneOperations / Zenith_SceneLifecycleScheduler / Zenith_SceneCallbackBus / Zenith_SceneEntityOwnership** - Engine subsystems held by `Zenith_Engine`. Accessed via `g_xEngine.SceneRegistry()`, `g_xEngine.SceneOperations()`, etc.
-- **Zenith_SceneSystem** - Public scene-system static class. Hosts the bootstrap orchestrators (`InitialiseSubsystems` / `ShutdownSubsystems` / `ResetForNextTest`) and a small set of `LoadScene*` / `UnloadScene` convenience methods. Most new call sites still target the subsystem accessor directly.
-- **Zenith_SceneOperation** - Tracks async scene loading progress.
+- **Zenith_SceneSystem** - The single scene system, held by `Zenith_Engine` and reached via `g_xEngine.Scenes()`. Owns the slot table, callbacks, (synchronous) load/unload, the per-frame `Update`, and cross-scene entity ownership — the former Registry / OperationQueue / LifecycleScheduler / CallbackBus / EntityOwnership subsystems all merged in. Most of its surface is instance methods; the entity-ownership API (`CreateEntity`, `MoveEntityToScene`, `MarkEntityPersistent`, `Destroy*`) and the bootstrap orchestrators (`InitialiseSubsystems` / `ShutdownSubsystems` / `ResetForNextTest`) are `static`.
 
-Multiple scenes can be loaded simultaneously (additive loading). One scene is "active" at any time.
+Multiple scenes can be loaded simultaneously (additive loading). One scene is "active" at any time. Scene loading is **synchronous** — `LoadScene` returns a real `Zenith_Scene` once Awake/OnEnable have run and the `SceneLoaded` callback has fired.
 
 ### Scene Loading Modes
 | Mode | Enum | Behavior |
@@ -87,28 +83,28 @@ A special scene that is always loaded and never unloaded. Use `MarkEntityPersist
 ### Common Scene Management Patterns
 
 ```cpp
-// Get active scene and create entity (Phase 5e: subsystem accessors)
-Zenith_Scene xScene = g_xEngine.SceneRegistry().GetActiveScene();
-Zenith_SceneData* pxSceneData = g_xEngine.SceneRegistry().GetSceneData(xScene);
+// Get active scene and create entity
+Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 Zenith_Entity xEntity(pxSceneData, "MyEntity");
 
-// Load scene additively
-Zenith_Scene xLoaded = g_xEngine.SceneOperations().LoadScene("Levels/Level1.zscen", SCENE_LOAD_ADDITIVE);
+// Load scene additively (synchronous — returns a valid handle)
+Zenith_Scene xLoaded = g_xEngine.Scenes().LoadScene("Levels/Level1.zscen", SCENE_LOAD_ADDITIVE);
 
-// Make entity persistent across scene loads
-Zenith_SceneEntityOwnership::MarkEntityPersistent(xPlayerEntity);
+// Make entity persistent across scene loads (static, Unity-style)
+Zenith_SceneSystem::MarkEntityPersistent(xPlayerEntity);
 
 // Move entity between scenes (updates reference in-place, Unity behavior)
-Zenith_SceneEntityOwnership::MoveEntityToScene(xEntity, xTargetScene);
+Zenith_SceneSystem::MoveEntityToScene(xEntity, xTargetScene);
 // xEntity now points to the entity in the target scene
 
-// Register for scene events
-g_xEngine.SceneCallbacks().RegisterSceneLoaded([](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+// Register for scene events (callbacks are function pointers, so a captureless lambda)
+g_xEngine.Scenes().RegisterSceneLoaded([](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
     // Handle scene load
 });
 ```
 
-The `Zenith_SceneManager` class is gone. The remaining `Zenith_SceneManager.h` is an empty include manifold kept for transitional convenience; new code should target the subsystem accessors directly.
+The `Zenith_SceneManager` class and header are gone — there is no facade or include manifold. Target `g_xEngine.Scenes()` (instance methods) or `Zenith_SceneSystem::` (the static entity-ownership / bootstrap methods) directly.
 
 ### Component Pools
 Each component type has a dedicated pool with:
@@ -250,7 +246,7 @@ Each entity has at most one `Zenith_ScriptComponent`, but the component can hold
 - Event system provides thread-safe `QueueEvent()` for cross-thread event dispatch
 
 **Scene Loading Reset Order:**
-When `g_xEngine.SceneOperations().LoadScene()` loads a scene in `SCENE_LOAD_SINGLE` mode, systems are reset in this order:
+When `g_xEngine.Scenes().LoadScene()` loads a scene in `SCENE_LOAD_SINGLE` mode, systems are reset in this order:
 1. Flux render systems (Terrain, StaticMeshes, AnimatedMeshes, etc.)
 2. `SceneData::Reset()` - Destroys all entities and their components
 3. `Zenith_Physics::Reset()` - Clears physics world
@@ -291,12 +287,10 @@ The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_C
 
 4. **Current Design Is Type-Safe**: The callback wrappers know the exact event type at compile time, preserving type safety within the wrapper while providing runtime polymorphism for storage.
 
-### SceneManager.h ↔ SceneData.h: cycle broken (T2.4)
+### Scene-system header ↔ SceneData.h: cycle broken (T2.4)
 
-The historical cycle (`SceneData.h` ↔ `SceneManager.h`, both including each other at the bottom for mutual template body references) was broken in T2.4 and is no longer a concern — the `Zenith_SceneManager` class itself is gone (only the empty include-manifold header remains).
-
-For context, the break was achieved by lifting the back-edge sources out of `SceneData.h`:
+`Zenith_SceneSystem.h` includes `Zenith_SceneData.h` at the bottom (for the `GetAllOfComponentTypeFromAllScenes` template body), so the back-edge from `SceneData.h` had to be removed to avoid a textual cycle. That was done by lifting the back-edge sources out of `SceneData.h`:
 
 1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentHandle<T>`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This header is self-contained.
 
-2. **Render-task-active check** — `SceneData.h`'s template assertions now call the free function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` (defined in `Zenith_SceneLifecycleScheduler.cpp`).
+2. **Render-task-active check** — `SceneData.h`'s template assertions now call the free function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` (defined in `Internal/Zenith_SceneSystem_Lifecycle.cpp`).

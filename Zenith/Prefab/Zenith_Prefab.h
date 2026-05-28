@@ -58,10 +58,11 @@ public:
 	Zenith_Entity Instantiate(Zenith_SceneData* pxSceneData, const std::string& strEntityName = "") const;
 
 	/**
-	 * Unity-parity overload: instantiate into Zenith_SceneManager::
-	 * GetDefaultCreationScene() — the loading scene if a SceneCreationTargetScope
-	 * is active, otherwise the active scene. Logs an error and returns a
-	 * default-constructed (invalid) entity when no creation target exists.
+	 * Unity-parity overload: instantiate into
+	 * g_xEngine.Scenes().GetDefaultCreationScene() — the loading scene if a
+	 * SceneCreationTargetScope is active, otherwise the active scene. Logs an
+	 * error and returns a default-constructed (invalid) entity when no creation
+	 * target exists.
 	 */
 	Zenith_Entity Instantiate(const std::string& strEntityName = "") const;
 
