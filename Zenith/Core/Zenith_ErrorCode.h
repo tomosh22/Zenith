@@ -19,4 +19,5 @@ enum class Zenith_ErrorCode : unsigned int
 	GPU_UPLOAD_FAILED,
 	OUT_OF_MEMORY,
 	INVALID_ARGUMENT,
+	QUEUE_FULL,
 };

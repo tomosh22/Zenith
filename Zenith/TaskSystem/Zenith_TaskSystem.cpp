@@ -2,6 +2,7 @@
 
 #include "TaskSystem/Zenith_TaskSystem.h"
 
+#include "Core/Zenith_ErrorCode.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include <thread>
 
@@ -160,8 +161,13 @@ u_int Zenith_TaskSystem::EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount)
 		}
 	}
 
-	Zenith_Assert(uEnqueuedCount == uCount,
-		"EnqueueAndSignal: Only enqueued %u/%u tasks - queue full!", uEnqueuedCount, uCount);
+	// Queue overflow is recoverable: SubmitTask resets m_bSubmitted on a short
+	// enqueue so the task can be retried, and SubmitTaskArray simply runs fewer
+	// worker invocations. A hard assert/break here would crash a shipping build
+	// on transient back-pressure, so log it (Zenith_ErrorCode::QUEUE_FULL) and
+	// fall through — signalling only the tasks we actually enqueued.
+	Zenith_Check(uEnqueuedCount == uCount,
+		"EnqueueAndSignal: Only enqueued %u/%u tasks - queue full (Zenith_ErrorCode::QUEUE_FULL)!", uEnqueuedCount, uCount);
 
 	for (u_int u = 0; u < uEnqueuedCount; u++)
 	{

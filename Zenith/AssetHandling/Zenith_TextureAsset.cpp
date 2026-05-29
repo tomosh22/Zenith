@@ -128,6 +128,12 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 
 	// Create GPU resources
 	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	if (!m_xVRAMHandle.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: GPU upload failed for texture '%s'", strPath.c_str());
+		Zenith_MemoryManagement::Deallocate(pData);
+		return Zenith_ErrorCode::GPU_UPLOAD_FAILED;
+	}
 	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 

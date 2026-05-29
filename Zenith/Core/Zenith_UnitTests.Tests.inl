@@ -15126,3 +15126,103 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 	ZENITH_ASSERT_TRUE(str.find("frame.lights_Set") == std::string::npos, "Generated identifier should never contain raw '.'");
 
 }
+
+//==============================================================================
+// Wave 8.3 - release-survivable check tier (Zenith_Check / Zenith_Verify)
+//==============================================================================
+
+ZENITH_TEST(Core, CheckTierReleaseSurvivable) { Zenith_UnitTests::TestCheckTierReleaseSurvivable(); }
+
+void Zenith_UnitTests::TestCheckTierReleaseSurvivable(){
+
+	// Unlike Zenith_Assert, the check tier logs and CONTINUES — it must never
+	// call Zenith_DebugBreak(). If Zenith_Check(false, ...) aborted, control
+	// would never reach the line after it and this test could not pass.
+	// (One log line is emitted by design; we keep it to a single failing Check
+	// to minimise spam.)
+	bool bReachedAfterCheck = false;
+	Zenith_Check(false, "TestCheckTierReleaseSurvivable: intentional check failure (expected, not a real error)");
+	bReachedAfterCheck = true;
+	ZENITH_ASSERT_TRUE(bReachedAfterCheck,
+		"Zenith_Check(false) must log and fall through, not abort");
+
+	// Zenith_Verify(expr) must EVALUATE expr for its side effects. Use a
+	// side-effecting, true expression: the increment runs and, because the
+	// expression is true, nothing is logged (zero spam) — proving evaluation
+	// happened independently of the log path.
+	int iSideEffectCounter = 0;
+	Zenith_Verify((++iSideEffectCounter) == 1);
+	ZENITH_ASSERT_EQ(iSideEffectCounter, 1,
+		"Zenith_Verify must evaluate its expression (side effect should have run exactly once)");
+}
+
+//==============================================================================
+// Wave 8.3 - task-queue overflow no longer crashes (graceful QUEUE_FULL)
+//==============================================================================
+
+// Trivial fire-and-forget task body: a short busy-spin to encourage the queue
+// to back up past uMAX_TASKS, then a single atomic increment so the test can
+// confirm work actually happened.
+struct QueueFullTestData
+{
+	std::atomic<u_int> m_uRunCount{0};
+};
+
+static void QueueFullTaskFunc(void* pData)
+{
+	auto* pxData = static_cast<QueueFullTestData*>(pData);
+	// Tiny amount of work so workers don't drain instantly, making the
+	// >128-in-flight overflow path realistic without a fragile blocking gate.
+	volatile u_int uSpin = 0;
+	for (u_int u = 0; u < 2048u; u++) { uSpin += u; }
+	(void)uSpin;
+	pxData->m_uRunCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+ZENITH_TEST(TaskSystem, QueueFullSurfacesError) { Zenith_UnitTests::TestQueueFullSurfacesError(); }
+
+void Zenith_UnitTests::TestQueueFullSurfacesError(){
+
+	// Submit far more than Zenith_TaskSystem::uMAX_TASKS (128) tasks without
+	// draining between submits, so the bounded circular queue can overflow.
+	// The old code asserted (and Zenith_DebugBreak'd) on overflow; the Wave 8.3
+	// change downgraded that to a Zenith_Check that logs QUEUE_FULL and lets the
+	// enqueue come up short. SubmitTask resets m_bSubmitted on a zero-enqueue, so
+	// any task that failed to enqueue is NOT marked submitted and its
+	// WaitUntilComplete() is a no-op — meaning this loop is deadlock-free
+	// regardless of how many tasks the queue refused.
+	constexpr u_int uNUM_TASKS = Zenith_TaskSystem::uMAX_TASKS * 2u + 16u; // 272 > 128
+	QueueFullTestData xData;
+
+	Zenith_Task** apxTasks = new Zenith_Task*[uNUM_TASKS];
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		apxTasks[u] = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, QueueFullTaskFunc, &xData);
+	}
+
+	// Fire them all in without draining — this is what drives the overflow.
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		g_xEngine.Tasks().SubmitTask(apxTasks[u]);
+	}
+
+	// Drain. Tasks that were enqueued run exactly once; tasks the queue refused
+	// had their submitted flag reset, so WaitUntilComplete returns immediately.
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		apxTasks[u]->WaitUntilComplete();
+	}
+
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		delete apxTasks[u];
+	}
+	delete[] apxTasks;
+
+	// The headline guarantee: we reached here without a debug-break / crash on
+	// overflow. As a sanity bound, every task that actually ran did so exactly
+	// once, so the run count is in (0, uNUM_TASKS].
+	const u_int uRan = xData.m_uRunCount.load(std::memory_order_relaxed);
+	ZENITH_ASSERT_GT(uRan, 0u, "At least some submitted tasks should have executed");
+	ZENITH_ASSERT_LE(uRan, uNUM_TASKS, "Run count must never exceed the number of tasks submitted");
+}

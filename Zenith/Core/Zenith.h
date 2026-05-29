@@ -147,6 +147,38 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 #define Zenith_Assert(x, ...)
 #endif
 
+// Release-survivable check tier.
+//
+// Unlike Zenith_Assert (which calls Zenith_DebugBreak() and is meant to halt a
+// developer at the point of a logic error), the check tier LOGS the failure and
+// CONTINUES execution. It is intended for conditions that can legitimately fail
+// in a shipping build (resource exhaustion, a GPU upload refusing, a queue
+// overflowing) where the caller has a real recovery path and a hard break would
+// be a worse outcome than a logged, handled degradation.
+//
+//   Zenith_Check(cond, ...)  — if cond is false, Zenith_Error(...) and fall
+//                              through. NEVER breaks. Use at a recoverable site
+//                              and pair it with the caller's fallback path.
+//   Zenith_Verify(cond)      — evaluates cond for its SIDE EFFECTS and, on
+//                              false, logs. The expression always runs even when
+//                              checks are compiled out (see below), so it is
+//                              safe to wrap a call whose return value you check.
+//
+// Gated by ZENITH_RUNTIME_CHECKS, defined ON for Debug and Release here. A
+// future Final configuration can leave it undefined to strip the logging:
+//   - Zenith_Check then compiles to nothing (cond is NOT evaluated — like
+//     Zenith_Assert in a no-assert build).
+//   - Zenith_Verify STILL evaluates cond (side effects must run) but does not
+//     log; the result is simply discarded.
+#define ZENITH_RUNTIME_CHECKS
+#ifdef ZENITH_RUNTIME_CHECKS
+#define Zenith_Check(x,...)if(!(x)){Zenith_Error(LOG_CATEGORY_CORE, "Check failed: " __VA_ARGS__);}
+#define Zenith_Verify(x)if(!(x)){Zenith_Error(LOG_CATEGORY_CORE, "Verify failed: " #x);}
+#else
+#define Zenith_Check(x, ...)
+#define Zenith_Verify(x)(void)(x)
+#endif
+
 #define ZENITH_USE_FINAL
 #ifdef ZENITH_USE_FINAL
 #define ZENITH_FINAL final

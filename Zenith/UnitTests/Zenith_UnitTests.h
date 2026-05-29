@@ -241,6 +241,10 @@ public:
 	static void TestTaskArrayCallingThreadParticipates();
 	static void TestTaskReuseAfterWait();
 
+	// Wave 8.3 - release-survivable check tier + task-queue overflow grace
+	static void TestCheckTierReleaseSurvivable();
+	static void TestQueueFullSurfacesError();
+
 	// RenderGraph diagnostic accessor
 	static void TestRenderGraphPassOrderDescription();
 
