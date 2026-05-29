@@ -2,6 +2,7 @@
 #include "Prefab/Zenith_Prefab.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Zenith_SceneSystem.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 namespace
 {
 	// Resolve a PrefabHandle to its concrete Zenith_Prefab*, handling both
@@ -289,7 +290,11 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 	return true;
 }
 
-Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const std::string& strEntityName) const
+Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData,
+	const std::string& strEntityName,
+	const Zenith_Maths::Vector3& xPosition,
+	const Zenith_Maths::Quat& xRotation,
+	const Zenith_Maths::Vector3& xScale) const
 {
 	if (!m_bIsValid || !pxSceneData)
 	{
@@ -300,11 +305,14 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 	// Suppress immediate lifecycle dispatch in Entity constructor across the entire
 	// recursive chain. PrefabInstantiationGuard restores the prior value when it
 	// goes out of scope; the manual dispatch below fires once after recursion completes.
+	// The spawn transform is applied inside InstantiateInternal (at the non-variant
+	// leaf) BEFORE that dispatch, so OnAwake sees the final transform and a baked
+	// collider's body is built in the right place (Unity "transform before Awake").
 	Zenith_Entity xEntity;
 	{
 		Zenith_PrefabInstantiationGuard xPrefabGuard;
 		Zenith_Vector<const Zenith_Prefab*> axVisited;
-		xEntity = InstantiateInternal(pxSceneData, strEntityName, axVisited);
+		xEntity = InstantiateInternal(pxSceneData, strEntityName, xPosition, xRotation, xScale, axVisited);
 	}
 
 	if (!xEntity.IsValid())
@@ -330,6 +338,9 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 Zenith_Entity Zenith_Prefab::InstantiateInternal(
 	Zenith_SceneData* pxSceneData,
 	const std::string& strEntityName,
+	const Zenith_Maths::Vector3& xPosition,
+	const Zenith_Maths::Quat& xRotation,
+	const Zenith_Maths::Vector3& xScale,
 	Zenith_Vector<const Zenith_Prefab*>& axVisited) const
 {
 	// Cycle guard. CreateAsVariant rejects cycles at construction time, but a
@@ -347,7 +358,9 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 
 	if (m_xBasePrefab.IsSet())
 	{
-		// Variant path: instantiate the base, then apply our overrides on top.
+		// Variant path: instantiate the base (which applies the caller transform
+		// at the leaf), then apply our overrides on top — so a per-property
+		// override (e.g. Scale) replaces just that property of the caller transform.
 		Zenith_Prefab* pxBase = ResolvePrefabHandle(m_xBasePrefab);
 		if (pxBase == nullptr)
 		{
@@ -357,7 +370,7 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 			return Zenith_Entity();
 		}
 
-		Zenith_Entity xEntity = pxBase->InstantiateInternal(pxSceneData, strEntityName, axVisited);
+		Zenith_Entity xEntity = pxBase->InstantiateInternal(pxSceneData, strEntityName, xPosition, xRotation, xScale, axVisited);
 		if (!xEntity.IsValid())
 		{
 			return xEntity;
@@ -389,31 +402,20 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
 	Zenith_Entity xEntity(pxSceneData, strName);
 	DeserializeComponents(xEntity);
+
+	// Apply the spawn transform as the BASE transform (variant overrides, applied
+	// by the caller above, then replace individual properties). Order matters:
+	// position and rotation first, then scale — SetScale auto-rebuilds a baked
+	// collider, and that rebuild reads the (now-synced) position/rotation so the
+	// body lands at the instance transform rather than the template/origin.
+	if (xEntity.HasComponent<Zenith_TransformComponent>())
+	{
+		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+		xTransform.SetPosition(xPosition);
+		xTransform.SetRotation(xRotation);
+		xTransform.SetScale(xScale);
+	}
 	return xEntity;
-}
-
-Zenith_Entity Zenith_Prefab::Instantiate(const std::string& strEntityName) const
-{
-	const Zenith_Scene xTarget = g_xEngine.Scenes().GetDefaultCreationScene();
-	if (!xTarget.IsValid())
-	{
-		Zenith_Error(LOG_CATEGORY_PREFAB,
-			"Prefab::Instantiate('%s'): no creation target available "
-			"(no active scene and no SceneCreationTargetScope)",
-			m_strName.c_str());
-		return Zenith_Entity();
-	}
-
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTarget);
-	if (!pxSceneData)
-	{
-		Zenith_Error(LOG_CATEGORY_PREFAB,
-			"Prefab::Instantiate('%s'): default creation scene (handle=%d gen=%u) is not loaded",
-			m_strName.c_str(), xTarget.m_iHandle, xTarget.m_uGeneration);
-		return Zenith_Entity();
-	}
-
-	return Instantiate(pxSceneData, strEntityName);
 }
 
 bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const

@@ -229,6 +229,9 @@ public:
 	static void TestPrefabVariantInstantiateLifecycleOnceAtTop();
 	static void TestPrefabVariantPositionOverrideSyncsPhysicsBody();
 	static void TestPrefabVariantScaleOverrideRebuildsCollider();
+	// Regression: RebuildCollider must rebuild at the body's current transform,
+	// not a stale cached one (Engine change 1 of the prefab-instantiate work).
+	static void TestColliderRebuildKeepsMovedTransform();
 	static void TestTaskArrayCallingThreadParticipates();
 	static void TestTaskReuseAfterWait();
 

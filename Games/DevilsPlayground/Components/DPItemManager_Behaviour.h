@@ -5,10 +5,11 @@
  *
  * Spawn flow:
  *   1. Iterate every DPItemSpawn_Behaviour in the active scene.
- *   2. For each spawner, look up its tag from a fixed spawn-index mapping
- *      (the prefab system isn't wired in skeleton-grade yet).
- *   3. Create an item entity at the spawner's world position, attach a cube
- *      mesh + sphere collider + DPItemBase_Behaviour, stamp the tag.
+ *   2. For each spawner, look up its tag from a fixed spawn-index mapping.
+ *   3. Instantiate the shared item prefab (cube mesh + sphere collider, baked)
+ *      at the spawner's world position, attach DPItemBase_Behaviour, stamp the
+ *      tag. The index->tag mapping stays because the tag is per-instance, not
+ *      baked into the prefab.
  *
  * SourceBugFixed (FindItemByTag): the source AItemManager::FindItemByType
  * derefs on miss. The fix lives in DP_Items::FindItemByTag
@@ -24,6 +25,8 @@
 #include "Components/DPItemSpawn_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
 #include "Physics/Zenith_Physics.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "Source/DPResources.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
@@ -164,30 +167,20 @@ private:
 		const Zenith_Maths::Vector3& xPos,
 		uint32_t uIndex)
 	{
+		Zenith_Prefab* pxItemPrefab = DevilsPlayground::Resources().m_xItemPrefab.GetDirect();
+		if (pxItemPrefab == nullptr) return INVALID_ENTITY_ID;
+
 		char szName[64];
 		std::snprintf(szName, sizeof(szName), "Item_%u_%s", uIndex, DP_ItemTagToString(eTag));
-		Zenith_Entity xEntity(pxScene, std::string(szName));
+
+		// Model (cube) + sphere/static collider are baked into the item prefab;
+		// Instantiate places it at xPos and finalizes the collider body.
+		Zenith_Entity xEntity = pxItemPrefab->Instantiate(pxScene, std::string(szName), xPos);
 		if (!xEntity.IsValid()) return INVALID_ENTITY_ID;
 
-		// Transform is auto-added by the entity constructor; just position it.
-		if (xEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
-		}
-
-		// Model: prototype cube. The path matches the other authoring sites in
-		// DevilsPlayground.cpp::MakeMeshPath which substitutes /Engine/* for
-		// this same cube.
-		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.LoadModel(std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT);
-
-		// Collider: sphere, static. 0.3m radius matches a small-ish pickup.
-		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
-		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
-
-		// Script: DPItemBase_Behaviour. AddScript<T> calls OnAwake immediately,
-		// which registers the tag side-table entry and applies tag tinting.
-		// We then SetTag for the actual tag (initial m_eTag is None).
+		// Script: DPItemBase_Behaviour stays post-instantiation. AddScript<T> calls
+		// OnAwake immediately, which registers the tag side-table entry with
+		// m_eTag=None; SetTag then re-registers with the real tag + applies tinting.
 		DPItemBase_Behaviour* pxItemBase = xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPItemBase_Behaviour>();
 		if (pxItemBase) pxItemBase->SetTag(eTag);
 

@@ -12,6 +12,8 @@
 #include "Flux/Flux_ModelInstance.h"
 #include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "Source/DPResources.h"
 
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
 #include "Source/DPProcLevel/DPProcLevel_LevelLayout.h"
@@ -113,8 +115,8 @@ void DPProcLevelBootstrap_Behaviour::SpawnWalls()
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
 
-	const std::string strMeshPath =
-		std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT;
+	Zenith_Prefab* pxWallPrefab = DevilsPlayground::Resources().m_xWallPrefab.GetDirect();
+	if (pxWallPrefab == nullptr) return;
 
 	uint32_t uSpawned = 0;
 	const uint32_t uN = m_xLayout.axWallSegments.GetSize();
@@ -123,34 +125,20 @@ void DPProcLevelBootstrap_Behaviour::SpawnWalls()
 		const DPProcLevel::WallSegment& xW = m_xLayout.axWallSegments.Get(i);
 		char szName[64];
 		std::snprintf(szName, sizeof(szName), "ProcWall_%u", i);
-		Zenith_Entity xEntity(pxScene, std::string(szName));
+
+		const float fCosY = std::cos(xW.fYawRadians);
+		const float fSinY = std::sin(xW.fYawRadians);
+		const float fOffsetX = -xW.fHalfExtentX * fCosY - xW.fHalfExtentZ * fSinY;
+		const float fOffsetZ =  xW.fHalfExtentX * fSinY - xW.fHalfExtentZ * fCosY;
+		const Zenith_Maths::Vector3 xPos(xW.fCentreX + fOffsetX, 1.0f, xW.fCentreZ + fOffsetZ);
+		const Zenith_Maths::Quat xRot =
+			Zenith_Maths::AngleAxis(xW.fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		const Zenith_Maths::Vector3 xScale(2.0f * xW.fHalfExtentX, 4.0f, 2.0f * xW.fHalfExtentZ);
+
+		// Model + OBB collider are baked into the prefab; Instantiate applies the
+		// transform and rebuilds the collider body to match.
+		Zenith_Entity xEntity = pxWallPrefab->Instantiate(pxScene, std::string(szName), xPos, xRot, xScale);
 		if (!xEntity.IsValid()) continue;
-
-		if (xEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
-			const float fCosY = std::cos(xW.fYawRadians);
-			const float fSinY = std::sin(xW.fYawRadians);
-			const float fOffsetX = -xW.fHalfExtentX * fCosY - xW.fHalfExtentZ * fSinY;
-			const float fOffsetZ =  xW.fHalfExtentX * fSinY - xW.fHalfExtentZ * fCosY;
-			xT.SetPosition(Zenith_Maths::Vector3(
-				xW.fCentreX + fOffsetX,
-				1.0f,
-				xW.fCentreZ + fOffsetZ));
-			const Zenith_Maths::Quat xRot =
-				Zenith_Maths::AngleAxis(xW.fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-			xT.SetRotation(xRot);
-			xT.SetScale(Zenith_Maths::Vector3(
-				2.0f * xW.fHalfExtentX,
-				4.0f,
-				2.0f * xW.fHalfExtentZ));
-		}
-
-		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.LoadModel(strMeshPath);
-
-		Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
-		xCol.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 
 		++uSpawned;
 	}
@@ -165,9 +153,6 @@ void DPProcLevelBootstrap_Behaviour::SpawnGameElements()
 	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
-
-	const std::string strMeshPath =
-		std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT;
 
 	uint32_t uSpawned = 0;
 	uint32_t uSkipped = 0;
@@ -185,95 +170,99 @@ void DPProcLevelBootstrap_Behaviour::SpawnGameElements()
 		char szName[64];
 		std::snprintf(szName, sizeof(szName), "ProcElem_%u_%s",
 			i, GameElementTypeToShortName(xElem.eType));
-		Zenith_Entity xEntity(pxScene, std::string(szName));
-		if (!xEntity.IsValid()) continue;
 
-		if (xEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
-			if (xElem.eType == DPProcLevel::GameElementType::Pentagram)
-			{
-				xT.SetPosition(Zenith_Maths::Vector3(xElem.fX, 1.0f, xElem.fZ));
-				xT.SetScale(Zenith_Maths::Vector3(2.0f, 0.5f, 2.0f));
-			}
-			else
-			{
-				xT.SetPosition(Zenith_Maths::Vector3(xElem.fX, 0.0f, xElem.fZ));
-			}
-		}
-
-		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.LoadModel(strMeshPath);
+		// Select the per-type prefab and compute its spawn transform. Most
+		// elements sit at (fX, 0, fZ) with identity rotation/scale; pentagram and
+		// door are special-cased.
+		Zenith_Prefab* pxPrefab = nullptr;
+		Zenith_Maths::Vector3 xPos(xElem.fX, 0.0f, xElem.fZ);
+		Zenith_Maths::Quat xRot(1.0f, 0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xScale(1.0f, 1.0f, 1.0f);
+		const Zenith_Maths::Vector3 xDoorLogicalCentre(xElem.fX, 1.0f, xElem.fZ);
 
 		switch (xElem.eType)
 		{
 		case DPProcLevel::GameElementType::Pentagram:
-		{
-			Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
-			xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-			xCol.SetIncludeInNavMesh(false);
-			xEntity.AddComponent<Zenith_ScriptComponent>()
-				.AddScript<DPPentagram_Behaviour>();
+			pxPrefab = DevilsPlayground::Resources().m_xPentagramPrefab.GetDirect();
+			xPos.y = 1.0f;
+			xScale = Zenith_Maths::Vector3(2.0f, 0.5f, 2.0f);
 			break;
-		}
 		case DPProcLevel::GameElementType::Forge:
-		{
-			xEntity.AddComponent<Zenith_ScriptComponent>()
-				.AddScript<DPForge_Behaviour>();
+			pxPrefab = DevilsPlayground::Resources().m_xForgePrefab.GetDirect();
 			break;
-		}
 		case DPProcLevel::GameElementType::Door:
 		{
-			if (xEntity.HasComponent<Zenith_TransformComponent>())
-			{
-				Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
-				constexpr float fHalfThick = 0.15f;
-				constexpr float fHalfWide  = 1.0f;
-				const float fCosY = std::cos(xElem.fYawRadians);
-				const float fSinY = std::sin(xElem.fYawRadians);
-				const float fOffsetX = -fHalfThick * fCosY - fHalfWide * fSinY;
-				const float fOffsetZ =  fHalfThick * fSinY - fHalfWide * fCosY;
-				xT.SetPosition(Zenith_Maths::Vector3(
-					xElem.fX + fOffsetX,
-					1.0f,
-					xElem.fZ + fOffsetZ));
-				xT.SetRotation(Zenith_Maths::AngleAxis(
-					xElem.fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
-				xT.SetScale(Zenith_Maths::Vector3(
-					2.0f * fHalfThick,
-					4.0f,
-					2.0f * fHalfWide));
-			}
-			xEntity.AddComponent<Zenith_ColliderComponent>()
-				.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+			pxPrefab = DevilsPlayground::Resources().m_xDoorPrefab.GetDirect();
+			constexpr float fHalfThick = 0.15f;
+			constexpr float fHalfWide  = 1.0f;
+			const float fCosY = std::cos(xElem.fYawRadians);
+			const float fSinY = std::sin(xElem.fYawRadians);
+			const float fOffsetX = -fHalfThick * fCosY - fHalfWide * fSinY;
+			const float fOffsetZ =  fHalfThick * fSinY - fHalfWide * fCosY;
+			xPos = Zenith_Maths::Vector3(xElem.fX + fOffsetX, 1.0f, xElem.fZ + fOffsetZ);
+			xRot = Zenith_Maths::AngleAxis(xElem.fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+			xScale = Zenith_Maths::Vector3(2.0f * fHalfThick, 4.0f, 2.0f * fHalfWide);
+			break;
+		}
+		case DPProcLevel::GameElementType::Chest:
+			pxPrefab = DevilsPlayground::Resources().m_xChestPrefab.GetDirect();
+			break;
+		case DPProcLevel::GameElementType::NoiseMachine:
+			pxPrefab = DevilsPlayground::Resources().m_xNoiseMachinePrefab.GetDirect();
+			break;
+		case DPProcLevel::GameElementType::Iron:
+		case DPProcLevel::GameElementType::Objective1:
+		case DPProcLevel::GameElementType::Objective2:
+		case DPProcLevel::GameElementType::Objective3:
+		case DPProcLevel::GameElementType::Objective4:
+		case DPProcLevel::GameElementType::Objective5:
+			pxPrefab = DevilsPlayground::Resources().m_xItemPrefab.GetDirect();
+			break;
+		case DPProcLevel::GameElementType::SpawnPoint:
+			break; // already skipped above
+		}
 
+		if (pxPrefab == nullptr) continue;
+
+		// Model + (type-specific) collider are baked into the prefab; Instantiate
+		// applies the transform and rebuilds any collider body to match.
+		Zenith_Entity xEntity = pxPrefab->Instantiate(pxScene, std::string(szName), xPos, xRot, xScale);
+		if (!xEntity.IsValid()) continue;
+
+		// Per-instance config + scripts stay post-instantiation: navmesh flags
+		// aren't serialized into the prefab, and scripts need their per-instance
+		// setters after creation (see Source/DPResources.h).
+		switch (xElem.eType)
+		{
+		case DPProcLevel::GameElementType::Pentagram:
+			if (xEntity.HasComponent<Zenith_ColliderComponent>())
+				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPPentagram_Behaviour>();
+			break;
+		case DPProcLevel::GameElementType::Forge:
+			xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPForge_Behaviour>();
+			break;
+		case DPProcLevel::GameElementType::Door:
+		{
+			// DPDoor_Behaviour::OnAwake sets SetIncludeInNavMesh(false) on its own
+			// collider, so it isn't done here.
 			DPDoor_Behaviour* pxDoor =
-				xEntity.AddComponent<Zenith_ScriptComponent>()
-					.AddScript<DPDoor_Behaviour>();
+				xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPDoor_Behaviour>();
 			if (pxDoor != nullptr)
 			{
-				pxDoor->SetLogicalCentre(Zenith_Maths::Vector3(xElem.fX, 1.0f, xElem.fZ));
-				pxDoor->SetRequiredKey(xElem.bDoorLocked
-					? DP_ItemTag::Key
-					: DP_ItemTag::None);
+				pxDoor->SetLogicalCentre(xDoorLogicalCentre);
+				pxDoor->SetRequiredKey(xElem.bDoorLocked ? DP_ItemTag::Key : DP_ItemTag::None);
 			}
 			break;
 		}
 		case DPProcLevel::GameElementType::Chest:
-		{
-			Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
-			xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-			xCol.SetIncludeInNavMesh(false);
-			xEntity.AddComponent<Zenith_ScriptComponent>()
-				.AddScript<DPChest_Behaviour>();
+			if (xEntity.HasComponent<Zenith_ColliderComponent>())
+				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPChest_Behaviour>();
 			break;
-		}
 		case DPProcLevel::GameElementType::NoiseMachine:
-		{
-			xEntity.AddComponent<Zenith_ScriptComponent>()
-				.AddScript<DummyNoiseMachine_Behaviour>();
+			xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DummyNoiseMachine_Behaviour>();
 			break;
-		}
 		case DPProcLevel::GameElementType::Iron:
 		case DPProcLevel::GameElementType::Objective1:
 		case DPProcLevel::GameElementType::Objective2:
@@ -281,12 +270,10 @@ void DPProcLevelBootstrap_Behaviour::SpawnGameElements()
 		case DPProcLevel::GameElementType::Objective4:
 		case DPProcLevel::GameElementType::Objective5:
 		{
-			Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
-			xCol.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
-			xCol.SetIncludeInNavMesh(false);
-			DPItemBase_Behaviour* pxItem = xEntity
-				.AddComponent<Zenith_ScriptComponent>()
-				.AddScript<DPItemBase_Behaviour>();
+			if (xEntity.HasComponent<Zenith_ColliderComponent>())
+				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			DPItemBase_Behaviour* pxItem =
+				xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPItemBase_Behaviour>();
 			if (pxItem != nullptr)
 			{
 				pxItem->SetTag(GameElementToItemTag(xElem.eType));
@@ -384,15 +371,13 @@ void DPProcLevelBootstrap_Behaviour::SpawnVillagers()
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	if (pxScene == nullptr) return;
 
-	const std::string strMeshPath = GetCubeMeshPath();
-
 	const uint32_t uN = m_xLayout.axVillagerSpawns.GetSize();
 	uint32_t uSpawned = 0;
 	for (uint32_t i = 0; i < uN; ++i)
 	{
 		const DPProcLevel::VillagerSpawn& xV = m_xLayout.axVillagerSpawns.Get(i);
 		if (SpawnCharacterEntity(pxScene, "ProcVillager", i, xV.fX, xV.fZ,
-			xV.fYawRadians, strMeshPath, /*bIsPriest=*/false))
+			xV.fYawRadians, /*bIsPriest=*/false))
 		{
 			++uSpawned;
 		}
@@ -410,21 +395,12 @@ void DPProcLevelBootstrap_Behaviour::SpawnPriest()
 	if (pxScene == nullptr) return;
 	if (!m_xLayout.xPriestSpawn.bValid) return;
 
-	const std::string strMeshPath = GetCubeMeshPath();
-
 	const DPProcLevel::PriestSpawn& xP = m_xLayout.xPriestSpawn;
 	m_bSpawnedPriest = SpawnCharacterEntity(pxScene, "ProcPriest", 0,
-		xP.fX, xP.fZ, xP.fYawRadians, strMeshPath, /*bIsPriest=*/true);
+		xP.fX, xP.fZ, xP.fYawRadians, /*bIsPriest=*/true);
 	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
 		"[DPProcLevelBootstrap] spawned priest=%d",
 		static_cast<int>(m_bSpawnedPriest));
-}
-
-std::string DPProcLevelBootstrap_Behaviour::GetCubeMeshPath()
-{
-	return std::string(GAME_ASSETS_DIR)
-		+ "Meshes/LevelPrototyping_Meshes_SM_Cube"
-		+ ZENITH_MODEL_EXT;
 }
 
 bool DPProcLevelBootstrap_Behaviour::SpawnCharacterEntity(
@@ -434,63 +410,62 @@ bool DPProcLevelBootstrap_Behaviour::SpawnCharacterEntity(
 	float fX,
 	float fZ,
 	float fYawRadians,
-	const std::string& strMeshPath,
 	bool bIsPriest)
 {
+	Zenith_Prefab* pxPrefab = bIsPriest
+		? DevilsPlayground::Resources().m_xPriestPrefab.GetDirect()
+		: DevilsPlayground::Resources().m_xVillagerPrefab.GetDirect();
+	if (pxPrefab == nullptr) return false;
+
 	char szName[64];
 	std::snprintf(szName, sizeof(szName), "%s_%u", szPrefix, uIndex);
-	Zenith_Entity xEntity(pxScene, std::string(szName));
-	if (!xEntity.IsValid()) return false;
 
 	const Zenith_Maths::Vector3 xScale = bIsPriest
 		? Zenith_Maths::Vector3(1.5f, 3.0f, 0.75f)
 		: Zenith_Maths::Vector3(1.0f, 2.0f, 0.5f);
 
-	if (xEntity.HasComponent<Zenith_TransformComponent>())
+	const float fCosY = std::cos(fYawRadians);
+	const float fSinY = std::sin(fYawRadians);
+	const float fHalfSx = xScale.x * 0.5f;
+	const float fHalfSz = xScale.z * 0.5f;
+	const float fOffsetX = -fHalfSx * fCosY - fHalfSz * fSinY;
+	const float fOffsetZ =  fHalfSx * fSinY - fHalfSz * fCosY;
+	const Zenith_Maths::Vector3 xPos(fX + fOffsetX, 1.0f, fZ + fOffsetZ);
+	const Zenith_Maths::Quat xRot = Zenith_Maths::AngleAxis(
+		fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+	// Model + capsule collider are baked; Instantiate places the entity and
+	// rebuilds the body to match the scale/rotation.
+	Zenith_Entity xEntity = pxPrefab->Instantiate(pxScene, std::string(szName), xPos, xRot, xScale);
+	if (!xEntity.IsValid()) return false;
+
+	// Priest: tint the (per-instance) model red.
+	if (bIsPriest && xEntity.HasComponent<Zenith_ModelComponent>())
 	{
-		Zenith_TransformComponent& xT =
-			xEntity.GetComponent<Zenith_TransformComponent>();
-
-		const float fCosY = std::cos(fYawRadians);
-		const float fSinY = std::sin(fYawRadians);
-		const float fHalfSx = xScale.x * 0.5f;
-		const float fHalfSz = xScale.z * 0.5f;
-		const float fOffsetX = -fHalfSx * fCosY - fHalfSz * fSinY;
-		const float fOffsetZ =  fHalfSx * fSinY - fHalfSz * fCosY;
-
-		xT.SetPosition(Zenith_Maths::Vector3(
-			fX + fOffsetX, 1.0f, fZ + fOffsetZ));
-		const Zenith_Maths::Quat xRot = Zenith_Maths::AngleAxis(
-			fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-		xT.SetRotation(xRot);
-		xT.SetScale(xScale);
-	}
-
-	Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-	xModel.LoadModel(strMeshPath);
-	Zenith_Assert(xModel.GetModelInstance(), "Character has no model instance");
-
-	if (bIsPriest)
-	{
-		Flux_ModelInstance* pxInst = xModel.GetModelInstance();
-		const uint32_t uMatCount = pxInst->GetNumMaterials();
-		const Zenith_Maths::Vector3 xRgb{ 0.95f, 0.10f, 0.10f };
-		for (uint32_t u = 0; u < uMatCount; ++u)
+		Flux_ModelInstance* pxInst = xEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+		if (pxInst != nullptr)
 		{
-			Zenith_MaterialAsset* pxBase = pxInst->GetMaterial(u);
-			Zenith_MaterialAsset* pxRed = DPMaterials::GetOrCreateColouredVariant(pxBase, xRgb, "Priest");
-			pxInst->SetMaterial(u, pxRed);
+			const uint32_t uMatCount = pxInst->GetNumMaterials();
+			const Zenith_Maths::Vector3 xRgb{ 0.95f, 0.10f, 0.10f };
+			for (uint32_t u = 0; u < uMatCount; ++u)
+			{
+				Zenith_MaterialAsset* pxBase = pxInst->GetMaterial(u);
+				Zenith_MaterialAsset* pxRed = DPMaterials::GetOrCreateColouredVariant(pxBase, xRgb, "Priest");
+				pxInst->SetMaterial(u, pxRed);
+			}
 		}
 	}
 
-	Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
-	xCol.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
-
-	if (xCol.HasValidBody())
+	// Disable gravity + lock rotation on the (already-final) capsule body.
+	if (xEntity.HasComponent<Zenith_ColliderComponent>())
 	{
-		const JPH::BodyID& xBodyID = xCol.GetBodyID();
-		g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
-		g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
+		Zenith_ColliderComponent& xCol = xEntity.GetComponent<Zenith_ColliderComponent>();
+		if (xCol.HasValidBody())
+		{
+			const JPH::BodyID& xBodyID = xCol.GetBodyID();
+			g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
+			g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
+		}
 	}
 
 	if (bIsPriest)

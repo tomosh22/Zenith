@@ -2660,7 +2660,9 @@ ZENITH_TEST(Automation, InstantiatePrefabStep)
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("AutoInstSrc");
 	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(1.f, 2.f, 3.f);
 	g_xEngine.EditorAutomation().AddStep_CreatePrefabFromSelected("AutoInstPrefab", szBasePath);
-	g_xEngine.EditorAutomation().AddStep_InstantiatePrefab(szBasePath, "AutoInstClone");
+	// Instantiate places the entity at the transform passed to the step (the
+	// prefab's baked transform is no longer auto-applied); request (1,2,3).
+	g_xEngine.EditorAutomation().AddStep_InstantiatePrefab(szBasePath, "AutoInstClone", 1.f, 2.f, 3.f);
 	g_xEngine.EditorAutomation().Begin();
 	while (!g_xEngine.EditorAutomation().IsComplete())
 	{
@@ -2675,9 +2677,9 @@ ZENITH_TEST(Automation, InstantiatePrefabStep)
 
 	Zenith_Maths::Vector3 xPos;
 	pxInstance->GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 1.f, 0.001f, "InstantiatePrefab: position X should match source");
-	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 2.f, 0.001f, "InstantiatePrefab: position Y should match source");
-	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 3.f, 0.001f, "InstantiatePrefab: position Z should match source");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 1.f, 0.001f, "InstantiatePrefab: position X should match requested transform");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 2.f, 0.001f, "InstantiatePrefab: position Y should match requested transform");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 3.f, 0.001f, "InstantiatePrefab: position Z should match requested transform");
 
 	std::filesystem::remove(szBasePath);
 	g_xEngine.EditorAutomation().Reset();

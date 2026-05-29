@@ -798,6 +798,17 @@ void Zenith_ColliderComponent::RebuildCollider()
 		xAngularVel = g_xEngine.Physics().GetAngularVelocity(m_xBodyID);
 	}
 
+	// Snapshot the live body transform into the transform cache BEFORE the body
+	// is destroyed. AddCollider (below) reads position/rotation via
+	// GetPosition/GetRotation, which fall back to the cached m_xPosition/
+	// m_xRotation once the body is gone; without this snapshot a body that was
+	// moved (by a setter or by physics simulation) would rebuild at a stale
+	// transform (commonly the origin). Covers both move paths.
+	if (HasValidBody() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	{
+		m_xParentEntity.GetComponent<Zenith_TransformComponent>().CommitPhysicsTransformToCache();
+	}
+
 	// Remove existing collider
 	if (m_xBodyID.IsInvalid() == false)
 	{

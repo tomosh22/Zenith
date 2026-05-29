@@ -5,6 +5,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_Asset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "Maths/Zenith_Maths.h"
 #include <string>
 
 /**
@@ -55,16 +56,20 @@ public:
 	// Instantiation
 	//--------------------------------------------------------------------------
 
-	Zenith_Entity Instantiate(Zenith_SceneData* pxSceneData, const std::string& strEntityName = "") const;
-
 	/**
-	 * Unity-parity overload: instantiate into
-	 * g_xEngine.Scenes().GetDefaultCreationScene() — the loading scene if a
-	 * SceneCreationTargetScope is active, otherwise the active scene. Logs an
-	 * error and returns a default-constructed (invalid) entity when no creation
-	 * target exists.
+	 * Instantiate the prefab into a scene at the given transform. Unity-style:
+	 * the transform is applied to the entity BEFORE its lifecycle (OnAwake/
+	 * OnEnable) runs, so a baked collider's physics body is built at the
+	 * instance transform. Position/rotation/scale default to origin / identity
+	 * / (1,1,1). For variants, per-property overrides apply on top of this
+	 * transform (e.g. a Scale override replaces the scale; an unset property
+	 * keeps the value passed here).
 	 */
-	Zenith_Entity Instantiate(const std::string& strEntityName = "") const;
+	Zenith_Entity Instantiate(Zenith_SceneData* pxSceneData,
+		const std::string&           strEntityName = "",
+		const Zenith_Maths::Vector3& xPosition     = Zenith_Maths::Vector3(0.0f),
+		const Zenith_Maths::Quat&    xRotation     = Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
+		const Zenith_Maths::Vector3& xScale        = Zenith_Maths::Vector3(1.0f)) const;
 
 	bool ApplyToEntity(Zenith_Entity& xEntity) const;
 
@@ -128,13 +133,17 @@ private:
 	void SerializeComponents(Zenith_Entity& xEntity);
 	void DeserializeComponents(Zenith_Entity& xEntity) const;
 
-	// Recursive helper for Instantiate. Walks the base-prefab chain, applies
-	// overrides on top, and tracks visited prefabs to abort on cycles.
-	// Lifecycle dispatch (OnAwake / OnEnable) is performed by the public
-	// Instantiate() once after the recursion unwinds — never by this helper.
+	// Recursive helper for Instantiate. Walks the base-prefab chain, applies the
+	// caller transform at the non-variant leaf and overrides on top, and tracks
+	// visited prefabs to abort on cycles. Lifecycle dispatch (OnAwake / OnEnable)
+	// is performed by the public Instantiate() once after the recursion unwinds —
+	// never by this helper.
 	Zenith_Entity InstantiateInternal(
 		Zenith_SceneData* pxSceneData,
 		const std::string& strEntityName,
+		const Zenith_Maths::Vector3& xPosition,
+		const Zenith_Maths::Quat& xRotation,
+		const Zenith_Maths::Vector3& xScale,
 		Zenith_Vector<const Zenith_Prefab*>& axVisited) const;
 
 	// Returns true if the proposed base prefab would form a cycle when set

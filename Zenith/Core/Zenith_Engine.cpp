@@ -601,6 +601,15 @@ void Zenith_Engine::Initialise()
 		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();
 	}
+	// The lifecycle-deferral guard above holds m_bIsLoadingScene true while
+	// Project_LoadInitialScene runs, so LoadSceneByIndex/LoadScene take their
+	// re-entrancy DEFER branch and queue the initial load to m_xPendingLoad
+	// instead of loading it synchronously. The tools path drains that pending
+	// load on the first main-loop Update; the non-tools bootstrap asserts an
+	// active scene below before any Update runs, so drain it explicitly here
+	// (the guard has cleared m_bIsLoadingScene, so the drained load runs
+	// synchronously). Without this the initial scene never loads.
+	g_xEngine.Scenes().DrainPendingLoadIfAny();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		g_xEngine.VulkanMemory().EndFrame(false);

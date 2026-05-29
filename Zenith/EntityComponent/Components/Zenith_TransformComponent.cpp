@@ -376,8 +376,14 @@ void Zenith_TransformComponent::DetachAllChildren()
 
 void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 {
-	// Check if entity has a physics body via ColliderComponent
-	// Use BodyInterface with BodyID for thread-safe access
+	// Always keep the cached transform in sync, even when a physics body is
+	// authoritative. Otherwise a later body teardown (e.g. RebuildCollider,
+	// which reads GetPosition AFTER destroying the body) falls back to a stale
+	// m_xPosition and snaps the rebuilt body to the wrong place.
+	m_xPosition = xPos;
+
+	// Mirror the move onto the Jolt body when one exists.
+	// Use BodyInterface with BodyID for thread-safe access.
 	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
@@ -386,16 +392,18 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 			JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
 			xBodyInterface.SetPosition(xCollider.GetBodyID(), xJoltPos, JPH::EActivation::Activate);
-			return;
 		}
 	}
-	m_xPosition = xPos;
 }
 
 void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 {
-	// Check if entity has a physics body via ColliderComponent
-	// Use BodyInterface with BodyID for thread-safe access
+	// Always keep the cached transform in sync (see SetPosition) so a later
+	// body teardown/rebuild reads the correct rotation rather than a stale one.
+	m_xRotation = xRot;
+
+	// Mirror the move onto the Jolt body when one exists.
+	// Use BodyInterface with BodyID for thread-safe access.
 	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
@@ -404,10 +412,8 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 			JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
 			xBodyInterface.SetRotation(xCollider.GetBodyID(), xJoltRot, JPH::EActivation::Activate);
-			return;
 		}
 	}
-	m_xRotation = xRot;
 }
 
 void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
@@ -488,6 +494,20 @@ void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale) const
 {
 	xScale = m_xScale;
+}
+
+void Zenith_TransformComponent::CommitPhysicsTransformToCache()
+{
+	// GetPosition/GetRotation read the live body when one is valid; copy those
+	// values straight into the cache so a subsequent body destroy + rebuild
+	// (which reads the cache once the body is gone) lands at the current world
+	// transform. No-op (writes back identical values) when there is no body.
+	Zenith_Maths::Vector3 xPos;
+	Zenith_Maths::Quat xRot;
+	GetPosition(xPos);
+	GetRotation(xRot);
+	m_xPosition = xPos;
+	m_xRotation = xRot;
 }
 
 void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)

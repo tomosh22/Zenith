@@ -199,7 +199,9 @@ struct Zenith_EditorAction
 	// std::string::c_str() or stack buffers — they will be dangling when executed.
 	const char* m_szArg1 = nullptr;
 	const char* m_szArg2 = nullptr;
-	float m_afArgs[4] = {};
+	// Up to 10 floats: most steps use <=4; INSTANTIATE_PREFAB packs a full
+	// transform here as pos[0..2], quat[3..6] (wxyz), scale[7..9].
+	float m_afArgs[10] = {};
 	int m_aiArgs[2] = {};
 	bool m_bArg = false;
 	void* m_pArg = nullptr;   // Type determined by m_eType (e.g. Flux_ParticleEmitterConfig*, Flux_MeshGeometry*)
@@ -468,10 +470,14 @@ void AddStep_AddPrefabVariantOverrideVec3(
 		float fX, float fY, float fZ);
 
 	// Load the prefab at szPrefabPath through the asset registry and instantiate
-	// it into the active scene. The new entity is selected so subsequent
-	// transform/component steps target it. Pass an empty entity name to fall
-	// back to the prefab's own name.
-void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName);
+	// it into the active scene at the given transform. The new entity is selected
+	// so subsequent transform/component steps target it. Pass an empty entity name
+	// to fall back to the prefab's own name. Transform defaults to origin /
+	// identity / (1,1,1); rotation is a quaternion in wxyz order.
+void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName,
+		float fPosX = 0.0f, float fPosY = 0.0f, float fPosZ = 0.0f,
+		float fRotW = 1.0f, float fRotX = 0.0f, float fRotY = 0.0f, float fRotZ = 0.0f,
+		float fScaleX = 1.0f, float fScaleY = 1.0f, float fScaleZ = 1.0f);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

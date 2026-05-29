@@ -7935,8 +7935,9 @@ void Zenith_UnitTests::TestPrefabInstantiation(){
 	Zenith_Prefab xPrefab;
 	xPrefab.CreateFromEntity(xSource, "InstantiatePrefab");
 
-	// Instantiate prefab
-	Zenith_Entity xInstance = xPrefab.Instantiate(pxSceneData, "PrefabInstance");
+	// Instantiate prefab at the requested transform (Instantiate now takes the
+	// spawn transform; it is no longer inherited from the prefab's baked values).
+	Zenith_Entity xInstance = xPrefab.Instantiate(pxSceneData, "PrefabInstance", Zenith_Maths::Vector3(5.0f, 10.0f, 15.0f));
 
 	// Verify instance has the transform values from prefab
 	ZENITH_ASSERT_TRUE(xInstance.HasComponent<Zenith_TransformComponent>(), "TestPrefabInstantiation: Instance should have transform component");
@@ -7945,10 +7946,10 @@ void Zenith_UnitTests::TestPrefabInstantiation(){
 	Zenith_Maths::Vector3 xPos;
 	xInstanceTransform.GetPosition(xPos);
 
-	// Position should match source
+	// Position should match the requested instantiate transform
 	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 5.0f) < 0.001f &&
 	              std::abs(xPos.y - 10.0f) < 0.001f &&
-	              std::abs(xPos.z - 15.0f) < 0.001f, "TestPrefabInstantiation: Instance position should match prefab source");
+	              std::abs(xPos.z - 15.0f) < 0.001f, "TestPrefabInstantiation: Instance position should match requested transform");
 
 }
 
@@ -7981,15 +7982,15 @@ void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip(){
 	ZENITH_ASSERT_TRUE(xLoadedPrefab.IsValid(), "TestPrefabSaveLoadRoundTrip: Loaded prefab should be valid");
 	ZENITH_ASSERT_EQ(xLoadedPrefab.GetName(), "RoundTripPrefab", "TestPrefabSaveLoadRoundTrip: Loaded prefab name should match");
 
-	// Instantiate loaded prefab
-	Zenith_Entity xInstance = xLoadedPrefab.Instantiate(pxSceneData, "LoadedInstance");
+	// Instantiate loaded prefab at the original transform (passed explicitly now).
+	Zenith_Entity xInstance = xLoadedPrefab.Instantiate(pxSceneData, "LoadedInstance", Zenith_Maths::Vector3(100.0f, 200.0f, 300.0f));
 	Zenith_TransformComponent& xInstanceTransform = xInstance.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xPos;
 	xInstanceTransform.GetPosition(xPos);
 
 	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 100.0f) < 0.001f &&
 	              std::abs(xPos.y - 200.0f) < 0.001f &&
-	              std::abs(xPos.z - 300.0f) < 0.001f, "TestPrefabSaveLoadRoundTrip: Instance position should match original");
+	              std::abs(xPos.z - 300.0f) < 0.001f, "TestPrefabSaveLoadRoundTrip: Instance position should match requested transform");
 
 	// Cleanup temp file
 	std::filesystem::remove(strTempPath);
@@ -8081,7 +8082,9 @@ void Zenith_UnitTests::TestPrefabVariantInstantiate(){
 	bool bVariantOk = xVariant.CreateAsVariant(xBaseHandle, "VariantOfBase");
 	ZENITH_ASSERT_TRUE(bVariantOk, "TestPrefabVariantInstantiate: CreateAsVariant should succeed");
 
-	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "VariantInstance");
+	// The variant has no position override, so the instance takes the spawn
+	// transform we pass here (no longer the base prefab's baked position).
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "VariantInstance", Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f));
 	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantInstantiate: instance should be valid (not an empty entity)");
 	ZENITH_ASSERT_TRUE(xInstance.HasComponent<Zenith_TransformComponent>(),
 		"TestPrefabVariantInstantiate: instance should inherit base's TransformComponent");
@@ -8089,7 +8092,7 @@ void Zenith_UnitTests::TestPrefabVariantInstantiate(){
 	Zenith_Maths::Vector3 xPos;
 	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 7.0f) < 0.001f && std::abs(xPos.y - 8.0f) < 0.001f && std::abs(xPos.z - 9.0f) < 0.001f,
-		"TestPrefabVariantInstantiate: position should match base prefab");
+		"TestPrefabVariantInstantiate: position should match the requested transform");
 
 #ifndef ZENITH_ANDROID
 	std::filesystem::remove(strBasePath);
@@ -8419,7 +8422,7 @@ void Zenith_UnitTests::TestPrefabMoveAssignment(){
 	ZENITH_ASSERT_TRUE(xTarget.IsValid(), "TestPrefabMoveAssignment: target prefab should be valid post-move");
 	ZENITH_ASSERT_EQ(xTarget.GetName(), std::string("MoveAsgnPrefab"), "TestPrefabMoveAssignment: name transfers");
 
-	Zenith_Entity xInstance = xTarget.Instantiate(pxSceneData, "MoveAsgnInstance");
+	Zenith_Entity xInstance = xTarget.Instantiate(pxSceneData, "MoveAsgnInstance", Zenith_Maths::Vector3(60.0f, 70.0f, 80.0f));
 	Zenith_Maths::Vector3 xPos;
 	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 60.0f) < 0.001f, "TestPrefabMoveAssignment: serialized data transfers via move");
@@ -8820,6 +8823,67 @@ void Zenith_UnitTests::TestPrefabVariantScaleOverrideRebuildsCollider(){
 #endif
 }
 
+// --- RebuildCollider must rebuild at the body's current transform ----------
+// Regression for the transform-cache bug behind prefab collider instantiation:
+// SetScale auto-calls RebuildCollider, which destroys + recreates the body via
+// AddCollider; AddCollider reads GetPosition/GetRotation, which fall back to the
+// cached m_xPosition/m_xRotation once the body is gone. Without the fix the body
+// snaps to a stale cached transform (commonly the origin).
+
+ZENITH_TEST(Collider, ColliderRebuildKeepsMovedTransform) { Zenith_UnitTests::TestColliderRebuildKeepsMovedTransform(); }
+
+void Zenith_UnitTests::TestColliderRebuildKeepsMovedTransform(){
+
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+
+	// --- Case A: body moved by a setter (the prefab-instantiate path; Eng. change 1a)
+	{
+		Zenith_Entity xEnt(pxSceneData, "RebuildMove_Setter");
+		Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+		xCol.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+
+		Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+		xT.SetPosition(Zenith_Maths::Vector3(10.0f, 5.0f, 7.0f));
+		xT.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f)); // triggers RebuildCollider
+
+		Zenith_Maths::Vector3 xPos;
+		xT.GetPosition(xPos);
+		ZENITH_ASSERT_TRUE(std::abs(xPos.x - 10.0f) < 0.05f && std::abs(xPos.y - 5.0f) < 0.05f && std::abs(xPos.z - 7.0f) < 0.05f,
+			"ColliderRebuildKeepsMovedTransform(setter): body must stay at (10,5,7) after rebuild (got (%.2f, %.2f, %.2f))",
+			xPos.x, xPos.y, xPos.z);
+	}
+
+	// --- Case B: body moved by simulation, not a setter (Eng. change 1b) ------
+	// The cache stays stale through the sim move, so only RebuildCollider's
+	// snapshot of the live body keeps the rebuild in the right place.
+	{
+		Zenith_Entity xEnt(pxSceneData, "RebuildMove_Sim");
+		Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+		xCol.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+
+		Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+		xT.SetPosition(Zenith_Maths::Vector3(20.0f, 3.0f, 9.0f));
+
+		// Drive the body along +X via the physics sim, bypassing the setters.
+		g_xEngine.Physics().SetGravityEnabled(xCol.GetBodyID(), false);
+		g_xEngine.Physics().SetLinearVelocity(xCol.GetBodyID(), Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f));
+		for (int i = 0; i < 30; ++i) g_xEngine.Physics().Update(1.0f / 60.0f);
+
+		Zenith_Maths::Vector3 xBefore;
+		xT.GetPosition(xBefore);                              // live body after the sim move
+		xT.SetScale(Zenith_Maths::Vector3(1.5f, 1.5f, 1.5f)); // triggers RebuildCollider
+
+		Zenith_Maths::Vector3 xAfter;
+		xT.GetPosition(xAfter);
+		ZENITH_ASSERT_TRUE(std::abs(xAfter.x - xBefore.x) < 0.1f && std::abs(xAfter.y - xBefore.y) < 0.1f && std::abs(xAfter.z - xBefore.z) < 0.1f,
+			"ColliderRebuildKeepsMovedTransform(sim): rebuild must preserve the live transform (before (%.2f,%.2f,%.2f) vs after (%.2f,%.2f,%.2f))",
+			xBefore.x, xBefore.y, xBefore.z, xAfter.x, xAfter.y, xAfter.z);
+		ZENITH_ASSERT_TRUE(xAfter.x > 19.0f,
+			"ColliderRebuildKeepsMovedTransform(sim): rebuilt body must not snap toward origin (x=%.2f)", xAfter.x);
+	}
+}
+
 // --- Loading a corrupted (truncated) prefab file ---------------------------
 
 ZENITH_TEST(Prefab, PrefabLoadCorruptedFile) { Zenith_UnitTests::TestPrefabLoadCorruptedFile(); }
@@ -8961,14 +9025,16 @@ void Zenith_UnitTests::TestPrefabVariantNestedPathSkipped(){
 	xOv.m_xValue.SetCursor(0);
 	xVariant.AddOverride(std::move(xOv));
 
-	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "NestedInstance");
+	// The nested override is skipped, so the instance keeps the spawn transform
+	// we pass here (origin would be the default; pass (1,2,3) to assert it sticks).
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "NestedInstance", Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
 	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantNestedPathSkipped: instance should still be valid");
 
-	// The base position should be unchanged, since the override was skipped.
+	// The position should be unchanged by the skipped nested override.
 	Zenith_Maths::Vector3 xPos;
 	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 1.0f) < 0.001f && std::abs(xPos.y - 2.0f) < 0.001f && std::abs(xPos.z - 3.0f) < 0.001f,
-		"TestPrefabVariantNestedPathSkipped: nested override should be skipped, base values preserved");
+		"TestPrefabVariantNestedPathSkipped: nested override should be skipped, requested transform preserved");
 
 #ifndef ZENITH_ANDROID
 	std::filesystem::remove(strBasePath);

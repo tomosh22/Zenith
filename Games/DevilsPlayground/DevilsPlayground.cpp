@@ -10,6 +10,7 @@
 #include "Source/DP_Reagents.h"
 #include "Source/DPParticles.h"
 #include "Source/DPTutorial.h"
+#include "Source/DPResources.h"
 
 #include <cstdio>
 #include <cstring>
@@ -18,8 +19,14 @@
 
 #include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Zenith_SceneSystem.h"
+#include "EntityComponent/Zenith_Entity.h"
+#include "EntityComponent/Zenith_SceneData.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Physics/Zenith_Physics_Fwd.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "UI/Zenith_UIRect.h"
 
 // Behaviour headers — including each here forces the
@@ -69,6 +76,77 @@ void Project_LoadInitialScene();
 // ============================================================================
 namespace DevilsPlayground
 {
+	// ------------------------------------------------------------------------
+	// Prefab template resources (see Source/DPResources.h). The single process-
+	// wide instance + the Resources() accessor the header declares.
+	// ------------------------------------------------------------------------
+	static DPResources g_xResources;
+	DPResources& Resources() { return g_xResources; }
+
+	namespace
+	{
+		bool s_bPrefabsInit = false;
+
+		// Build one prefab template in the PERSISTENT scene (the active scene is
+		// INVALID before the first scene loads): Transform + Model(cube) + an
+		// optional collider, captured into a prefab. The template entity is
+		// destroyed immediately afterwards -- the prefab keeps the serialized
+		// data, and a baked collider gives the template a live Jolt body that
+		// must be torn down. Matches the Marble/Combat template pattern.
+		void CreateDPTemplate(PrefabHandle& xOut, const char* szName,
+			bool bWithCollider, CollisionVolumeType eVolume, RigidBodyType eBody)
+		{
+			Zenith_Scene xPersistent = g_xEngine.Scenes().GetPersistentScene();
+			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xPersistent);
+			if (pxScene == nullptr) return;
+
+			Zenith_Entity xTemplate(pxScene, std::string(szName) + "Template");
+			xTemplate.AddComponent<Zenith_ModelComponent>().LoadModel(
+				std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT);
+			if (bWithCollider)
+			{
+				xTemplate.AddComponent<Zenith_ColliderComponent>().AddCollider(eVolume, eBody);
+			}
+
+			Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+			pxPrefab->CreateFromEntity(xTemplate, szName);
+			xOut.Set(pxPrefab);
+
+			g_xEngine.Scenes().Destroy(xTemplate);
+		}
+
+		void InitializeDPPrefabs()
+		{
+			if (s_bPrefabsInit) return;
+			CreateDPTemplate(Resources().m_xWallPrefab,         "DPWall",         true,  COLLISION_VOLUME_TYPE_OBB,     RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xVillagerPrefab,     "DPVillager",     true,  COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+			CreateDPTemplate(Resources().m_xPriestPrefab,       "DPPriest",       true,  COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+			CreateDPTemplate(Resources().m_xItemPrefab,         "DPItem",         true,  COLLISION_VOLUME_TYPE_SPHERE,  RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xDoorPrefab,         "DPDoor",         true,  COLLISION_VOLUME_TYPE_OBB,     RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xChestPrefab,        "DPChest",        true,  COLLISION_VOLUME_TYPE_AABB,    RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xPentagramPrefab,    "DPPentagram",    true,  COLLISION_VOLUME_TYPE_AABB,    RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xForgePrefab,        "DPForge",        false, COLLISION_VOLUME_TYPE_AABB,    RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xNoiseMachinePrefab, "DPNoiseMachine", false, COLLISION_VOLUME_TYPE_AABB,    RIGIDBODY_TYPE_STATIC);
+			CreateDPTemplate(Resources().m_xHeldVisualPrefab,   "DPHeldVisual",   false, COLLISION_VOLUME_TYPE_AABB,    RIGIDBODY_TYPE_STATIC);
+			s_bPrefabsInit = true;
+		}
+
+		void ShutdownDPPrefabs()
+		{
+			Resources().m_xWallPrefab.Clear();
+			Resources().m_xVillagerPrefab.Clear();
+			Resources().m_xPriestPrefab.Clear();
+			Resources().m_xItemPrefab.Clear();
+			Resources().m_xDoorPrefab.Clear();
+			Resources().m_xChestPrefab.Clear();
+			Resources().m_xPentagramPrefab.Clear();
+			Resources().m_xForgePrefab.Clear();
+			Resources().m_xNoiseMachinePrefab.Clear();
+			Resources().m_xHeldVisualPrefab.Clear();
+			s_bPrefabsInit = false;
+		}
+	}
+
 	void InitializeResources()
 	{
 		// Load Config/Tuning.json into the in-process cache before any other
@@ -106,6 +184,11 @@ namespace DevilsPlayground
 		// element for ~5 s. Shown-flag table is process-global; reset
 		// per run via DP_Tutorial::ResetForNewRun.
 		DP_Tutorial::Initialize();
+
+		// Build the per-archetype prefab templates (persistent scene; physics is
+		// already up at this point). Idempotent across Editor Stop/Play + batched
+		// tests via the s_bPrefabsInit guard.
+		InitializeDPPrefabs();
 
 #ifdef ZENITH_INPUT_SIMULATOR
 		// Tell the automated-test harness how to wipe DP-specific persistent
@@ -157,6 +240,9 @@ namespace DevilsPlayground
 		// doesn't matter (no cross-dependency), but grouped here for
 		// consistency.
 		DP_Tutorial::Shutdown();
+		// Drop the prefab template handles (releases the registry assets) and
+		// reset the init guard so Editor Stop/Play + batched tests re-create them.
+		ShutdownDPPrefabs();
 		DPMaterials::Shutdown();
 
 		// Drop the archetype cache before tuning -- archetypes don't depend on

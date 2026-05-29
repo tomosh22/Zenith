@@ -26,8 +26,10 @@
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "Prefab/Zenith_Prefab.h"
 
 #include "Source/PublicInterfaces.h"
+#include "Source/DPResources.h"
 #include "Source/DPInputActions.h"
 #include "Source/DPTutorial.h"
 #include "Source/DPMaterials.h"
@@ -637,20 +639,19 @@ private:
 
 		if (!m_xHeldItemVisual.IsValid())
 		{
+			Zenith_Prefab* pxVisualPrefab = DevilsPlayground::Resources().m_xHeldVisualPrefab.GetDirect();
+			if (pxVisualPrefab == nullptr) return;
+
 			char szName[64];
 			std::snprintf(szName, sizeof(szName), "HeldVisual_%u", m_xParentEntity.GetEntityID().m_uIndex);
-			Zenith_Entity xVisual(pxScene, std::string(szName));
+			// Model (cube) is baked into the prefab; instantiate at scale 0.25.
+			// Position is updated per-frame below to follow the villager.
+			Zenith_Entity xVisual = pxVisualPrefab->Instantiate(pxScene, std::string(szName),
+				Zenith_Maths::Vector3(0.0f),
+				Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
+				Zenith_Maths::Vector3(0.25f, 0.25f, 0.25f));
 			if (!xVisual.IsValid()) return;
 			m_xHeldItemVisual = xVisual.GetEntityID();
-
-			Zenith_ModelComponent& xModel = xVisual.AddComponent<Zenith_ModelComponent>();
-			xModel.LoadModel(std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT);
-
-			if (xVisual.HasComponent<Zenith_TransformComponent>())
-			{
-				xVisual.GetComponent<Zenith_TransformComponent>().SetScale(
-					Zenith_Maths::Vector3(0.25f, 0.25f, 0.25f));
-			}
 		}
 
 		// Tint the marker by tag. Reuse the same coloured-variant API the items

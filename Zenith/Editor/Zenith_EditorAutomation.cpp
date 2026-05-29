@@ -465,9 +465,20 @@ void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
 	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
-void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName)
+void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName,
+	float fPosX, float fPosY, float fPosZ,
+	float fRotW, float fRotX, float fRotY, float fRotZ,
+	float fScaleX, float fScaleY, float fScaleZ)
 {
-	Push(g_xEngine.EditorAutomation().m_axActions, ActionType::INSTANTIATE_PREFAB, szPrefabPath, szEntityName);
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::INSTANTIATE_PREFAB;
+	xAction.m_szArg1 = szPrefabPath;
+	xAction.m_szArg2 = szEntityName;
+	// pos[0..2], quat[3..6] (wxyz), scale[7..9] — see INSTANTIATE_PREFAB executor.
+	xAction.m_afArgs[0] = fPosX;   xAction.m_afArgs[1] = fPosY;   xAction.m_afArgs[2] = fPosZ;
+	xAction.m_afArgs[3] = fRotW;   xAction.m_afArgs[4] = fRotX;   xAction.m_afArgs[5] = fRotY;   xAction.m_afArgs[6] = fRotZ;
+	xAction.m_afArgs[7] = fScaleX; xAction.m_afArgs[8] = fScaleY; xAction.m_afArgs[9] = fScaleZ;
+	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
 // -- Scene Loading --
@@ -1542,7 +1553,11 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for instantiation", xAction.m_szArg1);
 
 		const char* szEntityName = (xAction.m_szArg2 != nullptr) ? xAction.m_szArg2 : "";
-		Zenith_Entity xEntity = pxPrefab->Instantiate(pxSceneData, szEntityName);
+		// Transform payload: pos[0..2], quat[3..6] (wxyz), scale[7..9].
+		const Zenith_Maths::Vector3 xPos(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
+		const Zenith_Maths::Quat    xRot(xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5], xAction.m_afArgs[6]);
+		const Zenith_Maths::Vector3 xScale(xAction.m_afArgs[7], xAction.m_afArgs[8], xAction.m_afArgs[9]);
+		Zenith_Entity xEntity = pxPrefab->Instantiate(pxSceneData, szEntityName, xPos, xRot, xScale);
 		Zenith_Assert(xEntity.IsValid(), "Instantiate returned invalid entity for '%s'", xAction.m_szArg1);
 
 		// Mirror the editor's normal selection behaviour after entity creation

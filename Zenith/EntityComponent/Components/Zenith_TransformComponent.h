@@ -38,6 +38,13 @@ public:
 	void GetRotation(Zenith_Maths::Quat& xRot);
 	void GetScale(Zenith_Maths::Vector3& xScale) const;
 
+	// Copy the live physics-body transform (if any) into the cached
+	// m_xPosition/m_xRotation. Call this BEFORE destroying a body that the
+	// transform reads from (e.g. Zenith_ColliderComponent::RebuildCollider),
+	// so code reading GetPosition/GetRotation after the body is gone sees the
+	// current world transform instead of a stale cached value.
+	void CommitPhysicsTransformToCache();
+
 	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
 
 	void BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut);

@@ -8,9 +8,9 @@
  * Output spawn flow (mirrors DPItemManager_Behaviour::SpawnItemEntity):
  *   1. Destroy the held input entity (RemoveHeldItem keeps the tag side-table
  *      consistent because the source entity is destroyed too).
- *   2. Construct a new item entity at the forge's world position.
- *   3. Attach Transform + ModelComponent + ColliderComponent + DPItemBase
- *      with m_eRecipeOutputTag stamped.
+ *   2. Instantiate the shared item prefab (cube mesh + sphere collider, baked)
+ *      at the forge's world position.
+ *   3. Attach DPItemBase with m_eRecipeOutputTag stamped (post-instantiation).
  *   4. Snap the new item into the villager's hand via DP_Player::SetHeldItem.
  */
 
@@ -23,6 +23,8 @@
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_AudioBus.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "Source/DPResources.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
@@ -155,24 +157,19 @@ private:
 		// Slight offset so the new item doesn't perfectly overlap the forge mesh.
 		xForgePos.x += 0.5f;
 
+		Zenith_Prefab* pxItemPrefab = DevilsPlayground::Resources().m_xItemPrefab.GetDirect();
+		if (pxItemPrefab == nullptr) return INVALID_ENTITY_ID;
+
 		char szName[64];
 		std::snprintf(szName, sizeof(szName), "ForgeOut_%u_%s",
 			m_uCraftCount, DP_ItemTagToString(m_eRecipeOutputTag));
-		Zenith_Entity xEntity(pxScene, std::string(szName));
+
+		// Reuse the shared item prefab (cube mesh + sphere collider, baked);
+		// Instantiate places it at the forge offset and finalizes the collider.
+		Zenith_Entity xEntity = pxItemPrefab->Instantiate(pxScene, std::string(szName), xForgePos);
 		if (!xEntity.IsValid()) return INVALID_ENTITY_ID;
 
-		if (xEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xForgePos);
-		}
-
-		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.LoadModel(std::string(GAME_ASSETS_DIR) +
-			"Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-
-		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
-		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
-
+		// Script + tag stay post-instantiation (OnAwake registers tag=None, SetTag re-registers).
 		DPItemBase_Behaviour* pxItemBase = xEntity
 			.AddComponent<Zenith_ScriptComponent>()
 			.AddScript<DPItemBase_Behaviour>();

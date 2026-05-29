@@ -86,7 +86,6 @@ private:
 
 	static const char* GameElementTypeToShortName(DPProcLevel::GameElementType eType);
 	static DP_ItemTag  GameElementToItemTag(DPProcLevel::GameElementType eType);
-	static std::string GetCubeMeshPath();
 
 	bool SpawnCharacterEntity(
 		Zenith_SceneData* pxScene,
@@ -95,7 +94,6 @@ private:
 		float fX,
 		float fZ,
 		float fYawRadians,
-		const std::string& strMeshPath,
 		bool bIsPriest);
 
 	uint64_t                  m_uSeed = 0ull;
