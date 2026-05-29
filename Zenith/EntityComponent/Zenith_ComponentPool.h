@@ -27,35 +27,23 @@ public:
 	virtual ~Zenith_ComponentPoolBase() = default;
 };
 
-// Unity-style component handle with generation counter
-template<typename T>
-struct Zenith_ComponentHandle
-{
-	uint32_t m_uIndex = UINT32_MAX;
-	uint32_t m_uGeneration = 0;
-
-	bool IsValid() const { return m_uIndex != UINT32_MAX; }
-	static Zenith_ComponentHandle Invalid() { return { UINT32_MAX, 0 }; }
-
-	bool operator==(const Zenith_ComponentHandle& xOther) const
-	{
-		return m_uIndex == xOther.m_uIndex && m_uGeneration == xOther.m_uGeneration;
-	}
-	bool operator!=(const Zenith_ComponentHandle& xOther) const { return !(*this == xOther); }
-};
-
 // Templated component pool with explicit lifetime management
-// Uses raw memory to give full control over construction/destruction timing
+// Uses raw memory to give full control over construction/destruction timing.
+//
+// The pool is DENSE: live components occupy slots [0, m_uSize) with no holes.
+// Removal is a real swap-and-pop (see RemoveAtSwapAndPop) — the last live
+// element is move-constructed into the vacated slot, so the pool stays
+// contiguous. This contiguity is the precondition for the future sparse-set
+// index. m_xOwningEntities is a parallel array whose size always tracks
+// m_uSize (one owner EntityID per live slot).
 template<typename T>
 class Zenith_ComponentPool : public Zenith_ComponentPoolBase
 {
 public:
 	T* m_pxData = nullptr;
-	u_int m_uSize = 0;      // Number of slots (high water mark)
+	u_int m_uSize = 0;      // Number of live, contiguous slots
 	u_int m_uCapacity = 0;  // Allocated capacity
 	Zenith_Vector<Zenith_EntityID> m_xOwningEntities;
-	Zenith_Vector<uint32_t> m_xGenerations;
-	Zenith_Vector<uint32_t> m_xFreeIndices;
 
 	static constexpr u_int uINITIAL_CAPACITY = 16;
 
@@ -63,13 +51,11 @@ public:
 
 	~Zenith_ComponentPool()
 	{
-		// Only destruct occupied slots - freed slots were already destructed in RemoveComponentFromEntity
+		// Dense pool: every slot in [0, m_uSize) is live, so destruct them all.
 		for (u_int i = 0; i < m_uSize; i++)
 		{
-			if (m_xOwningEntities.Get(i).IsValid())
-			{
-				m_pxData[i].~T();
-			}
+			Zenith_Assert(m_xOwningEntities.Get(i).IsValid(), "ComponentPool dtor: slot %u in dense range is not occupied", i);
+			m_pxData[i].~T();
 		}
 		// Free raw memory (no automatic destructor calls)
 		if (m_pxData)
@@ -96,7 +82,7 @@ public:
 
 	u_int GetSize() const { return m_uSize; }
 
-	// Allocate a new slot and construct component in-place
+	// Allocate a new slot at the end and construct component in-place
 	template<typename... Args>
 	u_int EmplaceBack(Zenith_EntityID xOwner, Args&&... args)
 	{
@@ -107,35 +93,58 @@ public:
 		u_int uIndex = m_uSize++;
 		new (&m_pxData[uIndex]) T(std::forward<Args>(args)...);
 		m_xOwningEntities.PushBack(xOwner);
-		m_xGenerations.PushBack(1);
 		return uIndex;
 	}
 
-	// Construct component at existing slot (for reuse)
-	template<typename... Args>
-	void ConstructAt(u_int uIndex, Zenith_EntityID xOwner, Args&&... args)
+	// Real swap-and-pop removal: keeps the pool dense.
+	//
+	// Destructs the component at uIndex. If uIndex is NOT the last live slot,
+	// the last element is MOVE-constructed into uIndex (move — not copy — so
+	// components that own VRAM / Jolt handles transfer ownership), the old last
+	// slot is destructed, and uIndex's owner is repointed to the moved element's
+	// owner. m_uSize is decremented either way.
+	//
+	// Returns the EntityID that owned the MOVED element (so the caller can
+	// repoint that entity's stored component index to uIndex), or
+	// INVALID_ENTITY_ID when uIndex was the last/only slot (no move happened).
+	Zenith_EntityID RemoveAtSwapAndPop(u_int uIndex)
 	{
-		Zenith_Assert(uIndex < m_uSize, "ConstructAt: Index out of range");
-		new (&m_pxData[uIndex]) T(std::forward<Args>(args)...);
-		m_xOwningEntities.Get(uIndex) = xOwner;
-		m_xGenerations.Get(uIndex)++;
-	}
+		Zenith_Assert(uIndex < m_uSize, "RemoveAtSwapAndPop: Index %u out of range (size=%u)", uIndex, m_uSize);
 
-	// Destruct component at slot (marks as free)
-	void DestructAt(u_int uIndex)
-	{
-		Zenith_Assert(uIndex < m_uSize, "DestructAt: Index out of range");
+		// Capture the owner of the last live element FIRST — before any move /
+		// destruct mutates the parallel owner array.
+		const u_int uLastIndex = m_uSize - 1;
+		const Zenith_EntityID xMovedOwner = m_xOwningEntities.Get(uLastIndex);
+
+		// Destruct the component being removed.
 		m_pxData[uIndex].~T();
-		m_xOwningEntities.Get(uIndex) = INVALID_ENTITY_ID;
+
+		if (uIndex != uLastIndex)
+		{
+			// Move-construct the last element into the vacated slot, then
+			// destruct the old last slot. Move (not memcpy/copy) so handle-owning
+			// components transfer ownership rather than aliasing it.
+			new (&m_pxData[uIndex]) T(std::move(m_pxData[uLastIndex]));
+			m_pxData[uLastIndex].~T();
+			m_xOwningEntities.Get(uIndex) = xMovedOwner;
+			m_xOwningEntities.PopBack();  // POD EntityID — drops the now-duplicated tail entry, keeps size == m_uSize
+			m_uSize--;
+			return xMovedOwner;
+		}
+
+		// uIndex was the last/only slot: nothing moved.
+		m_xOwningEntities.PopBack();
+		m_uSize--;
+		return INVALID_ENTITY_ID;
 	}
 
-	// Move-construct component at existing slot (for cross-scene transfer)
+	// Move-construct component at existing slot (for cross-scene transfer into
+	// an already-grown slot). Caller guarantees uIndex < m_uSize.
 	void MoveConstructAt(u_int uIndex, Zenith_EntityID xOwner, T&& xSource)
 	{
 		Zenith_Assert(uIndex < m_uSize, "MoveConstructAt: Index out of range");
 		new (&m_pxData[uIndex]) T(std::move(xSource));
 		m_xOwningEntities.Get(uIndex) = xOwner;
-		m_xGenerations.Get(uIndex)++;
 	}
 
 	// Move a component into a new slot at the end (for cross-scene transfer)
@@ -148,20 +157,7 @@ public:
 		u_int uIndex = m_uSize++;
 		new (&m_pxData[uIndex]) T(std::move(xSource));
 		m_xOwningEntities.PushBack(xOwner);
-		m_xGenerations.PushBack(1);
 		return uIndex;
-	}
-
-	bool IsSlotOccupied(uint32_t uIndex) const
-	{
-		if (uIndex >= m_xOwningEntities.GetSize()) return false;
-		return m_xOwningEntities.Get(uIndex).IsValid();
-	}
-
-	uint32_t GetGeneration(uint32_t uIndex) const
-	{
-		Zenith_Assert(uIndex < m_xGenerations.GetSize(), "GetGeneration: Invalid component index %u", uIndex);
-		return m_xGenerations.Get(uIndex);
 	}
 
 private:
@@ -173,17 +169,13 @@ private:
 		T* pxNewData = static_cast<T*>(Zenith_MemoryManagement::Allocate(uNewCapacity * sizeof(T)));
 		Zenith_Assert(pxNewData != nullptr, "ComponentPool::Grow: Allocation failed");
 
-		// Move existing components to new buffer
+		// Dense pool: move every live element in [0, m_uSize) to the new buffer.
 		for (u_int i = 0; i < m_uSize; i++)
 		{
-			if (m_xOwningEntities.Get(i).IsValid())
-			{
-				// Move-construct at new location
-				new (&pxNewData[i]) T(std::move(m_pxData[i]));
-				// Destruct old location
-				m_pxData[i].~T();
-			}
-			// Note: freed slots are left uninitialized in new buffer (will be constructed when reused)
+			Zenith_Assert(m_xOwningEntities.Get(i).IsValid(), "ComponentPool::Grow: slot %u in dense range is not occupied", i);
+			// Move-construct at new location, then destruct old location.
+			new (&pxNewData[i]) T(std::move(m_pxData[i]));
+			m_pxData[i].~T();
 		}
 
 		// Free old buffer

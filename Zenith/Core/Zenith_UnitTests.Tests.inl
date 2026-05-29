@@ -6722,6 +6722,58 @@ void Zenith_UnitTests::TestComponentSwapAndPop(){
 	g_xEngine.Scenes().UnloadScene(xTestScene);
 }
 
+/**
+ * Prove the pool removal is a REAL physical swap-and-pop (not free-list-with-holes).
+ *
+ * ComponentSwapAndPop / ComponentRemovalIndexUpdate above only prove that component
+ * DATA survives a removal — which is true even of a hole-based pool. This test pins
+ * the physical move: in a fresh scene the transform pool is dense (slots 0,1,2 for the
+ * three entities). Removing the FIRST entity's component must move the LAST live element
+ * into the vacated slot, so the last entity's STORED component index must CHANGE — and
+ * its data must remain intact at the new slot.
+ */
+ZENITH_TEST(ECS, SwapAndPopMovesIndex) { Zenith_UnitTests::TestSwapAndPopMovesIndex(); }
+void Zenith_UnitTests::TestSwapAndPopMovesIndex(){
+
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("TestSwapAndPopMovesIndexScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+
+	// Three entities — each auto-gets a Zenith_TransformComponent, so the fresh
+	// scene's transform pool now holds dense slots 0, 1, 2.
+	Zenith_Entity xEntity1(pxSceneData, "SwapPop1");
+	Zenith_Entity xEntity2(pxSceneData, "SwapPop2");
+	Zenith_Entity xEntity3(pxSceneData, "SwapPop3");
+
+	xEntity1.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xEntity2.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+	xEntity3.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+
+	// The stored component index lives in exactly one place: the global per-entity
+	// component map keyed by component TypeID. Read the LAST entity's index now.
+	const Zenith_SceneData::TypeID uTypeID = Zenith_SceneData::TypeIDGenerator::GetTypeID<Zenith_TransformComponent>();
+	const u_int uLastIndexBefore = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).at(uTypeID);
+
+	// Remove the FIRST entity's component. Real swap-and-pop moves the last live
+	// element (entity3) into the freed slot, so entity3's stored index must change.
+	xEntity1.RemoveComponent<Zenith_TransformComponent>();
+
+	const u_int uLastIndexAfter = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).at(uTypeID);
+	ZENITH_ASSERT_NE(uLastIndexAfter, uLastIndexBefore, "TestSwapAndPopMovesIndex: last entity's component index did not move — removal is not a real swap-and-pop");
+
+	// And its component data must be intact at the new slot.
+	ZENITH_ASSERT_TRUE(xEntity3.HasComponent<Zenith_TransformComponent>(), "TestSwapAndPopMovesIndex: last entity lost its component after swap-and-pop");
+	Zenith_Maths::Vector3 xPos3;
+	xEntity3.GetComponent<Zenith_TransformComponent>().GetPosition(xPos3);
+	ZENITH_ASSERT_EQ(xPos3.x, 3.0f, "TestSwapAndPopMovesIndex: moved component data corrupted after swap-and-pop");
+
+	// Sanity: the surviving middle entity is still addressable with intact data.
+	Zenith_Maths::Vector3 xPos2;
+	xEntity2.GetComponent<Zenith_TransformComponent>().GetPosition(xPos2);
+	ZENITH_ASSERT_EQ(xPos2.x, 2.0f, "TestSwapAndPopMovesIndex: untouched component data corrupted after swap-and-pop");
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+}
+
 // WS6 regression: Query::ForEach now snapshots into a per-thread POOL of reusable
 // buffers (instead of a fresh heap allocation per call). This pins the two
 // properties the pooling must preserve: (1) RE-ENTRANCY — a nested ForEach inside

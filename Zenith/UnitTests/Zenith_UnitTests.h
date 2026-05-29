@@ -151,6 +151,7 @@ public:
 	// ECS bug fix tests (Phase 1)
 	static void TestComponentRemovalIndexUpdate();
 	static void TestComponentSwapAndPop();
+	static void TestSwapAndPopMovesIndex();
 	static void TestQueryNestedReentrancy();
 	static void TestBenchECSSmoke();
 	static void TestMultipleComponentRemoval();

@@ -233,15 +233,6 @@ public:
 	template<typename T>
 	void AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const;
 
-	template<typename T>
-	bool IsComponentHandleValid(const Zenith_ComponentHandle<T>& xHandle) const;
-
-	template<typename T>
-	T* TryGetComponentFromHandle(const Zenith_ComponentHandle<T>& xHandle) const;
-
-	template<typename T>
-	Zenith_ComponentHandle<T> GetComponentHandle(Zenith_EntityID xID) const;
-
 	template<typename... Ts>
 	Zenith_Query<Ts...> Query();
 
@@ -626,33 +617,9 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 	Zenith_ComponentPool<T>* pxPool = GetOrCreateComponentPool<T>();
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 
-	u_int uComponentIndex;
-	if (pxPool->m_xFreeIndices.GetSize() > 0)
-	{
-		uComponentIndex = pxPool->m_xFreeIndices.GetBack();
-
-		// Check for generation overflow (matching entity slot overflow handling)
-		if (pxPool->m_xGenerations.Get(uComponentIndex) == UINT32_MAX)
-		{
-			static uint32_t ls_uRetiredSlotCount = 0;
-			ls_uRetiredSlotCount++;
-			Zenith_Warning(LOG_CATEGORY_ECS,
-				"Component slot %u generation overflow - retiring slot (total retired: %u). "
-				"Consider restarting if memory is a concern.", uComponentIndex, ls_uRetiredSlotCount);
-			pxPool->m_xFreeIndices.PopBack();
-			// Allocate a fresh slot instead
-			uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
-		}
-		else
-		{
-			pxPool->m_xFreeIndices.PopBack();
-			pxPool->ConstructAt(uComponentIndex, xID, std::forward<Args>(args)...);
-		}
-	}
-	else
-	{
-		uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
-	}
+	// Dense pool: always append at the end. Removal (RemoveComponentFromEntity)
+	// keeps the pool contiguous via swap-and-pop, so there are no holes to reuse.
+	const u_int uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
 
 	g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex)[uTypeID] = uComponentIndex;
 	MarkDirty();
@@ -706,11 +673,21 @@ bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 		pxPool->Get(uComponentIndex).OnRemove();
 	}
 
-	// Destruct and mark slot as free
-	pxPool->DestructAt(uComponentIndex);
-	pxPool->m_xFreeIndices.PushBack(uComponentIndex);
+	// Real swap-and-pop: destruct this slot and, unless it was the last one,
+	// move the last live element into it. RemoveAtSwapAndPop returns the owner
+	// of the moved element so we can repoint its stored component index.
+	const Zenith_EntityID xMovedOwner = pxPool->RemoveAtSwapAndPop(uComponentIndex);
 
+	// Erase the removed entity's entry BEFORE repointing the moved owner — the
+	// moved owner may be a different entity, and (in the last-element case) is
+	// INVALID_ENTITY_ID, so its branch is skipped.
 	xMap.erase(xIt);
+
+	if (xMovedOwner.IsValid() && xMovedOwner != xID)
+	{
+		g_xEngine.EntityStore().m_axEntityComponents.Get(xMovedOwner.m_uIndex)[uTypeID] = uComponentIndex;
+	}
+
 	MarkDirty();
 	return true;
 }
@@ -734,49 +711,12 @@ void Zenith_SceneData::AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const
 	if (pxPoolBase == nullptr) return;
 
 	Zenith_ComponentPool<T>* pxPool = static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
+	// Dense pool: every slot in [0, GetSize()) is live — no holes to skip.
 	for (u_int u = 0; u < pxPool->GetSize(); ++u)
 	{
-		if (pxPool->m_xOwningEntities.Get(u).IsValid())
-		{
-			xOut.PushBack(&pxPool->Get(u));
-		}
+		Zenith_Assert(pxPool->m_xOwningEntities.Get(u).IsValid(), "AppendAllOfComponentType: dense pool slot %u is not occupied", u);
+		xOut.PushBack(&pxPool->Get(u));
 	}
-}
-
-template<typename T>
-bool Zenith_SceneData::IsComponentHandleValid(const Zenith_ComponentHandle<T>& xHandle) const
-{
-	if (!xHandle.IsValid()) return false;
-	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	if (uTypeID >= m_xComponents.GetSize()) return false;
-
-	Zenith_ComponentPoolBase* pxPoolBase = m_xComponents.Get(uTypeID);
-	if (pxPoolBase == nullptr) return false;
-
-	Zenith_ComponentPool<T>* pxPool = static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
-	if (xHandle.m_uIndex >= pxPool->m_xGenerations.GetSize()) return false;
-	return pxPool->m_xGenerations.Get(xHandle.m_uIndex) == xHandle.m_uGeneration &&
-	       pxPool->m_xOwningEntities.Get(xHandle.m_uIndex).IsValid();
-}
-
-template<typename T>
-T* Zenith_SceneData::TryGetComponentFromHandle(const Zenith_ComponentHandle<T>& xHandle) const
-{
-	if (!IsComponentHandleValid(xHandle)) return nullptr;
-	return &GetComponentPool<T>()->Get(xHandle.m_uIndex);
-}
-
-template<typename T>
-Zenith_ComponentHandle<T> Zenith_SceneData::GetComponentHandle(Zenith_EntityID xID) const
-{
-	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	const auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
-	auto xIt = xMap.find(uTypeID);
-	if (xIt == xMap.end()) return Zenith_ComponentHandle<T>::Invalid();
-	const u_int uIndex = xIt->second;
-	const uint32_t uGeneration = GetComponentPool<T>()->m_xGenerations.Get(uIndex);
-
-	return { uIndex, uGeneration };
 }
 
 template<typename T>
@@ -792,14 +732,20 @@ void Zenith_SceneData::TransferComponent(Zenith_EntityID xEntityID, Zenith_Scene
 	Zenith_ComponentPool<T>* pxSourcePool = pxSource->GetComponentPool<T>();
 	Zenith_ComponentPool<T>* pxTargetPool = pxTarget->GetOrCreateComponentPool<T>();
 
+	// Move the component into the target pool (appended at its end).
 	T& xSourceComponent = pxSourcePool->Get(uSourcePoolIndex);
 	u_int uNewPoolIndex = pxTargetPool->MoveEmplaceBack(xEntityID, std::move(xSourceComponent));
 
-	// Destruct in source and free slot
-	pxSourcePool->DestructAt(uSourcePoolIndex);
-	pxSourcePool->m_xFreeIndices.PushBack(uSourcePoolIndex);
+	// Remove the (now moved-from) source slot with a real swap-and-pop so the
+	// SOURCE pool stays dense. If a different entity's component was moved into
+	// uSourcePoolIndex to fill the gap, repoint THAT entity's stored index.
+	const Zenith_EntityID xMovedOwner = pxSourcePool->RemoveAtSwapAndPop(uSourcePoolIndex);
+	if (xMovedOwner.IsValid() && xMovedOwner != xEntityID)
+	{
+		g_xEngine.EntityStore().m_axEntityComponents.Get(xMovedOwner.m_uIndex)[uTypeID] = uSourcePoolIndex;
+	}
 
-	// Update global mapping to point to target pool index
+	// Update the transferred entity's mapping to point at the target pool index.
 	xMap[uTypeID] = uNewPoolIndex;
 }
 
