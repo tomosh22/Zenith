@@ -267,6 +267,13 @@ public:
 	static constexpr u_int uSCENE_VERSION_CURRENT       = 5;
 	static constexpr u_int uSCENE_VERSION_MIN_SUPPORTED = 3;
 
+	// Non-destructive header validator: saves/restores the stream cursor so the
+	// caller's subsequent reads start from the same offset. Single source of truth
+	// for the header checks (IsValid → size → magic → version) shared by the
+	// LoadScene pre-pass and LoadFromDataStream. Static — operates only on the
+	// passed stream + the static header constants above, touches no instance state.
+	static bool ValidateSceneStream(Zenith_DataStream& xStream);
+
 	void SaveToFile(const std::string& strFilename, bool bIncludeTransient = false);
 	bool LoadFromFile(const std::string& strFilename);
 	bool LoadFromDataStream(Zenith_DataStream& xStream);

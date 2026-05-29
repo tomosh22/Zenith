@@ -168,6 +168,55 @@ Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xS
 	return xNewID;
 }
 
+bool Zenith_SceneData::ValidateSceneStream(Zenith_DataStream& xStream)
+{
+	// Non-destructive: every return path restores the cursor to its entry offset
+	// so LoadFromDataStream can call this and then re-read the header from the
+	// same starting position without desyncing. Check order is the same as the
+	// historical inline block: IsValid → size → magic → version-range.
+	const uint64_t ulSavedCursor = xStream.GetCursor();
+
+	if (!xStream.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene file: stream is empty or failed to read");
+		xStream.SetCursor(ulSavedCursor);
+		return false;
+	}
+
+	// Validate stream has minimum header data (magic + version = 8 bytes)
+	static constexpr uint64_t ulMIN_HEADER_SIZE = sizeof(u_int) * 2;
+	if (xStream.GetSize() < ulMIN_HEADER_SIZE)
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene file: too small (size=%llu, minimum=%llu)",
+			xStream.GetSize(), ulMIN_HEADER_SIZE);
+		xStream.SetCursor(ulSavedCursor);
+		return false;
+	}
+
+	u_int uMagicNumber;
+	u_int uVersion;
+	xStream >> uMagicNumber;
+	xStream >> uVersion;
+
+	if (uMagicNumber != uSCENE_MAGIC)
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Invalid scene file format: bad magic number 0x%08X (expected 0x%08X)",
+			uMagicNumber, uSCENE_MAGIC);
+		xStream.SetCursor(ulSavedCursor);
+		return false;
+	}
+
+	if (uVersion > uSCENE_VERSION_CURRENT || uVersion < uSCENE_VERSION_MIN_SUPPORTED)
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Unsupported scene file version %u", uVersion);
+		xStream.SetCursor(ulSavedCursor);
+		return false;
+	}
+
+	xStream.SetCursor(ulSavedCursor);
+	return true;
+}
+
 bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 {
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
@@ -195,32 +244,19 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	xSelf.m_uGeneration = m_uGeneration;
 	Zenith_SceneCreationTargetScope xCreationTargetScope(xSelf);
 
-	// Validate stream has minimum header data (magic + version = 8 bytes)
-	static constexpr uint64_t ulMIN_HEADER_SIZE = sizeof(u_int) * 2;
-	if (xStream.GetSize() < ulMIN_HEADER_SIZE)
+	// Single source of truth for header checks. ValidateSceneStream is
+	// non-destructive (restores the cursor to its entry offset), so after it
+	// returns we still consume the 8-byte header here to advance the cursor and
+	// populate uVersion for ReadEntityFromDataStream below. The magic was already
+	// validated inside ValidateSceneStream, so we skip past it rather than re-read.
+	if (!ValidateSceneStream(xStream))
 	{
-		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene file: too small (size=%llu, minimum=%llu)",
-			xStream.GetSize(), ulMIN_HEADER_SIZE);
 		return false;
 	}
 
-	u_int uMagicNumber;
+	xStream.SkipBytes(sizeof(u_int));  // magic — already validated above
 	u_int uVersion;
-	xStream >> uMagicNumber;
 	xStream >> uVersion;
-
-	if (uMagicNumber != uSCENE_MAGIC)
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE, "Invalid scene file format: bad magic number 0x%08X (expected 0x%08X)",
-			uMagicNumber, uSCENE_MAGIC);
-		return false;
-	}
-
-	if (uVersion > uSCENE_VERSION_CURRENT || uVersion < uSCENE_VERSION_MIN_SUPPORTED)
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE, "Unsupported scene file version %u", uVersion);
-		return false;
-	}
 
 	u_int uNumEntities;
 	xStream >> uNumEntities;
