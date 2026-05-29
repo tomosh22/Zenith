@@ -217,10 +217,10 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	// CPU-side work: update emitters and upload instance data
-	float fDt = g_xEngine.Frame().GetDt();
-	UpdateEmittersAndBuildInstanceBuffer(fDt);
-	UploadInstanceData();
+	// Emitter sim + instance upload runs once per frame in Render (registered as
+	// this pass's Prepare, main thread). This record callback only emits draw
+	// commands from the already-populated instance counts/buffers — no ECS
+	// mutation (xEmitter.Update) on the worker thread.
 
 	// Render CPU particles (alpha-blended first, then additive)
 	if (g_xEngine.Particles().m_uAlphaInstanceCount > 0 || g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
@@ -278,7 +278,13 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_PassHandle xComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute)
 		.Prepare(PreExecuteParticleCompute);
 
+	// Render (main-thread Prepare) does the emitter sim + instance-buffer upload
+	// before any record callback runs; ExecuteParticles (worker) then only emits
+	// draw commands. This moves the xEmitter.Update ECS mutation off the worker
+	// thread. Render was previously defined but never registered — this is a new,
+	// required edge (without it the CPU particle sim/upload would never run).
 	xGraph.AddPass("Particles", ExecuteParticles)
+		.Prepare([](void* p){ g_xEngine.Particles().Render(p); })
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.DependsOn(xComputePass);
 }
