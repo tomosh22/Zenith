@@ -170,6 +170,7 @@ public:
 	static void TestComponentMetaSerialization();
 	static void TestComponentMetaDeserialization();
 	static void TestComponentMetaTypeIDConsistency();
+	static void TestAccessSetMetadataRegistered();
 
 	// ECS lifecycle hooks tests (Phase 3)
 	static void TestLifecycleHookDetection();

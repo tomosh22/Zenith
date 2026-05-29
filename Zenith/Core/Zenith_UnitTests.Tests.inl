@@ -7287,6 +7287,36 @@ void Zenith_UnitTests::TestComponentMetaTypeIDConsistency(){
 
 }
 
+/**
+ * Test that the (inert) component access-set metadata is populated at
+ * registration. Transform declares DeclareAccess (READS_TRANSFORM |
+ * WRITES_TRANSFORM); an un-annotated component (Camera) must leave both masks
+ * at 0 (NONE). This metadata has no runtime consumer yet — the future system
+ * scheduler will read it.
+ */
+ZENITH_TEST(ECS, AccessSetMetadataRegistered) { Zenith_UnitTests::TestAccessSetMetadataRegistered(); }
+void Zenith_UnitTests::TestAccessSetMetadataRegistered(){
+
+	// Transform is the worked example: it owns its transform data, so it both
+	// reads and writes it.
+	const Zenith_ComponentMeta* pxTransformMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
+	ZENITH_ASSERT_NOT_NULL(pxTransformMeta, "TestAccessSetMetadataRegistered: Transform not registered");
+
+	const u_int uExpectedReads  = static_cast<u_int>(Zenith_ComponentAccess::READS_TRANSFORM);
+	const u_int uExpectedWrites = static_cast<u_int>(Zenith_ComponentAccess::WRITES_TRANSFORM);
+	ZENITH_ASSERT_EQ(pxTransformMeta->m_uReads, uExpectedReads, "TestAccessSetMetadataRegistered: Transform reads mask wrong");
+	ZENITH_ASSERT_EQ(pxTransformMeta->m_uWrites, uExpectedWrites, "TestAccessSetMetadataRegistered: Transform writes mask wrong");
+
+	// An un-annotated component leaves both masks at NONE (0).
+	const Zenith_ComponentMeta* pxCameraMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Camera");
+	ZENITH_ASSERT_NOT_NULL(pxCameraMeta, "TestAccessSetMetadataRegistered: Camera not registered");
+	ZENITH_ASSERT_EQ(pxCameraMeta->m_uReads, static_cast<u_int>(Zenith_ComponentAccess::NONE), "TestAccessSetMetadataRegistered: un-annotated Camera has non-zero reads mask");
+	ZENITH_ASSERT_EQ(pxCameraMeta->m_uWrites, static_cast<u_int>(Zenith_ComponentAccess::NONE), "TestAccessSetMetadataRegistered: un-annotated Camera has non-zero writes mask");
+
+}
+
 //------------------------------------------------------------------------------
 // ECS Lifecycle Hooks Tests (Phase 3)
 //------------------------------------------------------------------------------
