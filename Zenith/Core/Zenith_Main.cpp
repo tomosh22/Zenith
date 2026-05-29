@@ -1,10 +1,14 @@
 #include "Zenith.h"
 
+#include "Core/Zenith_BenchECS.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Zenith_SceneSystem.h"
 #include "Profiling/Zenith_Profiling.h"
+
+#include <cstdlib>
+#include <cstring>
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
@@ -54,6 +58,22 @@ void Zenith_Core::Zenith_Main()
 	Zenith_CommandLine::Parse(__argc, __argv);
 	Zenith_Window::Inititalise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
 	Zenith_Init();
+
+	// --bench-ecs: run the GPU-free ECS micro-benchmark once (after engine init
+	// so the scene system / component registry are live) then exit cleanly.
+	// Mirrors the run-then-exit pattern used by --list-automated-tests: go
+	// through Zenith_FullShutdown so GPU/Jolt/audio/window resources release in
+	// the normal order, then std::exit(0). When the flag is absent, behaviour is
+	// completely unchanged.
+	for (int i = 1; i < __argc; ++i)
+	{
+		if (std::strcmp(__argv[i], "--bench-ecs") == 0)
+		{
+			Zenith_BenchECS_Run();
+			Zenith_Core::Zenith_FullShutdown();
+			std::exit(0);
+		}
+	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	// EXT-3a: parse harness CLI flags AFTER Zenith_Init (so the registry has

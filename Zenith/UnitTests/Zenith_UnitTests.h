@@ -152,6 +152,7 @@ public:
 	static void TestComponentRemovalIndexUpdate();
 	static void TestComponentSwapAndPop();
 	static void TestQueryNestedReentrancy();
+	static void TestBenchECSSmoke();
 	static void TestMultipleComponentRemoval();
 	static void TestComponentRemovalWithManyEntities();
 	static void TestEntityNameFromScene();

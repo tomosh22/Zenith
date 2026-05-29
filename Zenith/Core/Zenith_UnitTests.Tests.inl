@@ -25,6 +25,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "Core/Zenith_BenchECS.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include <filesystem>
@@ -6794,6 +6795,25 @@ void Zenith_UnitTests::TestRenderPhaseTransitions(){
 
 	// Leave the engine in the clear state other code asserts on.
 	g_xEngine.Scenes().SetRenderTasksActive(false);
+}
+
+// Wave8.2: smoke-test the GPU-free --bench-ecs micro-benchmark. The benchmark
+// is the before/after measurement backstop for the future sparse-set query
+// rework; this test just proves the bench logic runs end-to-end on a tiny
+// workload (N=64, iters=2) without crashing and reports a positive processed
+// count. Zenith_BenchECS_RunOnce creates an empty additive scene, populates it,
+// runs the Query<...>().ForEach + Add/Remove churn, and tears the scene down
+// itself, so there is no scene to clean up here.
+ZENITH_TEST(Core, BenchECSSmoke) { Zenith_UnitTests::TestBenchECSSmoke(); }
+void Zenith_UnitTests::TestBenchECSSmoke(){
+
+	const u_int64 ulProcessed = Zenith_BenchECS_RunOnce(64, 2);
+
+	// 64 entities all carry a Transform and the outer ForEach visits every one
+	// each of the 2 iterations, so the processed count must be strictly
+	// positive (>= 128 in practice). Asserting > 0 keeps the test robust to the
+	// exact reduction formula while still proving real work happened.
+	ZENITH_ASSERT_GT(ulProcessed, static_cast<u_int64>(0), "BenchECSSmoke: bench reported zero processed components (no work done?)");
 }
 
 // WS3 regression: LoadScene(SINGLE) validates the file header BEFORE tearing down
