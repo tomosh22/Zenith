@@ -50,7 +50,15 @@ u_int Zenith_ComponentMetaRegistry::GetSerializationOrder(const std::string& str
 		{"Terrain", 40},   // Must be before Collider
 		{"Collider", 50},
 		{"Script", 60},
-		{"UI", 70}
+		{"UI", 70},
+		// Give the components that auto-register but were absent from this map
+		// explicit, distinct orders so they don't all share the 1000 default —
+		// std::sort is not stable, so a shared key could order them arbitrarily
+		// and make scene save-order nondeterministic. All depend only on
+		// lower-ordered components (Transform/Collider), so any value past 70 is safe.
+		{"InstancedMesh", 80},
+		{"ParticleEmitter", 85},
+		{"AIAgent", 90}
 	};
 
 	auto xIt = s_xOrderMap.find(strTypeName);

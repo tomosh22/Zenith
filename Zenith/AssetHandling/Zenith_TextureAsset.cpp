@@ -66,7 +66,7 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	if (!xStream.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to read file '%s'", strPath.c_str());
-		return Zenith_ErrorCode::CORRUPT_DATA;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	xStream >> iWidth;

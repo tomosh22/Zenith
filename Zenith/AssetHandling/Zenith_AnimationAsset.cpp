@@ -67,7 +67,7 @@ Zenith_Status Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 		if (!xStream.IsValid())
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "Failed to read animation file: %s", strPath.c_str());
-			return Zenith_ErrorCode::CORRUPT_DATA;
+			return Zenith_ErrorCode::FILE_NOT_FOUND;
 		}
 
 		m_pxClip = new Flux_AnimationClip();

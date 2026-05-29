@@ -59,7 +59,7 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (!xStream.IsValid())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to read .zfont '%s'", strAbsPath.c_str());
-		return Zenith_ErrorCode::CORRUPT_DATA;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	u_int32 uMagic = 0, uVersion = 0;
@@ -143,7 +143,7 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (!xAtlasStream.IsValid())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to read atlas '%s'", strAtlasAbsPath.c_str());
-		return Zenith_ErrorCode::CORRUPT_DATA;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
