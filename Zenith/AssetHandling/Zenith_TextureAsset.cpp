@@ -150,14 +150,14 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	m_xSurfaceInfo.m_uNumMips = uNumMips;
 	m_xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	// Create GPU resources
+	// Create GPU resources. Surface an invalid VRAM handle via the release-
+	// survivable check tier (WS8.3) for diagnosability, but DO NOT fail the load:
+	// the renderer has always tolerated a not-yet-valid handle here (e.g. headless
+	// boot, where FontAtlas uploads before the device is ready), so hard-failing
+	// would be a behaviour change. Hard-failing on genuine GPU-OOM is Wave-9
+	// error-handling scope, where the tolerant-caller contract is revisited.
 	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
-	if (!m_xVRAMHandle.IsValid())
-	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: GPU upload failed for texture '%s'", strPath.c_str());
-		Zenith_MemoryManagement::Deallocate(pData);
-		return Zenith_ErrorCode::GPU_UPLOAD_FAILED;
-	}
+	Zenith_Check(m_xVRAMHandle.IsValid(), "Zenith_TextureAsset: GPU upload returned an invalid handle for '%s'", strPath.c_str());
 	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
