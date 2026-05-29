@@ -57,6 +57,9 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
+// Stream envelope (reusable DataStream header) include
+#include "DataStream/Zenith_StreamEnvelope.h"
+
 // Model instance (for material tests)
 #include "Flux/Flux_ModelInstance.h"
 
@@ -6915,6 +6918,72 @@ void Zenith_UnitTests::TestSceneLoadValidation(){
 		xStream << (u_int)(Zenith_SceneData::uSCENE_VERSION_MIN_SUPPORTED - 1u);
 		xStream.SetCursor(0);
 		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a too-old version");
+	}
+}
+
+// wave8.5: the reusable DataStream envelope helper. Pin that a header round-trips
+// (write then read back the four fields), that the read is non-destructive and
+// leaves the cursor positioned for the payload on success, and that the two
+// corruption classes the asset boundary cares about map to the shared error
+// codes: a wrong magic -> BAD_MAGIC (so a legacy headerless stream rewinds), and
+// a future envelope version -> VERSION_MISMATCH.
+ZENITH_TEST(Serialization, EnvelopeRoundTrip) { Zenith_UnitTests::TestStreamEnvelopeRoundTrip(); }
+void Zenith_UnitTests::TestStreamEnvelopeRoundTrip(){
+
+	static constexpr u_int uTYPE_ID = 7;
+	static constexpr u_int uSCHEMA  = 3;
+
+	// Round-trip: header + payload write, read back, fields match and the
+	// payload that followed the header is intact.
+	{
+		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uTYPE_ID, uSCHEMA);
+		const u_int uPayload = 0xABCDEF01u;
+		xStream << (u_int)uPayload;
+		xStream.SetCursor(0);
+
+		Zenith_Result<Zenith_StreamHeader> xRes = Zenith_ReadStreamHeader(xStream, uTYPE_ID);
+		ZENITH_ASSERT_TRUE(xRes.IsOk(), "ReadStreamHeader rejected a well-formed header");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uMagic, (u_int)uSTREAM_ENVELOPE_MAGIC, "envelope magic did not round-trip");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uEnvelopeVersion, (u_int)uSTREAM_ENVELOPE_VERSION_CURRENT, "envelope version did not round-trip");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uAssetTypeId, (u_int)uTYPE_ID, "asset type id did not round-trip");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uSchemaVersion, (u_int)uSCHEMA, "schema version did not round-trip");
+
+		// On success the cursor sits just past the header — the payload reads next.
+		u_int uReadPayload = 0;
+		xStream >> uReadPayload;
+		ZENITH_ASSERT_EQ(uReadPayload, uPayload, "payload after header was not readable / cursor misplaced");
+	}
+
+	// Corrupt magic -> BAD_MAGIC, and the read is non-destructive (cursor restored
+	// to entry so a legacy headerless stream can be rewound and re-read).
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)0xDEADBEEFu;                       // bad magic
+		xStream << (u_int)uSTREAM_ENVELOPE_VERSION_CURRENT;
+		xStream << (u_int)uTYPE_ID;
+		xStream << (u_int)uSCHEMA;
+		xStream.SetCursor(0);
+
+		Zenith_Result<Zenith_StreamHeader> xRes = Zenith_ReadStreamHeader(xStream, uTYPE_ID);
+		ZENITH_ASSERT_TRUE(!xRes.IsOk(), "ReadStreamHeader accepted a bad magic");
+		ZENITH_ASSERT_TRUE(xRes.Error() == Zenith_ErrorCode::BAD_MAGIC, "bad magic must map to BAD_MAGIC");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), (uint64_t)0, "ReadStreamHeader must restore the cursor on BAD_MAGIC");
+	}
+
+	// Future envelope version -> VERSION_MISMATCH (cursor restored too).
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)uSTREAM_ENVELOPE_MAGIC;
+		xStream << (u_int)(uSTREAM_ENVELOPE_VERSION_CURRENT + 1u);  // newer than we support
+		xStream << (u_int)uTYPE_ID;
+		xStream << (u_int)uSCHEMA;
+		xStream.SetCursor(0);
+
+		Zenith_Result<Zenith_StreamHeader> xRes = Zenith_ReadStreamHeader(xStream, uTYPE_ID);
+		ZENITH_ASSERT_TRUE(!xRes.IsOk(), "ReadStreamHeader accepted a future envelope version");
+		ZENITH_ASSERT_TRUE(xRes.Error() == Zenith_ErrorCode::VERSION_MISMATCH, "future version must map to VERSION_MISMATCH");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), (uint64_t)0, "ReadStreamHeader must restore the cursor on VERSION_MISMATCH");
 	}
 }
 

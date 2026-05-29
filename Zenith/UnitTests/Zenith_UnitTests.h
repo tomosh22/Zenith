@@ -49,6 +49,9 @@ public:
 	// DataStream edge case tests
 	static void TestDataStreamBoundsCheck();
 
+	// Stream envelope (reusable DataStream header) tests
+	static void TestStreamEnvelopeRoundTrip();
+
 	// Scene serialization tests
 	static void TestSceneSerialization();
 	static void TestComponentSerialization();

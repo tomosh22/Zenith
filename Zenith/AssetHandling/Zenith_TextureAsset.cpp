@@ -1,8 +1,18 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
+
+// Asset-type id for the .ztxtr envelope. No engine-wide numeric asset-type-id
+// enum exists (assets are keyed by string type name), so a small local constant
+// suffices — it only needs to be stable within the texture read/write pair.
+// Writers (Tools/Zenith_Tools_TextureExport.cpp and the inline game exporters)
+// should pass this id and schema version 1 to Zenith_WriteStreamHeader when they
+// adopt the envelope; until then the read path's BAD_MAGIC branch loads the
+// historical headerless files unchanged (schema 0).
+static constexpr u_int uTEXTURE_ASSET_TYPE_ID = 1;
 
 // Unified data size calculation for both compressed and uncompressed textures
 static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uDepth = 1)
@@ -67,6 +77,20 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to read file '%s'", strPath.c_str());
 		return Zenith_ErrorCode::FILE_NOT_FOUND;
+	}
+
+	// Envelope-aware read with back-compat (wave8.5):
+	//   - v1 file  : Zenith_ReadStreamHeader succeeds and advances the cursor
+	//                past the header; the payload below reads as normal.
+	//   - legacy   : no envelope -> BAD_MAGIC. ReadStreamHeader is non-destructive
+	//                (it restores the cursor to 0), so the same payload reads pick
+	//                up the historical headerless layout (treated as schema 0).
+	//   - future   : a newer envelope version is a hard fail (VERSION_MISMATCH).
+	Zenith_Result<Zenith_StreamHeader> xHeaderResult = Zenith_ReadStreamHeader(xStream, uTEXTURE_ASSET_TYPE_ID);
+	if (!xHeaderResult.IsOk() && xHeaderResult.Error() != Zenith_ErrorCode::BAD_MAGIC)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Unsupported envelope in '%s'", strPath.c_str());
+		return xHeaderResult.Error();
 	}
 
 	xStream >> iWidth;
