@@ -124,11 +124,29 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 	TextureFormat eColourFormat,
 	TextureFormat eDepthStencilFormat)
 {
+	// Single-RTV is the N==1 case. Taking the address of the by-value param
+	// yields a valid 1-element array for the duration of this call.
+	return CreateFullscreenSpecMRT(xShader, eProgram, &eColourFormat, 1u, eDepthStencilFormat);
+}
+
+Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
+	Flux_Shader& xShader,
+	FluxShaderProgram eProgram,
+	const TextureFormat* aeColourFormats,
+	u_int uNumColourAttachments,
+	TextureFormat eDepthStencilFormat)
+{
+	Zenith_Assert(uNumColourAttachments >= 1 && uNumColourAttachments <= FLUX_MAX_TARGETS,
+		"CreateFullscreenSpecMRT: uNumColourAttachments %u out of range [1, %u]", uNumColourAttachments, FLUX_MAX_TARGETS);
+
 	xShader.Initialise(eProgram);
 
 	Flux_PipelineSpecification xSpec;
-	xSpec.m_aeColourAttachmentFormats[0] = eColourFormat;
-	xSpec.m_uNumColourAttachments = 1;
+	for (u_int u = 0; u < uNumColourAttachments; u++)
+	{
+		xSpec.m_aeColourAttachmentFormats[u] = aeColourFormats[u];
+	}
+	xSpec.m_uNumColourAttachments = uNumColourAttachments;
 	xSpec.m_eDepthStencilFormat = eDepthStencilFormat;
 	xSpec.m_pxShader = &xShader;
 	xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;

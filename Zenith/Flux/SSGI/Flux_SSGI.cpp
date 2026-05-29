@@ -192,13 +192,11 @@ void Flux_SSGIImpl::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI initialised");
 }
 
-void Flux_SSGIImpl::Shutdown()
+void Flux_SSGIImpl::ShutdownImpl()
 {
-	if (!g_xEngine.SSGI().m_bInitialised)
-		return;
-
-	g_xEngine.SSGI().m_pxGraph = nullptr;
-	g_xEngine.SSGI().m_bInitialised = false;
+	// CRTP hook from Flux_ScreenSpaceEffectBase::Shutdown(); the base owns the
+	// m_bInitialised guard and the m_pxGraph / m_bInitialised resets. SSGI has
+	// no per-effect GPU resources to release (no CBV), so this only logs.
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI shut down");
 }
 
@@ -421,20 +419,22 @@ void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	const bool bDenoise = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled;
 	xGraph.SetEnabled(g_xEngine.SSGI().m_xDenoisePassH, bDenoise);
 	xGraph.SetEnabled(g_xEngine.SSGI().m_xDenoisePassV, bDenoise);
-	g_xEngine.SSGI().m_bLastDenoiseEnabled = bDenoise;
 
-	// Commit the handle the deferred pass will now read. GetSSGIHandle asserts
-	// against this value — any runtime toggle without a matching
-	// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the mistake.
-	g_xEngine.SSGI().m_xCommittedSSGIHandle = bDenoise ? g_xEngine.SSGI().m_xDenoisedHandle : g_xEngine.SSGI().m_xResolvedHandle;
+	// Commit the handle the deferred pass will now read. GetSSGIHandle resolves
+	// to this value — any runtime toggle without a matching
+	// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the
+	// mistake. The composite selection captures BOTH the denoise toggle and the
+	// (clamped) resolution divisor, so a divisor change also forces a rebuild.
+	g_xEngine.SSGI().m_xSSGISelector.Commit(g_xEngine.SSGI().m_xDenoisedHandle, g_xEngine.SSGI().m_xResolvedHandle, bDenoise, Flux_SSGISelection{ bDenoise, uDivisor });
 }
 
 void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	const bool bDenoiseChanged    = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled != g_xEngine.SSGI().m_bLastDenoiseEnabled;
-	const bool bResolutionChanged = g_xEngine.SSGI().m_uRayMarchResolutionDivisor != g_xEngine.SSGI().m_uLastResolutionDivisor;
-
-	if (!bDenoiseChanged && !bResolutionChanged)
+	// The composite selection covers BOTH triggers in one comparison: the
+	// denoise toggle and the raymarch resolution divisor (which resizes the
+	// raymarch transient). This is where the composite TSelection earns its keep.
+	const Flux_SSGISelection xSelection{ Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled, g_xEngine.SSGI().m_uRayMarchResolutionDivisor };
+	if (!g_xEngine.SSGI().m_xSSGISelector.RequestRebuildIfSelectionChanged(xSelection))
 		return;
 
 	// Full graph rebuild — see Flux_SSR::ApplyBlurSelectionToGraph for the same

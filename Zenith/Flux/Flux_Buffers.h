@@ -50,6 +50,12 @@ public:
 	const Flux_Buffer& GetBuffer() const { return m_xBuffer; }
 	Flux_Buffer& GetBuffer() { return m_xBuffer; }
 
+	// Generic view accessor. The concrete leaves forward their domain-specific
+	// names (GetCBV / GetUAV / ...) to this so compile-time binder type safety
+	// is preserved at call sites while the body lives in one place.
+	TView& GetView() { return m_xView; }
+	const TView& GetView() const { return m_xView; }
+
 protected:
 	Flux_Buffer m_xBuffer;
 	TView m_xView;
@@ -99,6 +105,18 @@ public:
 	{
 		Zenith_FluxBuffers_Detail::AssertFrameIndex(uFrame);
 		return m_axBuffers[uFrame];
+	}
+
+	// Generic view accessors. The concrete leaves forward their domain-specific
+	// names (GetCBV / GetUAV / ...) to these so compile-time binder type safety
+	// is preserved at call sites while the bodies live in one place.
+	TView& GetView() { return m_axViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()]; }
+	const TView& GetView() const { return m_axViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()]; }
+
+	TView& GetViewForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_FluxBuffers_Detail::AssertFrameIndex(uFrame);
+		return m_axViews[uFrame];
 	}
 
 protected:
@@ -154,20 +172,20 @@ class Flux_IndexBuffer  : public Flux_SingleBufferBase<Flux_NoView> {};
 class Flux_ConstantBuffer : public Flux_SingleBufferBase<Flux_ConstantBufferView>
 {
 public:
-	Flux_ConstantBufferView& GetCBV() { return m_xView; }
+	Flux_ConstantBufferView& GetCBV() { return GetView(); }
 };
 
 class Flux_IndirectBuffer : public Flux_SingleBufferBase<Flux_UnorderedAccessView_Buffer>
 {
 public:
-	Flux_UnorderedAccessView_Buffer& GetUAV() { return m_xView; }
+	Flux_UnorderedAccessView_Buffer& GetUAV() { return GetView(); }
 };
 
 class Flux_ReadWriteBuffer : public Flux_SingleBufferBase<Flux_UnorderedAccessView_Buffer>
 {
 public:
-	Flux_UnorderedAccessView_Buffer& GetUAV() { return m_xView; }
-	const Flux_UnorderedAccessView_Buffer& GetUAV() const { return m_xView; }
+	Flux_UnorderedAccessView_Buffer& GetUAV() { return GetView(); }
+	const Flux_UnorderedAccessView_Buffer& GetUAV() const { return GetView(); }
 
 	// Read-only structured-buffer view, populated alongside m_xView at buffer
 	// init time (see Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer).
@@ -197,35 +215,18 @@ class Flux_DynamicVertexBuffer : public Flux_FrameIndexedBufferBase<Flux_NoView>
 class Flux_DynamicConstantBuffer : public Flux_FrameIndexedBufferBase<Flux_ConstantBufferView>
 {
 public:
-	const Flux_ConstantBufferView& GetCBV() const
-	{
-		return m_axViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()];
-	}
+	const Flux_ConstantBufferView& GetCBV() const { return GetView(); }
 
-	Flux_ConstantBufferView& GetCBVForFrameInFlight(const u_int uFrame)
-	{
-		Zenith_FluxBuffers_Detail::AssertFrameIndex(uFrame);
-		return m_axViews[uFrame];
-	}
+	Flux_ConstantBufferView& GetCBVForFrameInFlight(const u_int uFrame) { return GetViewForFrameInFlight(uFrame); }
 };
 
 class Flux_DynamicReadWriteBuffer : public Flux_FrameIndexedBufferBase<Flux_UnorderedAccessView_Buffer>
 {
 public:
-	const Flux_UnorderedAccessView_Buffer& GetUAV() const
-	{
-		return m_axViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()];
-	}
-	Flux_UnorderedAccessView_Buffer& GetUAV()
-	{
-		return m_axViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()];
-	}
+	const Flux_UnorderedAccessView_Buffer& GetUAV() const { return GetView(); }
+	Flux_UnorderedAccessView_Buffer& GetUAV() { return GetView(); }
 
-	Flux_UnorderedAccessView_Buffer& GetUAVForFrameInFlight(const u_int uFrame)
-	{
-		Zenith_FluxBuffers_Detail::AssertFrameIndex(uFrame);
-		return m_axViews[uFrame];
-	}
+	Flux_UnorderedAccessView_Buffer& GetUAVForFrameInFlight(const u_int uFrame) { return GetViewForFrameInFlight(uFrame); }
 
 	// Read-only structured-buffer view, populated alongside the UAV at buffer
 	// init time (see Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer).
