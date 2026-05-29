@@ -1111,16 +1111,20 @@
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Engine.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Result.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
+    <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.h" />
@@ -1191,6 +1195,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFogImpl.h" />
@@ -2379,6 +2384,7 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_AudioBus.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_BenchECS.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_CommandLine.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp" />
@@ -2388,6 +2394,7 @@
     <ClCompile Include="..\Zenith\Core\Zenith_TestFramework.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
+    <ClCompile Include="..\Zenith\DataStream\Zenith_StreamEnvelope.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.cpp" />

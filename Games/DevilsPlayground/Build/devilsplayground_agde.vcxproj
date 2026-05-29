@@ -191,6 +191,7 @@
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_Generator.h" />
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_JsonExport.h" />
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_LevelLayout.h" />
+    <ClInclude Include="..\Source\DPResources.h" />
     <ClInclude Include="..\Source\DPTelemetry.h" />
     <ClInclude Include="..\Source\DPTelemetryAnalyzer.h" />
     <ClInclude Include="..\Source\DPTutorial.h" />

@@ -490,6 +490,9 @@
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_LevelLayout.h">
       <Filter>Source\DPProcLevel</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\DPResources.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\DPTelemetry.h">
       <Filter>Source</Filter>
     </ClInclude>
