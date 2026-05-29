@@ -6775,6 +6775,27 @@ void Zenith_UnitTests::TestQueryNestedReentrancy(){
 	g_xEngine.Scenes().UnloadScene(xTestScene);
 }
 
+// Wave8 regression: the render-tasks-active signal is a real std::atomic compiled
+// in ALL configs (it used to exist only under ZENITH_ASSERT and otherwise returned
+// false). Parallel-sim work needs an authoritative, race-free value even in non-
+// assert builds. Pin the round-trip through the public setter/getter. The flag MUST
+// be left false at the end — scene-mutation asserts elsewhere fire if it stays true.
+ZENITH_TEST(Core, RenderPhaseTransitions) { Zenith_UnitTests::TestRenderPhaseTransitions(); }
+void Zenith_UnitTests::TestRenderPhaseTransitions(){
+
+	// Precondition: outside ExecuteRenderGraph the signal is clear.
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().AreRenderTasksActive(), "RenderPhaseTransitions: signal should start clear");
+
+	g_xEngine.Scenes().SetRenderTasksActive(true);
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().AreRenderTasksActive(), "RenderPhaseTransitions: setter(true) did not raise the signal");
+
+	g_xEngine.Scenes().SetRenderTasksActive(false);
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().AreRenderTasksActive(), "RenderPhaseTransitions: setter(false) did not clear the signal");
+
+	// Leave the engine in the clear state other code asserts on.
+	g_xEngine.Scenes().SetRenderTasksActive(false);
+}
+
 // WS3 regression: LoadScene(SINGLE) validates the file header BEFORE tearing down
 // the live world, so a corrupt/old/future .zscen no longer leaves the engine
 // scene-less. ValidateSceneStream is that non-destructive header gate. Pin that it

@@ -157,6 +157,9 @@ public:
 	static void TestEntityNameFromScene();
 	static void TestEntityCopyPreservesAccess();
 
+	// Render-phase boundary signal (always-compiled atomic)
+	static void TestRenderPhaseTransitions();
+
 	// ECS reflection system tests (Phase 2)
 	static void TestComponentMetaRegistration();
 	static void TestComponentMetaSerialization();

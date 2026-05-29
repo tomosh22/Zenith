@@ -280,13 +280,12 @@ void Zenith_Core::Zenith_MainLoop()
 		ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
 		#endif
 
-		#ifdef ZENITH_ASSERT
+		// Render-phase boundary. Compiled in ALL configs (the signal is a real
+		// atomic now, not assert-only): scene reads that happen on render
+		// worker threads check AreRenderTasksActive() to know this window is open.
 		g_xEngine.Scenes().SetRenderTasksActive(true);
-		#endif
 		ExecuteRenderGraph();
-		#ifdef ZENITH_ASSERT
 		g_xEngine.Scenes().SetRenderTasksActive(false);
-		#endif
 	}
 
 	// EndFrame prepares memory command buffer for submission and processes deferred deletions.

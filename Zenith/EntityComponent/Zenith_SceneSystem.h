@@ -21,6 +21,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashSet.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include <atomic>
 #include <cstdint>
 #include <string>
 // Was Zenith_SceneCallbackTypes.h — typedefs + enum inlined below.
@@ -215,15 +216,9 @@ public:
 
 	bool AreRenderTasksActive() const
 	{
-#ifdef ZENITH_ASSERT
-		return m_bRenderTasksActive;
-#else
-		return false;
-#endif
+		return m_bRenderTasksActive.load(std::memory_order_acquire);
 	}
-#ifdef ZENITH_ASSERT
-	void SetRenderTasksActive(bool b) { m_bRenderTasksActive = b; }
-#endif
+	void SetRenderTasksActive(bool b) { m_bRenderTasksActive.store(b, std::memory_order_release); }
 
 	//==========================================================================
 	// Callback bus
@@ -391,9 +386,12 @@ private:
 	};
 	PendingLoad                   m_xPendingLoad;
 
-#ifdef ZENITH_ASSERT
-	bool                          m_bRenderTasksActive = false;
-#endif
+	// Render-phase boundary signal. Compiled in ALL configs (not just assert
+	// builds): parallel-sim work needs an authoritative, race-free value of
+	// whether render tasks are reading scene state, even in shipping builds.
+	// Set true around ExecuteRenderGraph (see Zenith_Core.cpp); the scene-
+	// mutation asserts read it to permit concurrent reads during that window.
+	std::atomic<bool>             m_bRenderTasksActive { false };
 
 	//==========================================================================
 	// Data members (was Zenith_SceneCallbackBus)
