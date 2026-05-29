@@ -253,14 +253,14 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadMeshAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadMeshAsset(const std::string&);
 
 	/**
 	 * Load a mesh asset from file (private - use Zenith_AssetRegistry::Get)
 	 * @param szPath Path to .zmesh file
-	 * @return Loaded asset, or nullptr on failure
+	 * @return Loaded asset, or an error code on failure
 	 */
-	static Zenith_MeshAsset* LoadFromFile(const char* szPath);
+	static Zenith_Result<Zenith_MeshAsset*> LoadFromFile(const char* szPath);
 
 	uint32_t m_uNumVerts = 0;
 	uint32_t m_uNumIndices = 0;

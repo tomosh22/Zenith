@@ -43,11 +43,11 @@ Flux_AnimationClip* Zenith_AnimationAsset::ReleaseClip()
 	return pxClip;
 }
 
-bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
+Zenith_Status Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
-		return false;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	// Check file extension to determine loader
@@ -67,7 +67,7 @@ bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 		if (!xStream.IsValid())
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "Failed to read animation file: %s", strPath.c_str());
-			return false;
+			return Zenith_ErrorCode::CORRUPT_DATA;
 		}
 
 		m_pxClip = new Flux_AnimationClip();
@@ -91,13 +91,13 @@ bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 		if (!pxScene || !pxScene->mRootNode)
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "Failed to load animation via Assimp: %s", strPath.c_str());
-			return false;
+			return Zenith_ErrorCode::CORRUPT_DATA;
 		}
 
 		if (pxScene->mNumAnimations == 0)
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "No animations found in: %s", strPath.c_str());
-			return false;
+			return Zenith_ErrorCode::CORRUPT_DATA;
 		}
 
 		m_pxClip = new Flux_AnimationClip();
@@ -109,7 +109,7 @@ bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 		return true;
 #else
 		Zenith_Log(LOG_CATEGORY_ANIMATION, "Source format loading not supported without tools: %s", strPath.c_str());
-		return false;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 #endif
 	}
 }

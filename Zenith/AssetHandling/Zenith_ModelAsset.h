@@ -136,12 +136,12 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadModelAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadModelAsset(const std::string&);
 
 	/**
 	 * Load a model asset from file (private - use Zenith_AssetRegistry::Get)
 	 * @param szPath Path to .zmodel file
-	 * @return Loaded asset, or nullptr on failure
+	 * @return Loaded asset, or an error code on failure
 	 */
-	static Zenith_ModelAsset* LoadFromFile(const char* szPath);
+	static Zenith_Result<Zenith_ModelAsset*> LoadFromFile(const char* szPath);
 };

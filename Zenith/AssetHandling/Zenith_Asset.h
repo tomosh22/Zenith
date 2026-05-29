@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Zenith_Result.h"
 #include <string>
 #include <atomic>
 

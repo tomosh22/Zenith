@@ -111,16 +111,16 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadMeshGeometryAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadMeshGeometryAsset(const std::string&);
 
 	/**
 	 * Load geometry from file (private - use Zenith_AssetRegistry::Get)
 	 * @param strPath Path to mesh file (.zmesh)
 	 * @param uRetainAttributeBits Bitmask of attributes to retain in CPU memory
 	 * @param bUploadToGPU Whether to upload to GPU
-	 * @return true on success
+	 * @return SUCCESS, or an error code on failure
 	 */
-	bool LoadFromFile(const std::string& strPath, uint32_t uRetainAttributeBits = 0, bool bUploadToGPU = true);
+	Zenith_Status LoadFromFile(const std::string& strPath, uint32_t uRetainAttributeBits = 0, bool bUploadToGPU = true);
 
 	Flux_MeshGeometry* m_pxGeometry = nullptr;
 	bool m_bOwnsGeometry = true;

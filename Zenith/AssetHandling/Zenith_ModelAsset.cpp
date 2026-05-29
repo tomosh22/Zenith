@@ -74,7 +74,7 @@ Zenith_ModelAsset& Zenith_ModelAsset::operator=(Zenith_ModelAsset&& xOther)
 // Loading and Saving
 //------------------------------------------------------------------------------
 
-Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
+Zenith_Result<Zenith_ModelAsset*> Zenith_ModelAsset::LoadFromFile(const char* szPath)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
@@ -83,7 +83,7 @@ Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
 	if (!xStream.IsValid())
 	{
 		Zenith_Error(LOG_CATEGORY_ASSET, "LoadFromFile: Failed to read model file '%s'", szPath);
-		return nullptr;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	Zenith_ModelAsset* pxAsset = new Zenith_ModelAsset();

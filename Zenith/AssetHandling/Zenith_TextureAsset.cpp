@@ -53,7 +53,7 @@ void Zenith_TextureAsset::MarkAsBindless()
 	}
 }
 
-bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
+Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
 {
 	// Load texture data from file
 	size_t ulDataSize;
@@ -66,7 +66,7 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	if (!xStream.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to read file '%s'", strPath.c_str());
-		return false;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	xStream >> iWidth;
@@ -89,14 +89,14 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	if (ulAllocSize == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Zero data size for texture '%s' (dims: %dx%dx%d)", strPath.c_str(), iWidth, iHeight, iDepth);
-		return false;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	void* pData = Zenith_MemoryManagement::Allocate(ulAllocSize);
 	if (!pData)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to allocate %zu bytes for texture '%s'", ulAllocSize, strPath.c_str());
-		return false;
+		return Zenith_ErrorCode::OUT_OF_MEMORY;
 	}
 
 	// Initialize to zero in case file has less data than expected
@@ -134,6 +134,7 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	// Free the staging data
 	Zenith_MemoryManagement::Deallocate(pData);
 
+	// SUCCESS — payload is the legacy "true" bool carried by Zenith_Status.
 	return true;
 }
 

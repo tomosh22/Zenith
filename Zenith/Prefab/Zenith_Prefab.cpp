@@ -223,7 +223,7 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 	return true;
 }
 
-bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
+Zenith_Status Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 {
 	m_bIsValid = false;
 	m_xOverrides.Clear();
@@ -240,13 +240,13 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 	if (uMagic != PREFAB_MAGIC)
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB, "Invalid prefab file format: %s", strFilePath.c_str());
-		return false;
+		return Zenith_ErrorCode::BAD_MAGIC;
 	}
 
 	if (uVersion != PREFAB_VERSION)
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB, "Unsupported prefab version %u (expected %u). Please re-export the prefab: %s", uVersion, PREFAB_VERSION, strFilePath.c_str());
-		return false;
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	xInput >> m_strName;
