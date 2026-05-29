@@ -6721,6 +6721,110 @@ void Zenith_UnitTests::TestComponentSwapAndPop(){
 	g_xEngine.Scenes().UnloadScene(xTestScene);
 }
 
+// WS6 regression: Query::ForEach now snapshots into a per-thread POOL of reusable
+// buffers (instead of a fresh heap allocation per call). This pins the two
+// properties the pooling must preserve: (1) RE-ENTRANCY — a nested ForEach inside
+// a ForEach callback must check out a DISTINCT buffer and not clobber the outer
+// iteration; (2) SNAPSHOT STABILITY — the outer iteration is fixed at its start,
+// so an entity created mid-iteration is not visited by the outer loop.
+ZENITH_TEST(ECS, QueryNestedReentrancy) { Zenith_UnitTests::TestQueryNestedReentrancy(); }
+void Zenith_UnitTests::TestQueryNestedReentrancy(){
+
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("TestQueryNestedReentrancyScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+
+	// All entities auto-have Zenith_TransformComponent, so Query<Transform> matches the whole set.
+	const u_int uNumEntities = 6;
+	Zenith_Entity xEntities[uNumEntities] = {
+		Zenith_Entity(pxSceneData, "QNest0"), Zenith_Entity(pxSceneData, "QNest1"),
+		Zenith_Entity(pxSceneData, "QNest2"), Zenith_Entity(pxSceneData, "QNest3"),
+		Zenith_Entity(pxSceneData, "QNest4"), Zenith_Entity(pxSceneData, "QNest5"),
+	};
+	(void)xEntities;
+
+	// Baseline: a plain query visits exactly the created set.
+	u_int uPlain = 0;
+	Zenith_Query<Zenith_TransformComponent>(*pxSceneData).ForEach(
+		[&uPlain](Zenith_EntityID, Zenith_TransformComponent&) { ++uPlain; });
+	ZENITH_ASSERT_TRUE(uPlain == uNumEntities, "QueryNestedReentrancy: plain ForEach visited %u (expected %u)", uPlain, uNumEntities);
+
+	// Nested ForEach (re-entrancy) + one mid-iteration entity creation. The outer
+	// snapshot must visit EXACTLY the original set; the inner loop must always see
+	// at least the original set. A buffer-clobber would corrupt uOuter; a missing
+	// pooled-buffer checkout for the nested call would crash or miscount.
+	u_int uOuter = 0;
+	u_int uInnerMin = 0xFFFFFFFFu;
+	bool bCreatedOnce = false;
+	Zenith_Query<Zenith_TransformComponent>(*pxSceneData).ForEach(
+		[&](Zenith_EntityID, Zenith_TransformComponent&) {
+			++uOuter;
+			u_int uInner = 0;
+			Zenith_Query<Zenith_TransformComponent>(*pxSceneData).ForEach(
+				[&uInner](Zenith_EntityID, Zenith_TransformComponent&) { ++uInner; });
+			if (uInner < uInnerMin) { uInnerMin = uInner; }
+			if (!bCreatedOnce)
+			{
+				bCreatedOnce = true;
+				Zenith_Entity xLate(pxSceneData, "QNestLate"); // created mid-iteration
+				(void)xLate;
+			}
+		});
+	ZENITH_ASSERT_TRUE(uOuter == uNumEntities, "QueryNestedReentrancy: outer snapshot unstable, visited %u (expected %u)", uOuter, uNumEntities);
+	ZENITH_ASSERT_TRUE(uInnerMin >= uNumEntities, "QueryNestedReentrancy: nested ForEach saw %u (< base %u) — buffer clobber?", uInnerMin, uNumEntities);
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+}
+
+// WS3 regression: LoadScene(SINGLE) validates the file header BEFORE tearing down
+// the live world, so a corrupt/old/future .zscen no longer leaves the engine
+// scene-less. ValidateSceneStream is that non-destructive header gate. Pin that it
+// accepts a well-formed header (and restores the cursor) and rejects each
+// corruption class.
+ZENITH_TEST(Scene, SceneLoadValidation) { Zenith_UnitTests::TestSceneLoadValidation(); }
+void Zenith_UnitTests::TestSceneLoadValidation(){
+
+	// Well-formed header (magic + current version): accepted, cursor untouched.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream rejected a well-formed header");
+		ZENITH_ASSERT_TRUE(xStream.GetCursor() == 0, "ValidateSceneStream must restore the stream cursor");
+	}
+	// Truncated below the 8-byte header: rejected.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC; // 4 bytes only
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a truncated stream");
+	}
+	// Bad magic number: rejected.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)0xDEADBEEF;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a bad magic number");
+	}
+	// Future version (> current): rejected (the version-skew case WS3 targets).
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)(Zenith_SceneData::uSCENE_VERSION_CURRENT + 1u);
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a future version");
+	}
+	// Too-old version (< min supported): rejected.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)(Zenith_SceneData::uSCENE_VERSION_MIN_SUPPORTED - 1u);
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a too-old version");
+	}
+}
+
 /**
  * Test removing multiple components from multiple entities in sequence.
  */

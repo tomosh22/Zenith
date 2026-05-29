@@ -54,6 +54,7 @@ public:
 	static void TestComponentSerialization();
 	static void TestEntitySerialization();
 	static void TestSceneRoundTrip();
+	static void TestSceneLoadValidation();
 	static void TestSceneDisableDestroyHelpers();
 
 	// Animation system tests
@@ -150,6 +151,7 @@ public:
 	// ECS bug fix tests (Phase 1)
 	static void TestComponentRemovalIndexUpdate();
 	static void TestComponentSwapAndPop();
+	static void TestQueryNestedReentrancy();
 	static void TestMultipleComponentRemoval();
 	static void TestComponentRemovalWithManyEntities();
 	static void TestEntityNameFromScene();
