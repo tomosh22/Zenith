@@ -9,8 +9,6 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <fstream>
 
-ZENITH_REGISTER_COMPONENT(Zenith_TerrainComponent, "Terrain")
-
 // LOD distance thresholds from unified config (distance squared)
 // Used for debug visualization - actual thresholds are in Flux_TerrainConfig.h
 

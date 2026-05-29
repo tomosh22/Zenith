@@ -6,8 +6,6 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Flux_ModelInstance.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_AnimatorComponent, "Animator")
-
 void Zenith_AnimatorComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// Whole-controller override. Flux_AnimationController has WriteToDataStream

@@ -22,8 +22,6 @@
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
-
 void Zenith_ColliderComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// Intentionally registers no overrideable properties.

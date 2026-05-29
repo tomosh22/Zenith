@@ -5,8 +5,6 @@
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_InstancedMeshComponent, "InstancedMesh")
-
 //=============================================================================
 // Constructor / Destructor
 //=============================================================================

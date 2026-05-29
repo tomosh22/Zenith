@@ -3,8 +3,6 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_TweenComponent, "Tween")
-
 //=============================================================================
 // Construction / Move
 //=============================================================================

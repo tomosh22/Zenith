@@ -4,8 +4,6 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_LightComponent, "Light")
-
 void Zenith_LightComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// LIGHT_TYPE is intentionally omitted — its DataStream `>>` path goes through

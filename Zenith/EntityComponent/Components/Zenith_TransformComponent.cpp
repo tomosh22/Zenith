@@ -9,8 +9,6 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 
-ZENITH_REGISTER_COMPONENT(Zenith_TransformComponent, "Transform")
-
 void Zenith_TransformComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// Use SETTER form — Transform's setters are STATEFUL:
