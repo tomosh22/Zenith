@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EntityComponent/Zenith_Entity.h"
+#include "AssetHandling/Zenith_AssetHandle.h"	// MeshHandle/MaterialHandle typedefs + Zenith_Mesh/MaterialAsset fwd-decls (were pulled in transitively via the now-removed Flux includes)
 #include <string>
 #include <vector>
 
