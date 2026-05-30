@@ -897,7 +897,11 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 	VkBuffer xBuffer = VK_NULL_HANDLE;
 	VmaAllocation xAllocation = VK_NULL_HANDLE;
 	VkResult eResult = vmaCreateBuffer(g_xEngine.VulkanMemory().m_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xAllocation, nullptr);
-	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateBuffer failed with result %d", static_cast<int>(eResult));
+	// Wave9.1 (c) / mirrors WS8.3: surface a GPU-OOM (or any vmaCreateBuffer
+	// failure) via the release-survivable check tier — logged for diagnosability
+	// in all shipping configs — but keep the existing invalid-handle contract that
+	// callers already tolerate. Do NOT promote this to a hard assert/return change.
+	Zenith_Check(eResult == VK_SUCCESS, "vmaCreateBuffer failed (size=%u, result=%d) - returning invalid handle", uSize, (int)eResult);
 	if (eResult != VK_SUCCESS)
 	{
 		// Return invalid handle on allocation failure

@@ -58,6 +58,7 @@ public:
 	static void TestEntitySerialization();
 	static void TestSceneRoundTrip();
 	static void TestSceneLoadValidation();
+	static void TestSceneBodyCorruptionFailsGracefully();
 	static void TestSceneDisableDestroyHelpers();
 
 	// Animation system tests

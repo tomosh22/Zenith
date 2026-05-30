@@ -197,6 +197,13 @@ namespace Zenith_SaveData
 	// ============================================================================
 	bool Load(const char* szSlotName, SaveReadCallback pfnReadPayload, void* pxUserData)
 	{
+		// Wave9.1 (b): bool Load() preserves the legacy true/false contract for all
+		// existing if(!Load(...)) callers; LoadEx carries the specific reason.
+		return LoadEx(szSlotName, pfnReadPayload, pxUserData).IsOk();
+	}
+
+	Zenith_Status LoadEx(const char* szSlotName, SaveReadCallback pfnReadPayload, void* pxUserData)
+	{
 #ifdef ZENITH_INPUT_SIMULATOR
 		// MVP-0.4.3: if a test staged a readback for this slot, short-circuit
 		// the disk path and feed the staged payload to the read callback.
@@ -214,7 +221,7 @@ namespace Zenith_SaveData
 					xStream.SetCursor(0);
 				}
 				pfnReadPayload(xStream, pxStash->m_uGameVersion, pxUserData);
-				return true;
+				return Zenith_ErrorCode::SUCCESS;
 			}
 		}
 #endif
@@ -231,7 +238,7 @@ namespace Zenith_SaveData
 		if (!Zenith_FileAccess::FileExists(szPath))
 		{
 			Zenith_Log(LOG_CATEGORY_CORE, "SaveData: No save file at '%s'", szPath);
-			return false;
+			return Zenith_ErrorCode::FILE_NOT_FOUND;
 		}
 
 		// Read file
@@ -241,14 +248,14 @@ namespace Zenith_SaveData
 		if (!xFileStream.IsValid())
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: Failed to read save file '%s'", szPath);
-			return false;
+			return Zenith_ErrorCode::FILE_NOT_FOUND;
 		}
 
 		// Validate minimum size for header
 		if (xFileStream.GetSize() < sizeof(Zenith_SaveFileHeader))
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: File too small to contain header '%s'", szPath);
-			return false;
+			return Zenith_ErrorCode::CORRUPT_DATA;
 		}
 
 		// Read header
@@ -260,7 +267,7 @@ namespace Zenith_SaveData
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: Invalid magic number in '%s' (expected 0x%08X, got 0x%08X)",
 				szPath, uZENITH_SAVE_MAGIC, xHeader.uMagic);
-			return false;
+			return Zenith_ErrorCode::BAD_MAGIC;
 		}
 
 		// Validate format version
@@ -268,7 +275,7 @@ namespace Zenith_SaveData
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: Save file format version %u is newer than supported %u",
 				xHeader.uFormatVersion, uZENITH_SAVE_FORMAT_VERSION);
-			return false;
+			return Zenith_ErrorCode::VERSION_MISMATCH;
 		}
 
 		// Validate payload size
@@ -277,7 +284,7 @@ namespace Zenith_SaveData
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: Payload size mismatch in '%s' (header says %llu, file has %llu)",
 				szPath, xHeader.ulPayloadSize, ulRemainingBytes);
-			return false;
+			return Zenith_ErrorCode::CORRUPT_DATA;
 		}
 
 		// Validate checksum
@@ -290,7 +297,7 @@ namespace Zenith_SaveData
 			{
 				Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: Checksum mismatch in '%s' (expected 0x%08X, computed 0x%08X). File may be corrupted.",
 					szPath, xHeader.uChecksum, uComputedChecksum);
-				return false;
+				return Zenith_ErrorCode::CORRUPT_DATA;
 			}
 		}
 
@@ -304,7 +311,7 @@ namespace Zenith_SaveData
 		Zenith_Log(LOG_CATEGORY_CORE, "SaveData: Loaded from '%s' (game version %u, %llu bytes payload)",
 			szPath, xHeader.uGameVersion, xHeader.ulPayloadSize);
 
-		return true;
+		return Zenith_ErrorCode::SUCCESS;
 	}
 
 	// ============================================================================

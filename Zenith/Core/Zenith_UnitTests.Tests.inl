@@ -6921,6 +6921,63 @@ void Zenith_UnitTests::TestSceneLoadValidation(){
 	}
 }
 
+// Wave9.1 (a) regression: ValidateSceneStream only gates the 8-byte HEADER; a file
+// with a well-formed header but a corrupt BODY (e.g. an entity count of 0xFFFFFFFF
+// from a truncated/garbled file) used to be loaded unconditionally — spinning ~4
+// billion iterations and building a half-loaded world. LoadFromDataStream now has
+// bounded body guards that return false. Pin that (1) a wild entity count and (2) a
+// claimed-but-absent entity body are both rejected gracefully, leaving zero entities
+// (so the Operations.cpp rollback can unwind to a clean INVALID_SCENE). The count-vs-
+// remaining guard rejects BEFORE any ReadEntity call reads past EOF, so DataStream's
+// debug operator>> overflow assert never fires.
+#ifndef ZENITH_ANDROID
+ZENITH_TEST(Scene, SceneBodyCorruptionFailsGracefully) { Zenith_UnitTests::TestSceneBodyCorruptionFailsGracefully(); }
+#endif
+void Zenith_UnitTests::TestSceneBodyCorruptionFailsGracefully(){
+
+	// Case 1: well-formed header, then a wild entity count (0xFFFFFFFF) with no
+	// further bytes. The count vastly exceeds the remaining stream, so guard 1
+	// rejects before the entity loop runs — no half-world is built.
+	{
+		// Exact-size stream: GetSize() must report the 12 written header bytes, not the
+		// default 1024-byte capacity — else guard 1 (count > remaining bytes) cannot fire
+		// on an in-memory stream (operator<< only grows the buffer, never shrinks it).
+		Zenith_DataStream xStream(sizeof(u_int) * 3);
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream << (u_int)0xFFFFFFFFu;
+		xStream.SetCursor(0);
+
+		Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("BodyCorruptionTest");
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+
+		bool bOk = pxSceneData->LoadFromDataStream(xStream);
+		ZENITH_ASSERT_FALSE(bOk, "LoadFromDataStream accepted a wild (0xFFFFFFFF) entity count");
+		ZENITH_ASSERT_EQ(pxSceneData->GetEntityCount(), 0, "Corrupt-count load must leave zero entities (got %u)", pxSceneData->GetEntityCount());
+
+		g_xEngine.Scenes().UnloadScene(xScene);
+	}
+
+	// Case 2: well-formed header claiming 5 entities, but zero entity bytes follow.
+	// 5 > 0 remaining bytes, so guard 1 again rejects before reading past EOF.
+	{
+		Zenith_DataStream xStream(sizeof(u_int) * 3);
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream << (u_int)5u;
+		xStream.SetCursor(0);
+
+		Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("BodyCorruptionTest2");
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+
+		bool bOk = pxSceneData->LoadFromDataStream(xStream);
+		ZENITH_ASSERT_FALSE(bOk, "LoadFromDataStream accepted a claimed-but-absent entity body");
+		ZENITH_ASSERT_EQ(pxSceneData->GetEntityCount(), 0, "Truncated-body load must leave zero entities (got %u)", pxSceneData->GetEntityCount());
+
+		g_xEngine.Scenes().UnloadScene(xScene);
+	}
+}
+
 // wave8.5: the reusable DataStream envelope helper. Pin that a header round-trips
 // (write then read back the four fields), that the read is non-destructive and
 // leaves the cursor positioned for the payload on success, and that the two

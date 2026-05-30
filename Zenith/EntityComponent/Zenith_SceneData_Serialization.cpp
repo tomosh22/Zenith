@@ -261,11 +261,40 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	u_int uNumEntities;
 	xStream >> uNumEntities;
 
+	// Wave9.1 (a) guard 1: bounded sanity on the entity count BEFORE we start
+	// allocating. A corrupt count (e.g. 0xFFFFFFFF from a truncated/garbled file)
+	// would otherwise spin ~4 billion iterations building junk entities into a
+	// half-loaded world (in SINGLE mode the old world is already torn down). The
+	// bound is conservative — minimum 1 byte per entity — so a count that exceeds
+	// the raw bytes still remaining in the stream is provably corrupt and can never
+	// reject a valid scene. Returning false here re-activates the existing rollback
+	// in Zenith_SceneSystem_Operations.cpp (UnloadSceneForced on !bDeserialised).
+	const uint64_t ulRemaining = xStream.GetSize() - xStream.GetCursor();
+	if (uNumEntities > ulRemaining)
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene body: entity count %u exceeds remaining %llu bytes",
+			uNumEntities, (unsigned long long)ulRemaining);
+		return false;
+	}
+
 	std::unordered_map<uint32_t, Zenith_EntityID> xFileIndexToNewID; // #TODO: Replace with engine hash map
 	xFileIndexToNewID.reserve(uNumEntities);
 
 	for (u_int u = 0; u < uNumEntities; u++)
+	{
+		// Wave9.1 (a) guard 2: detect a stalled cursor. A malformed entity record
+		// that consumes no bytes would loop forever (or re-read the same garbage);
+		// if the cursor did not advance AND there are still more entities claimed,
+		// the body is corrupt. The u+1<uNumEntities gate avoids falsely rejecting a
+		// final, well-formed entity that legitimately ends exactly at EOF.
+		const uint64_t ulBefore = xStream.GetCursor();
 		ReadEntityFromDataStream(xStream, uVersion, xFileIndexToNewID);
+		if (xStream.GetCursor() <= ulBefore && u + 1 < uNumEntities)
+		{
+			Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene body: no read progress at entity %u/%u", u, uNumEntities);
+			return false;
+		}
+	}
 
 	// Rebuild hierarchy
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
@@ -285,6 +314,16 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 				xTransform.SetParentByID(it->second);
 			}
 		}
+	}
+
+	// Wave9.1 (a) guard 3: the trailing main-camera index is mandatory. If the
+	// stream is truncated before it, the body is malformed — bail (re-activating
+	// the Operations.cpp rollback) rather than letting operator>> clamp/no-op and
+	// silently leaving the camera index garbage.
+	if (xStream.GetCursor() + sizeof(uint32_t) > xStream.GetSize())
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene body: truncated before camera index");
+		return false;
 	}
 
 	// Read main camera
