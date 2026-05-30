@@ -929,6 +929,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_AccessSet.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
@@ -959,6 +960,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_CommandList.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_FeatureRegistry.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_GraphicsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
@@ -1939,6 +1941,7 @@
     <ClCompile Include="..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_PerFrame.cpp" />

@@ -39,6 +39,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #include "Flux/Flux_RendererImpl.h"
+#include "Flux/Flux_FeatureRegistry.h"
 
 // Phase 6a-1: Flux namespace state moved off Flux class onto
 // Flux_RendererImpl held by Zenith_Engine. Static facade methods below
@@ -225,41 +226,34 @@ void Flux_RendererImpl::LateInitialise()
 #endif
 
 	g_xEngine.FluxGraphics().Initialise();
-	g_xEngine.HDR().Initialise();  // Must be before DeferredShading - deferred renders to HDR target
+
 #ifdef ZENITH_TOOLS
+	// ImGui is the tail of the inline prologue. It depends only on the Vulkan
+	// device + swapchain format (see Zenith_Vulkan::InitialiseImGuiRenderPass),
+	// not on any registry feature, so bringing it up here — before the
+	// FluxGraphics-onward feature walk — is dependency-safe. Gizmos (which DOES
+	// depend on ImGui) is registered as a feature and initialised by the walk.
 	g_xEngine.Vulkan().InitialiseImGui();
-	g_xEngine.Gizmos().Initialise();
 #endif
-	g_xEngine.Shadows().Initialise();
-	g_xEngine.Skybox().Initialise();       // Cubemap skybox + procedural atmosphere
-	g_xEngine.IBL().Initialise();          // Image-based lighting (BRDF LUT, environment probes)
-	g_xEngine.StaticMeshes().Initialise();
-	g_xEngine.AnimatedMeshes().Initialise();
-	g_xEngine.InstancedMeshes().Initialise();
-	g_xEngine.Terrain().Initialise();
-	g_xEngine.Grass().Initialise();        // Grass/vegetation (after terrain)
-	g_xEngine.Primitives().Initialise();
-	// Wave 9 DI seam: inject HiZ's cross-subsystem deps explicitly (swapchain +
-	// graphics are initialised above; FluxRenderer is `*this`). The reusable
-	// template — see Flux_HiZImpl's header comment for the pattern other
-	// subsystems follow.
-	g_xEngine.HiZ().Initialise(g_xEngine.VulkanSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer());          // Hi-Z depth pyramid (needed by SSR)
-	g_xEngine.SSR().Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
-	g_xEngine.SSGI().Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
-	g_xEngine.DynamicLights().Initialise();   // Light gather + upload (front-end for clustered deferred)
-	g_xEngine.LightClustering().Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
-	g_xEngine.DeferredShading().Initialise(); // Reads cluster buffers + light buffer in fragment shader
-	g_xEngine.Decals().Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
-	// Wave-11 DI seam (2nd leaf seam after HiZ): inject SSAO's cross-subsystem
-	// deps explicitly (graphics + swapchain initialised above; HDR initialised
-	// earlier in this LateInitialise). Same reusable template as HiZ — see
-	// Flux_SSAOImpl's header comment.
-	g_xEngine.SSAO().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanSwapchain(), g_xEngine.HDR());
-	g_xEngine.Fog().Initialise();
-	g_xEngine.SDFs().Initialise();
-	g_xEngine.Particles().Initialise();
-	g_xEngine.Quads().Initialise();
-	g_xEngine.Text().Initialise();
+
+	// Wave-13.B: the per-subsystem Initialise() ladder that used to live inline
+	// here now walks the Flux_FeatureRegistry. RegisterDefaultFeatures() emits
+	// the features in the SAME init order (FluxGraphics is brought up inline
+	// above; the walk starts at HDR — FluxGraphics' registry init trampoline is
+	// null) and a debug golden-order assert backs the sequence. The DI seams
+	// (HiZ / SSAO) gather their dependency params from g_xEngine inside their
+	// init trampolines — see Flux_FeatureRegistry.cpp. The dependency rationale
+	// documented at the top of this function still holds; the registry preserves
+	// that order rather than replacing it.
+	Flux_FeatureRegistry::RegisterDefaultFeatures();
+	const Flux_FeatureRegistry& xRegistry = Flux_FeatureRegistry::Get();
+	for (u_int uFeature = 0; uFeature < xRegistry.GetNumFeatures(); uFeature++)
+	{
+		const Flux_FeatureDesc& xDesc = xRegistry.GetFeatures()[uFeature];
+		if (xDesc.m_pfnInitialise != nullptr)
+			xDesc.m_pfnInitialise();
+	}
+
 	g_xEngine.VulkanMemory().EndFrame(false);
 
 	// Create and compile the render graph
@@ -379,43 +373,33 @@ void Flux_RendererImpl::SetupRenderGraph()
 	g_xEngine.FluxGraphics().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.HDR().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph); // HDR scene target used by many subsystems
 
-	// Preprocessing
-	g_xEngine.IBL().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Skybox().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	// Wave-13.B: the feature SetupRenderGraph ladder now walks the
+	// Flux_FeatureRegistry in four sub-walks separated by the inline irregulars
+	// below. The order is identical to the pre-refactor sequence and is backed
+	// by the registry's debug golden-order assert. The irregulars are NOT plain
+	// feature SetupRenderGraph calls and so stay inline:
+	//   - FluxGraphics/HDR SetupTransients (above, before phase 1)
+	//   - Skybox aerial perspective (separate method, after phase 1)
+	//   - post-fog game render hook (after phase 2)
+	//   - HDR's second SetupRenderGraph (it IS a feature, in phase 3)
+	//   - final-RT layout-transition pass (below, after phase 4)
+	const Flux_FeatureRegistry& xRegistry = Flux_FeatureRegistry::Get();
 
-	// Geometry (all write to G-Buffer + Depth)
-	g_xEngine.Shadows().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.StaticMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Terrain().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Primitives().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.AnimatedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.InstancedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Grass().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	// Phase 1: preprocessing (IBL, Skybox) -> geometry G-buffer writers
+	// (Shadows, StaticMeshes, Terrain, Primitives, AnimatedMeshes,
+	// InstancedMeshes, Grass) -> decals (after writers, before readers) ->
+	// screen-space effects (HiZ, SSR, SSGI) -> clustering + deferred lighting.
+	// Clustering precedes DeferredShading so the per-cluster light lists are
+	// declared as writers before the shading pass reads them.
+	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
 
-	// Decals (read G-Buffer + depth, write G-Buffer MRTs). Must be
-	// registered after all G-buffer writers and before all G-buffer
-	// readers so the topo sort places it correctly. Grass doesn't write
-	// the G-buffer, so its position relative to decals is irrelevant.
-	g_xEngine.Decals().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-
-	// Screen-space effects
-	g_xEngine.HiZ().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.SSR().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.SSGI().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-
-	// Lighting & composition
-	// Clustering runs first — its outputs (per-cluster light index lists) are
-	// read by the deferred-shading fragment shader. The graph orders these via
-	// .ReadsBuffer / .WritesBuffer declarations, but registering in this order
-	// keeps the source-side intent explicit.
-	g_xEngine.LightClustering().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.DeferredShading().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	// Aerial perspective runs after DeferredShading — it blends scattering on
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
 	// topological order correct.
 	g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.SSAO().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Fog().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+
+	// Phase 2: SSAO + Fog.
+	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_SSAO_FOG);
 
 	// Game-side post-fog hook: contracted to fire AFTER engine fog passes are
 	// registered and BEFORE any post-processing passes. Games that disable the
@@ -423,17 +407,11 @@ void Flux_RendererImpl::SetupRenderGraph()
 	// their own atmospheric pass register here. See Zenith_GameRenderHook.h.
 	Zenith_GameRenderHook::InvokePostFogRegistrations(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
-	// Post-processing
-	g_xEngine.SDFs().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Particles().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.HDR().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	// Phase 3: post-processing (SDFs, Particles, HDR composite).
+	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_POST_PROCESS);
 
-	// UI & presentation
-	g_xEngine.Quads().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.Text().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-#ifdef ZENITH_TOOLS
-	g_xEngine.Gizmos().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-#endif
+	// Phase 4: UI & presentation (Quads, Text, [tools] Gizmos).
+	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_UI);
 
 	// Final-layout transition pass — leaves the Final Render Target in
 	// SHADER_READ_ONLY_OPTIMAL so the swapchain copy command buffer (which
@@ -471,31 +449,18 @@ void Flux_RendererImpl::Shutdown()
 	// callbacks would otherwise deref the now-null g_xEngine.FluxRenderer().m_pxRenderGraph and crash.
 	g_xEngine.FluxRenderer().m_xResChangeCallbacks.Clear();
 
-	// Shutdown Flux subsystems in REVERSE order of initialization
-	// This ensures dependencies are destroyed after their dependents
-	// NOTE: Flux_Fog does not have a Shutdown() method - relies on RAII / stateless
-	g_xEngine.Text().Shutdown();
-	g_xEngine.Quads().Shutdown();
-	g_xEngine.Particles().Shutdown();
-	g_xEngine.SDFs().Shutdown();
-	// Flux_Fog - no Shutdown() method
-	g_xEngine.DeferredShading().Shutdown(); // Lighting pipeline + shader
-	g_xEngine.SSAO().Shutdown();           // SSAO render targets
-	g_xEngine.Decals().Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
-	g_xEngine.LightClustering().Shutdown(); // Cluster compute pass (frees cluster buffers)
-	g_xEngine.DynamicLights().Shutdown();   // Light gather front-end (frees unified light buffer)
-	g_xEngine.SSGI().Shutdown();         // Before HiZ (SSGI uses Hi-Z)
-	g_xEngine.SSR().Shutdown();          // Before HiZ (SSR uses Hi-Z)
-	g_xEngine.HiZ().Shutdown();          // Hi-Z depth pyramid
-	g_xEngine.Primitives().Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
-	g_xEngine.Grass().Shutdown();        // After Terrain (depends on terrain data)
-	g_xEngine.Terrain().Shutdown();
-	g_xEngine.InstancedMeshes().Shutdown();
-	g_xEngine.AnimatedMeshes().Shutdown(); // GBuffer + Shadow pipelines/shaders
-	g_xEngine.StaticMeshes().Shutdown();   // GBuffer + Shadow pipelines/shaders
-	g_xEngine.IBL().Shutdown();          // After Skybox (uses skybox for environment)
-	g_xEngine.Skybox().Shutdown();
-	g_xEngine.Shadows().Shutdown();
+	// Shutdown Flux subsystems in REVERSE order of initialization. This ensures
+	// dependencies are destroyed after their dependents.
+	//
+	// Wave-13.B: the explicit reverse-order .Shutdown() ladder (Text -> ... ->
+	// Shadows) now walks the Flux_FeatureRegistry's explicit shutdown order
+	// (transcribed exactly from the former ladder, NOT a mechanical reverse of
+	// init; backed by the registry's debug golden-order assert). Features with
+	// no Shutdown() trampoline (Fog — RAII / stateless) are skipped. The
+	// non-feature teardown below (Slang / HotReload / ImGui) and the three
+	// inline-shutdown features (Gizmos, HDR, FluxGraphics — each kept inline
+	// here, deliberately absent from the registry shutdown walk) follow.
+	Flux_FeatureRegistry::Get().RunShutdown();
 
 #ifdef ZENITH_WINDOWS
 	Flux_SlangCompiler::Shutdown();

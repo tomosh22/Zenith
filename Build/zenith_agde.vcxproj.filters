@@ -784,6 +784,9 @@
     <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
@@ -3465,6 +3468,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_AccessSet.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -3553,6 +3559,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_FeatureRegistry.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h">
