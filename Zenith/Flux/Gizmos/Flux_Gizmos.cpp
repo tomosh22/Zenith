@@ -233,11 +233,21 @@ void Flux_GizmosImpl::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Ze
 	xOutBitangent = glm::cross(xAxis, xOutTangent);
 }
 
-// ==================== RENDERING ====================
+// ==================== PREPARE (main thread) ====================
 
-static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
+// WS11.A keystone: the Gizmos pass is the last live-ECS read inside a Flux
+// worker record callback. This Prepare runs on the main thread (before any
+// record task is dispatched — see Flux_RenderGraph::Execute) and performs the
+// GetEditableTransform ECS read here, computes the gizmo matrix/scale/entity
+// position, snapshots the interaction-highlight state, and (under ZENITH_DEBUG)
+// issues the three interaction-bound wireframe cubes — also on the main thread,
+// where Flux_Primitives mutation is safe. The worker record callback then reads
+// ONLY m_xDrawPacket. Mirrors Flux_StaticMeshesImpl::GatherDrawPacket.
+void Flux_GizmosImpl::GatherGizmoPacket(void*)
 {
-	(void)pUserData;
+	Flux_GizmoDrawPacket& xPacket = g_xEngine.Gizmos().m_xDrawPacket;
+	xPacket.m_bValid = false;
+
 	if (!Zenith_GraphicsOptions::Get().m_bGizmosEnabled)
 	{
 		return;
@@ -249,17 +259,18 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	Zenith_TransformComponent& xTransform = *pxTransform;
-
 	// Calculate gizmo scale based on camera distance for consistent screen size
 	Zenith_Maths::Vector3 xEntityPos;
-	xTransform.GetPosition(xEntityPos);
+	pxTransform->GetPosition(xEntityPos);
 	Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	float fDistance = glm::length(xEntityPos - xCameraPos);
+	// Keep the live member in sync — the interaction raycast path (RaycastGizmo /
+	// ApplyTranslation / ApplyScale) reads m_fGizmoScale outside the packet.
 	g_xEngine.Gizmos().m_fGizmoScale = fDistance / GIZMO_AUTO_SCALE_DISTANCE;
 
 #ifdef ZENITH_DEBUG
-	// Visualize gizmo interaction bounding boxes for debugging
+	// Visualize gizmo interaction bounding boxes for debugging. Now issued on the
+	// main thread from Prepare (was previously a worker-thread shared-state write).
 	g_xEngine.Primitives().AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * g_xEngine.Gizmos().m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale),
 		Zenith_Maths::Vector3(1, 0, 0));
@@ -275,9 +286,38 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 	Zenith_Maths::Matrix4 xGizmoMatrix = glm::translate(Zenith_Maths::Matrix4(1.0f), xEntityPos);
 	xGizmoMatrix = glm::scale(xGizmoMatrix, Zenith_Maths::Vector3(g_xEngine.Gizmos().m_fGizmoScale));
 
+	// Snapshot everything the worker record callback needs.
+	xPacket.m_xGizmoMatrix      = xGizmoMatrix;
+	xPacket.m_xEntityPos        = xEntityPos;
+	xPacket.m_fGizmoScale       = g_xEngine.Gizmos().m_fGizmoScale;
+	xPacket.m_eMode             = g_xEngine.Gizmos().m_eMode;
+	xPacket.m_eHoveredComponent = g_xEngine.Gizmos().m_eHoveredComponent;
+	xPacket.m_eActiveComponent  = g_xEngine.Gizmos().m_eActiveComponent;
+	xPacket.m_bIsInteracting    = g_xEngine.Gizmos().m_bIsInteracting;
+	xPacket.m_bValid            = true;
+}
+
+// ==================== RENDERING ====================
+
+static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
+
+	// Worker thread: read ONLY the packet gathered on the main thread in
+	// GatherGizmoPacket. No GetEditableTransform, no ECS access, no Primitives
+	// mutation here. m_bValid covers the gizmos-disabled and no-editable-target
+	// cases (both resolved during Prepare).
+	const Flux_GizmoDrawPacket& xPacket = g_xEngine.Gizmos().m_xDrawPacket;
+	if (!xPacket.m_bValid)
+	{
+		return;
+	}
+
+	const Zenith_Maths::Matrix4& xGizmoMatrix = xPacket.m_xGizmoMatrix;
+
 	// Select geometry based on mode
 	Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>* pxGeometry = nullptr;
-	switch (g_xEngine.Gizmos().m_eMode)
+	switch (xPacket.m_eMode)
 	{
 		case GizmoMode::Translate: pxGeometry = &g_xEngine.Gizmos().m_xTranslateGeometry; break;
 		case GizmoMode::Rotate: pxGeometry = &g_xEngine.Gizmos().m_xRotateGeometry; break;
@@ -317,9 +357,9 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 
 		// Highlight hovered or active component
 		xPushConstants.m_fHighlightIntensity = 0.0f;
-		if (xGeom.m_eComponent == g_xEngine.Gizmos().m_eHoveredComponent && !g_xEngine.Gizmos().m_bIsInteracting)
+		if (xGeom.m_eComponent == xPacket.m_eHoveredComponent && !xPacket.m_bIsInteracting)
 			xPushConstants.m_fHighlightIntensity = 0.5f;
-		else if (xGeom.m_eComponent == g_xEngine.Gizmos().m_eActiveComponent && g_xEngine.Gizmos().m_bIsInteracting)
+		else if (xGeom.m_eComponent == xPacket.m_eActiveComponent && xPacket.m_bIsInteracting)
 			xPushConstants.m_fHighlightIntensity = 1.0f;
 
 		xBinder.BindDrawConstants(g_xEngine.Gizmos().m_xShader, "GizmoPushConstants", &xPushConstants, sizeof(xPushConstants));
@@ -331,7 +371,12 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 
 void Flux_GizmosImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// WS11.A: hang the main-thread Prepare on the Gizmos pass so the editable-
+	// transform ECS read + Primitives mutation happen before any worker record
+	// task runs (mirrors Flux_StaticMeshesImpl::SetupRenderGraph). ExecuteGizmos
+	// then reads only the gathered packet.
 	xGraph.AddPass("Gizmos", ExecuteGizmos)
+		.Prepare([](void* p){ g_xEngine.Gizmos().GatherGizmoPacket(p); })
 		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
