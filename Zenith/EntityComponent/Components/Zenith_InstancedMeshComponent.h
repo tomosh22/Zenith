@@ -1,12 +1,13 @@
 #pragma once
 
 #include "EntityComponent/Zenith_Entity.h"
-#include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
-#include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include <string>
 #include <vector>
 
 class Zenith_MeshAsset;
+class Flux_InstanceGroup;
+class Flux_AnimationTexture;
+class Flux_MeshInstance;
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
