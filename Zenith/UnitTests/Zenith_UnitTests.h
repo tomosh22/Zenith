@@ -59,6 +59,7 @@ public:
 	static void TestSceneRoundTrip();
 	static void TestSceneLoadValidation();
 	static void TestSceneBodyCorruptionFailsGracefully();
+	static void TestSceneComponentSchemaVersion();
 	static void TestSceneDisableDestroyHelpers();
 
 	// Animation system tests

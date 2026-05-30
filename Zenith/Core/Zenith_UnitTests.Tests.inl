@@ -6978,6 +6978,191 @@ void Zenith_UnitTests::TestSceneBodyCorruptionFailsGracefully(){
 	}
 }
 
+// wave9.3: per-component schemaVersion in .zscen (scene v6, INERT). The field is
+// written per component OUTSIDE the size-prefixed payload, so legacy v3/4/5 files
+// (which carry no such field) and the v6 unknown-component SkipBytes path both stay
+// byte-aligned. Three pins: (1) a v6 save stamps version 6 in the header and still
+// round-trips a Transform; (2) a hand-crafted PRE-v6 (v5) stream loads cleanly with
+// the Transform intact — proving v<6 consumes ZERO schemaVersion bytes; (3) a v6
+// stream whose only component names a bogus type loads cleanly AND the trailing
+// camera index still reads — proving the v6 size-skip stays aligned past the
+// schemaVersion field.
+#ifndef ZENITH_ANDROID // (1) uses std::filesystem with a relative path, like the sibling scene tests
+ZENITH_TEST(Scene, SceneComponentSchemaVersion) { Zenith_UnitTests::TestSceneComponentSchemaVersion(); }
+#endif
+void Zenith_UnitTests::TestSceneComponentSchemaVersion(){
+
+	// The registry key for the Transform component is "Transform" (not
+	// "TransformComponent") — see Zenith_ComponentMeta.cpp FinalizeRegistration.
+	const std::string strTransformTypeName = "Transform";
+
+	// ------------------------------------------------------------------
+	// Shared helper: a real Transform payload (exactly what SerializeEntityComponents
+	// writes between the size prefix and the next component) for a known position.
+	// Built by serializing a live Transform into a scratch stream so the test stays
+	// robust to the component's field layout.
+	// ------------------------------------------------------------------
+	const Zenith_Maths::Vector3 xKnownPos(12.5f, -7.0f, 3.25f);
+
+	Zenith_Scene xSrcScene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionSrcScene");
+	Zenith_SceneData* pxSrcSceneData = g_xEngine.Scenes().GetSceneData(xSrcScene);
+
+	// Capture the Transform payload bytes once, from a throwaway entity.
+	Zenith_DataStream xTransformPayload;
+	u_int uTransformPayloadSize = 0;
+	{
+		Zenith_Entity xPayloadEntity(pxSrcSceneData, "PayloadEntity");
+		xPayloadEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xKnownPos);
+		xPayloadEntity.GetComponent<Zenith_TransformComponent>().WriteToDataStream(xTransformPayload);
+		uTransformPayloadSize = static_cast<u_int>(xTransformPayload.GetCursor());
+		ZENITH_ASSERT_GT(uTransformPayloadSize, 0u, "SchemaVersion: captured Transform payload is empty");
+	}
+
+	// ==================================================================
+	// (1) v6 round-trip: save a real scene, reopen the raw bytes and check the
+	//     header version is uSCENE_VERSION_CURRENT (6), then LoadFromFile and
+	//     verify the Transform round-trips.
+	// ==================================================================
+	{
+		const std::string strScenePath = "unit_test_schemaversion_v6" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xSaveScene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV6SaveScene");
+		Zenith_SceneData* pxSaveSceneData = g_xEngine.Scenes().GetSceneData(xSaveScene);
+
+		Zenith_Entity xEntity(pxSaveSceneData, "SchemaV6Entity");
+		xEntity.SetTransient(false);
+		xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xKnownPos);
+
+		pxSaveSceneData->SaveToFile(strScenePath);
+		ZENITH_ASSERT_TRUE(std::filesystem::exists(strScenePath), "SchemaVersion: v6 scene file was not created");
+
+		// Reopen the raw bytes: header is [magic u_int][version u_int]. Assert the
+		// version field is the current scene version (6).
+		{
+			Zenith_DataStream xRaw;
+			xRaw.ReadFromFile(strScenePath.c_str());
+			ZENITH_ASSERT_TRUE(xRaw.IsValid(), "SchemaVersion: could not reopen v6 scene file");
+			u_int uMagic = 0;
+			u_int uVersion = 0;
+			xRaw >> uMagic;
+			xRaw >> uVersion;
+			ZENITH_ASSERT_EQ(uMagic, (u_int)Zenith_SceneData::uSCENE_MAGIC, "SchemaVersion: v6 file magic mismatch");
+			ZENITH_ASSERT_EQ(uVersion, (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT, "SchemaVersion: saved scene version is not uSCENE_VERSION_CURRENT (6)");
+		}
+
+		// Load it back through the normal path and confirm the Transform survived.
+		Zenith_Scene xLoadScene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV6LoadScene");
+		Zenith_SceneData* pxLoadSceneData = g_xEngine.Scenes().GetSceneData(xLoadScene);
+		ZENITH_ASSERT_TRUE(pxLoadSceneData->LoadFromFile(strScenePath), "SchemaVersion: v6 LoadFromFile failed");
+
+		Zenith_Entity xLoaded = pxLoadSceneData->FindEntityByName("SchemaV6Entity");
+		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "SchemaVersion: v6 entity not found after round-trip");
+		ZENITH_ASSERT_TRUE(xLoaded.HasComponent<Zenith_TransformComponent>(), "SchemaVersion: v6 entity missing Transform");
+		Zenith_Maths::Vector3 xLoadedPos;
+		xLoaded.GetComponent<Zenith_TransformComponent>().GetPosition(xLoadedPos);
+		ZENITH_ASSERT_EQ(xLoadedPos, xKnownPos, "SchemaVersion: v6 Transform position did not round-trip");
+
+		g_xEngine.Scenes().UnloadScene(xSaveScene);
+		g_xEngine.Scenes().UnloadScene(xLoadScene);
+		std::filesystem::remove(strScenePath);
+	}
+
+	// ==================================================================
+	// (2) v5 back-compat: hand-craft an in-memory PRE-v6 stream and load it. The
+	//     pre-v6 component layout is [typeName][size][payload] — NO schemaVersion.
+	//     If LoadFromDataStream consumed a schemaVersion for v5 it would desync and
+	//     the Transform (and trailer) would be garbage. Asserting the Transform
+	//     matches proves v<6 reads zero schemaVersion bytes.
+	// ==================================================================
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)5u;                      // version 5 (pre-v6)
+		xStream << (u_int)1u;                      // entity count
+
+		// Entity: [fileIndex u32][name str] then components (v4/5 entity layout).
+		xStream << (uint32_t)0u;                   // file index
+		xStream << std::string("V5Entity");        // name
+
+		// Components: [count u_int] then per-component [typeName][size][payload].
+		xStream << (u_int)1u;                      // one component
+		xStream << strTransformTypeName;           // "Transform"
+		xStream << (u_int)uTransformPayloadSize;   // size prefix (payload only)
+		xStream.WriteData(xTransformPayload.GetData(), uTransformPayloadSize);
+
+		// Trailer: main camera file index (none).
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+
+		xStream.SetCursor(0);
+
+		Zenith_Scene xV5Scene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV5Scene");
+		Zenith_SceneData* pxV5SceneData = g_xEngine.Scenes().GetSceneData(xV5Scene);
+		ZENITH_ASSERT_TRUE(pxV5SceneData->LoadFromDataStream(xStream), "SchemaVersion: hand-crafted v5 stream failed to load");
+		ZENITH_ASSERT_EQ(pxV5SceneData->GetEntityCount(), 1u, "SchemaVersion: v5 stream produced wrong entity count");
+
+		Zenith_Entity xLoaded = pxV5SceneData->FindEntityByName("V5Entity");
+		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "SchemaVersion: v5 entity not found");
+		ZENITH_ASSERT_TRUE(xLoaded.HasComponent<Zenith_TransformComponent>(), "SchemaVersion: v5 entity missing Transform");
+		Zenith_Maths::Vector3 xLoadedPos;
+		xLoaded.GetComponent<Zenith_TransformComponent>().GetPosition(xLoadedPos);
+		ZENITH_ASSERT_EQ(xLoadedPos, xKnownPos, "SchemaVersion: v5 Transform did not match (v<6 must consume NO schemaVersion bytes)");
+
+		g_xEngine.Scenes().UnloadScene(xV5Scene);
+	}
+
+	// ==================================================================
+	// (3) unknown-component-in-v6: craft a v6 stream whose only component names a
+	//     bogus type, with a schemaVersion + a payload size. The reader must
+	//     consume the schemaVersion (v6 gate), then SkipBytes(size) for the unknown
+	//     type, and STILL land exactly on the trailing camera index. Asserting the
+	//     load succeeds + the entity exists proves the v6 size-skip stays aligned
+	//     past the schemaVersion field.
+	// ==================================================================
+	{
+		const u_int uBogusPayloadSize = 13u;       // arbitrary, distinct from sizeof(u_int)
+
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;  // version 6
+		xStream << (u_int)1u;                      // entity count
+
+		// Entity: [fileIndex u32][name str].
+		xStream << (uint32_t)0u;
+		xStream << std::string("V6UnknownEntity");
+
+		// Components: [count] then [typeName][schemaVersion][size][payload] (v6 layout).
+		xStream << (u_int)1u;                      // one component
+		xStream << std::string("BogusComponentXYZ");
+		xStream << (u_int)7u;                       // schemaVersion (outside the payload)
+		xStream << (u_int)uBogusPayloadSize;        // payload size
+		for (u_int u = 0; u < uBogusPayloadSize; ++u)
+		{
+			uint8_t uByte = static_cast<uint8_t>(0xA0u + u);
+			xStream.WriteData(&uByte, 1);
+		}
+
+		// Trailer: main camera file index (none). If the size-skip were misaligned
+		// (e.g. by failing to consume the schemaVersion), reading this would consume
+		// payload bytes instead and the load would desync.
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+
+		xStream.SetCursor(0);
+
+		Zenith_Scene xV6Scene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV6UnknownScene");
+		Zenith_SceneData* pxV6SceneData = g_xEngine.Scenes().GetSceneData(xV6Scene);
+		ZENITH_ASSERT_TRUE(pxV6SceneData->LoadFromDataStream(xStream), "SchemaVersion: v6 unknown-component stream failed to load (size-skip misaligned?)");
+		ZENITH_ASSERT_EQ(pxV6SceneData->GetEntityCount(), 1u, "SchemaVersion: v6 unknown-component stream produced wrong entity count");
+
+		Zenith_Entity xLoaded = pxV6SceneData->FindEntityByName("V6UnknownEntity");
+		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "SchemaVersion: v6 unknown-component entity not found (trailer misread => skip misaligned)");
+
+		g_xEngine.Scenes().UnloadScene(xV6Scene);
+	}
+
+	// Tear down the source scene that owns the captured payload.
+	g_xEngine.Scenes().UnloadScene(xSrcScene);
+}
+
 // wave8.5: the reusable DataStream envelope helper. Pin that a header round-trips
 // (write then read back the four fields), that the read is non-destructive and
 // leaves the cursor positioned for the payload on success, and that the two

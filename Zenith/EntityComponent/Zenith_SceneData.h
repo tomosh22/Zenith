@@ -254,8 +254,18 @@ public:
 	// uSCENE_VERSION_CURRENT here and the call sites that reference it:
 	//   SaveToFile, LoadFromDataStream.
 	// All of them reference these constants — no magic numbers elsewhere.
+	//
+	// Version history (read/write asymmetry is intentional — see DeserializeEntityComponents):
+	//   v3      legacy entity layout (explicit per-entity child-index list)
+	//   v4/v5   compact entity layout [fileIndex][name]; per-component [typeName][size][payload]
+	//   v6      adds an OPTIONAL per-component schemaVersion written OUTSIDE the
+	//           size-prefixed payload: [typeName][schemaVersion u_int][size u_int][payload].
+	//           INERT this wave — no component opts in yet (every component reports
+	//           the default schema 1), but the field round-trips so a later component
+	//           migration can branch on it. v3/4/5 files carry no schemaVersion bytes;
+	//           the read path is gated on (uSceneVersion >= 6) so they stay byte-aligned.
 	static constexpr u_int uSCENE_MAGIC                 = 0x5A53434E;
-	static constexpr u_int uSCENE_VERSION_CURRENT       = 5;
+	static constexpr u_int uSCENE_VERSION_CURRENT       = 6;
 	static constexpr u_int uSCENE_VERSION_MIN_SUPPORTED = 3;
 
 	// Non-destructive header validator: saves/restores the stream cursor so the

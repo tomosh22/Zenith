@@ -157,7 +157,10 @@ Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xS
 	Zenith_Entity xEntity(this, xNewID);
 	xEntity.AddComponent<Zenith_TransformComponent>();
 
-	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
+	// Pass the .zscen header version so the component reader knows whether to
+	// consume the per-component schemaVersion field (scene v6+). Pre-v6 files
+	// carry no such field; the version gate keeps them byte-aligned.
+	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream, uVersion);
 
 	if (uVersion == 3 && uFileParentIndex != Zenith_EntityID::INVALID_INDEX)
 	{
