@@ -250,7 +250,11 @@ void Flux_RendererImpl::LateInitialise()
 	g_xEngine.LightClustering().Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
 	g_xEngine.DeferredShading().Initialise(); // Reads cluster buffers + light buffer in fragment shader
 	g_xEngine.Decals().Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
-	g_xEngine.SSAO().Initialise();
+	// Wave-11 DI seam (2nd leaf seam after HiZ): inject SSAO's cross-subsystem
+	// deps explicitly (graphics + swapchain initialised above; HDR initialised
+	// earlier in this LateInitialise). Same reusable template as HiZ — see
+	// Flux_SSAOImpl's header comment.
+	g_xEngine.SSAO().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanSwapchain(), g_xEngine.HDR());
 	g_xEngine.Fog().Initialise();
 	g_xEngine.SDFs().Initialise();
 	g_xEngine.Particles().Initialise();

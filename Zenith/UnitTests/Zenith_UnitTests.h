@@ -617,6 +617,14 @@ public:
 	// flaky here.)
 	static void TestHiZInjectedDepsWired();
 
+	// Wave-11 DI-seam test for Flux_SSAOImpl (2nd leaf seam, same WS9.2 template
+	// as HiZ). A default-constructed instance is headless-safe, so this is a
+	// pure-CPU seam test: the three injected-dep member pointers (graphics,
+	// swapchain, HDR) default nullptr, and assigning distinct sentinel pointers
+	// proves the storage slots exist and are independent. Sentinels never
+	// dereferenced (SSAO's real Initialise wiring runs only in non-headless boot).
+	static void TestSSAOInjectedDepsWired();
+
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
 	// Vulkan device required — the resolver path takes a reflection pointer

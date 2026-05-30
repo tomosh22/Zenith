@@ -14723,6 +14723,50 @@ void Zenith_UnitTests::TestHiZInjectedDepsWired(){
 }
 
 // ============================================================================
+// Flux_SSAOImpl dependency-injection seam test (Wave-11, 2nd leaf seam)
+// ============================================================================
+// Flux_SSAOImpl's Initialise now takes its cross-subsystem deps (graphics,
+// swapchain, HDR) as explicit references and stores them in member pointers —
+// the same reusable DI template as Flux_HiZImpl (WS9.2). The real wiring happens
+// in Flux.cpp's Flux_RendererImpl::LateInitialise, which only runs in the
+// non-headless boot path. Because the test runner may execute headless
+// (LateInitialise skipped, so the live g_xEngine.SSAO() pointers stay nullptr),
+// a post-init "==&g_xEngine.FluxGraphics()" assertion would be flaky. Instead
+// this is a pure-CPU seam test on a stack-constructed instance
+// (default-constructed Flux_SSAOImpl is headless-safe, like Flux_RenderGraph):
+//   1. the three injected-dep member pointers default to nullptr, and
+//   2. assigning distinct non-null sentinel pointers stores into the right
+//      slots.
+// The sentinels are reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/SSAO/Flux_SSAOImpl.h"
+
+ZENITH_TEST(Flux, SSAOInjectedDepsWired) { Zenith_UnitTests::TestSSAOInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestSSAOInjectedDepsWired(){
+	Flux_SSAOImpl xSSAO;
+
+	// 1. Fresh instance: all three injected-dep pointers default to nullptr.
+	ZENITH_ASSERT_NULL(xSSAO.m_pxGraphics,  "Fresh Flux_SSAOImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSSAO.m_pxSwapchain, "Fresh Flux_SSAOImpl: m_pxSwapchain defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSSAO.m_pxHDR,       "Fresh Flux_SSAOImpl: m_pxHDR defaults nullptr (headless-safe)");
+
+	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
+	//    and are independent (the DI seam stores each ref into its own member).
+	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
+	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x2000));
+	Flux_HDRImpl*            pxSentinelHDR       = reinterpret_cast<Flux_HDRImpl*>           (static_cast<uintptr_t>(0x3000));
+
+	xSSAO.m_pxGraphics  = pxSentinelGraphics;
+	xSSAO.m_pxSwapchain = pxSentinelSwapchain;
+	xSSAO.m_pxHDR       = pxSentinelHDR;
+
+	ZENITH_ASSERT_EQ(xSSAO.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xSSAO.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
+	ZENITH_ASSERT_EQ(xSSAO.m_pxHDR,       pxSentinelHDR,       "m_pxHDR stores the injected HDR pointer");
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.
