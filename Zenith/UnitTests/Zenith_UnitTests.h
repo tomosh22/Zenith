@@ -191,6 +191,12 @@ public:
 	static void TestQueryCount();
 	static void TestQueryFirstAndAny();
 
+	// WS10 sparse-set keystone: fuzz cross-check that the sparse-set query read
+	// path returns the EXACT same matched-entity set as the legacy scan path
+	// (and matches an independent ground-truth oracle), across ~5000 random
+	// Add/Remove/Destroy+recreate/cross-scene-move ops.
+	static void TestQuerySparseLegacyEquivalence();
+
 	// ECS event system tests (Phase 5)
 	static void TestEventSubscribeDispatch();
 	static void TestEventUnsubscribe();

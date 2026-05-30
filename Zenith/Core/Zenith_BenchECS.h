@@ -27,4 +27,10 @@ void Zenith_BenchECS_Run();
 // returns the total number of component instances visited across all
 // iterations (the "processed count"). Used both by Zenith_BenchECS_Run (for
 // the printed sweep) and by the Core/BenchECSSmoke unit test (tiny N/iters).
-u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters);
+//
+// WS10: bUseSparse selects the Query READ path for the hot ForEach loops. The
+// flag is pinned via g_xEngine.Scenes().SetSparseQueryReads(bUseSparse) around
+// the hot loops and the prior value restored before return. The Add/Remove
+// churn always dual-writes the sparse index regardless of path. Defaults to
+// true (sparse) so the existing Core/BenchECSSmoke call site is unchanged.
+u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters, bool bUseSparse = true);

@@ -31,8 +31,15 @@
 // Deterministic: every choice is keyed off the loop index, so the processed
 // count is reproducible across runs and machines.
 // ============================================================================
-u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters)
+u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters, bool bUseSparse)
 {
+	// WS10 A/B: pin the Query read path (sparse vs legacy) for this whole pass
+	// and restore the engine's prior toggle value before returning. The
+	// Add/Remove churn below dual-writes the sparse index regardless of path, so
+	// flipping the read path mid-bench is safe.
+	const bool bPrevSparse = g_xEngine.Scenes().AreSparseQueryReadsEnabled();
+	g_xEngine.Scenes().SetSparseQueryReads(bUseSparse);
+
 	// Distinct scene name per entity count so repeated calls don't collide.
 	char acSceneName[128];
 	std::snprintf(acSceneName, sizeof(acSceneName), "BenchECS_%u", uNumEntities);
@@ -121,6 +128,9 @@ u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters)
 
 	g_xEngine.Scenes().UnloadScene(xScene);
 
+	// Restore the engine's prior read-path toggle (leave no side effect).
+	g_xEngine.Scenes().SetSparseQueryReads(bPrevSparse);
+
 	return ulProcessed;
 }
 
@@ -142,16 +152,47 @@ void Zenith_BenchECS_Run()
 	{
 		const u_int uNumEntities = auEntityCounts[uCountIndex];
 
-		const std::chrono::steady_clock::time_point xStart = std::chrono::steady_clock::now();
-		const u_int64 ulProcessed = Zenith_BenchECS_RunOnce(uNumEntities, uBENCH_ITERS);
-		const std::chrono::steady_clock::time_point xEnd = std::chrono::steady_clock::now();
+		// WS10 A/B: run the SAME workload twice per N — once with the legacy read
+		// path, once with the sparse fast path — and print one tagged BENCH line
+		// each. The Add/Remove churn is identical (it dual-writes the sparse index
+		// regardless), so the two passes are over the same logical workload.
 
-		const double fElapsedMs =
-			std::chrono::duration<double, std::milli>(xEnd - xStart).count();
+		// --- legacy ---
+		const std::chrono::steady_clock::time_point xStartLegacy = std::chrono::steady_clock::now();
+		const u_int64 ulProcessedLegacy = Zenith_BenchECS_RunOnce(uNumEntities, uBENCH_ITERS, /*bUseSparse=*/false);
+		const std::chrono::steady_clock::time_point xEndLegacy = std::chrono::steady_clock::now();
+		const double fLegacyMs = std::chrono::duration<double, std::milli>(xEndLegacy - xStartLegacy).count();
 
-		std::printf("BENCH ecs.query_foreach N=%u iters=%u ms=%.3f processed=%llu\n",
-			uNumEntities, uBENCH_ITERS, fElapsedMs,
-			static_cast<unsigned long long>(ulProcessed));
+		std::printf("BENCH ecs.query_foreach path=legacy N=%u iters=%u ms=%.3f processed=%llu\n",
+			uNumEntities, uBENCH_ITERS, fLegacyMs,
+			static_cast<unsigned long long>(ulProcessedLegacy));
+		std::fflush(stdout);
+
+		// --- sparse ---
+		const std::chrono::steady_clock::time_point xStartSparse = std::chrono::steady_clock::now();
+		const u_int64 ulProcessedSparse = Zenith_BenchECS_RunOnce(uNumEntities, uBENCH_ITERS, /*bUseSparse=*/true);
+		const std::chrono::steady_clock::time_point xEndSparse = std::chrono::steady_clock::now();
+		const double fSparseMs = std::chrono::duration<double, std::milli>(xEndSparse - xStartSparse).count();
+
+		std::printf("BENCH ecs.query_foreach path=sparse N=%u iters=%u ms=%.3f processed=%llu\n",
+			uNumEntities, uBENCH_ITERS, fSparseMs,
+			static_cast<unsigned long long>(ulProcessedSparse));
+		std::fflush(stdout);
+
+		// Correctness self-check INSIDE the bench: both read paths must visit the
+		// same number of component instances for the identical workload. A
+		// mismatch means the sparse index diverged from the legacy map — a hard
+		// regression — so assert it loudly.
+		Zenith_Assert(ulProcessedLegacy == ulProcessedSparse,
+			"BenchECS A/B mismatch at N=%u: legacy processed=%llu, sparse processed=%llu",
+			uNumEntities,
+			static_cast<unsigned long long>(ulProcessedLegacy),
+			static_cast<unsigned long long>(ulProcessedSparse));
+
+		// Optional human-readable ratio line (legacy/sparse). Guard the divide.
+		const double fRatio = (fSparseMs > 0.0) ? (fLegacyMs / fSparseMs) : 0.0;
+		std::printf("BENCH ecs.query_foreach.ratio N=%u legacy_over_sparse=%.3f\n",
+			uNumEntities, fRatio);
 		std::fflush(stdout);
 	}
 

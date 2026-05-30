@@ -13,3 +13,13 @@
 //
 // Defined in Internal/Zenith_SceneSystem_Lifecycle.cpp.
 bool Zenith_AreRenderTasksActive();
+
+// WS10: same cycle-break pattern for the sparse-set query read toggle. The
+// templated Zenith_Query<Ts...> in Zenith_Query.h must read the toggle without
+// including Zenith_SceneSystem.h (that would close the include cycle, since
+// SceneSystem.h pulls in SceneData.h -> Query types). This free-function
+// forwards to g_xEngine.Scenes().AreSparseQueryReadsEnabled(). Query.h includes
+// THIS header and calls the forwarder.
+//
+// Defined in Internal/Zenith_SceneSystem_Lifecycle.cpp, beside the one above.
+bool Zenith_AreSparseQueryReadsEnabled();

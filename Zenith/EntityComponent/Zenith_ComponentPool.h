@@ -45,6 +45,19 @@ public:
 	u_int m_uCapacity = 0;  // Allocated capacity
 	Zenith_Vector<Zenith_EntityID> m_xOwningEntities;
 
+	// Sparse-set index (WS10 keystone). Maps an entity SLOT index
+	// (Zenith_EntityID::m_uIndex) -> the DENSE pool index that holds that
+	// entity's component, or uINVALID_DENSE when the entity has no component of
+	// this type. This is the O(1) "does entity E have component T, and where?"
+	// lookup the sparse-set query fast path walks instead of the per-entity
+	// component map. It is maintained ADDITIVELY by the pool mutators below
+	// (EmplaceBack / MoveEmplaceBack / MoveConstructAt / RemoveAtSwapAndPop) so
+	// every existing call site dual-writes it automatically — no SceneData /
+	// Entity call-site edits are needed. The legacy m_axEntityComponents map
+	// stays authoritative for the public accessors; this is a parallel index.
+	Zenith_Vector<u_int> m_xSparse;
+	static constexpr u_int uINVALID_DENSE = 0xFFFFFFFFu;
+
 	static constexpr u_int uINITIAL_CAPACITY = 16;
 
 	Zenith_ComponentPool() = default;
@@ -82,6 +95,33 @@ public:
 
 	u_int GetSize() const { return m_uSize; }
 
+	//--------------------------------------------------------------------------
+	// Sparse-set index maintenance (WS10)
+	//--------------------------------------------------------------------------
+
+	// Point entity slot uSlot at dense index uDense. Zenith_Vector has no
+	// fill-resize (the doubling Resize is private; Reserve grows capacity but
+	// not size), so grow the logical size with a PushBack(uINVALID_DENSE) loop
+	// until uSlot is addressable, then write the entry. Newly grown slots in
+	// between default to uINVALID_DENSE (no component), which is exactly the
+	// "absent" sentinel GetSparseDense returns.
+	void SetSparse(u_int uSlot, u_int uDense)
+	{
+		while (m_xSparse.GetSize() <= uSlot)
+		{
+			m_xSparse.PushBack(uINVALID_DENSE);
+		}
+		m_xSparse.Get(uSlot) = uDense;
+	}
+
+	// Dense index for entity slot uSlot, or uINVALID_DENSE if the slot has never
+	// been pointed at this pool (sparse array shorter than uSlot) or was cleared.
+	// NON-asserting: an out-of-range slot is simply "absent".
+	u_int GetSparseDense(u_int uSlot) const
+	{
+		return (uSlot < m_xSparse.GetSize()) ? m_xSparse.Get(uSlot) : uINVALID_DENSE;
+	}
+
 	// Allocate a new slot at the end and construct component in-place
 	template<typename... Args>
 	u_int EmplaceBack(Zenith_EntityID xOwner, Args&&... args)
@@ -93,6 +133,8 @@ public:
 		u_int uIndex = m_uSize++;
 		new (&m_pxData[uIndex]) T(std::forward<Args>(args)...);
 		m_xOwningEntities.PushBack(xOwner);
+		// Sparse dual-write: entity slot -> this new dense index.
+		SetSparse(xOwner.m_uIndex, uIndex);
 		return uIndex;
 	}
 
@@ -111,13 +153,24 @@ public:
 	{
 		Zenith_Assert(uIndex < m_uSize, "RemoveAtSwapAndPop: Index %u out of range (size=%u)", uIndex, m_uSize);
 
-		// Capture the owner of the last live element FIRST — before any move /
-		// destruct mutates the parallel owner array.
+		// Capture the owner of the last live element AND the owner being removed
+		// FIRST — before any move / destruct mutates the parallel owner array.
 		const u_int uLastIndex = m_uSize - 1;
 		const Zenith_EntityID xMovedOwner = m_xOwningEntities.Get(uLastIndex);
+		const Zenith_EntityID xRemovedOwner = m_xOwningEntities.Get(uIndex);
 
 		// Destruct the component being removed.
 		m_pxData[uIndex].~T();
+
+		// Sparse dual-write, step 1: the removed entity no longer has this
+		// component. Clear it FIRST so the clear-then-repoint order is correct
+		// even when uIndex == uLastIndex (removed == tail): the single tail entry
+		// is cleared and nothing repoints it back. When uIndex != uLastIndex and
+		// removed != tail, step 2 below repoints the tail owner; if removed ==
+		// tail it cannot happen here (that is the last/only branch). SetSparse
+		// (not a bare Get-assign) so the write is bounds-safe even in the
+		// impossible-by-construction case of a short sparse array.
+		SetSparse(xRemovedOwner.m_uIndex, uINVALID_DENSE);
 
 		if (uIndex != uLastIndex)
 		{
@@ -129,10 +182,15 @@ public:
 			m_xOwningEntities.Get(uIndex) = xMovedOwner;
 			m_xOwningEntities.PopBack();  // POD EntityID — drops the now-duplicated tail entry, keeps size == m_uSize
 			m_uSize--;
+			// Sparse dual-write, step 2: the tail element now lives at uIndex.
+			// Repoint its owner's sparse entry. (Safe even if xMovedOwner ==
+			// xRemovedOwner is impossible here — they are different live slots.)
+			SetSparse(xMovedOwner.m_uIndex, uIndex);
 			return xMovedOwner;
 		}
 
-		// uIndex was the last/only slot: nothing moved.
+		// uIndex was the last/only slot: nothing moved. Sparse was already
+		// cleared above; do ONLY the clear (no repoint).
 		m_xOwningEntities.PopBack();
 		m_uSize--;
 		return INVALID_ENTITY_ID;
@@ -145,6 +203,8 @@ public:
 		Zenith_Assert(uIndex < m_uSize, "MoveConstructAt: Index out of range");
 		new (&m_pxData[uIndex]) T(std::move(xSource));
 		m_xOwningEntities.Get(uIndex) = xOwner;
+		// Sparse dual-write: entity slot -> this (existing) dense index.
+		SetSparse(xOwner.m_uIndex, uIndex);
 	}
 
 	// Move a component into a new slot at the end (for cross-scene transfer)
@@ -157,10 +217,17 @@ public:
 		u_int uIndex = m_uSize++;
 		new (&m_pxData[uIndex]) T(std::move(xSource));
 		m_xOwningEntities.PushBack(xOwner);
+		// Sparse dual-write: entity slot -> this new dense index.
+		SetSparse(xOwner.m_uIndex, uIndex);
 		return uIndex;
 	}
 
 private:
+	// NOTE (WS10 sparse index): Grow() reallocates the dense component buffer but
+	// every live element keeps its SAME dense index [0, m_uSize) — only the
+	// backing storage address moves. The sparse array maps entity-slot -> dense
+	// index, and those dense indices are unchanged, so Grow() MUST NOT touch
+	// m_xSparse. (Capacity, not logical contents, changed.)
 	void Grow()
 	{
 		u_int uNewCapacity = m_uCapacity == 0 ? uINITIAL_CAPACITY : m_uCapacity * 2;

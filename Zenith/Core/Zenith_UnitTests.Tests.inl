@@ -24,6 +24,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"  // WS10 fuzz cross-check (Light is a headless-safe component)
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "Core/Zenith_BenchECS.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
@@ -6830,6 +6831,319 @@ void Zenith_UnitTests::TestQueryNestedReentrancy(){
 
 	g_xEngine.Scenes().UnloadScene(xTestScene);
 }
+
+// WS10 sparse-set keystone fuzz cross-check. Hammers the ECS with thousands of
+// deterministic random Add / Remove / Destroy+recreate / cross-scene-move ops,
+// and periodically asserts that:
+//   (a) the SPARSE read path and the LEGACY read path return the IDENTICAL
+//       matched-entity set for a battery of query combos, AND
+//   (b) that set equals an INDEPENDENT ground-truth oracle (a plain bool array
+//       per type, indexed by local entity-array index — derived from neither
+//       ECS path).
+// This is the correctness backstop for the whole wave: the sparse index is a
+// parallel structure maintained by the pool mutators, so the only way to trust
+// it is to diff it against the legacy scan AND an oracle that knows nothing
+// about either. Uses a self-written fixed-seed PRNG (no std::rand) so the run
+// is reproducible. Guarded like its scene-touching siblings.
+#ifndef ZENITH_ANDROID
+namespace
+{
+	// Fixed-seed xorshift32 PRNG. Deterministic, self-contained — no std::rand.
+	struct WS10_Rng
+	{
+		uint32_t m_uState;
+		explicit WS10_Rng(uint32_t uSeed) : m_uState(uSeed ? uSeed : 0x1u) {}
+		uint32_t Next()
+		{
+			uint32_t x = m_uState;
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			m_uState = x;
+			return x;
+		}
+		// Uniform-ish in [0, uN). uN assumed small relative to 2^32 (it is here).
+		uint32_t NextBelow(uint32_t uN) { return uN ? (Next() % uN) : 0u; }
+	};
+
+	// Per-local-slot ground-truth oracle. Index into the arrays below == the
+	// stable LOCAL entity-array index (NOT the engine EntityID, which changes on
+	// destroy+recreate). m_xId tracks the CURRENT EntityID for that slot.
+	struct WS10_Oracle
+	{
+		Zenith_Vector<Zenith_EntityID> m_xId;       // current EntityID per local slot
+		Zenith_Vector<bool>            m_bAlive;     // entity exists right now
+		Zenith_Vector<bool>            m_bInQueried; // currently in the QUERIED scene (false when moved out)
+		Zenith_Vector<bool>            m_bHasCamera; // Camera component present (Transform == alive, auto)
+		Zenith_Vector<bool>            m_bHasLight;  // Light component present
+	};
+
+	// Tiny insertion sort over packed EntityIDs (the test TU has no sort helper).
+	void WS10_SortPacked(Zenith_Vector<uint64_t>& xVals)
+	{
+		for (u_int i = 1; i < xVals.GetSize(); ++i)
+		{
+			const uint64_t ulKey = xVals.Get(i);
+			u_int j = i;
+			while (j > 0 && xVals.Get(j - 1) > ulKey)
+			{
+				xVals.Get(j) = xVals.Get(j - 1);
+				--j;
+			}
+			xVals.Get(j) = ulKey;
+		}
+	}
+
+	bool WS10_PackedVectorsEqual(const Zenith_Vector<uint64_t>& xA, const Zenith_Vector<uint64_t>& xB)
+	{
+		if (xA.GetSize() != xB.GetSize()) return false;
+		for (u_int i = 0; i < xA.GetSize(); ++i)
+		{
+			if (xA.Get(i) != xB.Get(i)) return false;
+		}
+		return true;
+	}
+
+	// Bitmask of which queried component types a combo requires.
+	enum WS10_ComboMask : uint32_t
+	{
+		WS10_T = 1u << 0,  // Transform (always present while alive)
+		WS10_C = 1u << 1,  // Camera
+		WS10_L = 1u << 2,  // Light
+	};
+
+	// Build the oracle's expected matched set (as packed EntityIDs) for a combo,
+	// restricted to entities alive AND in the queried scene.
+	void WS10_OracleExpected(const WS10_Oracle& xOracle, uint32_t uMask, Zenith_Vector<uint64_t>& xOut)
+	{
+		xOut.Clear();
+		for (u_int i = 0; i < xOracle.m_bAlive.GetSize(); ++i)
+		{
+			if (!xOracle.m_bAlive.Get(i)) continue;
+			if (!xOracle.m_bInQueried.Get(i)) continue;
+			if ((uMask & WS10_C) && !xOracle.m_bHasCamera.Get(i)) continue;
+			if ((uMask & WS10_L) && !xOracle.m_bHasLight.Get(i)) continue;
+			// Transform always satisfied for an alive entity (auto-added).
+			xOut.PushBack(xOracle.m_xId.Get(i).GetPacked());
+		}
+		WS10_SortPacked(xOut);
+	}
+}
+
+ZENITH_TEST(ECS, QuerySparseLegacyEquivalence) { Zenith_UnitTests::TestQuerySparseLegacyEquivalence(); }
+void Zenith_UnitTests::TestQuerySparseLegacyEquivalence(){
+
+	// Pin the toggle so we can flip it deterministically; restore at the end.
+	const bool bPrevSparse = g_xEngine.Scenes().AreSparseQueryReadsEnabled();
+
+	Zenith_Scene xSceneA = g_xEngine.Scenes().CreateEmptyScene("WS10_FuzzSceneA"); // the QUERIED scene
+	Zenith_Scene xSceneB = g_xEngine.Scenes().CreateEmptyScene("WS10_FuzzSceneB"); // cross-scene move target
+	Zenith_SceneData* pxA = g_xEngine.Scenes().GetSceneData(xSceneA);
+	Zenith_SceneData* pxB = g_xEngine.Scenes().GetSceneData(xSceneB);
+	ZENITH_ASSERT_NOT_NULL(pxA, "WS10: scene A has no data");
+	ZENITH_ASSERT_NOT_NULL(pxB, "WS10: scene B has no data");
+
+	WS10_Rng xRng(0xC0FFEEu);
+	WS10_Oracle xOracle;
+
+	// --- Seed ~300 entities in scene A (each auto-carries Transform). ---
+	const u_int uNumEntities = 300u;
+	for (u_int i = 0; i < uNumEntities; ++i)
+	{
+		char acName[64];
+		std::snprintf(acName, sizeof(acName), "WS10_E%u", i);
+		Zenith_Entity xEnt(pxA, acName);
+		const Zenith_EntityID xId = xEnt.GetEntityID();
+
+		bool bCam = (xRng.NextBelow(2u) == 0u);
+		bool bLit = (xRng.NextBelow(2u) == 0u);
+		if (bCam) xEnt.AddComponent<Zenith_CameraComponent>();
+		if (bLit) xEnt.AddComponent<Zenith_LightComponent>();
+
+		xOracle.m_xId.PushBack(xId);
+		xOracle.m_bAlive.PushBack(true);
+		xOracle.m_bInQueried.PushBack(true);
+		xOracle.m_bHasCamera.PushBack(bCam);
+		xOracle.m_bHasLight.PushBack(bLit);
+	}
+
+	// Collect a query's ForEach EntityIDs (as packed, sorted) under the CURRENTLY
+	// pinned read path. Takes the query BY REFERENCE and calls ForEach on it; the
+	// generic-lambda variadic param pack ignores the component refs.
+	auto CollectForEach = [&](auto& xQuery, Zenith_Vector<uint64_t>& xOut)
+	{
+		xOut.Clear();
+		xQuery.ForEach([&xOut](Zenith_EntityID xId, auto&...) { xOut.PushBack(xId.GetPacked()); });
+		WS10_SortPacked(xOut);
+	};
+
+	// Run ONE query through both read paths + the oracle and assert all three
+	// agree. The query type-list is fixed by the caller via the xQuery argument;
+	// uMask tells the oracle which components the combo requires.
+	auto CheckCombo = [&](auto xQuery, uint32_t uMask)
+	{
+		Zenith_Vector<uint64_t> xLegacy;
+		Zenith_Vector<uint64_t> xSparse;
+		Zenith_Vector<uint64_t> xExpected;
+
+		g_xEngine.Scenes().SetSparseQueryReads(false);
+		CollectForEach(xQuery, xLegacy);
+		g_xEngine.Scenes().SetSparseQueryReads(true);
+		CollectForEach(xQuery, xSparse);
+
+		WS10_OracleExpected(xOracle, uMask, xExpected);
+
+		ZENITH_ASSERT_TRUE(WS10_PackedVectorsEqual(xLegacy, xSparse),
+			"WS10: sparse vs legacy mismatch (mask=%u): legacy=%u sparse=%u",
+			uMask, xLegacy.GetSize(), xSparse.GetSize());
+		ZENITH_ASSERT_TRUE(WS10_PackedVectorsEqual(xSparse, xExpected),
+			"WS10: matched set != oracle (mask=%u): sparse=%u oracle=%u",
+			uMask, xSparse.GetSize(), xExpected.GetSize());
+	};
+
+	// The battery of combos (matches the spec list). Each constructs a fresh
+	// Zenith_Query over scene A; the mask tells the oracle which components are
+	// required.
+	auto RunBattery = [&]()
+	{
+		CheckCombo(Zenith_Query<Zenith_TransformComponent>(*pxA),                                                  WS10_T);
+		CheckCombo(Zenith_Query<Zenith_CameraComponent>(*pxA),                                                     WS10_C);
+		CheckCombo(Zenith_Query<Zenith_TransformComponent, Zenith_CameraComponent>(*pxA),                          WS10_T | WS10_C);
+		CheckCombo(Zenith_Query<Zenith_TransformComponent, Zenith_LightComponent>(*pxA),                           WS10_T | WS10_L);
+		CheckCombo(Zenith_Query<Zenith_TransformComponent, Zenith_CameraComponent, Zenith_LightComponent>(*pxA),   WS10_T | WS10_C | WS10_L);
+		CheckCombo(Zenith_Query<Zenith_CameraComponent, Zenith_LightComponent>(*pxA),                              WS10_C | WS10_L);
+	};
+
+	// Validate the seeded state before any churn.
+	RunBattery();
+
+	// --- ~5000 random ops, oracle updated on each, battery every ~40 ops. ---
+	const u_int uNumOps = 5000u;
+	for (u_int uOp = 0; uOp < uNumOps; ++uOp)
+	{
+		const u_int uLocal = xRng.NextBelow(uNumEntities);
+		const uint32_t uAction = xRng.NextBelow(100u);
+
+		const bool bAlive    = xOracle.m_bAlive.Get(uLocal);
+		const bool bInQueried = xOracle.m_bInQueried.Get(uLocal);
+		const Zenith_EntityID xId = xOracle.m_xId.Get(uLocal);
+
+		// Resolve a live handle in whichever scene currently owns the entity.
+		Zenith_SceneData* pxOwner = bInQueried ? pxA : pxB;
+
+		if (uAction < 30u)
+		{
+			// Add/Remove CAMERA (only meaningful while alive).
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				if (xOracle.m_bHasCamera.Get(uLocal))
+				{
+					xEnt.RemoveComponent<Zenith_CameraComponent>();
+					xOracle.m_bHasCamera.Get(uLocal) = false;
+				}
+				else
+				{
+					xEnt.AddComponent<Zenith_CameraComponent>();
+					xOracle.m_bHasCamera.Get(uLocal) = true;
+				}
+			}
+		}
+		else if (uAction < 60u)
+		{
+			// Add/Remove LIGHT (only meaningful while alive).
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				if (xOracle.m_bHasLight.Get(uLocal))
+				{
+					xEnt.RemoveComponent<Zenith_LightComponent>();
+					xOracle.m_bHasLight.Get(uLocal) = false;
+				}
+				else
+				{
+					xEnt.AddComponent<Zenith_LightComponent>();
+					xOracle.m_bHasLight.Get(uLocal) = true;
+				}
+			}
+		}
+		else if (uAction < 75u)
+		{
+			// Cross-scene MOVE (toggle which scene owns the entity). Only ROOT
+			// entities can move (all of ours are roots). This exercises the
+			// source-pool swap-and-pop sparse clear + target-pool sparse set, and
+			// proves scene-A queries exclude moved-out entities (stale source
+			// sparse entries are rejected by the round-trip compare).
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				Zenith_Scene xTarget = bInQueried ? xSceneB : xSceneA;
+				const bool bMoved = Zenith_SceneSystem::MoveEntityToScene(xEnt, xTarget);
+				if (bMoved)
+				{
+					xOracle.m_bInQueried.Get(uLocal) = !bInQueried;
+					// EntityID is preserved across the move (global slot table).
+					xOracle.m_xId.Get(uLocal) = xEnt.GetEntityID();
+				}
+			}
+		}
+		else if (uAction < 88u)
+		{
+			// DESTROY (immediate, synchronous) — frees the slot (generation bump)
+			// and swap-and-pops its components out of the owning scene's pools.
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				xEnt.DestroyImmediate();
+				xOracle.m_bAlive.Get(uLocal) = false;
+				xOracle.m_bHasCamera.Get(uLocal) = false;
+				xOracle.m_bHasLight.Get(uLocal) = false;
+				xOracle.m_xId.Get(uLocal) = INVALID_ENTITY_ID;
+				// A destroyed slot is conceptually back in scene A for re-creation.
+				xOracle.m_bInQueried.Get(uLocal) = true;
+			}
+		}
+		else
+		{
+			// RE-CREATE a destroyed slot (drives slot reuse + generation change).
+			// Always re-create into scene A (the queried scene).
+			if (!bAlive)
+			{
+				char acName[64];
+				std::snprintf(acName, sizeof(acName), "WS10_R%u_%u", uLocal, uOp);
+				Zenith_Entity xEnt(pxA, acName);
+				bool bCam = (xRng.NextBelow(2u) == 0u);
+				bool bLit = (xRng.NextBelow(2u) == 0u);
+				if (bCam) xEnt.AddComponent<Zenith_CameraComponent>();
+				if (bLit) xEnt.AddComponent<Zenith_LightComponent>();
+
+				xOracle.m_xId.Get(uLocal) = xEnt.GetEntityID();
+				xOracle.m_bAlive.Get(uLocal) = true;
+				xOracle.m_bInQueried.Get(uLocal) = true;
+				xOracle.m_bHasCamera.Get(uLocal) = bCam;
+				xOracle.m_bHasLight.Get(uLocal) = bLit;
+			}
+		}
+
+		if ((uOp % 40u) == 0u)
+		{
+			RunBattery();
+		}
+	}
+
+	// Final battery after all churn.
+	RunBattery();
+
+	// Cleanup: unload both scenes; restore the toggle to its prior value.
+	g_xEngine.Scenes().SetSparseQueryReads(bPrevSparse);
+	g_xEngine.Scenes().UnloadScene(xSceneA);
+	g_xEngine.Scenes().UnloadScene(xSceneB);
+}
+#else
+// Android build: scene-fuzz test compiled out (mirrors sibling scene tests).
+ZENITH_TEST(ECS, QuerySparseLegacyEquivalence) {}
+void Zenith_UnitTests::TestQuerySparseLegacyEquivalence(){}
+#endif // ZENITH_ANDROID
 
 // Wave8 regression: the render-tasks-active signal is a real std::atomic compiled
 // in ALL configs (it used to exist only under ZENITH_ASSERT and otherwise returned

@@ -220,6 +220,19 @@ public:
 	}
 	void SetRenderTasksActive(bool b) { m_bRenderTasksActive.store(b, std::memory_order_release); }
 
+	// WS10 sparse-set query toggle. When true (the shipped default), Zenith_Query
+	// uses the O(matches) sparse-set fast path; when false it uses the legacy
+	// O(entities x types) scan. Both paths are kept (reversibility), and the
+	// pool always dual-writes the sparse index regardless of this flag, so the
+	// toggle can be flipped live (tests/bench pin a path and restore it). Atomic
+	// because ForEach may run on render-task worker threads, mirroring
+	// m_bRenderTasksActive. Compiled in ALL configs (not #ifdef-d).
+	bool AreSparseQueryReadsEnabled() const
+	{
+		return m_bUseSparseQueryReads.load(std::memory_order_acquire);
+	}
+	void SetSparseQueryReads(bool b) { m_bUseSparseQueryReads.store(b, std::memory_order_release); }
+
 	//==========================================================================
 	// Callback bus
 	//==========================================================================
@@ -392,6 +405,10 @@ private:
 	// Set true around ExecuteRenderGraph (see Zenith_Core.cpp); the scene-
 	// mutation asserts read it to permit concurrent reads during that window.
 	std::atomic<bool>             m_bRenderTasksActive { false };
+
+	// WS10 sparse-set query read path. Default true = sparse fast path shipped on.
+	// Plain std::atomic (NOT #ifdef-d) so it compiles + works in *_False configs.
+	std::atomic<bool>             m_bUseSparseQueryReads { true };
 
 	//==========================================================================
 	// Data members (was Zenith_SceneCallbackBus)

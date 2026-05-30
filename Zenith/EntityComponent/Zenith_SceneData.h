@@ -289,6 +289,11 @@ private:
 	friend class Zenith_SceneTests;
 	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;
+	// WS10: the sparse-set query fast path reaches component pools directly
+	// (TryGetComponentPool + the pool's m_xOwningEntities / GetSparseDense / Get).
+	// Query already held a Zenith_SceneData* and used its public accessors; the
+	// fast path additionally needs the (private) non-asserting pool fetch.
+	template<typename... Ts> friend class Zenith_Query;
 	// (Earlier revisions friended `class Zenith_Editor` here so editor code
 	// could reach into scene-data privates. Audited stale -- editor accesses
 	// scene data only through the public API -- and removed when
@@ -548,6 +553,22 @@ private:
 		Zenith_Assert(uTypeID < m_xComponents.GetSize(), "GetComponentPool: Component type not registered");
 		Zenith_ComponentPoolBase* pxPoolBase = m_xComponents.Get(uTypeID);
 		Zenith_Assert(pxPoolBase != nullptr, "GetComponentPool: Component pool does not exist");
+		return static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
+	}
+
+	// NON-asserting pool fetch (WS10). GetComponentPool asserts when the type is
+	// unregistered or the slot is null; the sparse-set query fast path needs to
+	// treat "no pool of this type in this scene" as simply an EMPTY result
+	// (Query<NeverAddedType> must not assert). Returns nullptr in that case.
+	// Friended to Zenith_Query via the Zenith_UnitTests-style access; Query holds
+	// a Zenith_SceneData* and calls this directly.
+	template<typename T>
+	Zenith_ComponentPool<T>* TryGetComponentPool() const
+	{
+		const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
+		if (uTypeID >= m_xComponents.GetSize()) return nullptr;
+		Zenith_ComponentPoolBase* pxPoolBase = m_xComponents.Get(uTypeID);
+		if (pxPoolBase == nullptr) return nullptr;
 		return static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
 	}
 

@@ -355,3 +355,7 @@ void Zenith_SceneSystem::DispatchFullLifecycleInit()
 
 #include "EntityComponent/Zenith_RenderTaskState.h"
 bool Zenith_AreRenderTasksActive() { return g_xEngine.Scenes().AreRenderTasksActive(); }
+
+// WS10: forwards the sparse-set query read toggle to Zenith_Query.h without the
+// header cycle (see Zenith_RenderTaskState.h for the rationale).
+bool Zenith_AreSparseQueryReadsEnabled() { return g_xEngine.Scenes().AreSparseQueryReadsEnabled(); }
