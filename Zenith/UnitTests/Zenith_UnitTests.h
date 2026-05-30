@@ -600,6 +600,15 @@ public:
 	static void TestRenderGraphLifetimeRecomputeIdempotent();
 	static void TestRenderGraphAliasingBarrierUsesTopologicalLastUse();
 
+	// Wave 9 DI-seam test for Flux_HiZImpl. A default-constructed instance is
+	// headless-safe (like Flux_RenderGraph), so this is a pure CPU seam test:
+	// the three injected-dep member pointers default nullptr, and assigning
+	// sentinel pointers proves the storage slots exist. The sentinels are never
+	// dereferenced. (HiZ's real Initialise wiring only runs in non-headless
+	// boot, which the test runner may skip, so a post-init assertion would be
+	// flaky here.)
+	static void TestHiZInjectedDepsWired();
+
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
 	// Vulkan device required — the resolver path takes a reflection pointer

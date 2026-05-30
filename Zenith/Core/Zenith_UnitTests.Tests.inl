@@ -14123,6 +14123,50 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 }
 
 // ============================================================================
+// Flux_HiZImpl dependency-injection seam test (Wave 9)
+// ============================================================================
+// Flux_HiZImpl's Initialise now takes its cross-subsystem deps (swapchain,
+// graphics, renderer) as explicit references and stores them in member
+// pointers — the reusable DI template for the other ~50 subsystems. The real
+// wiring happens in Flux.cpp's Flux_RendererImpl::LateInitialise, which only
+// runs in the non-headless boot path. Because the test runner may execute
+// headless (LateInitialise skipped, so the live g_xEngine.HiZ() pointers stay
+// nullptr), a post-init "==&g_xEngine.VulkanSwapchain()" assertion would be
+// flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
+// (default-constructed Flux_HiZImpl is headless-safe, like Flux_RenderGraph):
+//   1. the three injected-dep member pointers default to nullptr, and
+//   2. assigning distinct non-null sentinel pointers stores into the right
+//      slots.
+// The sentinels are reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/HiZ/Flux_HiZImpl.h"
+
+ZENITH_TEST(Flux, HiZInjectedDepsWired) { Zenith_UnitTests::TestHiZInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestHiZInjectedDepsWired(){
+	Flux_HiZImpl xHiZ;
+
+	// 1. Fresh instance: all three injected-dep pointers default to nullptr.
+	ZENITH_ASSERT_NULL(xHiZ.m_pxSwapchain, "Fresh Flux_HiZImpl: m_pxSwapchain defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xHiZ.m_pxGraphics,  "Fresh Flux_HiZImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xHiZ.m_pxRenderer,  "Fresh Flux_HiZImpl: m_pxRenderer defaults nullptr (headless-safe)");
+
+	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
+	//    and are independent (the DI seam stores each ref into its own member).
+	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x1000));
+	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x2000));
+	Flux_RendererImpl*       pxSentinelRenderer  = reinterpret_cast<Flux_RendererImpl*>      (static_cast<uintptr_t>(0x3000));
+
+	xHiZ.m_pxSwapchain = pxSentinelSwapchain;
+	xHiZ.m_pxGraphics  = pxSentinelGraphics;
+	xHiZ.m_pxRenderer  = pxSentinelRenderer;
+
+	ZENITH_ASSERT_EQ(xHiZ.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
+	ZENITH_ASSERT_EQ(xHiZ.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xHiZ.m_pxRenderer,  pxSentinelRenderer,  "m_pxRenderer stores the injected renderer pointer");
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.

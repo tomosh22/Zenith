@@ -239,7 +239,11 @@ void Flux_RendererImpl::LateInitialise()
 	g_xEngine.Terrain().Initialise();
 	g_xEngine.Grass().Initialise();        // Grass/vegetation (after terrain)
 	g_xEngine.Primitives().Initialise();
-	g_xEngine.HiZ().Initialise();          // Hi-Z depth pyramid (needed by SSR)
+	// Wave 9 DI seam: inject HiZ's cross-subsystem deps explicitly (swapchain +
+	// graphics are initialised above; FluxRenderer is `*this`). The reusable
+	// template — see Flux_HiZImpl's header comment for the pattern other
+	// subsystems follow.
+	g_xEngine.HiZ().Initialise(g_xEngine.VulkanSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer());          // Hi-Z depth pyramid (needed by SSR)
 	g_xEngine.SSR().Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	g_xEngine.SSGI().Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
 	g_xEngine.DynamicLights().Initialise();   // Light gather + upload (front-end for clustered deferred)
