@@ -3,6 +3,11 @@
 #endif
 #include "Zenith.h"
 #include "Zenith_Tools_TextureExport.h"
+// Wave-13 PCH slim round 2: <filesystem> was demoted out of Zenith.h. This TU
+// uses std::filesystem (path manipulation + recursive_directory_iterator below)
+// and was relying on the transitive PCH include (neither the local headers nor
+// assimp provide it), so it now carries the explicit include.
+#include <filesystem>
 
 // Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
 // Paths are constructed using ZENITH_ROOT (defined by build system) + project name
