@@ -23,3 +23,13 @@ bool Zenith_AreRenderTasksActive();
 //
 // Defined in Internal/Zenith_SceneSystem_Lifecycle.cpp, beside the one above.
 bool Zenith_AreSparseQueryReadsEnabled();
+
+// WS12: same cycle-break pattern for the parallel-sim WAVE-IN-FLIGHT signal.
+// SceneData.h's component-read assertion bodies (EntityHasComponent /
+// GetComponentFromEntity) must know whether a parallel OnUpdate wave is in
+// flight (so they permit worker-thread reads of the provably-disjoint eligible
+// entities), without including Zenith_SceneSystem.h (which would close the
+// include cycle). Forwards to g_xEngine.Scenes().AreParallelSimWaveActive().
+//
+// Defined in Internal/Zenith_SceneSystem_Lifecycle.cpp, beside the others.
+bool Zenith_IsParallelSimWaveActive();

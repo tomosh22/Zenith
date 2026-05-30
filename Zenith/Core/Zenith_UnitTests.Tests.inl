@@ -18,6 +18,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_AccessSet.h"  // WS12 parallel-sim conflict model
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -16020,4 +16021,256 @@ void Zenith_UnitTests::TestQueueFullSurfacesError(){
 	const u_int uRan = xData.m_uRunCount.load(std::memory_order_relaxed);
 	ZENITH_ASSERT_GT(uRan, 0u, "At least some submitted tasks should have executed");
 	ZENITH_ASSERT_LE(uRan, uNUM_TASKS, "Run count must never exceed the number of tasks submitted");
+}
+
+// ============================================================================
+// WS12 parallel-simulation: conflict model + serial-vs-parallel determinism
+// ============================================================================
+
+// (a) Pure unit test of the Zenith_AccessSet conflict math. No scene, no
+// threads — just the bit logic that decides eligibility. Pins: read-read never
+// conflicts; any shared write conflicts; un-annotated (0/0) maps to UNKNOWN
+// (conflicts with everything, not eligible); Transform-only is eligible; any
+// PHYSICS/UNKNOWN bit makes a mask ineligible.
+ZENITH_TEST(ECS, AccessSetConflictModel) { Zenith_UnitTests::TestAccessSetConflictModel(); }
+void Zenith_UnitTests::TestAccessSetConflictModel(){
+
+	using namespace Zenith_AccessSet;
+
+	const u_int uR_T = static_cast<u_int>(Zenith_ComponentAccess::READS_TRANSFORM);
+	const u_int uW_T = static_cast<u_int>(Zenith_ComponentAccess::WRITES_TRANSFORM);
+	const u_int uW_P = static_cast<u_int>(Zenith_ComponentAccess::WRITES_PHYSICS);
+
+	// Read-read never conflicts (two readers of Transform).
+	ZENITH_ASSERT_TRUE(!ConflictsWith(uR_T, 0u, uR_T, 0u),
+		"AccessSetConflictModel: two pure readers must not conflict");
+
+	// Write-write on the same domain conflicts.
+	ZENITH_ASSERT_TRUE(ConflictsWith(0u, uW_T, 0u, uW_T),
+		"AccessSetConflictModel: two writers of the same domain must conflict");
+
+	// Write-read on the same domain conflicts (A writes Transform, B reads it).
+	ZENITH_ASSERT_TRUE(ConflictsWith(0u, uW_T, uR_T, 0u),
+		"AccessSetConflictModel: writer vs reader of same domain must conflict");
+
+	// Disjoint domains do not conflict (A: Transform write, B: Physics write).
+	ZENITH_ASSERT_TRUE(!ConflictsWith(0u, uW_T, 0u, uW_P),
+		"AccessSetConflictModel: writes to disjoint domains must not conflict");
+
+	// UNKNOWN conflicts with everything that touches any domain.
+	ZENITH_ASSERT_TRUE(ConflictsWith(uACCESS_UNKNOWN, uACCESS_UNKNOWN, uR_T, 0u),
+		"AccessSetConflictModel: UNKNOWN must conflict with a Transform reader");
+	ZENITH_ASSERT_TRUE(ConflictsWith(uACCESS_UNKNOWN, uACCESS_UNKNOWN, 0u, uW_P),
+		"AccessSetConflictModel: UNKNOWN must conflict with a Physics writer");
+
+	// Un-annotated meta (both masks 0) maps to UNKNOWN, NOT "touches nothing".
+	Zenith_ComponentMeta xUnannotated;
+	xUnannotated.m_uReads = 0u;
+	xUnannotated.m_uWrites = 0u;
+	ZENITH_ASSERT_EQ(EffectiveReads(xUnannotated), uACCESS_UNKNOWN,
+		"AccessSetConflictModel: un-annotated component must read as UNKNOWN");
+	ZENITH_ASSERT_EQ(EffectiveWrites(xUnannotated), uACCESS_UNKNOWN,
+		"AccessSetConflictModel: un-annotated component must write as UNKNOWN");
+
+	// A component that legitimately declares writes-only (reads==0, writes!=0)
+	// must NOT be promoted to UNKNOWN — it declared something.
+	Zenith_ComponentMeta xWritesOnly;
+	xWritesOnly.m_uReads = 0u;
+	xWritesOnly.m_uWrites = uW_T;
+	ZENITH_ASSERT_EQ(EffectiveReads(xWritesOnly), 0u,
+		"AccessSetConflictModel: declared writes-only must keep reads==0");
+	ZENITH_ASSERT_EQ(EffectiveWrites(xWritesOnly), uW_T,
+		"AccessSetConflictModel: declared writes-only must keep its write mask");
+
+	// Subset eligibility: Transform-only eligible; UNKNOWN / PHYSICS not.
+	ZENITH_ASSERT_TRUE(MaskIsParallelEligible(uR_T | uW_T),
+		"AccessSetConflictModel: Transform-only aggregate must be eligible");
+	ZENITH_ASSERT_TRUE(MaskIsParallelEligible(0u),
+		"AccessSetConflictModel: empty aggregate must be eligible (no per-frame work)");
+	ZENITH_ASSERT_TRUE(!MaskIsParallelEligible(uACCESS_UNKNOWN),
+		"AccessSetConflictModel: UNKNOWN aggregate must NOT be eligible");
+	ZENITH_ASSERT_TRUE(!MaskIsParallelEligible(uR_T | uW_P),
+		"AccessSetConflictModel: any PHYSICS bit must make the aggregate ineligible");
+}
+
+namespace
+{
+	// Fixed-seed PRNG (xorshift32) for the determinism scene — std::rand is
+	// forbidden and would not be reproducible across the serial/parallel runs.
+	struct Zenith_DetRng
+	{
+		uint32_t m_uState;
+		explicit Zenith_DetRng(uint32_t uSeed) : m_uState(uSeed ? uSeed : 0x1234567u) {}
+		uint32_t Next()
+		{
+			uint32_t x = m_uState;
+			x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+			m_uState = x;
+			return x;
+		}
+		// Deterministic float in [fLo, fHi].
+		float NextFloat(float fLo, float fHi)
+		{
+			const float f01 = static_cast<float>(Next() & 0xFFFFFFu) / static_cast<float>(0xFFFFFF);
+			return fLo + (fHi - fLo) * f01;
+		}
+	};
+
+	// FNV-1a over the FIELD-BY-FIELD serialization of every entity's Transform
+	// (position + rotation + scale + parent index — see
+	// Zenith_TransformComponent::WriteToDataStream). Modelled on
+	// Test_ProcLevel_DeterminismCheck::HashLayout: we serialize each component
+	// via its own WriteToDataStream into a Zenith_DataStream and FNV the bytes,
+	// rather than memcpy-ing the struct, so uninitialised padding never feeds the
+	// hash. The Tween outputs are exactly position/rotation/scale, so this hash
+	// covers everything the parallel dispatch could perturb.
+	uint64_t Zenith_HashSceneTransforms(Zenith_SceneData* pxSceneData,
+	                                     const Zenith_Vector<Zenith_EntityID>& xIDs)
+	{
+		uint64_t h = 0xcbf29ce484222325ull;
+		auto Bytes = [&h](const void* p, size_t n)
+		{
+			const uint8_t* b = static_cast<const uint8_t*>(p);
+			for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 0x100000001b3ull; }
+		};
+
+		for (u_int u = 0; u < xIDs.GetSize(); ++u)
+		{
+			Zenith_EntityID uID = xIDs.Get(u);
+			if (!pxSceneData->EntityExists(uID)) { const uint8_t z = 0xAA; Bytes(&z, 1); continue; }
+			Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
+			if (!xEntity.HasComponent<Zenith_TransformComponent>()) { const uint8_t z = 0xBB; Bytes(&z, 1); continue; }
+
+			// Field-by-field via the component's own serializer. Hash the WRITTEN
+			// bytes (GetCursor — how far the write advanced), NOT GetSize (the
+			// buffer capacity), so the uninitialised buffer tail never feeds the
+			// hash (that tail is exactly the "uninitialised padding" the
+			// field-by-field methodology exists to avoid).
+			Zenith_DataStream xStream(256);
+			xEntity.GetComponent<Zenith_TransformComponent>().WriteToDataStream(xStream);
+			Bytes(xStream.GetData(), static_cast<size_t>(xStream.GetCursor()));
+		}
+		return h;
+	}
+
+	// Build a fixed, reproducible scene of uCount collider-free / script-free
+	// entities, each carrying a TweenComponent driving a deterministic looping
+	// ping-pong POSITION tween (and every 3rd entity also a looping SCALE tween)
+	// so the entities keep animating for the whole frame budget. Seeded purely
+	// off the entity index so the serial and parallel scenes are bit-identical at
+	// construction. Returns the active-entity snapshot in xIDsOut.
+	void Zenith_BuildDeterminismScene(Zenith_SceneData* pxSceneData, u_int uCount,
+	                                  Zenith_Vector<Zenith_EntityID>& xIDsOut)
+	{
+		Zenith_DetRng xRng(0xC0FFEEu);
+		xIDsOut.Reserve(uCount);
+
+		for (u_int u = 0; u < uCount; ++u)
+		{
+			char acName[64];
+			std::snprintf(acName, sizeof(acName), "DetTween_%u", u);
+			Zenith_Entity xEntity(pxSceneData, acName);
+
+			// Deterministic start position keyed off index.
+			const Zenith_Maths::Vector3 xStart(
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f));
+			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xStart);
+
+			Zenith_TweenComponent& xTween = xEntity.AddComponent<Zenith_TweenComponent>();
+
+			const Zenith_Maths::Vector3 xTo(
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f));
+			const float fDuration = xRng.NextFloat(0.2f, 1.0f);
+			xTween.TweenPositionFromTo(xStart, xTo, fDuration, EASING_QUAD_OUT);
+			xTween.SetLoop(true, /*bPingPong=*/true);
+
+			if ((u % 3u) == 0u)
+			{
+				const Zenith_Maths::Vector3 xScaleTo(
+					xRng.NextFloat(0.5f, 2.0f),
+					xRng.NextFloat(0.5f, 2.0f),
+					xRng.NextFloat(0.5f, 2.0f));
+				xTween.TweenScaleFromTo(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f), xScaleTo,
+					xRng.NextFloat(0.2f, 1.0f), EASING_QUAD_OUT);
+				xTween.SetLoop(true, /*bPingPong=*/true);
+			}
+
+			xIDsOut.PushBack(xEntity.GetEntityID());
+		}
+	}
+
+	// Run uFrames fixed-dt OnUpdate passes through the chokepoint
+	// (DispatchOnUpdateForEntities — the function that carries the WS12 gate),
+	// then return the field-by-field state hash. Pins the parallel-sim flag for
+	// the whole run. Zenith_UnitTests is a friend of Zenith_SceneData, so it may
+	// call the (private) DispatchOnUpdateForEntities directly.
+	uint64_t Zenith_RunDeterminismFrames(Zenith_SceneData* pxSceneData,
+	                                     const Zenith_Vector<Zenith_EntityID>& xIDs,
+	                                     u_int uFrames, bool bParallel)
+	{
+		const bool bPrev = g_xEngine.Scenes().AreParallelSimEnabled();
+		g_xEngine.Scenes().SetParallelSim(bParallel);
+
+		const float fFixedDt = 1.0f / 60.0f;
+		for (u_int f = 0; f < uFrames; ++f)
+		{
+			// This is a free helper (not a Zenith_UnitTests member), so it drives the
+			// gated dispatch via the PUBLIC Bench_DispatchOnUpdatePass forwarder rather
+			// than the private DispatchOnUpdateForEntities (friendship covers members only).
+			pxSceneData->Bench_DispatchOnUpdatePass(xIDs, fFixedDt);
+		}
+
+		const uint64_t uHash = Zenith_HashSceneTransforms(pxSceneData, xIDs);
+		g_xEngine.Scenes().SetParallelSim(bPrev);
+		return uHash;
+	}
+}
+
+// (b) The proof. Build an identical fixed scene of collider-free Tween entities
+// twice; run the same 30 fixed-dt frames serial then parallel; the field-by-
+// field ECS-state hash MUST match. Then repeat the parallel run two more times
+// (fresh identical scenes) and assert all parallel hashes equal the serial hash
+// — catching both a serial/parallel divergence AND any run-to-run nondeterminism
+// in the parallel path (e.g. an order-dependent reduction). Small enough to run
+// every boot. Restores the flag + tears down all scenes.
+ZENITH_TEST(ECS, ParallelSimDeterminismSmoke) { Zenith_UnitTests::TestParallelSimDeterminismSmoke(); }
+void Zenith_UnitTests::TestParallelSimDeterminismSmoke(){
+
+	const bool bPrevFlag = g_xEngine.Scenes().AreParallelSimEnabled();
+
+	static constexpr u_int uNUM_ENTITIES = 64;
+	static constexpr u_int uNUM_FRAMES   = 30;
+
+	// --- Serial reference ---
+	Zenith_Scene xSerialScene = g_xEngine.Scenes().CreateEmptyScene("ParallelSimDet_Serial");
+	Zenith_SceneData* pxSerial = g_xEngine.Scenes().GetSceneData(xSerialScene);
+	Zenith_Vector<Zenith_EntityID> xSerialIDs;
+	Zenith_BuildDeterminismScene(pxSerial, uNUM_ENTITIES, xSerialIDs);
+	const uint64_t uSerialHash = Zenith_RunDeterminismFrames(pxSerial, xSerialIDs, uNUM_FRAMES, /*bParallel=*/false);
+	g_xEngine.Scenes().UnloadScene(xSerialScene);
+
+	// --- Parallel runs (repeat to catch run-to-run nondeterminism) ---
+	for (u_int uRepeat = 0; uRepeat < 3u; ++uRepeat)
+	{
+		char acName[64];
+		std::snprintf(acName, sizeof(acName), "ParallelSimDet_Parallel_%u", uRepeat);
+		Zenith_Scene xParallelScene = g_xEngine.Scenes().CreateEmptyScene(acName);
+		Zenith_SceneData* pxParallel = g_xEngine.Scenes().GetSceneData(xParallelScene);
+		Zenith_Vector<Zenith_EntityID> xParallelIDs;
+		Zenith_BuildDeterminismScene(pxParallel, uNUM_ENTITIES, xParallelIDs);
+		const uint64_t uParallelHash = Zenith_RunDeterminismFrames(pxParallel, xParallelIDs, uNUM_FRAMES, /*bParallel=*/true);
+		g_xEngine.Scenes().UnloadScene(xParallelScene);
+
+		ZENITH_ASSERT_TRUE(uParallelHash == uSerialHash,
+			"ParallelSimDeterminismSmoke: parallel state hash (0x%016llx, repeat %u) diverged from serial (0x%016llx)",
+			static_cast<unsigned long long>(uParallelHash), uRepeat,
+			static_cast<unsigned long long>(uSerialHash));
+	}
+
+	// Restore the flag to whatever it was (default OFF) so no test bleeds state.
+	g_xEngine.Scenes().SetParallelSim(bPrevFlag);
 }

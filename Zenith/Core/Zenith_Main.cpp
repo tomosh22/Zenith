@@ -73,6 +73,24 @@ void Zenith_Core::Zenith_Main()
 			Zenith_Core::Zenith_FullShutdown();
 			std::exit(0);
 		}
+		// --bench-sim: WS12 parallel-sim bench (serial vs parallel timing + an
+		// in-bench byte-identity assert). Same GPU-free run-then-exit pattern.
+		if (std::strcmp(__argv[i], "--bench-sim") == 0)
+		{
+			Zenith_BenchSim_Run();
+			Zenith_Core::Zenith_FullShutdown();
+			std::exit(0);
+		}
+		// --check-sim-determinism: WS12 heavy determinism soak (the gate/proof the
+		// orchestrator runs explicitly). Runs serial-vs-parallel x16 over 256
+		// Tween entities and prints a PASS/FAIL line; exit code is 0 on PASS, 1 on
+		// FAIL so the soak can gate CI.
+		if (std::strcmp(__argv[i], "--check-sim-determinism") == 0)
+		{
+			const bool bPass = Zenith_CheckSimDeterminism_Run();
+			Zenith_Core::Zenith_FullShutdown();
+			std::exit(bPass ? 0 : 1);
+		}
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR

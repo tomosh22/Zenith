@@ -174,6 +174,15 @@ public:
 	static void TestComponentMetaTypeIDConsistency();
 	static void TestAccessSetMetadataRegistered();
 
+	// WS12 parallel-simulation conflict model + determinism cross-check.
+	//  - AccessSetConflictModel: pure unit test of the ConflictsWith /
+	//    UNKNOWN-default / subset-eligibility math in Zenith_AccessSet.h.
+	//  - ParallelSimDeterminismSmoke: the proof that serial and parallel
+	//    DispatchOnUpdate produce byte-identical ECS state on a fixed scene of
+	//    collider-free Tween entities (runs every boot; small).
+	static void TestAccessSetConflictModel();
+	static void TestParallelSimDeterminismSmoke();
+
 	// ECS lifecycle hooks tests (Phase 3)
 	static void TestLifecycleHookDetection();
 	static void TestLifecycleOnAwake();
