@@ -544,6 +544,7 @@ public:
 	static void TestAnimatorControllerStoreSurvivesPoolRelocation();
 	static void TestAnimatorControllerStoreSurvivesCrossSceneMove();
 	static void TestAnimatorControllerStoreDestroyIsIdempotent();
+	static void TestAnimatorControllerStoreValidatesGeneration();
 
 	// Gizmo math helper tests (ZENITH_TOOLS only)
 	static void TestGizmosLineLineParallel();

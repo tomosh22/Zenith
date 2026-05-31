@@ -13465,6 +13465,55 @@ void Zenith_UnitTests::TestAnimatorControllerStoreDestroyIsIdempotent(){
 	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
+// Generation validation (review follow-up): the store is keyed by EntityID, and
+// Zenith_EntityID carries a generation for stale-handle detection. A stale id
+// for a RECYCLED slot must never resolve to, or destroy, the new occupant's
+// controller; and GetOrCreate on a recycled slot must RECOVER (tear down the
+// stale controller + hand back a FRESH one), not return the stale instance.
+ZENITH_TEST(Animator, ControllerStoreValidatesGeneration) { Zenith_UnitTests::TestAnimatorControllerStoreValidatesGeneration(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreValidatesGeneration(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorGenValidationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "AnimatorGenValidationEntity");
+	const Zenith_EntityID xRealId = xEntity.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	// The slot's current (generation-matched) controller.
+	Flux_AnimationController& xReal = xStore.GetOrCreate(xRealId);
+	ZENITH_ASSERT_EQ(xStore.TryGet(xRealId), &xReal, "matched-generation id must resolve its controller");
+
+	// Same SLOT, a DIFFERENT generation — the exact stale-handle / recycled-slot shape.
+	Zenith_EntityID xStaleId = xRealId;
+	xStaleId.m_uGeneration = xRealId.m_uGeneration + 1u;
+
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xStaleId) == nullptr, "stale-generation id must NOT resolve the slot's controller");
+	ZENITH_ASSERT_FALSE(xStore.Destroy(xStaleId), "stale-generation Destroy must be a no-op");
+	ZENITH_ASSERT_EQ(xStore.TryGet(xRealId), &xReal, "the live controller must survive a stale-generation Destroy");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "stale ops must not change the live count");
+
+	// GetOrCreate on the recycled slot (new generation) must recover: tear down
+	// the stale controller and return a FRESH one (NOT the stale instance).
+	Flux_AnimationController& xFresh = xStore.GetOrCreate(xStaleId);
+	// NB: deliberately NOT asserting &xFresh != &xReal — DestroyControllerAt
+	// frees the stale controller and the very next `new` can legitimately reuse
+	// that heap block, so pointer identity is not a reliable freshness signal.
+	// The generation keying is the robust proof: the OLD generation no longer
+	// resolves (its entry was torn down + regenerated), and the NEW generation
+	// resolves the recreated controller. If GetOrCreate had instead returned the
+	// stale entry (no recovery), TryGet(xRealId) below would still resolve.
+	ZENITH_ASSERT_EQ(xStore.TryGet(xStaleId), &xFresh, "the new-generation id resolves the recreated controller");
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xRealId) == nullptr, "the old-generation id must no longer resolve (entry torn down + regenerated)");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "recovery is net-neutral: one stale torn down, one fresh created");
+
+	// Correct-generation Destroy cleans up (no orphan for the scene unload).
+	ZENITH_ASSERT_TRUE(xStore.Destroy(xStaleId), "matched-generation Destroy removes the fresh controller");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "no net controller leak");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
 // Per-component streaming state isolation. Two Flux_TerrainStreamingState
 // instances own independent dirty flags; flipping one must not change the
 // other. Regression test for the pre-refactor "global dirty flag" bug where

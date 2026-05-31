@@ -91,6 +91,12 @@ private:
 	// Grow m_xSlotToController so uSlot is a valid index, padding with uINVALID.
 	void EnsureSlotCapacity(u_int uSlot);
 
+	// Free + swap-and-pop the controller at dense index uControllerIndex (owning
+	// entity slot uSlot) and repair the relocated element's slot mapping. Shared
+	// by Destroy() and the GetOrCreate() stale-slot recovery. Generation
+	// validation is the CALLER's responsibility.
+	void DestroyControllerAt(u_int uControllerIndex, u_int uSlot);
+
 	// Dense array of heap-allocated controllers (pointers are stable).
 	Zenith_Vector<Flux_AnimationController*> m_xControllers;
 
@@ -99,6 +105,13 @@ private:
 	// a swap-and-pop removal (the moved element's slot entry must be repointed
 	// at its new index).
 	Zenith_Vector<u_int> m_xControllerSlots;
+
+	// Parallel dense array: the entity GENERATION each live controller belongs
+	// to. The slot index alone is NOT a stable identity — slots are recycled, and
+	// Zenith_EntityID carries a generation precisely for stale-handle detection.
+	// Every entry point validates index AND generation so a stale id for a reused
+	// slot can never resolve to, or destroy, the new occupant's controller.
+	Zenith_Vector<u_int> m_xControllerGenerations;
 
 	// Index-by-entity-SLOT: slot -> index into m_xControllers (or uINVALID).
 	Zenith_Vector<u_int> m_xSlotToController;
