@@ -225,10 +225,19 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* pxTaskArray)
 		? (uNumInvocations > 0 ? uNumInvocations - 1 : 0)
 		: uNumInvocations;
 
-	EnqueueAndSignal(pxTaskArray, uTasksForWorkers);
+	const u_int uEnqueuedForWorkers = EnqueueAndSignal(pxTaskArray, uTasksForWorkers);
 
-	// Calling thread executes one invocation if it's participating
-	if (bCallingThreadParticipates && uNumInvocations > 0)
+	// The completion semaphore fires only when EXACTLY m_uNumInvocations DoTask()
+	// calls finish (see Zenith_TaskArray::DoTask). EnqueueAndSignal can short-
+	// enqueue on queue overflow (QUEUE_FULL is recoverable, not a crash), so the
+	// calling thread must run EVERY invocation that did NOT reach a worker — its
+	// own participation slot AND any the full queue dropped — or the completion
+	// counter never reaches the target and WaitUntilComplete blocks forever on
+	// transient back-pressure. (A single SubmitTask recovers via the m_bSubmitted
+	// reset above; a TaskArray's fixed completion target cannot, so the caller
+	// absorbs the shortfall here.)
+	const u_int uCallerInvocations = uNumInvocations - uEnqueuedForWorkers;
+	for (u_int u = 0; u < uCallerInvocations; u++)
 	{
 		pxTaskArray->DoTask();
 	}
