@@ -9,9 +9,25 @@
 class Flux_CommandList;
 class Flux_RenderGraph;
 
+// Cross-subsystem dependency injected into Initialise (Wave-14 DI seam, built on
+// the WS9.2 Flux_HiZImpl / Wave-11 Flux_SSAOImpl template). Forward-declared
+// here; the full header is pulled in by Flux_Quads.cpp. Flux_GraphicsImpl is the
+// ONLY cross-subsystem dep — VulkanMemory()/DebugVariables() are engine-infra
+// singletons and stay direct g_xEngine lookups (same carve-out as SSAO/HiZ).
+class Flux_GraphicsImpl;
+
 // Phase 9: state + behaviour for Quads subsystem -- shader/pipeline/instance
 // buffer + per-frame quad upload ring. The nested Quad struct is the on-wire
 // per-quad vertex format used by UI and game-side overlay drawing.
+//
+// Wave-14 DI seam (mirrors Flux_SSAOImpl): the lone cross-subsystem dependency
+// (Flux_GraphicsImpl) is INJECTED through Initialise as an explicit reference and
+// stored as a member pointer, rather than reached for via g_xEngine.FluxGraphics()
+// inside the instance methods. The only place g_xEngine self-lookup survives is
+// the non-capturing fn-pointer trampoline (the ExecuteQuads graph callback, and
+// the ZENITH_TOOLS hot-reload callback) — those cannot capture state, so they
+// re-enter via g_xEngine.Quads() to reach this singleton instance and then route
+// their FluxGraphics reach-ins through the injected member.
 class Flux_QuadsImpl
 {
 public:
@@ -44,7 +60,9 @@ public:
 	Flux_QuadsImpl(const Flux_QuadsImpl&) = delete;
 	Flux_QuadsImpl& operator=(const Flux_QuadsImpl&) = delete;
 
-	void Initialise();
+	// Cross-subsystem dep is injected here and stored into m_pxGraphics below.
+	// This is the WS9.2 DI template: explicit ref param -> stored member pointer.
+	void Initialise(Flux_GraphicsImpl& xGraphics);
 	void BuildPipelines();
 	void Shutdown();
 
@@ -61,4 +79,9 @@ public:
 
 	Quad                     m_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
 	uint32_t                 m_uQuadRenderIndex = 0;
+
+	// Injected cross-subsystem dependency (stored by Initialise). Default nullptr
+	// so a default-constructed instance is headless-safe; the real boot path wires
+	// it in via the Quads init trampoline (Flux_FeatureRegistry.cpp).
+	Flux_GraphicsImpl*       m_pxGraphics = nullptr;
 };

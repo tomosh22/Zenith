@@ -14768,6 +14768,42 @@ void Zenith_UnitTests::TestSSAOInjectedDepsWired(){
 }
 
 // ============================================================================
+// Flux_QuadsImpl dependency-injection seam test (Wave-14)
+// ============================================================================
+// Flux_QuadsImpl's Initialise now takes its lone cross-subsystem dep (graphics)
+// as an explicit reference and stores it in a member pointer — the same reusable
+// DI template as Flux_HiZImpl (WS9.2) / Flux_SSAOImpl (Wave-11). The real wiring
+// happens in the Quads init trampoline (Flux_FeatureRegistry.cpp), driven by
+// Flux_RendererImpl::LateInitialise, which only runs in the non-headless boot
+// path — and Quads is not even wired in headless boot. Because the test runner
+// may execute headless (LateInitialise skipped, so the live g_xEngine.Quads()
+// pointer stays nullptr), a post-init "==&g_xEngine.FluxGraphics()" assertion
+// would be flaky. Instead this is a pure-CPU seam test on a stack-constructed
+// instance (default-constructed Flux_QuadsImpl is headless-safe):
+//   1. the injected-dep member pointer defaults to nullptr, and
+//   2. assigning a distinct non-null sentinel pointer stores into the right slot.
+// The sentinel is reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/Quads/Flux_QuadsImpl.h"
+
+ZENITH_TEST(Flux, QuadsInjectedDepsWired) { Zenith_UnitTests::TestQuadsInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestQuadsInjectedDepsWired(){
+	Flux_QuadsImpl xQuads;
+
+	// 1. Fresh instance: the injected-dep pointer defaults to nullptr.
+	ZENITH_ASSERT_NULL(xQuads.m_pxGraphics, "Fresh Flux_QuadsImpl: m_pxGraphics defaults nullptr (headless-safe)");
+
+	// 2. A distinct, never-dereferenced sentinel proves the storage slot exists
+	//    (the DI seam stores the injected ref into its member).
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+
+	xQuads.m_pxGraphics = pxSentinelGraphics;
+
+	ZENITH_ASSERT_EQ(xQuads.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.

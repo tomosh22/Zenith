@@ -634,6 +634,15 @@ public:
 	// dereferenced (SSAO's real Initialise wiring runs only in non-headless boot).
 	static void TestSSAOInjectedDepsWired();
 
+	// Wave-14 DI-seam test for Flux_QuadsImpl (cleanest next leaf seam, same WS9.2
+	// template as HiZ/SSAO). Quads has a single cross-subsystem dep (Flux_GraphicsImpl)
+	// and is NOT wired in the headless boot path, so this is a pure-CPU seam test on
+	// a stack-constructed instance: the lone injected-dep member pointer (graphics)
+	// defaults nullptr, and assigning a sentinel pointer proves the storage slot
+	// exists. Sentinel never dereferenced (Quads' real Initialise wiring runs only
+	// in non-headless boot).
+	static void TestQuadsInjectedDepsWired();
+
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
 	// Vulkan device required — the resolver path takes a reflection pointer

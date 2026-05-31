@@ -298,7 +298,9 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.Particles().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Particles().Shutdown(); });
 	const u_int uQuads = xReg.Register(szFLUX_FEATURE_QUADS,
-		+[](){ g_xEngine.Quads().Initialise(); },
+		// DI seam: Quads::Initialise takes (Graphics&). FluxGraphics is brought up
+		// inline at the top of LateInitialise before this walk, so the dep is ready.
+		+[](){ g_xEngine.Quads().Initialise(g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Quads().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Quads().Shutdown(); });
 	const u_int uText = xReg.Register(szFLUX_FEATURE_TEXT,
