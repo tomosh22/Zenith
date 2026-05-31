@@ -8,7 +8,22 @@
 class Zenith_TextureAsset;
 class Flux_RenderGraph;
 
+// Cross-subsystem dependencies injected into Initialise (Wave-17 DI seam, the
+// SSAO leaf-seam shape: explicit ref params -> stored member pointers).
+// Forward-declared here; full headers are pulled in by Flux_Decals.cpp.
+class Flux_GraphicsImpl;
+class Zenith_Vulkan_Swapchain;
+
 // Phase 9: state + behaviour for Decals subsystem.
+//
+// Wave-17 DI seam (mirrors Flux_SSAOImpl): cross-subsystem dependencies are
+// INJECTED through Initialise as explicit references and stored as member
+// pointers, rather than reached for via g_xEngine.X() inside SetupRenderGraph.
+// The only place g_xEngine self-lookup survives is the non-capturing fn-pointer
+// trampolines (the Execute* graph callbacks and the ZENITH_DEBUG_VARIABLES-gated
+// Prepare callback) — those cannot capture state, so they re-enter via
+// g_xEngine.Decals() to reach this singleton instance and then route their
+// FluxGraphics reach-ins through the injected member.
 class Flux_DecalsImpl
 {
 public:
@@ -18,7 +33,10 @@ public:
 	Flux_DecalsImpl(const Flux_DecalsImpl&) = delete;
 	Flux_DecalsImpl& operator=(const Flux_DecalsImpl&) = delete;
 
-	void Initialise();
+	// Cross-subsystem deps are injected here and stored into the member pointers
+	// below. This is the SSAO DI template: explicit ref params -> stored member
+	// pointers.
+	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swapchain& xSwapchain);
 	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -62,4 +80,10 @@ public:
 
 	Flux_DynamicReadWriteBuffer m_xDecalBuffer;
 	Flux_IndexBuffer            m_xDecalIndexBuffer;
+
+	// Injected cross-subsystem dependencies (stored by Initialise). Default
+	// nullptr so a default-constructed instance is headless-safe; the real boot
+	// path wires them in Flux_FeatureRegistry's Decals init trampoline.
+	Flux_GraphicsImpl*       m_pxGraphics  = nullptr;
+	Zenith_Vulkan_Swapchain* m_pxSwapchain = nullptr;
 };

@@ -285,7 +285,8 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.DeferredShading().SetupRenderGraph(g); },
 		+[](){ g_xEngine.DeferredShading().Shutdown(); });
 	const u_int uDecals = xReg.Register(szFLUX_FEATURE_DECALS,
-		+[](){ g_xEngine.Decals().Initialise(); },
+		// DI seam: Decals::Initialise takes (Graphics&, Swapchain&).
+		+[](){ g_xEngine.Decals().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanSwapchain()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Decals().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Decals().Shutdown(); });
 	const u_int uSSAO = xReg.Register(szFLUX_FEATURE_SSAO,
