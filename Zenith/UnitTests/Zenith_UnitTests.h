@@ -642,6 +642,13 @@ public:
 	// exists. Sentinel never dereferenced (Quads' real Initialise wiring runs only
 	// in non-headless boot).
 	static void TestQuadsInjectedDepsWired();
+	// Wave-14 DI-seam test for Flux_SDFsImpl (same WS9.2 template as HiZ/SSAO,
+	// lowest raw fan-in leaf). A default-constructed instance is headless-safe,
+	// so this is a pure-CPU seam test: the two injected-dep member pointers
+	// (graphics, HDR) default nullptr, and assigning distinct sentinel pointers
+	// proves the storage slots exist and are independent. Sentinels never
+	// dereferenced (SDFs' real Initialise wiring runs only in non-headless boot).
+	static void TestSDFsInjectedDepsWired();
 
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live

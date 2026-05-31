@@ -14804,6 +14804,46 @@ void Zenith_UnitTests::TestQuadsInjectedDepsWired(){
 }
 
 // ============================================================================
+// Flux_SDFsImpl dependency-injection seam test (Wave-14, lowest-fan-in leaf)
+// ============================================================================
+// Flux_SDFsImpl's Initialise now takes its two cross-subsystem deps (graphics,
+// HDR) as explicit references and stores them in member pointers — the same
+// reusable DI template as Flux_HiZImpl (WS9.2) and Flux_SSAOImpl (Wave-11). The
+// real wiring happens through the Flux_FeatureRegistry SDFs init trampoline,
+// which only runs in the non-headless boot path. Because the test runner may
+// execute headless (init walk skipped, so the live g_xEngine.SDFs() pointers
+// stay nullptr), a post-init "==&g_xEngine.FluxGraphics()" assertion would be
+// flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
+// (default-constructed Flux_SDFsImpl is headless-safe, like Flux_RenderGraph):
+//   1. the two injected-dep member pointers default to nullptr, and
+//   2. assigning distinct non-null sentinel pointers stores into the right
+//      slots.
+// The sentinels are reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/SDFs/Flux_SDFsImpl.h"
+
+ZENITH_TEST(Flux, SDFsInjectedDepsWired) { Zenith_UnitTests::TestSDFsInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestSDFsInjectedDepsWired(){
+	Flux_SDFsImpl xSDFs;
+
+	// 1. Fresh instance: both injected-dep pointers default to nullptr.
+	ZENITH_ASSERT_NULL(xSDFs.m_pxGraphics, "Fresh Flux_SDFsImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSDFs.m_pxHDR,      "Fresh Flux_SDFsImpl: m_pxHDR defaults nullptr (headless-safe)");
+
+	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
+	//    and are independent (the DI seam stores each ref into its own member).
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	Flux_HDRImpl*      pxSentinelHDR      = reinterpret_cast<Flux_HDRImpl*>     (static_cast<uintptr_t>(0x2000));
+
+	xSDFs.m_pxGraphics = pxSentinelGraphics;
+	xSDFs.m_pxHDR      = pxSentinelHDR;
+
+	ZENITH_ASSERT_EQ(xSDFs.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xSDFs.m_pxHDR,      pxSentinelHDR,      "m_pxHDR stores the injected HDR pointer");
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.

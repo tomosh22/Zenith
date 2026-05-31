@@ -35,7 +35,7 @@ static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData);
 
 void Flux_SDFsImpl::BuildPipelines()
 {
-	g_xEngine.SDFs().m_xShader.Initialise(FluxShaderProgram::SDFs);
+	this->m_xShader.Initialise(FluxShaderProgram::SDFs);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -44,21 +44,26 @@ void Flux_SDFsImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &g_xEngine.SDFs().m_xShader;
+	xPipelineSpec.m_pxShader = &this->m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	g_xEngine.SDFs().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	this->m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.SDFs().m_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(this->m_xPipeline, xPipelineSpec);
 }
 
-void Flux_SDFsImpl::Initialise()
+void Flux_SDFsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
 {
+	// Wave-14 DI seam: store the injected cross-subsystem deps. Every later
+	// instance-method reach-in routes through these instead of g_xEngine.
+	m_pxGraphics = &xGraphics;
+	m_pxHDR      = &xHDR;
+
 	BuildPipelines();
 
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), g_xEngine.SDFs().m_xSpheresBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), this->m_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif
@@ -76,7 +81,10 @@ void Flux_SDFsImpl::Initialise()
 
 void Flux_SDFsImpl::Shutdown()
 {
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.SDFs().m_xSpheresBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(this->m_xSpheresBuffer);
+	// Drop the injected deps so the instance returns to a clean default state.
+	m_pxGraphics = nullptr;
+	m_pxHDR      = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs shut down");
 }
 
@@ -118,14 +126,20 @@ static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 
 	UploadSpheres();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SDFs().m_xPipeline);
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// cannot capture, so it re-enters via g_xEngine.SDFs() to reach the singleton
+	// instance, then routes its FluxGraphics reach-ins through the injected
+	// member (mirrors ExecuteSSAOGenerate).
+	Flux_SDFsImpl& xSDFs = g_xEngine.SDFs();
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSDFs.m_xPipeline);
+
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSDFs.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSDFs.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.SDFs().m_xSpheresBuffer.GetCBV(), 1);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSDFs.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSDFs.m_xSpheresBuffer.GetCBV(), 1);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -135,6 +149,6 @@ void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass.
 	xGraph.AddPass("SDFs", ExecuteSDFs)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),  RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(m_pxHDR->GetHDRSceneTarget(),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetDepthAttachment(),  RESOURCE_ACCESS_WRITE_DSV);
 }

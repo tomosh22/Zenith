@@ -290,7 +290,10 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.Fog().SetupRenderGraph(g); },
 		nullptr); // Fog has no Shutdown() — RAII / stateless.
 	const u_int uSDFs = xReg.Register(szFLUX_FEATURE_SDFS,
-		+[](){ g_xEngine.SDFs().Initialise(); },
+		// DI seam: SDFs::Initialise takes (Graphics&, HDR&) — the trampoline
+		// gathers them from g_xEngine. HDR is registered first (above) so it
+		// inits before the walk reaches SDFs.
+		+[](){ g_xEngine.SDFs().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SDFs().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SDFs().Shutdown(); });
 	const u_int uParticles = xReg.Register(szFLUX_FEATURE_PARTICLES,
