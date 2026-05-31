@@ -69,7 +69,14 @@ void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int 
 	// The backend reads xPass.m_xPrologueBarriers directly and emits them
 	// right before TransitionTargetsForRenderPass / Dispatch entry, outside
 	// any active render pass. See Zenith_Vulkan.cpp::RecordCommandBuffersTask.
+	//
+	// Per-pass record-cost scope. Runs on a worker thread; the profiler keys
+	// events by thread id (same as the enclosing FLUX_RECORD_COMMAND_BUFFERS
+	// task scope), so the pass's DebugName() label disambiguates which pass
+	// the cost belongs to in the timeline.
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS, xPass.DebugName());
 	xPass.m_pfnOnRecord(xPass.m_pxCommandList, xPass.m_pUserData);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS);
 }
 
 void Flux_RenderGraph::Execute()
