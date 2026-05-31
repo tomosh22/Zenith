@@ -166,6 +166,16 @@ namespace Zenith_FileAccess
 
 		xFile.write(static_cast<const char*>(pData), ulSize);
 		xFile.close();
+
+		// Post-write diagnostic: parity with the Windows sibling. The
+		// write()/flush-on-close above is otherwise UNCHECKED, so a disk-full /
+		// permission / quota failure silently produces a truncated or empty
+		// file with no signal in a shipping build. .fail() picks up both a
+		// failed write (badbit) and a failed flush during close (failbit).
+		// Log-and-continue only -- WriteFile is void with many best-effort
+		// callers that must NOT hard-fail, so do NOT promote this to a
+		// return/assert or change the signature.
+		Zenith_Check(!xFile.fail(), "WriteFile: write failed for '%s' (disk full / permission / quota?)", szFilename);
 	}
 
 	bool FileExists(const char* szFilename)
