@@ -37,7 +37,7 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData);
 
 void Flux_ParticlesImpl::BuildPipelines()
 {
-	g_xEngine.Particles().m_xShader.Initialise(FluxShaderProgram::Particles);
+	m_xShader.Initialise(FluxShaderProgram::Particles);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -52,10 +52,10 @@ void Flux_ParticlesImpl::BuildPipelines()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &g_xEngine.Particles().m_xShader;
+	xPipelineSpec.m_pxShader = &m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	g_xEngine.Particles().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
@@ -64,36 +64,42 @@ void Flux_ParticlesImpl::BuildPipelines()
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.Particles().m_xPipelineAlpha, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(m_xPipelineAlpha, xPipelineSpec);
 
 	// Additive blending pipeline (SrcAlpha / One)
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.Particles().m_xPipelineAdditive, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(m_xPipelineAdditive, xPipelineSpec);
 
 	// Rebuild the GPU compute pipeline alongside the rasterisation ones so a
 	// shader edit to either Particles.slang or ParticleUpdate.slang triggers a
-	// single coordinated rebuild.
-	g_xEngine.ParticleGPU().BuildPipelines();
+	// single coordinated rebuild. Routed through the injected ParticleGPU member.
+	m_pxParticleGPU->BuildPipelines();
 }
 
-void Flux_ParticlesImpl::Initialise()
+void Flux_ParticlesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Flux_ParticleGPUImpl& xParticleGPU)
 {
+	// Wave-17 DI seam: store the injected cross-subsystem deps. Every later
+	// instance-method reach-in routes through these instead of g_xEngine.
+	m_pxGraphics    = &xGraphics;
+	m_pxHDR         = &xHDR;
+	m_pxParticleGPU = &xParticleGPU;
+
 	BuildPipelines();
 
 	// Allocate instance buffers for both blend modes
-	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAlpha, false);
-	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAdditive, false);
+	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAlpha, false);
+	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAdditive, false);
 
 	// Load default particle texture (pinned)
 	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
 	{
-		g_xEngine.Particles().m_xParticleTexture.Set(pxParticle);
+		m_xParticleTexture.Set(pxParticle);
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
-		g_xEngine.Particles().m_xParticleTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;
+		m_xParticleTexture = m_pxGraphics->m_xWhiteTexture;
 	}
 
 #ifdef ZENITH_TOOLS
@@ -110,21 +116,26 @@ void Flux_ParticlesImpl::Initialise()
 
 void Flux_ParticlesImpl::Reset()
 {
-	g_xEngine.Particles().m_uAlphaInstanceCount = 0;
-	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
+	m_uAlphaInstanceCount = 0;
+	m_uAdditiveInstanceCount = 0;
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticlesImpl::Reset()");
 }
 
 void Flux_ParticlesImpl::ReleaseAssetReferences()
 {
-	g_xEngine.Particles().m_xParticleTexture.Clear();
+	m_xParticleTexture.Clear();
 }
 
 void Flux_ParticlesImpl::Shutdown()
 {
-	g_xEngine.ParticleGPU().Shutdown();
-	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAlpha);
-	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAdditive);
+	// Routed through the injected ParticleGPU member.
+	m_pxParticleGPU->Shutdown();
+	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(m_xInstanceBufferAlpha);
+	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(m_xInstanceBufferAdditive);
+	// Drop the injected deps so the instance returns to a clean default state.
+	m_pxGraphics    = nullptr;
+	m_pxHDR         = nullptr;
+	m_pxParticleGPU = nullptr;
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
 }
 
@@ -222,51 +233,61 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 	// commands from the already-populated instance counts/buffers — no ECS
 	// mutation (xEmitter.Update) on the worker thread.
 
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// capture, so it re-enters via g_xEngine.Particles() to reach the singleton
+	// instance, then routes its FluxGraphics reach-ins through the injected member
+	// (mirrors ExecuteSSAOGenerate / ExecuteQuads).
+	Flux_ParticlesImpl& xParticles = g_xEngine.Particles();
+
 	// Render CPU particles (alpha-blended first, then additive)
-	if (g_xEngine.Particles().m_uAlphaInstanceCount > 0 || g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
+	if (xParticles.m_uAlphaInstanceCount > 0 || xParticles.m_uAdditiveInstanceCount > 0)
 	{
 		// Alpha-blended particles
-		if (g_xEngine.Particles().m_uAlphaInstanceCount > 0)
+		if (xParticles.m_uAlphaInstanceCount > 0)
 		{
-			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Particles().m_xPipelineAlpha);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xParticles.m_xPipelineAlpha);
 
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
-			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Particles().m_xInstanceBufferAlpha, 1);
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_pxGraphics->m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xParticles.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_xInstanceBufferAlpha, 1);
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&g_xEngine.Particles().m_xParticleTexture.GetDirect()->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xParticles.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Particles().m_uAlphaInstanceCount);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xParticles.m_uAlphaInstanceCount);
 		}
 
 		// Additive particles
-		if (g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
+		if (xParticles.m_uAdditiveInstanceCount > 0)
 		{
-			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Particles().m_xPipelineAdditive);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xParticles.m_xPipelineAdditive);
 
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
-			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Particles().m_xInstanceBufferAdditive, 1);
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_pxGraphics->m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xParticles.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_xInstanceBufferAdditive, 1);
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&g_xEngine.Particles().m_xParticleTexture.GetDirect()->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xParticles.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Particles().m_uAdditiveInstanceCount);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xParticles.m_uAdditiveInstanceCount);
 		}
 	}
 }
 
 static void ExecuteParticleCompute(Flux_CommandList* pxCmdList, void*)
 {
-	g_xEngine.ParticleGPU().DispatchCompute(pxCmdList);
+	// Non-capturing graph callback: re-enter via g_xEngine.Particles() to reach
+	// the singleton instance, then route the ParticleGPU reach-in through the
+	// injected member (mirrors ExecuteParticles).
+	g_xEngine.Particles().m_pxParticleGPU->DispatchCompute(pxCmdList);
 }
 
 static void PreExecuteParticleCompute(void*)
 {
-	g_xEngine.ParticleGPU().PreExecuteCompute();
+	// Non-capturing Prepare callback: same self-lookup + member-route as above.
+	g_xEngine.Particles().m_pxParticleGPU->PreExecuteCompute();
 }
 
 void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -285,6 +306,6 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// required edge (without it the CPU particle sim/upload would never run).
 	xGraph.AddPass("Particles", ExecuteParticles)
 		.Prepare([](void* p){ g_xEngine.Particles().Render(p); })
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxHDR->GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.DependsOn(xComputePass);
 }

@@ -306,7 +306,14 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.SDFs().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SDFs().Shutdown(); });
 	const u_int uParticles = xReg.Register(szFLUX_FEATURE_PARTICLES,
-		+[](){ g_xEngine.Particles().Initialise(); },
+		// DI seam (Wave-17, heaviest leaf — 3 cross-subsystem deps): Particles::Initialise
+		// takes (Graphics&, HDR&, ParticleGPU&). FluxGraphics is brought up inline before
+		// this walk; HDR is registered first (above) so it inits before the walk reaches
+		// Particles; ParticleGPU is an engine-owned sibling singleton constructed in
+		// Zenith_Engine::Initialise (well before any feature init walk), so all three deps
+		// are ready when this trampoline fires. The ECS reach (g_xEngine.Scenes()) inside
+		// the WS7 emitter-sim Prepare-gather stays self-routed by design.
+		+[](){ g_xEngine.Particles().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.ParticleGPU()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Particles().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Particles().Shutdown(); });
 	const u_int uQuads = xReg.Register(szFLUX_FEATURE_QUADS,
