@@ -34,6 +34,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzleRegistryViewer", 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxproj", "{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithBase", "zenithbase_win64.vcxproj", "{04AE3503-34B5-40D1-B5EA-687E4EBDA542}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		vs2022_Debug_Win64_False|x64 = vs2022_Debug_Win64_False|x64
@@ -172,6 +174,14 @@ Global
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

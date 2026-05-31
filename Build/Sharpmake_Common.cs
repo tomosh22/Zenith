@@ -181,6 +181,11 @@ public class ZenithSolution : Solution
 		conf.SolutionFileName = "[solution.Name]_[target.Platform]";
 		conf.SolutionPath = @"[solution.SharpmakeCsPath]";
 
+		// ZenithBase: bottom-leaf static lib (L0 set), carved out of the
+		// monolithic engine lib in Wave-20 stage 1. ZenithProject publicly
+		// depends on it, so it would be pulled into the solution transitively;
+		// adding it explicitly keeps it visible/buildable on its own.
+		conf.AddProject<ZenithBaseLibProject>(target);
 		conf.AddProject<ZenithProject>(target);
 		conf.AddProject<TestGameProject>(target);
 		conf.AddProject<MarbleGameProject>(target);

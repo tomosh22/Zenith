@@ -1,0 +1,189 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
+      <Configuration>arm64_v8a_vs2022_Debug_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
+      <Configuration>arm64_v8a_vs2022_Release_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>ZenithBase</RootNamespace>
+    <ProjectName>ZenithBase</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals" Condition="'$(Platform)'=='Android-arm64-v8a' Or '$(Platform)'=='Android-x86_64' Or '$(Platform)'=='Android-armeabi-v7a' Or '$(Platform)'=='Android-x86'">
+    <AndroidMinSdkVersion>30</AndroidMinSdkVersion>
+    <PlatformToolset>Clang</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <TargetName>libzenithbase</TargetName>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\</OutDir>
+    <IntDir>obj\zenithbase\agde\arm64_v8a_vs2022_debug_agde_false\</IntDir>
+    <TargetExt>.a</TargetExt>
+    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libzenithbase.a</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <TargetName>libzenithbase</TargetName>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\</OutDir>
+    <IntDir>obj\zenithbase\agde\arm64_v8a_vs2022_release_agde_false\</IntDir>
+    <TargetExt>.a</TargetExt>
+    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libzenithbase.a</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithbase\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Lib>
+      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libzenithbase.a</OutputFile>
+      <NoWarnOnCreate>true</NoWarnOnCreate>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithbase\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Lib>
+      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libzenithbase.a</OutputFile>
+      <NoWarnOnCreate>true</NoWarnOnCreate>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashMap.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashSet.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
+    <ClInclude Include="..\Zenith\Core\FrameContext.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h" />
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith.h" />
+    <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Engine.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Result.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
+    <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
+    <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h" />
+    <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_Maths.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp" />
+    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_String.cpp" />
+    <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
+    <ClCompile Include="..\Zenith\DataStream\Zenith_StreamEnvelope.cpp" />
+    <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
+    <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
