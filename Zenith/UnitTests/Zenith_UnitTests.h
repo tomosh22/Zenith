@@ -665,6 +665,9 @@ public:
 	static void TestPrimitivesInjectedDepsWired();
 	static void TestStaticMeshesInjectedDepsWired();
 	static void TestAnimatedMeshesInjectedDepsWired();
+	// Wave-17 DI-seam sentinel tests.
+	static void TestDecalsInjectedDepsWired();
+	static void TestParticlesInjectedDepsWired();
 
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live

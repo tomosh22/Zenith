@@ -14993,6 +14993,43 @@ void Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(){
 }
 
 // ============================================================================
+// Wave-17 DI-seam sentinel tests (Decals: Graphics+Swapchain; Particles: Graphics+HDR+ParticleGPU).
+// Same pure-CPU headless-safe pattern; orchestrator batch-added (impl agents were code-only).
+// ============================================================================
+
+#include "Flux/Decals/Flux_DecalsImpl.h"
+ZENITH_TEST(Flux, DecalsInjectedDepsWired) { Zenith_UnitTests::TestDecalsInjectedDepsWired(); }
+void Zenith_UnitTests::TestDecalsInjectedDepsWired(){
+	Flux_DecalsImpl xDecals;
+	ZENITH_ASSERT_NULL(xDecals.m_pxGraphics,  "Fresh Flux_DecalsImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xDecals.m_pxSwapchain, "Fresh Flux_DecalsImpl: m_pxSwapchain defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
+	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x2000));
+	xDecals.m_pxGraphics  = pxSentinelGraphics;
+	xDecals.m_pxSwapchain = pxSentinelSwapchain;
+	ZENITH_ASSERT_EQ(xDecals.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xDecals.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
+}
+
+#include "Flux/Particles/Flux_ParticlesImpl.h"
+ZENITH_TEST(Flux, ParticlesInjectedDepsWired) { Zenith_UnitTests::TestParticlesInjectedDepsWired(); }
+void Zenith_UnitTests::TestParticlesInjectedDepsWired(){
+	Flux_ParticlesImpl xParticles;
+	ZENITH_ASSERT_NULL(xParticles.m_pxGraphics,    "Fresh Flux_ParticlesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xParticles.m_pxHDR,         "Fresh Flux_ParticlesImpl: m_pxHDR defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xParticles.m_pxParticleGPU, "Fresh Flux_ParticlesImpl: m_pxParticleGPU defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl*    pxSentinelGraphics    = reinterpret_cast<Flux_GraphicsImpl*>   (static_cast<uintptr_t>(0x1000));
+	Flux_HDRImpl*         pxSentinelHDR         = reinterpret_cast<Flux_HDRImpl*>        (static_cast<uintptr_t>(0x2000));
+	Flux_ParticleGPUImpl* pxSentinelParticleGPU = reinterpret_cast<Flux_ParticleGPUImpl*>(static_cast<uintptr_t>(0x3000));
+	xParticles.m_pxGraphics    = pxSentinelGraphics;
+	xParticles.m_pxHDR         = pxSentinelHDR;
+	xParticles.m_pxParticleGPU = pxSentinelParticleGPU;
+	ZENITH_ASSERT_EQ(xParticles.m_pxGraphics,    pxSentinelGraphics,    "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xParticles.m_pxHDR,         pxSentinelHDR,         "m_pxHDR stores the injected HDR pointer");
+	ZENITH_ASSERT_EQ(xParticles.m_pxParticleGPU, pxSentinelParticleGPU, "m_pxParticleGPU stores the injected ParticleGPU pointer");
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.
