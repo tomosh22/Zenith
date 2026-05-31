@@ -14844,6 +14844,68 @@ void Zenith_UnitTests::TestSDFsInjectedDepsWired(){
 }
 
 // ============================================================================
+// Wave-15 DI-seam sentinel tests (Text / Skybox / Primitives / StaticMeshes /
+// AnimatedMeshes). Same pure-CPU headless-safe pattern as Quads/SDFs: each
+// injected-dep member pointer defaults nullptr, then stores an assigned sentinel
+// (never dereferenced). Orchestrator batch-added (impl agents produced code only,
+// to avoid a 5-way merge in this shared file).
+// ============================================================================
+
+#include "Flux/Text/Flux_TextImpl.h"
+ZENITH_TEST(Flux, TextInjectedDepsWired) { Zenith_UnitTests::TestTextInjectedDepsWired(); }
+void Zenith_UnitTests::TestTextInjectedDepsWired(){
+	Flux_TextImpl xText;
+	ZENITH_ASSERT_NULL(xText.m_pxGraphics, "Fresh Flux_TextImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xText.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xText.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
+ZENITH_TEST(Flux, SkyboxInjectedDepsWired) { Zenith_UnitTests::TestSkyboxInjectedDepsWired(); }
+void Zenith_UnitTests::TestSkyboxInjectedDepsWired(){
+	Flux_SkyboxImpl xSkybox;
+	ZENITH_ASSERT_NULL(xSkybox.m_pxGraphics, "Fresh Flux_SkyboxImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSkybox.m_pxHDR,      "Fresh Flux_SkyboxImpl: m_pxHDR defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	Flux_HDRImpl*      pxSentinelHDR      = reinterpret_cast<Flux_HDRImpl*>     (static_cast<uintptr_t>(0x2000));
+	xSkybox.m_pxGraphics = pxSentinelGraphics;
+	xSkybox.m_pxHDR      = pxSentinelHDR;
+	ZENITH_ASSERT_EQ(xSkybox.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xSkybox.m_pxHDR,      pxSentinelHDR,      "m_pxHDR stores the injected HDR pointer");
+}
+
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
+ZENITH_TEST(Flux, PrimitivesInjectedDepsWired) { Zenith_UnitTests::TestPrimitivesInjectedDepsWired(); }
+void Zenith_UnitTests::TestPrimitivesInjectedDepsWired(){
+	Flux_PrimitivesImpl xPrimitives;
+	ZENITH_ASSERT_NULL(xPrimitives.m_pxGraphics, "Fresh Flux_PrimitivesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xPrimitives.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xPrimitives.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
+ZENITH_TEST(Flux, StaticMeshesInjectedDepsWired) { Zenith_UnitTests::TestStaticMeshesInjectedDepsWired(); }
+void Zenith_UnitTests::TestStaticMeshesInjectedDepsWired(){
+	Flux_StaticMeshesImpl xStaticMeshes;
+	ZENITH_ASSERT_NULL(xStaticMeshes.m_pxGraphics, "Fresh Flux_StaticMeshesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xStaticMeshes.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xStaticMeshes.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
+ZENITH_TEST(Flux, AnimatedMeshesInjectedDepsWired) { Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(); }
+void Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(){
+	Flux_AnimatedMeshesImpl xAnimatedMeshes;
+	ZENITH_ASSERT_NULL(xAnimatedMeshes.m_pxGraphics, "Fresh Flux_AnimatedMeshesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xAnimatedMeshes.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xAnimatedMeshes.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.

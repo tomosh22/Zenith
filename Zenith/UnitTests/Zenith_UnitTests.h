@@ -649,6 +649,12 @@ public:
 	// proves the storage slots exist and are independent. Sentinels never
 	// dereferenced (SDFs' real Initialise wiring runs only in non-headless boot).
 	static void TestSDFsInjectedDepsWired();
+	// Wave-15 DI-seam sentinel tests (same pure-CPU headless-safe template).
+	static void TestTextInjectedDepsWired();
+	static void TestSkyboxInjectedDepsWired();
+	static void TestPrimitivesInjectedDepsWired();
+	static void TestStaticMeshesInjectedDepsWired();
+	static void TestAnimatedMeshesInjectedDepsWired();
 
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
