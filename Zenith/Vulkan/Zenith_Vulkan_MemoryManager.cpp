@@ -1025,7 +1025,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	VkImage xImage = VK_NULL_HANDLE;
 	VmaAllocation xAllocation = VK_NULL_HANDLE;
 	VkResult eResult = vmaCreateImage(g_xEngine.VulkanMemory().m_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
-	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateImage failed with result %d", static_cast<int>(eResult));
+	// Wave14 B3 / mirrors WS9.2 CreateBufferVRAM: surface a GPU-OOM (or any
+	// vmaCreateImage failure) via the release-survivable check tier — logged for
+	// diagnosability in all shipping configs — but keep the existing invalid-handle
+	// contract that callers already tolerate. Do NOT promote this to a hard
+	// assert/return change.
+	Zenith_Check(eResult == VK_SUCCESS, "vmaCreateImage failed (result=%d) - returning invalid handle (Zenith_ErrorCode::GPU_UPLOAD_FAILED)", (int)eResult);
 	if (eResult != VK_SUCCESS)
 	{
 		// Return invalid handle on allocation failure
@@ -1114,7 +1119,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::
 	xImageOut = VK_NULL_HANDLE;
 	xAllocationOut = VK_NULL_HANDLE;
 	VkResult eResult = vmaCreateImage(g_xEngine.VulkanMemory().m_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImageOut, &xAllocationOut, nullptr);
-	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateImage failed with result %d", static_cast<int>(eResult));
+	// Wave14 B3 / mirrors WS9.2 CreateBufferVRAM: surface a GPU-OOM (or any
+	// vmaCreateImage failure) via the release-survivable check tier — logged for
+	// diagnosability in all shipping configs — but keep the existing invalid-handle
+	// contract that callers already tolerate. Do NOT promote this to a hard
+	// assert/return change.
+	Zenith_Check(eResult == VK_SUCCESS, "vmaCreateImage failed (result=%d) - returning invalid handle (Zenith_ErrorCode::GPU_UPLOAD_FAILED)", (int)eResult);
 	if (eResult != VK_SUCCESS)
 	{
 		return Flux_VRAMHandle();
@@ -1218,7 +1228,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	Flux_VRAMHandle xHandle = AllocateAndRegisterImage(xImageInfo, xImage, xAllocation);
 	if (!xHandle.IsValid())
 	{
-		return xHandle;  // Allocation failure already asserted inside the helper.
+		return xHandle;  // Allocation failure already logged (Zenith_Check) inside the helper.
 	}
 
 	if (pData)
