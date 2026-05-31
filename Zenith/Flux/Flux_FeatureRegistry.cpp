@@ -247,7 +247,9 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.Grass().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Grass().Shutdown(); });
 	const u_int uPrimitives = xReg.Register(szFLUX_FEATURE_PRIMITIVES,
-		+[](){ g_xEngine.Primitives().Initialise(); },
+		// DI seam: Primitives::Initialise takes (Graphics&). FluxGraphics is brought
+		// up before the walk reaches Primitives, so the trampoline forwards it.
+		+[](){ g_xEngine.Primitives().Initialise(g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Primitives().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Primitives().Shutdown(); });
 	const u_int uHiZ = xReg.Register(szFLUX_FEATURE_HIZ,
