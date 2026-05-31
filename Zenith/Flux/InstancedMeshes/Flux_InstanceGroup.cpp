@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
+#include "Core/Zenith_Engine.h"  // g_xEngine.Threading().IsMainThread() (WS7 mutation guard)
 
 //=============================================================================
 // VkDrawIndexedIndirectCommand structure (matches Vulkan spec)
@@ -279,6 +280,10 @@ void Flux_InstanceGroup::DestroyGPUBuffers()
 
 void Flux_InstanceGroup::UpdateGPUBuffers()
 {
+	// WS7: single-writer guard. Relocated to the main-thread Prepare gather; a
+	// future worker-thread record-callback mutation trips immediately.
+	AssertMainThreadMutation("UpdateGPUBuffers");
+
 	if (!m_bBuffersInitialised || m_uCapacity == 0)
 		return;
 
@@ -305,19 +310,14 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	}
 
 	// Phase 1: Populate visible index buffer with sequential indices (no GPU culling)
-	// This will be replaced by compute shader output in Phase 2
+	// This will be replaced by compute shader output in Phase 2.
+	// The CPU bookkeeping (which slots are visible + the visible count) is factored
+	// into ComputeVisibleIndices so the headless determinism test can exercise the
+	// EXACT same computation without a live allocator; only the upload below is
+	// device-dependent.
 	{
 		Zenith_Vector<uint32_t> auVisibleIndices;
-		auVisibleIndices.Reserve(m_uInstanceCount);
-
-		for (uint32_t i = 0; i < m_uCapacity; ++i)
-		{
-			// Only include enabled instances
-			if (m_axAnimData[i].m_uFlags != 0)
-			{
-				auVisibleIndices.PushBack(i);
-			}
-		}
+		ComputeVisibleIndices(auVisibleIndices);
 
 		if (auVisibleIndices.GetSize() > 0)
 		{
@@ -340,6 +340,9 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 
 void Flux_InstanceGroup::ResetVisibleCount()
 {
+	// WS7: single-writer guard (see UpdateGPUBuffers).
+	AssertMainThreadMutation("ResetVisibleCount");
+
 	if (!m_bBuffersInitialised)
 		return;
 
@@ -370,9 +373,117 @@ void Flux_InstanceGroup::ResetVisibleCount()
 	m_uVisibleCount = 0;
 }
 
+void Flux_InstanceGroup::ComputeVisibleIndices(Zenith_Vector<uint32_t>& xauVisibleOut) const
+{
+	// Pure CPU bookkeeping — NO GPU access, NO member mutation. Walk every slot
+	// up to capacity in ascending order and collect the ENABLED ones (m_uFlags
+	// != 0). Deterministic: same CPU state -> same list, every run. Shared by
+	// UpdateGPUBuffers (which then uploads it) and the determinism test (which
+	// only hashes it).
+	xauVisibleOut.Clear();
+	xauVisibleOut.Reserve(m_uInstanceCount);
+
+	for (uint32_t i = 0; i < m_uCapacity; ++i)
+	{
+		if (m_axAnimData[i].m_uFlags != 0)
+		{
+			xauVisibleOut.PushBack(i);
+		}
+	}
+}
+
+uint64_t Flux_InstanceGroup::HashVisibleStateForTest() const
+{
+	// FNV-1a over m_uVisibleCount followed by the ComputeVisibleIndices list.
+	// Mirrors the byte-feeding methodology of Zenith_HashSceneTransforms (the
+	// WS12 determinism cross-check): no struct memcpy, so no uninitialised
+	// padding ever feeds the hash.
+	uint64_t uHash = 0xcbf29ce484222325ull;
+	auto Bytes = [&uHash](const void* p, size_t n)
+	{
+		const uint8_t* pb = static_cast<const uint8_t*>(p);
+		for (size_t i = 0; i < n; ++i) { uHash ^= pb[i]; uHash *= 0x100000001b3ull; }
+	};
+
+	Bytes(&m_uVisibleCount, sizeof(m_uVisibleCount));
+
+	Zenith_Vector<uint32_t> auVisibleIndices;
+	ComputeVisibleIndices(auVisibleIndices);
+	const uint32_t uCount = auVisibleIndices.GetSize();
+	Bytes(&uCount, sizeof(uCount));
+	for (uint32_t i = 0; i < uCount; ++i)
+	{
+		const uint32_t uIndex = auVisibleIndices.Get(i);
+		Bytes(&uIndex, sizeof(uIndex));
+	}
+
+	return uHash;
+}
+
+void Flux_InstanceGroup::SeedInstancesForTest(uint32_t uCount, uint32_t uSeed)
+{
+	// Device-independent: fill the CPU SoA arrays only. No GPU buffer init (the
+	// allocator-backed path asserts in headless). Deterministic by (uSeed, slot).
+	uCount = std::min(uCount, uMAX_INSTANCES);
+
+	m_axTransforms.resize(uCount);
+	m_axAnimData.resize(uCount);
+	m_abDirty.resize(uCount);
+	m_auFreeIDs.clear();
+
+	for (uint32_t i = 0; i < uCount; ++i)
+	{
+		// A simple deterministic transform stamp (translation by index) so the
+		// transform array is non-uniform; the visible-index computation itself
+		// only depends on the enabled flag, but this keeps the seed realistic.
+		Zenith_Maths::Matrix4 xTransform = glm::identity<Zenith_Maths::Matrix4>();
+		xTransform[3][0] = static_cast<float>(i);
+		m_axTransforms[i] = xTransform;
+
+		Flux_InstanceAnimData xAnimData = {};
+		xAnimData.m_uAnimationIndex = 0;
+		xAnimData.m_uFrameCount = 1;
+		xAnimData.m_fAnimTime = 0.0f;
+		xAnimData.m_uColorTint = 0xFFFFFFFF;
+		// Deterministic enabled/disabled mix: a fixed LCG-style hash of (seed,index)
+		// leaves roughly 3/4 of slots enabled, so ComputeVisibleIndices has a
+		// non-trivial, reproducible visible set to collect. Slots 0 and 1 are pinned
+		// disabled/enabled respectively so the visible subset is GUARANTEED to be
+		// strictly between 0 and uCount for any seed (keeps the test's degeneracy
+		// guard non-vacuous without depending on the hash distribution).
+		const uint32_t uMix = (uSeed * 2654435761u) ^ (i * 40503u + 0x9E3779B9u);
+		uint32_t uFlags = ((uMix & 3u) != 0u) ? 1u : 0u;
+		if (i == 0) uFlags = 0u;
+		else if (i == 1) uFlags = 1u;
+		xAnimData.m_uFlags = uFlags;
+		m_axAnimData[i] = xAnimData;
+
+		m_abDirty[i] = true;
+	}
+
+	m_uCapacity = uCount;
+	m_uInstanceCount = uCount;
+	m_uVisibleCount = 0;
+	m_bTransformsDirty = true;
+	m_bAnimDataDirty = true;
+	// Intentionally leave m_bBuffersInitialised false — no GPU buffers exist.
+}
+
 //=============================================================================
 // Helper Functions
 //=============================================================================
+
+void Flux_InstanceGroup::AssertMainThreadMutation(const char* szWhat) const
+{
+	// MEMORY "Mutating:" idiom. The WS7 keystone runs all per-frame GPU-sync
+	// mutation from the main-thread .Prepare gather (GatherInstancedPacket). A
+	// future call from a worker-thread record callback (the latent race C1C2
+	// removed) trips here. NOT a !AreRenderTasksActive check: the render-task
+	// window spans both Prepare (main thread) and record (workers), so only
+	// thread affinity distinguishes the legitimate single writer.
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+		"Flux_InstanceGroup::%s must run on the main thread (WS7 Prepare gather is the single writer)", szWhat);
+}
 
 void Flux_InstanceGroup::MarkDirty(uint32_t uInstanceID)
 {

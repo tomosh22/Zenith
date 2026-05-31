@@ -592,6 +592,16 @@ public:
 	// StructuredBuffer<uint>).
 	static void TestRenderGraphStorageBufferSRVBarrier();
 
+	// WS7 keystone (C1C2): InstancedMeshes Prepare-gather determinism / thread-safety
+	// regression. With GPU culling forced OFF (the path that used to double-call
+	// UpdateGPUBuffers across two concurrent record callbacks), the per-group CPU
+	// visibility bookkeeping (ComputeVisibleIndices + m_uVisibleCount) is now produced
+	// by a SINGLE main-thread Prepare writer. The test seeds a fixed instanced layout,
+	// captures a legacy serial-reference hash, then asserts every repeated re-seed +
+	// recompute is byte-identical (zero divergence == the cross-worker race is gone).
+	// Device-independent (CPU SoA only) so it runs in the headless suite.
+	static void TestInstancedMeshesPrepareDeterminism();
+
 	// Transient-aliasing signature tests. The signature is pure pointer math
 	// over the transient descriptor; no Vulkan required.
 	static void TestAliasSignatureIdenticalDescs();

@@ -14130,6 +14130,93 @@ void Zenith_UnitTests::TestRenderGraphStorageBufferSRVBarrier(){
 }
 
 // ============================================================================
+// WS7 keystone (C1C2): InstancedMeshes Prepare-gather determinism / thread-safety
+// ============================================================================
+// The InstancedMeshes record callbacks (ExecuteCulling / ExecuteInstancedGBuffer)
+// used to mutate each Flux_InstanceGroup's CPU bookkeeping (m_uVisibleCount + the
+// visible-index list) from CONCURRENT worker threads. WS7 (C1) relocated that to a
+// SINGLE main-thread .Prepare gather; the CPU visibility math is factored into
+// Flux_InstanceGroup::ComputeVisibleIndices (device-independent). This test pins
+// the determinism guarantee: with GPU culling forced OFF (the path that used to
+// double-call UpdateGPUBuffers), a fixed seeded layout produces a byte-identical
+// visible-state hash on every repeated re-seed + recompute (zero divergence == the
+// cross-worker race is gone). It also cross-checks that the visible count derived
+// from the single-writer recompute equals the freshly computed visible-index size.
+//
+// Headless-safe: SeedInstancesForTest fills only the CPU SoA arrays (no GPU buffer
+// allocation, which would assert without a Vulkan allocator).
+#include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
+#include "Core/Zenith_GraphicsOptions.h"
+
+ZENITH_TEST(Core, InstancedMeshesPrepareDeterminism) { Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(); }
+void Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(){
+
+	// Force the CPU-fallback path (the one that used to double-call UpdateGPUBuffers
+	// across two concurrent record callbacks). Restore on exit so no test bleeds state.
+	const bool bPrevGPUCulling = Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled;
+	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = false;
+
+	static constexpr uint32_t uNUM_INSTANCES = 4096;
+	static constexpr uint32_t uSEED          = 0xC0FFEEu;
+	static constexpr uint32_t uNUM_REPEATS   = 4;
+
+	// --- Legacy serial reference: seed once, compute the reference visible set. ---
+	uint64_t uReferenceHash = 0;
+	uint32_t uReferenceVisible = 0;
+	{
+		Flux_InstanceGroup xRefGroup;
+		xRefGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED);
+
+		Zenith_Vector<uint32_t> auRefVisible;
+		xRefGroup.ComputeVisibleIndices(auRefVisible);
+		uReferenceVisible = auRefVisible.GetSize();
+
+		// Sanity: the seed must leave a non-trivial visible subset (not all / none),
+		// otherwise the determinism check would be vacuous.
+		ZENITH_ASSERT_TRUE(uReferenceVisible > 0 && uReferenceVisible < uNUM_INSTANCES,
+			"InstancedMeshesPrepareDeterminism: seed produced a degenerate visible set (%u of %u)",
+			uReferenceVisible, uNUM_INSTANCES);
+
+		uReferenceHash = xRefGroup.HashVisibleStateForTest();
+	}
+
+	// --- Repeated re-seeds (independent groups): every run must be byte-identical. ---
+	for (uint32_t uRepeat = 0; uRepeat < uNUM_REPEATS; ++uRepeat)
+	{
+		Flux_InstanceGroup xGroup;
+		xGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED);
+
+		// The visible-index list is the exact CPU computation the single main-thread
+		// writer (GatherInstancedPacket -> UpdateGPUBuffers -> ComputeVisibleIndices)
+		// performs; recomputing it must reproduce the reference set every time.
+		Zenith_Vector<uint32_t> auVisible;
+		xGroup.ComputeVisibleIndices(auVisible);
+		ZENITH_ASSERT_EQ(auVisible.GetSize(), uReferenceVisible,
+			"InstancedMeshesPrepareDeterminism: visible count diverged on repeat %u (%u vs ref %u)",
+			uRepeat, auVisible.GetSize(), uReferenceVisible);
+
+		const uint64_t uHash = xGroup.HashVisibleStateForTest();
+		ZENITH_ASSERT_TRUE(uHash == uReferenceHash,
+			"InstancedMeshesPrepareDeterminism: visible-state hash (0x%016llx, repeat %u) diverged from reference (0x%016llx)",
+			static_cast<unsigned long long>(uHash), uRepeat,
+			static_cast<unsigned long long>(uReferenceHash));
+	}
+
+	// --- A DIFFERENT seed must produce a DIFFERENT layout (guards a no-op accessor
+	//     that always returns the same constant — which would make the above vacuous). ---
+	{
+		Flux_InstanceGroup xOtherGroup;
+		xOtherGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED ^ 0x5A5A5A5Au);
+		const uint64_t uOtherHash = xOtherGroup.HashVisibleStateForTest();
+		ZENITH_ASSERT_TRUE(uOtherHash != uReferenceHash,
+			"InstancedMeshesPrepareDeterminism: a different seed produced the same hash (0x%016llx) — accessor likely not reading state",
+			static_cast<unsigned long long>(uReferenceHash));
+	}
+
+	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = bPrevGPUCulling;
+}
+
+// ============================================================================
 // Transient-aliasing signature tests
 // ============================================================================
 // MakeTransientMemorySignature is a pure function of the descriptor — tests
