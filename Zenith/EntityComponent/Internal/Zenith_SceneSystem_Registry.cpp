@@ -653,7 +653,9 @@ bool Zenith_SceneSystem::IsScenePaused(Zenith_Scene xScene)
 
 Zenith_CameraComponent* Zenith_SceneSystem::FindMainCameraAcrossScenes()
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || m_bRenderTasksActive, "FindMainCameraAcrossScenes must be called from main thread or during render task execution");
+	// Walks LIVE ECS (TryGetMainCamera per scene), so it must never be called from a render worker;
+	// the cached frame-constants accessors (Flux_GraphicsImpl::GetViewProjMatrix / GetCameraPosition) are the worker-side path.
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "FindMainCameraAcrossScenes must be called from the main thread (walks live ECS)");
 	// Try active scene first (common case).
 	Zenith_SceneData* pxActiveData = GetSceneData(GetActiveScene());
 	if (pxActiveData)

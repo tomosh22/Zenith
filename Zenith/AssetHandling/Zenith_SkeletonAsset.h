@@ -155,14 +155,14 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadSkeletonAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadSkeletonAsset(const std::string&);
 
 	/**
 	 * Load a skeleton asset from file (private - use Zenith_AssetRegistry::Get)
 	 * @param szPath Path to .zskel file
-	 * @return Loaded asset, or nullptr on failure
+	 * @return Loaded asset, or an error code on failure
 	 */
-	static Zenith_SkeletonAsset* LoadFromFile(const char* szPath);
+	static Zenith_Result<Zenith_SkeletonAsset*> LoadFromFile(const char* szPath);
 
 	/**
 	 * Recursively compute model-space bind pose for a bone and its children

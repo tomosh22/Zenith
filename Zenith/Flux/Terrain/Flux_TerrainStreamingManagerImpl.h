@@ -2,6 +2,7 @@
 
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
+#include "Flux/Terrain/Flux_TerrainGPUStructs.h"
 #include "Maths/Zenith_Maths.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Collections/Zenith_Vector.h"
@@ -15,7 +16,6 @@ using namespace Flux_TerrainConfig;
 
 // Forward declarations
 class Flux_MeshGeometry;
-struct Zenith_TerrainChunkData;
 class Zenith_TerrainComponent;
 
 // ========== Residency State ==========
@@ -128,6 +128,43 @@ struct Flux_TerrainStreamingState
 	uint32_t                    m_uCurrentFrame      = 0;
 
 	Zenith_TerrainComponent*    m_pxOwner = nullptr;
+
+	// ========== Unified Terrain Buffers (relocated from Zenith_TerrainComponent) ==========
+	// Contains LOW LOD (always-resident) data at the beginning, followed by
+	// streaming space for HIGH LOD. Owned here (one streaming state per terrain
+	// component); the component forwards its buffer accessors to these members.
+	Flux_VertexBuffer m_xUnifiedVertexBuffer;
+	Flux_IndexBuffer  m_xUnifiedIndexBuffer;
+
+	// Buffer sizes and layout information
+	uint64_t m_ulUnifiedVertexBufferSize = 0;
+	uint64_t m_ulUnifiedIndexBufferSize  = 0;
+	uint32_t m_uVertexStride             = 0;
+	uint32_t m_uLowLODVertexCount        = 0;   // Vertices reserved for LOW LOD at buffer start
+	uint32_t m_uLowLODIndexCount         = 0;   // Indices reserved for LOW LOD at buffer start
+
+	// ========== GPU-Driven Culling State (relocated from Zenith_TerrainComponent) ==========
+	bool m_bCullingResourcesInitialized = false;
+
+	// GPU buffers for culling.
+	// m_xChunkDataBuffer is frame-indexed (one Flux_Buffer per frame in flight).
+	// The buffer is rebuilt + host-uploaded every frame in
+	// UpdateChunkLODAllocations, so frame N+1's CPU write to the underlying
+	// memory must not race against frame N's GPU compute read. A single shared
+	// buffer would race here: even though the per-frame fence at BeginFrame
+	// guarantees the slot's previous use is complete, slot K's frame N+2 CPU
+	// work runs concurrently with slot K+1's frame N+1 GPU work — and they hit
+	// the same shared chunk-data memory. Frame indexing closes that race
+	// entirely (one buffer per frame slot, CPU only ever writes the slot whose
+	// fence we just waited on). Memory residency is host-visible (see
+	// Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer), so the
+	// upload skips the staging buffer too — eliminating the staging-reuse race
+	// that the previous staged-upload path was exposed to.
+	Flux_DynamicReadWriteBuffer m_xChunkDataBuffer;
+	Flux_IndirectBuffer         m_xIndirectDrawBuffer;   // Indirect draw commands (written by compute)
+	Flux_DynamicConstantBuffer  m_xFrustumPlanesBuffer;  // Camera frustum + position (read-only in compute)
+	Flux_IndirectBuffer         m_xVisibleCountBuffer;   // Atomic counter for visible chunks
+	Flux_ReadWriteBuffer        m_xLODLevelBuffer;       // LOD level for each chunk (visualization)
 
 	void Initialize(Zenith_TerrainComponent* pxOwner);
 	void Shutdown();

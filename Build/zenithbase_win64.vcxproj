@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="vs2022_Debug_Win64_False|x64">
+      <Configuration>vs2022_Debug_Win64_False</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Debug_Win64_True|x64">
+      <Configuration>vs2022_Debug_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Release_Win64_False|x64">
+      <Configuration>vs2022_Release_Win64_False</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Release_Win64_True|x64">
+      <Configuration>vs2022_Release_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{04AE3503-34B5-40D1-B5EA-687E4EBDA542}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>ZenithBase</RootNamespace>
+    <ProjectName>ZenithBase</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
+    <TargetName>zenithbase</TargetName>
+    <OutDir>output\win64\vs2022_debug_win64_false\</OutDir>
+    <IntDir>obj\zenithbase\win64\vs2022_debug_win64_false\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_debug_win64_false\zenithbase.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+    <TargetName>zenithbase</TargetName>
+    <OutDir>output\win64\vs2022_debug_win64_true\</OutDir>
+    <IntDir>obj\zenithbase\win64\vs2022_debug_win64_true\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_debug_win64_true\zenithbase.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
+    <TargetName>zenithbase</TargetName>
+    <OutDir>output\win64\vs2022_release_win64_false\</OutDir>
+    <IntDir>obj\zenithbase\win64\vs2022_release_win64_false\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_release_win64_false\zenithbase.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+    <TargetName>zenithbase</TargetName>
+    <OutDir>output\win64\vs2022_release_win64_true\</OutDir>
+    <IntDir>obj\zenithbase\win64\vs2022_release_win64_true\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_release_win64_true\zenithbase.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NOMINMAX;WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>obj\zenithbase\win64\vs2022_debug_win64_false\ZenithBase.pch</PrecompiledHeaderOutputFile>
+      <ProgramDatabaseFileName>obj\zenithbase\win64\vs2022_debug_win64_false\zenithbase_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <OptimizeReferences>false</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_debug_win64_false\zenithbase.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NOMINMAX;WIN64;ZENITH_DEBUG;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\freetype\include;..\tools\middleware\msdf-atlas-gen;..\tools\middleware\msdf-atlas-gen\msdfgen;..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>obj\zenithbase\win64\vs2022_debug_win64_true\ZenithBase.pch</PrecompiledHeaderOutputFile>
+      <ProgramDatabaseFileName>obj\zenithbase\win64\vs2022_debug_win64_true\zenithbase_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <OptimizeReferences>false</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_debug_win64_true\zenithbase.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>obj\zenithbase\win64\vs2022_release_win64_false\ZenithBase.pch</PrecompiledHeaderOutputFile>
+      <ProgramDatabaseFileName>obj\zenithbase\win64\vs2022_release_win64_false\zenithbase_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_release_win64_false\zenithbase.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;WIN64;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\freetype\include;..\tools\middleware\msdf-atlas-gen;..\tools\middleware\msdf-atlas-gen\msdfgen;..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>obj\zenithbase\win64\vs2022_release_win64_true\ZenithBase.pch</PrecompiledHeaderOutputFile>
+      <ProgramDatabaseFileName>obj\zenithbase\win64\vs2022_release_win64_true\zenithbase_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_release_win64_true\zenithbase.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashMap.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashSet.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
+    <ClInclude Include="..\Zenith\Core\FrameContext.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h" />
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith.h" />
+    <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Engine.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Result.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
+    <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
+    <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h" />
+    <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_Maths.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp" />
+    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_String.cpp" />
+    <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
+    <ClCompile Include="..\Zenith\DataStream\Zenith_StreamEnvelope.cpp" />
+    <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
+    <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

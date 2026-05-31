@@ -84,7 +84,7 @@ Zenith_SkeletonAsset& Zenith_SkeletonAsset::operator=(Zenith_SkeletonAsset&& xOt
 // Loading and Saving
 //------------------------------------------------------------------------------
 
-Zenith_SkeletonAsset* Zenith_SkeletonAsset::LoadFromFile(const char* szPath)
+Zenith_Result<Zenith_SkeletonAsset*> Zenith_SkeletonAsset::LoadFromFile(const char* szPath)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
@@ -93,7 +93,7 @@ Zenith_SkeletonAsset* Zenith_SkeletonAsset::LoadFromFile(const char* szPath)
 	if (!xStream.IsValid())
 	{
 		Zenith_Error(LOG_CATEGORY_ANIMATION, "LoadFromFile: Failed to read skeleton file '%s'", szPath);
-		return nullptr;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	Zenith_SkeletonAsset* pxAsset = new Zenith_SkeletonAsset();

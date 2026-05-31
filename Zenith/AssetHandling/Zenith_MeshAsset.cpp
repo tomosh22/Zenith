@@ -121,7 +121,7 @@ Zenith_MeshAsset& Zenith_MeshAsset::operator=(Zenith_MeshAsset&& xOther)
 // Loading and Saving
 //------------------------------------------------------------------------------
 
-Zenith_MeshAsset* Zenith_MeshAsset::LoadFromFile(const char* szPath)
+Zenith_Result<Zenith_MeshAsset*> Zenith_MeshAsset::LoadFromFile(const char* szPath)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
@@ -130,7 +130,7 @@ Zenith_MeshAsset* Zenith_MeshAsset::LoadFromFile(const char* szPath)
 	if (!xStream.IsValid())
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "LoadFromFile: Failed to read file '%s'", szPath);
-		return nullptr;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	Zenith_MeshAsset* pxAsset = new Zenith_MeshAsset();

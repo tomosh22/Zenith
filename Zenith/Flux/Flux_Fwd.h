@@ -18,6 +18,7 @@ class Flux_ConstantBuffer;
 class Flux_DynamicConstantBuffer;
 class Flux_IndirectBuffer;
 class Flux_ReadWriteBuffer;
+class Flux_DynamicReadWriteBuffer;
 
 // View types (contain Vulkan handles - full definition requires vulkan.hpp)
 struct Flux_ShaderResourceView;

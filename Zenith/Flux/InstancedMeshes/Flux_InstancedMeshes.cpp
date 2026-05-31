@@ -230,7 +230,16 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Pass 1: GPU culling compute (no declared resources — per-instance-group
 	// output buffers are dynamic and not graph-tracked, so the GBuffer pass's
 	// dependency is expressed as an explicit DependsOn below).
-	Flux_PassHandle xCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
+	//
+	// WS7 keystone: the gather Prepare is hung on this FIRST instanced pass
+	// (Particles-Compute pattern). CallPrepareCallbacks runs it on the main thread
+	// before any record task dispatches, so it is the SINGLE writer of every
+	// group's per-frame state (UpdateGPUBuffers + ResetVisibleCount + culling-
+	// constants upload + stats). Both ExecuteCulling and ExecuteInstancedGBuffer
+	// then only READ that frozen state on their worker threads. Pass-registration
+	// order is irrelevant to Prepare timing.
+	Flux_PassHandle xCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling)
+		.Prepare([](void* p){ g_xEngine.InstancedMeshes().GatherInstancedPacket(p); });
 
 	// Pass 2: GBuffer render
 	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteInstancedGBuffer)
@@ -241,8 +250,107 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.DependsOn(xCullingPass);
 }
 
+// WS7 keystone gather (main thread, via .Prepare). This is the SINGLE writer of
+// every instance group's per-frame CPU/GPU-sync state. It performs, once on the
+// main thread, exactly the per-group work the record callbacks used to do
+// concurrently:
+//   - UpdateGPUBuffers(): uploads dirty transform/anim data and rebuilds the CPU
+//     visible-index list + m_uVisibleCount. Needed by BOTH the GPU-culling path
+//     (fresh transform/anim before the compute dispatch) and the CPU-fallback
+//     path (the ExecuteInstancedGBuffer !bUseGPUCulling branch used to call this).
+//   - When GPU culling is active: ResetVisibleCount() (zeroes the GPU atomic
+//     counter + indirect command, and m_uVisibleCount) and uploads the per-group
+//     culling constants into the shared subsystem buffer (same single-buffer
+//     overwrite semantics as before — the dispatches bind+read it at GPU time).
+//   - Accumulates the m_uTotalInstances / m_uVisibleInstances stats that
+//     ExecuteInstancedGBuffer used to write in its draw loop.
+// After this returns the group state is frozen; the record callbacks are readers.
+void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
+{
+	Flux_InstancedMeshesImpl& xSelf = g_xEngine.InstancedMeshes();
+
+	// Reset stats up-front (matches ExecuteInstancedGBuffer's old pre-loop reset).
+	xSelf.m_uTotalInstances = 0;
+	xSelf.m_uVisibleInstances = 0;
+
+	if (xSelf.m_apxInstanceGroups.empty())
+	{
+		return;
+	}
+
+	// Same predicate ExecuteCulling's outer guard / ExecuteInstancedGBuffer's
+	// bUseGPUCulling used. When false we still rebuild the CPU visible list
+	// (UpdateGPUBuffers) so the GBuffer CPU-fallback draw has a current count.
+	const bool bUseGPUCulling = xSelf.m_bCullingInitialized && xSelf.m_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled;
+
+	// Camera matrices for the culling constants (frame constants, already computed
+	// this frame — main-thread-safe reads). Only needed on the GPU-culling path,
+	// matching the old ExecuteCulling which fetched them under the same guard.
+	Zenith_Maths::Matrix4 xViewProjMatrix(1.0f);
+	Zenith_Maths::Vector3 xCameraPos(0.0f);
+	if (bUseGPUCulling)
+	{
+		xViewProjMatrix = g_xEngine.FluxGraphics().GetViewProjMatrix();
+		xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
+	}
+
+	for (size_t uGroup = 0; uGroup < xSelf.m_apxInstanceGroups.size(); ++uGroup)
+	{
+		Flux_InstanceGroup* pxGroup = xSelf.m_apxInstanceGroups[uGroup];
+		if (!pxGroup || pxGroup->IsEmpty())
+		{
+			continue;
+		}
+
+		Flux_MeshInstance* pxMesh = pxGroup->GetMesh();
+		if (!pxMesh)
+		{
+			continue;
+		}
+
+		// Upload CPU data to GPU + rebuild CPU visible list (sets m_uVisibleCount).
+		pxGroup->UpdateGPUBuffers();
+
+		if (bUseGPUCulling)
+		{
+			// Reset the GPU atomic counter + indirect command (also zeroes
+			// m_uVisibleCount). Order matters: AFTER UpdateGPUBuffers, mirroring
+			// the old ExecuteCulling sequence — the GPU compute writes the real
+			// visible count on-device.
+			pxGroup->ResetVisibleCount();
+
+			// Build + upload culling constants into the shared subsystem buffer.
+			// Single-buffer overwrite semantics preserved exactly (UploadBufferData
+			// is an immediate, mutex-guarded copy).
+			Flux_CullingConstants xCullingConstants;
+			Flux_InstanceCullingUtil::ExtractFrustumPlanes(xViewProjMatrix, xCullingConstants.m_axFrustumPlanes);
+			xCullingConstants.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
+			xCullingConstants.m_uTotalInstanceCount = pxGroup->GetInstanceCount();
+			xCullingConstants.m_uMeshIndexCount = pxMesh->GetNumIndices();
+			xCullingConstants.m_fBoundingSphereRadius = pxGroup->GetBounds().m_fRadius;
+			xCullingConstants.m_fPadding = 0.0f;
+
+			g_xEngine.VulkanMemory().UploadBufferData(
+				xSelf.m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle,
+				&xCullingConstants,
+				sizeof(xCullingConstants));
+		}
+
+		// Stats (moved from ExecuteInstancedGBuffer's draw loop). Visible count is
+		// not GPU-accurate on the culling path (would need a readback), so we use
+		// the instance count there — identical to the old behaviour.
+		xSelf.m_uTotalInstances += pxGroup->GetInstanceCount();
+		xSelf.m_uVisibleInstances += bUseGPUCulling ? pxGroup->GetInstanceCount() : pxGroup->GetVisibleCount();
+	}
+}
+
 static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 {
+	// PURE READER (worker thread). All CPU/GPU-sync mutation — UpdateGPUBuffers,
+	// ResetVisibleCount, and the culling-constants upload — was relocated to
+	// GatherInstancedPacket (.Prepare, main thread). This callback only binds the
+	// now-frozen per-group buffers and dispatches the culling compute.
+
 	// Check if GPU culling should run
 	if (!g_xEngine.InstancedMeshes().m_bCullingInitialized || !g_xEngine.InstancedMeshes().m_bCullingEnabled || !Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled)
 	{
@@ -253,10 +361,6 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	{
 		return;
 	}
-
-	// Get camera matrices from Flux_Graphics (already computed this frame)
-	Zenith_Maths::Matrix4 xViewProjMatrix = g_xEngine.FluxGraphics().GetViewProjMatrix();
-	Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 
 	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.InstancedMeshes().m_xCullingPipeline);
 
@@ -277,28 +381,8 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 			continue;
 		}
 
-		// Upload CPU data to GPU before culling (ensures transforms and anim data are current)
-		pxGroup->UpdateGPUBuffers();
-
-		// Reset visible count to 0 before culling
-		pxGroup->ResetVisibleCount();
-
-		// Build culling constants
-		Flux_CullingConstants xCullingConstants;
-		Flux_InstanceCullingUtil::ExtractFrustumPlanes(xViewProjMatrix, xCullingConstants.m_axFrustumPlanes);
-		xCullingConstants.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
-		xCullingConstants.m_uTotalInstanceCount = pxGroup->GetInstanceCount();
-		xCullingConstants.m_uMeshIndexCount = pxMesh->GetNumIndices();
-		xCullingConstants.m_fBoundingSphereRadius = pxGroup->GetBounds().m_fRadius;
-		xCullingConstants.m_fPadding = 0.0f;
-
-		// Upload culling constants
-		g_xEngine.VulkanMemory().UploadBufferData(
-			g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle,
-			&xCullingConstants,
-			sizeof(xCullingConstants));
-
-		// Bind resources
+		// Bind resources (culling constants were uploaded into the shared buffer by
+		// GatherInstancedPacket; we just bind its CBV here).
 		xBinder.BindCBV(g_xEngine.InstancedMeshes().m_xCullingShader, "CullingConstants", &g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer.GetCBV());
 		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
 		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
@@ -407,6 +491,11 @@ static void IssueBatchDraw(Flux_CommandList* pxCmdList, Flux_InstanceGroup* pxGr
 
 static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 {
+	// PURE READER (worker thread). The CPU-fallback UpdateGPUBuffers and the
+	// per-group stat writes were relocated to GatherInstancedPacket (.Prepare,
+	// main thread). This callback binds the now-frozen per-group buffers and
+	// emits the draws only.
+
 	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
 		return;
@@ -425,10 +514,6 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
 	xBinder.BindCBV(g_xEngine.InstancedMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
-	// Track statistics
-	g_xEngine.InstancedMeshes().m_uTotalInstances = 0;
-	g_xEngine.InstancedMeshes().m_uVisibleInstances = 0;
-
 	const bool bUseGPUCulling = g_xEngine.InstancedMeshes().m_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && g_xEngine.InstancedMeshes().m_bCullingInitialized;
 
 	for (size_t uGroup = 0; uGroup < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++uGroup)
@@ -445,29 +530,22 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 			continue;
 		}
 
-		// When GPU culling is enabled, buffers are updated by the culling pass (ExecuteCulling)
-		// When disabled (CPU fallback), update buffers here including CPU-side visible list
-		if (!bUseGPUCulling)
-		{
-			// CPU fallback: UpdateGPUBuffers builds visible index list on CPU
-			pxGroup->UpdateGPUBuffers();
-		}
-
 		// Set vertex and index buffers from mesh
 		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMesh->GetVertexBuffer());
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
 
 		BindBatchDescriptors(xBinder, pxGroup);
 		IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
-
-		g_xEngine.InstancedMeshes().m_uTotalInstances += pxGroup->GetInstanceCount();
-		// Note: visible count is not accurate for GPU culling path (would need GPU readback)
-		g_xEngine.InstancedMeshes().m_uVisibleInstances += bUseGPUCulling ? pxGroup->GetInstanceCount() : pxGroup->GetVisibleCount();
 	}
 }
 
 void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
+	// C2 audit: PURE READER. Called from the shadow cascades' record path; it only
+	// reads frozen group state (GetMesh / GetTransformBuffer / GetVisibleIndexBuffer
+	// / GetVisibleCount) — no UpdateGPUBuffers, no ResetVisibleCount. The mutators it
+	// would otherwise have called assert main-thread-only (AssertMainThreadMutation),
+	// so any future worker-thread mutation here trips immediately.
 	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
 		return;

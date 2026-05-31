@@ -2,9 +2,17 @@
 
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_AccessSet.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+// WS12 parallel-sim chokepoint: the collider guard (the hidden Tween->Jolt
+// physics-write edge) needs the concrete ColliderComponent type for
+// HasComponent<>, and ParallelDispatchHook fans the eligible wave through the
+// task system. Both pull in only when the WS12 gate is ON at runtime.
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Zenith_SceneSystem.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
@@ -737,7 +745,211 @@ void Zenith_SceneData::QueuePendingStartsForNewEntities(const Zenith_Vector<Zeni
 
 void Zenith_SceneData::DispatchLifecycleHookForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook)
 {
+	// WS12 gate. DEFAULT FALSE -> the existing serial loop below runs verbatim:
+	// identical iteration order, single thread, zero behaviour change. Only when
+	// g_xEngine.Scenes().AreParallelSimEnabled() is true do we take the parallel
+	// branch (proven byte-identical by the determinism cross-check). Reversibility
+	// = flip the flag / delete this else-branch.
+	if (!g_xEngine.Scenes().AreParallelSimEnabled())
+	{
+		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+
+		for (u_int u = 0; u < xSnapshotIDs.GetSize(); ++u)
+		{
+			Zenith_EntityID uID = xSnapshotIDs.Get(u);
+			if (!EntityExists(uID)) continue;
+			if (WasCreatedDuringUpdate(uID)) continue;
+
+			Zenith_Entity xEntity = GetEntity(uID);
+			if (!xEntity.IsActiveInHierarchy()) continue;
+
+			switch (eHook)
+			{
+			case LifecycleHook::UPDATE:      xRegistry.DispatchOnUpdate(xEntity, fDt);     break;
+			case LifecycleHook::LATE_UPDATE: xRegistry.DispatchOnLateUpdate(xEntity, fDt); break;
+			}
+		}
+		return;
+	}
+
+	ParallelDispatchHook(xSnapshotIDs, fDt, eHook);
+}
+
+//-----------------------------------------------------------------------------
+// WS12 parallel-sim eligibility + dispatch
+//-----------------------------------------------------------------------------
+
+bool Zenith_SceneData::IsEntityParallelEligible(Zenith_Entity& xEntity)
+{
+	// (c) No ScriptComponent — scripts are an open-ended surface (arbitrary user
+	//     OnUpdate that may touch any state); always serial.
+	if (xEntity.HasComponent<Zenith_ScriptComponent>()) return false;
+
+	// (b) No ColliderComponent — the hidden Tween->Jolt physics-write guard.
+	//     Transform::SetPosition/SetRotation mirror onto the shared Jolt
+	//     BodyInterface IFF the entity has a collider, which the determinism
+	//     hash (ECS state only) cannot see. Exclude collider-bearing entities.
+	if (xEntity.HasComponent<Zenith_ColliderComponent>()) return false;
+
+	// Defense-in-depth (strictly CONSERVATIVE — only ever REMOVES entities from
+	// the eligible set, so it cannot affect the default-OFF byte-identity nor the
+	// serial-vs-parallel equivalence). A Tween animating SCALE on an entity with
+	// a ModelComponent that has a baked physics mesh would, via
+	// Transform::SetScale -> ModelComponent::GeneratePhysicsMesh, write shared
+	// physics state — the SAME class of cross-system race as the collider edge
+	// (and equally invisible to the ECS-state hash). The mask check below does
+	// NOT catch this because ModelComponent has no per-frame update hook and so
+	// never contributes to the aggregate mask. Exclude it explicitly. Beyond the
+	// spec's three named conditions, but demanded by the "correctness must be
+	// PROVEN, never assumed" principle for this highest-risk change.
+	if (xEntity.HasComponent<Zenith_ModelComponent>())
+	{
+		if (xEntity.GetComponent<Zenith_ModelComponent>().HasPhysicsMesh()) return false;
+	}
+
+	// (a) Aggregate per-frame-update access mask is a strict subset of
+	//     {READS_TRANSFORM|WRITES_TRANSFORM}. Any UNKNOWN bit (an un-annotated
+	//     update component) or PHYSICS bit forces serial. This keeps ~11/12
+	//     component types serial; only the audited Tween passes.
+	const u_int uMask = Zenith_AccessSet::ComputeEntityUpdateAccessMask(
+		Zenith_ComponentMetaRegistry::Get(), xEntity);
+	return Zenith_AccessSet::MaskIsParallelEligible(uMask);
+}
+
+// One shard of the WS12 eligible-entity parallel wave. Splits the eligible list
+// into uNumInvocations CONTIGUOUS ranges (deterministic partition, independent
+// of which worker picks which index) and dispatches its range. Eligible
+// entities are mutually disjoint (each writes only its own Transform), so ranges
+// never touch shared state and the union of all ranges == the whole eligible
+// list exactly once, in order. Static member (not a free function) so it can
+// reach the private WasCreatedDuringUpdate guard.
+void Zenith_SceneData::ParallelSimShardFunc(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
+{
+	ParallelSimShardContext* pxCtx = static_cast<ParallelSimShardContext*>(pData);
+	const Zenith_Vector<Zenith_EntityID>& xEligible = *pxCtx->m_pxEligibleIDs;
+	Zenith_SceneData* pxSceneData = pxCtx->m_pxSceneData;
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+
+	const u_int uTotal = xEligible.GetSize();
+
+	// Even contiguous partition with the remainder spread over the first
+	// (uTotal % uNumInvocations) shards. Pure integer math on the index, so
+	// every worker computes the same disjoint ranges regardless of order.
+	const u_int uBase      = uTotal / uNumInvocations;
+	const u_int uRemainder = uTotal % uNumInvocations;
+	const u_int uBegin = uInvocationIndex * uBase + (uInvocationIndex < uRemainder ? uInvocationIndex : uRemainder);
+	const u_int uCount = uBase + (uInvocationIndex < uRemainder ? 1u : 0u);
+	const u_int uEnd   = uBegin + uCount;
+
+	for (u_int u = uBegin; u < uEnd; ++u)
+	{
+		Zenith_EntityID uID = xEligible.Get(u);
+
+		// Same per-entity guards as the serial loop, re-checked inside the shard
+		// (the EntityExists / WasCreatedDuringUpdate guards are pure reads of
+		// stable slot storage — thread-safe during task execution; see
+		// EntityExists' contract comment). IsActiveInHierarchy was resolved on
+		// the MAIN THREAD during the gather (it asserts main-thread and mutates
+		// the per-slot cache, so it must NOT run on a worker); only entities that
+		// passed it are in this list. A Tween OnUpdate cannot create/destroy
+		// entities, so nothing in this wave can invalidate another eligible
+		// entity mid-wave — but we keep the cheap guards anyway for serial parity.
+		if (!pxSceneData->EntityExists(uID)) continue;
+		if (pxSceneData->WasCreatedDuringUpdate(uID)) continue;
+
+		Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
+
+		if (pxCtx->m_bLateUpdate)
+		{
+			xRegistry.DispatchOnLateUpdate(xEntity, pxCtx->m_fDt);
+		}
+		else
+		{
+			xRegistry.DispatchOnUpdate(xEntity, pxCtx->m_fDt);
+		}
+	}
+}
+
+void Zenith_SceneData::ParallelDispatchHook(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook)
+{
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+
+	// ORDER-PRESERVING SEGMENTED DISPATCH. We walk the snapshot in order and
+	// accumulate MAXIMAL CONTIGUOUS RUNS of eligible entities into a pending
+	// wave. The moment we hit an INELIGIBLE entity (or the end of the snapshot),
+	// we FLUSH the pending eligible wave (parallel dispatch + barrier) and THEN
+	// dispatch the ineligible entity inline. This preserves the EXACT global
+	// serial order: every entity — eligible or not — is dispatched in its
+	// snapshot position relative to every other, just with the disjoint eligible
+	// runs fanned across workers.
+	//
+	// Why segment rather than one big wave: the spec's one-wave shortcut is
+	// byte-identical to serial ONLY if no ineligible entity reads an eligible
+	// entity's per-frame output. An ineligible entity is UNKNOWN (we must assume
+	// it reads anything — e.g. a follow-camera script reading a tweened entity's
+	// position). Deferring ALL eligible entities to a single post-gather wave
+	// would let such an ineligible entity observe a STALE transform, diverging
+	// from serial — a hazard the determinism cross-check (pure-Tween scenes)
+	// cannot see, exactly the "assumed, not proven" trap the spec warns against.
+	// Segmenting makes the equivalence hold for ANY scene, not just the test
+	// scenes. Eligible entities never read other entities, so order WITHIN a run
+	// is irrelevant; the barrier before each ineligible dispatch makes all prior
+	// eligible writes visible. In the common cases this is still cheap: an
+	// all-eligible scene (the bench/soak) is exactly one wave; an all-ineligible
+	// scene (~every real scene today) submits no wave at all.
+	//
+	// All guards (EntityExists / WasCreatedDuringUpdate / IsActiveInHierarchy)
+	// run here on the MAIN THREAD during the walk — IsActiveInHierarchy asserts
+	// main-thread and mutates the per-slot cache, so it must NOT run on a worker.
+
+	Zenith_Vector<Zenith_EntityID> xPendingEligible;
+	xPendingEligible.Reserve(xSnapshotIDs.GetSize());
+
+	const u_int uNumWorkers = g_xEngine.Tasks().GetNumWorkerThreads();
+
+	// Flush the pending eligible run as one mutually-disjoint parallel wave, then
+	// clear it. No-op when the run is empty (also avoids Zenith_TaskArray's
+	// "0 invocations" assert).
+	auto FlushEligibleWave = [&]()
+	{
+		const u_int uCount = xPendingEligible.GetSize();
+		if (uCount == 0u) return;
+
+		// Shard count = worker threads + 1 (the calling main thread participates
+		// via bCallingThreadParticipates). +1 guarantees >= 1 even on a single-
+		// core / pre-init box where GetNumWorkerThreads() is 0. Never more shards
+		// than items (no empty shard; TaskArray forbids 0 invocations).
+		u_int uNumInvocations = uNumWorkers + 1u;
+		if (uNumInvocations > uCount)
+		{
+			uNumInvocations = uCount;
+		}
+
+		ParallelSimShardContext xCtx;
+		xCtx.m_pxSceneData   = this;
+		xCtx.m_pxEligibleIDs = &xPendingEligible;
+		xCtx.m_fDt           = fDt;
+		xCtx.m_bLateUpdate   = (eHook == LifecycleHook::LATE_UPDATE);
+
+		Zenith_TaskArray xArray(
+			ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+			&Zenith_SceneData::ParallelSimShardFunc,
+			&xCtx,
+			uNumInvocations,
+			/* bCallingThreadParticipates = */ true);
+
+		// Signal the wave-in-flight window so the SceneData component-read asserts
+		// permit worker-thread reads of the (disjoint) eligible entities — exactly
+		// the m_bRenderTasksActive pattern. Cleared the instant the barrier
+		// returns, before any ineligible entity is dispatched, so the asserts go
+		// back to strict main-thread-only outside the wave.
+		g_xEngine.Scenes().SetParallelSimWaveActive(true);
+		g_xEngine.Tasks().SubmitTaskArray(&xArray);
+		xArray.WaitUntilComplete();
+		g_xEngine.Scenes().SetParallelSimWaveActive(false);
+
+		xPendingEligible.Clear();
+	};
 
 	for (u_int u = 0; u < xSnapshotIDs.GetSize(); ++u)
 	{
@@ -748,12 +960,27 @@ void Zenith_SceneData::DispatchLifecycleHookForEntities(const Zenith_Vector<Zeni
 		Zenith_Entity xEntity = GetEntity(uID);
 		if (!xEntity.IsActiveInHierarchy()) continue;
 
-		switch (eHook)
+		if (IsEntityParallelEligible(xEntity))
 		{
-		case LifecycleHook::UPDATE:      xRegistry.DispatchOnUpdate(xEntity, fDt);     break;
-		case LifecycleHook::LATE_UPDATE: xRegistry.DispatchOnLateUpdate(xEntity, fDt); break;
+			// Extend the current eligible run.
+			xPendingEligible.PushBack(uID);
+		}
+		else
+		{
+			// End of an eligible run: flush it (barrier) so its writes are
+			// visible, then dispatch this ineligible entity inline, in order —
+			// byte-identical to the serial loop.
+			FlushEligibleWave();
+			switch (eHook)
+			{
+			case LifecycleHook::UPDATE:      xRegistry.DispatchOnUpdate(xEntity, fDt);     break;
+			case LifecycleHook::LATE_UPDATE: xRegistry.DispatchOnLateUpdate(xEntity, fDt); break;
+			}
 		}
 	}
+
+	// Flush any trailing eligible run.
+	FlushEligibleWave();
 }
 
 void Zenith_SceneData::TickTimedDestructions(float fDt)

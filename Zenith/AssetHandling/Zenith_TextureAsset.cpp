@@ -1,8 +1,18 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
+
+// Asset-type id for the .ztxtr envelope. No engine-wide numeric asset-type-id
+// enum exists (assets are keyed by string type name), so a small local constant
+// suffices — it only needs to be stable within the texture read/write pair.
+// Writers (Tools/Zenith_Tools_TextureExport.cpp and the inline game exporters)
+// should pass this id and schema version 1 to Zenith_WriteStreamHeader when they
+// adopt the envelope; until then the read path's BAD_MAGIC branch loads the
+// historical headerless files unchanged (schema 0).
+static constexpr u_int uTEXTURE_ASSET_TYPE_ID = 1;
 
 // Unified data size calculation for both compressed and uncompressed textures
 static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uDepth = 1)
@@ -53,7 +63,7 @@ void Zenith_TextureAsset::MarkAsBindless()
 	}
 }
 
-bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
+Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
 {
 	// Load texture data from file
 	size_t ulDataSize;
@@ -66,7 +76,21 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	if (!xStream.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to read file '%s'", strPath.c_str());
-		return false;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
+	}
+
+	// Envelope-aware read with back-compat (wave8.5):
+	//   - v1 file  : Zenith_ReadStreamHeader succeeds and advances the cursor
+	//                past the header; the payload below reads as normal.
+	//   - legacy   : no envelope -> BAD_MAGIC. ReadStreamHeader is non-destructive
+	//                (it restores the cursor to 0), so the same payload reads pick
+	//                up the historical headerless layout (treated as schema 0).
+	//   - future   : a newer envelope version is a hard fail (VERSION_MISMATCH).
+	Zenith_Result<Zenith_StreamHeader> xHeaderResult = Zenith_ReadStreamHeader(xStream, uTEXTURE_ASSET_TYPE_ID);
+	if (!xHeaderResult.IsOk() && xHeaderResult.Error() != Zenith_ErrorCode::BAD_MAGIC)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Unsupported envelope in '%s'", strPath.c_str());
+		return xHeaderResult.Error();
 	}
 
 	xStream >> iWidth;
@@ -89,14 +113,14 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	if (ulAllocSize == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Zero data size for texture '%s' (dims: %dx%dx%d)", strPath.c_str(), iWidth, iHeight, iDepth);
-		return false;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	void* pData = Zenith_MemoryManagement::Allocate(ulAllocSize);
 	if (!pData)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to allocate %zu bytes for texture '%s'", ulAllocSize, strPath.c_str());
-		return false;
+		return Zenith_ErrorCode::OUT_OF_MEMORY;
 	}
 
 	// Initialize to zero in case file has less data than expected
@@ -126,14 +150,21 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	m_xSurfaceInfo.m_uNumMips = uNumMips;
 	m_xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	// Create GPU resources
+	// Create GPU resources. Surface an invalid VRAM handle via the release-
+	// survivable check tier (WS8.3) for diagnosability, but DO NOT fail the load:
+	// the renderer has always tolerated a not-yet-valid handle here (e.g. headless
+	// boot, where FontAtlas uploads before the device is ready), so hard-failing
+	// would be a behaviour change. Hard-failing on genuine GPU-OOM is Wave-9
+	// error-handling scope, where the tolerant-caller contract is revisited.
 	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	Zenith_Check(m_xVRAMHandle.IsValid(), "Zenith_TextureAsset: GPU upload returned an invalid handle for '%s'", strPath.c_str());
 	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	// Free the staging data
 	Zenith_MemoryManagement::Deallocate(pData);
 
+	// SUCCESS — payload is the legacy "true" bool carried by Zenith_Status.
 	return true;
 }
 

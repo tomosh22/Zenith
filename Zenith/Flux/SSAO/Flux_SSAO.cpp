@@ -2,18 +2,23 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/SSAO/Flux_SSAOImpl.h"
-#include "Flux/SSAO/Flux_SSAOImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+// Injected dep: GetWidth/GetHeight on the stored swapchain pointer need the
+// full type (only transitively available before this seam).
+#include "Vulkan/Zenith_Vulkan_Swapchain.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
+
+// Wave-11 DI seam (2nd leaf seam after WS9.2 HiZ): cross-subsystem deps are
+// injected into Initialise and stored as member pointers; g_xEngine.SSAO()
+// self-lookup survives only in the non-capturing fn-pointer trampolines below.
 
 // Shaders and pipelines
 
@@ -41,30 +46,35 @@ static struct SSAOBlurConstants
 } dbg_xBlurConstants;
 
 // Attachment accessors — always resolve through the graph's transient slot.
-static Flux_RenderAttachment& GetRawOcclusion()
+// Now non-static members: read their own m_pxGraph / m_x*Handle instead of
+// reaching for g_xEngine.SSAO() (mirror HiZ GetHiZBuffer).
+Flux_RenderAttachment& Flux_SSAOImpl::GetRawOcclusion()
 {
-	Zenith_Assert(g_xEngine.SSAO().m_pxGraph, "Flux_SSAOImpl::GetRawOcclusion: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return g_xEngine.SSAO().m_pxGraph->GetTransientAttachment(g_xEngine.SSAO().m_xRawOcclusionHandle);
+	Zenith_Assert(m_pxGraph, "Flux_SSAOImpl::GetRawOcclusion: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return m_pxGraph->GetTransientAttachment(m_xRawOcclusionHandle);
 }
-static Flux_RenderAttachment& GetBlurred()
+Flux_RenderAttachment& Flux_SSAOImpl::GetBlurred()
 {
-	Zenith_Assert(g_xEngine.SSAO().m_pxGraph, "Flux_SSAOImpl::GetBlurred: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return g_xEngine.SSAO().m_pxGraph->GetTransientAttachment(g_xEngine.SSAO().m_xBlurredHandle);
+	Zenith_Assert(m_pxGraph, "Flux_SSAOImpl::GetBlurred: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return m_pxGraph->GetTransientAttachment(m_xBlurredHandle);
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
 // Debug-texture callbacks — resolved every ImGui draw so the preview follows
 // render-graph rebuilds. Returning nullptr before SetupRenderGraph avoids the
-// null-guard asserts on the attachment getters above.
+// null-guard asserts on the attachment getters above. Non-capturing fn-pointer
+// trampolines: re-enter via g_xEngine.SSAO() to reach the singleton instance.
 static const Flux_ShaderResourceView* DebugGetRawOcclusionSRV()
 {
-	if (g_xEngine.SSAO().m_pxGraph == nullptr) return nullptr;
-	return &GetRawOcclusion().SRV();
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
+	if (xSSAO.m_pxGraph == nullptr) return nullptr;
+	return &xSSAO.GetRawOcclusion().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetBlurredSRV()
 {
-	if (g_xEngine.SSAO().m_pxGraph == nullptr) return nullptr;
-	return &GetBlurred().SRV();
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
+	if (xSSAO.m_pxGraph == nullptr) return nullptr;
+	return &xSSAO.GetBlurred().SRV();
 }
 #endif
 
@@ -73,27 +83,33 @@ static const Flux_ShaderResourceView* DebugGetBlurredSRV()
 void Flux_SSAOImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		g_xEngine.SSAO().m_xGenerateShader, g_xEngine.SSAO().m_xGeneratePipeline,
+		m_xGenerateShader, m_xGeneratePipeline,
 		FluxShaderProgram::SSAO_Main, SSAO_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		g_xEngine.SSAO().m_xBlurShader, g_xEngine.SSAO().m_xBlurPipeline,
+		m_xBlurShader, m_xBlurPipeline,
 		FluxShaderProgram::SSAO_Blur, SSAO_FORMAT);
 
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			g_xEngine.SSAO().m_xUpsampleShader, FluxShaderProgram::SSAO_Upsample, HDR_SCENE_FORMAT);
+			m_xUpsampleShader, FluxShaderProgram::SSAO_Upsample, HDR_SCENE_FORMAT);
 
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ZERO;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_SRCALPHA;
 
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSAO().m_xUpsamplePipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xUpsamplePipeline, xSpec);
 	}
 }
 
-void Flux_SSAOImpl::Initialise()
+void Flux_SSAOImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swapchain& xSwapchain, Flux_HDRImpl& xHDR)
 {
+	// Wave-11 DI seam: store the injected cross-subsystem deps. Every later
+	// instance-method reach-in routes through these instead of g_xEngine.
+	m_pxGraphics  = &xGraphics;
+	m_pxSwapchain = &xSwapchain;
+	m_pxHDR       = &xHDR;
+
 	BuildPipelines();
 
 #ifdef ZENITH_TOOLS
@@ -102,6 +118,8 @@ void Flux_SSAOImpl::Initialise()
 		FluxShaderProgram::SSAO_Blur,
 		FluxShaderProgram::SSAO_Upsample,
 	};
+	// Non-capturing fn-pointer trampoline: re-enters via g_xEngine.SSAO() to
+	// reach the singleton instance (it cannot capture `this`).
 	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSAO().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
@@ -128,26 +146,36 @@ void Flux_SSAOImpl::Initialise()
 
 void Flux_SSAOImpl::Shutdown()
 {
-	g_xEngine.SSAO().m_pxGraph = nullptr;
+	m_pxGraph = nullptr;
+	// Drop the injected deps so the instance returns to a clean default state.
+	m_pxGraphics  = nullptr;
+	m_pxSwapchain = nullptr;
+	m_pxHDR       = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO shut down");
 }
 
-// ---- Execute callbacks (use GetRawOcclusion/GetBlurred helpers) ----
+// ---- Execute callbacks (use GetRawOcclusion/GetBlurred accessors) ----
 
 static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bSSAOEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSAO().m_xGeneratePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// cannot capture, so it re-enters via g_xEngine.SSAO() to reach the singleton
+	// instance, then routes its FluxGraphics reach-ins through the injected
+	// member (mirrors ExecuteHiZMip).
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSAO.m_xGeneratePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSSAO.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSSAO.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(g_xEngine.SSAO().m_xGenerateShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(g_xEngine.SSAO().m_xGenerateShader, "SSAOConstants", &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
-	xBinder.BindSRV(g_xEngine.SSAO().m_xGenerateShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSAO().m_xGenerateShader, "g_xNormalTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindCBV(xSSAO.m_xGenerateShader, "FrameConstants", &xSSAO.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindDrawConstants(xSSAO.m_xGenerateShader, "SSAOConstants", &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
+	xBinder.BindSRV(xSSAO.m_xGenerateShader, "g_xDepthTex", xSSAO.m_pxGraphics->GetDepthStencilSRV());
+	xBinder.BindSRV(xSSAO.m_xGenerateShader, "g_xNormalTex", xSSAO.m_pxGraphics->GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -158,15 +186,17 @@ static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 	if (!xOpts.m_bSSAOEnabled || !xOpts.m_bSSAOBlurEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSAO().m_xBlurPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSAO.m_xBlurPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSSAO.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSSAO.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindDrawConstants(g_xEngine.SSAO().m_xBlurShader, "SSAOBlurConstants", &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
-	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xOcclusionTex", &GetRawOcclusion().SRV());
-	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xNormalTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindDrawConstants(xSSAO.m_xBlurShader, "SSAOBlurConstants", &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
+	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xOcclusionTex", &xSSAO.GetRawOcclusion().SRV());
+	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xDepthTex", xSSAO.m_pxGraphics->GetDepthStencilSRV());
+	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xNormalTex", xSSAO.m_pxGraphics->GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -177,17 +207,19 @@ static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 	if (!xOpts.m_bSSAOEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSAO().m_xUpsamplePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSAO.m_xUpsamplePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSSAO.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSSAO.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	if (xOpts.m_bSSAOBlurEnabled)
-		xBinder.BindSRV(g_xEngine.SSAO().m_xUpsampleShader, "g_xOcclusionTex", &GetBlurred().SRV());
+		xBinder.BindSRV(xSSAO.m_xUpsampleShader, "g_xOcclusionTex", &xSSAO.GetBlurred().SRV());
 	else
-		xBinder.BindSRV(g_xEngine.SSAO().m_xUpsampleShader, "g_xOcclusionTex", &GetRawOcclusion().SRV());
+		xBinder.BindSRV(xSSAO.m_xUpsampleShader, "g_xOcclusionTex", &xSSAO.GetRawOcclusion().SRV());
 
-	xBinder.BindSRV(g_xEngine.SSAO().m_xUpsampleShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(xSSAO.m_xUpsampleShader, "g_xDepthTex", xSSAO.m_pxGraphics->GetDepthStencilSRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -196,36 +228,36 @@ static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 
 void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	g_xEngine.SSAO().m_pxGraph = &xGraph;
+	m_pxGraph = &xGraph;
 
-	const u_int uHalfWidth  = g_xEngine.VulkanSwapchain().GetWidth()  / 2;
-	const u_int uHalfHeight = g_xEngine.VulkanSwapchain().GetHeight() / 2;
+	const u_int uHalfWidth  = m_pxSwapchain->GetWidth()  / 2;
+	const u_int uHalfHeight = m_pxSwapchain->GetHeight() / 2;
 
 	Flux_TransientTextureDesc xSSAODesc;
 	xSSAODesc.m_uWidth       = uHalfWidth;
 	xSSAODesc.m_uHeight      = uHalfHeight;
 	xSSAODesc.m_eFormat      = SSAO_FORMAT;
 	xSSAODesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	g_xEngine.SSAO().m_xRawOcclusionHandle = xGraph.CreateTransient(xSSAODesc);
-	g_xEngine.SSAO().m_xBlurredHandle      = xGraph.CreateTransient(xSSAODesc);
+	m_xRawOcclusionHandle = xGraph.CreateTransient(xSSAODesc);
+	m_xBlurredHandle      = xGraph.CreateTransient(xSSAODesc);
 
 	xGraph.AddPass("SSAO Generate", ExecuteSSAOGenerate)
 		.ClearTargets()
-		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads         (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(g_xEngine.SSAO().m_xRawOcclusionHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
+		.Reads         (m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads         (m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_xRawOcclusionHandle,                                   RESOURCE_ACCESS_WRITE_RTV);
 
 	xGraph.AddPass("SSAO Blur", ExecuteSSAOBlur)
 		.ClearTargets()
-		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads         (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (g_xEngine.SSAO().m_xRawOcclusionHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(g_xEngine.SSAO().m_xBlurredHandle,                                          RESOURCE_ACCESS_WRITE_RTV);
+		.Reads         (m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads         (m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_xRawOcclusionHandle,                                   RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_xBlurredHandle,                                        RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — writes AO factor onto the HDR scene via multiplicative blend.
 	xGraph.AddPass("SSAO Upsample", ExecuteSSAOUpsample)
-		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
-		.Writes        (g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.ReadsTransient(g_xEngine.SSAO().m_xBlurredHandle,                    RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(g_xEngine.SSAO().m_xRawOcclusionHandle,               RESOURCE_ACCESS_READ_SRV);
+		.Reads         (m_pxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
+		.Writes        (m_pxHDR->GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.ReadsTransient(m_xBlurredHandle,                   RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient(m_xRawOcclusionHandle,              RESOURCE_ACCESS_READ_SRV);
 }

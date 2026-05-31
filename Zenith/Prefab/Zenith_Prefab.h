@@ -111,12 +111,12 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadPrefabAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadPrefabAsset(const std::string&);
 
 	/**
 	 * Load prefab from file (private - use Zenith_AssetRegistry::Get)
 	 */
-	bool LoadFromFile(const std::string& strFilePath);
+	Zenith_Status LoadFromFile(const std::string& strFilePath);
 
 	std::string m_strName;
 	Zenith_DataStream m_xComponentData;

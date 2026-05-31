@@ -17,6 +17,16 @@
 #endif
 
 // Phase 7g: subsystem state moved to Flux_PrimitivesImpl held by Zenith_Engine.
+//
+// Wave-15 DI seam (mirrors Flux_QuadsImpl): the lone cross-subsystem dep
+// (Flux_GraphicsImpl) is injected into Initialise and stored in m_pxGraphics;
+// SetupRenderGraph routes its FluxGraphics reach-ins through m_pxGraphics.
+// g_xEngine.Primitives() self-lookup survives only in the non-capturing
+// ExecuteGBuffer / hot-reload fn-pointer trampolines below (which then route
+// FluxGraphics through the injected member); VulkanMemory()/DebugVariables() stay
+// direct engine-infra lookups. The Add*/Render instance methods only self-look-up
+// g_xEngine.Primitives() under the mutex idiom and are untouched.
+//
 // The per-primitive instance structs are also there (named Flux_PrimitivesXxxInstance);
 // these aliases preserve the original short names used throughout this file.
 using SphereInstance   = Flux_PrimitivesSphereInstance;
@@ -413,8 +423,13 @@ void Flux_PrimitivesImpl::BuildPipelines()
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 
-void Flux_PrimitivesImpl::Initialise()
+void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 {
+	// Wave-15 DI seam: store the injected cross-subsystem dep. The FluxGraphics
+	// reach-ins (in ExecuteGBuffer / SetupRenderGraph) route through this instead
+	// of g_xEngine.FluxGraphics().
+	m_pxGraphics = &xGraphics;
+
 	// Generate procedural meshes
 	Zenith_Vector<PrimitiveVertex> xVertices;
 	Zenith_Vector<u_int> xIndices;
@@ -502,16 +517,18 @@ void Flux_PrimitivesImpl::Shutdown()
 		g_xEngine.Primitives().m_bTriangleBuffersInitialised = false;
 	}
 
+	// Drop the injected dep so the instance returns to a clean default state.
+	m_pxGraphics = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives shut down");
 }
 
 void Flux_PrimitivesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_PrimitivesImpl::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)
@@ -871,8 +888,14 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		g_xEngine.Primitives().m_xTriangleInstances.Clear();
 	}
 
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// capture, so it re-enters via g_xEngine.Primitives() to reach the singleton
+	// instance, then routes its FluxGraphics reach-in through the injected member
+	// (mirrors ExecuteSSAOGenerate).
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(g_xEngine.Primitives().m_xPrimitivesShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xPrimitives.m_xPrimitivesShader, "FrameConstants", &xPrimitives.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
 
 	RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
 	RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);

@@ -21,6 +21,7 @@ static std::string GetGameAssetsDirectory()
 
 #include <cstring>
 #include <cmath>
+#include <set>
 
 #include "TaskSystem/Zenith_TaskSystem.h"
 

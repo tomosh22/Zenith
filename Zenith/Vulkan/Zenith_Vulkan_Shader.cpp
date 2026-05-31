@@ -19,6 +19,21 @@
 
 void Zenith_Vulkan_Shader::Initialise(FluxShaderProgram eProgram)
 {
+	// Boot path: a failed shader load is non-recoverable — a zero-stage Reset()
+	// shader just crashes later at createGraphicsPipeline, so a hard break here
+	// is the correct (and earliest-possible) failure. InitialiseEx carries the
+	// specific reason for callers that can use it (e.g. unit tests); this void
+	// wrapper exists because the backend concept FluxBackendShader pins
+	// Initialise to `-> std::same_as<void>`.
+	const Zenith_Status xStatus = InitialiseEx(eProgram);
+	Zenith_Assert(xStatus.IsOk(),
+				  "Shader load failed for FluxShaderProgram=%u (eError=%u)",
+				  static_cast<u_int>(eProgram),
+				  static_cast<u_int>(xStatus.Error()));
+}
+
+Zenith_Status Zenith_Vulkan_Shader::InitialiseEx(FluxShaderProgram eProgram)
+{
 	// Idempotent: free any previously-loaded SPIR-V code, modules, and
 	// reflection so the hot-reload path can re-call Initialise on the same
 	// shader instance without leaking GPU handles.
@@ -27,18 +42,13 @@ void Zenith_Vulkan_Shader::Initialise(FluxShaderProgram eProgram)
 #ifdef ZENITH_WINDOWS
 	if (Flux_SlangCompiler::IsInitialised())
 	{
-		bool bSuccess = InitialiseFromProgramSource(eProgram);
-		Zenith_Assert(bSuccess, "Slang program compile failed for FluxShaderProgram=%u",
-					  static_cast<u_int>(eProgram));
-		return;
+		return InitialiseFromProgramSource(eProgram);
 	}
 #endif
-	bool bSuccess = InitialiseFromProgramArtifacts(eProgram);
-	Zenith_Assert(bSuccess, "Failed to load precompiled artifacts for FluxShaderProgram=%u",
-				  static_cast<u_int>(eProgram));
+	return InitialiseFromProgramArtifacts(eProgram);
 }
 
-bool Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram eProgram)
+Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram eProgram)
 {
 	const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(eProgram);
 	std::string strRoot(SHADER_SOURCE_ROOT);
@@ -51,7 +61,11 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram ePro
 
 		m_pcVertShaderCode = Zenith_FileAccess::ReadFile((strRoot + strVStem + ".spv").c_str(), m_pcVertShaderCodeSize);
 		m_pcFragShaderCode = Zenith_FileAccess::ReadFile((strRoot + strFStem + ".spv").c_str(), m_pcFragShaderCodeSize);
-		if (!m_pcVertShaderCode || !m_pcFragShaderCode) return false;
+		// ReadFile returns null on a missing artifact (graceful since WS14.B1).
+		if (!m_pcVertShaderCode || !m_pcFragShaderCode) return Zenith_ErrorCode::FILE_NOT_FOUND;
+		// A present-but-empty .spv would otherwise trip CreateShaderModule's
+		// hard assert — surface it as recoverable corruption instead.
+		if (!m_pcVertShaderCodeSize || !m_pcFragShaderCodeSize) return Zenith_ErrorCode::CORRUPT_DATA;
 
 		m_xVertShaderModule = CreateShaderModule(m_pcVertShaderCode, m_pcVertShaderCodeSize);
 		m_xFragShaderModule = CreateShaderModule(m_pcFragShaderCode, m_pcFragShaderCodeSize);
@@ -88,7 +102,7 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram ePro
 			x.ReadFromDataStream(xFRefl);
 			MergeReflection(x);
 		}
-		return true;
+		return Zenith_ErrorCode::SUCCESS;
 	}
 
 	// Compute-program path
@@ -96,7 +110,8 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram ePro
 	{
 		std::string strCStem = Flux_ShaderRegistry::GetComputeArtifactStem(eProgram);
 		m_pcCompShaderCode = Zenith_FileAccess::ReadFile((strRoot + strCStem + ".spv").c_str(), m_pcCompShaderCodeSize);
-		if (!m_pcCompShaderCode) return false;
+		if (!m_pcCompShaderCode) return Zenith_ErrorCode::FILE_NOT_FOUND;
+		if (!m_pcCompShaderCodeSize) return Zenith_ErrorCode::CORRUPT_DATA;
 		m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
 		m_uStageCount = 1;
 
@@ -112,14 +127,16 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram ePro
 		Zenith_DataStream xRefl;
 		xRefl.ReadFromFile((strRoot + strCStem + ".spv.refl").c_str());
 		if (xRefl.IsValid()) m_xReflection.ReadFromDataStream(xRefl);
-		return true;
+		return Zenith_ErrorCode::SUCCESS;
 	}
 
-	return false;
+	// Registry entry exposed neither a graphics (vert+frag) nor a compute entry
+	// point — a malformed program descriptor, not a load failure.
+	return Zenith_ErrorCode::INVALID_ARGUMENT;
 }
 
 #ifdef ZENITH_WINDOWS
-bool Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgram eProgram)
+Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgram eProgram)
 {
 	const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(eProgram);
 
@@ -129,19 +146,26 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgram eProgra
 	Flux_SlangProgramResult xResult;
 	if (!Flux_SlangCompiler::CompileProgram(xDesc, xResult))
 	{
+		// xResult.m_strError already holds the Slang diagnostic; log it here and
+		// surface the dedicated code so callers can distinguish a compile error
+		// from a missing artifact / corrupt blob.
 		Zenith_Log(LOG_CATEGORY_RENDERER, "CompileProgram failed for '%s': %s",
 				   xEntry.m_szName, xResult.m_strError.c_str());
-		return false;
+		return Zenith_ErrorCode::SHADER_COMPILE_FAILED;
 	}
 
 	const bool bGraphics = xEntry.m_szVertexEntry && xEntry.m_szFragmentEntry;
 	if (bGraphics)
 	{
 		m_pcVertShaderCodeSize = xResult.m_axVertexSpirv.GetSize() * sizeof(uint32_t);
+		m_pcFragShaderCodeSize = xResult.m_axFragmentSpirv.GetSize() * sizeof(uint32_t);
+		// A "successful" compile that emitted zero SPIR-V words would trip
+		// CreateShaderModule's hard assert; treat it as recoverable corruption.
+		if (!m_pcVertShaderCodeSize || !m_pcFragShaderCodeSize) return Zenith_ErrorCode::CORRUPT_DATA;
+
 		m_pcVertShaderCode     = new char[m_pcVertShaderCodeSize];
 		memcpy(m_pcVertShaderCode, xResult.m_axVertexSpirv.GetDataPointer(), m_pcVertShaderCodeSize);
 
-		m_pcFragShaderCodeSize = xResult.m_axFragmentSpirv.GetSize() * sizeof(uint32_t);
 		m_pcFragShaderCode     = new char[m_pcFragShaderCodeSize];
 		memcpy(m_pcFragShaderCode, xResult.m_axFragmentSpirv.GetDataPointer(), m_pcFragShaderCodeSize);
 
@@ -162,6 +186,7 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgram eProgra
 	else if (xEntry.m_szComputeEntry)
 	{
 		m_pcCompShaderCodeSize = xResult.m_axComputeSpirv.GetSize() * sizeof(uint32_t);
+		if (!m_pcCompShaderCodeSize) return Zenith_ErrorCode::CORRUPT_DATA;
 		m_pcCompShaderCode     = new char[m_pcCompShaderCodeSize];
 		memcpy(m_pcCompShaderCode, xResult.m_axComputeSpirv.GetDataPointer(), m_pcCompShaderCodeSize);
 		m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
@@ -175,7 +200,7 @@ bool Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgram eProgra
 	}
 
 	MergeReflection(xResult.m_xReflection);
-	return true;
+	return Zenith_ErrorCode::SUCCESS;
 }
 #endif
 

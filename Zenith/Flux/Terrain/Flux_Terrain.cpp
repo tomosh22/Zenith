@@ -316,8 +316,9 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxT = xTerrains.Get(u);
-		if (!pxT->m_bCullingResourcesInitialized) continue;
-		xGraph.WriteBuffer(xResetPass, pxT->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		Flux_TerrainStreamingState* pxState = pxT->m_pxStreamingState;
+		if (!pxState->m_bCullingResourcesInitialized) continue;
+		xGraph.WriteBuffer(xResetPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
 
 	// Pass 1: Terrain culling compute. PreRenderUpdate runs as a Prepare
@@ -332,7 +333,8 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxT = xTerrains.Get(u);
-		if (!pxT->m_bCullingResourcesInitialized) continue;
+		Flux_TerrainStreamingState* pxState = pxT->m_pxStreamingState;
+		if (!pxState->m_bCullingResourcesInitialized) continue;
 		// m_xChunkDataBuffer and m_xFrustumPlanesBuffer are intentionally NOT
 		// declared here: both are frame-indexed (Flux_DynamicReadWriteBuffer
 		// and Flux_DynamicConstantBuffer respectively — one Flux_Buffer per
@@ -353,9 +355,9 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		// this pass. LODLevelBuffer is now a read-modify-write (the GPU LOD
 		// hysteresis check reads the prior frame's value before writing) so it
 		// is declared READWRITE_UAV.
-		xGraph.WriteBuffer(xCullingPass, pxT->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
-		xGraph.WriteBuffer(xCullingPass, pxT->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
-		xGraph.WriteBuffer(xCullingPass, pxT->m_xLODLevelBuffer.GetBuffer(),     RESOURCE_ACCESS_READWRITE_UAV);
+		xGraph.WriteBuffer(xCullingPass, pxState->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.WriteBuffer(xCullingPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.WriteBuffer(xCullingPass, pxState->m_xLODLevelBuffer.GetBuffer(),     RESOURCE_ACCESS_READWRITE_UAV);
 	}
 
 	// Pass 2: Terrain GBuffer. The DependsOn(xCullingPass) edge documents
@@ -372,13 +374,14 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxT = xTerrains.Get(u);
-		if (!pxT->m_bCullingResourcesInitialized) continue;
+		Flux_TerrainStreamingState* pxState = pxT->m_pxStreamingState;
+		if (!pxState->m_bCullingResourcesInitialized) continue;
 		// DrawIndexedIndirectCount reads the indirect-args buffer and the
 		// count buffer at the GPU command-processor stage; LODLevelBuffer is
 		// sampled in the vertex shader as StructuredBuffer<uint> (read-only).
-		xGraph.ReadBuffer(xGBufferPass, pxT->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
-		xGraph.ReadBuffer(xGBufferPass, pxT->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
-		xGraph.ReadBuffer(xGBufferPass, pxT->m_xLODLevelBuffer.GetBuffer(),     RESOURCE_ACCESS_READ_BUFFER_SRV);
+		xGraph.ReadBuffer(xGBufferPass, pxState->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+		xGraph.ReadBuffer(xGBufferPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+		xGraph.ReadBuffer(xGBufferPass, pxState->m_xLODLevelBuffer.GetBuffer(),     RESOURCE_ACCESS_READ_BUFFER_SRV);
 	}
 }
 
@@ -429,14 +432,15 @@ static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
 	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = g_xEngine.Terrain().m_xTerrainComponentsToRender.Get(u);
-		if (!pxTerrain->m_bCullingResourcesInitialized) continue;
+		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
+		if (!pxState->m_bCullingResourcesInitialized) continue;
 
 		// Bind set 0, slot 0: visibleCount UAV. Dispatch a single thread that
 		// writes 0u. The graph emits a UAV→UAV barrier between this pass and
 		// the culling pass, so the culling dispatch's atomic increments see
 		// the cleared value.
 		pxCmdList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCmdList->AddCommand<Flux_CommandBindUAV_Buffer>(&pxTerrain->m_xVisibleCountBuffer.GetUAV(), 0);
+		pxCmdList->AddCommand<Flux_CommandBindUAV_Buffer>(&pxState->m_xVisibleCountBuffer.GetUAV(), 0);
 		pxCmdList->AddCommand<Flux_CommandDispatch>(1, 1, 1);
 	}
 }

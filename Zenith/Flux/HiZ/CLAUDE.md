@@ -19,7 +19,7 @@ There is no explicit ordering enum — the dependency declarations alone produce
 
 | File | Purpose |
 |------|---------|
-| [Flux_HiZ.h](Flux_HiZ.h) | Class declaration, constants |
+| [Flux_HiZImpl.h](Flux_HiZImpl.h) | `Flux_HiZImpl` class declaration, constants, injected-dep member pointers |
 | [Flux_HiZ.cpp](Flux_HiZ.cpp) | Implementation, pipeline setup |
 | [../Shaders/HiZ/Flux_HiZ_Generate.comp](../Shaders/HiZ/Flux_HiZ_Generate.comp) | Compute shader for mip generation |
 
@@ -33,13 +33,15 @@ There is no explicit ordering enum — the dependency declarations alone produce
 
 ### Per-Mip Views
 
-The system creates individual SRV and UAV for each mip level:
+The HiZ chain is a render-graph **transient** (created in `SetupRenderGraph` via
+`CreateTransient`). The graph owns the image; per-mip SRV/UAV views are resolved
+on demand from the transient attachment:
 
 ```cpp
 static constexpr u_int uHIZ_MAX_MIPS = 12;  // Supports up to 4096x4096
 
-static Flux_ShaderResourceView s_axMipSRVs[uHIZ_MAX_MIPS];   // Read from previous mip
-static Flux_UnorderedAccessView_Texture s_axMipUAVs[uHIZ_MAX_MIPS];  // Write to current mip
+Flux_ShaderResourceView&          GetMipSRV(u_int uMip);  // Read previous mip — GetHiZBuffer().SRV(uMip)
+Flux_UnorderedAccessView_Texture& GetMipUAV(u_int uMip);  // Write current mip — GetHiZBuffer().UAV(uMip)
 ```
 
 ### Mip Generation Algorithm
@@ -74,14 +76,14 @@ For the HiZ chain, each per-mip pass uses the fluent builder:
 ```cpp
 xGraph.AddPass(szPassName, ExecuteHiZMip)
     .UserData(uMip)                                          // typed, no void* cast
-    .ReadsTransient (s_xHiZBufferHandle, READ_SRV, uMip-1, 1) // previous mip
-    .WritesTransient(s_xHiZBufferHandle, WRITE_UAV, uMip, 1); // current mip
+    .ReadsTransient (m_xHiZBufferHandle, READ_SRV, uMip-1, 1) // previous mip
+    .WritesTransient(m_xHiZBufferHandle, WRITE_UAV, uMip, 1); // current mip
 ```
 
 From those declarations the graph emits:
 - Mip pass `N`: `UNDEFINED → WRITE_UAV` (GENERAL) on mip `N` before the dispatch
 - Mip pass `N+1`: `WRITE_UAV → READ_SRV` (SHADER_READ_ONLY) on mip `N` before the dispatch
-- The next graphics consumer (SSR / SSGI / SSAO) declaring `Read(... 0, s_uMipCount)` triggers
+- The next graphics consumer (SSR / SSGI / SSAO) declaring `Read(... 0, m_uMipCount)` triggers
   `WRITE_UAV → READ_SRV` on the final mip before its render pass begins
 
 No inline `Flux_CommandImageTransition` calls live in `ExecuteHiZMip` — the
@@ -90,24 +92,78 @@ ensures consecutive mip passes don't over-synchronise.
 
 ## Public Interface
 
+The subsystem is a non-static `Flux_HiZImpl` owned by `Zenith_Engine`; callers
+reach it via `g_xEngine.HiZ()`. (The historical `Flux_HiZ` static facade was
+removed in Phase 9.)
+
 ```cpp
-class Flux_HiZ
+class Flux_HiZImpl
 {
 public:
-    static void Initialise();
-    static void Shutdown();
-    static void Reset();
+    // Wave 9 DI seam: cross-subsystem deps are injected as explicit references
+    // and stored in member pointers (see "Dependency-Injection Seam" below).
+    void Initialise(Zenith_Vulkan_Swapchain& xSwapchain,
+                    Flux_GraphicsImpl&       xGraphics,
+                    Flux_RendererImpl&       xRenderer);
+    void Shutdown();
+    void BuildPipelines();
 
-    static void Render(void*);
-    static void SubmitRenderTask();
-    static void WaitForRenderTask();
+    void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-    // Accessors for consumers (SSR, SSAO, culling)
-    static Flux_ShaderResourceView& GetHiZSRV();           // Full mip chain
-    static u_int GetMipCount();
-    static bool IsEnabled();
+    // Accessors for consumers (SSR, SSGI, SSAO, culling)
+    Flux_RenderAttachment&            GetHiZAttachment();
+    Flux_ShaderResourceView&          GetHiZSRV();           // Full mip chain
+    u_int                             GetMipCount() const;
+    Flux_ShaderResourceView&          GetMipSRV(u_int uMip); // Single mip
+    Flux_UnorderedAccessView_Texture& GetMipUAV(u_int uMip); // Compute write
+    bool                              IsEnabled() const;
 };
 ```
+
+## Dependency-Injection Seam (Wave 9 template)
+
+`Flux_HiZImpl` is the first subsystem migrated to the reusable g_xEngine
+dependency-injection pattern, intended as the template for the other ~50
+subsystems:
+
+- **Cross-subsystem deps are injected through `Initialise`** as explicit
+  references (`Zenith_Vulkan_Swapchain&`, `Flux_GraphicsImpl&`,
+  `Flux_RendererImpl&`) and stored into member pointers
+  (`m_pxSwapchain`, `m_pxGraphics`, `m_pxRenderer`, defaulted `nullptr`).
+  Every later **instance-method** reach-in routes through those members rather
+  than `g_xEngine.X()`. The wiring lives at exactly one call site —
+  `Flux_RendererImpl::LateInitialise` in `Flux/Flux.cpp`:
+
+  ```cpp
+  g_xEngine.HiZ().Initialise(g_xEngine.VulkanSwapchain(),
+                             g_xEngine.FluxGraphics(),
+                             g_xEngine.FluxRenderer());
+  ```
+
+  (Boot order guarantees the swapchain + graphics are already initialised; the
+  renderer is `*this`.)
+
+- **`g_xEngine.HiZ()` self-lookup survives ONLY in the non-capturing
+  fn-pointer trampolines** — the resolution-change callback, the
+  `ZENITH_TOOLS` hot-reload callback, and the `ExecuteHiZMip` graph callback
+  (`void(*)(Flux_CommandList*, void*)`). These cannot capture `this`, so they
+  re-enter via `g_xEngine.HiZ()` to reach the singleton instance and then route
+  their *other* reach-ins through that instance's injected members
+  (`xHiZ.m_pxSwapchain->`, `xHiZ.m_pxGraphics->`).
+
+This split — inject cross-subsystem deps, keep singleton self-lookup for
+trampolines — is the pattern the remaining subsystems should follow.
+
+A pure-CPU seam test (`Flux/HiZInjectedDepsWired` in
+`Core/Zenith_UnitTests.Tests.inl`) pins the contract: a default-constructed
+`Flux_HiZImpl` leaves the three injected-dep pointers `nullptr`, and assigning
+sentinel pointers stores into the right slots. (A post-init wiring assertion was
+avoided because `LateInitialise` is skipped in headless boot.)
+
+### External interface unchanged
+
+This was an internal seam only: external callers and the `g_xEngine.HiZ()`
+accessor are unchanged.
 
 ## Debug Variables
 

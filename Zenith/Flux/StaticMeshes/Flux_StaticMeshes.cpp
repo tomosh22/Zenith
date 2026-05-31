@@ -29,6 +29,7 @@
 
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
+static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance);
 
 void Flux_StaticMeshesImpl::BuildPipelines()
 {
@@ -84,8 +85,13 @@ void Flux_StaticMeshesImpl::BuildPipelines()
 	}
 }
 
-void Flux_StaticMeshesImpl::Initialise()
+void Flux_StaticMeshesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 {
+	// Wave-15 DI seam: store the injected cross-subsystem dep. The FluxGraphics
+	// reach-ins (in SetupRenderGraph, ExecuteGBuffer and RenderModelInstanceMeshes)
+	// route through this instead of g_xEngine.FluxGraphics().
+	m_pxGraphics = &xGraphics;
+
 	BuildPipelines();
 
 #ifdef ZENITH_TOOLS
@@ -110,15 +116,56 @@ void Flux_StaticMeshesImpl::Shutdown()
 	g_xEngine.StaticMeshes().m_xShadowPipeline.Reset();
 	g_xEngine.StaticMeshes().m_xGBufferShader.Reset();
 	g_xEngine.StaticMeshes().m_xShadowShader.Reset();
+
+	// Drop the injected dep so the instance returns to a clean default state.
+	m_pxGraphics = nullptr;
 }
 
 void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// The gather Prepare is hung on the GBuffer pass (Terrain pattern). It runs
+	// on the main thread before any record callback, so the packet it builds is
+	// available to BOTH this pass's ExecuteGBuffer and all 4 shadow cascades
+	// (which call RenderToShadowMap from Flux_Shadows). Pass-registration order
+	// is irrelevant to Prepare timing — CallPrepareCallbacks runs every enabled
+	// pass's Prepare before RecordCommandLists dispatches any record task.
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Prepare([](void* p){ g_xEngine.StaticMeshes().GatherDrawPacket(p); })
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+}
+
+// Prepare callback (main thread): walk every Zenith_ModelComponent in all
+// scenes once, skip skinned-animated models (rendered by Flux_AnimatedMeshes)
+// and components without a model instance, resolve the model matrix from the
+// live Zenith_TransformComponent here, and store everything the worker-thread
+// record path needs. This is the single shared source for the GBuffer pass and
+// all shadow cascades — it removes every live-ECS read from those worker paths.
+void Flux_StaticMeshesImpl::GatherDrawPacket(void*)
+{
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = g_xEngine.StaticMeshes().m_xDrawPacket;
+	xPacket.Clear();
+
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
+	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
+
+	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	{
+		Zenith_ModelComponent* pxModel = xIt.GetData();
+		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
+		if (!pxModelInstance) continue;
+
+		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
+		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
+
+		Flux_StaticMeshDrawItem xItem;
+		xItem.m_pxModel = pxModel;
+		xItem.m_pxModelInstance = pxModelInstance;
+		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xItem.m_xModelMatrix);
+		xPacket.PushBack(xItem);
+	}
 }
 
 // Animated meshes (skeleton + at least one skinned mesh instance) are rendered
@@ -155,7 +202,7 @@ static void DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBind
 }
 
 static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
-	Zenith_ModelComponent* pxModel, Flux_ModelInstance* pxModelInstance)
+	Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix)
 {
 	// One-shot debug log: log the first static-model layout we render so we can
 	// diagnose missing/empty meshes by looking at the first frame's logs.
@@ -179,9 +226,6 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 		ls_bLoggedOnce = true;
 	}
 
-	Zenith_Maths::Matrix4 xModelMatrix;
-	pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-
 	for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
 	{
 		Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
@@ -191,7 +235,10 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 		Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-		if (!pxMaterial) pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+		// Non-capturing static helper: re-enter via g_xEngine.StaticMeshes() to reach
+		// the singleton instance, then route the FluxGraphics reach-in (blank-material
+		// fallback) through the injected member (mirrors ExecuteSDFs / ExecuteQuads).
+		if (!pxMaterial) pxMaterial = g_xEngine.StaticMeshes().m_pxGraphics->m_xBlankMaterial.GetDirect();
 		Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());
@@ -205,21 +252,18 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.StaticMeshes().m_xGBufferPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(g_xEngine.StaticMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	// Non-capturing graph callback: keep the g_xEngine.StaticMeshes() self-lookup to
+	// reach the shader on this singleton instance, and route the FluxGraphics reach-in
+	// (frame constants) through the injected member (mirrors ExecuteSDFs / ExecuteQuads).
+	xBinder.BindCBV(g_xEngine.StaticMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.StaticMeshes().m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
 
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
-
-	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
+	// access here — this runs on a worker thread.
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = g_xEngine.StaticMeshes().m_xDrawPacket;
+	for (u_int u = 0; u < xPacket.GetSize(); u++)
 	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
-		if (!pxModelInstance) continue;
-
-		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
-		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
-
-		RenderModelInstanceMeshes(pxCmdList, xBinder, pxModel, pxModelInstance);
+		const Flux_StaticMeshDrawItem& xItem = xPacket.Get(u);
+		RenderModelInstanceMeshes(pxCmdList, xBinder, xItem.m_pxModelInstance, xItem.m_xModelMatrix);
 	}
 }
 
@@ -232,20 +276,15 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const F
 	// FrameConstants doesn't appear in the reflected layout — binding it
 	// here would fail the name lookup.
 
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
-
-	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	// Iterate the packet gathered on the main thread (GatherDrawPacket). This is
+	// the same packet the GBuffer pass consumes; it is shared across all 4 shadow
+	// cascades. No ECS access here — this runs on a worker thread.
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = g_xEngine.StaticMeshes().m_xDrawPacket;
+	for (u_int u = 0; u < xPacket.GetSize(); u++)
 	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
-		if (!pxModelInstance) continue;
-
-		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
-		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
-
-		Zenith_Maths::Matrix4 xModelMatrix;
-		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+		const Flux_StaticMeshDrawItem& xItem = xPacket.Get(u);
+		Flux_ModelInstance* pxModelInstance = xItem.m_pxModelInstance;
+		const Zenith_Maths::Matrix4& xModelMatrix = xItem.m_xModelMatrix;
 
 		for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
 		{

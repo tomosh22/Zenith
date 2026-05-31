@@ -43,6 +43,26 @@ Manages animation playback for an entity.
 
 **Blending:** Supports crossfading between animations via weighted bone transform blending.
 
+**Ownership (Wave-19):** A `Flux_AnimationController` is no longer a by-value member of `Zenith_AnimatorComponent`. It is owned by `Flux_AnimationControllerStore` (below) and the ECS component is a thin forwarding handle into it.
+
+### Flux_AnimationControllerStore
+Heap-stable owning store of one `Flux_AnimationController` per entity (`Flux_AnimationControllerStore.{h,cpp}`). Held by `Zenith_Engine` as `m_pxAnimationControllers`, reached via `g_xEngine.AnimationControllers()`. This is the Flux-side twin of WS18's `Flux_TerrainStreamingState` relocation: the heavy controller that used to live inside `Zenith_AnimatorComponent` moved here so the ECS component header carries no Flux include.
+
+**Storage:** `Zenith_Vector<Flux_AnimationController*>` — each controller individually `new`/`delete`'d, so the pointer is **heap-stable** (it never moves when the vector grows or compacts). An index-by-entity-**slot** array (`Zenith_Vector<u_int>`, sentinel `0xFFFFFFFF`) maps an `EntityID` slot to its controller index for O(1), hash-free lookup. A parallel dense slot array repairs the slot→index mapping after a swap-and-pop removal.
+
+**API:**
+- `GetOrCreate(Zenith_EntityID) &` — controller for the entity, created on first call.
+- `TryGet(Zenith_EntityID) *` — pointer-or-null, no allocation.
+- `Get(Zenith_EntityID) &` — asserts present.
+- `Destroy(Zenith_EntityID)` — **idempotent** (no-op when absent); returns whether it removed one.
+- `GetCount()` — live controller count (test/diagnostic).
+
+**Why heap-stable matters:** the component caches a `Flux_AnimationController*` for the hot path, and games cache `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects. Because the controller is keyed by the **stable** `EntityID` slot and never relocates, those pointers survive a component-pool relocation and a cross-scene `MoveEntityToScene`.
+
+**Lifetime:** allocated in `Zenith_Engine::Initialise` (alongside the mesh subsystems) and deleted in `Zenith_Engine::Shutdown` **before** the Vulkan device teardown — each controller owns a `Flux_DynamicConstantBuffer` bone buffer whose destructor needs the device alive.
+
+**Layering:** the store lives under `Flux/`, so it includes `Flux_AnimationController.h` freely. Its `.cpp` includes `EntityComponent/Zenith_Entity.h` for the `Zenith_EntityID` slot index (the store's single, allow-listed Flux→EntityComponent edge); the header only forward-declares the id.
+
 ## Skinning Equation
 
 The fundamental skinning equation transforms vertices from mesh-local space to world space:
@@ -143,6 +163,7 @@ using Flux_AnimStateUpdateCallback = void(*)(void* pUserData, float fDt);
 MeshAnimation/
   Flux_AnimationClip.h/cpp           - Animation keyframe storage
   Flux_AnimationController.h/cpp     - Playback control (owns clips, state machine, IK, layers)
+  Flux_AnimationControllerStore.h/cpp- Heap-stable owning store of per-entity controllers (g_xEngine.AnimationControllers()); ECS entry point Zenith_AnimatorComponent forwards into it
   Flux_AnimationStateMachine.h/cpp   - State machine (states, transitions, any-state, sub-SM)
   Flux_AnimationLayer.h/cpp          - Animation layer (weight, blend mode, avatar mask)
   Flux_SkeletonInstance.h/cpp        - Runtime skeleton state

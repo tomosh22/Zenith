@@ -21,7 +21,12 @@ namespace Zenith_FileAccess
 	char* ReadFile(const char* szFilename)
 	{
 		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);
-		Zenith_Assert(xFile.is_open(), "Failed to open file %s", szFilename);
+		const bool bOpen = xFile.is_open();
+		Zenith_Check(bOpen, "Failed to open file %s", szFilename);
+		if (!bOpen)
+		{
+			return nullptr;
+		}
 
 		uint64_t ulFileSize = xFile.tellg();
 		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulFileSize));
@@ -34,7 +39,13 @@ namespace Zenith_FileAccess
 	char* ReadFile(const char* szFilename, uint64_t& ulSize)
 	{
 		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);
-		Zenith_Assert(xFile.is_open(), "Failed to open file %s", szFilename);
+		const bool bOpen = xFile.is_open();
+		Zenith_Check(bOpen, "Failed to open file %s", szFilename);
+		if (!bOpen)
+		{
+			ulSize = 0;
+			return nullptr;
+		}
 
 		ulSize = xFile.tellg();
 		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulSize));
@@ -93,6 +104,16 @@ namespace Zenith_FileAccess
 
 		xFile.write(static_cast<const char*>(pData), ulSize);
 		xFile.close();
+
+		// Post-write diagnostic: the write()/flush-on-close above is otherwise
+		// UNCHECKED, so a disk-full / permission / quota failure silently
+		// produces a truncated or empty file with no signal in a shipping
+		// build. .fail() picks up both a failed write (badbit) and a failed
+		// flush during close (failbit). Log-and-continue only -- WriteFile is
+		// void with many best-effort callers that must NOT hard-fail (the
+		// open-check above is likewise non-fatal in shipping), so do NOT
+		// promote this to a return/assert or change the signature.
+		Zenith_Check(!xFile.fail(), "WriteFile: write failed for '%s' (disk full / permission / quota?)", szFilename);
 	}
 
 	bool FileExists(const char* szFilename)

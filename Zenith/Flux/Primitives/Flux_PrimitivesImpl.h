@@ -5,6 +5,13 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Maths/Zenith_Maths.h"
 
+// Cross-subsystem dependency injected into Initialise (Wave-15 DI seam, identical
+// shape to the Wave-14 Flux_QuadsImpl template). Forward-declared here; the full
+// header is pulled in by Flux_Primitives.cpp. Flux_GraphicsImpl is the ONLY
+// cross-subsystem dep — VulkanMemory()/DebugVariables() are engine-infra
+// singletons and stay direct g_xEngine lookups (same carve-out as Quads/SSAO).
+class Flux_GraphicsImpl;
+
 // Per-primitive instance types (file-static before Phase 7g; promoted to
 // engine-owned arrays).
 struct Flux_PrimitivesSphereInstance
@@ -55,6 +62,15 @@ struct Flux_PrimitivesTriangleInstance
 };
 
 // Phase 9: state + behaviour for Primitives subsystem.
+//
+// Wave-15 DI seam (mirrors Flux_QuadsImpl): the lone cross-subsystem dependency
+// (Flux_GraphicsImpl) is INJECTED through Initialise as an explicit reference and
+// stored as a member pointer, rather than reached for via g_xEngine.FluxGraphics()
+// inside the instance methods. The only place g_xEngine self-lookup survives is
+// the non-capturing fn-pointer trampoline (the ExecuteGBuffer graph callback, and
+// the ZENITH_TOOLS hot-reload callback) — those cannot capture state, so they
+// re-enter via g_xEngine.Primitives() to reach this singleton instance and then
+// route their FluxGraphics reach-ins through the injected member.
 class Flux_PrimitivesImpl
 {
 public:
@@ -64,7 +80,9 @@ public:
 	Flux_PrimitivesImpl(const Flux_PrimitivesImpl&) = delete;
 	Flux_PrimitivesImpl& operator=(const Flux_PrimitivesImpl&) = delete;
 
-	void Initialise();
+	// Cross-subsystem dep is injected here and stored into m_pxGraphics below.
+	// This is the WS9.2 DI template: explicit ref param -> stored member pointer.
+	void Initialise(Flux_GraphicsImpl& xGraphics);
 	void BuildPipelines();
 	void Shutdown();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -133,4 +151,9 @@ public:
 	bool                     m_bTriangleBuffersInitialised = false;
 
 	Zenith_Mutex m_xInstanceMutex;
+
+	// Injected cross-subsystem dependency (stored by Initialise). Default nullptr
+	// so a default-constructed instance is headless-safe; the real boot path wires
+	// it in via the Primitives init trampoline (Flux_FeatureRegistry.cpp).
+	Flux_GraphicsImpl* m_pxGraphics = nullptr;
 };

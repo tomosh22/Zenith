@@ -12,6 +12,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+// Wave-19: AnimatorComponent.h is a Flux-include-free forwarding handle now;
+// this TU uses the complete Flux_AnimationController type directly (GetController()).
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -161,7 +164,7 @@ static bool RenderTest_ValidateResidencyAllocationRanges(const Zenith_TerrainCom
 {
 	const uint64_t ulVertexBufferSize = xTerrain.GetUnifiedVertexBuffer().GetBuffer().m_ulSize;
 	const uint64_t ulIndexBufferSize  = xTerrain.GetUnifiedIndexBuffer().GetBuffer().m_ulSize;
-	const uint32_t uVertexStride = xTerrain.m_uVertexStride;
+	const uint32_t uVertexStride = xTerrain.GetVertexStride();
 	if (uVertexStride == 0) return true;  // pre-init terrain — nothing to validate
 
 	const uint32_t uMaxVertices = static_cast<uint32_t>(ulVertexBufferSize / uVertexStride);
@@ -294,7 +297,7 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 			u,
 			static_cast<void*>(pxTerrain),
 			pxTerrain->IsRenderGeometryUsable() ? 1u : 0u,
-			pxTerrain->m_bCullingResourcesInitialized ? 1u : 0u,
+			(pxState && pxState->m_bCullingResourcesInitialized) ? 1u : 0u,
 			static_cast<void*>(pxState),
 			uActiveCount,
 			uLowZero,
@@ -307,7 +310,7 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 			Zenith_Error(LOG_CATEGORY_TERRAIN, "RENDERTEST_SMOKE_FAIL: terrain[%u] render geometry unusable", u);
 			bPass = false;
 		}
-		if (!pxTerrain->m_bCullingResourcesInitialized)
+		if (!pxState || !pxState->m_bCullingResourcesInitialized)
 		{
 			Zenith_Error(LOG_CATEGORY_TERRAIN, "RENDERTEST_SMOKE_FAIL: terrain[%u] culling resources not initialized", u);
 			bPass = false;
@@ -352,7 +355,7 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 			}
 
 			// Probe B: residency allocation range validation.
-			if (pxTerrain->m_bCullingResourcesInitialized)
+			if (pxState->m_bCullingResourcesInitialized)
 			{
 				if (!RenderTest_ValidateResidencyAllocationRanges(*pxTerrain, *pxState, u, uFrame))
 				{

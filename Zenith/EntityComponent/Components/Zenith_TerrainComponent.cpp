@@ -7,9 +7,22 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Maths/Zenith_FrustumCulling.h"
 #include <fstream>
 
-ZENITH_REGISTER_COMPONENT(Zenith_TerrainComponent, "Terrain")
+// The Flux GPU state these methods operate on now lives on the owning
+// Flux_TerrainStreamingState (Wave-18 relocation). Accessing
+// m_pxStreamingState->m_x... throughout is the O(1) pointer hop the component
+// already paid for the streaming state; no map lookup was added.
+//
+// NOTE: the full Flux_MeshGeometry type (used by LoadCombinedPhysicsGeometry /
+// LoadAndCombineLowLODChunks / InitializeUnifiedBuffers) is pulled in
+// transitively by Flux/Flux_GraphicsImpl.h above (it owns Flux_MeshGeometry
+// members by value). Deliberately NOT adding a direct
+// #include "Flux/MeshGeometry/Flux_MeshGeometry.h" here: that would introduce a
+// new Zenith_TerrainComponent.cpp => Flux/MeshGeometry edge the layering gate
+// would (correctly) flag. The .cpp's existing allow-listed Flux dependencies
+// already carry the type.
 
 // LOD distance thresholds from unified config (distance squared)
 // Used for debug visualization - actual thresholds are in Flux_TerrainConfig.h
@@ -43,31 +56,27 @@ void Zenith_TerrainComponent::DecrementInstanceCount()
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_Entity& xEntity)
 	: m_xParentEntity(xEntity)
 	, m_pxPhysicsGeometry(nullptr)
-	, m_bCullingResourcesInitialized(false)
 {
 	IncrementInstanceCount();
 
 	// Each terrain owns its own streaming state. Initialise() pre-allocates
 	// the cached chunk-data scratch buffer and resets per-frame counters;
 	// the allocators get sized later in RegisterTerrainBuffers (it has the
-	// vertex stride needed to derive vertex-count budgets).
+	// vertex stride needed to derive vertex-count budgets). The relocated GPU
+	// state (buffers + scalars + m_bCullingResourcesInitialized) default-inits
+	// inside Flux_TerrainStreamingState.
 	m_pxStreamingState = new Flux_TerrainStreamingState();
 	m_pxStreamingState->Initialize(this);
 }
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity)
-	: m_bCullingResourcesInitialized(false)
-	, m_xParentEntity(xEntity)
-	, m_ulUnifiedVertexBufferSize(0)
-	, m_ulUnifiedIndexBufferSize(0)
-	, m_uVertexStride(0)
-	, m_uLowLODVertexCount(0)
-	, m_uLowLODIndexCount(0)
+	: m_xParentEntity(xEntity)
 {
 	IncrementInstanceCount();
 
 	// Allocate this terrain's own streaming state — same pattern as the
-	// default (deserialization) constructor.
+	// default (deserialization) constructor. The unified-buffer scalars and
+	// the culling-init flag now live on (and default-init inside) the state.
 	m_pxStreamingState = new Flux_TerrainStreamingState();
 	m_pxStreamingState->Initialize(this);
 
@@ -277,25 +286,36 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 
 Zenith_TerrainComponent::~Zenith_TerrainComponent()
 {
+	// A moved-from component owns nothing — its state pointer was stolen and
+	// nulled, and DecrementInstanceCount must NOT run (the moved-to component
+	// is the live one, and IncrementInstanceCount fired once at construction).
+	if (m_pxStreamingState == nullptr)
+	{
+		// Physics geometry was also stolen (nulled) by the move; delete is a
+		// no-op on null but kept for symmetry / clarity.
+		delete m_pxPhysicsGeometry;
+		m_pxPhysicsGeometry = nullptr;
+		return;
+	}
+
 	DestroyCullingResources();
 
 	// Take this terrain out of the manager's registry FIRST so no concurrent
 	// PreRenderUpdate iteration can pick up a state that's about to be freed.
-	// Then tear down and free the per-terrain state.
 	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
 
-	if (m_pxStreamingState)
-	{
-		m_pxStreamingState->Shutdown();
-		delete m_pxStreamingState;
-		m_pxStreamingState = nullptr;
-	}
-
-	// Destroy owned unified buffers
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xUnifiedVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xUnifiedIndexBuffer);
+	// Destroy the owned unified buffers (they now live ON the streaming state)
+	// BEFORE freeing the state — preserves the documented destroy order:
+	// DestroyCullingResources -> unregister -> destroy unified buffers ->
+	// delete state.
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Unified terrain buffers destroyed");
+
+	m_pxStreamingState->Shutdown();
+	delete m_pxStreamingState;
+	m_pxStreamingState = nullptr;
 
 	delete m_pxPhysicsGeometry;
 	m_pxPhysicsGeometry = nullptr;
@@ -303,6 +323,118 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	// MaterialHandle members (m_axMaterials[]) auto-release when destroyed
 
 	DecrementInstanceCount();
+}
+
+// ========== Move semantics (Wave-18) ==========
+// STEAL the owned state + physics geometry + material/splat handles from the
+// source, null the source's owning pointers, and REPOINT the streaming state's
+// owner back-pointer at *this so the manager registry / per-frame resolver keep
+// dereferencing the live component. See the header for why the implicit move
+// (a shallow pointer copy → double-free on pool relocation) is wrong.
+Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_TerrainComponent&& xOther) noexcept
+	: m_xParentEntity(xOther.m_xParentEntity)
+	, m_pxPhysicsGeometry(xOther.m_pxPhysicsGeometry)
+	, m_bTerrainGeometryUnusable(xOther.m_bTerrainGeometryUnusable)
+	, m_pxStreamingState(xOther.m_pxStreamingState)
+{
+	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
+		m_axMaterials[u] = std::move(xOther.m_axMaterials[u]);
+	m_xSplatmap = std::move(xOther.m_xSplatmap);
+
+	// Repoint the state's back-pointer at the new owner.
+	if (m_pxStreamingState)
+		m_pxStreamingState->m_pxOwner = this;
+
+	// Null the source so its destructor frees nothing (no double-free).
+	xOther.m_pxStreamingState = nullptr;
+	xOther.m_pxPhysicsGeometry = nullptr;
+}
+
+Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainComponent&& xOther) noexcept
+{
+	if (this == &xOther)
+		return *this;
+
+	// Release anything this component currently owns before stealing. Mirrors
+	// the destructor's order (cull -> unregister -> unified buffers -> state).
+	if (m_pxStreamingState)
+	{
+		DestroyCullingResources();
+		g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
+		g_xEngine.VulkanMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
+		g_xEngine.VulkanMemory().DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
+		m_pxStreamingState->Shutdown();
+		delete m_pxStreamingState;
+		m_pxStreamingState = nullptr;
+		// This component had its own instance-count slot; the source keeps its
+		// own (transferred below). Balance the count for the state we just
+		// destroyed so the net count is unchanged by the assignment.
+		DecrementInstanceCount();
+	}
+	delete m_pxPhysicsGeometry;
+	m_pxPhysicsGeometry = nullptr;
+
+	// Steal from the source.
+	m_xParentEntity            = xOther.m_xParentEntity;
+	m_pxPhysicsGeometry        = xOther.m_pxPhysicsGeometry;
+	m_bTerrainGeometryUnusable = xOther.m_bTerrainGeometryUnusable;
+	m_pxStreamingState         = xOther.m_pxStreamingState;
+	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
+		m_axMaterials[u] = std::move(xOther.m_axMaterials[u]);
+	m_xSplatmap = std::move(xOther.m_xSplatmap);
+
+	if (m_pxStreamingState)
+		m_pxStreamingState->m_pxOwner = this;
+
+	xOther.m_pxStreamingState  = nullptr;
+	xOther.m_pxPhysicsGeometry = nullptr;
+
+	return *this;
+}
+
+// ========== Out-of-line buffer / stride / draw-count forwarders ==========
+// Each forwards into the owning Flux_TerrainStreamingState. The full state +
+// buffer-wrapper types are visible here (Flux_TerrainStreamingManagerImpl.h);
+// the header only forward-declares them.
+
+const Flux_VertexBuffer& Zenith_TerrainComponent::GetUnifiedVertexBuffer() const
+{
+	return m_pxStreamingState->m_xUnifiedVertexBuffer;
+}
+
+const Flux_IndexBuffer& Zenith_TerrainComponent::GetUnifiedIndexBuffer() const
+{
+	return m_pxStreamingState->m_xUnifiedIndexBuffer;
+}
+
+uint32_t Zenith_TerrainComponent::GetVertexStride() const
+{
+	return m_pxStreamingState->m_uVertexStride;
+}
+
+const Flux_MeshGeometry& Zenith_TerrainComponent::GetPhysicsMeshGeometry() const
+{
+	return *m_pxPhysicsGeometry;
+}
+
+const Flux_IndirectBuffer& Zenith_TerrainComponent::GetIndirectDrawBuffer() const
+{
+	return m_pxStreamingState->m_xIndirectDrawBuffer;
+}
+
+const Flux_IndirectBuffer& Zenith_TerrainComponent::GetVisibleCountBuffer() const
+{
+	return m_pxStreamingState->m_xVisibleCountBuffer;
+}
+
+uint32_t Zenith_TerrainComponent::GetMaxDrawCount() const
+{
+	return Flux_TerrainConfig::TOTAL_CHUNKS;
+}
+
+Flux_ReadWriteBuffer& Zenith_TerrainComponent::GetLODLevelBuffer()
+{
+	return m_pxStreamingState->m_xLODLevelBuffer;
 }
 
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -571,7 +703,7 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 		return;
 	}
 
-	m_uVertexStride = xLowLODGeometry.GetBufferLayout().GetStride();
+	m_pxStreamingState->m_uVertexStride = xLowLODGeometry.GetBufferLayout().GetStride();
 
 	// Collect init data for chunk (0,0)
 	{
@@ -585,7 +717,7 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 		}
 	}
 
-	const uint64_t ulLowLODVertexDataSize = static_cast<uint64_t>(uTotalVerts) * m_uVertexStride;
+	const uint64_t ulLowLODVertexDataSize = static_cast<uint64_t>(uTotalVerts) * m_pxStreamingState->m_uVertexStride;
 	const uint64_t ulLowLODIndexDataSize = static_cast<uint64_t>(uTotalIndices) * sizeof(Flux_MeshGeometry::IndexType);
 	const uint64_t ulLowLODPositionDataSize = static_cast<uint64_t>(uTotalVerts) * sizeof(Zenith_Maths::Vector3);
 
@@ -658,8 +790,8 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOW LOD mesh combination complete: %u vertices, %u indices",
 		xLowLODGeometry.GetNumVerts(), xLowLODGeometry.GetNumIndices());
 
-	m_uLowLODVertexCount = xLowLODGeometry.GetNumVerts();
-	m_uLowLODIndexCount = xLowLODGeometry.GetNumIndices();
+	m_pxStreamingState->m_uLowLODVertexCount = xLowLODGeometry.GetNumVerts();
+	m_pxStreamingState->m_uLowLODIndexCount = xLowLODGeometry.GetNumIndices();
 }
 
 void Zenith_TerrainComponent::InitializeUnifiedBuffers(const Flux_MeshGeometry& xLowLODGeometry)
@@ -686,18 +818,18 @@ void Zenith_TerrainComponent::InitializeUnifiedBuffers(const Flux_MeshGeometry& 
 	memset(pUnifiedVertexData + ulLowLODVertexSize, 0, STREAMING_VERTEX_BUFFER_SIZE);
 	memset(pUnifiedIndexData + (ulLowLODIndexSize / sizeof(uint32_t)), 0, STREAMING_INDEX_BUFFER_SIZE);
 
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_xUnifiedVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_xUnifiedIndexBuffer);
+	g_xEngine.VulkanMemory().InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_pxStreamingState->m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_pxStreamingState->m_xUnifiedIndexBuffer);
 
-	m_ulUnifiedVertexBufferSize = ulUnifiedVertexSize;
-	m_ulUnifiedIndexBufferSize = ulUnifiedIndexSize;
+	m_pxStreamingState->m_ulUnifiedVertexBufferSize = ulUnifiedVertexSize;
+	m_pxStreamingState->m_ulUnifiedIndexBufferSize = ulUnifiedIndexSize;
 
 	delete[] pUnifiedVertexData;
 	delete[] pUnifiedIndexData;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Unified terrain buffers uploaded to GPU");
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOW LOD region: vertices [0, %u), indices [0, %u)", m_uLowLODVertexCount, m_uLowLODIndexCount);
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Streaming region starts at: vertex %u, index %u", m_uLowLODVertexCount, m_uLowLODIndexCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOW LOD region: vertices [0, %u), indices [0, %u)", m_pxStreamingState->m_uLowLODVertexCount, m_pxStreamingState->m_uLowLODIndexCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Streaming region starts at: vertex %u, index %u", m_pxStreamingState->m_uLowLODVertexCount, m_pxStreamingState->m_uLowLODIndexCount);
 }
 
 // ========== Physics Geometry Loading ==========
@@ -796,7 +928,7 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 
 void Zenith_TerrainComponent::InitializeCullingResources()
 {
-	if (m_bCullingResourcesInitialized)
+	if (m_pxStreamingState->m_bCullingResourcesInitialized)
 	{
 		Zenith_Assert(false, "Zenith_TerrainComponent::InitializeCullingResources() called when already initialized");
 		return;
@@ -810,7 +942,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(
 		nullptr,
 		sizeof(Zenith_CameraDataGPU),
-		m_xFrustumPlanesBuffer
+		m_pxStreamingState->m_xFrustumPlanesBuffer
 	);
 
 	// Indirect draw command buffer (one command per chunk, max)
@@ -822,17 +954,17 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 
 	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(
 		indirectBufferSize,
-		m_xIndirectDrawBuffer
+		m_pxStreamingState->m_xIndirectDrawBuffer
 	);
 
 	// Upload the zero-initialized data
-	g_xEngine.VulkanMemory().UploadBufferData(m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
+	g_xEngine.VulkanMemory().UploadBufferData(m_pxStreamingState->m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
 	delete[] pZeroBuffer;
 
 	// Visible chunk counter (single atomic uint32_t)
 	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(
 		sizeof(uint32_t),
-		m_xVisibleCountBuffer
+		m_pxStreamingState->m_xVisibleCountBuffer
 	);
 
 	// LOD level buffer (one uint32_t per potential draw call). Zero-initialise
@@ -848,7 +980,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 		g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
 			pZero,
 			sizeof(uint32_t) * TOTAL_CHUNKS,
-			m_xLODLevelBuffer
+			m_pxStreamingState->m_xLODLevelBuffer
 		);
 		delete[] pZero;
 	}
@@ -856,7 +988,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	// Build chunk data (AABBs + LOD metadata) and upload to GPU
 	BuildChunkData();
 
-	m_bCullingResourcesInitialized = true;
+	m_pxStreamingState->m_bCullingResourcesInitialized = true;
 
 	// New per-terrain GPU buffers (chunk data, indirect, count, LOD level)
 	// just appeared. g_xEngine.Terrain().SetupRenderGraph reads
@@ -880,7 +1012,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 
 void Zenith_TerrainComponent::DestroyCullingResources()
 {
-	if (!m_bCullingResourcesInitialized)
+	if (!m_pxStreamingState || !m_pxStreamingState->m_bCullingResourcesInitialized)
 	{
 		return;
 	}
@@ -896,15 +1028,15 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 	// Cleanup GPU resources - queue for deferred deletion to avoid destroying in-use resources.
 	// Chunk data buffer is frame-indexed; DestroyDynamicReadWriteBuffer queues
 	// every frame slot for deferred deletion.
-	g_xEngine.VulkanMemory().DestroyDynamicReadWriteBuffer(m_xChunkDataBuffer);
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(m_xFrustumPlanesBuffer);
-	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xIndirectDrawBuffer);
-	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xVisibleCountBuffer);
-	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xLODLevelBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicReadWriteBuffer(m_pxStreamingState->m_xChunkDataBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(m_pxStreamingState->m_xFrustumPlanesBuffer);
+	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_pxStreamingState->m_xIndirectDrawBuffer);
+	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_pxStreamingState->m_xVisibleCountBuffer);
+	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_pxStreamingState->m_xLODLevelBuffer);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Culling resources destroyed");
 
-	m_bCullingResourcesInitialized = false;
+	m_pxStreamingState->m_bCullingResourcesInitialized = false;
 }
 
 void Zenith_TerrainComponent::BuildChunkData()
@@ -927,7 +1059,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 	g_xEngine.VulkanMemory().InitialiseDynamicReadWriteBuffer(
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
-		m_xChunkDataBuffer
+		m_pxStreamingState->m_xChunkDataBuffer
 	);
 
 	// Cleanup CPU data
@@ -939,7 +1071,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 {
 	// CRITICAL: Skip if culling resources not initialized (e.g., terrain component added via editor but not yet set up)
-	if (!m_bCullingResourcesInitialized)
+	if (!m_pxStreamingState->m_bCullingResourcesInitialized)
 	{
 		return;  // Terrain not ready for rendering yet
 	}
@@ -991,7 +1123,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	// implicit host-write-available barrier carries the visibility into the
 	// compute read on the render queue.
 	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
-		m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
+		m_pxStreamingState->m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		0  // Offset 0 - replace entire buffer
@@ -1024,7 +1156,7 @@ void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& 
 
 void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Matrix4& xViewProjMatrix)
 {
-	if (!m_bCullingResourcesInitialized)
+	if (!m_pxStreamingState->m_bCullingResourcesInitialized)
 	{
 		return;
 	}
@@ -1044,12 +1176,12 @@ void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Ma
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(m_pxStreamingState->m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
 }
 
 void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
 {
-	if (!m_bCullingResourcesInitialized)
+	if (!m_pxStreamingState->m_bCullingResourcesInitialized)
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
 		return;
@@ -1066,11 +1198,11 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
 	// resolves to the current frame's SRV — the same slot CPU just wrote to
 	// in PreRenderUpdate via UpdateChunkLODAllocations.
 	xCmdList.AddCommand<Flux_CommandBeginBind>(0);
-	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(m_xChunkDataBuffer.GetSRV(), 0);            // Chunk data (read-only StructuredBuffer)
-	xCmdList.AddCommand<Flux_CommandBindCBV>(&m_xFrustumPlanesBuffer.GetCBV(), 1);              // Frustum planes (read)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xIndirectDrawBuffer.GetUAV(), 2);        // Indirect commands (write)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xVisibleCountBuffer.GetUAV(), 3);        // Visible count (read/write atomic)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xLODLevelBuffer.GetUAV(), 4);            // LOD levels (read-modify-write for hysteresis)
+	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(m_pxStreamingState->m_xChunkDataBuffer.GetSRV(), 0);            // Chunk data (read-only StructuredBuffer)
+	xCmdList.AddCommand<Flux_CommandBindCBV>(&m_pxStreamingState->m_xFrustumPlanesBuffer.GetCBV(), 1);              // Frustum planes (read)
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_pxStreamingState->m_xIndirectDrawBuffer.GetUAV(), 2);        // Indirect commands (write)
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_pxStreamingState->m_xVisibleCountBuffer.GetUAV(), 3);        // Visible count (read/write atomic)
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_pxStreamingState->m_xLODLevelBuffer.GetUAV(), 4);            // LOD levels (read-modify-write for hysteresis)
 
 	// Dispatch compute shader
 	// We have TOTAL_CHUNKS chunks, with local_size_x=64 we need (TOTAL_CHUNKS + 63) / 64 workgroups

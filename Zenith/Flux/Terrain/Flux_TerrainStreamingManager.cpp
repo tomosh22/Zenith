@@ -268,8 +268,9 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Zenith_TerrainComp
 	}
 	g_xEngine.TerrainStreaming().m_xRegistryMutex.Unlock();
 
-	// Initialize allocators for the streaming region (after LOW LOD).
-	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / pxTerrainComponent->m_uVertexStride);
+	// Initialize allocators for the streaming region (after LOW LOD). The
+	// vertex stride now lives on the state itself (Wave-18 relocation).
+	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / xState.m_uVertexStride);
 	const uint32_t uMaxStreamingIndices  = static_cast<uint32_t>(STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t));
 
 	xState.m_xVertexAllocator.Initialize(uMaxStreamingVertices, "StreamingVertices");
@@ -688,13 +689,14 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	if (!TryAllocateStreamingSpace(xState, uNumVerts, uNumIndices, xState.m_xLastCameraPos, xAlloc))
 		return Flux_TerrainStreamInResult::AllocationFailure;
 
-	// Calculate absolute offsets in unified buffer (streaming region starts after LOW LOD)
-	const Zenith_TerrainComponent* const pxOwner = xState.m_pxOwner;
-	const uint32_t uAbsoluteVertexOffset = pxOwner->m_uLowLODVertexCount + xAlloc.m_uVertexOffset;
-	const uint32_t uAbsoluteIndexOffset  = pxOwner->m_uLowLODIndexCount  + xAlloc.m_uIndexOffset;
+	// Calculate absolute offsets in unified buffer (streaming region starts
+	// after LOW LOD). The LOW-LOD counts, vertex stride and unified buffers now
+	// live ON the streaming state (Wave-18 relocation) — no pxOwner hop needed.
+	const uint32_t uAbsoluteVertexOffset = xState.m_uLowLODVertexCount + xAlloc.m_uVertexOffset;
+	const uint32_t uAbsoluteIndexOffset  = xState.m_uLowLODIndexCount  + xAlloc.m_uIndexOffset;
 
 	// Calculate byte offsets
-	const uint32_t uVertexStride       = pxOwner->m_uVertexStride;
+	const uint32_t uVertexStride       = xState.m_uVertexStride;
 	const uint64_t ulVertexDataSize    = static_cast<uint64_t>(uNumVerts)   * uVertexStride;
 	const uint64_t ulVertexOffsetBytes = static_cast<uint64_t>(uAbsoluteVertexOffset) * uVertexStride;
 	const uint64_t ulIndexDataSize     = static_cast<uint64_t>(uNumIndices) * sizeof(uint32_t);
@@ -702,14 +704,14 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 
 	// Upload to GPU
 	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
-		pxOwner->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
+		xState.m_xUnifiedVertexBuffer.GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_pVertexData,
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
-		pxOwner->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
+		xState.m_xUnifiedIndexBuffer.GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_puIndices,
 		ulIndexDataSize,
 		ulIndexOffsetBytes
@@ -737,10 +739,11 @@ void Flux_TerrainStreamingManagerImpl::EvictLOD(Flux_TerrainStreamingState& xSta
 	if (xResidency.m_aeStates[uLODLevel] != Flux_TerrainLODResidencyState::RESIDENT)
 		return;
 
-	// Free allocations (convert absolute to relative offsets)
+	// Free allocations (convert absolute to relative offsets). LOW-LOD counts
+	// now live on the state itself (Wave-18 relocation).
 	Flux_TerrainLODAllocation& xAlloc = xResidency.m_axAllocations[uLODLevel];
-	const uint32_t uRelativeVertexOffset = xAlloc.m_uVertexOffset - xState.m_pxOwner->m_uLowLODVertexCount;
-	const uint32_t uRelativeIndexOffset  = xAlloc.m_uIndexOffset  - xState.m_pxOwner->m_uLowLODIndexCount;
+	const uint32_t uRelativeVertexOffset = xAlloc.m_uVertexOffset - xState.m_uLowLODVertexCount;
+	const uint32_t uRelativeIndexOffset  = xAlloc.m_uIndexOffset  - xState.m_uLowLODIndexCount;
 
 	xState.m_xVertexAllocator.Free(uRelativeVertexOffset, xAlloc.m_uVertexCount);
 	xState.m_xIndexAllocator .Free(uRelativeIndexOffset,  xAlloc.m_uIndexCount);

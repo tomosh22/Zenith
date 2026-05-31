@@ -424,4 +424,13 @@ public:
 		FluxShaderProgram eProgram,
 		TextureFormat eColourFormat,
 		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);
+
+	// Multi-render-target variant — covers N>=1 colour targets. The single-RTV
+	// CreateFullscreenSpec above delegates to this with uNumColourAttachments==1.
+	static Flux_PipelineSpecification CreateFullscreenSpecMRT(
+		Flux_Shader& xShader,
+		FluxShaderProgram eProgram,
+		const TextureFormat* aeColourFormats,
+		u_int uNumColourAttachments,
+		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);
 };

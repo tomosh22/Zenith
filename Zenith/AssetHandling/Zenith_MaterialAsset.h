@@ -178,14 +178,14 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadMaterialAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadMaterialAsset(const std::string&);
 
 	/**
 	 * Load material data from file (private - use Zenith_AssetRegistry::Get)
 	 * @param strPath Path to .zmat file
-	 * @return true on success
+	 * @return SUCCESS, or an error code on failure
 	 */
-	bool LoadFromFile(const std::string& strPath);
+	Zenith_Status LoadFromFile(const std::string& strPath);
 
 	// Material identity
 	std::string m_strName;

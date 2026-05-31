@@ -90,6 +90,19 @@ public:
 	// tests that explicitly inspect the scrubbed state + the SceneData destructor.
 	void ScrubAndReset();
 
+	// WS12 bench/soak hook (all configs). Thin public forwarder to the private
+	// per-frame OnUpdate chokepoint (DispatchOnUpdateForEntities, which carries
+	// the parallel-sim gate), exposed so the GPU-free --bench-sim /
+	// --check-sim-determinism harnesses in Zenith_BenchECS.cpp can drive exactly
+	// the gated path without befriending the whole bench TU. Mirrors the
+	// Editor_* forwarder precedent. NOT part of the normal-runtime surface —
+	// game code never calls this; the engine's own per-frame Update reaches the
+	// chokepoint internally.
+	void Bench_DispatchOnUpdatePass(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
+	{
+		DispatchOnUpdateForEntities(xSnapshotIDs, fDt);
+	}
+
 	//==========================================================================
 	// Read-Only Scene Properties
 	//==========================================================================
@@ -233,15 +246,6 @@ public:
 	template<typename T>
 	void AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const;
 
-	template<typename T>
-	bool IsComponentHandleValid(const Zenith_ComponentHandle<T>& xHandle) const;
-
-	template<typename T>
-	T* TryGetComponentFromHandle(const Zenith_ComponentHandle<T>& xHandle) const;
-
-	template<typename T>
-	Zenith_ComponentHandle<T> GetComponentHandle(Zenith_EntityID xID) const;
-
 	template<typename... Ts>
 	Zenith_Query<Ts...> Query();
 
@@ -263,9 +267,26 @@ public:
 	// uSCENE_VERSION_CURRENT here and the call sites that reference it:
 	//   SaveToFile, LoadFromDataStream.
 	// All of them reference these constants — no magic numbers elsewhere.
+	//
+	// Version history (read/write asymmetry is intentional — see DeserializeEntityComponents):
+	//   v3      legacy entity layout (explicit per-entity child-index list)
+	//   v4/v5   compact entity layout [fileIndex][name]; per-component [typeName][size][payload]
+	//   v6      adds an OPTIONAL per-component schemaVersion written OUTSIDE the
+	//           size-prefixed payload: [typeName][schemaVersion u_int][size u_int][payload].
+	//           INERT this wave — no component opts in yet (every component reports
+	//           the default schema 1), but the field round-trips so a later component
+	//           migration can branch on it. v3/4/5 files carry no schemaVersion bytes;
+	//           the read path is gated on (uSceneVersion >= 6) so they stay byte-aligned.
 	static constexpr u_int uSCENE_MAGIC                 = 0x5A53434E;
-	static constexpr u_int uSCENE_VERSION_CURRENT       = 5;
+	static constexpr u_int uSCENE_VERSION_CURRENT       = 6;
 	static constexpr u_int uSCENE_VERSION_MIN_SUPPORTED = 3;
+
+	// Non-destructive header validator: saves/restores the stream cursor so the
+	// caller's subsequent reads start from the same offset. Single source of truth
+	// for the header checks (IsValid → size → magic → version) shared by the
+	// LoadScene pre-pass and LoadFromDataStream. Static — operates only on the
+	// passed stream + the static header constants above, touches no instance state.
+	static bool ValidateSceneStream(Zenith_DataStream& xStream);
 
 	void SaveToFile(const std::string& strFilename, bool bIncludeTransient = false);
 	bool LoadFromFile(const std::string& strFilename);
@@ -281,6 +302,11 @@ private:
 	friend class Zenith_SceneTests;
 	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;
+	// WS10: the sparse-set query fast path reaches component pools directly
+	// (TryGetComponentPool + the pool's m_xOwningEntities / GetSparseDense / Get).
+	// Query already held a Zenith_SceneData* and used its public accessors; the
+	// fast path additionally needs the (private) non-asserting pool fetch.
+	template<typename... Ts> friend class Zenith_Query;
 	// (Earlier revisions friended `class Zenith_Editor` here so editor code
 	// could reach into scene-data privates. Audited stale -- editor accesses
 	// scene data only through the public API -- and removed when
@@ -448,6 +474,45 @@ private:
 	// loop and validity checks; only the dispatched hook differs.
 	enum class LifecycleHook { UPDATE, LATE_UPDATE };
 	void DispatchLifecycleHookForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook);
+
+	// WS12 gated parallel dispatch (only reached when
+	// g_xEngine.Scenes().AreParallelSimEnabled() is true — otherwise
+	// DispatchLifecycleHookForEntities runs its existing serial loop verbatim).
+	// Walks the snapshot in deterministic order, running the same EntityExists /
+	// WasCreatedDuringUpdate / IsActiveInHierarchy guards on the MAIN THREAD.
+	// MAXIMAL CONTIGUOUS RUNS of eligible (collider-free / script-free
+	// Tween-only) entities are fanned across the task system as one disjoint
+	// wave each; an ineligible entity flushes the pending wave (barrier) then
+	// dispatches inline. This preserves the EXACT global serial order of every
+	// entity relative to every other, so the result is byte-identical to serial
+	// for ANY scene — not just cross-dependency-free ones (eligible entities
+	// never read other entities; the pre-ineligible barrier publishes their
+	// writes). Proven by ParallelSimDeterminismSmoke / --check-sim-determinism.
+	void ParallelDispatchHook(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook);
+
+	// Context + worker for the WS12 eligible-entity parallel wave. The worker is
+	// a static member (not a free function) so it can reach the private
+	// WasCreatedDuringUpdate guard; its signature matches Zenith_TaskArrayFunction
+	// (void(*)(void*, u_int, u_int)) so &Zenith_SceneData::ParallelSimShardFunc is
+	// a valid task-array function pointer.
+	struct ParallelSimShardContext
+	{
+		Zenith_SceneData*                     m_pxSceneData   = nullptr;
+		const Zenith_Vector<Zenith_EntityID>* m_pxEligibleIDs = nullptr;
+		float                                 m_fDt           = 0.0f;
+		bool                                  m_bLateUpdate   = false; // false=OnUpdate, true=OnLateUpdate
+	};
+	static void ParallelSimShardFunc(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
+
+	// WS12 eligibility predicate for a single entity (the conservative parallel
+	// unit gate). Returns true ONLY if ALL hold: (a) the entity's aggregate
+	// per-frame-update access mask is a strict subset of
+	// {READS_TRANSFORM|WRITES_TRANSFORM} (no UNKNOWN/PHYSICS bit — see
+	// Zenith_AccessSet); (b) the entity has NO ColliderComponent (the hidden
+	// Tween->Jolt physics-write guard); (c) the entity has NO ScriptComponent
+	// (open-ended surface). Anything else -> serial/main-thread. Defined in the
+	// .cpp where the concrete component types are available.
+	bool IsEntityParallelEligible(Zenith_Entity& xEntity);
 	void DispatchOnUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
 		{ DispatchLifecycleHookForEntities(xSnapshotIDs, fDt, LifecycleHook::UPDATE); }
 	void DispatchOnLateUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
@@ -543,6 +608,22 @@ private:
 		return static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
 	}
 
+	// NON-asserting pool fetch (WS10). GetComponentPool asserts when the type is
+	// unregistered or the slot is null; the sparse-set query fast path needs to
+	// treat "no pool of this type in this scene" as simply an EMPTY result
+	// (Query<NeverAddedType> must not assert). Returns nullptr in that case.
+	// Friended to Zenith_Query via the Zenith_UnitTests-style access; Query holds
+	// a Zenith_SceneData* and calls this directly.
+	template<typename T>
+	Zenith_ComponentPool<T>* TryGetComponentPool() const
+	{
+		const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
+		if (uTypeID >= m_xComponents.GetSize()) return nullptr;
+		Zenith_ComponentPoolBase* pxPoolBase = m_xComponents.Get(uTypeID);
+		if (pxPoolBase == nullptr) return nullptr;
+		return static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
+	}
+
 	template<typename T>
 	Zenith_ComponentPool<T>* GetOrCreateComponentPool()
 	{
@@ -619,33 +700,9 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 	Zenith_ComponentPool<T>* pxPool = GetOrCreateComponentPool<T>();
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 
-	u_int uComponentIndex;
-	if (pxPool->m_xFreeIndices.GetSize() > 0)
-	{
-		uComponentIndex = pxPool->m_xFreeIndices.GetBack();
-
-		// Check for generation overflow (matching entity slot overflow handling)
-		if (pxPool->m_xGenerations.Get(uComponentIndex) == UINT32_MAX)
-		{
-			static uint32_t ls_uRetiredSlotCount = 0;
-			ls_uRetiredSlotCount++;
-			Zenith_Warning(LOG_CATEGORY_ECS,
-				"Component slot %u generation overflow - retiring slot (total retired: %u). "
-				"Consider restarting if memory is a concern.", uComponentIndex, ls_uRetiredSlotCount);
-			pxPool->m_xFreeIndices.PopBack();
-			// Allocate a fresh slot instead
-			uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
-		}
-		else
-		{
-			pxPool->m_xFreeIndices.PopBack();
-			pxPool->ConstructAt(uComponentIndex, xID, std::forward<Args>(args)...);
-		}
-	}
-	else
-	{
-		uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
-	}
+	// Dense pool: always append at the end. Removal (RemoveComponentFromEntity)
+	// keeps the pool contiguous via swap-and-pop, so there are no holes to reuse.
+	const u_int uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
 
 	g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex)[uTypeID] = uComponentIndex;
 	MarkDirty();
@@ -655,7 +712,11 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 template<typename T>
 bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive()
+	// WS12: also permitted during a parallel-sim OnUpdate wave — the eligible
+	// entities are provably disjoint (each Tween reads/writes only its own
+	// Transform), so concurrent component-map reads are race-free, exactly like
+	// the render-task window above.
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive() || Zenith_IsParallelSimWaveActive()
 		,
 		"EntityHasComponent must be called from main thread");
 	if (!EntityExists(xID)) return false;
@@ -667,7 +728,9 @@ bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 template<typename T>
 T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(),
+	// WS12: also permitted during a parallel-sim OnUpdate wave (disjoint eligible
+	// entities — each Tween touches only its own Transform). See EntityHasComponent.
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive() || Zenith_IsParallelSimWaveActive(),
 		"GetComponentFromEntity must be called from main thread");
 	Zenith_Assert(EntityExists(xID), "GetComponentFromEntity: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
 
@@ -699,11 +762,21 @@ bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 		pxPool->Get(uComponentIndex).OnRemove();
 	}
 
-	// Destruct and mark slot as free
-	pxPool->DestructAt(uComponentIndex);
-	pxPool->m_xFreeIndices.PushBack(uComponentIndex);
+	// Real swap-and-pop: destruct this slot and, unless it was the last one,
+	// move the last live element into it. RemoveAtSwapAndPop returns the owner
+	// of the moved element so we can repoint its stored component index.
+	const Zenith_EntityID xMovedOwner = pxPool->RemoveAtSwapAndPop(uComponentIndex);
 
+	// Erase the removed entity's entry BEFORE repointing the moved owner — the
+	// moved owner may be a different entity, and (in the last-element case) is
+	// INVALID_ENTITY_ID, so its branch is skipped.
 	xMap.erase(xIt);
+
+	if (xMovedOwner.IsValid() && xMovedOwner != xID)
+	{
+		g_xEngine.EntityStore().m_axEntityComponents.Get(xMovedOwner.m_uIndex)[uTypeID] = uComponentIndex;
+	}
+
 	MarkDirty();
 	return true;
 }
@@ -727,49 +800,12 @@ void Zenith_SceneData::AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const
 	if (pxPoolBase == nullptr) return;
 
 	Zenith_ComponentPool<T>* pxPool = static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
+	// Dense pool: every slot in [0, GetSize()) is live — no holes to skip.
 	for (u_int u = 0; u < pxPool->GetSize(); ++u)
 	{
-		if (pxPool->m_xOwningEntities.Get(u).IsValid())
-		{
-			xOut.PushBack(&pxPool->Get(u));
-		}
+		Zenith_Assert(pxPool->m_xOwningEntities.Get(u).IsValid(), "AppendAllOfComponentType: dense pool slot %u is not occupied", u);
+		xOut.PushBack(&pxPool->Get(u));
 	}
-}
-
-template<typename T>
-bool Zenith_SceneData::IsComponentHandleValid(const Zenith_ComponentHandle<T>& xHandle) const
-{
-	if (!xHandle.IsValid()) return false;
-	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	if (uTypeID >= m_xComponents.GetSize()) return false;
-
-	Zenith_ComponentPoolBase* pxPoolBase = m_xComponents.Get(uTypeID);
-	if (pxPoolBase == nullptr) return false;
-
-	Zenith_ComponentPool<T>* pxPool = static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
-	if (xHandle.m_uIndex >= pxPool->m_xGenerations.GetSize()) return false;
-	return pxPool->m_xGenerations.Get(xHandle.m_uIndex) == xHandle.m_uGeneration &&
-	       pxPool->m_xOwningEntities.Get(xHandle.m_uIndex).IsValid();
-}
-
-template<typename T>
-T* Zenith_SceneData::TryGetComponentFromHandle(const Zenith_ComponentHandle<T>& xHandle) const
-{
-	if (!IsComponentHandleValid(xHandle)) return nullptr;
-	return &GetComponentPool<T>()->Get(xHandle.m_uIndex);
-}
-
-template<typename T>
-Zenith_ComponentHandle<T> Zenith_SceneData::GetComponentHandle(Zenith_EntityID xID) const
-{
-	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	const auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
-	auto xIt = xMap.find(uTypeID);
-	if (xIt == xMap.end()) return Zenith_ComponentHandle<T>::Invalid();
-	const u_int uIndex = xIt->second;
-	const uint32_t uGeneration = GetComponentPool<T>()->m_xGenerations.Get(uIndex);
-
-	return { uIndex, uGeneration };
 }
 
 template<typename T>
@@ -785,14 +821,20 @@ void Zenith_SceneData::TransferComponent(Zenith_EntityID xEntityID, Zenith_Scene
 	Zenith_ComponentPool<T>* pxSourcePool = pxSource->GetComponentPool<T>();
 	Zenith_ComponentPool<T>* pxTargetPool = pxTarget->GetOrCreateComponentPool<T>();
 
+	// Move the component into the target pool (appended at its end).
 	T& xSourceComponent = pxSourcePool->Get(uSourcePoolIndex);
 	u_int uNewPoolIndex = pxTargetPool->MoveEmplaceBack(xEntityID, std::move(xSourceComponent));
 
-	// Destruct in source and free slot
-	pxSourcePool->DestructAt(uSourcePoolIndex);
-	pxSourcePool->m_xFreeIndices.PushBack(uSourcePoolIndex);
+	// Remove the (now moved-from) source slot with a real swap-and-pop so the
+	// SOURCE pool stays dense. If a different entity's component was moved into
+	// uSourcePoolIndex to fill the gap, repoint THAT entity's stored index.
+	const Zenith_EntityID xMovedOwner = pxSourcePool->RemoveAtSwapAndPop(uSourcePoolIndex);
+	if (xMovedOwner.IsValid() && xMovedOwner != xEntityID)
+	{
+		g_xEngine.EntityStore().m_axEntityComponents.Get(xMovedOwner.m_uIndex)[uTypeID] = uSourcePoolIndex;
+	}
 
-	// Update global mapping to point to target pool index
+	// Update the transferred entity's mapping to point at the target pool index.
 	xMap[uTypeID] = uNewPoolIndex;
 }
 

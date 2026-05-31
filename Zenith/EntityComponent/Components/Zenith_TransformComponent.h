@@ -30,6 +30,22 @@ public:
 	// in Zenith_ComponentMeta calls this once at component-type registration.
 	static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties);
 
+	// Coarse access-set declaration (worked example). The reflection layer
+	// detects this optional static (HasAccessSet<T>) and copies the masks into
+	// the component meta — INERT this wave, read by the future system scheduler.
+	// Transform OWNS its transform data, so it both reads and writes it.
+	//
+	// We cannot include Zenith_ComponentMeta.h here (it -> Scene -> SceneData ->
+	// this header would cycle), so the Zenith_ComponentAccess bit values are
+	// written directly. Keep these in sync with the enum:
+	//     READS_TRANSFORM  = 1u << 0
+	//     WRITES_TRANSFORM = 1u << 1
+	static void DeclareAccess(u_int& uReads, u_int& uWrites)
+	{
+		uReads = (1u << 0);   // Zenith_ComponentAccess::READS_TRANSFORM
+		uWrites = (1u << 1);  // Zenith_ComponentAccess::WRITES_TRANSFORM
+	}
+
 	void SetPosition(const Zenith_Maths::Vector3& xPos);
 	void SetRotation(const Zenith_Maths::Quat& xRot);
 	void SetScale(const Zenith_Maths::Vector3& xScale);

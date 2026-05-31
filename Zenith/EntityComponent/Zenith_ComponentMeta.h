@@ -59,8 +59,11 @@ using ComponentRemoveFn = void(*)(Zenith_Entity&);
 // Serialize component to data stream
 using ComponentSerializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&);
 
-// Deserialize component from data stream
-using ComponentDeserializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&);
+// Deserialize component from data stream. The trailing u_int carries the
+// per-component schemaVersion read from the scene file (scene v6+); it is 1 for
+// pre-v6 files / callers that don't track a schema. Components opt in to seeing
+// it via HasVersionedReadFromDataStream<T>; the rest ignore it (see wrapper).
+using ComponentDeserializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&, u_int);
 
 // Transfer (move-construct) a component from source scene to target scene
 using ComponentTransferFn = void(*)(Zenith_EntityID, Zenith_SceneData*, Zenith_SceneData*);
@@ -78,6 +81,42 @@ using ComponentLifecycleFn = void(*)(Zenith_Entity&);
 
 // Called every frame with delta time
 using ComponentUpdateFn = void(*)(Zenith_Entity&, float);
+
+//------------------------------------------------------------------------------
+// Component access-set metadata (INERT this wave)
+//
+// Coarse, conservative description of which engine domains a component reads
+// and writes. This is metadata ONLY — nothing in the engine consumes it yet.
+// It is populated at component-type registration (compile-time detected, exactly
+// like the lifecycle hooks below) so the future system scheduler can read it to
+// decide which component updates may run in parallel. Shipping it inert now
+// de-risks that later keystone: the masks already exist and are populated.
+//
+// The values are a stable bit contract. Components opt in by declaring the
+// OPTIONAL static method (detected by HasAccessSet<T>):
+//
+//     static void DeclareAccess(u_int& uReads, u_int& uWrites)
+//     {
+//         uReads  = static_cast<u_int>(Zenith_ComponentAccess::READS_TRANSFORM);
+//         uWrites = static_cast<u_int>(Zenith_ComponentAccess::WRITES_TRANSFORM);
+//     }
+//
+// Components that don't declare it leave both masks at 0 (NONE).
+//
+// NOTE: components whose headers cannot include this one without a textual
+// cycle (e.g. Zenith_TransformComponent.h — see its DeclareAccess) write the
+// raw bit values directly and document the correspondence. Keep that bit
+// contract in sync with this enum.
+//------------------------------------------------------------------------------
+
+enum class Zenith_ComponentAccess : u_int
+{
+	NONE             = 0,
+	READS_TRANSFORM  = 1u << 0,
+	WRITES_TRANSFORM = 1u << 1,
+	READS_PHYSICS    = 1u << 2,
+	WRITES_PHYSICS   = 1u << 3,
+};
 
 //------------------------------------------------------------------------------
 // C++20 Concepts for optional lifecycle hooks
@@ -112,6 +151,47 @@ concept HasRegisterProperties = requires(Zenith_Vector<Zenith_PropertyDescriptor
 	{ T::RegisterProperties(a) } -> std::same_as<void>;
 };
 
+// Optional: a component declares its coarse read/write access set (see
+// Zenith_ComponentAccess above). Detected and populated at registration exactly
+// like the lifecycle hooks. Components without this static leave both masks 0.
+template<typename T>
+concept HasAccessSet = requires(u_int& uReads, u_int& uWrites) {
+	{ T::DeclareAccess(uReads, uWrites) } -> std::same_as<void>;
+};
+
+// Optional: a component declares the on-disk schema version of its serialized
+// payload (INERT this wave — see Zenith_ComponentMeta::m_uSchemaVersion). A
+// component opts in by adding `static constexpr u_int uSchemaVersion = N;`.
+// Detected at registration exactly like the access-set / lifecycle hooks.
+template<typename T>
+concept HasSchemaVersion = requires { { T::uSchemaVersion } -> std::convertible_to<u_int>; };
+
+// The schema version a component declares, or the default 1 if it declares none.
+// 0 is reserved to mean "legacy / unversioned" so a future migration can tell a
+// pre-schema payload from a deliberate v1.
+template<typename T>
+static constexpr u_int ComponentSchemaVersion()
+{
+	if constexpr (HasSchemaVersion<T>)
+	{
+		return T::uSchemaVersion;
+	}
+	else
+	{
+		return 1u;
+	}
+}
+
+// Optional: a component provides a schema-version-aware overload of
+// ReadFromDataStream so a future migration can branch on the persisted schema
+// without breaking the single-arg signature every current component uses. The
+// deserialize wrapper prefers this overload when present (see
+// ComponentDeserializeWrapper); otherwise it falls back to the single-arg form.
+template<typename T>
+concept HasVersionedReadFromDataStream = requires(T& t, Zenith_DataStream& s, u_int v) {
+	t.ReadFromDataStream(s, v);
+};
+
 //------------------------------------------------------------------------------
 // Component metadata structure
 //------------------------------------------------------------------------------
@@ -143,6 +223,21 @@ struct Zenith_ComponentMeta
 	ComponentUpdateFn m_pfnOnLateUpdate = nullptr;  // Called after all OnUpdate calls
 	ComponentUpdateFn m_pfnOnFixedUpdate = nullptr; // Called at fixed timestep
 	ComponentLifecycleFn m_pfnOnDestroy = nullptr;  // Called before component is removed
+
+	// Coarse access-set metadata (INERT this wave — populated for the future
+	// system scheduler, no runtime consumer yet). Bitmasks of
+	// Zenith_ComponentAccess values. Both stay 0 (NONE) for components that
+	// don't implement DeclareAccess. See HasAccessSet<T> / Zenith_ComponentAccess.
+	u_int m_uReads = 0;
+	u_int m_uWrites = 0;
+
+	// On-disk schema version of this component's serialized payload (INERT this
+	// wave). Written per-component into scene v6 files OUTSIDE the size-prefixed
+	// payload, so it never disturbs the unknown-component SkipBytes(size) path.
+	// Default 1; a component overrides it via `static constexpr u_int uSchemaVersion`.
+	// Populated at registration from ComponentSchemaVersion<T>(). No real component
+	// opts in yet — the field exists so a later migration can branch on it.
+	u_int m_uSchemaVersion = 1;
 };
 
 //------------------------------------------------------------------------------
@@ -164,8 +259,15 @@ public:
 	// Serialize all components of an entity to data stream
 	void SerializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream) const;
 
-	// Deserialize components from data stream onto an entity
-	void DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream) const;
+	// Deserialize components from data stream onto an entity.
+	// uSceneVersion is the .zscen header version that produced this stream; it gates
+	// whether the per-component schemaVersion field is consumed (scene v6+ only).
+	// It defaults to the CURRENT scene version because every in-build round-trip
+	// caller (prefab data, Zenith_Entity::ReadFromDataStream, the serialization unit
+	// tests) pairs with SerializeEntityComponents, which now ALWAYS writes the field;
+	// only the on-disk scene loader passes an older version for legacy v3/4/5 files.
+	void DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream,
+		u_int uSceneVersion = Zenith_SceneData::uSCENE_VERSION_CURRENT) const;
 
 	// Get all registered component metas (sorted by serialization order)
 	const std::vector<const Zenith_ComponentMeta*>& GetAllMetasSorted() const;
@@ -268,7 +370,7 @@ static void ComponentSerializeWrapper(Zenith_Entity& xEntity, Zenith_DataStream&
 }
 
 template<typename T>
-static void ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStream& xStream)
+static void ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStream& xStream, u_int uSchemaVersion)
 {
 	// Special case: TransformComponent is already created by entity constructor
 	// For other components, create if not present
@@ -276,7 +378,18 @@ static void ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStrea
 	{
 		xEntity.AddComponent<T>();
 	}
-	xEntity.GetComponent<T>().ReadFromDataStream(xStream);
+	// Prefer the schema-version-aware overload when the component provides one;
+	// otherwise call the single-arg form every current component implements and
+	// drop the version on the floor. INERT this wave — no component opts in.
+	if constexpr (HasVersionedReadFromDataStream<T>)
+	{
+		xEntity.GetComponent<T>().ReadFromDataStream(xStream, uSchemaVersion);
+	}
+	else
+	{
+		xEntity.GetComponent<T>().ReadFromDataStream(xStream);
+		(void)uSchemaVersion;
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -363,6 +476,19 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 	{
 		T::RegisterProperties(xMeta.m_axProperties);
 	}
+
+	// Detect the optional access-set declaration the same way. Components that
+	// declare DeclareAccess populate the coarse read/write masks; the rest keep
+	// the default 0/0. INERT this wave — no runtime consumer yet.
+	if constexpr (HasAccessSet<T>)
+	{
+		T::DeclareAccess(xMeta.m_uReads, xMeta.m_uWrites);
+	}
+
+	// Record the component's on-disk schema version (default 1; a component
+	// overrides via `static constexpr u_int uSchemaVersion`). Written per-component
+	// into scene v6 files. INERT this wave — no component opts in yet.
+	xMeta.m_uSchemaVersion = ComponentSchemaVersion<T>();
 
 	// Detect and assign lifecycle hooks using C++20 concepts
 	// Hook pointers remain nullptr if component doesn't implement the hook

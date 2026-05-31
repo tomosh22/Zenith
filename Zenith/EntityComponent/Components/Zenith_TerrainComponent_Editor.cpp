@@ -133,7 +133,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 	if (!ImGui::CollapsingHeader("Terrain Component", ImGuiTreeNodeFlags_DefaultOpen))
 		return;
 
-	const bool bTerrainInitialized = m_ulUnifiedVertexBufferSize > 0;
+	const bool bTerrainInitialized = m_pxStreamingState->m_ulUnifiedVertexBufferSize > 0;
 
 	if (!bTerrainInitialized)
 	{
@@ -408,10 +408,10 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xUnifiedVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xUnifiedIndexBuffer);
-	m_ulUnifiedVertexBufferSize = 0;
-	m_ulUnifiedIndexBufferSize = 0;
+	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
+	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
+	m_pxStreamingState->m_ulUnifiedVertexBufferSize = 0;
+	m_pxStreamingState->m_ulUnifiedIndexBufferSize = 0;
 
 	if (m_pxPhysicsGeometry)
 	{
@@ -429,11 +429,11 @@ void Zenith_TerrainComponent::RenderTerrainStatisticsSection()
 	ImGui::Text("Chunks: %d x %d", CHUNK_GRID_SIZE, CHUNK_GRID_SIZE);
 	ImGui::Text("Total Chunks: %d", TOTAL_CHUNKS);
 	ImGui::Text("LOD Count: %d", LOD_COUNT);
-	ImGui::Text("Vertex Buffer Size: %.2f MB", m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
-	ImGui::Text("Index Buffer Size: %.2f MB", m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));
-	ImGui::Text("LOW LOD Vertices: %u", m_uLowLODVertexCount);
-	ImGui::Text("LOW LOD Indices: %u", m_uLowLODIndexCount);
-	bool bTemp = m_bCullingResourcesInitialized;
+	ImGui::Text("Vertex Buffer Size: %.2f MB", m_pxStreamingState->m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
+	ImGui::Text("Index Buffer Size: %.2f MB", m_pxStreamingState->m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));
+	ImGui::Text("LOW LOD Vertices: %u", m_pxStreamingState->m_uLowLODVertexCount);
+	ImGui::Text("LOW LOD Indices: %u", m_pxStreamingState->m_uLowLODIndexCount);
+	bool bTemp = m_pxStreamingState->m_bCullingResourcesInitialized;
 	ImGui::Checkbox("Culling Resources Initialized", &bTemp);
 	ImGui::TreePop();
 }

@@ -96,11 +96,11 @@ public:
 	static const FontMetrics& GetActiveOrDefaultMetrics();
 
 private:
-	friend Zenith_Asset* LoadFontAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadFontAsset(const std::string&);
 
 	// Loads the .zfont (and its referenced atlas .ztxtr as a procedural texture).
 	// Path is "engine:..." or "game:..." form; resolved via Zenith_AssetRegistry::ResolvePath.
-	bool LoadFromFile(const std::string& strPrefixedPath);
+	Zenith_Status LoadFromFile(const std::string& strPrefixedPath);
 
 	Zenith_Vector<Zenith_FontGlyphMetric> m_xGlyphs;        // contiguous codepoints; index = codepoint - m_uFirstCodepoint
 	TextureHandle                         m_xAtlasTexture;  // procedural texture; no mips (see CreateFromData)
@@ -115,4 +115,4 @@ private:
 	static const FontMetrics s_xDefaultMetrics;
 };
 
-Zenith_Asset* LoadFontAsset(const std::string& strPath);
+Zenith_Result<Zenith_Asset*> LoadFontAsset(const std::string& strPath);

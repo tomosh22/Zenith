@@ -1,0 +1,154 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp">
+      <Filter>Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
+      <Filter>Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp">
+      <Filter>Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp">
+      <Filter>Core\Multithreading</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
+      <Filter>DataStream</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\DataStream\Zenith_StreamEnvelope.cpp">
+      <Filter>DataStream</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
+      <Filter>FileAccess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h">
+      <Filter>Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashMap.h">
+      <Filter>Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashSet.h">
+      <Filter>Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h">
+      <Filter>Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h">
+      <Filter>Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\FrameContext.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h">
+      <Filter>Core\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\ZenithConfig.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Engine.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Result.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_String.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Tween.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h">
+      <Filter>DataStream</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h">
+      <Filter>DataStream</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
+      <Filter>FileAccess</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_Maths.h" />
+    <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Collections">
+      <UniqueIdentifier>{9391fca9-389a-7c9c-73e7-a3f3cbf411cd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core">
+      <UniqueIdentifier>{6c8e1683-89b2-32d7-cc78-427b51f93153}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Memory">
+      <UniqueIdentifier>{ee157ed3-103f-0fba-51ac-8c653307c00c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Multithreading">
+      <UniqueIdentifier>{c892d468-1246-8692-ce31-ca4253070505}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="DataStream">
+      <UniqueIdentifier>{544d37bf-b368-d1f2-d32b-177ae42c6e2b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="FileAccess">
+      <UniqueIdentifier>{e87b3fc1-fb64-0e0b-4c25-883f5125c4d1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -419,14 +419,16 @@ Flux_MeshGeometry* Zenith_MeshGeometryAsset::ReleaseGeometry()
 	return pxGeometry;
 }
 
-bool Zenith_MeshGeometryAsset::LoadFromFile(const std::string& strPath, uint32_t uRetainAttributeBits, bool bUploadToGPU)
+Zenith_Status Zenith_MeshGeometryAsset::LoadFromFile(const std::string& strPath, uint32_t uRetainAttributeBits, bool bUploadToGPU)
 {
 	if (strPath.empty())
 	{
-		return false;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	m_pxGeometry = new Flux_MeshGeometry();
+	// Flux_MeshGeometry::LoadFromFile returns void (no error signal), so the
+	// empty-path guard above is the only failure this wrapper can detect today.
 	Flux_MeshGeometry::LoadFromFile(strPath.c_str(), *m_pxGeometry, uRetainAttributeBits, bUploadToGPU);
 	m_bOwnsGeometry = true;
 

@@ -45,13 +45,13 @@ const Zenith_FontGlyphMetric* Zenith_FontAsset::FindGlyph(u_int32 uCodepoint) co
 	return &m_xGlyphs.Get(static_cast<u_int>(uCodepoint - m_uFirstCodepoint));
 }
 
-bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
+Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 {
 	const std::string strAbsPath = Zenith_AssetRegistry::ResolvePath(strPrefixedPath);
 	if (strAbsPath.empty())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: empty resolved path for '%s'", strPrefixedPath.c_str());
-		return false;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	Zenith_DataStream xStream;
@@ -59,7 +59,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (!xStream.IsValid())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to read .zfont '%s'", strAbsPath.c_str());
-		return false;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	u_int32 uMagic = 0, uVersion = 0;
@@ -71,7 +71,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 		uVersion, sk_uVersion, strAbsPath.c_str());
 	if (uMagic != sk_uMagic || uVersion != sk_uVersion)
 	{
-		return false;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	float fAscent = 0.f, fDescent = 0.f, fLineHeight = 0.f, fEmAdvance = 0.f, fLayoutAscenderCorrection = 0.f;
@@ -105,7 +105,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (uGlyphCount == 0 || uGlyphCount > 65536)
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: implausible glyph count %u at %s", uGlyphCount, strAbsPath.c_str());
-		return false;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	m_xGlyphs.Clear();
@@ -133,7 +133,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (strAtlasPrefixedPath.empty())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: .zfont has empty atlas path");
-		return false;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	// --- Load the atlas .ztxtr as a procedural texture (no mips). ---
@@ -143,7 +143,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (!xAtlasStream.IsValid())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to read atlas '%s'", strAtlasAbsPath.c_str());
-		return false;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
@@ -169,7 +169,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (!pData)
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: alloc fail for atlas data (%zu bytes)", ulRead);
-		return false;
+		return Zenith_ErrorCode::OUT_OF_MEMORY;
 	}
 	memset(pData, 0, ulRead);
 	xAtlasStream.ReadData(pData, ulRead);
@@ -189,7 +189,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	{
 		Zenith_MemoryManagement::Deallocate(pData);
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to create procedural atlas");
-		return false;
+		return Zenith_ErrorCode::GPU_UPLOAD_FAILED;
 	}
 
 	// MSDF mips generated naïvely break the median reconstruction. Disable mips;
@@ -200,7 +200,7 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	if (!bCreated)
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: CreateFromData failed");
-		return false;
+		return Zenith_ErrorCode::GPU_UPLOAD_FAILED;
 	}
 
 	m_xAtlasTexture.Set(pxAtlas);
@@ -212,18 +212,19 @@ bool Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	return true;
 }
 
-Zenith_Asset* LoadFontAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadFontAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
-		return new Zenith_FontAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_FontAsset());
 	}
 
 	Zenith_FontAsset* pxAsset = new Zenith_FontAsset();
-	if (!pxAsset->LoadFromFile(strPath))
+	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
+	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
-		return nullptr;
+		return xStatus.Error();
 	}
-	return pxAsset;
+	return static_cast<Zenith_Asset*>(pxAsset);
 }

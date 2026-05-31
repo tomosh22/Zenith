@@ -7,8 +7,6 @@
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Particles/Flux_ParticleGPUImpl.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_ParticleEmitterComponent, "ParticleEmitter")
-
 // Forward declaration of helper function
 static Zenith_Maths::Vector3 GetRandomDirectionInCone(const Zenith_Maths::Vector3& xDir, float fSpreadAngleDegrees);
 

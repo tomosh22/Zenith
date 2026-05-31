@@ -113,7 +113,7 @@
       <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libaishowcase.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
-      <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libaishowcase.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
@@ -151,7 +151,7 @@
       <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libaishowcase.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
-      <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libaishowcase.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
@@ -171,6 +171,11 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\build\zenithbase_agde.vcxproj">
+      <Project>{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\build\zenith_agde.vcxproj">
       <Project>{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

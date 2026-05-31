@@ -15,6 +15,11 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+// Wave-19: Zenith_AnimatorComponent.h is now a Flux-include-free forwarding
+// handle, so it no longer drags in Flux_AnimationController.h. This TU uses the
+// complete Flux_AnimationController type (GetController().AddLayer/GetIKSolver/...)
+// — include the header directly.
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
 #include "Flux/MeshAnimation/Flux_AnimationLayer.h"
 #include "Flux/MeshAnimation/Flux_BlendTree.h"

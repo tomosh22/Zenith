@@ -14,145 +14,168 @@
 #include <fstream>
 
 // Loader implementations
-Zenith_Asset* LoadTextureAsset(const std::string& strPath)
+//
+// Each loader returns Zenith_Result<Zenith_Asset*>: the freshly-new'd asset on
+// success (implicit SUCCESS via the value ctor), or a specific Zenith_ErrorCode
+// on failure. The Result lives only inside this asset-loading boundary; the
+// public Get<T>()/Create<T>() facade still hands callers a raw T* (nullptr on
+// failure), so nothing outside AssetHandling changes.
+Zenith_Result<Zenith_Asset*> LoadTextureAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty procedural texture
-		return new Zenith_TextureAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_TextureAsset());
 	}
 
 	Zenith_TextureAsset* pxAsset = new Zenith_TextureAsset();
-	if (!pxAsset->LoadFromFile(strPath, true))
+	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath, true);
+	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
-		return nullptr;
+		return xStatus.Error();
 	}
-	return pxAsset;
+	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
-Zenith_Asset* LoadMaterialAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadMaterialAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty material
-		return new Zenith_MaterialAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_MaterialAsset());
 	}
 
 	Zenith_MaterialAsset* pxAsset = new Zenith_MaterialAsset();
-	if (!pxAsset->LoadFromFile(strPath))
+	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
+	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
-		return nullptr;
+		return xStatus.Error();
 	}
-	return pxAsset;
+	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
-Zenith_Asset* LoadMeshAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadMeshAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty mesh
-		return new Zenith_MeshAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_MeshAsset());
 	}
 
-	Zenith_MeshAsset* pxAsset = Zenith_MeshAsset::LoadFromFile(strPath.c_str());
-	return pxAsset;
+	Zenith_Result<Zenith_MeshAsset*> xRes = Zenith_MeshAsset::LoadFromFile(strPath.c_str());
+	if (!xRes.IsOk())
+	{
+		return xRes.Error();
+	}
+	return static_cast<Zenith_Asset*>(xRes.Value());
 }
 
-Zenith_Asset* LoadSkeletonAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadSkeletonAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty skeleton
-		return new Zenith_SkeletonAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_SkeletonAsset());
 	}
 
-	Zenith_SkeletonAsset* pxAsset = Zenith_SkeletonAsset::LoadFromFile(strPath.c_str());
-	return pxAsset;
+	Zenith_Result<Zenith_SkeletonAsset*> xRes = Zenith_SkeletonAsset::LoadFromFile(strPath.c_str());
+	if (!xRes.IsOk())
+	{
+		return xRes.Error();
+	}
+	return static_cast<Zenith_Asset*>(xRes.Value());
 }
 
-Zenith_Asset* LoadModelAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadModelAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty model
-		return new Zenith_ModelAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_ModelAsset());
 	}
 
-	Zenith_ModelAsset* pxAsset = Zenith_ModelAsset::LoadFromFile(strPath.c_str());
-	return pxAsset;
+	Zenith_Result<Zenith_ModelAsset*> xRes = Zenith_ModelAsset::LoadFromFile(strPath.c_str());
+	if (!xRes.IsOk())
+	{
+		return xRes.Error();
+	}
+	return static_cast<Zenith_Asset*>(xRes.Value());
 }
 
-Zenith_Asset* LoadPrefabAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadPrefabAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty prefab
-		return new Zenith_Prefab();
+		return static_cast<Zenith_Asset*>(new Zenith_Prefab());
 	}
 
 	Zenith_Prefab* pxAsset = new Zenith_Prefab();
-	if (!pxAsset->LoadFromFile(strPath))
+	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
+	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
-		return nullptr;
+		return xStatus.Error();
 	}
-	return pxAsset;
+	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
-Zenith_Asset* LoadAnimationAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadAnimationAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty animation asset (for procedural animations)
-		return new Zenith_AnimationAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_AnimationAsset());
 	}
 
 	// Procedural assets are created via Create(), not loaded
 	if (strPath.find("procedural://") == 0)
 	{
-		return nullptr;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	Zenith_AnimationAsset* pxAsset = new Zenith_AnimationAsset();
-	if (!pxAsset->LoadFromFile(strPath))
+	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
+	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
-		return nullptr;
+		return xStatus.Error();
 	}
-	return pxAsset;
+	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
-Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadMeshGeometryAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty mesh geometry asset (for procedural geometry)
-		return new Zenith_MeshGeometryAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_MeshGeometryAsset());
 	}
 
 	// Procedural assets are created via Create(), not loaded
 	if (strPath.find("procedural://") == 0)
 	{
-		return nullptr;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
-	if (!pxAsset->LoadFromFile(strPath))
+	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
+	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
-		return nullptr;
+		return xStatus.Error();
 	}
-	return pxAsset;
+	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
-Zenith_Asset* LoadScriptAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadScriptAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Create empty script asset for procedural use (rare - script assets are normally registered via macro)
-		return new Zenith_ScriptAsset();
+		return static_cast<Zenith_Asset*>(new Zenith_ScriptAsset());
 	}
 
 	// Script assets use the generic .zdata serialization pipeline.
@@ -527,12 +550,14 @@ Zenith_Asset* Zenith_AssetRegistry::GetInternal(Zenith_TypeIndex xType, const st
 	std::string strAbsolutePath = ResolvePath(strPath);
 
 	// Load the asset using the absolute path
-	Zenith_Asset* pxAsset = itLoader->second(strAbsolutePath);
-	if (pxAsset == nullptr)
+	Zenith_Result<Zenith_Asset*> xRes = itLoader->second(strAbsolutePath);
+	if (!xRes.IsOk())
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to load asset '%s' (resolved: '%s')", strPath.c_str(), strAbsolutePath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to load asset '%s' (resolved: '%s') [error %u]",
+			strPath.c_str(), strAbsolutePath.c_str(), static_cast<unsigned int>(xRes.Error()));
 		return nullptr;
 	}
+	Zenith_Asset* pxAsset = xRes.Value();
 
 	// Store the prefixed path (portable) in the asset and cache
 	pxAsset->m_strPath = strPath;
@@ -562,12 +587,14 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType)
 	std::string strPath = GenerateProceduralPath("asset");
 
 	// Create the asset (loader should handle empty path as "create new")
-	Zenith_Asset* pxAsset = itLoader->second("");
-	if (pxAsset == nullptr)
+	Zenith_Result<Zenith_Asset*> xRes = itLoader->second("");
+	if (!xRes.IsOk())
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset");
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset [error %u]",
+			static_cast<unsigned int>(xRes.Error()));
 		return nullptr;
 	}
+	Zenith_Asset* pxAsset = xRes.Value();
 
 	// Set path and add to cache
 	pxAsset->m_strPath = strPath;
@@ -594,12 +621,14 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType, const
 	}
 
 	// Create the asset (loader should handle empty path as "create new")
-	Zenith_Asset* pxAsset = itLoader->second("");
-	if (pxAsset == nullptr)
+	Zenith_Result<Zenith_Asset*> xRes = itLoader->second("");
+	if (!xRes.IsOk())
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset");
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset [error %u]",
+			static_cast<unsigned int>(xRes.Error()));
 		return nullptr;
 	}
+	Zenith_Asset* pxAsset = xRes.Value();
 
 	// Set the specified path and add to cache
 	pxAsset->m_strPath = strPath;
@@ -726,12 +755,12 @@ bool Zenith_AssetRegistry::SaveInternal(Zenith_Asset* pxAsset)
 
 // Loader function for .zdata files (serializable assets)
 // This is a friend function of Zenith_AssetRegistry and is forward-declared in the header
-Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
+Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
 		// Cannot create without type - use registry.Create<T>() instead
-		return nullptr;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	// Open file
@@ -739,7 +768,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 	if (!xFile.is_open())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to open .zdata file: %s", strPath.c_str());
-		return nullptr;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	// Read and validate magic number
@@ -748,7 +777,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 	if (uMagic != Zenith_AssetRegistry::ZDATA_MAGIC)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Invalid .zdata file (bad magic): %s", strPath.c_str());
-		return nullptr;
+		return Zenith_ErrorCode::BAD_MAGIC;
 	}
 
 	// Read and validate version
@@ -758,7 +787,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: .zdata file version %u is newer than supported (%u): %s",
 			uVersion, Zenith_AssetRegistry::ZDATA_VERSION, strPath.c_str());
-		return nullptr;
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	// Read type name
@@ -772,7 +801,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 	if (strTypeName.empty())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: .zdata file has empty type name: %s", strPath.c_str());
-		return nullptr;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	// Find factory for this type
@@ -791,7 +820,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Serializable type '%s' not registered, cannot load: %s",
 			strTypeName.c_str(), strPath.c_str());
-		return nullptr;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	// Create asset instance
@@ -800,7 +829,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create '%s' from: %s",
 			strTypeName.c_str(), strPath.c_str());
-		return nullptr;
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	// Read remaining file data into buffer

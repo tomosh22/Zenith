@@ -33,6 +33,25 @@ enum class GizmoMode
 	Scale
 };
 
+// WS11.A: per-frame draw packet resolved on the main thread during the Gizmos
+// pass Prepare (GatherGizmoPacket). The gizmo's editable transform is read from
+// the live ECS there, and the resulting matrix/scale/entity-pos plus the
+// interaction-highlight state are snapshotted here. The worker-thread record
+// callback (ExecuteGizmos) reads ONLY this struct — it performs no ECS access
+// and no shared-state mutation. m_bValid is false when there is no editable
+// target, in which case the record callback early-outs.
+struct Flux_GizmoDrawPacket
+{
+	bool                  m_bValid            = false;
+	Zenith_Maths::Matrix4 m_xGizmoMatrix      = Zenith_Maths::Matrix4(1.0f);
+	Zenith_Maths::Vector3 m_xEntityPos        = Zenith_Maths::Vector3(0, 0, 0);
+	float                 m_fGizmoScale       = 1.0f;
+	GizmoMode             m_eMode             = GizmoMode::Translate;
+	GizmoComponent        m_eHoveredComponent = GizmoComponent::None;
+	GizmoComponent        m_eActiveComponent  = GizmoComponent::None;
+	bool                  m_bIsInteracting    = false;
+};
+
 // Phase 9: state + behaviour for Flux_Gizmos subsystem.
 class Flux_GizmosImpl
 {
@@ -49,6 +68,12 @@ public:
 	void Reset();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// Prepare callback (main thread): performs the GetEditableTransform ECS read,
+	// computes the gizmo matrix/scale/entity-pos, snapshots the interaction state,
+	// and (under ZENITH_DEBUG) issues the interaction-bound wireframe cubes — all
+	// on the main thread. Results land in m_xDrawPacket for the record callback.
+	void GatherGizmoPacket(void* pUserData);
 
 	void SetTargetEntity(Zenith_Entity* pxEntity);
 	void SetGizmoMode(GizmoMode eMode);
@@ -105,6 +130,10 @@ public:
 	Zenith_Maths::Quaternion m_xInitialEntityRotation = Zenith_Maths::Quaternion(1, 0, 0, 0);
 	Zenith_Maths::Vector3    m_xInitialEntityScale    = Zenith_Maths::Vector3(1, 1, 1);
 	float                    m_fGizmoScale            = 1.0f;
+
+	// WS11.A: per-frame snapshot populated on the main thread in GatherGizmoPacket
+	// and consumed by the worker-thread record callback ExecuteGizmos.
+	Flux_GizmoDrawPacket     m_xDrawPacket;
 
 	Flux_Pipeline            m_xPipeline;
 	Flux_Shader              m_xShader;

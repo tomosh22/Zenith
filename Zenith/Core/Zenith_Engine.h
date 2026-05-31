@@ -9,6 +9,7 @@ class Zenith_AssetRegistry;
 class Zenith_EntityStore;
 class Flux_GraphicsImpl;
 class Flux_AnimatedMeshesImpl;
+class Flux_AnimationControllerStore;
 class Flux_DecalsImpl;
 class Flux_DeferredShadingImpl;
 class Flux_DynamicLightsImpl;
@@ -119,6 +120,10 @@ public:
 	Flux_HiZImpl& HiZ();
 	Flux_StaticMeshesImpl& StaticMeshes();
 	Flux_AnimatedMeshesImpl& AnimatedMeshes();
+	// Heap-stable owning store of one Flux_AnimationController per entity
+	// (Wave-19 ownership relocation). Zenith_AnimatorComponent is a thin
+	// forwarding handle into this store, keyed by EntityID slot.
+	Flux_AnimationControllerStore& AnimationControllers();
 	Flux_DeferredShadingImpl& DeferredShading();
 	Flux_SDFsImpl& SDFs();
 	Flux_QuadsImpl& Quads();
@@ -192,6 +197,7 @@ private:
 	Flux_HiZImpl*                       m_pxHiZ              = nullptr;
 	Flux_StaticMeshesImpl*              m_pxStaticMeshes     = nullptr;
 	Flux_AnimatedMeshesImpl*            m_pxAnimatedMeshes   = nullptr;
+	Flux_AnimationControllerStore*      m_pxAnimationControllers = nullptr;
 	Flux_DeferredShadingImpl*           m_pxDeferredShading  = nullptr;
 	Flux_SDFsImpl*                      m_pxSDFs             = nullptr;
 	Flux_QuadsImpl*                     m_pxQuads            = nullptr;

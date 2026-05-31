@@ -18,13 +18,19 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_AccessSet.h"  // WS12 parallel-sim conflict model
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"  // WS10 fuzz cross-check (Light is a headless-safe component)
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"  // WS19 forwarding-handle relocation tests
+#include "Flux/MeshAnimation/Flux_AnimationControllerStore.h"     // WS19 store
+#include "Core/Zenith_Engine.h"                                    // g_xEngine.AnimationControllers()
+#include "Core/Zenith_BenchECS.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include <filesystem>
@@ -55,6 +61,9 @@
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
+
+// Stream envelope (reusable DataStream header) include
+#include "DataStream/Zenith_StreamEnvelope.h"
 
 // Model instance (for material tests)
 #include "Flux/Flux_ModelInstance.h"
@@ -6722,6 +6731,823 @@ void Zenith_UnitTests::TestComponentSwapAndPop(){
 }
 
 /**
+ * Prove the pool removal is a REAL physical swap-and-pop (not free-list-with-holes).
+ *
+ * ComponentSwapAndPop / ComponentRemovalIndexUpdate above only prove that component
+ * DATA survives a removal — which is true even of a hole-based pool. This test pins
+ * the physical move: in a fresh scene the transform pool is dense (slots 0,1,2 for the
+ * three entities). Removing the FIRST entity's component must move the LAST live element
+ * into the vacated slot, so the last entity's STORED component index must CHANGE — and
+ * its data must remain intact at the new slot.
+ */
+ZENITH_TEST(ECS, SwapAndPopMovesIndex) { Zenith_UnitTests::TestSwapAndPopMovesIndex(); }
+void Zenith_UnitTests::TestSwapAndPopMovesIndex(){
+
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("TestSwapAndPopMovesIndexScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+
+	// Three entities — each auto-gets a Zenith_TransformComponent, so the fresh
+	// scene's transform pool now holds dense slots 0, 1, 2.
+	Zenith_Entity xEntity1(pxSceneData, "SwapPop1");
+	Zenith_Entity xEntity2(pxSceneData, "SwapPop2");
+	Zenith_Entity xEntity3(pxSceneData, "SwapPop3");
+
+	xEntity1.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xEntity2.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+	xEntity3.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+
+	// The stored component index lives in exactly one place: the global per-entity
+	// component map keyed by component TypeID. Read the LAST entity's index now.
+	const Zenith_SceneData::TypeID uTypeID = Zenith_SceneData::TypeIDGenerator::GetTypeID<Zenith_TransformComponent>();
+	const u_int uLastIndexBefore = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).at(uTypeID);
+
+	// Remove the FIRST entity's component. Real swap-and-pop moves the last live
+	// element (entity3) into the freed slot, so entity3's stored index must change.
+	xEntity1.RemoveComponent<Zenith_TransformComponent>();
+
+	const u_int uLastIndexAfter = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).at(uTypeID);
+	ZENITH_ASSERT_NE(uLastIndexAfter, uLastIndexBefore, "TestSwapAndPopMovesIndex: last entity's component index did not move — removal is not a real swap-and-pop");
+
+	// And its component data must be intact at the new slot.
+	ZENITH_ASSERT_TRUE(xEntity3.HasComponent<Zenith_TransformComponent>(), "TestSwapAndPopMovesIndex: last entity lost its component after swap-and-pop");
+	Zenith_Maths::Vector3 xPos3;
+	xEntity3.GetComponent<Zenith_TransformComponent>().GetPosition(xPos3);
+	ZENITH_ASSERT_EQ(xPos3.x, 3.0f, "TestSwapAndPopMovesIndex: moved component data corrupted after swap-and-pop");
+
+	// Sanity: the surviving middle entity is still addressable with intact data.
+	Zenith_Maths::Vector3 xPos2;
+	xEntity2.GetComponent<Zenith_TransformComponent>().GetPosition(xPos2);
+	ZENITH_ASSERT_EQ(xPos2.x, 2.0f, "TestSwapAndPopMovesIndex: untouched component data corrupted after swap-and-pop");
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+}
+
+// WS6 regression: Query::ForEach now snapshots into a per-thread POOL of reusable
+// buffers (instead of a fresh heap allocation per call). This pins the two
+// properties the pooling must preserve: (1) RE-ENTRANCY — a nested ForEach inside
+// a ForEach callback must check out a DISTINCT buffer and not clobber the outer
+// iteration; (2) SNAPSHOT STABILITY — the outer iteration is fixed at its start,
+// so an entity created mid-iteration is not visited by the outer loop.
+ZENITH_TEST(ECS, QueryNestedReentrancy) { Zenith_UnitTests::TestQueryNestedReentrancy(); }
+void Zenith_UnitTests::TestQueryNestedReentrancy(){
+
+	Zenith_Scene xTestScene = g_xEngine.Scenes().CreateEmptyScene("TestQueryNestedReentrancyScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+
+	// All entities auto-have Zenith_TransformComponent, so Query<Transform> matches the whole set.
+	const u_int uNumEntities = 6;
+	Zenith_Entity xEntities[uNumEntities] = {
+		Zenith_Entity(pxSceneData, "QNest0"), Zenith_Entity(pxSceneData, "QNest1"),
+		Zenith_Entity(pxSceneData, "QNest2"), Zenith_Entity(pxSceneData, "QNest3"),
+		Zenith_Entity(pxSceneData, "QNest4"), Zenith_Entity(pxSceneData, "QNest5"),
+	};
+	(void)xEntities;
+
+	// Baseline: a plain query visits exactly the created set.
+	u_int uPlain = 0;
+	Zenith_Query<Zenith_TransformComponent>(*pxSceneData).ForEach(
+		[&uPlain](Zenith_EntityID, Zenith_TransformComponent&) { ++uPlain; });
+	ZENITH_ASSERT_TRUE(uPlain == uNumEntities, "QueryNestedReentrancy: plain ForEach visited %u (expected %u)", uPlain, uNumEntities);
+
+	// Nested ForEach (re-entrancy) + one mid-iteration entity creation. The outer
+	// snapshot must visit EXACTLY the original set; the inner loop must always see
+	// at least the original set. A buffer-clobber would corrupt uOuter; a missing
+	// pooled-buffer checkout for the nested call would crash or miscount.
+	u_int uOuter = 0;
+	u_int uInnerMin = 0xFFFFFFFFu;
+	bool bCreatedOnce = false;
+	Zenith_Query<Zenith_TransformComponent>(*pxSceneData).ForEach(
+		[&](Zenith_EntityID, Zenith_TransformComponent&) {
+			++uOuter;
+			u_int uInner = 0;
+			Zenith_Query<Zenith_TransformComponent>(*pxSceneData).ForEach(
+				[&uInner](Zenith_EntityID, Zenith_TransformComponent&) { ++uInner; });
+			if (uInner < uInnerMin) { uInnerMin = uInner; }
+			if (!bCreatedOnce)
+			{
+				bCreatedOnce = true;
+				Zenith_Entity xLate(pxSceneData, "QNestLate"); // created mid-iteration
+				(void)xLate;
+			}
+		});
+	ZENITH_ASSERT_TRUE(uOuter == uNumEntities, "QueryNestedReentrancy: outer snapshot unstable, visited %u (expected %u)", uOuter, uNumEntities);
+	ZENITH_ASSERT_TRUE(uInnerMin >= uNumEntities, "QueryNestedReentrancy: nested ForEach saw %u (< base %u) — buffer clobber?", uInnerMin, uNumEntities);
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+}
+
+// WS10 sparse-set keystone fuzz cross-check. Hammers the ECS with thousands of
+// deterministic random Add / Remove / Destroy+recreate / cross-scene-move ops,
+// and periodically asserts that:
+//   (a) the SPARSE read path and the LEGACY read path return the IDENTICAL
+//       matched-entity set for a battery of query combos, AND
+//   (b) that set equals an INDEPENDENT ground-truth oracle (a plain bool array
+//       per type, indexed by local entity-array index — derived from neither
+//       ECS path).
+// This is the correctness backstop for the whole wave: the sparse index is a
+// parallel structure maintained by the pool mutators, so the only way to trust
+// it is to diff it against the legacy scan AND an oracle that knows nothing
+// about either. Uses a self-written fixed-seed PRNG (no std::rand) so the run
+// is reproducible. Guarded like its scene-touching siblings.
+#ifndef ZENITH_ANDROID
+namespace
+{
+	// Fixed-seed xorshift32 PRNG. Deterministic, self-contained — no std::rand.
+	struct WS10_Rng
+	{
+		uint32_t m_uState;
+		explicit WS10_Rng(uint32_t uSeed) : m_uState(uSeed ? uSeed : 0x1u) {}
+		uint32_t Next()
+		{
+			uint32_t x = m_uState;
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			m_uState = x;
+			return x;
+		}
+		// Uniform-ish in [0, uN). uN assumed small relative to 2^32 (it is here).
+		uint32_t NextBelow(uint32_t uN) { return uN ? (Next() % uN) : 0u; }
+	};
+
+	// Per-local-slot ground-truth oracle. Index into the arrays below == the
+	// stable LOCAL entity-array index (NOT the engine EntityID, which changes on
+	// destroy+recreate). m_xId tracks the CURRENT EntityID for that slot.
+	struct WS10_Oracle
+	{
+		Zenith_Vector<Zenith_EntityID> m_xId;       // current EntityID per local slot
+		Zenith_Vector<bool>            m_bAlive;     // entity exists right now
+		Zenith_Vector<bool>            m_bInQueried; // currently in the QUERIED scene (false when moved out)
+		Zenith_Vector<bool>            m_bHasCamera; // Camera component present (Transform == alive, auto)
+		Zenith_Vector<bool>            m_bHasLight;  // Light component present
+	};
+
+	// Tiny insertion sort over packed EntityIDs (the test TU has no sort helper).
+	void WS10_SortPacked(Zenith_Vector<uint64_t>& xVals)
+	{
+		for (u_int i = 1; i < xVals.GetSize(); ++i)
+		{
+			const uint64_t ulKey = xVals.Get(i);
+			u_int j = i;
+			while (j > 0 && xVals.Get(j - 1) > ulKey)
+			{
+				xVals.Get(j) = xVals.Get(j - 1);
+				--j;
+			}
+			xVals.Get(j) = ulKey;
+		}
+	}
+
+	bool WS10_PackedVectorsEqual(const Zenith_Vector<uint64_t>& xA, const Zenith_Vector<uint64_t>& xB)
+	{
+		if (xA.GetSize() != xB.GetSize()) return false;
+		for (u_int i = 0; i < xA.GetSize(); ++i)
+		{
+			if (xA.Get(i) != xB.Get(i)) return false;
+		}
+		return true;
+	}
+
+	// Bitmask of which queried component types a combo requires.
+	enum WS10_ComboMask : uint32_t
+	{
+		WS10_T = 1u << 0,  // Transform (always present while alive)
+		WS10_C = 1u << 1,  // Camera
+		WS10_L = 1u << 2,  // Light
+	};
+
+	// Build the oracle's expected matched set (as packed EntityIDs) for a combo,
+	// restricted to entities alive AND in the queried scene.
+	void WS10_OracleExpected(const WS10_Oracle& xOracle, uint32_t uMask, Zenith_Vector<uint64_t>& xOut)
+	{
+		xOut.Clear();
+		for (u_int i = 0; i < xOracle.m_bAlive.GetSize(); ++i)
+		{
+			if (!xOracle.m_bAlive.Get(i)) continue;
+			if (!xOracle.m_bInQueried.Get(i)) continue;
+			if ((uMask & WS10_C) && !xOracle.m_bHasCamera.Get(i)) continue;
+			if ((uMask & WS10_L) && !xOracle.m_bHasLight.Get(i)) continue;
+			// Transform always satisfied for an alive entity (auto-added).
+			xOut.PushBack(xOracle.m_xId.Get(i).GetPacked());
+		}
+		WS10_SortPacked(xOut);
+	}
+}
+
+ZENITH_TEST(ECS, QuerySparseLegacyEquivalence) { Zenith_UnitTests::TestQuerySparseLegacyEquivalence(); }
+void Zenith_UnitTests::TestQuerySparseLegacyEquivalence(){
+
+	// Pin the toggle so we can flip it deterministically; restore at the end.
+	const bool bPrevSparse = g_xEngine.Scenes().AreSparseQueryReadsEnabled();
+
+	Zenith_Scene xSceneA = g_xEngine.Scenes().CreateEmptyScene("WS10_FuzzSceneA"); // the QUERIED scene
+	Zenith_Scene xSceneB = g_xEngine.Scenes().CreateEmptyScene("WS10_FuzzSceneB"); // cross-scene move target
+	Zenith_SceneData* pxA = g_xEngine.Scenes().GetSceneData(xSceneA);
+	Zenith_SceneData* pxB = g_xEngine.Scenes().GetSceneData(xSceneB);
+	ZENITH_ASSERT_NOT_NULL(pxA, "WS10: scene A has no data");
+	ZENITH_ASSERT_NOT_NULL(pxB, "WS10: scene B has no data");
+
+	WS10_Rng xRng(0xC0FFEEu);
+	WS10_Oracle xOracle;
+
+	// --- Seed ~300 entities in scene A (each auto-carries Transform). ---
+	const u_int uNumEntities = 300u;
+	for (u_int i = 0; i < uNumEntities; ++i)
+	{
+		char acName[64];
+		std::snprintf(acName, sizeof(acName), "WS10_E%u", i);
+		Zenith_Entity xEnt(pxA, acName);
+		const Zenith_EntityID xId = xEnt.GetEntityID();
+
+		bool bCam = (xRng.NextBelow(2u) == 0u);
+		bool bLit = (xRng.NextBelow(2u) == 0u);
+		if (bCam) xEnt.AddComponent<Zenith_CameraComponent>();
+		if (bLit) xEnt.AddComponent<Zenith_LightComponent>();
+
+		xOracle.m_xId.PushBack(xId);
+		xOracle.m_bAlive.PushBack(true);
+		xOracle.m_bInQueried.PushBack(true);
+		xOracle.m_bHasCamera.PushBack(bCam);
+		xOracle.m_bHasLight.PushBack(bLit);
+	}
+
+	// Collect a query's ForEach EntityIDs (as packed, sorted) under the CURRENTLY
+	// pinned read path. Takes the query BY REFERENCE and calls ForEach on it; the
+	// generic-lambda variadic param pack ignores the component refs.
+	auto CollectForEach = [&](auto& xQuery, Zenith_Vector<uint64_t>& xOut)
+	{
+		xOut.Clear();
+		xQuery.ForEach([&xOut](Zenith_EntityID xId, auto&...) { xOut.PushBack(xId.GetPacked()); });
+		WS10_SortPacked(xOut);
+	};
+
+	// Run ONE query through both read paths + the oracle and assert all three
+	// agree. The query type-list is fixed by the caller via the xQuery argument;
+	// uMask tells the oracle which components the combo requires.
+	auto CheckCombo = [&](auto xQuery, uint32_t uMask)
+	{
+		Zenith_Vector<uint64_t> xLegacy;
+		Zenith_Vector<uint64_t> xSparse;
+		Zenith_Vector<uint64_t> xExpected;
+
+		g_xEngine.Scenes().SetSparseQueryReads(false);
+		CollectForEach(xQuery, xLegacy);
+		g_xEngine.Scenes().SetSparseQueryReads(true);
+		CollectForEach(xQuery, xSparse);
+
+		WS10_OracleExpected(xOracle, uMask, xExpected);
+
+		ZENITH_ASSERT_TRUE(WS10_PackedVectorsEqual(xLegacy, xSparse),
+			"WS10: sparse vs legacy mismatch (mask=%u): legacy=%u sparse=%u",
+			uMask, xLegacy.GetSize(), xSparse.GetSize());
+		ZENITH_ASSERT_TRUE(WS10_PackedVectorsEqual(xSparse, xExpected),
+			"WS10: matched set != oracle (mask=%u): sparse=%u oracle=%u",
+			uMask, xSparse.GetSize(), xExpected.GetSize());
+	};
+
+	// The battery of combos (matches the spec list). Each constructs a fresh
+	// Zenith_Query over scene A; the mask tells the oracle which components are
+	// required.
+	auto RunBattery = [&]()
+	{
+		CheckCombo(Zenith_Query<Zenith_TransformComponent>(*pxA),                                                  WS10_T);
+		CheckCombo(Zenith_Query<Zenith_CameraComponent>(*pxA),                                                     WS10_C);
+		CheckCombo(Zenith_Query<Zenith_TransformComponent, Zenith_CameraComponent>(*pxA),                          WS10_T | WS10_C);
+		CheckCombo(Zenith_Query<Zenith_TransformComponent, Zenith_LightComponent>(*pxA),                           WS10_T | WS10_L);
+		CheckCombo(Zenith_Query<Zenith_TransformComponent, Zenith_CameraComponent, Zenith_LightComponent>(*pxA),   WS10_T | WS10_C | WS10_L);
+		CheckCombo(Zenith_Query<Zenith_CameraComponent, Zenith_LightComponent>(*pxA),                              WS10_C | WS10_L);
+	};
+
+	// Validate the seeded state before any churn.
+	RunBattery();
+
+	// --- ~5000 random ops, oracle updated on each, battery every ~40 ops. ---
+	const u_int uNumOps = 5000u;
+	for (u_int uOp = 0; uOp < uNumOps; ++uOp)
+	{
+		const u_int uLocal = xRng.NextBelow(uNumEntities);
+		const uint32_t uAction = xRng.NextBelow(100u);
+
+		const bool bAlive    = xOracle.m_bAlive.Get(uLocal);
+		const bool bInQueried = xOracle.m_bInQueried.Get(uLocal);
+		const Zenith_EntityID xId = xOracle.m_xId.Get(uLocal);
+
+		// Resolve a live handle in whichever scene currently owns the entity.
+		Zenith_SceneData* pxOwner = bInQueried ? pxA : pxB;
+
+		if (uAction < 30u)
+		{
+			// Add/Remove CAMERA (only meaningful while alive).
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				if (xOracle.m_bHasCamera.Get(uLocal))
+				{
+					xEnt.RemoveComponent<Zenith_CameraComponent>();
+					xOracle.m_bHasCamera.Get(uLocal) = false;
+				}
+				else
+				{
+					xEnt.AddComponent<Zenith_CameraComponent>();
+					xOracle.m_bHasCamera.Get(uLocal) = true;
+				}
+			}
+		}
+		else if (uAction < 60u)
+		{
+			// Add/Remove LIGHT (only meaningful while alive).
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				if (xOracle.m_bHasLight.Get(uLocal))
+				{
+					xEnt.RemoveComponent<Zenith_LightComponent>();
+					xOracle.m_bHasLight.Get(uLocal) = false;
+				}
+				else
+				{
+					xEnt.AddComponent<Zenith_LightComponent>();
+					xOracle.m_bHasLight.Get(uLocal) = true;
+				}
+			}
+		}
+		else if (uAction < 75u)
+		{
+			// Cross-scene MOVE (toggle which scene owns the entity). Only ROOT
+			// entities can move (all of ours are roots). This exercises the
+			// source-pool swap-and-pop sparse clear + target-pool sparse set, and
+			// proves scene-A queries exclude moved-out entities (stale source
+			// sparse entries are rejected by the round-trip compare).
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				Zenith_Scene xTarget = bInQueried ? xSceneB : xSceneA;
+				const bool bMoved = Zenith_SceneSystem::MoveEntityToScene(xEnt, xTarget);
+				if (bMoved)
+				{
+					xOracle.m_bInQueried.Get(uLocal) = !bInQueried;
+					// EntityID is preserved across the move (global slot table).
+					xOracle.m_xId.Get(uLocal) = xEnt.GetEntityID();
+				}
+			}
+		}
+		else if (uAction < 88u)
+		{
+			// DESTROY (immediate, synchronous) — frees the slot (generation bump)
+			// and swap-and-pops its components out of the owning scene's pools.
+			if (bAlive)
+			{
+				Zenith_Entity xEnt(pxOwner, xId);
+				xEnt.DestroyImmediate();
+				xOracle.m_bAlive.Get(uLocal) = false;
+				xOracle.m_bHasCamera.Get(uLocal) = false;
+				xOracle.m_bHasLight.Get(uLocal) = false;
+				xOracle.m_xId.Get(uLocal) = INVALID_ENTITY_ID;
+				// A destroyed slot is conceptually back in scene A for re-creation.
+				xOracle.m_bInQueried.Get(uLocal) = true;
+			}
+		}
+		else
+		{
+			// RE-CREATE a destroyed slot (drives slot reuse + generation change).
+			// Always re-create into scene A (the queried scene).
+			if (!bAlive)
+			{
+				char acName[64];
+				std::snprintf(acName, sizeof(acName), "WS10_R%u_%u", uLocal, uOp);
+				Zenith_Entity xEnt(pxA, acName);
+				bool bCam = (xRng.NextBelow(2u) == 0u);
+				bool bLit = (xRng.NextBelow(2u) == 0u);
+				if (bCam) xEnt.AddComponent<Zenith_CameraComponent>();
+				if (bLit) xEnt.AddComponent<Zenith_LightComponent>();
+
+				xOracle.m_xId.Get(uLocal) = xEnt.GetEntityID();
+				xOracle.m_bAlive.Get(uLocal) = true;
+				xOracle.m_bInQueried.Get(uLocal) = true;
+				xOracle.m_bHasCamera.Get(uLocal) = bCam;
+				xOracle.m_bHasLight.Get(uLocal) = bLit;
+			}
+		}
+
+		if ((uOp % 40u) == 0u)
+		{
+			RunBattery();
+		}
+	}
+
+	// Final battery after all churn.
+	RunBattery();
+
+	// Cleanup: unload both scenes; restore the toggle to its prior value.
+	g_xEngine.Scenes().SetSparseQueryReads(bPrevSparse);
+	g_xEngine.Scenes().UnloadScene(xSceneA);
+	g_xEngine.Scenes().UnloadScene(xSceneB);
+}
+#else
+// Android build: scene-fuzz test compiled out (mirrors sibling scene tests).
+ZENITH_TEST(ECS, QuerySparseLegacyEquivalence) {}
+void Zenith_UnitTests::TestQuerySparseLegacyEquivalence(){}
+#endif // ZENITH_ANDROID
+
+// Wave8 regression: the render-tasks-active signal is a real std::atomic compiled
+// in ALL configs (it used to exist only under ZENITH_ASSERT and otherwise returned
+// false). Parallel-sim work needs an authoritative, race-free value even in non-
+// assert builds. Pin the round-trip through the public setter/getter. The flag MUST
+// be left false at the end — scene-mutation asserts elsewhere fire if it stays true.
+ZENITH_TEST(Core, RenderPhaseTransitions) { Zenith_UnitTests::TestRenderPhaseTransitions(); }
+void Zenith_UnitTests::TestRenderPhaseTransitions(){
+
+	// Precondition: outside ExecuteRenderGraph the signal is clear.
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().AreRenderTasksActive(), "RenderPhaseTransitions: signal should start clear");
+
+	g_xEngine.Scenes().SetRenderTasksActive(true);
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().AreRenderTasksActive(), "RenderPhaseTransitions: setter(true) did not raise the signal");
+
+	g_xEngine.Scenes().SetRenderTasksActive(false);
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().AreRenderTasksActive(), "RenderPhaseTransitions: setter(false) did not clear the signal");
+
+	// Leave the engine in the clear state other code asserts on.
+	g_xEngine.Scenes().SetRenderTasksActive(false);
+}
+
+// Wave8.2: smoke-test the GPU-free --bench-ecs micro-benchmark. The benchmark
+// is the before/after measurement backstop for the future sparse-set query
+// rework; this test just proves the bench logic runs end-to-end on a tiny
+// workload (N=64, iters=2) without crashing and reports a positive processed
+// count. Zenith_BenchECS_RunOnce creates an empty additive scene, populates it,
+// runs the Query<...>().ForEach + Add/Remove churn, and tears the scene down
+// itself, so there is no scene to clean up here.
+ZENITH_TEST(Core, BenchECSSmoke) { Zenith_UnitTests::TestBenchECSSmoke(); }
+void Zenith_UnitTests::TestBenchECSSmoke(){
+
+	const u_int64 ulProcessed = Zenith_BenchECS_RunOnce(64, 2);
+
+	// 64 entities all carry a Transform and the outer ForEach visits every one
+	// each of the 2 iterations, so the processed count must be strictly
+	// positive (>= 128 in practice). Asserting > 0 keeps the test robust to the
+	// exact reduction formula while still proving real work happened.
+	ZENITH_ASSERT_GT(ulProcessed, static_cast<u_int64>(0), "BenchECSSmoke: bench reported zero processed components (no work done?)");
+}
+
+// WS3 regression: LoadScene(SINGLE) validates the file header BEFORE tearing down
+// the live world, so a corrupt/old/future .zscen no longer leaves the engine
+// scene-less. ValidateSceneStream is that non-destructive header gate. Pin that it
+// accepts a well-formed header (and restores the cursor) and rejects each
+// corruption class.
+ZENITH_TEST(Scene, SceneLoadValidation) { Zenith_UnitTests::TestSceneLoadValidation(); }
+void Zenith_UnitTests::TestSceneLoadValidation(){
+
+	// Well-formed header (magic + current version): accepted, cursor untouched.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream rejected a well-formed header");
+		ZENITH_ASSERT_TRUE(xStream.GetCursor() == 0, "ValidateSceneStream must restore the stream cursor");
+	}
+	// Truncated below the 8-byte header: rejected.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC; // 4 bytes only
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a truncated stream");
+	}
+	// Bad magic number: rejected.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)0xDEADBEEF;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a bad magic number");
+	}
+	// Future version (> current): rejected (the version-skew case WS3 targets).
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)(Zenith_SceneData::uSCENE_VERSION_CURRENT + 1u);
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a future version");
+	}
+	// Too-old version (< min supported): rejected.
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)(Zenith_SceneData::uSCENE_VERSION_MIN_SUPPORTED - 1u);
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_TRUE(!Zenith_SceneData::ValidateSceneStream(xStream), "ValidateSceneStream accepted a too-old version");
+	}
+}
+
+// Wave9.1 (a) regression: ValidateSceneStream only gates the 8-byte HEADER; a file
+// with a well-formed header but a corrupt BODY (e.g. an entity count of 0xFFFFFFFF
+// from a truncated/garbled file) used to be loaded unconditionally — spinning ~4
+// billion iterations and building a half-loaded world. LoadFromDataStream now has
+// bounded body guards that return false. Pin that (1) a wild entity count and (2) a
+// claimed-but-absent entity body are both rejected gracefully, leaving zero entities
+// (so the Operations.cpp rollback can unwind to a clean INVALID_SCENE). The count-vs-
+// remaining guard rejects BEFORE any ReadEntity call reads past EOF, so DataStream's
+// debug operator>> overflow assert never fires.
+#ifndef ZENITH_ANDROID
+ZENITH_TEST(Scene, SceneBodyCorruptionFailsGracefully) { Zenith_UnitTests::TestSceneBodyCorruptionFailsGracefully(); }
+#endif
+void Zenith_UnitTests::TestSceneBodyCorruptionFailsGracefully(){
+
+	// Case 1: well-formed header, then a wild entity count (0xFFFFFFFF) with no
+	// further bytes. The count vastly exceeds the remaining stream, so guard 1
+	// rejects before the entity loop runs — no half-world is built.
+	{
+		// Exact-size stream: GetSize() must report the 12 written header bytes, not the
+		// default 1024-byte capacity — else guard 1 (count > remaining bytes) cannot fire
+		// on an in-memory stream (operator<< only grows the buffer, never shrinks it).
+		Zenith_DataStream xStream(sizeof(u_int) * 3);
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream << (u_int)0xFFFFFFFFu;
+		xStream.SetCursor(0);
+
+		Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("BodyCorruptionTest");
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+
+		bool bOk = pxSceneData->LoadFromDataStream(xStream);
+		ZENITH_ASSERT_FALSE(bOk, "LoadFromDataStream accepted a wild (0xFFFFFFFF) entity count");
+		ZENITH_ASSERT_EQ(pxSceneData->GetEntityCount(), 0, "Corrupt-count load must leave zero entities (got %u)", pxSceneData->GetEntityCount());
+
+		g_xEngine.Scenes().UnloadScene(xScene);
+	}
+
+	// Case 2: well-formed header claiming 5 entities, but zero entity bytes follow.
+	// 5 > 0 remaining bytes, so guard 1 again rejects before reading past EOF.
+	{
+		Zenith_DataStream xStream(sizeof(u_int) * 3);
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;
+		xStream << (u_int)5u;
+		xStream.SetCursor(0);
+
+		Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("BodyCorruptionTest2");
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+
+		bool bOk = pxSceneData->LoadFromDataStream(xStream);
+		ZENITH_ASSERT_FALSE(bOk, "LoadFromDataStream accepted a claimed-but-absent entity body");
+		ZENITH_ASSERT_EQ(pxSceneData->GetEntityCount(), 0, "Truncated-body load must leave zero entities (got %u)", pxSceneData->GetEntityCount());
+
+		g_xEngine.Scenes().UnloadScene(xScene);
+	}
+}
+
+// wave9.3: per-component schemaVersion in .zscen (scene v6, INERT). The field is
+// written per component OUTSIDE the size-prefixed payload, so legacy v3/4/5 files
+// (which carry no such field) and the v6 unknown-component SkipBytes path both stay
+// byte-aligned. Three pins: (1) a v6 save stamps version 6 in the header and still
+// round-trips a Transform; (2) a hand-crafted PRE-v6 (v5) stream loads cleanly with
+// the Transform intact — proving v<6 consumes ZERO schemaVersion bytes; (3) a v6
+// stream whose only component names a bogus type loads cleanly AND the trailing
+// camera index still reads — proving the v6 size-skip stays aligned past the
+// schemaVersion field.
+#ifndef ZENITH_ANDROID // (1) uses std::filesystem with a relative path, like the sibling scene tests
+ZENITH_TEST(Scene, SceneComponentSchemaVersion) { Zenith_UnitTests::TestSceneComponentSchemaVersion(); }
+#endif
+void Zenith_UnitTests::TestSceneComponentSchemaVersion(){
+
+	// The registry key for the Transform component is "Transform" (not
+	// "TransformComponent") — see Zenith_ComponentMeta.cpp FinalizeRegistration.
+	const std::string strTransformTypeName = "Transform";
+
+	// ------------------------------------------------------------------
+	// Shared helper: a real Transform payload (exactly what SerializeEntityComponents
+	// writes between the size prefix and the next component) for a known position.
+	// Built by serializing a live Transform into a scratch stream so the test stays
+	// robust to the component's field layout.
+	// ------------------------------------------------------------------
+	const Zenith_Maths::Vector3 xKnownPos(12.5f, -7.0f, 3.25f);
+
+	Zenith_Scene xSrcScene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionSrcScene");
+	Zenith_SceneData* pxSrcSceneData = g_xEngine.Scenes().GetSceneData(xSrcScene);
+
+	// Capture the Transform payload bytes once, from a throwaway entity.
+	Zenith_DataStream xTransformPayload;
+	u_int uTransformPayloadSize = 0;
+	{
+		Zenith_Entity xPayloadEntity(pxSrcSceneData, "PayloadEntity");
+		xPayloadEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xKnownPos);
+		xPayloadEntity.GetComponent<Zenith_TransformComponent>().WriteToDataStream(xTransformPayload);
+		uTransformPayloadSize = static_cast<u_int>(xTransformPayload.GetCursor());
+		ZENITH_ASSERT_GT(uTransformPayloadSize, 0u, "SchemaVersion: captured Transform payload is empty");
+	}
+
+	// ==================================================================
+	// (1) v6 round-trip: save a real scene, reopen the raw bytes and check the
+	//     header version is uSCENE_VERSION_CURRENT (6), then LoadFromFile and
+	//     verify the Transform round-trips.
+	// ==================================================================
+	{
+		const std::string strScenePath = "unit_test_schemaversion_v6" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xSaveScene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV6SaveScene");
+		Zenith_SceneData* pxSaveSceneData = g_xEngine.Scenes().GetSceneData(xSaveScene);
+
+		Zenith_Entity xEntity(pxSaveSceneData, "SchemaV6Entity");
+		xEntity.SetTransient(false);
+		xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xKnownPos);
+
+		pxSaveSceneData->SaveToFile(strScenePath);
+		ZENITH_ASSERT_TRUE(std::filesystem::exists(strScenePath), "SchemaVersion: v6 scene file was not created");
+
+		// Reopen the raw bytes: header is [magic u_int][version u_int]. Assert the
+		// version field is the current scene version (6).
+		{
+			Zenith_DataStream xRaw;
+			xRaw.ReadFromFile(strScenePath.c_str());
+			ZENITH_ASSERT_TRUE(xRaw.IsValid(), "SchemaVersion: could not reopen v6 scene file");
+			u_int uMagic = 0;
+			u_int uVersion = 0;
+			xRaw >> uMagic;
+			xRaw >> uVersion;
+			ZENITH_ASSERT_EQ(uMagic, (u_int)Zenith_SceneData::uSCENE_MAGIC, "SchemaVersion: v6 file magic mismatch");
+			ZENITH_ASSERT_EQ(uVersion, (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT, "SchemaVersion: saved scene version is not uSCENE_VERSION_CURRENT (6)");
+		}
+
+		// Load it back through the normal path and confirm the Transform survived.
+		Zenith_Scene xLoadScene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV6LoadScene");
+		Zenith_SceneData* pxLoadSceneData = g_xEngine.Scenes().GetSceneData(xLoadScene);
+		ZENITH_ASSERT_TRUE(pxLoadSceneData->LoadFromFile(strScenePath), "SchemaVersion: v6 LoadFromFile failed");
+
+		Zenith_Entity xLoaded = pxLoadSceneData->FindEntityByName("SchemaV6Entity");
+		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "SchemaVersion: v6 entity not found after round-trip");
+		ZENITH_ASSERT_TRUE(xLoaded.HasComponent<Zenith_TransformComponent>(), "SchemaVersion: v6 entity missing Transform");
+		Zenith_Maths::Vector3 xLoadedPos;
+		xLoaded.GetComponent<Zenith_TransformComponent>().GetPosition(xLoadedPos);
+		ZENITH_ASSERT_EQ(xLoadedPos, xKnownPos, "SchemaVersion: v6 Transform position did not round-trip");
+
+		g_xEngine.Scenes().UnloadScene(xSaveScene);
+		g_xEngine.Scenes().UnloadScene(xLoadScene);
+		std::filesystem::remove(strScenePath);
+	}
+
+	// ==================================================================
+	// (2) v5 back-compat: hand-craft an in-memory PRE-v6 stream and load it. The
+	//     pre-v6 component layout is [typeName][size][payload] — NO schemaVersion.
+	//     If LoadFromDataStream consumed a schemaVersion for v5 it would desync and
+	//     the Transform (and trailer) would be garbage. Asserting the Transform
+	//     matches proves v<6 reads zero schemaVersion bytes.
+	// ==================================================================
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)5u;                      // version 5 (pre-v6)
+		xStream << (u_int)1u;                      // entity count
+
+		// Entity: [fileIndex u32][name str] then components (v4/5 entity layout).
+		xStream << (uint32_t)0u;                   // file index
+		xStream << std::string("V5Entity");        // name
+
+		// Components: [count u_int] then per-component [typeName][size][payload].
+		xStream << (u_int)1u;                      // one component
+		xStream << strTransformTypeName;           // "Transform"
+		xStream << (u_int)uTransformPayloadSize;   // size prefix (payload only)
+		xStream.WriteData(xTransformPayload.GetData(), uTransformPayloadSize);
+
+		// Trailer: main camera file index (none).
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+
+		xStream.SetCursor(0);
+
+		Zenith_Scene xV5Scene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV5Scene");
+		Zenith_SceneData* pxV5SceneData = g_xEngine.Scenes().GetSceneData(xV5Scene);
+		ZENITH_ASSERT_TRUE(pxV5SceneData->LoadFromDataStream(xStream), "SchemaVersion: hand-crafted v5 stream failed to load");
+		ZENITH_ASSERT_EQ(pxV5SceneData->GetEntityCount(), 1u, "SchemaVersion: v5 stream produced wrong entity count");
+
+		Zenith_Entity xLoaded = pxV5SceneData->FindEntityByName("V5Entity");
+		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "SchemaVersion: v5 entity not found");
+		ZENITH_ASSERT_TRUE(xLoaded.HasComponent<Zenith_TransformComponent>(), "SchemaVersion: v5 entity missing Transform");
+		Zenith_Maths::Vector3 xLoadedPos;
+		xLoaded.GetComponent<Zenith_TransformComponent>().GetPosition(xLoadedPos);
+		ZENITH_ASSERT_EQ(xLoadedPos, xKnownPos, "SchemaVersion: v5 Transform did not match (v<6 must consume NO schemaVersion bytes)");
+
+		g_xEngine.Scenes().UnloadScene(xV5Scene);
+	}
+
+	// ==================================================================
+	// (3) unknown-component-in-v6: craft a v6 stream whose only component names a
+	//     bogus type, with a schemaVersion + a payload size. The reader must
+	//     consume the schemaVersion (v6 gate), then SkipBytes(size) for the unknown
+	//     type, and STILL land exactly on the trailing camera index. Asserting the
+	//     load succeeds + the entity exists proves the v6 size-skip stays aligned
+	//     past the schemaVersion field.
+	// ==================================================================
+	{
+		const u_int uBogusPayloadSize = 13u;       // arbitrary, distinct from sizeof(u_int)
+
+		Zenith_DataStream xStream;
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)Zenith_SceneData::uSCENE_VERSION_CURRENT;  // version 6
+		xStream << (u_int)1u;                      // entity count
+
+		// Entity: [fileIndex u32][name str].
+		xStream << (uint32_t)0u;
+		xStream << std::string("V6UnknownEntity");
+
+		// Components: [count] then [typeName][schemaVersion][size][payload] (v6 layout).
+		xStream << (u_int)1u;                      // one component
+		xStream << std::string("BogusComponentXYZ");
+		xStream << (u_int)7u;                       // schemaVersion (outside the payload)
+		xStream << (u_int)uBogusPayloadSize;        // payload size
+		for (u_int u = 0; u < uBogusPayloadSize; ++u)
+		{
+			uint8_t uByte = static_cast<uint8_t>(0xA0u + u);
+			xStream.WriteData(&uByte, 1);
+		}
+
+		// Trailer: main camera file index (none). If the size-skip were misaligned
+		// (e.g. by failing to consume the schemaVersion), reading this would consume
+		// payload bytes instead and the load would desync.
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+
+		xStream.SetCursor(0);
+
+		Zenith_Scene xV6Scene = g_xEngine.Scenes().CreateEmptyScene("SchemaVersionV6UnknownScene");
+		Zenith_SceneData* pxV6SceneData = g_xEngine.Scenes().GetSceneData(xV6Scene);
+		ZENITH_ASSERT_TRUE(pxV6SceneData->LoadFromDataStream(xStream), "SchemaVersion: v6 unknown-component stream failed to load (size-skip misaligned?)");
+		ZENITH_ASSERT_EQ(pxV6SceneData->GetEntityCount(), 1u, "SchemaVersion: v6 unknown-component stream produced wrong entity count");
+
+		Zenith_Entity xLoaded = pxV6SceneData->FindEntityByName("V6UnknownEntity");
+		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "SchemaVersion: v6 unknown-component entity not found (trailer misread => skip misaligned)");
+
+		g_xEngine.Scenes().UnloadScene(xV6Scene);
+	}
+
+	// Tear down the source scene that owns the captured payload.
+	g_xEngine.Scenes().UnloadScene(xSrcScene);
+}
+
+// wave8.5: the reusable DataStream envelope helper. Pin that a header round-trips
+// (write then read back the four fields), that the read is non-destructive and
+// leaves the cursor positioned for the payload on success, and that the two
+// corruption classes the asset boundary cares about map to the shared error
+// codes: a wrong magic -> BAD_MAGIC (so a legacy headerless stream rewinds), and
+// a future envelope version -> VERSION_MISMATCH.
+ZENITH_TEST(Serialization, EnvelopeRoundTrip) { Zenith_UnitTests::TestStreamEnvelopeRoundTrip(); }
+void Zenith_UnitTests::TestStreamEnvelopeRoundTrip(){
+
+	static constexpr u_int uTYPE_ID = 7;
+	static constexpr u_int uSCHEMA  = 3;
+
+	// Round-trip: header + payload write, read back, fields match and the
+	// payload that followed the header is intact.
+	{
+		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uTYPE_ID, uSCHEMA);
+		const u_int uPayload = 0xABCDEF01u;
+		xStream << (u_int)uPayload;
+		xStream.SetCursor(0);
+
+		Zenith_Result<Zenith_StreamHeader> xRes = Zenith_ReadStreamHeader(xStream, uTYPE_ID);
+		ZENITH_ASSERT_TRUE(xRes.IsOk(), "ReadStreamHeader rejected a well-formed header");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uMagic, (u_int)uSTREAM_ENVELOPE_MAGIC, "envelope magic did not round-trip");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uEnvelopeVersion, (u_int)uSTREAM_ENVELOPE_VERSION_CURRENT, "envelope version did not round-trip");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uAssetTypeId, (u_int)uTYPE_ID, "asset type id did not round-trip");
+		ZENITH_ASSERT_EQ(xRes.Value().m_uSchemaVersion, (u_int)uSCHEMA, "schema version did not round-trip");
+
+		// On success the cursor sits just past the header — the payload reads next.
+		u_int uReadPayload = 0;
+		xStream >> uReadPayload;
+		ZENITH_ASSERT_EQ(uReadPayload, uPayload, "payload after header was not readable / cursor misplaced");
+	}
+
+	// Corrupt magic -> BAD_MAGIC, and the read is non-destructive (cursor restored
+	// to entry so a legacy headerless stream can be rewound and re-read).
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)0xDEADBEEFu;                       // bad magic
+		xStream << (u_int)uSTREAM_ENVELOPE_VERSION_CURRENT;
+		xStream << (u_int)uTYPE_ID;
+		xStream << (u_int)uSCHEMA;
+		xStream.SetCursor(0);
+
+		Zenith_Result<Zenith_StreamHeader> xRes = Zenith_ReadStreamHeader(xStream, uTYPE_ID);
+		ZENITH_ASSERT_TRUE(!xRes.IsOk(), "ReadStreamHeader accepted a bad magic");
+		ZENITH_ASSERT_TRUE(xRes.Error() == Zenith_ErrorCode::BAD_MAGIC, "bad magic must map to BAD_MAGIC");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), (uint64_t)0, "ReadStreamHeader must restore the cursor on BAD_MAGIC");
+	}
+
+	// Future envelope version -> VERSION_MISMATCH (cursor restored too).
+	{
+		Zenith_DataStream xStream;
+		xStream << (u_int)uSTREAM_ENVELOPE_MAGIC;
+		xStream << (u_int)(uSTREAM_ENVELOPE_VERSION_CURRENT + 1u);  // newer than we support
+		xStream << (u_int)uTYPE_ID;
+		xStream << (u_int)uSCHEMA;
+		xStream.SetCursor(0);
+
+		Zenith_Result<Zenith_StreamHeader> xRes = Zenith_ReadStreamHeader(xStream, uTYPE_ID);
+		ZENITH_ASSERT_TRUE(!xRes.IsOk(), "ReadStreamHeader accepted a future envelope version");
+		ZENITH_ASSERT_TRUE(xRes.Error() == Zenith_ErrorCode::VERSION_MISMATCH, "future version must map to VERSION_MISMATCH");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), (uint64_t)0, "ReadStreamHeader must restore the cursor on VERSION_MISMATCH");
+	}
+}
+
+/**
  * Test removing multiple components from multiple entities in sequence.
  */
 ZENITH_TEST(Core, MultipleComponentRemoval) { Zenith_UnitTests::TestMultipleComponentRemoval(); }
@@ -7018,6 +7844,36 @@ void Zenith_UnitTests::TestComponentMetaTypeIDConsistency(){
 		ZENITH_ASSERT_GE(xMetasSorted[i]->m_uSerializationOrder, uPrevOrder, "TestComponentMetaTypeIDConsistency: Metas not sorted by serialization order");
 		uPrevOrder = xMetasSorted[i]->m_uSerializationOrder;
 	}
+
+}
+
+/**
+ * Test that the (inert) component access-set metadata is populated at
+ * registration. Transform declares DeclareAccess (READS_TRANSFORM |
+ * WRITES_TRANSFORM); an un-annotated component (Camera) must leave both masks
+ * at 0 (NONE). This metadata has no runtime consumer yet — the future system
+ * scheduler will read it.
+ */
+ZENITH_TEST(ECS, AccessSetMetadataRegistered) { Zenith_UnitTests::TestAccessSetMetadataRegistered(); }
+void Zenith_UnitTests::TestAccessSetMetadataRegistered(){
+
+	// Transform is the worked example: it owns its transform data, so it both
+	// reads and writes it.
+	const Zenith_ComponentMeta* pxTransformMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
+	ZENITH_ASSERT_NOT_NULL(pxTransformMeta, "TestAccessSetMetadataRegistered: Transform not registered");
+
+	const u_int uExpectedReads  = static_cast<u_int>(Zenith_ComponentAccess::READS_TRANSFORM);
+	const u_int uExpectedWrites = static_cast<u_int>(Zenith_ComponentAccess::WRITES_TRANSFORM);
+	ZENITH_ASSERT_EQ(pxTransformMeta->m_uReads, uExpectedReads, "TestAccessSetMetadataRegistered: Transform reads mask wrong");
+	ZENITH_ASSERT_EQ(pxTransformMeta->m_uWrites, uExpectedWrites, "TestAccessSetMetadataRegistered: Transform writes mask wrong");
+
+	// An un-annotated component leaves both masks at NONE (0).
+	const Zenith_ComponentMeta* pxCameraMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Camera");
+	ZENITH_ASSERT_NOT_NULL(pxCameraMeta, "TestAccessSetMetadataRegistered: Camera not registered");
+	ZENITH_ASSERT_EQ(pxCameraMeta->m_uReads, static_cast<u_int>(Zenith_ComponentAccess::NONE), "TestAccessSetMetadataRegistered: un-annotated Camera has non-zero reads mask");
+	ZENITH_ASSERT_EQ(pxCameraMeta->m_uWrites, static_cast<u_int>(Zenith_ComponentAccess::NONE), "TestAccessSetMetadataRegistered: un-annotated Camera has non-zero writes mask");
 
 }
 
@@ -12342,6 +13198,322 @@ void Zenith_UnitTests::TestChunkDistanceZero(){
 
 }
 
+// Wave-18 move-ctor regression. Zenith_TerrainComponent owns a heap
+// Flux_TerrainStreamingState (and a physics geometry pointer); the implicit
+// move would shallow-copy the pointer, so a pool relocation would double-free
+// both on the moved-from temporary's destruction. The explicit move must:
+//   - transfer the SAME state pointer to the moved-to component,
+//   - repoint state->m_pxOwner at the moved-to component,
+//   - null the moved-from component's state pointer (so its dtor frees nothing).
+// The default (deserialization) constructor is used so the test stays headless
+// (it only allocates + Initialize()s the state — no device, no mesh load). Both
+// components' destructors are headless-safe: DestroyCullingResources early-outs
+// when culling was never initialised, UnregisterTerrainBuffers is a no-op for an
+// unregistered state, and the unified-buffer destroys early-out on invalid VRAM
+// handles.
+ZENITH_TEST(Terrain, ComponentMoveStealsState) { Zenith_UnitTests::TestTerrainComponentMoveStealsState(); }
+void Zenith_UnitTests::TestTerrainComponentMoveStealsState(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "TerrainMoveCtorEntity");
+
+	Zenith_TerrainComponent xSource(xEntity);
+	Flux_TerrainStreamingState* pxCapturedState = xSource.m_pxStreamingState;
+	ZENITH_ASSERT_TRUE(pxCapturedState != nullptr, "Source terrain must own a streaming state after construction");
+	ZENITH_ASSERT_EQ(pxCapturedState->m_pxOwner, &xSource, "Freshly-constructed state must point back at its component");
+
+	// Force the move.
+	Zenith_TerrainComponent xMoved(std::move(xSource));
+
+	// The moved-to component owns the SAME state instance...
+	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState, pxCapturedState, "Move must transfer the exact streaming-state instance");
+	// ...the back-pointer is repointed at the new owner...
+	ZENITH_ASSERT_EQ(pxCapturedState->m_pxOwner, &xMoved, "Move must repoint state->m_pxOwner at the moved-to component");
+	// ...and the moved-from component owns nothing (no double-free on its dtor).
+	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Moved-from component's state pointer must be nulled");
+
+	// Both xMoved and xSource destruct here at scope exit; xSource frees
+	// nothing (null state), xMoved frees the single owned state exactly once.
+}
+
+// Wave-18 move-assignment counterpart. Same invariants as the move ctor; also
+// verifies the destination releases its own pre-existing state before stealing
+// (so the assignment is leak-free), via two independently-constructed
+// components.
+ZENITH_TEST(Terrain, ComponentMoveAssignmentStealsState) { Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(); }
+void Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntityA(pxSceneData, "TerrainMoveAssignA");
+	Zenith_Entity xEntityB(pxSceneData, "TerrainMoveAssignB");
+
+	Zenith_TerrainComponent xSource(xEntityA);
+	Zenith_TerrainComponent xDest(xEntityB);
+
+	Flux_TerrainStreamingState* pxSourceState = xSource.m_pxStreamingState;
+	Flux_TerrainStreamingState* pxDestStateBefore = xDest.m_pxStreamingState;
+	ZENITH_ASSERT_TRUE(pxSourceState != nullptr, "Source must own a state");
+	ZENITH_ASSERT_TRUE(pxDestStateBefore != nullptr, "Dest must own its own state before assignment");
+	ZENITH_ASSERT_TRUE(pxSourceState != pxDestStateBefore, "The two components must own distinct states");
+
+	xDest = std::move(xSource);
+
+	ZENITH_ASSERT_EQ(xDest.m_pxStreamingState, pxSourceState, "Move-assign must transfer the source's state instance");
+	ZENITH_ASSERT_EQ(pxSourceState->m_pxOwner, &xDest, "Move-assign must repoint state->m_pxOwner at the destination");
+	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Move-assigned-from component's state pointer must be nulled");
+}
+
+//=============================================================================
+// Wave-19 — Zenith_AnimatorComponent forwarding-handle / store relocation.
+//
+// The controller lives in Flux_AnimationControllerStore (keyed by EntityID
+// slot, heap-stable). The component caches a Flux_AnimationController* and just
+// forwards. These regressions pin: (1) a component MOVE shares the SAME
+// controller with the moved-to instance and neutralises the moved-from;
+// (2) Destroy is idempotent + per-entity (not per-instance), so a move +
+// double dtor/OnDestroy never double-frees; (3) a real pool swap-and-pop
+// relocation and a cross-scene move keep the cached pointer valid and the
+// controller count stable.
+//=============================================================================
+
+// Move CTOR: the moved-to component must hold the SAME cached controller
+// pointer, the store must still resolve that exact controller for the (stable)
+// EntityID, the moved-from must be neutralised (null cache + moved-out), and
+// the live controller count must be exactly one. These are pure stack
+// instances (NOT added to a pool) so the component's own ctor/dtor drive the
+// store create/destroy — mirroring the headless Terrain move-ctor test.
+ZENITH_TEST(Animator, ControllerStoreMoveCtorSharesController) { Zenith_UnitTests::TestAnimatorControllerStoreMoveCtorSharesController(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreMoveCtorSharesController(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorMoveCtorScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "AnimatorMoveCtorEntity");
+	const Zenith_EntityID xId = xEntity.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	{
+		Zenith_AnimatorComponent xSource(xEntity);
+		Flux_AnimationController* pxCaptured = xSource.m_pxController;
+		ZENITH_ASSERT_NOT_NULL(pxCaptured, "Animator ctor must eagerly create + cache the store controller");
+		ZENITH_ASSERT_EQ(xStore.TryGet(xId), pxCaptured, "Store must resolve the entity to the cached controller");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "Exactly one controller created for the entity");
+
+		// Force the move.
+		Zenith_AnimatorComponent xMoved(std::move(xSource));
+
+		ZENITH_ASSERT_EQ(xMoved.m_pxController, pxCaptured, "Move ctor must copy the heap-stable controller pointer");
+		ZENITH_ASSERT_EQ(xStore.TryGet(xId), pxCaptured, "Moved-to component must resolve the SAME store controller");
+		ZENITH_ASSERT_TRUE(xSource.m_pxController == nullptr, "Moved-from cached pointer must be nulled");
+		ZENITH_ASSERT_TRUE(xSource.m_bMovedOut, "Moved-from component must be flagged moved-out");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "Move must NOT create a second controller");
+
+		// Scope exit: xMoved dtor Destroys once; xSource dtor (moved-out) skips.
+	}
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "After both components destruct, exactly ONE Destroy must have fired (no leak, no double-free)");
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xId) == nullptr, "Controller must be gone from the store after destruction");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// Move ASSIGNMENT: the destination already owns its OWN entity's controller.
+// Move-assigning the source must (a) release the dest's pre-existing controller
+// (no leak), (b) repoint the dest at the source's controller, (c) neutralise
+// the source. Net live count after the assignment is one (dest's old one freed,
+// source's transferred).
+ZENITH_TEST(Animator, ControllerStoreMoveAssignReleasesDest) { Zenith_UnitTests::TestAnimatorControllerStoreMoveAssignReleasesDest(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreMoveAssignReleasesDest(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorMoveAssignScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntityA(pxSceneData, "AnimatorMoveAssignA");
+	Zenith_Entity xEntityB(pxSceneData, "AnimatorMoveAssignB");
+	const Zenith_EntityID xIdA = xEntityA.GetEntityID();
+	const Zenith_EntityID xIdB = xEntityB.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	{
+		Zenith_AnimatorComponent xSource(xEntityA);
+		Zenith_AnimatorComponent xDest(xEntityB);
+
+		Flux_AnimationController* pxSourceController = xSource.m_pxController;
+		Flux_AnimationController* pxDestControllerBefore = xDest.m_pxController;
+		ZENITH_ASSERT_NOT_NULL(pxSourceController, "Source must own a controller");
+		ZENITH_ASSERT_NOT_NULL(pxDestControllerBefore, "Dest must own its own controller before assignment");
+		ZENITH_ASSERT_NE(pxSourceController, pxDestControllerBefore, "The two entities must own distinct controllers");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 2u, "Two controllers exist before the assignment");
+
+		xDest = std::move(xSource);
+
+		ZENITH_ASSERT_EQ(xDest.m_pxController, pxSourceController, "Move-assign must transfer the source's controller pointer");
+		ZENITH_ASSERT_EQ(xDest.GetParentEntity().GetEntityID(), xIdA, "Move-assign must adopt the source's entity identity");
+		ZENITH_ASSERT_TRUE(xSource.m_pxController == nullptr, "Move-assigned-from cached pointer must be nulled");
+		ZENITH_ASSERT_TRUE(xSource.m_bMovedOut, "Move-assigned-from component must be flagged moved-out");
+		// Dest's ORIGINAL controller (entity B) must have been freed by the assignment.
+		ZENITH_ASSERT_TRUE(xStore.TryGet(xIdB) == nullptr, "Dest's pre-existing (entity B) controller must be released on move-assign");
+		ZENITH_ASSERT_EQ(xStore.TryGet(xIdA), pxSourceController, "Entity A's controller must still resolve to the transferred instance");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "Move-assign must net to ONE live controller (B freed, A transferred)");
+	}
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "All controllers released after scope exit (no leak, no double-free)");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// REAL pool relocation: AddComponent on three entities packs the animator pool
+// densely (slots 0,1,2). Removing entity0's animator triggers a true
+// swap-and-pop that move-constructs entity2's component into slot 0. Because
+// the store is keyed by the STABLE EntityID (not the pool slot), entity2 must
+// still resolve the SAME controller afterwards, and the relocation must NOT
+// create/destroy any controller (count unchanged).
+ZENITH_TEST(Animator, ControllerStoreSurvivesPoolRelocation) { Zenith_UnitTests::TestAnimatorControllerStoreSurvivesPoolRelocation(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreSurvivesPoolRelocation(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorPoolRelocScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity0(pxSceneData, "AnimatorReloc0");
+	Zenith_Entity xEntity1(pxSceneData, "AnimatorReloc1");
+	Zenith_Entity xEntity2(pxSceneData, "AnimatorReloc2");
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+
+	xEntity0.AddComponent<Zenith_AnimatorComponent>();
+	xEntity1.AddComponent<Zenith_AnimatorComponent>();
+	Zenith_AnimatorComponent& xAnim2 = xEntity2.AddComponent<Zenith_AnimatorComponent>();
+
+	const u_int uCountAfterAdds = xStore.GetCount();
+	Flux_AnimationController* pxController2 = &xAnim2.GetController();
+	ZENITH_ASSERT_EQ(xStore.TryGet(xEntity2.GetEntityID()), pxController2, "Entity2's controller must resolve via the store");
+
+	// Real swap-and-pop: entity2 (last) is move-constructed into entity0's freed slot.
+	xEntity0.RemoveComponent<Zenith_AnimatorComponent>();
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountAfterAdds - 1u, "Removing entity0's animator must destroy exactly ONE controller");
+	ZENITH_ASSERT_TRUE(xEntity2.HasComponent<Zenith_AnimatorComponent>(), "Entity2 must still have its animator after the pool relocation");
+	// The relocated component must resolve the SAME heap-stable controller.
+	Zenith_AnimatorComponent& xAnim2After = xEntity2.GetComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_EQ(&xAnim2After.GetController(), pxController2, "Relocated component must resolve the SAME controller (EntityID-keyed, heap-stable)");
+	ZENITH_ASSERT_EQ(xStore.TryGet(xEntity2.GetEntityID()), pxController2, "Store lookup for entity2 must be unchanged by the relocation");
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xEntity0.GetEntityID()) == nullptr, "Removed entity0's controller must be gone");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// Cross-scene MoveEntityToScene preserves the EntityID slot (global slot
+// table), so the animator's controller must survive the move: same controller,
+// same store count, resolvable in the new scene.
+ZENITH_TEST(Animator, ControllerStoreSurvivesCrossSceneMove) { Zenith_UnitTests::TestAnimatorControllerStoreSurvivesCrossSceneMove(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreSurvivesCrossSceneMove(){
+	Zenith_Scene xSceneA = g_xEngine.Scenes().CreateEmptyScene("AnimatorXSceneA");
+	Zenith_Scene xSceneB = g_xEngine.Scenes().CreateEmptyScene("AnimatorXSceneB");
+	Zenith_SceneData* pxSceneDataA = g_xEngine.Scenes().GetSceneData(xSceneA);
+
+	Zenith_Entity xEntity(pxSceneDataA, "AnimatorXSceneEntity");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBeforeMove = xStore.GetCount();
+	Flux_AnimationController* pxController = &xAnim.GetController();
+	const Zenith_EntityID xIdBefore = xEntity.GetEntityID();
+
+	const bool bMoved = Zenith_SceneSystem::MoveEntityToScene(xEntity, xSceneB);
+	ZENITH_ASSERT_TRUE(bMoved, "Cross-scene move of the animator entity must succeed");
+	// EntityID is preserved across the move (global slot table) — xEntity now
+	// points at the moved entity in scene B.
+	ZENITH_ASSERT_EQ(xEntity.GetEntityID(), xIdBefore, "EntityID slot must be preserved across the cross-scene move");
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBeforeMove, "Cross-scene move must not create/destroy any controller");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_AnimatorComponent>(), "Animator must travel with the entity to scene B");
+	Zenith_AnimatorComponent& xAnimAfter = xEntity.GetComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_EQ(&xAnimAfter.GetController(), pxController, "Moved entity must resolve the SAME controller (EntityID-keyed, heap-stable)");
+	ZENITH_ASSERT_EQ(xStore.TryGet(xIdBefore), pxController, "Store lookup must still resolve the controller post-move");
+
+	g_xEngine.Scenes().UnloadScene(xSceneA);
+	g_xEngine.Scenes().UnloadScene(xSceneB);
+}
+
+// Destroy must be IDEMPOTENT: the component's OnDestroy AND its dtor both call
+// store.Destroy(entity). The second call must be a harmless no-op. Also a
+// never-created entity Destroy is a no-op. Exercised directly on the store.
+ZENITH_TEST(Animator, ControllerStoreDestroyIsIdempotent) { Zenith_UnitTests::TestAnimatorControllerStoreDestroyIsIdempotent(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreDestroyIsIdempotent(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorDestroyIdempotentScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "AnimatorDestroyIdempotentEntity");
+	const Zenith_EntityID xId = xEntity.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	// Destroy on an entity with NO controller is a no-op.
+	ZENITH_ASSERT_FALSE(xStore.Destroy(xId), "Destroy on an absent entity must return false (no-op)");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "No-op Destroy must not change the count");
+
+	(void)xStore.GetOrCreate(xId);
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "GetOrCreate must create one controller");
+	// GetOrCreate again must NOT create a second.
+	(void)xStore.GetOrCreate(xId);
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "GetOrCreate is idempotent for an existing entity");
+
+	ZENITH_ASSERT_TRUE(xStore.Destroy(xId), "First Destroy must report it removed the controller");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "Destroy must remove exactly one controller");
+	// Second Destroy (mirrors dtor-after-OnDestroy) is a harmless no-op.
+	ZENITH_ASSERT_FALSE(xStore.Destroy(xId), "Second Destroy must be an idempotent no-op");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "Idempotent second Destroy must not change the count");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// Generation validation (review follow-up): the store is keyed by EntityID, and
+// Zenith_EntityID carries a generation for stale-handle detection. A stale id
+// for a RECYCLED slot must never resolve to, or destroy, the new occupant's
+// controller; and GetOrCreate on a recycled slot must RECOVER (tear down the
+// stale controller + hand back a FRESH one), not return the stale instance.
+ZENITH_TEST(Animator, ControllerStoreValidatesGeneration) { Zenith_UnitTests::TestAnimatorControllerStoreValidatesGeneration(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreValidatesGeneration(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorGenValidationScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "AnimatorGenValidationEntity");
+	const Zenith_EntityID xRealId = xEntity.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	// The slot's current (generation-matched) controller.
+	Flux_AnimationController& xReal = xStore.GetOrCreate(xRealId);
+	ZENITH_ASSERT_EQ(xStore.TryGet(xRealId), &xReal, "matched-generation id must resolve its controller");
+
+	// Same SLOT, a DIFFERENT generation — the exact stale-handle / recycled-slot shape.
+	Zenith_EntityID xStaleId = xRealId;
+	xStaleId.m_uGeneration = xRealId.m_uGeneration + 1u;
+
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xStaleId) == nullptr, "stale-generation id must NOT resolve the slot's controller");
+	ZENITH_ASSERT_FALSE(xStore.Destroy(xStaleId), "stale-generation Destroy must be a no-op");
+	ZENITH_ASSERT_EQ(xStore.TryGet(xRealId), &xReal, "the live controller must survive a stale-generation Destroy");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "stale ops must not change the live count");
+
+	// GetOrCreate on the recycled slot (new generation) must recover: tear down
+	// the stale controller and return a FRESH one (NOT the stale instance).
+	Flux_AnimationController& xFresh = xStore.GetOrCreate(xStaleId);
+	// NB: deliberately NOT asserting &xFresh != &xReal — DestroyControllerAt
+	// frees the stale controller and the very next `new` can legitimately reuse
+	// that heap block, so pointer identity is not a reliable freshness signal.
+	// The generation keying is the robust proof: the OLD generation no longer
+	// resolves (its entry was torn down + regenerated), and the NEW generation
+	// resolves the recreated controller. If GetOrCreate had instead returned the
+	// stale entry (no recovery), TryGet(xRealId) below would still resolve.
+	ZENITH_ASSERT_EQ(xStore.TryGet(xStaleId), &xFresh, "the new-generation id resolves the recreated controller");
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xRealId) == nullptr, "the old-generation id must no longer resolve (entry torn down + regenerated)");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "recovery is net-neutral: one stale torn down, one fresh created");
+
+	// Correct-generation Destroy cleans up (no orphan for the scene unload).
+	ZENITH_ASSERT_TRUE(xStore.Destroy(xStaleId), "matched-generation Destroy removes the fresh controller");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "no net controller leak");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
 // Per-component streaming state isolation. Two Flux_TerrainStreamingState
 // instances own independent dirty flags; flipping one must not change the
 // other. Regression test for the pre-refactor "global dirty flag" bug where
@@ -13277,6 +14449,93 @@ void Zenith_UnitTests::TestRenderGraphStorageBufferSRVBarrier(){
 }
 
 // ============================================================================
+// WS7 keystone (C1C2): InstancedMeshes Prepare-gather determinism / thread-safety
+// ============================================================================
+// The InstancedMeshes record callbacks (ExecuteCulling / ExecuteInstancedGBuffer)
+// used to mutate each Flux_InstanceGroup's CPU bookkeeping (m_uVisibleCount + the
+// visible-index list) from CONCURRENT worker threads. WS7 (C1) relocated that to a
+// SINGLE main-thread .Prepare gather; the CPU visibility math is factored into
+// Flux_InstanceGroup::ComputeVisibleIndices (device-independent). This test pins
+// the determinism guarantee: with GPU culling forced OFF (the path that used to
+// double-call UpdateGPUBuffers), a fixed seeded layout produces a byte-identical
+// visible-state hash on every repeated re-seed + recompute (zero divergence == the
+// cross-worker race is gone). It also cross-checks that the visible count derived
+// from the single-writer recompute equals the freshly computed visible-index size.
+//
+// Headless-safe: SeedInstancesForTest fills only the CPU SoA arrays (no GPU buffer
+// allocation, which would assert without a Vulkan allocator).
+#include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
+#include "Core/Zenith_GraphicsOptions.h"
+
+ZENITH_TEST(Core, InstancedMeshesPrepareDeterminism) { Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(); }
+void Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(){
+
+	// Force the CPU-fallback path (the one that used to double-call UpdateGPUBuffers
+	// across two concurrent record callbacks). Restore on exit so no test bleeds state.
+	const bool bPrevGPUCulling = Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled;
+	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = false;
+
+	static constexpr uint32_t uNUM_INSTANCES = 4096;
+	static constexpr uint32_t uSEED          = 0xC0FFEEu;
+	static constexpr uint32_t uNUM_REPEATS   = 4;
+
+	// --- Legacy serial reference: seed once, compute the reference visible set. ---
+	uint64_t uReferenceHash = 0;
+	uint32_t uReferenceVisible = 0;
+	{
+		Flux_InstanceGroup xRefGroup;
+		xRefGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED);
+
+		Zenith_Vector<uint32_t> auRefVisible;
+		xRefGroup.ComputeVisibleIndices(auRefVisible);
+		uReferenceVisible = auRefVisible.GetSize();
+
+		// Sanity: the seed must leave a non-trivial visible subset (not all / none),
+		// otherwise the determinism check would be vacuous.
+		ZENITH_ASSERT_TRUE(uReferenceVisible > 0 && uReferenceVisible < uNUM_INSTANCES,
+			"InstancedMeshesPrepareDeterminism: seed produced a degenerate visible set (%u of %u)",
+			uReferenceVisible, uNUM_INSTANCES);
+
+		uReferenceHash = xRefGroup.HashVisibleStateForTest();
+	}
+
+	// --- Repeated re-seeds (independent groups): every run must be byte-identical. ---
+	for (uint32_t uRepeat = 0; uRepeat < uNUM_REPEATS; ++uRepeat)
+	{
+		Flux_InstanceGroup xGroup;
+		xGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED);
+
+		// The visible-index list is the exact CPU computation the single main-thread
+		// writer (GatherInstancedPacket -> UpdateGPUBuffers -> ComputeVisibleIndices)
+		// performs; recomputing it must reproduce the reference set every time.
+		Zenith_Vector<uint32_t> auVisible;
+		xGroup.ComputeVisibleIndices(auVisible);
+		ZENITH_ASSERT_EQ(auVisible.GetSize(), uReferenceVisible,
+			"InstancedMeshesPrepareDeterminism: visible count diverged on repeat %u (%u vs ref %u)",
+			uRepeat, auVisible.GetSize(), uReferenceVisible);
+
+		const uint64_t uHash = xGroup.HashVisibleStateForTest();
+		ZENITH_ASSERT_TRUE(uHash == uReferenceHash,
+			"InstancedMeshesPrepareDeterminism: visible-state hash (0x%016llx, repeat %u) diverged from reference (0x%016llx)",
+			static_cast<unsigned long long>(uHash), uRepeat,
+			static_cast<unsigned long long>(uReferenceHash));
+	}
+
+	// --- A DIFFERENT seed must produce a DIFFERENT layout (guards a no-op accessor
+	//     that always returns the same constant — which would make the above vacuous). ---
+	{
+		Flux_InstanceGroup xOtherGroup;
+		xOtherGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED ^ 0x5A5A5A5Au);
+		const uint64_t uOtherHash = xOtherGroup.HashVisibleStateForTest();
+		ZENITH_ASSERT_TRUE(uOtherHash != uReferenceHash,
+			"InstancedMeshesPrepareDeterminism: a different seed produced the same hash (0x%016llx) — accessor likely not reading state",
+			static_cast<unsigned long long>(uReferenceHash));
+	}
+
+	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = bPrevGPUCulling;
+}
+
+// ============================================================================
 // Transient-aliasing signature tests
 // ============================================================================
 // MakeTransientMemorySignature is a pure function of the descriptor — tests
@@ -13824,6 +15083,269 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 #else
 	ZENITH_SKIP("Pass debug names are only present in ZENITH_TOOLS builds");
 #endif
+}
+
+// ============================================================================
+// Flux_HiZImpl dependency-injection seam test (Wave 9)
+// ============================================================================
+// Flux_HiZImpl's Initialise now takes its cross-subsystem deps (swapchain,
+// graphics, renderer) as explicit references and stores them in member
+// pointers — the reusable DI template for the other ~50 subsystems. The real
+// wiring happens in Flux.cpp's Flux_RendererImpl::LateInitialise, which only
+// runs in the non-headless boot path. Because the test runner may execute
+// headless (LateInitialise skipped, so the live g_xEngine.HiZ() pointers stay
+// nullptr), a post-init "==&g_xEngine.VulkanSwapchain()" assertion would be
+// flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
+// (default-constructed Flux_HiZImpl is headless-safe, like Flux_RenderGraph):
+//   1. the three injected-dep member pointers default to nullptr, and
+//   2. assigning distinct non-null sentinel pointers stores into the right
+//      slots.
+// The sentinels are reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/HiZ/Flux_HiZImpl.h"
+
+ZENITH_TEST(Flux, HiZInjectedDepsWired) { Zenith_UnitTests::TestHiZInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestHiZInjectedDepsWired(){
+	Flux_HiZImpl xHiZ;
+
+	// 1. Fresh instance: all three injected-dep pointers default to nullptr.
+	ZENITH_ASSERT_NULL(xHiZ.m_pxSwapchain, "Fresh Flux_HiZImpl: m_pxSwapchain defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xHiZ.m_pxGraphics,  "Fresh Flux_HiZImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xHiZ.m_pxRenderer,  "Fresh Flux_HiZImpl: m_pxRenderer defaults nullptr (headless-safe)");
+
+	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
+	//    and are independent (the DI seam stores each ref into its own member).
+	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x1000));
+	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x2000));
+	Flux_RendererImpl*       pxSentinelRenderer  = reinterpret_cast<Flux_RendererImpl*>      (static_cast<uintptr_t>(0x3000));
+
+	xHiZ.m_pxSwapchain = pxSentinelSwapchain;
+	xHiZ.m_pxGraphics  = pxSentinelGraphics;
+	xHiZ.m_pxRenderer  = pxSentinelRenderer;
+
+	ZENITH_ASSERT_EQ(xHiZ.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
+	ZENITH_ASSERT_EQ(xHiZ.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xHiZ.m_pxRenderer,  pxSentinelRenderer,  "m_pxRenderer stores the injected renderer pointer");
+}
+
+// ============================================================================
+// Flux_SSAOImpl dependency-injection seam test (Wave-11, 2nd leaf seam)
+// ============================================================================
+// Flux_SSAOImpl's Initialise now takes its cross-subsystem deps (graphics,
+// swapchain, HDR) as explicit references and stores them in member pointers —
+// the same reusable DI template as Flux_HiZImpl (WS9.2). The real wiring happens
+// in Flux.cpp's Flux_RendererImpl::LateInitialise, which only runs in the
+// non-headless boot path. Because the test runner may execute headless
+// (LateInitialise skipped, so the live g_xEngine.SSAO() pointers stay nullptr),
+// a post-init "==&g_xEngine.FluxGraphics()" assertion would be flaky. Instead
+// this is a pure-CPU seam test on a stack-constructed instance
+// (default-constructed Flux_SSAOImpl is headless-safe, like Flux_RenderGraph):
+//   1. the three injected-dep member pointers default to nullptr, and
+//   2. assigning distinct non-null sentinel pointers stores into the right
+//      slots.
+// The sentinels are reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/SSAO/Flux_SSAOImpl.h"
+
+ZENITH_TEST(Flux, SSAOInjectedDepsWired) { Zenith_UnitTests::TestSSAOInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestSSAOInjectedDepsWired(){
+	Flux_SSAOImpl xSSAO;
+
+	// 1. Fresh instance: all three injected-dep pointers default to nullptr.
+	ZENITH_ASSERT_NULL(xSSAO.m_pxGraphics,  "Fresh Flux_SSAOImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSSAO.m_pxSwapchain, "Fresh Flux_SSAOImpl: m_pxSwapchain defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSSAO.m_pxHDR,       "Fresh Flux_SSAOImpl: m_pxHDR defaults nullptr (headless-safe)");
+
+	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
+	//    and are independent (the DI seam stores each ref into its own member).
+	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
+	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x2000));
+	Flux_HDRImpl*            pxSentinelHDR       = reinterpret_cast<Flux_HDRImpl*>           (static_cast<uintptr_t>(0x3000));
+
+	xSSAO.m_pxGraphics  = pxSentinelGraphics;
+	xSSAO.m_pxSwapchain = pxSentinelSwapchain;
+	xSSAO.m_pxHDR       = pxSentinelHDR;
+
+	ZENITH_ASSERT_EQ(xSSAO.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xSSAO.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
+	ZENITH_ASSERT_EQ(xSSAO.m_pxHDR,       pxSentinelHDR,       "m_pxHDR stores the injected HDR pointer");
+}
+
+// ============================================================================
+// Flux_QuadsImpl dependency-injection seam test (Wave-14)
+// ============================================================================
+// Flux_QuadsImpl's Initialise now takes its lone cross-subsystem dep (graphics)
+// as an explicit reference and stores it in a member pointer — the same reusable
+// DI template as Flux_HiZImpl (WS9.2) / Flux_SSAOImpl (Wave-11). The real wiring
+// happens in the Quads init trampoline (Flux_FeatureRegistry.cpp), driven by
+// Flux_RendererImpl::LateInitialise, which only runs in the non-headless boot
+// path — and Quads is not even wired in headless boot. Because the test runner
+// may execute headless (LateInitialise skipped, so the live g_xEngine.Quads()
+// pointer stays nullptr), a post-init "==&g_xEngine.FluxGraphics()" assertion
+// would be flaky. Instead this is a pure-CPU seam test on a stack-constructed
+// instance (default-constructed Flux_QuadsImpl is headless-safe):
+//   1. the injected-dep member pointer defaults to nullptr, and
+//   2. assigning a distinct non-null sentinel pointer stores into the right slot.
+// The sentinel is reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/Quads/Flux_QuadsImpl.h"
+
+ZENITH_TEST(Flux, QuadsInjectedDepsWired) { Zenith_UnitTests::TestQuadsInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestQuadsInjectedDepsWired(){
+	Flux_QuadsImpl xQuads;
+
+	// 1. Fresh instance: the injected-dep pointer defaults to nullptr.
+	ZENITH_ASSERT_NULL(xQuads.m_pxGraphics, "Fresh Flux_QuadsImpl: m_pxGraphics defaults nullptr (headless-safe)");
+
+	// 2. A distinct, never-dereferenced sentinel proves the storage slot exists
+	//    (the DI seam stores the injected ref into its member).
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+
+	xQuads.m_pxGraphics = pxSentinelGraphics;
+
+	ZENITH_ASSERT_EQ(xQuads.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+// ============================================================================
+// Flux_SDFsImpl dependency-injection seam test (Wave-14, lowest-fan-in leaf)
+// ============================================================================
+// Flux_SDFsImpl's Initialise now takes its two cross-subsystem deps (graphics,
+// HDR) as explicit references and stores them in member pointers — the same
+// reusable DI template as Flux_HiZImpl (WS9.2) and Flux_SSAOImpl (Wave-11). The
+// real wiring happens through the Flux_FeatureRegistry SDFs init trampoline,
+// which only runs in the non-headless boot path. Because the test runner may
+// execute headless (init walk skipped, so the live g_xEngine.SDFs() pointers
+// stay nullptr), a post-init "==&g_xEngine.FluxGraphics()" assertion would be
+// flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
+// (default-constructed Flux_SDFsImpl is headless-safe, like Flux_RenderGraph):
+//   1. the two injected-dep member pointers default to nullptr, and
+//   2. assigning distinct non-null sentinel pointers stores into the right
+//      slots.
+// The sentinels are reinterpret_cast and NEVER dereferenced.
+
+#include "Flux/SDFs/Flux_SDFsImpl.h"
+
+ZENITH_TEST(Flux, SDFsInjectedDepsWired) { Zenith_UnitTests::TestSDFsInjectedDepsWired(); }
+
+void Zenith_UnitTests::TestSDFsInjectedDepsWired(){
+	Flux_SDFsImpl xSDFs;
+
+	// 1. Fresh instance: both injected-dep pointers default to nullptr.
+	ZENITH_ASSERT_NULL(xSDFs.m_pxGraphics, "Fresh Flux_SDFsImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSDFs.m_pxHDR,      "Fresh Flux_SDFsImpl: m_pxHDR defaults nullptr (headless-safe)");
+
+	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
+	//    and are independent (the DI seam stores each ref into its own member).
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	Flux_HDRImpl*      pxSentinelHDR      = reinterpret_cast<Flux_HDRImpl*>     (static_cast<uintptr_t>(0x2000));
+
+	xSDFs.m_pxGraphics = pxSentinelGraphics;
+	xSDFs.m_pxHDR      = pxSentinelHDR;
+
+	ZENITH_ASSERT_EQ(xSDFs.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xSDFs.m_pxHDR,      pxSentinelHDR,      "m_pxHDR stores the injected HDR pointer");
+}
+
+// ============================================================================
+// Wave-15 DI-seam sentinel tests (Text / Skybox / Primitives / StaticMeshes /
+// AnimatedMeshes). Same pure-CPU headless-safe pattern as Quads/SDFs: each
+// injected-dep member pointer defaults nullptr, then stores an assigned sentinel
+// (never dereferenced). Orchestrator batch-added (impl agents produced code only,
+// to avoid a 5-way merge in this shared file).
+// ============================================================================
+
+#include "Flux/Text/Flux_TextImpl.h"
+ZENITH_TEST(Flux, TextInjectedDepsWired) { Zenith_UnitTests::TestTextInjectedDepsWired(); }
+void Zenith_UnitTests::TestTextInjectedDepsWired(){
+	Flux_TextImpl xText;
+	ZENITH_ASSERT_NULL(xText.m_pxGraphics, "Fresh Flux_TextImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xText.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xText.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
+ZENITH_TEST(Flux, SkyboxInjectedDepsWired) { Zenith_UnitTests::TestSkyboxInjectedDepsWired(); }
+void Zenith_UnitTests::TestSkyboxInjectedDepsWired(){
+	Flux_SkyboxImpl xSkybox;
+	ZENITH_ASSERT_NULL(xSkybox.m_pxGraphics, "Fresh Flux_SkyboxImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xSkybox.m_pxHDR,      "Fresh Flux_SkyboxImpl: m_pxHDR defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	Flux_HDRImpl*      pxSentinelHDR      = reinterpret_cast<Flux_HDRImpl*>     (static_cast<uintptr_t>(0x2000));
+	xSkybox.m_pxGraphics = pxSentinelGraphics;
+	xSkybox.m_pxHDR      = pxSentinelHDR;
+	ZENITH_ASSERT_EQ(xSkybox.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xSkybox.m_pxHDR,      pxSentinelHDR,      "m_pxHDR stores the injected HDR pointer");
+}
+
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
+ZENITH_TEST(Flux, PrimitivesInjectedDepsWired) { Zenith_UnitTests::TestPrimitivesInjectedDepsWired(); }
+void Zenith_UnitTests::TestPrimitivesInjectedDepsWired(){
+	Flux_PrimitivesImpl xPrimitives;
+	ZENITH_ASSERT_NULL(xPrimitives.m_pxGraphics, "Fresh Flux_PrimitivesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xPrimitives.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xPrimitives.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
+ZENITH_TEST(Flux, StaticMeshesInjectedDepsWired) { Zenith_UnitTests::TestStaticMeshesInjectedDepsWired(); }
+void Zenith_UnitTests::TestStaticMeshesInjectedDepsWired(){
+	Flux_StaticMeshesImpl xStaticMeshes;
+	ZENITH_ASSERT_NULL(xStaticMeshes.m_pxGraphics, "Fresh Flux_StaticMeshesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xStaticMeshes.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xStaticMeshes.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
+ZENITH_TEST(Flux, AnimatedMeshesInjectedDepsWired) { Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(); }
+void Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(){
+	Flux_AnimatedMeshesImpl xAnimatedMeshes;
+	ZENITH_ASSERT_NULL(xAnimatedMeshes.m_pxGraphics, "Fresh Flux_AnimatedMeshesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
+	xAnimatedMeshes.m_pxGraphics = pxSentinelGraphics;
+	ZENITH_ASSERT_EQ(xAnimatedMeshes.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
+}
+
+// ============================================================================
+// Wave-17 DI-seam sentinel tests (Decals: Graphics+Swapchain; Particles: Graphics+HDR+ParticleGPU).
+// Same pure-CPU headless-safe pattern; orchestrator batch-added (impl agents were code-only).
+// ============================================================================
+
+#include "Flux/Decals/Flux_DecalsImpl.h"
+ZENITH_TEST(Flux, DecalsInjectedDepsWired) { Zenith_UnitTests::TestDecalsInjectedDepsWired(); }
+void Zenith_UnitTests::TestDecalsInjectedDepsWired(){
+	Flux_DecalsImpl xDecals;
+	ZENITH_ASSERT_NULL(xDecals.m_pxGraphics,  "Fresh Flux_DecalsImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xDecals.m_pxSwapchain, "Fresh Flux_DecalsImpl: m_pxSwapchain defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
+	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x2000));
+	xDecals.m_pxGraphics  = pxSentinelGraphics;
+	xDecals.m_pxSwapchain = pxSentinelSwapchain;
+	ZENITH_ASSERT_EQ(xDecals.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xDecals.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
+}
+
+#include "Flux/Particles/Flux_ParticlesImpl.h"
+ZENITH_TEST(Flux, ParticlesInjectedDepsWired) { Zenith_UnitTests::TestParticlesInjectedDepsWired(); }
+void Zenith_UnitTests::TestParticlesInjectedDepsWired(){
+	Flux_ParticlesImpl xParticles;
+	ZENITH_ASSERT_NULL(xParticles.m_pxGraphics,    "Fresh Flux_ParticlesImpl: m_pxGraphics defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xParticles.m_pxHDR,         "Fresh Flux_ParticlesImpl: m_pxHDR defaults nullptr (headless-safe)");
+	ZENITH_ASSERT_NULL(xParticles.m_pxParticleGPU, "Fresh Flux_ParticlesImpl: m_pxParticleGPU defaults nullptr (headless-safe)");
+	Flux_GraphicsImpl*    pxSentinelGraphics    = reinterpret_cast<Flux_GraphicsImpl*>   (static_cast<uintptr_t>(0x1000));
+	Flux_HDRImpl*         pxSentinelHDR         = reinterpret_cast<Flux_HDRImpl*>        (static_cast<uintptr_t>(0x2000));
+	Flux_ParticleGPUImpl* pxSentinelParticleGPU = reinterpret_cast<Flux_ParticleGPUImpl*>(static_cast<uintptr_t>(0x3000));
+	xParticles.m_pxGraphics    = pxSentinelGraphics;
+	xParticles.m_pxHDR         = pxSentinelHDR;
+	xParticles.m_pxParticleGPU = pxSentinelParticleGPU;
+	ZENITH_ASSERT_EQ(xParticles.m_pxGraphics,    pxSentinelGraphics,    "m_pxGraphics stores the injected graphics pointer");
+	ZENITH_ASSERT_EQ(xParticles.m_pxHDR,         pxSentinelHDR,         "m_pxHDR stores the injected HDR pointer");
+	ZENITH_ASSERT_EQ(xParticles.m_pxParticleGPU, pxSentinelParticleGPU, "m_pxParticleGPU stores the injected ParticleGPU pointer");
 }
 
 // ============================================================================
@@ -14980,4 +16502,356 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 	ZENITH_ASSERT_TRUE(str.find("kframe_lights_Name = \"frame.lights\"") != std::string::npos, "Sanitised identifier should replace '.' with '_' but kName literal should preserve original");
 	ZENITH_ASSERT_TRUE(str.find("frame.lights_Set") == std::string::npos, "Generated identifier should never contain raw '.'");
 
+}
+
+//==============================================================================
+// Wave 8.3 - release-survivable check tier (Zenith_Check / Zenith_Verify)
+//==============================================================================
+
+ZENITH_TEST(Core, CheckTierReleaseSurvivable) { Zenith_UnitTests::TestCheckTierReleaseSurvivable(); }
+
+void Zenith_UnitTests::TestCheckTierReleaseSurvivable(){
+
+	// Unlike Zenith_Assert, the check tier logs and CONTINUES — it must never
+	// call Zenith_DebugBreak(). If Zenith_Check(false, ...) aborted, control
+	// would never reach the line after it and this test could not pass.
+	// (One log line is emitted by design; we keep it to a single failing Check
+	// to minimise spam.)
+	bool bReachedAfterCheck = false;
+	Zenith_Check(false, "TestCheckTierReleaseSurvivable: intentional check failure (expected, not a real error)");
+	bReachedAfterCheck = true;
+	ZENITH_ASSERT_TRUE(bReachedAfterCheck,
+		"Zenith_Check(false) must log and fall through, not abort");
+
+	// Zenith_Verify(expr) must EVALUATE expr for its side effects. Use a
+	// side-effecting, true expression: the increment runs and, because the
+	// expression is true, nothing is logged (zero spam) — proving evaluation
+	// happened independently of the log path.
+	int iSideEffectCounter = 0;
+	Zenith_Verify((++iSideEffectCounter) == 1);
+	ZENITH_ASSERT_EQ(iSideEffectCounter, 1,
+		"Zenith_Verify must evaluate its expression (side effect should have run exactly once)");
+}
+
+//==============================================================================
+// Wave 8.3 - task-queue overflow no longer crashes (graceful QUEUE_FULL)
+//==============================================================================
+
+// Trivial fire-and-forget task body: a short busy-spin to encourage the queue
+// to back up past uMAX_TASKS, then a single atomic increment so the test can
+// confirm work actually happened.
+struct QueueFullTestData
+{
+	std::atomic<u_int> m_uRunCount{0};
+};
+
+static void QueueFullTaskFunc(void* pData)
+{
+	auto* pxData = static_cast<QueueFullTestData*>(pData);
+	// Tiny amount of work so workers don't drain instantly, making the
+	// >128-in-flight overflow path realistic without a fragile blocking gate.
+	volatile u_int uSpin = 0;
+	for (u_int u = 0; u < 2048u; u++) { uSpin += u; }
+	(void)uSpin;
+	pxData->m_uRunCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+ZENITH_TEST(TaskSystem, QueueFullSurfacesError) { Zenith_UnitTests::TestQueueFullSurfacesError(); }
+
+void Zenith_UnitTests::TestQueueFullSurfacesError(){
+
+	// Submit far more than Zenith_TaskSystem::uMAX_TASKS (128) tasks without
+	// draining between submits, so the bounded circular queue can overflow.
+	// The old code asserted (and Zenith_DebugBreak'd) on overflow; the Wave 8.3
+	// change downgraded that to a Zenith_Check that logs QUEUE_FULL and lets the
+	// enqueue come up short. SubmitTask resets m_bSubmitted on a zero-enqueue, so
+	// any task that failed to enqueue is NOT marked submitted and its
+	// WaitUntilComplete() is a no-op — meaning this loop is deadlock-free
+	// regardless of how many tasks the queue refused.
+	constexpr u_int uNUM_TASKS = Zenith_TaskSystem::uMAX_TASKS * 2u + 16u; // 272 > 128
+	QueueFullTestData xData;
+
+	Zenith_Task** apxTasks = new Zenith_Task*[uNUM_TASKS];
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		apxTasks[u] = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, QueueFullTaskFunc, &xData);
+	}
+
+	// Fire them all in without draining — this is what drives the overflow.
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		g_xEngine.Tasks().SubmitTask(apxTasks[u]);
+	}
+
+	// Drain. Tasks that were enqueued run exactly once; tasks the queue refused
+	// had their submitted flag reset, so WaitUntilComplete returns immediately.
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		apxTasks[u]->WaitUntilComplete();
+	}
+
+	for (u_int u = 0; u < uNUM_TASKS; u++)
+	{
+		delete apxTasks[u];
+	}
+	delete[] apxTasks;
+
+	// The headline guarantee: we reached here without a debug-break / crash on
+	// overflow. As a sanity bound, every task that actually ran did so exactly
+	// once, so the run count is in (0, uNUM_TASKS].
+	const u_int uRan = xData.m_uRunCount.load(std::memory_order_relaxed);
+	ZENITH_ASSERT_GT(uRan, 0u, "At least some submitted tasks should have executed");
+	ZENITH_ASSERT_LE(uRan, uNUM_TASKS, "Run count must never exceed the number of tasks submitted");
+}
+
+// ============================================================================
+// WS12 parallel-simulation: conflict model + serial-vs-parallel determinism
+// ============================================================================
+
+// (a) Pure unit test of the Zenith_AccessSet conflict math. No scene, no
+// threads — just the bit logic that decides eligibility. Pins: read-read never
+// conflicts; any shared write conflicts; un-annotated (0/0) maps to UNKNOWN
+// (conflicts with everything, not eligible); Transform-only is eligible; any
+// PHYSICS/UNKNOWN bit makes a mask ineligible.
+ZENITH_TEST(ECS, AccessSetConflictModel) { Zenith_UnitTests::TestAccessSetConflictModel(); }
+void Zenith_UnitTests::TestAccessSetConflictModel(){
+
+	using namespace Zenith_AccessSet;
+
+	const u_int uR_T = static_cast<u_int>(Zenith_ComponentAccess::READS_TRANSFORM);
+	const u_int uW_T = static_cast<u_int>(Zenith_ComponentAccess::WRITES_TRANSFORM);
+	const u_int uW_P = static_cast<u_int>(Zenith_ComponentAccess::WRITES_PHYSICS);
+
+	// Read-read never conflicts (two readers of Transform).
+	ZENITH_ASSERT_TRUE(!ConflictsWith(uR_T, 0u, uR_T, 0u),
+		"AccessSetConflictModel: two pure readers must not conflict");
+
+	// Write-write on the same domain conflicts.
+	ZENITH_ASSERT_TRUE(ConflictsWith(0u, uW_T, 0u, uW_T),
+		"AccessSetConflictModel: two writers of the same domain must conflict");
+
+	// Write-read on the same domain conflicts (A writes Transform, B reads it).
+	ZENITH_ASSERT_TRUE(ConflictsWith(0u, uW_T, uR_T, 0u),
+		"AccessSetConflictModel: writer vs reader of same domain must conflict");
+
+	// Disjoint domains do not conflict (A: Transform write, B: Physics write).
+	ZENITH_ASSERT_TRUE(!ConflictsWith(0u, uW_T, 0u, uW_P),
+		"AccessSetConflictModel: writes to disjoint domains must not conflict");
+
+	// UNKNOWN conflicts with everything that touches any domain.
+	ZENITH_ASSERT_TRUE(ConflictsWith(uACCESS_UNKNOWN, uACCESS_UNKNOWN, uR_T, 0u),
+		"AccessSetConflictModel: UNKNOWN must conflict with a Transform reader");
+	ZENITH_ASSERT_TRUE(ConflictsWith(uACCESS_UNKNOWN, uACCESS_UNKNOWN, 0u, uW_P),
+		"AccessSetConflictModel: UNKNOWN must conflict with a Physics writer");
+
+	// Un-annotated meta (both masks 0) maps to UNKNOWN, NOT "touches nothing".
+	Zenith_ComponentMeta xUnannotated;
+	xUnannotated.m_uReads = 0u;
+	xUnannotated.m_uWrites = 0u;
+	ZENITH_ASSERT_EQ(EffectiveReads(xUnannotated), uACCESS_UNKNOWN,
+		"AccessSetConflictModel: un-annotated component must read as UNKNOWN");
+	ZENITH_ASSERT_EQ(EffectiveWrites(xUnannotated), uACCESS_UNKNOWN,
+		"AccessSetConflictModel: un-annotated component must write as UNKNOWN");
+
+	// A component that legitimately declares writes-only (reads==0, writes!=0)
+	// must NOT be promoted to UNKNOWN — it declared something.
+	Zenith_ComponentMeta xWritesOnly;
+	xWritesOnly.m_uReads = 0u;
+	xWritesOnly.m_uWrites = uW_T;
+	ZENITH_ASSERT_EQ(EffectiveReads(xWritesOnly), 0u,
+		"AccessSetConflictModel: declared writes-only must keep reads==0");
+	ZENITH_ASSERT_EQ(EffectiveWrites(xWritesOnly), uW_T,
+		"AccessSetConflictModel: declared writes-only must keep its write mask");
+
+	// Subset eligibility: Transform-only eligible; UNKNOWN / PHYSICS not.
+	ZENITH_ASSERT_TRUE(MaskIsParallelEligible(uR_T | uW_T),
+		"AccessSetConflictModel: Transform-only aggregate must be eligible");
+	ZENITH_ASSERT_TRUE(MaskIsParallelEligible(0u),
+		"AccessSetConflictModel: empty aggregate must be eligible (no per-frame work)");
+	ZENITH_ASSERT_TRUE(!MaskIsParallelEligible(uACCESS_UNKNOWN),
+		"AccessSetConflictModel: UNKNOWN aggregate must NOT be eligible");
+	ZENITH_ASSERT_TRUE(!MaskIsParallelEligible(uR_T | uW_P),
+		"AccessSetConflictModel: any PHYSICS bit must make the aggregate ineligible");
+}
+
+namespace
+{
+	// Fixed-seed PRNG (xorshift32) for the determinism scene — std::rand is
+	// forbidden and would not be reproducible across the serial/parallel runs.
+	struct Zenith_DetRng
+	{
+		uint32_t m_uState;
+		explicit Zenith_DetRng(uint32_t uSeed) : m_uState(uSeed ? uSeed : 0x1234567u) {}
+		uint32_t Next()
+		{
+			uint32_t x = m_uState;
+			x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+			m_uState = x;
+			return x;
+		}
+		// Deterministic float in [fLo, fHi].
+		float NextFloat(float fLo, float fHi)
+		{
+			const float f01 = static_cast<float>(Next() & 0xFFFFFFu) / static_cast<float>(0xFFFFFF);
+			return fLo + (fHi - fLo) * f01;
+		}
+	};
+
+	// FNV-1a over the FIELD-BY-FIELD serialization of every entity's Transform
+	// (position + rotation + scale + parent index — see
+	// Zenith_TransformComponent::WriteToDataStream). Modelled on
+	// Test_ProcLevel_DeterminismCheck::HashLayout: we serialize each component
+	// via its own WriteToDataStream into a Zenith_DataStream and FNV the bytes,
+	// rather than memcpy-ing the struct, so uninitialised padding never feeds the
+	// hash. The Tween outputs are exactly position/rotation/scale, so this hash
+	// covers everything the parallel dispatch could perturb.
+	uint64_t Zenith_HashSceneTransforms(Zenith_SceneData* pxSceneData,
+	                                     const Zenith_Vector<Zenith_EntityID>& xIDs)
+	{
+		uint64_t h = 0xcbf29ce484222325ull;
+		auto Bytes = [&h](const void* p, size_t n)
+		{
+			const uint8_t* b = static_cast<const uint8_t*>(p);
+			for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 0x100000001b3ull; }
+		};
+
+		for (u_int u = 0; u < xIDs.GetSize(); ++u)
+		{
+			Zenith_EntityID uID = xIDs.Get(u);
+			if (!pxSceneData->EntityExists(uID)) { const uint8_t z = 0xAA; Bytes(&z, 1); continue; }
+			Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
+			if (!xEntity.HasComponent<Zenith_TransformComponent>()) { const uint8_t z = 0xBB; Bytes(&z, 1); continue; }
+
+			// Field-by-field via the component's own serializer. Hash the WRITTEN
+			// bytes (GetCursor — how far the write advanced), NOT GetSize (the
+			// buffer capacity), so the uninitialised buffer tail never feeds the
+			// hash (that tail is exactly the "uninitialised padding" the
+			// field-by-field methodology exists to avoid).
+			Zenith_DataStream xStream(256);
+			xEntity.GetComponent<Zenith_TransformComponent>().WriteToDataStream(xStream);
+			Bytes(xStream.GetData(), static_cast<size_t>(xStream.GetCursor()));
+		}
+		return h;
+	}
+
+	// Build a fixed, reproducible scene of uCount collider-free / script-free
+	// entities, each carrying a TweenComponent driving a deterministic looping
+	// ping-pong POSITION tween (and every 3rd entity also a looping SCALE tween)
+	// so the entities keep animating for the whole frame budget. Seeded purely
+	// off the entity index so the serial and parallel scenes are bit-identical at
+	// construction. Returns the active-entity snapshot in xIDsOut.
+	void Zenith_BuildDeterminismScene(Zenith_SceneData* pxSceneData, u_int uCount,
+	                                  Zenith_Vector<Zenith_EntityID>& xIDsOut)
+	{
+		Zenith_DetRng xRng(0xC0FFEEu);
+		xIDsOut.Reserve(uCount);
+
+		for (u_int u = 0; u < uCount; ++u)
+		{
+			char acName[64];
+			std::snprintf(acName, sizeof(acName), "DetTween_%u", u);
+			Zenith_Entity xEntity(pxSceneData, acName);
+
+			// Deterministic start position keyed off index.
+			const Zenith_Maths::Vector3 xStart(
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f));
+			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xStart);
+
+			Zenith_TweenComponent& xTween = xEntity.AddComponent<Zenith_TweenComponent>();
+
+			const Zenith_Maths::Vector3 xTo(
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f),
+				xRng.NextFloat(-5.0f, 5.0f));
+			const float fDuration = xRng.NextFloat(0.2f, 1.0f);
+			xTween.TweenPositionFromTo(xStart, xTo, fDuration, EASING_QUAD_OUT);
+			xTween.SetLoop(true, /*bPingPong=*/true);
+
+			if ((u % 3u) == 0u)
+			{
+				const Zenith_Maths::Vector3 xScaleTo(
+					xRng.NextFloat(0.5f, 2.0f),
+					xRng.NextFloat(0.5f, 2.0f),
+					xRng.NextFloat(0.5f, 2.0f));
+				xTween.TweenScaleFromTo(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f), xScaleTo,
+					xRng.NextFloat(0.2f, 1.0f), EASING_QUAD_OUT);
+				xTween.SetLoop(true, /*bPingPong=*/true);
+			}
+
+			xIDsOut.PushBack(xEntity.GetEntityID());
+		}
+	}
+
+	// Run uFrames fixed-dt OnUpdate passes through the chokepoint
+	// (DispatchOnUpdateForEntities — the function that carries the WS12 gate),
+	// then return the field-by-field state hash. Pins the parallel-sim flag for
+	// the whole run. Zenith_UnitTests is a friend of Zenith_SceneData, so it may
+	// call the (private) DispatchOnUpdateForEntities directly.
+	uint64_t Zenith_RunDeterminismFrames(Zenith_SceneData* pxSceneData,
+	                                     const Zenith_Vector<Zenith_EntityID>& xIDs,
+	                                     u_int uFrames, bool bParallel)
+	{
+		const bool bPrev = g_xEngine.Scenes().AreParallelSimEnabled();
+		g_xEngine.Scenes().SetParallelSim(bParallel);
+
+		const float fFixedDt = 1.0f / 60.0f;
+		for (u_int f = 0; f < uFrames; ++f)
+		{
+			// This is a free helper (not a Zenith_UnitTests member), so it drives the
+			// gated dispatch via the PUBLIC Bench_DispatchOnUpdatePass forwarder rather
+			// than the private DispatchOnUpdateForEntities (friendship covers members only).
+			pxSceneData->Bench_DispatchOnUpdatePass(xIDs, fFixedDt);
+		}
+
+		const uint64_t uHash = Zenith_HashSceneTransforms(pxSceneData, xIDs);
+		g_xEngine.Scenes().SetParallelSim(bPrev);
+		return uHash;
+	}
+}
+
+// (b) The proof. Build an identical fixed scene of collider-free Tween entities
+// twice; run the same 30 fixed-dt frames serial then parallel; the field-by-
+// field ECS-state hash MUST match. Then repeat the parallel run two more times
+// (fresh identical scenes) and assert all parallel hashes equal the serial hash
+// — catching both a serial/parallel divergence AND any run-to-run nondeterminism
+// in the parallel path (e.g. an order-dependent reduction). Small enough to run
+// every boot. Restores the flag + tears down all scenes.
+ZENITH_TEST(ECS, ParallelSimDeterminismSmoke) { Zenith_UnitTests::TestParallelSimDeterminismSmoke(); }
+void Zenith_UnitTests::TestParallelSimDeterminismSmoke(){
+
+	const bool bPrevFlag = g_xEngine.Scenes().AreParallelSimEnabled();
+
+	static constexpr u_int uNUM_ENTITIES = 64;
+	static constexpr u_int uNUM_FRAMES   = 30;
+
+	// --- Serial reference ---
+	Zenith_Scene xSerialScene = g_xEngine.Scenes().CreateEmptyScene("ParallelSimDet_Serial");
+	Zenith_SceneData* pxSerial = g_xEngine.Scenes().GetSceneData(xSerialScene);
+	Zenith_Vector<Zenith_EntityID> xSerialIDs;
+	Zenith_BuildDeterminismScene(pxSerial, uNUM_ENTITIES, xSerialIDs);
+	const uint64_t uSerialHash = Zenith_RunDeterminismFrames(pxSerial, xSerialIDs, uNUM_FRAMES, /*bParallel=*/false);
+	g_xEngine.Scenes().UnloadScene(xSerialScene);
+
+	// --- Parallel runs (repeat to catch run-to-run nondeterminism) ---
+	for (u_int uRepeat = 0; uRepeat < 3u; ++uRepeat)
+	{
+		char acName[64];
+		std::snprintf(acName, sizeof(acName), "ParallelSimDet_Parallel_%u", uRepeat);
+		Zenith_Scene xParallelScene = g_xEngine.Scenes().CreateEmptyScene(acName);
+		Zenith_SceneData* pxParallel = g_xEngine.Scenes().GetSceneData(xParallelScene);
+		Zenith_Vector<Zenith_EntityID> xParallelIDs;
+		Zenith_BuildDeterminismScene(pxParallel, uNUM_ENTITIES, xParallelIDs);
+		const uint64_t uParallelHash = Zenith_RunDeterminismFrames(pxParallel, xParallelIDs, uNUM_FRAMES, /*bParallel=*/true);
+		g_xEngine.Scenes().UnloadScene(xParallelScene);
+
+		ZENITH_ASSERT_TRUE(uParallelHash == uSerialHash,
+			"ParallelSimDeterminismSmoke: parallel state hash (0x%016llx, repeat %u) diverged from serial (0x%016llx)",
+			static_cast<unsigned long long>(uParallelHash), uRepeat,
+			static_cast<unsigned long long>(uSerialHash));
+	}
+
+	// Restore the flag to whatever it was (default OFF) so no test bleeds state.
+	g_xEngine.Scenes().SetParallelSim(bPrevFlag);
 }

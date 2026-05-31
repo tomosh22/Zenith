@@ -3,9 +3,9 @@
 
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Zenith_Result.h"
 #include <string>
 #include <unordered_map>
-#include <functional>
 
 // Compile-time type index (no RTTI required)
 // Each unique type T gets a unique address via function-local static
@@ -42,7 +42,7 @@ class Zenith_Prefab;
 class Zenith_ScriptAsset;
 
 // Forward declare .zdata loader (defined in .cpp, used by RegisterAssetType<T>)
-Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
+Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
 
 /**
  * Zenith_AssetRegistry - THE unified asset management system
@@ -246,13 +246,13 @@ public:
 		// Also register a loader for this type if instance exists
 		if (s_pxInstance)
 		{
-			s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<T>(), [](const std::string& strPath) -> Zenith_Asset* {
+			s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<T>(), [](const std::string& strPath) -> Zenith_Result<Zenith_Asset*> {
 				if (strPath.empty())
 				{
-					// Create empty instance for procedural assets
-					return new T();
+					// Create empty instance for procedural assets (implicit SUCCESS)
+					return static_cast<Zenith_Asset*>(new T());
 				}
-				// Use the generic .zdata loader
+				// Use the generic .zdata loader (already returns a Zenith_Result)
 				return LoadSerializableAsset(strPath);
 			});
 		}
@@ -322,10 +322,14 @@ private:
 	Zenith_AssetRegistry& operator=(const Zenith_AssetRegistry&) = delete;
 
 	// Friend declaration for .zdata loader
-	friend Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
+	friend Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
 
-	// Internal loader registration (called by template specializations)
-	using AssetLoaderFn = std::function<Zenith_Asset*(const std::string&)>;
+	// Internal loader registration (called by template specializations).
+	// Plain function pointer (not std::function — house rule). The free loaders
+	// register directly as &LoadXxxAsset; the RegisterAssetType<T> loader lambda
+	// is captureless and decays to a function pointer.
+	using AssetLoaderFn = Zenith_Result<Zenith_Asset*>(*)(const std::string&);
+	static_assert(std::is_trivially_destructible_v<Zenith_Result<Zenith_Asset*>>);
 	void RegisterLoader(Zenith_TypeIndex xType, AssetLoaderFn pfnLoader);
 
 	// Internal implementations (called via static public wrappers)

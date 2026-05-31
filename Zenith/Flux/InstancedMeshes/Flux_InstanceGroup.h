@@ -100,6 +100,15 @@ public:
 	// Reset the visible count for a new frame (called before culling)
 	void ResetVisibleCount();
 
+	// Device-independent CPU bookkeeping shared by UpdateGPUBuffers and the
+	// headless determinism test: collect the indices of every ENABLED instance
+	// (m_uFlags != 0) in ascending slot order. This is the exact CPU computation
+	// that feeds the visible-index buffer upload — factored out so the upload
+	// (which needs a live allocator) and the pure bookkeeping (which doesn't) can
+	// be exercised independently. Does NOT touch GPU buffers and does NOT mutate
+	// m_uVisibleCount; the caller owns that.
+	void ComputeVisibleIndices(Zenith_Vector<uint32_t>& xauVisibleOut) const;
+
 	//-------------------------------------------------------------------------
 	// Accessors
 	//-------------------------------------------------------------------------
@@ -108,9 +117,35 @@ public:
 	uint32_t GetVisibleCount() const { return m_uVisibleCount; }
 	bool IsEmpty() const { return m_uInstanceCount == 0; }
 
+	// Additive test accessor (determinism / thread-safety regression). Returns an
+	// FNV-1a hash over m_uVisibleCount and the ComputeVisibleIndices() list so a
+	// test can assert the CPU visibility bookkeeping is byte-identical across runs
+	// (zero divergence == the cross-worker race is gone). Read-only; no GPU access.
+	uint64_t HashVisibleStateForTest() const;
+
+	// Additive test-only seeding helper. Populates the CPU instance arrays directly
+	// (transforms + anim data + counts) with a deterministic pattern derived purely
+	// from uSeed and the slot index, WITHOUT allocating GPU buffers — so the
+	// determinism/thread-safety regression can run in the HEADLESS unit suite where
+	// no Vulkan allocator exists (the normal AddInstance -> InitialiseGPUBuffers path
+	// asserts there). Every uSeed produces a reproducible enabled/disabled mix so the
+	// visible-index computation is exercised over a non-trivial layout. Mirrors the
+	// per-slot init AddInstance performs for the CPU fields it touches.
+	void SeedInstancesForTest(uint32_t uCount, uint32_t uSeed);
+
 	// Access to CPU-side transform data (for serialization)
 	const std::vector<Zenith_Maths::Matrix4>& GetTransforms() const { return m_axTransforms; }
 
+	// READ accessors consumed inside the worker-thread record callbacks
+	// (ExecuteCulling / ExecuteInstancedGBuffer / RenderToShadowMap). These stay
+	// lock-free: the WS7 keystone makes the main-thread Prepare gather the SINGLE
+	// writer of this group's per-frame state, so by the time the record callbacks
+	// run that state is frozen and every accessor is a pure read. They legitimately
+	// run on multiple worker threads concurrently (the culling + GBuffer record
+	// tasks dispatch in parallel), so a reader-side TryLock sentinel would
+	// false-positive across those concurrent readers — the thread-safety guarantee
+	// is therefore enforced on the WRITE side instead (see UpdateGPUBuffers /
+	// ResetVisibleCount, which assert main-thread-only via AssertMainThreadMutation).
 	Flux_MeshInstance* GetMesh() const { return m_pxMesh; }
 	Zenith_MaterialAsset* GetMaterial() const { return m_xMaterial.GetDirect(); }
 	Flux_AnimationTexture* GetAnimationTexture() const { return m_pxAnimationTexture; }
@@ -138,6 +173,17 @@ private:
 	void InitialiseGPUBuffers();
 	void DestroyGPUBuffers();
 	void MarkDirty(uint32_t uInstanceID);
+
+	// Thread-safety sentinel for the per-frame GPU-sync mutators (UpdateGPUBuffers /
+	// ResetVisibleCount). The WS7 keystone makes the main-thread .Prepare gather the
+	// SINGLE writer of this state; record callbacks are pure readers. Asserting
+	// main-thread-only here means a FUTURE attempt to mutate from a worker-thread
+	// record callback (the latent race C1C2 removed) trips immediately. This is the
+	// MEMORY "Mutating:" idiom — preferred over a reader-side TryLock because the
+	// culling + GBuffer record passes read concurrently and would contend a reader
+	// lock. Note the render-task-active window spans BOTH Prepare and record, so the
+	// guard is thread-affinity (IsMainThread), NOT a !AreRenderTasksActive check.
+	void AssertMainThreadMutation(const char* szWhat) const;
 
 	static uint32_t PackColorRGBA8(const Zenith_Maths::Vector4& xColor);
 

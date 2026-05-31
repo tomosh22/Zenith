@@ -11,8 +11,6 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include <filesystem>
 
-ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
-
 void Zenith_ModelComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// "Model" is STATEFUL — overriding the asset handle alone would leave the

@@ -67,15 +67,15 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadAnimationAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadAnimationAsset(const std::string&);
 
 	/**
 	 * Load animation from file (private - use Zenith_AssetRegistry::Get)
 	 * Supports both .zanim binary format and source formats via Assimp
 	 * @param strPath Path to animation file
-	 * @return true on success
+	 * @return SUCCESS, or an error code on failure
 	 */
-	bool LoadFromFile(const std::string& strPath);
+	Zenith_Status LoadFromFile(const std::string& strPath);
 
 	Flux_AnimationClip* m_pxClip = nullptr;
 	bool m_bOwnsClip = true;

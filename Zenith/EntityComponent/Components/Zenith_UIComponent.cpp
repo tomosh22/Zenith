@@ -2,8 +2,6 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_UIComponent, "UI")
-
 Zenith_UIComponent::Zenith_UIComponent(Zenith_Entity& xParentEntity)
     : m_xParentEntity(xParentEntity)
 {

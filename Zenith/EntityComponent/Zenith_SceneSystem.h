@@ -21,6 +21,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashSet.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include <atomic>
 #include <cstdint>
 #include <string>
 // Was Zenith_SceneCallbackTypes.h — typedefs + enum inlined below.
@@ -215,15 +216,52 @@ public:
 
 	bool AreRenderTasksActive() const
 	{
-#ifdef ZENITH_ASSERT
-		return m_bRenderTasksActive;
-#else
-		return false;
-#endif
+		return m_bRenderTasksActive.load(std::memory_order_acquire);
 	}
-#ifdef ZENITH_ASSERT
-	void SetRenderTasksActive(bool b) { m_bRenderTasksActive = b; }
-#endif
+	void SetRenderTasksActive(bool b) { m_bRenderTasksActive.store(b, std::memory_order_release); }
+
+	// WS10 sparse-set query toggle. When true (the shipped default), Zenith_Query
+	// uses the O(matches) sparse-set fast path; when false it uses the legacy
+	// O(entities x types) scan. Both paths are kept (reversibility), and the
+	// pool always dual-writes the sparse index regardless of this flag, so the
+	// toggle can be flipped live (tests/bench pin a path and restore it). Atomic
+	// because ForEach may run on render-task worker threads, mirroring
+	// m_bRenderTasksActive. Compiled in ALL configs (not #ifdef-d).
+	bool AreSparseQueryReadsEnabled() const
+	{
+		return m_bUseSparseQueryReads.load(std::memory_order_acquire);
+	}
+	void SetSparseQueryReads(bool b) { m_bUseSparseQueryReads.store(b, std::memory_order_release); }
+
+	// WS12 gated parallel-simulation toggle (see m_bUseParallelSim). DEFAULT
+	// FALSE: the per-frame OnUpdate/OnLateUpdate dispatch chokepoint
+	// (Zenith_SceneData::DispatchLifecycleHookForEntities) runs the existing
+	// serial loop verbatim — zero behaviour change. When true, the chokepoint
+	// fans the parallel-eligible subset across the task system while keeping
+	// ineligible entities in their exact serial relative order. The cross-check
+	// (ParallelSimDeterminismSmoke / --check-sim-determinism) proves the parallel
+	// result is byte-identical to serial; the default-ON flip is out of scope.
+	// Store with release / load with acquire, matching the sibling toggles.
+	bool AreParallelSimEnabled() const
+	{
+		return m_bUseParallelSim.load(std::memory_order_acquire);
+	}
+	void SetParallelSim(bool b) { m_bUseParallelSim.store(b, std::memory_order_release); }
+
+	// WS12 parallel-sim WAVE-IN-FLIGHT signal (distinct from the enable toggle
+	// above). Set true ONLY for the narrow window where a parallel OnUpdate wave
+	// is fanned across the task system + the calling thread waits on the barrier
+	// (see Zenith_SceneData::ParallelDispatchHook). Exactly mirrors
+	// m_bRenderTasksActive: the SceneData component-read assertions
+	// (EntityHasComponent / GetComponentFromEntity) permit worker-thread reads
+	// while this is true, because the parallel unit is provably disjoint (each
+	// eligible Tween reads/writes only its own Transform). Outside that window it
+	// is false, so the assertions stay strict. Compiled in ALL configs.
+	bool AreParallelSimWaveActive() const
+	{
+		return m_bParallelSimWaveActive.load(std::memory_order_acquire);
+	}
+	void SetParallelSimWaveActive(bool b) { m_bParallelSimWaveActive.store(b, std::memory_order_release); }
 
 	//==========================================================================
 	// Callback bus
@@ -391,9 +429,38 @@ private:
 	};
 	PendingLoad                   m_xPendingLoad;
 
-#ifdef ZENITH_ASSERT
-	bool                          m_bRenderTasksActive = false;
-#endif
+	// Render-phase boundary signal. Compiled in ALL configs (not just assert
+	// builds): parallel-sim work needs an authoritative, race-free value of
+	// whether render tasks are reading scene state, even in shipping builds.
+	// Set true around ExecuteRenderGraph (see Zenith_Core.cpp); the scene-
+	// mutation asserts read it to permit concurrent reads during that window.
+	std::atomic<bool>             m_bRenderTasksActive { false };
+
+	// WS10 sparse-set query read path. Default true = sparse fast path shipped on.
+	// Plain std::atomic (NOT #ifdef-d) so it compiles + works in *_False configs.
+	std::atomic<bool>             m_bUseSparseQueryReads { true };
+
+	// WS12 gated parallel-simulation toggle. DEFAULT FALSE = byte-identical to
+	// today (the existing serial DispatchLifecycleHookForEntities loop runs
+	// verbatim, single thread, identical order). When true, that chokepoint fans
+	// the parallel-ELIGIBLE subset (collider-free / script-free Tween-only
+	// entities — see Zenith_AccessSet.h) across the task system and runs every
+	// ineligible entity inline on the main thread in its exact serial order.
+	// Proven byte-identical by the serial-vs-parallel determinism cross-check
+	// (ParallelSimDeterminismSmoke + --check-sim-determinism). Plain std::atomic
+	// (NOT #ifdef-d) so it compiles + works in *_False configs; atomic because the
+	// gate is read on the main thread but the design mirrors the other always-
+	// compiled flags (m_bRenderTasksActive / m_bUseSparseQueryReads). The
+	// default-ON flip is deliberately OUT OF SCOPE for this wave.
+	std::atomic<bool>             m_bUseParallelSim { false };
+
+	// WS12 parallel-sim wave-in-flight signal (see AreParallelSimWaveActive).
+	// True only during the SubmitTaskArray + WaitUntilComplete window of a
+	// parallel OnUpdate wave; permits worker-thread ECS component reads in the
+	// SceneData assertions, exactly like m_bRenderTasksActive does for the render
+	// phase. Default false. Plain std::atomic (NOT #ifdef-d) so it works in
+	// *_False configs.
+	std::atomic<bool>             m_bParallelSimWaveActive { false };
 
 	//==========================================================================
 	// Data members (was Zenith_SceneCallbackBus)

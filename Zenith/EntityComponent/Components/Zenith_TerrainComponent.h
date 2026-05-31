@@ -1,54 +1,33 @@
 #pragma once
 
-// Unified terrain configuration - single source of truth for all terrain constants
-#include "Flux/Terrain/Flux_TerrainConfig.h"
-using namespace Flux_TerrainConfig;
-
 #include "EntityComponent/Zenith_Entity.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "Maths/Zenith_FrustumCulling.h"
 
-// Forward declarations
+// Forward declarations only — this header includes NO Flux header (Wave-18
+// ownership-relocation). The Flux GPU state (unified vertex/index buffers,
+// per-frame culling buffers, the 4 GPU-layout structs, and all the terrain
+// config constants) lives on the OWNING Flux side now — in
+// Flux_TerrainStreamingState (Flux/Terrain/Flux_TerrainStreamingManagerImpl.h)
+// and Flux_TerrainGPUStructs.h. This component is a thin handle whose public
+// buffer/stride accessors are defined out-of-line in the .cpp and forward into
+// *m_pxStreamingState; the accessor *signatures* only need these
+// forward-declarations of the Flux buffer-wrapper types (a forward declaration
+// is NOT an #include, so it introduces no cross-layer coupling — the layering
+// gate scans #include edges, not forward decls).
 class Flux_CommandList;
+class Flux_MeshGeometry;
+class Flux_VertexBuffer;
+class Flux_IndexBuffer;
+class Flux_IndirectBuffer;
+class Flux_ReadWriteBuffer;
 struct Flux_TerrainChunkInitData;
 struct Flux_TerrainStreamingState;
+struct Zenith_FrustumPlaneGPU;
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
-
-// LOD data for a single level
-struct Zenith_TerrainLODData
-{
-	uint32_t m_uFirstIndex;    // Starting index in the index buffer for this LOD
-	uint32_t m_uIndexCount;    // Number of indices to draw for this LOD
-	uint32_t m_uVertexOffset;  // Base vertex offset (always 0 for combined mesh)
-	float m_fMaxDistance;      // Maximum distance (squared) at which this LOD is used
-};
-
-// Chunk data structure that gets uploaded to GPU
-// Must match the GLSL struct in Flux_TerrainCulling.comp
-struct Zenith_TerrainChunkData
-{
-	Zenith_Maths::Vector4 m_xAABBMin;                   // xyz = min corner, w = padding
-	Zenith_Maths::Vector4 m_xAABBMax;                   // xyz = max corner, w = padding
-	Zenith_TerrainLODData m_axLODs[LOD_COUNT];          // LOD mesh data (HIGH=0, LOW=1)
-};
-
-// Frustum plane structure for GPU upload
-struct Zenith_FrustumPlaneGPU
-{
-	Zenith_Maths::Vector4 m_xNormalAndDistance;  // xyz = normal, w = distance
-};
-
-// Camera culling data structure for GPU upload
-struct Zenith_CameraDataGPU
-{
-	Zenith_FrustumPlaneGPU m_axFrustumPlanes[6];  // 6 frustum planes
-	Zenith_Maths::Vector4 m_xCameraPosition;      // xyz = camera position, w = padding
-};
 
 class Zenith_TerrainComponent
 {
@@ -65,14 +44,40 @@ public:
 
 	~Zenith_TerrainComponent();
 
+	// The component owns two raw pointers (m_pxStreamingState,
+	// m_pxPhysicsGeometry) plus the material/splat handles, and has a user
+	// destructor that frees them. The implicitly-generated move would be a
+	// shallow pointer copy, so a pool relocation (swap-and-pop / Grow) would
+	// double-free both the streaming state and the physics geometry when the
+	// moved-from temporary destructs. Define an explicit move that STEALS the
+	// owned state, nulls the source, and REPOINTS the streaming state's owner
+	// back-pointer at the moved-to component (the manager registry / per-frame
+	// resolver dereference m_pxOwner, so it must always point at the live
+	// component). Copy is deleted outright — a terrain component must never be
+	// duplicated (two owners of the same GPU buffers).
+	Zenith_TerrainComponent(Zenith_TerrainComponent&& xOther) noexcept;
+	Zenith_TerrainComponent& operator=(Zenith_TerrainComponent&& xOther) noexcept;
+	Zenith_TerrainComponent(const Zenith_TerrainComponent&) = delete;
+	Zenith_TerrainComponent& operator=(const Zenith_TerrainComponent&) = delete;
+
 private:
 	static uint32_t s_uInstanceCount;
 	static void IncrementInstanceCount();
 	static void DecrementInstanceCount();
 
 public:
-	const Flux_VertexBuffer& GetUnifiedVertexBuffer() const { return m_xUnifiedVertexBuffer; }
-	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
+	// Buffer accessors forward into the owning Flux_TerrainStreamingState.
+	// Out-of-line (.cpp) because the buffer-wrapper types are only
+	// forward-declared in this header — the bodies need the full state type,
+	// which only the .cpp pulls in. Behaviour is identical to the previous
+	// inline by-value-member accessors.
+	const Flux_VertexBuffer& GetUnifiedVertexBuffer() const;
+	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const;
+
+	// Vertex stride of the unified buffer (bytes). Added so render-side
+	// consumers (RenderTest.cpp) that previously read m_uVertexStride directly
+	// keep a stable accessor now that the field lives on the streaming state.
+	uint32_t GetVertexStride() const;
 
 	// Returns true once render geometry is in a usable state. Set to false
 	// only when the LOW LOD load for chunk (0,0) — the canonical chunk
@@ -87,7 +92,9 @@ public:
 	// this query — the alternative is a crash on the first physics body
 	// build for the terrain.
 	bool HasPhysicsGeometry() const { return m_pxPhysicsGeometry != nullptr; }
-	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
+	// Out-of-line (.cpp): dereferencing the forward-declared Flux_MeshGeometry
+	// to return a reference needs the full type.
+	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const;
 	// Material accessors (4-material palette)
 	static constexpr u_int TERRAIN_MATERIAL_COUNT = 4;
 	Zenith_MaterialAsset* GetMaterial(u_int uIndex) const { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex].GetDirect(); }
@@ -146,23 +153,28 @@ public:
 	/**
 	 * Get the indirect draw buffer for rendering
 	 * Contains VkDrawIndexedIndirectCommand structs written by the compute shader
+	 * Forwards into the owning Flux_TerrainStreamingState (out-of-line).
 	 */
-	const Flux_IndirectBuffer& GetIndirectDrawBuffer() const { return m_xIndirectDrawBuffer; }
+	const Flux_IndirectBuffer& GetIndirectDrawBuffer() const;
 
 	/**
 	 * Get the visible chunk count buffer (for indirect draw count)
+	 * Forwards into the owning Flux_TerrainStreamingState (out-of-line).
 	 */
-	const Flux_IndirectBuffer& GetVisibleCountBuffer() const { return m_xVisibleCountBuffer; }
+	const Flux_IndirectBuffer& GetVisibleCountBuffer() const;
 
 	/**
 	 * Get the maximum number of draw commands (= total chunks)
+	 * Out-of-line (.cpp): the value is Flux_TerrainConfig::TOTAL_CHUNKS, which
+	 * this header no longer names.
 	 */
-	uint32_t GetMaxDrawCount() const { return TOTAL_CHUNKS; }
+	uint32_t GetMaxDrawCount() const;
 
 	/**
 	 * Get the LOD level buffer for visualization
+	 * Forwards into the owning Flux_TerrainStreamingState (out-of-line).
 	 */
-	Flux_ReadWriteBuffer& GetLODLevelBuffer() { return m_xLODLevelBuffer; }
+	Flux_ReadWriteBuffer& GetLODLevelBuffer();
 
 	/**
 	 * Update chunk LOD allocations in GPU buffer based on current streaming manager state
@@ -177,56 +189,26 @@ public:
 	MaterialHandle m_axMaterials[4];
 	TextureHandle m_xSplatmap;
 
-	// ========== Unified Terrain Buffers (owned by this component) ==========
-	// Contains LOW LOD (always-resident) data at the beginning, followed by streaming space for HIGH LOD
-	// These buffers are registered with Flux_TerrainStreamingManager for LOD streaming
-	Flux_VertexBuffer m_xUnifiedVertexBuffer;
-	Flux_IndexBuffer m_xUnifiedIndexBuffer;
-
-	// Buffer sizes and layout information
-	uint64_t m_ulUnifiedVertexBufferSize = 0;
-	uint64_t m_ulUnifiedIndexBufferSize = 0;
-	uint32_t m_uVertexStride = 0;
-	uint32_t m_uLowLODVertexCount = 0;   // Vertices reserved for LOW LOD at buffer start
-	uint32_t m_uLowLODIndexCount = 0;    // Indices reserved for LOW LOD at buffer start
-
 	// Set by LoadAndCombineLowLODChunks when chunk (0,0)'s LOW LOD source
 	// fails to load. Without (0,0) we have no canonical vertex layout, so
 	// the rest of the render geometry pipeline (unified buffers, streaming
 	// registration, culling resources) is intentionally short-circuited.
 	bool m_bTerrainGeometryUnusable = false;
 
-	// ========== GPU-Driven Culling State ==========
-	bool m_bCullingResourcesInitialized = false;
-
 	// Per-component streaming state. Heap-allocated by the constructors
 	// (forward-declared type so this header doesn't need the full struct).
-	// Owned by this component — the manager keeps a non-owning pointer to
-	// the same instance in its registry / primary slot. Destroyed in the
-	// destructor after UnregisterTerrainBuffers(this) takes it out of the
-	// registry so cross-thread access via the manager can't see a dead
-	// state.
+	// Owned by this component. As of Wave-18 it ALSO owns the relocated Flux
+	// GPU state: the unified vertex/index buffers, the per-frame culling
+	// buffers (chunk-data / indirect / frustum / visible-count / LOD-level),
+	// the unified-buffer scalars (sizes / stride / LOW-LOD counts) and the
+	// m_bCullingResourcesInitialized flag. The manager keeps a non-owning
+	// pointer to the same instance in its registry; the per-frame render path
+	// resolves it via the m_pxOwner back-pointer (O(1), no map lookup).
+	// Destroyed in the destructor after UnregisterTerrainBuffers(this) takes
+	// it out of the registry so cross-thread access via the manager can't see
+	// a dead state. The component's public buffer/stride accessors forward
+	// into *m_pxStreamingState.
 	Flux_TerrainStreamingState* m_pxStreamingState = nullptr;
-
-	// GPU buffers for culling
-	// Frame-indexed (one Flux_Buffer per frame in flight). The buffer is
-	// rebuilt + host-uploaded every frame in UpdateChunkLODAllocations, so
-	// frame N+1's CPU write to the underlying memory must not race against
-	// frame N's GPU compute read. A single shared buffer would race here:
-	// even though the per-frame fence at BeginFrame guarantees the slot's
-	// previous use is complete, slot K's frame N+2 CPU work runs concurrently
-	// with slot K+1's frame N+1 GPU work — and they hit the same shared
-	// chunk-data memory. Frame indexing closes that race entirely (one buffer
-	// per frame slot, CPU only ever writes the slot whose fence we just
-	// waited on). Memory residency is host-visible (see
-	// Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer), so the
-	// upload skips the staging buffer too — eliminating the staging-reuse
-	// race that the previous staged-upload path was exposed to.
-	Flux_DynamicReadWriteBuffer m_xChunkDataBuffer;
-	Flux_IndirectBuffer m_xIndirectDrawBuffer;      // Indirect draw commands (written by compute)
-	Flux_DynamicConstantBuffer m_xFrustumPlanesBuffer; // Camera frustum + position (read-only in compute)
-	Flux_IndirectBuffer m_xVisibleCountBuffer;      // Atomic counter for visible chunks
-	Flux_ReadWriteBuffer m_xLODLevelBuffer;         // LOD level for each chunk (visualization)
 
 	// Helper methods for culling
 	void BuildChunkData();

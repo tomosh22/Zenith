@@ -9,6 +9,9 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+// Injected dep: GetWidth/GetHeight on the stored swapchain pointer need the
+// full type (only transitively available before this seam).
+#include "Vulkan/Zenith_Vulkan_Swapchain.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
@@ -259,8 +262,13 @@ void Flux_DecalsImpl::BuildPipelines()
 
 // ===== INIT / SHUTDOWN =====
 
-void Flux_DecalsImpl::Initialise()
+void Flux_DecalsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swapchain& xSwapchain)
 {
+	// Wave-17 DI seam: store the injected cross-subsystem deps. The
+	// SetupRenderGraph reach-ins route through these instead of g_xEngine.
+	m_pxGraphics  = &xGraphics;
+	m_pxSwapchain = &xSwapchain;
+
 	BuildPipelines();
 
 	// One frame-indexed structured buffer for all decals.
@@ -316,6 +324,10 @@ void Flux_DecalsImpl::Shutdown()
 	g_xEngine.Decals().m_pxGraph           = nullptr;
 	g_xEngine.Decals().m_uActiveDecalCount = 0;
 	m_bInitialised      = false;
+
+	// Drop the injected deps so the instance returns to a clean default state.
+	m_pxGraphics  = nullptr;
+	m_pxSwapchain = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals shut down");
 }
@@ -378,40 +390,49 @@ static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
 	// No logging here — runs on a worker thread at 60Hz; per-frame log
 	// from each of the parallel-recorder threads serialises them on the
 	// logger mutex and starves the engine.
-	if (g_xEngine.Decals().m_uActiveDecalCount == 0)
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// cannot capture, so it re-enters via g_xEngine.Decals() to reach the
+	// singleton instance, then routes its FluxGraphics reach-ins through the
+	// injected member (mirrors ExecuteSSAOGenerate).
+	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
+	if (xDecals.m_uActiveDecalCount == 0)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Decals().m_xNormalsCopyPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xDecals.m_xNormalsCopyPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xDecals.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xDecals.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(g_xEngine.Decals().m_xNormalsCopyShader, "g_xNormalsTex",
-		g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(xDecals.m_xNormalsCopyShader, "g_xNormalsTex",
+		xDecals.m_pxGraphics->GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 {
-	if (g_xEngine.Decals().m_uActiveDecalCount == 0)
+	// Non-capturing graph callback — re-enters via g_xEngine.Decals() to reach
+	// the singleton instance, then routes FluxGraphics reach-ins through the
+	// injected member (mirrors ExecuteSSAOGenerate).
+	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
+	if (xDecals.m_uActiveDecalCount == 0)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Decals().m_xApplyPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xDecals.m_xApplyPipeline);
 	// Index-only draw — VS emits cube corners from SV_VertexID. The IB
 	// values are unused but the command is required (Flux has no
 	// non-indexed instanced draw).
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Decals().m_xDecalIndexBuffer);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xDecals.m_xDecalIndexBuffer);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(g_xEngine.Decals().m_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xDecals.m_xApplyShader, "FrameConstants", &xDecals.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xDepthTex",       g_xEngine.FluxGraphics().GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xNormalsCopyTex", &g_xEngine.Decals().m_pxGraph->GetTransientAttachment(g_xEngine.Decals().m_xNormalsCopyHandle).SRV());
-	xBinder.BindSRV_Buffer(g_xEngine.Decals().m_xApplyShader, "DecalBuffer", g_xEngine.Decals().m_xDecalBuffer.GetSRV());
+	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xDepthTex",       xDecals.m_pxGraphics->GetDepthStencilSRV());
+	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xNormalsCopyTex", &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
+	xBinder.BindSRV_Buffer(xDecals.m_xApplyShader, "DecalBuffer", xDecals.m_xDecalBuffer.GetSRV());
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(36, g_xEngine.Decals().m_uActiveDecalCount);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(36, xDecals.m_uActiveDecalCount);
 }
 
 // ===== PREPARE CALLBACK =====
@@ -453,8 +474,8 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.Decals().m_pxGraph = &xGraph;
 
 	Flux_TransientTextureDesc xDesc;
-	xDesc.m_uWidth       = g_xEngine.VulkanSwapchain().GetWidth();
-	xDesc.m_uHeight      = g_xEngine.VulkanSwapchain().GetHeight();
+	xDesc.m_uWidth       = m_pxSwapchain->GetWidth();
+	xDesc.m_uHeight      = m_pxSwapchain->GetHeight();
 	xDesc.m_eFormat      = k_eNormalsCopyFormat;
 	xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 	g_xEngine.Decals().m_xNormalsCopyHandle = xGraph.CreateTransient(xDesc);
@@ -465,18 +486,18 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.Decals().m_xNormalsCopyPass = xGraph.AddPass("Decal Normals Copy", ExecuteNormalsCopy)
 		.Prepare(PrepareDecals)
 		.ClearTargets()
-		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.Decals().m_xNormalsCopyHandle,                                       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Apply — instanced cube into all 3 G-buffer MRTs. Reads depth + the
 	// cloned normals; writes diffuse / normalsAmbient / material under
 	// per-attachment blend.
 	g_xEngine.Decals().m_xApplyPass = xGraph.AddPass("Decal Apply", ExecuteApply)
-		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
+		.Reads         (m_pxGraphics->GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.Decals().m_xNormalsCopyHandle,                                      RESOURCE_ACCESS_READ_SRV)
-		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
+		.Writes        (m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Both passes are always-enabled. The render graph skips Prepare
 	// callbacks for disabled passes (Flux_RenderGraph_Execution.cpp:144),

@@ -19,10 +19,15 @@
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
+// Full Flux_MeshGeometry type: BuildTerrainCollider dereferences the reference
+// returned by Zenith_TerrainComponent::GetPhysicsMeshGeometry()
+// (xMesh.m_uNumVerts / m_pxPositions / ...). This type used to arrive
+// transitively through Zenith_TerrainComponent.h, which dropped its
+// Flux_MeshGeometry include in the Wave-18 ownership-relocation; include it
+// directly here now (the dependency was always real, just transitive).
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
-
-ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
 
 void Zenith_ColliderComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {

@@ -2,6 +2,7 @@
 
 #include "TaskSystem/Zenith_TaskSystem.h"
 
+#include "Core/Zenith_ErrorCode.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include <thread>
 
@@ -160,8 +161,13 @@ u_int Zenith_TaskSystem::EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount)
 		}
 	}
 
-	Zenith_Assert(uEnqueuedCount == uCount,
-		"EnqueueAndSignal: Only enqueued %u/%u tasks - queue full!", uEnqueuedCount, uCount);
+	// Queue overflow is recoverable: SubmitTask resets m_bSubmitted on a short
+	// enqueue so the task can be retried, and SubmitTaskArray simply runs fewer
+	// worker invocations. A hard assert/break here would crash a shipping build
+	// on transient back-pressure, so log it (Zenith_ErrorCode::QUEUE_FULL) and
+	// fall through — signalling only the tasks we actually enqueued.
+	Zenith_Check(uEnqueuedCount == uCount,
+		"EnqueueAndSignal: Only enqueued %u/%u tasks - queue full (Zenith_ErrorCode::QUEUE_FULL)!", uEnqueuedCount, uCount);
 
 	for (u_int u = 0; u < uEnqueuedCount; u++)
 	{
@@ -219,10 +225,19 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* pxTaskArray)
 		? (uNumInvocations > 0 ? uNumInvocations - 1 : 0)
 		: uNumInvocations;
 
-	EnqueueAndSignal(pxTaskArray, uTasksForWorkers);
+	const u_int uEnqueuedForWorkers = EnqueueAndSignal(pxTaskArray, uTasksForWorkers);
 
-	// Calling thread executes one invocation if it's participating
-	if (bCallingThreadParticipates && uNumInvocations > 0)
+	// The completion semaphore fires only when EXACTLY m_uNumInvocations DoTask()
+	// calls finish (see Zenith_TaskArray::DoTask). EnqueueAndSignal can short-
+	// enqueue on queue overflow (QUEUE_FULL is recoverable, not a crash), so the
+	// calling thread must run EVERY invocation that did NOT reach a worker — its
+	// own participation slot AND any the full queue dropped — or the completion
+	// counter never reaches the target and WaitUntilComplete blocks forever on
+	// transient back-pressure. (A single SubmitTask recovers via the m_bSubmitted
+	// reset above; a TaskArray's fixed completion target cannot, so the caller
+	// absorbs the shortfall here.)
+	const u_int uCallerInvocations = uNumInvocations - uEnqueuedForWorkers;
+	for (u_int u = 0; u < uCallerInvocations; u++)
 	{
 		pxTaskArray->DoTask();
 	}

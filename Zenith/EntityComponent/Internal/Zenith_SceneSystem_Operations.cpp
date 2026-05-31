@@ -94,11 +94,12 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 		return xScene;
 	}
 
-	// File existence. NOTE: this is the ONLY pre-teardown check — the file's
-	// contents are not validated here. For SINGLE this means a file that exists
-	// but later fails to deserialise (corrupt body / unsupported version) is
-	// only caught after the teardown below, leaving the engine scene-less (see
-	// the deserialise-failure rollback further down).
+	// File existence. This is the first of two pre-teardown checks: existence
+	// here, then ValidateSceneStream's non-destructive header pre-pass right
+	// after the read below. Together they reject a missing / corrupt / unsupported
+	// file before the SINGLE teardown, so a bad file fails safely with the live
+	// world intact. The post-teardown deserialise rollback further down remains
+	// as a backstop for body-level corruption that passes the header.
 	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene: File not found: %s", strPath.c_str());
@@ -113,12 +114,24 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 	}
 	m_axCurrentlyLoadingPaths.PushBack(strCanonicalPath);
 
-	// Read file synchronously on the main thread. Scene files are assumed
-	// well-formed (they only come from the editor's known-good save path), so
-	// there's no header/body validation here — just the deserialise-failure
-	// rollback further down as a backstop.
+	// Read file synchronously on the main thread, then run ValidateSceneStream
+	// as a non-destructive header pre-pass (see below) so a corrupt/unsupported
+	// file is rejected before the SINGLE teardown. The deserialise-failure
+	// rollback further down stays as a backstop for body-level corruption.
 	Zenith_DataStream xLoadedData;
 	xLoadedData.ReadFromFile(strPath.c_str());
+
+	// Non-destructive header pre-pass: reject a corrupt/empty/old/future-version
+	// file HERE, before the SINGLE teardown below, so the live world (render
+	// systems, entities, physics) stays intact on failure. ValidateSceneStream
+	// restores the cursor, so the SetCursor(0) before LoadFromDataStream still
+	// works unchanged. Cleanup is EraseValue only — m_bIsLoadingScene has NOT
+	// been set yet (it is set just below), so we must not reset it here.
+	if (!Zenith_SceneData::ValidateSceneStream(xLoadedData))
+	{
+		m_axCurrentlyLoadingPaths.EraseValue(strCanonicalPath);
+		return MakeInvalidScene();
+	}
 
 	m_bIsLoadingScene = true;
 

@@ -31,6 +31,16 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// WS7 keystone main-thread gather (mirrors Flux_StaticMeshesImpl::GatherDrawPacket).
+	// Hung via .Prepare on the first instanced pass; CallPrepareCallbacks runs it on
+	// the main thread BEFORE any record task dispatches. Walks m_apxInstanceGroups
+	// once: per group it does the CPU dirty-bookkeeping + GPU-buffer sync that the
+	// record callbacks used to do concurrently (UpdateGPUBuffers + ResetVisibleCount),
+	// uploads the per-group culling constants, and pre-computes the m_uTotalInstances
+	// / m_uVisibleInstances stats. After this returns, every group's state is frozen
+	// and ExecuteCulling / ExecuteInstancedGBuffer are pure readers.
+	void GatherInstancedPacket(void*);
+
 	uint32_t GetTotalInstanceCount() const   { return m_uTotalInstances; }
 	uint32_t GetVisibleInstanceCount() const { return m_uVisibleInstances; }
 	uint32_t GetGroupCount() const           { return static_cast<uint32_t>(m_apxInstanceGroups.size()); }

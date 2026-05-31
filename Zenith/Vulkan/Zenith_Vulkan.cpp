@@ -10,6 +10,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include <algorithm>
+#include <set>
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"

@@ -8,8 +8,6 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 
-ZENITH_REGISTER_COMPONENT(Zenith_CameraComponent, "Camera")
-
 Zenith_CameraComponent::Zenith_CameraComponent(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
 {

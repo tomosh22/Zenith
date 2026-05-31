@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_android.cpp">
@@ -586,6 +586,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_BenchECS.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_CommandLine.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -611,6 +614,9 @@
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
+      <Filter>DataStream</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\DataStream\Zenith_StreamEnvelope.cpp">
       <Filter>DataStream</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
@@ -712,6 +718,21 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Callbacks.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_EntityOwnership.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Lifecycle.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Operations.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Registry.cpp">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
@@ -761,6 +782,9 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp">
@@ -818,6 +842,9 @@
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.cpp">
@@ -1051,21 +1078,7 @@
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
-      <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Callbacks.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_EntityOwnership.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Lifecycle.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Operations.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Registry.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile></ItemGroup>
+  </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Middleware\imgui-docking\backends\imgui_impl_android.h">
       <Filter>Middleware\imgui-docking\backends</Filter>
@@ -3320,6 +3333,9 @@
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -3329,10 +3345,16 @@
     <ClInclude Include="..\Zenith\Core\Zenith_Engine.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Result.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_String.h">
@@ -3348,6 +3370,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h">
+      <Filter>DataStream</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h">
       <Filter>DataStream</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h">
@@ -3446,6 +3471,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_AccessSet.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -3536,6 +3564,9 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_FeatureRegistry.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -3558,6 +3589,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h">
@@ -3609,6 +3643,9 @@
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.h">
@@ -3984,6 +4021,9 @@
       <Filter>Flux\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
+      <Filter>Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainGPUStructs.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainImpl.h">

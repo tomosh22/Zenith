@@ -1,12 +1,12 @@
 #pragma once
 #include "EntityComponent/Zenith_Entity.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 // Forward declarations for new asset/instance system
 class Zenith_ModelAsset;
 class Zenith_MeshGeometryAsset;
+class Flux_MeshGeometry;
 class Flux_ModelInstance;
 class Flux_MeshInstance;
 class Flux_SkeletonInstance;

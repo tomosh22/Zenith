@@ -1,0 +1,82 @@
+# layering_allowlist.txt -- Wave-8 enforced-layering ratchet allowlist.
+#
+# These are the KNOWN cross-layer #include edges between Zenith/Flux and
+# Zenith/EntityComponent at the time this ratchet was introduced. They are
+# pre-existing leaks, NOT an endorsement of the coupling.
+#
+# RULES:
+#   * Do NOT add new edges to this file to silence the gate. A new
+#     Flux<->EntityComponent include should instead be removed/redesigned.
+#   * Later decoupling waves SHRINK this list: when a leak is removed the
+#     gate still passes and the now-stale line here should be deleted.
+#   * Format (one edge per line): <repo-relative-source> => <included-path>
+#
+# Regenerate (only when deliberately accepting the current set):
+#   powershell -NoProfile -File Tools/layering_gate.ps1 -Update
+#
+Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/Flux_ModelInstance.h
+Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_AnimationController.h
+Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_AnimationControllerStore.h
+Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_SkeletonInstance.h
+Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/Flux_ModelInstance.h
+Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/MeshGeometry/Flux_MeshGeometry.h
+Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/MeshGeometry/Flux_MeshInstance.h
+Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/Primitives/Flux_PrimitivesImpl.h
+Zenith/EntityComponent/Components/Zenith_InstancedMeshComponent.cpp => Flux/InstancedMeshes/Flux_AnimationTexture.h
+Zenith/EntityComponent/Components/Zenith_InstancedMeshComponent.cpp => Flux/InstancedMeshes/Flux_InstanceGroup.h
+Zenith/EntityComponent/Components/Zenith_InstancedMeshComponent.cpp => Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Flux/Flux_GraphicsImpl.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Flux/Flux_ImGuiIntegration.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Flux/Flux_ModelInstance.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/Flux_ModelInstance.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshAnimation/Flux_MeshAnimation.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshAnimation/Flux_SkeletonInstance.h
+Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshGeometry/Flux_MeshInstance.h
+Zenith/EntityComponent/Components/Zenith_ParticleEmitterComponent.cpp => Flux/Particles/Flux_ParticleEmitterConfig.h
+Zenith/EntityComponent/Components/Zenith_ParticleEmitterComponent.cpp => Flux/Particles/Flux_ParticleGPUImpl.h
+Zenith/EntityComponent/Components/Zenith_ParticleEmitterComponent.h => Flux/Particles/Flux_ParticleData.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Flux/MeshGeometry/Flux_MeshGeometry.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Flux/Terrain/Flux_TerrainImpl.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Flux/Terrain/Flux_TerrainStreamingManagerImpl.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/Flux_GraphicsImpl.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/Flux_RendererImpl.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/RenderGraph/Flux_RenderGraph.h
+Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/Terrain/Flux_TerrainStreamingManagerImpl.h
+Zenith/EntityComponent/Internal/Zenith_SceneSystem_Operations.cpp => Flux/Fog/Flux_FogImpl.h
+Zenith/EntityComponent/Internal/Zenith_SceneSystem_Operations.cpp => Flux/Gizmos/Flux_GizmosImpl.h
+Zenith/EntityComponent/Internal/Zenith_SceneSystem_Operations.cpp => Flux/Particles/Flux_ParticlesImpl.h
+Zenith/EntityComponent/Internal/Zenith_SceneSystem_Operations.cpp => Flux/Skybox/Flux_SkyboxImpl.h
+Zenith/EntityComponent/Internal/Zenith_SceneSystem_Operations.cpp => Flux/Terrain/Flux_TerrainImpl.h
+Zenith/EntityComponent/Internal/Zenith_SceneSystem_Operations.cpp => Flux/Text/Flux_TextImpl.h
+Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => EntityComponent/Components/Zenith_ModelComponent.h
+Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => EntityComponent/Components/Zenith_TransformComponent.h
+Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => EntityComponent/Zenith_SceneSystem.h
+Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => EntityComponent/Components/Zenith_LightComponent.h
+Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => EntityComponent/Components/Zenith_TransformComponent.h
+Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => EntityComponent/Zenith_Query.h
+Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => EntityComponent/Zenith_SceneSystem.h
+Zenith/Flux/Flux_Graphics.cpp => EntityComponent/Components/Zenith_CameraComponent.h
+Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Components/Zenith_TransformComponent.h
+Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Zenith_Entity.h
+Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Zenith_SceneData.h
+Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Zenith_SceneSystem.h
+Zenith/Flux/InstancedMeshes/Flux_InstancedMeshes.cpp => EntityComponent/Components/Zenith_CameraComponent.h
+Zenith/Flux/InstancedMeshes/Flux_InstancedMeshes.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/MeshAnimation/Flux_AnimationControllerStore.cpp => EntityComponent/Zenith_Entity.h
+Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Components/Zenith_ParticleEmitterComponent.h
+Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Zenith_Query.h
+Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Zenith_SceneSystem.h
+Zenith/Flux/Quads/Flux_Quads.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/StaticMeshes/Flux_StaticMeshes.cpp => EntityComponent/Components/Zenith_ModelComponent.h
+Zenith/Flux/StaticMeshes/Flux_StaticMeshes.cpp => EntityComponent/Components/Zenith_TransformComponent.h
+Zenith/Flux/StaticMeshes/Flux_StaticMeshes.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/StaticMeshes/Flux_StaticMeshes.cpp => EntityComponent/Zenith_SceneSystem.h
+Zenith/Flux/Terrain/Flux_Terrain.cpp => EntityComponent/Components/Zenith_CameraComponent.h
+Zenith/Flux/Terrain/Flux_Terrain.cpp => EntityComponent/Components/Zenith_TerrainComponent.h
+Zenith/Flux/Terrain/Flux_Terrain.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/Terrain/Flux_Terrain.cpp => EntityComponent/Zenith_SceneSystem.h
+Zenith/Flux/Terrain/Flux_TerrainStreamingManager.cpp => EntityComponent/Components/Zenith_TerrainComponent.h

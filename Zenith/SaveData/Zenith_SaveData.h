@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DataStream/Zenith_DataStream.h"
+#include "Core/Zenith_Result.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Collections/Zenith_Vector.h"
@@ -58,6 +59,17 @@ namespace Zenith_SaveData
 	// pxUserData: passed through to the callback
 	// Returns true on success (file exists, valid magic, checksum matches)
 	bool Load(const char* szSlotName, SaveReadCallback pfnReadPayload, void* pxUserData);
+
+	// Wave9.1 (b): graceful-load variant carrying the specific failure reason.
+	// Same parameters as Load(); contains the real load body. Returns:
+	//   SUCCESS          - load succeeded (or a staged test readback was served)
+	//   FILE_NOT_FOUND   - missing file / unreadable stream
+	//   BAD_MAGIC        - wrong magic number in the header
+	//   VERSION_MISMATCH - file format version newer than supported
+	//   CORRUPT_DATA     - too small for a header / payload-size mismatch / CRC mismatch
+	// bool Load(...) is a thin wrapper: `return LoadEx(...).IsOk();`, so every
+	// existing if(!Load(...)) caller keeps working unchanged.
+	Zenith_Status LoadEx(const char* szSlotName, SaveReadCallback pfnReadPayload, void* pxUserData);
 
 	// Check if a save slot exists on disk
 	bool SlotExists(const char* szSlotName);

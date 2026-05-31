@@ -3,19 +3,62 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "Core/Zenith_Engine.h"   // g_xEngine.AnimationControllers() — EC->Core, not a layering edge.
+// Flux animation types are resolved HERE (the forwarding-handle .cpp), not in
+// the component header. These .cpp -> Flux edges are allow-listed; the header
+// itself is now Flux-include-free (Wave-19 decouple).
+#include "Flux/MeshAnimation/Flux_AnimationController.h"   // pulls Flux_AnimationStateMachine.h / Flux_AnimatorStateInfo / Flux_AnimationLayer / Flux_AnimationClip transitively
+#include "Flux/MeshAnimation/Flux_AnimationControllerStore.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Flux_ModelInstance.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_AnimatorComponent, "Animator")
+//=============================================================================
+// Store-backed controller access
+//
+// Controller() resolves the store-owned Flux_AnimationController for this
+// component's entity. Wave-19: the controller lives in
+// Flux_AnimationControllerStore (g_xEngine.AnimationControllers()), keyed by
+// the stable EntityID slot. The cached m_pxController is preferred on the hot
+// path (OnUpdate) to avoid a per-frame store lookup; the cold forwarders use
+// Controller() so they resolve correctly even if invoked before OnStart cached
+// the pointer (the ctor primes it via GetOrCreate, so this is normally a cheap
+// assert-and-return).
+//=============================================================================
+Flux_AnimationController& Zenith_AnimatorComponent::Controller() const
+{
+	return g_xEngine.AnimationControllers().Get(m_xParentEntity.GetEntityID());
+}
+
+// EC-side mirror -> Flux POD conversion. Defined here where Flux_AnimatorStateInfo
+// is complete (the header only forward-declares it). Field-for-field copy.
+Zenith_AnimatorStateInfo::operator Flux_AnimatorStateInfo() const
+{
+	Flux_AnimatorStateInfo xOut;
+	xOut.m_strStateName = m_strStateName;
+	xOut.m_fNormalizedTime = m_fNormalizedTime;
+	xOut.m_fLength = m_fLength;
+	xOut.m_fSpeed = m_fSpeed;
+	xOut.m_bHasLooped = m_bHasLooped;
+	xOut.m_bIsTransitioning = m_bIsTransitioning;
+	xOut.m_fTransitionProgress = m_fTransitionProgress;
+	return xOut;
+}
 
 void Zenith_AnimatorComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
-	// Whole-controller override. Flux_AnimationController has WriteToDataStream
-	// and ReadFromDataStream, so DataStream's `>>` SFINAE dispatch hands the
-	// payload to its deserialiser. Variant overrides typically use this to
-	// swap the entire animation graph on a per-instance basis (e.g. enemy
-	// variants that share a base mesh but differ only in their animator).
-	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_AnimatorComponent, m_xController, "Controller", axProperties);
+	// Whole-controller override. Wave-19: the controller is no longer a member
+	// field, so the offset-based PROPERTY macro can't be used. PROPERTY_CUSTOM
+	// redirects the deserialise into the store-backed controller via Controller().
+	// Flux_AnimationController has WriteToDataStream/ReadFromDataStream, so the
+	// DataStream `>>` SFINAE dispatch hands the payload to its deserialiser —
+	// byte-format-identical to the previous `xValue >> m_xController`. Variant
+	// overrides typically use this to swap the entire animation graph on a
+	// per-instance basis (e.g. enemy variants that share a base mesh but differ
+	// only in their animator).
+	ZENITH_REGISTER_COMPONENT_PROPERTY_CUSTOM(Zenith_AnimatorComponent, "Controller", axProperties,
+	{
+		xValue >> pxComp->Controller();
+	});
 }
 
 //=============================================================================
@@ -25,34 +68,69 @@ void Zenith_AnimatorComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyD
 Zenith_AnimatorComponent::Zenith_AnimatorComponent(Zenith_Entity& xEntity)
 	: m_xParentEntity(xEntity)
 {
+	// Eagerly create the store-owned controller and cache the (heap-stable)
+	// pointer. This keeps GetController() / clip-loading valid even when game
+	// setup code touches the controller before OnStart fires (e.g. Combat's
+	// LoadAnimationClips runs during component wiring).
+	m_pxController = &g_xEngine.AnimationControllers().GetOrCreate(m_xParentEntity.GetEntityID());
 }
 
 Zenith_AnimatorComponent::~Zenith_AnimatorComponent()
 {
+	// Idempotent + moved-out guarded: a moved-from component owns nothing (the
+	// moved-to instance shares the same EntityID-keyed controller), so it must
+	// not Destroy. For a live component this frees the store entry; if OnDestroy
+	// already ran Destroy, this call is a no-op (Destroy is idempotent). Net
+	// effect: EXACTLY ONE Destroy per entity.
+	if (!m_bMovedOut)
+	{
+		g_xEngine.AnimationControllers().Destroy(m_xParentEntity.GetEntityID());
+	}
 }
 
 //=============================================================================
 // Move Semantics
+//
+// Copy the POD identity (entity handle, cached model component, retry count,
+// the HEAP-STABLE controller pointer) and mark the source moved-out. The
+// controller itself stays in the store keyed by the stable EntityID slot
+// (unchanged across the pool relocation), so the moved-to component resolves
+// the SAME controller. The source is neutralised so its dtor/OnDestroy won't
+// Destroy the shared entry.
 //=============================================================================
 
 Zenith_AnimatorComponent::Zenith_AnimatorComponent(Zenith_AnimatorComponent&& xOther) noexcept
 	: m_xParentEntity(xOther.m_xParentEntity)
-	, m_xController(std::move(xOther.m_xController))
+	, m_pxController(xOther.m_pxController)
 	, m_pxCachedModelComponent(xOther.m_pxCachedModelComponent)
 	, m_uDiscoveryRetryCount(xOther.m_uDiscoveryRetryCount)
 {
 	xOther.m_pxCachedModelComponent = nullptr;
+	xOther.m_pxController = nullptr;
+	xOther.m_bMovedOut = true;
 }
 
 Zenith_AnimatorComponent& Zenith_AnimatorComponent::operator=(Zenith_AnimatorComponent&& xOther) noexcept
 {
 	if (this != &xOther)
 	{
+		// If this destination already owns a (distinct) controller, release it
+		// first so the assignment doesn't leak the store entry. Guard the
+		// self-keyed / moved-out cases. Destroy is idempotent.
+		if (!m_bMovedOut && m_xParentEntity.GetEntityID() != xOther.m_xParentEntity.GetEntityID())
+		{
+			g_xEngine.AnimationControllers().Destroy(m_xParentEntity.GetEntityID());
+		}
+
 		m_xParentEntity = xOther.m_xParentEntity;
-		m_xController = std::move(xOther.m_xController);
+		m_pxController = xOther.m_pxController;
 		m_pxCachedModelComponent = xOther.m_pxCachedModelComponent;
 		m_uDiscoveryRetryCount = xOther.m_uDiscoveryRetryCount;
+		m_bMovedOut = false;
+
 		xOther.m_pxCachedModelComponent = nullptr;
+		xOther.m_pxController = nullptr;
+		xOther.m_bMovedOut = true;
 	}
 	return *this;
 }
@@ -66,13 +144,19 @@ void Zenith_AnimatorComponent::OnStart()
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimatorComponent] OnStart fired for entity %u",
 		m_xParentEntity.GetEntityID().m_uIndex);
 
+	// Cache the (heap-stable) store-owned controller pointer for the hot path.
+	// GetOrCreate is idempotent — the ctor already created it; this re-resolves
+	// the pointer (it never changes for a given entity, but OnStart is the
+	// canonical Wave-19 cache point).
+	m_pxController = &g_xEngine.AnimationControllers().GetOrCreate(m_xParentEntity.GetEntityID());
+
 	// Clear any editor animation preview state so the state machine drives animation
-	m_xController.Stop();
+	m_pxController->Stop();
 
 	// Reset state machine to default state in case editor preview advanced it
-	if (m_xController.HasStateMachine())
+	if (m_pxController->HasStateMachine())
 	{
-		Flux_AnimationStateMachine& xSM = m_xController.GetStateMachine();
+		Flux_AnimationStateMachine& xSM = m_pxController->GetStateMachine();
 		if (!xSM.GetDefaultStateName().empty())
 		{
 			xSM.SetState(xSM.GetDefaultStateName());
@@ -84,12 +168,16 @@ void Zenith_AnimatorComponent::OnStart()
 
 void Zenith_AnimatorComponent::OnUpdate(float fDt)
 {
+	// Hot path: dereference the CACHED controller pointer directly (O(1), no
+	// store lookup, no hash). Primed by the ctor and re-primed by OnStart.
+	Flux_AnimationController& xController = *m_pxController;
+
 	// Lazy skeleton discovery: retry each frame until found
 	// Handles cases where ModelComponent loads its model after OnStart has already fired
-	if (!m_xController.IsInitialized())
+	if (!xController.IsInitialized())
 	{
 		TryDiscoverSkeleton();
-		if (!m_xController.IsInitialized())
+		if (!xController.IsInitialized())
 		{
 			// Log once every ~60 frames to avoid spamming
 			m_uDiscoveryRetryCount++;
@@ -106,7 +194,7 @@ void Zenith_AnimatorComponent::OnUpdate(float fDt)
 	UpdateWorldMatrix();
 
 	// Evaluate animation (state machine, IK, GPU upload)
-	m_xController.Update(fDt);
+	xController.Update(fDt);
 
 	// Also update model instance animation if present
 	SyncModelInstanceAnimation();
@@ -114,7 +202,13 @@ void Zenith_AnimatorComponent::OnUpdate(float fDt)
 
 void Zenith_AnimatorComponent::OnDestroy()
 {
-	// Flux_AnimationController destructor handles cleanup
+	// Destroy the store-owned controller for this entity. Idempotent + moved-out
+	// guarded (see dtor). Doing it here AND in the dtor is intentional and safe:
+	// whichever fires first does the work, the second is a no-op.
+	if (!m_bMovedOut)
+	{
+		g_xEngine.AnimationControllers().Destroy(m_xParentEntity.GetEntityID());
+	}
 }
 
 //=============================================================================
@@ -123,37 +217,51 @@ void Zenith_AnimatorComponent::OnDestroy()
 
 void Zenith_AnimatorComponent::SetFloat(const std::string& strName, float fValue)
 {
-	m_xController.SetFloat(strName, fValue);
+	Controller().SetFloat(strName, fValue);
 }
 
 void Zenith_AnimatorComponent::SetInt(const std::string& strName, int32_t iValue)
 {
-	m_xController.SetInt(strName, iValue);
+	Controller().SetInt(strName, iValue);
 }
 
 void Zenith_AnimatorComponent::SetBool(const std::string& strName, bool bValue)
 {
-	m_xController.SetBool(strName, bValue);
+	Controller().SetBool(strName, bValue);
 }
 
 void Zenith_AnimatorComponent::SetTrigger(const std::string& strName)
 {
-	m_xController.SetTrigger(strName);
+	Controller().SetTrigger(strName);
 }
 
 float Zenith_AnimatorComponent::GetFloat(const std::string& strName) const
 {
-	return m_xController.GetFloat(strName);
+	return Controller().GetFloat(strName);
 }
 
 int32_t Zenith_AnimatorComponent::GetInt(const std::string& strName) const
 {
-	return m_xController.GetInt(strName);
+	return Controller().GetInt(strName);
 }
 
 bool Zenith_AnimatorComponent::GetBool(const std::string& strName) const
 {
-	return m_xController.GetBool(strName);
+	return Controller().GetBool(strName);
+}
+
+//=============================================================================
+// Controller Access
+//=============================================================================
+
+Flux_AnimationController& Zenith_AnimatorComponent::GetController()
+{
+	return Controller();
+}
+
+const Flux_AnimationController& Zenith_AnimatorComponent::GetController() const
+{
+	return Controller();
 }
 
 //=============================================================================
@@ -163,38 +271,38 @@ bool Zenith_AnimatorComponent::GetBool(const std::string& strName) const
 #ifdef ZENITH_TOOLS
 void Zenith_AnimatorComponent::PlayAnimation(const std::string& strClipName, float fBlendTime)
 {
-	m_xController.PlayClip(strClipName, fBlendTime);
+	Controller().PlayClip(strClipName, fBlendTime);
 }
 #endif
 
 void Zenith_AnimatorComponent::CrossFade(const std::string& strStateName, float fDuration)
 {
-	m_xController.CrossFade(strStateName, fDuration);
+	Controller().CrossFade(strStateName, fDuration);
 }
 
 void Zenith_AnimatorComponent::Stop()
 {
-	m_xController.Stop();
+	Controller().Stop();
 }
 
 void Zenith_AnimatorComponent::SetPaused(bool bPaused)
 {
-	m_xController.SetPaused(bPaused);
+	Controller().SetPaused(bPaused);
 }
 
 bool Zenith_AnimatorComponent::IsPaused() const
 {
-	return m_xController.IsPaused();
+	return Controller().IsPaused();
 }
 
 void Zenith_AnimatorComponent::SetPlaybackSpeed(float fSpeed)
 {
-	m_xController.SetPlaybackSpeed(fSpeed);
+	Controller().SetPlaybackSpeed(fSpeed);
 }
 
 float Zenith_AnimatorComponent::GetPlaybackSpeed() const
 {
-	return m_xController.GetPlaybackSpeed();
+	return Controller().GetPlaybackSpeed();
 }
 
 //=============================================================================
@@ -203,12 +311,12 @@ float Zenith_AnimatorComponent::GetPlaybackSpeed() const
 
 Flux_AnimationClip* Zenith_AnimatorComponent::AddClipFromFile(const std::string& strPath)
 {
-	return m_xController.AddClipFromFile(strPath);
+	return Controller().AddClipFromFile(strPath);
 }
 
 Flux_AnimationClip* Zenith_AnimatorComponent::GetClip(const std::string& strName)
 {
-	return m_xController.GetClip(strName);
+	return Controller().GetClip(strName);
 }
 
 //=============================================================================
@@ -217,26 +325,36 @@ Flux_AnimationClip* Zenith_AnimatorComponent::GetClip(const std::string& strName
 
 Flux_AnimationStateMachine& Zenith_AnimatorComponent::GetStateMachine()
 {
-	return m_xController.GetStateMachine();
+	return Controller().GetStateMachine();
 }
 
 Flux_AnimationStateMachine* Zenith_AnimatorComponent::CreateStateMachine(const std::string& strName)
 {
-	return m_xController.CreateStateMachine(strName);
+	return Controller().CreateStateMachine(strName);
 }
 
 bool Zenith_AnimatorComponent::HasStateMachine() const
 {
-	return m_xController.HasStateMachine();
+	return Controller().HasStateMachine();
 }
 
 //=============================================================================
 // State Info Query
 //=============================================================================
 
-Flux_AnimatorStateInfo Zenith_AnimatorComponent::GetCurrentAnimatorStateInfo() const
+Zenith_AnimatorStateInfo Zenith_AnimatorComponent::GetCurrentAnimatorStateInfo() const
 {
-	return m_xController.GetCurrentAnimatorStateInfo();
+	// Fill the EC-side mirror from the Flux result. Byte-identical field copy.
+	Flux_AnimatorStateInfo xFlux = Controller().GetCurrentAnimatorStateInfo();
+	Zenith_AnimatorStateInfo xInfo;
+	xInfo.m_strStateName = xFlux.m_strStateName;
+	xInfo.m_fNormalizedTime = xFlux.m_fNormalizedTime;
+	xInfo.m_fLength = xFlux.m_fLength;
+	xInfo.m_fSpeed = xFlux.m_fSpeed;
+	xInfo.m_bHasLooped = xFlux.m_bHasLooped;
+	xInfo.m_bIsTransitioning = xFlux.m_bIsTransitioning;
+	xInfo.m_fTransitionProgress = xFlux.m_fTransitionProgress;
+	return xInfo;
 }
 
 //=============================================================================
@@ -245,17 +363,17 @@ Flux_AnimatorStateInfo Zenith_AnimatorComponent::GetCurrentAnimatorStateInfo() c
 
 void Zenith_AnimatorComponent::SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPos, float fWeight)
 {
-	m_xController.SetIKTarget(strChainName, xPos, fWeight);
+	Controller().SetIKTarget(strChainName, xPos, fWeight);
 }
 
 void Zenith_AnimatorComponent::SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePos, float fWeight)
 {
-	m_xController.SetIKTargetModelSpace(strChainName, xModelSpacePos, fWeight);
+	Controller().SetIKTargetModelSpace(strChainName, xModelSpacePos, fWeight);
 }
 
 void Zenith_AnimatorComponent::ClearIKTarget(const std::string& strChainName)
 {
-	m_xController.ClearIKTarget(strChainName);
+	Controller().ClearIKTarget(strChainName);
 }
 
 //=============================================================================
@@ -264,17 +382,17 @@ void Zenith_AnimatorComponent::ClearIKTarget(const std::string& strChainName)
 
 void Zenith_AnimatorComponent::SetUpdateMode(Flux_AnimationUpdateMode eMode)
 {
-	m_xController.SetUpdateMode(eMode);
+	Controller().SetUpdateMode(eMode);
 }
 
 Flux_AnimationUpdateMode Zenith_AnimatorComponent::GetUpdateMode() const
 {
-	return m_xController.GetUpdateMode();
+	return Controller().GetUpdateMode();
 }
 
 bool Zenith_AnimatorComponent::IsInitialized() const
 {
-	return m_xController.IsInitialized();
+	return Controller().IsInitialized();
 }
 
 //=============================================================================
@@ -283,7 +401,8 @@ bool Zenith_AnimatorComponent::IsInitialized() const
 
 void Zenith_AnimatorComponent::TryDiscoverSkeleton()
 {
-	if (m_xController.IsInitialized())
+	Flux_AnimationController& xController = Controller();
+	if (xController.IsInitialized())
 		return;
 
 	Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
@@ -316,7 +435,7 @@ void Zenith_AnimatorComponent::TryDiscoverSkeleton()
 		return;
 	}
 
-	m_xController.Initialize(pxSkeleton);
+	xController.Initialize(pxSkeleton);
 	m_pxCachedModelComponent = pxModel;
 	m_uDiscoveryRetryCount = 0;
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimatorComponent] Auto-discovered skeleton (%u bones) on entity %u",
@@ -328,7 +447,7 @@ void Zenith_AnimatorComponent::UpdateWorldMatrix()
 	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Matrix4 xWorldMatrix;
 	xTransform.BuildModelMatrix(xWorldMatrix);
-	m_xController.SetWorldMatrix(xWorldMatrix);
+	Controller().SetWorldMatrix(xWorldMatrix);
 }
 
 void Zenith_AnimatorComponent::SyncModelInstanceAnimation()
@@ -349,12 +468,12 @@ void Zenith_AnimatorComponent::SyncModelInstanceAnimation()
 
 void Zenith_AnimatorComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	m_xController.WriteToDataStream(xStream);
+	Controller().WriteToDataStream(xStream);
 }
 
 void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	m_xController.ReadFromDataStream(xStream);
+	Controller().ReadFromDataStream(xStream);
 }
 
 //=============================================================================
@@ -368,7 +487,9 @@ void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Editor/Zenith_Editor.h"
-#include "Flux/MeshAnimation/Flux_AnimationClip.h"
+// Flux_AnimationClip is already complete here via Flux_AnimationController.h
+// (included above) -> Flux_AnimationClip.h, so no direct Flux clip include is
+// needed for the editor clip list below.
 
 //-----------------------------------------------------------------------------
 // RenderPropertiesPanel - Main editor UI. Delegates to per-section helpers so
@@ -379,18 +500,20 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 	if (!ImGui::CollapsingHeader("Animator", ImGuiTreeNodeFlags_DefaultOpen))
 		return;
 
+	Flux_AnimationController& xController = Controller();
+
 	// Editor fallback: attempt skeleton discovery if OnStart/OnUpdate haven't fired yet
 	// (happens when editor is in Stopped mode - SceneManager::Update doesn't run)
-	if (!m_xController.IsInitialized())
+	if (!xController.IsInitialized())
 	{
 		TryDiscoverSkeleton();
 	}
 
 	// Tick animation from editor when game logic isn't running (Stopped/Paused mode)
-	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing && m_xController.IsInitialized())
+	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing && xController.IsInitialized())
 	{
 		UpdateWorldMatrix();
-		m_xController.Update(g_xEngine.Frame().GetDt());
+		xController.Update(g_xEngine.Frame().GetDt());
 		SyncModelInstanceAnimation();
 	}
 
@@ -412,10 +535,12 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderStatusAndStateInfoSection()
 {
+	Flux_AnimationController& xController = Controller();
+
 	// Status
-	if (m_xController.IsInitialized())
+	if (xController.IsInitialized())
 	{
-		ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Status: Initialized (%u bones)", m_xController.GetNumBones());
+		ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Status: Initialized (%u bones)", xController.GetNumBones());
 	}
 	else
 	{
@@ -423,9 +548,9 @@ void Zenith_AnimatorComponent::RenderStatusAndStateInfoSection()
 	}
 
 	// Current state info
-	if (m_xController.HasStateMachine())
+	if (xController.HasStateMachine())
 	{
-		Flux_AnimatorStateInfo xInfo = m_xController.GetCurrentAnimatorStateInfo();
+		Flux_AnimatorStateInfo xInfo = xController.GetCurrentAnimatorStateInfo();
 		ImGui::Text("Current State: %s", xInfo.m_strStateName.c_str());
 		float fProgress = xInfo.m_fNormalizedTime - static_cast<int>(xInfo.m_fNormalizedTime);
 		ImGui::ProgressBar(fProgress, ImVec2(-1, 0), nullptr);
@@ -446,6 +571,8 @@ void Zenith_AnimatorComponent::RenderAnimationClipsSection()
 	if (!ImGui::TreeNode("Animation Clips"))
 		return;
 
+	Flux_AnimationController& xController = Controller();
+
 	// Drag-drop target for .zanim files
 	ImVec2 xDropSize(ImGui::GetContentRegionAvail().x, 30);
 	ImGui::Button("Drop .zanim file here", xDropSize);
@@ -456,7 +583,7 @@ void Zenith_AnimatorComponent::RenderAnimationClipsSection()
 			const DragDropFilePayload* pFilePayload =
 				static_cast<const DragDropFilePayload*>(pPayload->Data);
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "Animation dropped: %s", pFilePayload->m_szFilePath);
-			m_xController.AddClipFromFile(pFilePayload->m_szFilePath);
+			xController.AddClipFromFile(pFilePayload->m_szFilePath);
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -469,13 +596,13 @@ void Zenith_AnimatorComponent::RenderAnimationClipsSection()
 	{
 		if (strlen(s_szAnimPath) > 0)
 		{
-			m_xController.AddClipFromFile(s_szAnimPath);
+			xController.AddClipFromFile(s_szAnimPath);
 			s_szAnimPath[0] = '\0';
 		}
 	}
 
 	// Loaded clips list
-	const auto& xClips = m_xController.GetClipCollection().GetClips();
+	const auto& xClips = xController.GetClipCollection().GetClips();
 	for (size_t i = 0; i < xClips.size(); ++i)
 	{
 		Flux_AnimationClip* pxClip = xClips[i];
@@ -489,7 +616,7 @@ void Zenith_AnimatorComponent::RenderAnimationClipsSection()
 		ImGui::SameLine();
 		if (ImGui::SmallButton("Play"))
 		{
-			m_xController.PlayClip(pxClip->GetName(), 0.15f);
+			xController.PlayClip(pxClip->GetName(), 0.15f);
 		}
 
 		ImGui::PopID();
@@ -507,36 +634,38 @@ void Zenith_AnimatorComponent::RenderPlaybackControlsSection()
 	if (!ImGui::TreeNode("Playback Controls"))
 		return;
 
-	bool bPaused = m_xController.IsPaused();
+	Flux_AnimationController& xController = Controller();
+
+	bool bPaused = xController.IsPaused();
 	if (ImGui::Checkbox("Paused", &bPaused))
 	{
-		m_xController.SetPaused(bPaused);
+		xController.SetPaused(bPaused);
 	}
 
-	float fSpeed = m_xController.GetPlaybackSpeed();
+	float fSpeed = xController.GetPlaybackSpeed();
 	if (ImGui::SliderFloat("Speed", &fSpeed, 0.0f, 3.0f))
 	{
-		m_xController.SetPlaybackSpeed(fSpeed);
+		xController.SetPlaybackSpeed(fSpeed);
 	}
 
 	if (ImGui::Button("Stop"))
 	{
-		m_xController.Stop();
+		xController.Stop();
 	}
 
 	// CrossFade to state
-	if (m_xController.HasStateMachine())
+	if (xController.HasStateMachine())
 	{
 		ImGui::Separator();
 		ImGui::Text("CrossFade:");
 
-		const auto& xStates = m_xController.GetStateMachine().GetStates();
+		const auto& xStates = xController.GetStateMachine().GetStates();
 		for (auto it = xStates.begin(); it != xStates.end(); ++it)
 		{
 			ImGui::SameLine();
 			if (ImGui::SmallButton(it->first.c_str()))
 			{
-				m_xController.CrossFade(it->first, 0.15f);
+				xController.CrossFade(it->first, 0.15f);
 			}
 		}
 	}
@@ -550,13 +679,15 @@ void Zenith_AnimatorComponent::RenderPlaybackControlsSection()
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderParametersSection()
 {
-	if (!m_xController.HasStateMachine())
+	Flux_AnimationController& xController = Controller();
+
+	if (!xController.HasStateMachine())
 		return;
 
 	if (!ImGui::TreeNode("Parameters"))
 		return;
 
-	Flux_AnimationParameters& xParams = m_xController.GetStateMachine().GetParameters();
+	Flux_AnimationParameters& xParams = xController.GetStateMachine().GetParameters();
 	const auto& xParamMap = xParams.GetParameters();
 
 	for (auto it = xParamMap.begin(); it != xParamMap.end(); ++it)
@@ -617,13 +748,15 @@ void Zenith_AnimatorComponent::RenderParametersSection()
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderStateMachineSection()
 {
-	if (!m_xController.HasStateMachine())
+	Flux_AnimationController& xController = Controller();
+
+	if (!xController.HasStateMachine())
 		return;
 
 	if (!ImGui::TreeNode("State Machine"))
 		return;
 
-	Flux_AnimationStateMachine& xSM = m_xController.GetStateMachine();
+	Flux_AnimationStateMachine& xSM = xController.GetStateMachine();
 
 	// States list
 	ImGui::Text("States:");
@@ -679,15 +812,17 @@ void Zenith_AnimatorComponent::RenderStateMachineSection()
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderLayersSection()
 {
-	if (!m_xController.HasLayers())
+	Flux_AnimationController& xController = Controller();
+
+	if (!xController.HasLayers())
 		return;
 
 	if (!ImGui::TreeNode("Layers"))
 		return;
 
-	for (uint32_t i = 0; i < m_xController.GetLayerCount(); ++i)
+	for (uint32_t i = 0; i < xController.GetLayerCount(); ++i)
 	{
-		Flux_AnimationLayer* pxLayer = m_xController.GetLayer(i);
+		Flux_AnimationLayer* pxLayer = xController.GetLayer(i);
 		ImGui::PushID(i);
 
 		if (ImGui::TreeNode("##Layer", "%s (%.0f%%)", pxLayer->GetName().c_str(), pxLayer->GetWeight() * 100.0f))
@@ -721,11 +856,13 @@ void Zenith_AnimatorComponent::RenderLayersSection()
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderUpdateModeSection()
 {
+	Flux_AnimationController& xController = Controller();
+
 	const char* aszUpdateModes[] = { "Normal", "Fixed", "Unscaled" };
-	int iMode = static_cast<int>(m_xController.GetUpdateMode());
+	int iMode = static_cast<int>(xController.GetUpdateMode());
 	if (ImGui::Combo("Update Mode", &iMode, aszUpdateModes, 3))
 	{
-		m_xController.SetUpdateMode(static_cast<Flux_AnimationUpdateMode>(iMode));
+		xController.SetUpdateMode(static_cast<Flux_AnimationUpdateMode>(iMode));
 	}
 }
 

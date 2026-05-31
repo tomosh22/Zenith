@@ -207,27 +207,24 @@ void Flux_SSRImpl::BuildPipelines()
 	// shape), RT1 carries hit metadata (UV / travel distance / ray count) for
 	// downstream Phase 3b denoise BRDF reuse and Phase 4 variance.
 	{
-		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			g_xEngine.SSR().m_xRayMarchShader, FluxShaderProgram::SSR_RayMarch, SSR_FORMAT);
-		xSpec.m_aeColourAttachmentFormats[1] = SSR_FORMAT;
-		xSpec.m_uNumColourAttachments        = 2;
+		const TextureFormat aeFormats[2] = { SSR_FORMAT, SSR_FORMAT };
+		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpecMRT(
+			g_xEngine.SSR().m_xRayMarchShader, FluxShaderProgram::SSR_RayMarch, aeFormats, 2u);
 		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSR().m_xRayMarchPipeline, xSpec);
 	}
 
 	{
-		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			g_xEngine.SSR().m_xUpsampleShader, FluxShaderProgram::SSR_Upsample, SSR_FORMAT);
-		xSpec.m_aeColourAttachmentFormats[1] = SSR_FORMAT;
-		xSpec.m_uNumColourAttachments        = 2;
+		const TextureFormat aeFormats[2] = { SSR_FORMAT, SSR_FORMAT };
+		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpecMRT(
+			g_xEngine.SSR().m_xUpsampleShader, FluxShaderProgram::SSR_Upsample, aeFormats, 2u);
 		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSR().m_xUpsamplePipeline, xSpec);
 	}
 
 	// DenoiseH is dual-MRT (Phase 3b): RT0 = Σ(w·color)+Σw, RT1 = Σ(w·conf).
 	{
-		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			g_xEngine.SSR().m_xDenoiseHShader, FluxShaderProgram::SSR_DenoiseH, SSR_FORMAT);
-		xSpec.m_aeColourAttachmentFormats[1] = SSR_FORMAT;
-		xSpec.m_uNumColourAttachments        = 2;
+		const TextureFormat aeFormats[2] = { SSR_FORMAT, SSR_FORMAT };
+		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpecMRT(
+			g_xEngine.SSR().m_xDenoiseHShader, FluxShaderProgram::SSR_DenoiseH, aeFormats, 2u);
 		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSR().m_xDenoiseHPipeline, xSpec);
 	}
 
@@ -288,15 +285,11 @@ void Flux_SSRImpl::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR initialised");
 }
 
-void Flux_SSRImpl::Shutdown()
+void Flux_SSRImpl::ShutdownImpl()
 {
-	if (!g_xEngine.SSR().m_bInitialised)
-		return;
-
+	// CRTP hook from Flux_ScreenSpaceEffectBase::Shutdown(); the base owns the
+	// m_bInitialised guard and the m_pxGraph / m_bInitialised resets.
 	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.SSR().m_xSSRConstantsBuffer);
-
-	g_xEngine.SSR().m_pxGraph = nullptr;
-	g_xEngine.SSR().m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR shut down");
 }
 
@@ -563,20 +556,19 @@ void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	const bool bRoughnessBlur = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled;
 	xGraph.SetEnabled(g_xEngine.SSR().m_xDenoiseHPass, bRoughnessBlur);
 	xGraph.SetEnabled(g_xEngine.SSR().m_xDenoiseVPass, bRoughnessBlur);
-	g_xEngine.SSR().m_bLastBlurEnabled = bRoughnessBlur;
 
 	// Commit the handle the deferred pass will now read. GetReflectionHandle
-	// asserts against this value on every call — any runtime toggle without a
-	// matching g_xEngine.FluxRenderer().RequestGraphRebuild() will trip at the point of the
+	// resolves to this value — any runtime toggle without a matching
+	// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the
 	// mistake, not downstream in Validate() or AssertBoundResourceDeclared.
 	// When denoise is off, deferred reads the upsampled (full-res) output —
-	// never the raw half-res raymarch.
-	g_xEngine.SSR().m_xCommittedReflectionHandle = bRoughnessBlur ? g_xEngine.SSR().m_xDenoiseVHandle : g_xEngine.SSR().m_xUpsampledHandle;
+	// never the raw half-res raymarch. The selection is the enabled bool itself.
+	g_xEngine.SSR().m_xReflectionSelector.Commit(g_xEngine.SSR().m_xDenoiseVHandle, g_xEngine.SSR().m_xUpsampledHandle, bRoughnessBlur, bRoughnessBlur);
 }
 
 void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	if (Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled == g_xEngine.SSR().m_bLastBlurEnabled)
+	if (!g_xEngine.SSR().m_xReflectionSelector.RequestRebuildIfSelectionChanged(Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled))
 		return;
 
 	// Full graph rebuild — not just xGraph.MarkDirty() — because
@@ -589,8 +581,8 @@ void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	// g_xEngine.FluxRenderer().RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
 	// on the next frame, so the deferred pass's declared Read resolves to the
 	// handle matching the new m_bSSRRoughnessBlurEnabled value. SetupRenderGraph
-	// above will also re-seed g_xEngine.SSR().m_xCommittedReflectionHandle and re-set the
-	// resolve pass's enable bit.
+	// above will also re-Commit the selector (re-seeding the committed handle)
+	// and re-set the resolve pass's enable bit.
 	g_xEngine.FluxRenderer().RequestGraphRebuild();
 }
 

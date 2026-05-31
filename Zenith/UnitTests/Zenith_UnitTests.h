@@ -49,11 +49,17 @@ public:
 	// DataStream edge case tests
 	static void TestDataStreamBoundsCheck();
 
+	// Stream envelope (reusable DataStream header) tests
+	static void TestStreamEnvelopeRoundTrip();
+
 	// Scene serialization tests
 	static void TestSceneSerialization();
 	static void TestComponentSerialization();
 	static void TestEntitySerialization();
 	static void TestSceneRoundTrip();
+	static void TestSceneLoadValidation();
+	static void TestSceneBodyCorruptionFailsGracefully();
+	static void TestSceneComponentSchemaVersion();
 	static void TestSceneDisableDestroyHelpers();
 
 	// Animation system tests
@@ -150,16 +156,32 @@ public:
 	// ECS bug fix tests (Phase 1)
 	static void TestComponentRemovalIndexUpdate();
 	static void TestComponentSwapAndPop();
+	static void TestSwapAndPopMovesIndex();
+	static void TestQueryNestedReentrancy();
+	static void TestBenchECSSmoke();
 	static void TestMultipleComponentRemoval();
 	static void TestComponentRemovalWithManyEntities();
 	static void TestEntityNameFromScene();
 	static void TestEntityCopyPreservesAccess();
+
+	// Render-phase boundary signal (always-compiled atomic)
+	static void TestRenderPhaseTransitions();
 
 	// ECS reflection system tests (Phase 2)
 	static void TestComponentMetaRegistration();
 	static void TestComponentMetaSerialization();
 	static void TestComponentMetaDeserialization();
 	static void TestComponentMetaTypeIDConsistency();
+	static void TestAccessSetMetadataRegistered();
+
+	// WS12 parallel-simulation conflict model + determinism cross-check.
+	//  - AccessSetConflictModel: pure unit test of the ConflictsWith /
+	//    UNKNOWN-default / subset-eligibility math in Zenith_AccessSet.h.
+	//  - ParallelSimDeterminismSmoke: the proof that serial and parallel
+	//    DispatchOnUpdate produce byte-identical ECS state on a fixed scene of
+	//    collider-free Tween entities (runs every boot; small).
+	static void TestAccessSetConflictModel();
+	static void TestParallelSimDeterminismSmoke();
 
 	// ECS lifecycle hooks tests (Phase 3)
 	static void TestLifecycleHookDetection();
@@ -177,6 +199,12 @@ public:
 	static void TestQueryNoMatches();
 	static void TestQueryCount();
 	static void TestQueryFirstAndAny();
+
+	// WS10 sparse-set keystone: fuzz cross-check that the sparse-set query read
+	// path returns the EXACT same matched-entity set as the legacy scan path
+	// (and matches an independent ground-truth oracle), across ~5000 random
+	// Add/Remove/Destroy+recreate/cross-scene-move ops.
+	static void TestQuerySparseLegacyEquivalence();
 
 	// ECS event system tests (Phase 5)
 	static void TestEventSubscribeDispatch();
@@ -234,6 +262,10 @@ public:
 	static void TestColliderRebuildKeepsMovedTransform();
 	static void TestTaskArrayCallingThreadParticipates();
 	static void TestTaskReuseAfterWait();
+
+	// Wave 8.3 - release-survivable check tier + task-queue overflow grace
+	static void TestCheckTierReleaseSurvivable();
+	static void TestQueueFullSurfacesError();
 
 	// RenderGraph diagnostic accessor
 	static void TestRenderGraphPassOrderDescription();
@@ -490,6 +522,29 @@ public:
 	static void TestTerrainActiveSetCenterIndexFirst();
 	static void TestTerrainActiveSetUsesNearestAABBForOffsetTerrain();
 	static void TestTerrainChunkDataNoLowZeroWhenLowResident();
+	// Wave-18 ownership-relocation: Zenith_TerrainComponent now has an explicit
+	// move ctor + move assignment that steal the owned Flux_TerrainStreamingState
+	// (+ physics geometry + handles), null the source, and repoint the state's
+	// m_pxOwner back-pointer at the moved-to component. Regression guard for the
+	// latent double-free the implicit (shallow) move would have caused on a
+	// component-pool relocation (swap-and-pop / Grow).
+	static void TestTerrainComponentMoveStealsState();
+	static void TestTerrainComponentMoveAssignmentStealsState();
+
+	// Wave-19 ownership-relocation: Zenith_AnimatorComponent is now a thin
+	// forwarding handle into Flux_AnimationControllerStore (keyed by EntityID
+	// slot). These pin the relocation invariants: a component move (ctor +
+	// assign) shares the SAME store-owned controller with the moved-to instance
+	// and leaves the moved-from safe (no double-Destroy); a real pool swap-and-pop
+	// relocation and a cross-scene MoveEntityToScene both keep the cached
+	// controller pointer valid (heap-stable) and produce EXACTLY ONE controller
+	// per entity.
+	static void TestAnimatorControllerStoreMoveCtorSharesController();
+	static void TestAnimatorControllerStoreMoveAssignReleasesDest();
+	static void TestAnimatorControllerStoreSurvivesPoolRelocation();
+	static void TestAnimatorControllerStoreSurvivesCrossSceneMove();
+	static void TestAnimatorControllerStoreDestroyIsIdempotent();
+	static void TestAnimatorControllerStoreValidatesGeneration();
 
 	// Gizmo math helper tests (ZENITH_TOOLS only)
 	static void TestGizmosLineLineParallel();
@@ -560,6 +615,16 @@ public:
 	// StructuredBuffer<uint>).
 	static void TestRenderGraphStorageBufferSRVBarrier();
 
+	// WS7 keystone (C1C2): InstancedMeshes Prepare-gather determinism / thread-safety
+	// regression. With GPU culling forced OFF (the path that used to double-call
+	// UpdateGPUBuffers across two concurrent record callbacks), the per-group CPU
+	// visibility bookkeeping (ComputeVisibleIndices + m_uVisibleCount) is now produced
+	// by a SINGLE main-thread Prepare writer. The test seeds a fixed instanced layout,
+	// captures a legacy serial-reference hash, then asserts every repeated re-seed +
+	// recompute is byte-identical (zero divergence == the cross-worker race is gone).
+	// Device-independent (CPU SoA only) so it runs in the headless suite.
+	static void TestInstancedMeshesPrepareDeterminism();
+
 	// Transient-aliasing signature tests. The signature is pure pointer math
 	// over the transient descriptor; no Vulkan required.
 	static void TestAliasSignatureIdenticalDescs();
@@ -584,6 +649,48 @@ public:
 	static void TestRenderGraphDisabledPassExcludedFromLifetimes();
 	static void TestRenderGraphLifetimeRecomputeIdempotent();
 	static void TestRenderGraphAliasingBarrierUsesTopologicalLastUse();
+
+	// Wave 9 DI-seam test for Flux_HiZImpl. A default-constructed instance is
+	// headless-safe (like Flux_RenderGraph), so this is a pure CPU seam test:
+	// the three injected-dep member pointers default nullptr, and assigning
+	// sentinel pointers proves the storage slots exist. The sentinels are never
+	// dereferenced. (HiZ's real Initialise wiring only runs in non-headless
+	// boot, which the test runner may skip, so a post-init assertion would be
+	// flaky here.)
+	static void TestHiZInjectedDepsWired();
+
+	// Wave-11 DI-seam test for Flux_SSAOImpl (2nd leaf seam, same WS9.2 template
+	// as HiZ). A default-constructed instance is headless-safe, so this is a
+	// pure-CPU seam test: the three injected-dep member pointers (graphics,
+	// swapchain, HDR) default nullptr, and assigning distinct sentinel pointers
+	// proves the storage slots exist and are independent. Sentinels never
+	// dereferenced (SSAO's real Initialise wiring runs only in non-headless boot).
+	static void TestSSAOInjectedDepsWired();
+
+	// Wave-14 DI-seam test for Flux_QuadsImpl (cleanest next leaf seam, same WS9.2
+	// template as HiZ/SSAO). Quads has a single cross-subsystem dep (Flux_GraphicsImpl)
+	// and is NOT wired in the headless boot path, so this is a pure-CPU seam test on
+	// a stack-constructed instance: the lone injected-dep member pointer (graphics)
+	// defaults nullptr, and assigning a sentinel pointer proves the storage slot
+	// exists. Sentinel never dereferenced (Quads' real Initialise wiring runs only
+	// in non-headless boot).
+	static void TestQuadsInjectedDepsWired();
+	// Wave-14 DI-seam test for Flux_SDFsImpl (same WS9.2 template as HiZ/SSAO,
+	// lowest raw fan-in leaf). A default-constructed instance is headless-safe,
+	// so this is a pure-CPU seam test: the two injected-dep member pointers
+	// (graphics, HDR) default nullptr, and assigning distinct sentinel pointers
+	// proves the storage slots exist and are independent. Sentinels never
+	// dereferenced (SDFs' real Initialise wiring runs only in non-headless boot).
+	static void TestSDFsInjectedDepsWired();
+	// Wave-15 DI-seam sentinel tests (same pure-CPU headless-safe template).
+	static void TestTextInjectedDepsWired();
+	static void TestSkyboxInjectedDepsWired();
+	static void TestPrimitivesInjectedDepsWired();
+	static void TestStaticMeshesInjectedDepsWired();
+	static void TestAnimatedMeshesInjectedDepsWired();
+	// Wave-17 DI-seam sentinel tests.
+	static void TestDecalsInjectedDepsWired();
+	static void TestParticlesInjectedDepsWired();
 
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live

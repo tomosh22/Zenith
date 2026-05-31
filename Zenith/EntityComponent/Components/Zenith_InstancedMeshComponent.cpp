@@ -3,9 +3,13 @@
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
+// The component header now forward-declares the Flux instance types (layering
+// decoupling, wave13.A); pull in the concrete definitions here where the
+// implementation dereferences them. Flux_InstanceGroup.h transitively provides
+// Flux_MeshInstance, so the two includes below cover all three.
+#include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
+#include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
-
-ZENITH_REGISTER_COMPONENT(Zenith_InstancedMeshComponent, "InstancedMesh")
 
 //=============================================================================
 // Constructor / Destructor

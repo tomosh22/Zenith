@@ -107,15 +107,15 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Asset* LoadTextureAsset(const std::string&);
+	friend Zenith_Result<Zenith_Asset*> LoadTextureAsset(const std::string&);
 
 	/**
 	 * Load texture data from an image file (private - use Zenith_AssetRegistry::Get)
 	 * @param strPath Path to image file (PNG, JPG, etc.)
 	 * @param bCreateMips Generate mipmaps
-	 * @return true on success
+	 * @return SUCCESS, or an error code on failure
 	 */
-	bool LoadFromFile(const std::string& strPath, bool bCreateMips = true);
+	Zenith_Status LoadFromFile(const std::string& strPath, bool bCreateMips = true);
 
 	bool m_bGPUResourcesAllocated = false;
 };

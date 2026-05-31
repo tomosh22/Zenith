@@ -2,8 +2,6 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_ScriptComponent, "Script")
-
 namespace
 {
 	// Current ScriptComponent serialization version.

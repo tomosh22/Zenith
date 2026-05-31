@@ -1,12 +1,14 @@
 #pragma once
 
 #include "EntityComponent/Zenith_Entity.h"
-#include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
-#include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
+#include "AssetHandling/Zenith_AssetHandle.h"	// MeshHandle/MaterialHandle typedefs + Zenith_Mesh/MaterialAsset fwd-decls (were pulled in transitively via the now-removed Flux includes)
 #include <string>
 #include <vector>
 
 class Zenith_MeshAsset;
+class Flux_InstanceGroup;
+class Flux_AnimationTexture;
+class Flux_MeshInstance;
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

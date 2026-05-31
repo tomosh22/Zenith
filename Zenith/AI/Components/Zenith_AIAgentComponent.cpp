@@ -7,7 +7,14 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 
-ZENITH_REGISTER_COMPONENT(Zenith_AIAgentComponent, "AIAgent")
+// Registrar for the AI module's components, invoked from
+// Zenith_ComponentMetaRegistry::FinalizeRegistration via a forward declaration.
+// Defining it here (a TU that sees the full Zenith_AIAgentComponent header) keeps
+// the EntityComponent module free of any AI dependency.
+void Zenith_AI_RegisterComponents()
+{
+	Zenith_ComponentMetaRegistry::Get().RegisterComponent<Zenith_AIAgentComponent>("AIAgent");
+}
 
 Zenith_AIAgentComponent::Zenith_AIAgentComponent(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)

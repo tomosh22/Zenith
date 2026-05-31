@@ -25,12 +25,12 @@ Zenith_MaterialAsset::~Zenith_MaterialAsset()
 // Loading / Saving
 //--------------------------------------------------------------------------
 
-bool Zenith_MaterialAsset::LoadFromFile(const std::string& strPath)
+Zenith_Status Zenith_MaterialAsset::LoadFromFile(const std::string& strPath)
 {
 	if (!std::filesystem::exists(strPath))
 	{
 		Zenith_Error(LOG_CATEGORY_ASSET, "Material file not found: %s", strPath.c_str());
-		return false;
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
 	Zenith_DataStream xStream;
@@ -67,7 +67,7 @@ bool Zenith_MaterialAsset::Reload()
 		return false;
 	}
 
-	return LoadFromFile(m_strPath);
+	return LoadFromFile(m_strPath).IsOk();
 }
 
 void Zenith_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const

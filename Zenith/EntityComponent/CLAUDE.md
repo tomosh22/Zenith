@@ -11,7 +11,7 @@
 - `Zenith_Entity.inl` - Template bodies for `AddComponent` / `GetComponent` / etc. (included from Zenith_Scene.h)
 - `Zenith_EntityStore.h` - Process-wide entity slot storage (slots, generations, component maps), owned by `Zenith_Engine`
 - `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations + property reflection
-- `Zenith_ComponentPool.h` - Per-type component pool, `Zenith_ComponentHandle<T>`, and the `Zenith_Component` concept
+- `Zenith_ComponentPool.h` - Per-type dense component pool (real swap-and-pop removal) and the `Zenith_Component` concept
 - `Zenith_ComponentRegistry.h/cpp` - Component type registration for editor UI
 - `Zenith_Query.h` - Multi-component entity queries
 - `Zenith_EventSystem.h/cpp` - Type-safe event dispatcher with deferred queue
@@ -107,11 +107,18 @@ g_xEngine.Scenes().RegisterSceneLoaded([](Zenith_Scene xScene, Zenith_SceneLoadM
 The `Zenith_SceneManager` class and header are gone — there is no facade or include manifold. Target `g_xEngine.Scenes()` (instance methods) or `Zenith_SceneSystem::` (the static entity-ownership / bootstrap methods) directly.
 
 ### Component Pools
-Each component type has a dedicated pool with:
-- `m_xData` - Vector of component instances
-- `m_xOwningEntities` - Parallel vector tracking which entity owns each component
+Each component type has a dedicated `Zenith_ComponentPool<T>` (`Zenith_ComponentPool.h`) with:
+- `m_pxData` - Raw-memory array of component instances, explicit placement-new lifetimes
+- `m_uSize` / `m_uCapacity` - live-slot count and allocated capacity
+- `m_xOwningEntities` - Parallel array (size == `m_uSize`) tracking which entity owns each slot
 
-**Swap-and-Pop Removal:** When a component is removed, it's swapped with the last element in the pool, then the last element is removed. This avoids expensive array shifts but means component indices are unstable after removal. The moved component's owner index is updated in `m_xEntityComponents`.
+The pool is **dense**: live components occupy slots `[0, m_uSize)` with no holes. The per-entity component index is stored in exactly one place — `g_xEngine.EntityStore().m_axEntityComponents.Get(entityIdx)[typeID]`.
+
+**Swap-and-Pop Removal (real):** `RemoveAtSwapAndPop(uIndex)` is a true swap-and-pop. It captures the owner of the last live element first, destructs the slot at `uIndex`, and — unless `uIndex` was already the last element — **move-constructs** (not copy/memcpy, so components owning VRAM / Jolt handles transfer ownership) the last element into `uIndex`, destructs the old last slot, and decrements `m_uSize`. It returns the `Zenith_EntityID` that owned the moved element (or `INVALID_ENTITY_ID` if `uIndex` was the last/only slot).
+
+The single removal call site, `Zenith_SceneData::RemoveComponentFromEntity<T>`, calls `RemoveAtSwapAndPop`, erases the removed entity's `m_axEntityComponents` entry, and — when a different entity's component was moved into the freed slot — repoints that owner's stored index to `uIndex`. Cross-scene transfer (`TransferComponent`) does the same swap-and-pop on the source pool so it too stays dense. Component indices are therefore unstable after any removal; never cache a raw pool index across a removal — look it up through `m_axEntityComponents`.
+
+There is no component free-list, no per-slot generation array, and no `Zenith_ComponentHandle<T>`; the dense layout is the precondition for the future sparse-set index.
 
 ## Component Meta System
 
@@ -291,6 +298,6 @@ The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_C
 
 `Zenith_SceneSystem.h` includes `Zenith_SceneData.h` at the bottom (for the `GetAllOfComponentTypeFromAllScenes` template body), so the back-edge from `SceneData.h` had to be removed to avoid a textual cycle. That was done by lifting the back-edge sources out of `SceneData.h`:
 
-1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentHandle<T>`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This header is self-contained.
+1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This header is self-contained.
 
 2. **Render-task-active check** — `SceneData.h`'s template assertions now call the free function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` (defined in `Internal/Zenith_SceneSystem_Lifecycle.cpp`).
