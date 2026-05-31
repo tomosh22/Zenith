@@ -13195,6 +13195,71 @@ void Zenith_UnitTests::TestChunkDistanceZero(){
 
 }
 
+// Wave-18 move-ctor regression. Zenith_TerrainComponent owns a heap
+// Flux_TerrainStreamingState (and a physics geometry pointer); the implicit
+// move would shallow-copy the pointer, so a pool relocation would double-free
+// both on the moved-from temporary's destruction. The explicit move must:
+//   - transfer the SAME state pointer to the moved-to component,
+//   - repoint state->m_pxOwner at the moved-to component,
+//   - null the moved-from component's state pointer (so its dtor frees nothing).
+// The default (deserialization) constructor is used so the test stays headless
+// (it only allocates + Initialize()s the state — no device, no mesh load). Both
+// components' destructors are headless-safe: DestroyCullingResources early-outs
+// when culling was never initialised, UnregisterTerrainBuffers is a no-op for an
+// unregistered state, and the unified-buffer destroys early-out on invalid VRAM
+// handles.
+ZENITH_TEST(Terrain, ComponentMoveStealsState) { Zenith_UnitTests::TestTerrainComponentMoveStealsState(); }
+void Zenith_UnitTests::TestTerrainComponentMoveStealsState(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "TerrainMoveCtorEntity");
+
+	Zenith_TerrainComponent xSource(xEntity);
+	Flux_TerrainStreamingState* pxCapturedState = xSource.m_pxStreamingState;
+	ZENITH_ASSERT_TRUE(pxCapturedState != nullptr, "Source terrain must own a streaming state after construction");
+	ZENITH_ASSERT_EQ(pxCapturedState->m_pxOwner, &xSource, "Freshly-constructed state must point back at its component");
+
+	// Force the move.
+	Zenith_TerrainComponent xMoved(std::move(xSource));
+
+	// The moved-to component owns the SAME state instance...
+	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState, pxCapturedState, "Move must transfer the exact streaming-state instance");
+	// ...the back-pointer is repointed at the new owner...
+	ZENITH_ASSERT_EQ(pxCapturedState->m_pxOwner, &xMoved, "Move must repoint state->m_pxOwner at the moved-to component");
+	// ...and the moved-from component owns nothing (no double-free on its dtor).
+	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Moved-from component's state pointer must be nulled");
+
+	// Both xMoved and xSource destruct here at scope exit; xSource frees
+	// nothing (null state), xMoved frees the single owned state exactly once.
+}
+
+// Wave-18 move-assignment counterpart. Same invariants as the move ctor; also
+// verifies the destination releases its own pre-existing state before stealing
+// (so the assignment is leak-free), via two independently-constructed
+// components.
+ZENITH_TEST(Terrain, ComponentMoveAssignmentStealsState) { Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(); }
+void Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntityA(pxSceneData, "TerrainMoveAssignA");
+	Zenith_Entity xEntityB(pxSceneData, "TerrainMoveAssignB");
+
+	Zenith_TerrainComponent xSource(xEntityA);
+	Zenith_TerrainComponent xDest(xEntityB);
+
+	Flux_TerrainStreamingState* pxSourceState = xSource.m_pxStreamingState;
+	Flux_TerrainStreamingState* pxDestStateBefore = xDest.m_pxStreamingState;
+	ZENITH_ASSERT_TRUE(pxSourceState != nullptr, "Source must own a state");
+	ZENITH_ASSERT_TRUE(pxDestStateBefore != nullptr, "Dest must own its own state before assignment");
+	ZENITH_ASSERT_TRUE(pxSourceState != pxDestStateBefore, "The two components must own distinct states");
+
+	xDest = std::move(xSource);
+
+	ZENITH_ASSERT_EQ(xDest.m_pxStreamingState, pxSourceState, "Move-assign must transfer the source's state instance");
+	ZENITH_ASSERT_EQ(pxSourceState->m_pxOwner, &xDest, "Move-assign must repoint state->m_pxOwner at the destination");
+	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Move-assigned-from component's state pointer must be nulled");
+}
+
 // Per-component streaming state isolation. Two Flux_TerrainStreamingState
 // instances own independent dirty flags; flipping one must not change the
 // other. Regression test for the pre-refactor "global dirty flag" bug where

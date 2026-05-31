@@ -522,6 +522,14 @@ public:
 	static void TestTerrainActiveSetCenterIndexFirst();
 	static void TestTerrainActiveSetUsesNearestAABBForOffsetTerrain();
 	static void TestTerrainChunkDataNoLowZeroWhenLowResident();
+	// Wave-18 ownership-relocation: Zenith_TerrainComponent now has an explicit
+	// move ctor + move assignment that steal the owned Flux_TerrainStreamingState
+	// (+ physics geometry + handles), null the source, and repoint the state's
+	// m_pxOwner back-pointer at the moved-to component. Regression guard for the
+	// latent double-free the implicit (shallow) move would have caused on a
+	// component-pool relocation (swap-and-pop / Grow).
+	static void TestTerrainComponentMoveStealsState();
+	static void TestTerrainComponentMoveAssignmentStealsState();
 
 	// Gizmo math helper tests (ZENITH_TOOLS only)
 	static void TestGizmosLineLineParallel();

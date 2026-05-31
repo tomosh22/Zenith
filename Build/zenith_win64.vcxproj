@@ -1340,6 +1340,7 @@
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSRImpl.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h" />
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainGPUStructs.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManagerImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h" />

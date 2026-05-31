@@ -4017,6 +4017,9 @@
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainGPUStructs.h">
+      <Filter>Flux\Terrain</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainImpl.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
