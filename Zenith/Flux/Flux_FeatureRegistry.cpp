@@ -234,7 +234,10 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.StaticMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.StaticMeshes().Shutdown(); });
 	const u_int uAnimatedMeshes = xReg.Register(szFLUX_FEATURE_ANIMATED_MESHES,
-		+[](){ g_xEngine.AnimatedMeshes().Initialise(); },
+		// DI seam: AnimatedMeshes::Initialise takes (Graphics&). FluxGraphics is
+		// brought up inline at the top of LateInitialise before this walk, so the
+		// dep is ready.
+		+[](){ g_xEngine.AnimatedMeshes().Initialise(g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.AnimatedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.AnimatedMeshes().Shutdown(); });
 	const u_int uInstancedMeshes = xReg.Register(szFLUX_FEATURE_INSTANCED_MESHES,
