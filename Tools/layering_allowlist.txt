@@ -15,9 +15,9 @@
 #   powershell -NoProfile -File Tools/layering_gate.ps1 -Update
 #
 Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/Flux_ModelInstance.h
-Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_AnimationClip.h
+Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_AnimationController.h
+Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_AnimationControllerStore.h
 Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_SkeletonInstance.h
-Zenith/EntityComponent/Components/Zenith_AnimatorComponent.h => Flux/MeshAnimation/Flux_AnimationController.h
 Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/Flux_ModelInstance.h
 Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/MeshGeometry/Flux_MeshGeometry.h
 Zenith/EntityComponent/Components/Zenith_ColliderComponent.cpp => Flux/MeshGeometry/Flux_MeshInstance.h
@@ -65,6 +65,7 @@ Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Zenith_SceneData.h
 Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Zenith_SceneSystem.h
 Zenith/Flux/InstancedMeshes/Flux_InstancedMeshes.cpp => EntityComponent/Components/Zenith_CameraComponent.h
 Zenith/Flux/InstancedMeshes/Flux_InstancedMeshes.cpp => EntityComponent/Zenith_Scene.h
+Zenith/Flux/MeshAnimation/Flux_AnimationControllerStore.cpp => EntityComponent/Zenith_Entity.h
 Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Components/Zenith_ParticleEmitterComponent.h
 Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Zenith_Query.h
 Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Zenith_Scene.h

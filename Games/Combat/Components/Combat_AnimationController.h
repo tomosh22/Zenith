@@ -10,6 +10,11 @@
  */
 
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+// Wave-19: Zenith_AnimatorComponent.h no longer pulls in Flux_AnimationController.h
+// transitively (it's now a Flux-include-free forwarding handle). Include the
+// controller header directly — this TU uses the complete Flux_AnimationController
+// type (GetController().CreateStateMachine/GetClipCollection/...).
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
 #include "Flux/MeshAnimation/Flux_BlendTree.h"
 #include "Combat_PlayerController.h"

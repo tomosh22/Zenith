@@ -844,6 +844,9 @@
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.cpp">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
@@ -3640,6 +3643,9 @@
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.h">

@@ -531,6 +531,20 @@ public:
 	static void TestTerrainComponentMoveStealsState();
 	static void TestTerrainComponentMoveAssignmentStealsState();
 
+	// Wave-19 ownership-relocation: Zenith_AnimatorComponent is now a thin
+	// forwarding handle into Flux_AnimationControllerStore (keyed by EntityID
+	// slot). These pin the relocation invariants: a component move (ctor +
+	// assign) shares the SAME store-owned controller with the moved-to instance
+	// and leaves the moved-from safe (no double-Destroy); a real pool swap-and-pop
+	// relocation and a cross-scene MoveEntityToScene both keep the cached
+	// controller pointer valid (heap-stable) and produce EXACTLY ONE controller
+	// per entity.
+	static void TestAnimatorControllerStoreMoveCtorSharesController();
+	static void TestAnimatorControllerStoreMoveAssignReleasesDest();
+	static void TestAnimatorControllerStoreSurvivesPoolRelocation();
+	static void TestAnimatorControllerStoreSurvivesCrossSceneMove();
+	static void TestAnimatorControllerStoreDestroyIsIdempotent();
+
 	// Gizmo math helper tests (ZENITH_TOOLS only)
 	static void TestGizmosLineLineParallel();
 	static void TestGizmosLineLinePerpendicular();

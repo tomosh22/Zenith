@@ -9,7 +9,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_TransformComponent` | Position, rotation, scale (added automatically to all entities) |
 | `Zenith_CameraComponent` | View/projection matrices for rendering |
 | `Zenith_ModelComponent` | Renderable 3D mesh with materials (no animation - use AnimatorComponent) |
-| `Zenith_AnimatorComponent` | Skeletal animation controller (auto-discovers skeleton from ModelComponent) |
+| `Zenith_AnimatorComponent` | Skeletal animation **forwarding handle** (auto-discovers skeleton from ModelComponent). The `Flux_AnimationController` lives in `Flux_AnimationControllerStore` (`g_xEngine.AnimationControllers()`), keyed by EntityID — see "AnimatorComponent is a forwarding handle" below |
 | `Zenith_LightComponent` | Dynamic lights (directional, point, spot) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
@@ -17,6 +17,18 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_ScriptComponent` | Custom behavior attachment (Unity-style: multiple scripts per entity, .zscript asset files) |
 | `Zenith_UIComponent` | UI element support |
+
+## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
+
+`Zenith_AnimatorComponent` does **not** own a `Flux_AnimationController` by value any more. The controller lives in an owning Flux subsystem — `Flux_AnimationControllerStore` (`Flux/MeshAnimation/Flux_AnimationControllerStore.{h,cpp}`), reached via `g_xEngine.AnimationControllers()` — keyed by the entity's **stable `Zenith_EntityID` slot**. The component is a thin handle: every public accessor (`GetController`, `GetStateMachine`, `SetFloat`, `CrossFade`, `AddClipFromFile`, serialization, the editor panel, …) forwards into the store-owned controller. This is the ECS-side twin of WS18's `Zenith_TerrainComponent` → `Flux_TerrainStreamingState` relocation, and it lets `Zenith_AnimatorComponent.h` carry **zero** Flux includes (the heavy `Flux_AnimationController.h` header edge — old allowlist line 20 — is gone; the forwarding bodies' Flux includes live in the `.cpp`, which is allow-listed).
+
+Key invariants (pinned by the `Animator` regression suite in `Core/Zenith_UnitTests.Tests.inl`):
+
+- **Heap-stable storage.** The store allocates each `Flux_AnimationController` with `new` (`Zenith_Vector<Flux_AnimationController*>` + an index-by-entity-slot `Zenith_Vector<u_int>` for O(1) lookup). The pointer never moves, so the component's cached `m_pxController` (and any game code caching `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects) survives a component-pool relocation (swap-and-pop / `Grow`) **and** a cross-scene `MoveEntityToScene`.
+- **Hot path is O(1), no hash.** `OnUpdate` dereferences the cached `m_pxController` directly — no per-frame store lookup. The ctor primes the cache (`GetOrCreate`); `OnStart` re-primes it.
+- **Exactly one controller per entity, exactly one Destroy.** `Destroy(EntityID)` is idempotent. Both the component dtor and `OnDestroy` call it (whichever fires first does the work; the second is a no-op). A **moved-from** component is neutralised (`m_bMovedOut = true`, cached pointer nulled) so the pool's move-construct-then-destruct-source sequence never double-frees — the moved-to instance shares the same EntityID-keyed controller.
+- **`GetCurrentAnimatorStateInfo()` returns `Zenith_AnimatorStateInfo`** — an EC-side mirror POD of `Flux_AnimatorStateInfo` (same field names/types + `IsName`). It is implicitly convertible to `Flux_AnimatorStateInfo` (operator defined in the `.cpp`), so callers that include the Flux state-machine header keep compiling unchanged. The mirror is what lets the by-value return stay Flux-include-free in the header.
+- **Render path is unaffected.** Bones are read by `Flux_AnimatedMeshes` from `Zenith_ModelComponent::GetSkeletonInstance()->GetBoneBuffer()`, never from the controller. Relocating the controller's *ownership* cannot regress rendering. Serialization byte-format is unchanged (no `.zscen` / `.zprfb` bump).
 
 ## Creating a New Component
 

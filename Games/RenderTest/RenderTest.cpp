@@ -12,6 +12,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+// Wave-19: AnimatorComponent.h is a Flux-include-free forwarding handle now;
+// this TU uses the complete Flux_AnimationController type directly (GetController()).
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"

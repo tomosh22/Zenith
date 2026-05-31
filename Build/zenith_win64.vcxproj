@@ -1215,6 +1215,7 @@
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.h" />
@@ -2473,6 +2474,7 @@
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp" />
+    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.cpp" />

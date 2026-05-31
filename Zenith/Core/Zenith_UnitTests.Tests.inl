@@ -27,6 +27,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"  // WS10 fuzz cross-check (Light is a headless-safe component)
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"  // WS19 forwarding-handle relocation tests
+#include "Flux/MeshAnimation/Flux_AnimationControllerStore.h"     // WS19 store
+#include "Core/Zenith_Engine.h"                                    // g_xEngine.AnimationControllers()
 #include "Core/Zenith_BenchECS.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
@@ -13258,6 +13261,208 @@ void Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(){
 	ZENITH_ASSERT_EQ(xDest.m_pxStreamingState, pxSourceState, "Move-assign must transfer the source's state instance");
 	ZENITH_ASSERT_EQ(pxSourceState->m_pxOwner, &xDest, "Move-assign must repoint state->m_pxOwner at the destination");
 	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Move-assigned-from component's state pointer must be nulled");
+}
+
+//=============================================================================
+// Wave-19 — Zenith_AnimatorComponent forwarding-handle / store relocation.
+//
+// The controller lives in Flux_AnimationControllerStore (keyed by EntityID
+// slot, heap-stable). The component caches a Flux_AnimationController* and just
+// forwards. These regressions pin: (1) a component MOVE shares the SAME
+// controller with the moved-to instance and neutralises the moved-from;
+// (2) Destroy is idempotent + per-entity (not per-instance), so a move +
+// double dtor/OnDestroy never double-frees; (3) a real pool swap-and-pop
+// relocation and a cross-scene move keep the cached pointer valid and the
+// controller count stable.
+//=============================================================================
+
+// Move CTOR: the moved-to component must hold the SAME cached controller
+// pointer, the store must still resolve that exact controller for the (stable)
+// EntityID, the moved-from must be neutralised (null cache + moved-out), and
+// the live controller count must be exactly one. These are pure stack
+// instances (NOT added to a pool) so the component's own ctor/dtor drive the
+// store create/destroy — mirroring the headless Terrain move-ctor test.
+ZENITH_TEST(Animator, ControllerStoreMoveCtorSharesController) { Zenith_UnitTests::TestAnimatorControllerStoreMoveCtorSharesController(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreMoveCtorSharesController(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorMoveCtorScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "AnimatorMoveCtorEntity");
+	const Zenith_EntityID xId = xEntity.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	{
+		Zenith_AnimatorComponent xSource(xEntity);
+		Flux_AnimationController* pxCaptured = xSource.m_pxController;
+		ZENITH_ASSERT_NOT_NULL(pxCaptured, "Animator ctor must eagerly create + cache the store controller");
+		ZENITH_ASSERT_EQ(xStore.TryGet(xId), pxCaptured, "Store must resolve the entity to the cached controller");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "Exactly one controller created for the entity");
+
+		// Force the move.
+		Zenith_AnimatorComponent xMoved(std::move(xSource));
+
+		ZENITH_ASSERT_EQ(xMoved.m_pxController, pxCaptured, "Move ctor must copy the heap-stable controller pointer");
+		ZENITH_ASSERT_EQ(xStore.TryGet(xId), pxCaptured, "Moved-to component must resolve the SAME store controller");
+		ZENITH_ASSERT_TRUE(xSource.m_pxController == nullptr, "Moved-from cached pointer must be nulled");
+		ZENITH_ASSERT_TRUE(xSource.m_bMovedOut, "Moved-from component must be flagged moved-out");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "Move must NOT create a second controller");
+
+		// Scope exit: xMoved dtor Destroys once; xSource dtor (moved-out) skips.
+	}
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "After both components destruct, exactly ONE Destroy must have fired (no leak, no double-free)");
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xId) == nullptr, "Controller must be gone from the store after destruction");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// Move ASSIGNMENT: the destination already owns its OWN entity's controller.
+// Move-assigning the source must (a) release the dest's pre-existing controller
+// (no leak), (b) repoint the dest at the source's controller, (c) neutralise
+// the source. Net live count after the assignment is one (dest's old one freed,
+// source's transferred).
+ZENITH_TEST(Animator, ControllerStoreMoveAssignReleasesDest) { Zenith_UnitTests::TestAnimatorControllerStoreMoveAssignReleasesDest(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreMoveAssignReleasesDest(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorMoveAssignScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntityA(pxSceneData, "AnimatorMoveAssignA");
+	Zenith_Entity xEntityB(pxSceneData, "AnimatorMoveAssignB");
+	const Zenith_EntityID xIdA = xEntityA.GetEntityID();
+	const Zenith_EntityID xIdB = xEntityB.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	{
+		Zenith_AnimatorComponent xSource(xEntityA);
+		Zenith_AnimatorComponent xDest(xEntityB);
+
+		Flux_AnimationController* pxSourceController = xSource.m_pxController;
+		Flux_AnimationController* pxDestControllerBefore = xDest.m_pxController;
+		ZENITH_ASSERT_NOT_NULL(pxSourceController, "Source must own a controller");
+		ZENITH_ASSERT_NOT_NULL(pxDestControllerBefore, "Dest must own its own controller before assignment");
+		ZENITH_ASSERT_NE(pxSourceController, pxDestControllerBefore, "The two entities must own distinct controllers");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 2u, "Two controllers exist before the assignment");
+
+		xDest = std::move(xSource);
+
+		ZENITH_ASSERT_EQ(xDest.m_pxController, pxSourceController, "Move-assign must transfer the source's controller pointer");
+		ZENITH_ASSERT_EQ(xDest.GetParentEntity().GetEntityID(), xIdA, "Move-assign must adopt the source's entity identity");
+		ZENITH_ASSERT_TRUE(xSource.m_pxController == nullptr, "Move-assigned-from cached pointer must be nulled");
+		ZENITH_ASSERT_TRUE(xSource.m_bMovedOut, "Move-assigned-from component must be flagged moved-out");
+		// Dest's ORIGINAL controller (entity B) must have been freed by the assignment.
+		ZENITH_ASSERT_TRUE(xStore.TryGet(xIdB) == nullptr, "Dest's pre-existing (entity B) controller must be released on move-assign");
+		ZENITH_ASSERT_EQ(xStore.TryGet(xIdA), pxSourceController, "Entity A's controller must still resolve to the transferred instance");
+		ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "Move-assign must net to ONE live controller (B freed, A transferred)");
+	}
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "All controllers released after scope exit (no leak, no double-free)");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// REAL pool relocation: AddComponent on three entities packs the animator pool
+// densely (slots 0,1,2). Removing entity0's animator triggers a true
+// swap-and-pop that move-constructs entity2's component into slot 0. Because
+// the store is keyed by the STABLE EntityID (not the pool slot), entity2 must
+// still resolve the SAME controller afterwards, and the relocation must NOT
+// create/destroy any controller (count unchanged).
+ZENITH_TEST(Animator, ControllerStoreSurvivesPoolRelocation) { Zenith_UnitTests::TestAnimatorControllerStoreSurvivesPoolRelocation(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreSurvivesPoolRelocation(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorPoolRelocScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity0(pxSceneData, "AnimatorReloc0");
+	Zenith_Entity xEntity1(pxSceneData, "AnimatorReloc1");
+	Zenith_Entity xEntity2(pxSceneData, "AnimatorReloc2");
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+
+	xEntity0.AddComponent<Zenith_AnimatorComponent>();
+	xEntity1.AddComponent<Zenith_AnimatorComponent>();
+	Zenith_AnimatorComponent& xAnim2 = xEntity2.AddComponent<Zenith_AnimatorComponent>();
+
+	const u_int uCountAfterAdds = xStore.GetCount();
+	Flux_AnimationController* pxController2 = &xAnim2.GetController();
+	ZENITH_ASSERT_EQ(xStore.TryGet(xEntity2.GetEntityID()), pxController2, "Entity2's controller must resolve via the store");
+
+	// Real swap-and-pop: entity2 (last) is move-constructed into entity0's freed slot.
+	xEntity0.RemoveComponent<Zenith_AnimatorComponent>();
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountAfterAdds - 1u, "Removing entity0's animator must destroy exactly ONE controller");
+	ZENITH_ASSERT_TRUE(xEntity2.HasComponent<Zenith_AnimatorComponent>(), "Entity2 must still have its animator after the pool relocation");
+	// The relocated component must resolve the SAME heap-stable controller.
+	Zenith_AnimatorComponent& xAnim2After = xEntity2.GetComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_EQ(&xAnim2After.GetController(), pxController2, "Relocated component must resolve the SAME controller (EntityID-keyed, heap-stable)");
+	ZENITH_ASSERT_EQ(xStore.TryGet(xEntity2.GetEntityID()), pxController2, "Store lookup for entity2 must be unchanged by the relocation");
+	ZENITH_ASSERT_TRUE(xStore.TryGet(xEntity0.GetEntityID()) == nullptr, "Removed entity0's controller must be gone");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// Cross-scene MoveEntityToScene preserves the EntityID slot (global slot
+// table), so the animator's controller must survive the move: same controller,
+// same store count, resolvable in the new scene.
+ZENITH_TEST(Animator, ControllerStoreSurvivesCrossSceneMove) { Zenith_UnitTests::TestAnimatorControllerStoreSurvivesCrossSceneMove(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreSurvivesCrossSceneMove(){
+	Zenith_Scene xSceneA = g_xEngine.Scenes().CreateEmptyScene("AnimatorXSceneA");
+	Zenith_Scene xSceneB = g_xEngine.Scenes().CreateEmptyScene("AnimatorXSceneB");
+	Zenith_SceneData* pxSceneDataA = g_xEngine.Scenes().GetSceneData(xSceneA);
+
+	Zenith_Entity xEntity(pxSceneDataA, "AnimatorXSceneEntity");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBeforeMove = xStore.GetCount();
+	Flux_AnimationController* pxController = &xAnim.GetController();
+	const Zenith_EntityID xIdBefore = xEntity.GetEntityID();
+
+	const bool bMoved = Zenith_SceneSystem::MoveEntityToScene(xEntity, xSceneB);
+	ZENITH_ASSERT_TRUE(bMoved, "Cross-scene move of the animator entity must succeed");
+	// EntityID is preserved across the move (global slot table) — xEntity now
+	// points at the moved entity in scene B.
+	ZENITH_ASSERT_EQ(xEntity.GetEntityID(), xIdBefore, "EntityID slot must be preserved across the cross-scene move");
+
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBeforeMove, "Cross-scene move must not create/destroy any controller");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_AnimatorComponent>(), "Animator must travel with the entity to scene B");
+	Zenith_AnimatorComponent& xAnimAfter = xEntity.GetComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_EQ(&xAnimAfter.GetController(), pxController, "Moved entity must resolve the SAME controller (EntityID-keyed, heap-stable)");
+	ZENITH_ASSERT_EQ(xStore.TryGet(xIdBefore), pxController, "Store lookup must still resolve the controller post-move");
+
+	g_xEngine.Scenes().UnloadScene(xSceneA);
+	g_xEngine.Scenes().UnloadScene(xSceneB);
+}
+
+// Destroy must be IDEMPOTENT: the component's OnDestroy AND its dtor both call
+// store.Destroy(entity). The second call must be a harmless no-op. Also a
+// never-created entity Destroy is a no-op. Exercised directly on the store.
+ZENITH_TEST(Animator, ControllerStoreDestroyIsIdempotent) { Zenith_UnitTests::TestAnimatorControllerStoreDestroyIsIdempotent(); }
+void Zenith_UnitTests::TestAnimatorControllerStoreDestroyIsIdempotent(){
+	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("AnimatorDestroyIdempotentScene");
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "AnimatorDestroyIdempotentEntity");
+	const Zenith_EntityID xId = xEntity.GetEntityID();
+
+	Flux_AnimationControllerStore& xStore = g_xEngine.AnimationControllers();
+	const u_int uCountBefore = xStore.GetCount();
+
+	// Destroy on an entity with NO controller is a no-op.
+	ZENITH_ASSERT_FALSE(xStore.Destroy(xId), "Destroy on an absent entity must return false (no-op)");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "No-op Destroy must not change the count");
+
+	(void)xStore.GetOrCreate(xId);
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "GetOrCreate must create one controller");
+	// GetOrCreate again must NOT create a second.
+	(void)xStore.GetOrCreate(xId);
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore + 1u, "GetOrCreate is idempotent for an existing entity");
+
+	ZENITH_ASSERT_TRUE(xStore.Destroy(xId), "First Destroy must report it removed the controller");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "Destroy must remove exactly one controller");
+	// Second Destroy (mirrors dtor-after-OnDestroy) is a harmless no-op.
+	ZENITH_ASSERT_FALSE(xStore.Destroy(xId), "Second Destroy must be an idempotent no-op");
+	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "Idempotent second Destroy must not change the count");
+
+	g_xEngine.Scenes().UnloadScene(xScene);
 }
 
 // Per-component streaming state isolation. Two Flux_TerrainStreamingState
