@@ -76,16 +76,16 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_bDepthTestEnabled = false;
 		xSpec.m_bDepthWriteEnabled = false;
-		xSpec.m_pxShader = &g_xEngine.Skybox().m_xCubemapShader;
-		g_xEngine.Skybox().m_xCubemapShader.Initialise(FluxShaderProgram::SkyboxCubemap);
-		g_xEngine.Skybox().m_xCubemapShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		xSpec.m_pxShader = &this->m_xCubemapShader;
+		this->m_xCubemapShader.Initialise(FluxShaderProgram::SkyboxCubemap);
+		this->m_xCubemapShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 		{
 			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
 			xBlendState.m_bBlendEnabled = false;
 		}
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Skybox().m_xCubemapPipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(this->m_xCubemapPipeline, xSpec);
 	}
 
 	// ========== Solid colour override pipeline (MRT with no blending) ==========
@@ -100,16 +100,16 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_bDepthTestEnabled = false;
 		xSpec.m_bDepthWriteEnabled = false;
-		xSpec.m_pxShader = &g_xEngine.Skybox().m_xSolidColourShader;
-		g_xEngine.Skybox().m_xSolidColourShader.Initialise(FluxShaderProgram::SkyboxSolidColour);
-		g_xEngine.Skybox().m_xSolidColourShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		xSpec.m_pxShader = &this->m_xSolidColourShader;
+		this->m_xSolidColourShader.Initialise(FluxShaderProgram::SkyboxSolidColour);
+		this->m_xSolidColourShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 		{
 			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
 			xBlendState.m_bBlendEnabled = false;
 		}
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Skybox().m_xSolidColourPipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(this->m_xSolidColourPipeline, xSpec);
 	}
 
 	// ========== Atmosphere sky pipeline ==========
@@ -124,10 +124,10 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_bDepthTestEnabled = false;
 		xSpec.m_bDepthWriteEnabled = false;
-		xSpec.m_pxShader = &g_xEngine.Skybox().m_xAtmosphereShader;
-		g_xEngine.Skybox().m_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
-		g_xEngine.Skybox().m_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Skybox().m_xAtmospherePipeline, xSpec);
+		xSpec.m_pxShader = &this->m_xAtmosphereShader;
+		this->m_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
+		this->m_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		Flux_PipelineBuilder::FromSpecification(this->m_xAtmospherePipeline, xSpec);
 	}
 
 	// ========== Aerial perspective pipeline (alpha blending) ==========
@@ -135,29 +135,34 @@ void Flux_SkyboxImpl::BuildPipelines()
 		Flux_PipelineSpecification xSpec;
 		xSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 		xSpec.m_uNumColourAttachments = 1;
-		xSpec.m_pxShader = &g_xEngine.Skybox().m_xAerialPerspectiveShader;
-		g_xEngine.Skybox().m_xAerialPerspectiveShader.Initialise(FluxShaderProgram::SkyboxAerialPerspective);
-		g_xEngine.Skybox().m_xAerialPerspectiveShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		xSpec.m_pxShader = &this->m_xAerialPerspectiveShader;
+		this->m_xAerialPerspectiveShader.Initialise(FluxShaderProgram::SkyboxAerialPerspective);
+		this->m_xAerialPerspectiveShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Skybox().m_xAerialPerspectivePipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(this->m_xAerialPerspectivePipeline, xSpec);
 	}
 }
 
-void Flux_SkyboxImpl::Initialise()
+void Flux_SkyboxImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
 {
+	// Wave-15 DI seam: store the injected cross-subsystem deps. Every later
+	// instance-method reach-in routes through these instead of g_xEngine.
+	m_pxGraphics = &xGraphics;
+	m_pxHDR      = &xHDR;
+
 	CreateRenderTargets();
 
 	// Atmosphere & solid-colour CB allocations are one-time — kept in
 	// Initialise so hot-reload's BuildPipelines() doesn't leak them.
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), g_xEngine.Skybox().m_xSolidColourConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
+	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
 
 	BuildPipelines();
 
 	// Take a ref-counted copy of the global cubemap handle (set during init in Zenith_Main).
-	g_xEngine.Skybox().m_xCubemapTexture = g_xEngine.FluxGraphics().m_xCubemapTexture;
+	this->m_xCubemapTexture = m_pxGraphics->m_xCubemapTexture;
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -179,20 +184,23 @@ void Flux_SkyboxImpl::Initialise()
 
 void Flux_SkyboxImpl::ReleaseAssetReferences()
 {
-	g_xEngine.Skybox().m_xCubemapTexture.Clear();
+	this->m_xCubemapTexture.Clear();
 }
 
 void Flux_SkyboxImpl::Shutdown()
 {
 	DestroyRenderTargets();
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xSolidColourConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(this->m_xAtmosphereConstantsBuffer);
+	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(this->m_xSolidColourConstantsBuffer);
+	// Drop the injected deps so the instance returns to a clean default state.
+	m_pxGraphics = nullptr;
+	m_pxHDR      = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
 void Flux_SkyboxImpl::Reset()
 {
-	g_xEngine.Skybox().m_bLUTNeedsUpdate = true;
+	this->m_bLUTNeedsUpdate = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SkyboxImpl::Reset()");
 }
 
@@ -205,31 +213,36 @@ void Flux_SkyboxImpl::CreateRenderTargets()
 	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
-	xBuilder.BuildColour(g_xEngine.Skybox().m_xTransmittanceLUT, "Skybox Transmittance LUT");
+	xBuilder.BuildColour(this->m_xTransmittanceLUT, "Skybox Transmittance LUT");
 }
 
 void Flux_SkyboxImpl::DestroyRenderTargets()
 {
-	if (g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
+	if (this->m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
-		Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle);
-		g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle,
-			g_xEngine.Skybox().m_xTransmittanceLUT.RTV().m_xImageViewHandle, g_xEngine.Skybox().m_xTransmittanceLUT.DSV().m_xImageViewHandle,
-			g_xEngine.Skybox().m_xTransmittanceLUT.SRV().m_xImageViewHandle, g_xEngine.Skybox().m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
+		Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(this->m_xTransmittanceLUT.m_xVRAMHandle);
+		g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, this->m_xTransmittanceLUT.m_xVRAMHandle,
+			this->m_xTransmittanceLUT.RTV().m_xImageViewHandle, this->m_xTransmittanceLUT.DSV().m_xImageViewHandle,
+			this->m_xTransmittanceLUT.SRV().m_xImageViewHandle, this->m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
 	}
 }
 
 
 static void PreExecuteSkybox(void*)
 {
+	// Non-capturing graph callback (void(*)(void*)) — it cannot capture, so it
+	// re-enters via g_xEngine.Skybox() to reach the singleton instance. VulkanMemory
+	// stays a direct infra reach-in.
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+
 	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
 	// Upload buffer data sequentially before parallel recording
 	if (!xOpts.m_bSkyboxEnabled)
 	{
 		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
-		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Skybox().m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
+		g_xEngine.VulkanMemory().UploadBufferData(xSkybox.m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
-	else if (g_xEngine.Skybox().IsAtmosphereEnabled())
+	else if (xSkybox.IsAtmosphereEnabled())
 	{
 		s_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::afRAYLEIGH_SCATTER[0],
@@ -245,19 +258,19 @@ static void PreExecuteSkybox(void*)
 
 		s_xAtmosphereConstants.m_fPlanetRadius = AtmosphereConfig::fEARTH_RADIUS;
 		s_xAtmosphereConstants.m_fAtmosphereRadius = AtmosphereConfig::fATMOSPHERE_RADIUS;
-		s_xAtmosphereConstants.m_fMieG = g_xEngine.Skybox().GetMieG();
-		s_xAtmosphereConstants.m_fSunIntensity = g_xEngine.Skybox().GetSunIntensity();
+		s_xAtmosphereConstants.m_fMieG = xSkybox.GetMieG();
+		s_xAtmosphereConstants.m_fSunIntensity = xSkybox.GetSunIntensity();
 
-		s_xAtmosphereConstants.m_fRayleighScale = g_xEngine.Skybox().GetRayleighScale();
-		s_xAtmosphereConstants.m_fMieScale = g_xEngine.Skybox().GetMieScale();
-		s_xAtmosphereConstants.m_fAerialPerspectiveStrength = g_xEngine.Skybox().GetAerialPerspectiveStrength();
+		s_xAtmosphereConstants.m_fRayleighScale = xSkybox.GetRayleighScale();
+		s_xAtmosphereConstants.m_fMieScale = xSkybox.GetMieScale();
+		s_xAtmosphereConstants.m_fAerialPerspectiveStrength = xSkybox.GetAerialPerspectiveStrength();
 		s_xAtmosphereConstants.m_uDebugMode = dbg_uSkyboxDebugMode;
 
 		s_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
 		s_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
 		s_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
 
-		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
+		g_xEngine.VulkanMemory().UploadBufferData(xSkybox.m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
 	}
 }
 
@@ -267,26 +280,34 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 	{
 		// Solid colour override (buffer uploaded in PreExecuteSkybox)
 
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Skybox().m_xSolidColourPipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+		// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+		// cannot capture, so it re-enters via g_xEngine.Skybox() to reach the
+		// singleton instance, then routes its FluxGraphics reach-ins through the
+		// injected member (mirrors ExecuteSDFs).
+		Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+
+		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xSolidColourPipeline);
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.Skybox().m_xSolidColourConstantsBuffer.GetCBV(), 0);
+		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_xSolidColourConstantsBuffer.GetCBV(), 0);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 		return;
 	}
 
-	if (g_xEngine.Skybox().IsAtmosphereEnabled())
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+
+	if (xSkybox.IsAtmosphereEnabled())
 	{
 		// Atmosphere sky (constants uploaded in PreExecuteSkybox)
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Skybox().m_xAtmospherePipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xAtmospherePipeline);
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 		{
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			xBinder.BindCBV(g_xEngine.Skybox().m_xAtmosphereShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-			xBinder.BindCBV(g_xEngine.Skybox().m_xAtmosphereShader, "AtmosphereConstants", &g_xEngine.Skybox().m_xAtmosphereConstantsBuffer.GetCBV());
+			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "FrameConstants", &xSkybox.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
 		}
 
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -294,17 +315,17 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 	else
 	{
 		// Cubemap sky
-		Zenith_TextureAsset* pxCubemap = g_xEngine.Skybox().m_xCubemapTexture.GetDirect();
+		Zenith_TextureAsset* pxCubemap = xSkybox.m_xCubemapTexture.GetDirect();
 		if (!pxCubemap || !pxCubemap->m_xSRV.m_xImageViewHandle.IsValid())
 		{
 			return;
 		}
 
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Skybox().m_xCubemapPipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xCubemapPipeline);
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
+		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
 		pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxCubemap->m_xSRV, 1);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 	}
@@ -312,20 +333,25 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 {
-	if (!g_xEngine.Skybox().IsAtmosphereEnabled() || !g_xEngine.Skybox().IsAerialPerspectiveEnabled())
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// capture, so it re-enters via g_xEngine.Skybox() to reach the singleton
+	// instance, then routes its FluxGraphics reach-ins through the injected member.
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+
+	if (!xSkybox.IsAtmosphereEnabled() || !xSkybox.IsAerialPerspectiveEnabled())
 	{
 		return;
 	}
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Skybox().m_xAerialPerspectivePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xAerialPerspectivePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "AtmosphereConstants", &g_xEngine.Skybox().m_xAtmosphereConstantsBuffer.GetCBV());
-		xBinder.BindSRV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "g_xDepthTex", &g_xEngine.FluxGraphics().GetDepthAttachment().SRV());
+		xBinder.BindCBV(xSkybox.m_xAerialPerspectiveShader, "FrameConstants", &xSkybox.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(xSkybox.m_xAerialPerspectiveShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+		xBinder.BindSRV(xSkybox.m_xAerialPerspectiveShader, "g_xDepthTex", &xSkybox.m_pxGraphics->GetDepthAttachment().SRV());
 	}
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -338,12 +364,12 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// clear the MRT target (both color — redundantly — and depth, which the
 	// subsequent geometry passes need for depth testing).
 	xGraph.AddPass("Skybox", ExecuteSkybox)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
 		// Depth is attached purely so ClearTargets() clears it to 1.0; the
 		// skybox pipelines disable depth test/write, so the draw does not touch it.
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
+		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
 		.Prepare(PreExecuteSkybox)
 		.ClearTargets();
 }
@@ -356,8 +382,8 @@ void Flux_SkyboxImpl::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph
 	// it downstream of the lighting pass — otherwise it would blend into stale
 	// last-frame HDR and produce garbage.
 	xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Writes(m_pxHDR->GetHDRSceneTarget(),          RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (m_pxGraphics->GetDepthAttachment(),    RESOURCE_ACCESS_READ_SRV);
 }
 
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
@@ -368,7 +394,7 @@ bool Flux_SkyboxImpl::IsAerialPerspectiveEnabled() const { return Zenith_Graphic
 
 Flux_ShaderResourceView& Flux_SkyboxImpl::GetTransmittanceLUTSRV()
 {
-	return g_xEngine.Skybox().m_xTransmittanceLUT.SRV();
+	return this->m_xTransmittanceLUT.SRV();
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -383,6 +409,6 @@ void Flux_SkyboxImpl::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);
 
-	g_xEngine.DebugVariables().AddTexture({ "Flux", "Skybox", "Textures", "TransmittanceLUT" }, g_xEngine.Skybox().m_xTransmittanceLUT.SRV());
+	g_xEngine.DebugVariables().AddTexture({ "Flux", "Skybox", "Textures", "TransmittanceLUT" }, this->m_xTransmittanceLUT.SRV());
 }
 #endif

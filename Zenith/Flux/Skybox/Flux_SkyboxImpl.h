@@ -6,6 +6,12 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 
+// Cross-subsystem dependencies injected into Initialise (Wave-15 DI seam, same
+// reusable template as the Wave-14 Flux_SDFsImpl / Wave-11 Flux_SSAOImpl leaf
+// seams). Forward-declared here; full headers are pulled in by Flux_Skybox.cpp.
+class Flux_GraphicsImpl;
+class Flux_HDRImpl;
+
 namespace AtmosphereConfig
 {
 	constexpr float fEARTH_RADIUS = 6360000.0f;
@@ -51,6 +57,17 @@ enum Skybox_DebugMode : u_int
 };
 
 // Phase 9: state + behaviour for Skybox subsystem.
+//
+// Wave-15 DI seam (mirrors Flux_SDFsImpl/Flux_SSAOImpl): the two cross-subsystem
+// dependencies (FluxGraphics for the fullscreen quad + frame constants + MRT and
+// final-RT attachments, HDR for the scene render target in the aerial-perspective
+// path) are INJECTED through Initialise as explicit references and stored as
+// member pointers, rather than reached for via g_xEngine.X() inside every method.
+// The only place g_xEngine self-lookup survives is the non-capturing fn-pointer
+// trampolines (the Execute* graph callbacks and the ZENITH_TOOLS hot-reload
+// callback) — those cannot capture state, so they re-enter via g_xEngine.Skybox()
+// to reach this singleton instance and then route their other reach-ins through
+// the injected members.
 class Flux_SkyboxImpl
 {
 public:
@@ -60,7 +77,10 @@ public:
 	Flux_SkyboxImpl(const Flux_SkyboxImpl&) = delete;
 	Flux_SkyboxImpl& operator=(const Flux_SkyboxImpl&) = delete;
 
-	void Initialise();
+	// Cross-subsystem deps are injected here and stored into the member pointers
+	// below. This is the WS9.2 DI template: explicit ref params -> stored member
+	// pointers.
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR);
 	void ReleaseAssetReferences();
 	void Shutdown();
 	void Reset();
@@ -115,4 +135,10 @@ public:
 	float                      m_fMieScale                  = 1.0f;
 	float                      m_fMieG                      = AtmosphereConfig::fMIE_G;
 	float                      m_fAerialPerspectiveStrength = 1.0f;
+
+	// Injected cross-subsystem dependencies (stored by Initialise). Default
+	// nullptr so a default-constructed instance is headless-safe; the real boot
+	// path wires them through the Flux_FeatureRegistry Skybox init trampoline.
+	Flux_GraphicsImpl* m_pxGraphics = nullptr;
+	Flux_HDRImpl*      m_pxHDR      = nullptr;
 };
