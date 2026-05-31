@@ -85,8 +85,13 @@ void Flux_StaticMeshesImpl::BuildPipelines()
 	}
 }
 
-void Flux_StaticMeshesImpl::Initialise()
+void Flux_StaticMeshesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 {
+	// Wave-15 DI seam: store the injected cross-subsystem dep. The FluxGraphics
+	// reach-ins (in SetupRenderGraph, ExecuteGBuffer and RenderModelInstanceMeshes)
+	// route through this instead of g_xEngine.FluxGraphics().
+	m_pxGraphics = &xGraphics;
+
 	BuildPipelines();
 
 #ifdef ZENITH_TOOLS
@@ -111,6 +116,9 @@ void Flux_StaticMeshesImpl::Shutdown()
 	g_xEngine.StaticMeshes().m_xShadowPipeline.Reset();
 	g_xEngine.StaticMeshes().m_xGBufferShader.Reset();
 	g_xEngine.StaticMeshes().m_xShadowShader.Reset();
+
+	// Drop the injected dep so the instance returns to a clean default state.
+	m_pxGraphics = nullptr;
 }
 
 void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -123,10 +131,10 @@ void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// pass's Prepare before RecordCommandLists dispatches any record task.
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)
 		.Prepare([](void* p){ g_xEngine.StaticMeshes().GatherDrawPacket(p); })
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 // Prepare callback (main thread): walk every Zenith_ModelComponent in all
@@ -227,7 +235,10 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 		Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-		if (!pxMaterial) pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+		// Non-capturing static helper: re-enter via g_xEngine.StaticMeshes() to reach
+		// the singleton instance, then route the FluxGraphics reach-in (blank-material
+		// fallback) through the injected member (mirrors ExecuteSDFs / ExecuteQuads).
+		if (!pxMaterial) pxMaterial = g_xEngine.StaticMeshes().m_pxGraphics->m_xBlankMaterial.GetDirect();
 		Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());
@@ -241,7 +252,10 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.StaticMeshes().m_xGBufferPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(g_xEngine.StaticMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	// Non-capturing graph callback: keep the g_xEngine.StaticMeshes() self-lookup to
+	// reach the shader on this singleton instance, and route the FluxGraphics reach-in
+	// (frame constants) through the injected member (mirrors ExecuteSDFs / ExecuteQuads).
+	xBinder.BindCBV(g_xEngine.StaticMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.StaticMeshes().m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
 	// access here — this runs on a worker thread.

@@ -227,7 +227,10 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.IBL().SetupRenderGraph(g); },
 		+[](){ g_xEngine.IBL().Shutdown(); });
 	const u_int uStaticMeshes = xReg.Register(szFLUX_FEATURE_STATIC_MESHES,
-		+[](){ g_xEngine.StaticMeshes().Initialise(); },
+		// DI seam: StaticMeshes::Initialise takes (Graphics&). FluxGraphics is brought
+		// up inline before this walk, so the dep is ready. The ECS reach inside
+		// GatherDrawPacket (g_xEngine.Scenes()) stays self-routed by design.
+		+[](){ g_xEngine.StaticMeshes().Initialise(g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.StaticMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.StaticMeshes().Shutdown(); });
 	const u_int uAnimatedMeshes = xReg.Register(szFLUX_FEATURE_ANIMATED_MESHES,
