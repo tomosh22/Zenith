@@ -20,4 +20,10 @@ enum class Zenith_ErrorCode : unsigned int
 	OUT_OF_MEMORY,
 	INVALID_ARGUMENT,
 	QUEUE_FULL,
+	// Appended at the END (ordinal-safe): a shader program failed to compile
+	// at runtime via Flux_SlangCompiler::CompileProgram. Codes are
+	// runtime-return-only and never serialized, so appending here cannot shift
+	// any persisted ordinal. Returned by Zenith_Vulkan_Shader::InitialiseEx on
+	// the source-compile path.
+	SHADER_COMPILE_FAILED,
 };
