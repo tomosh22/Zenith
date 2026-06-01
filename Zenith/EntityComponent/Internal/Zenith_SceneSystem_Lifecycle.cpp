@@ -359,7 +359,3 @@ bool Zenith_AreRenderTasksActive() { return g_xEngine.Scenes().AreRenderTasksAct
 // WS10: forwards the sparse-set query read toggle to Zenith_Query.h without the
 // header cycle (see Zenith_RenderTaskState.h for the rationale).
 bool Zenith_AreSparseQueryReadsEnabled() { return g_xEngine.Scenes().AreSparseQueryReadsEnabled(); }
-
-// WS12: forwards the parallel-sim wave-in-flight signal to SceneData.h's
-// component-read asserts without the header cycle (see Zenith_RenderTaskState.h).
-bool Zenith_IsParallelSimWaveActive() { return g_xEngine.Scenes().AreParallelSimWaveActive(); }

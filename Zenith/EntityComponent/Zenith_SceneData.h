@@ -90,19 +90,6 @@ public:
 	// tests that explicitly inspect the scrubbed state + the SceneData destructor.
 	void ScrubAndReset();
 
-	// WS12 bench/soak hook (all configs). Thin public forwarder to the private
-	// per-frame OnUpdate chokepoint (DispatchOnUpdateForEntities, which carries
-	// the parallel-sim gate), exposed so the GPU-free --bench-sim /
-	// --check-sim-determinism harnesses in Zenith_BenchECS.cpp can drive exactly
-	// the gated path without befriending the whole bench TU. Mirrors the
-	// Editor_* forwarder precedent. NOT part of the normal-runtime surface —
-	// game code never calls this; the engine's own per-frame Update reaches the
-	// chokepoint internally.
-	void Bench_DispatchOnUpdatePass(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
-	{
-		DispatchOnUpdateForEntities(xSnapshotIDs, fDt);
-	}
-
 	//==========================================================================
 	// Read-Only Scene Properties
 	//==========================================================================
@@ -475,44 +462,6 @@ private:
 	enum class LifecycleHook { UPDATE, LATE_UPDATE };
 	void DispatchLifecycleHookForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook);
 
-	// WS12 gated parallel dispatch (only reached when
-	// g_xEngine.Scenes().AreParallelSimEnabled() is true — otherwise
-	// DispatchLifecycleHookForEntities runs its existing serial loop verbatim).
-	// Walks the snapshot in deterministic order, running the same EntityExists /
-	// WasCreatedDuringUpdate / IsActiveInHierarchy guards on the MAIN THREAD.
-	// MAXIMAL CONTIGUOUS RUNS of eligible (collider-free / script-free
-	// Tween-only) entities are fanned across the task system as one disjoint
-	// wave each; an ineligible entity flushes the pending wave (barrier) then
-	// dispatches inline. This preserves the EXACT global serial order of every
-	// entity relative to every other, so the result is byte-identical to serial
-	// for ANY scene — not just cross-dependency-free ones (eligible entities
-	// never read other entities; the pre-ineligible barrier publishes their
-	// writes). Proven by ParallelSimDeterminismSmoke / --check-sim-determinism.
-	void ParallelDispatchHook(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook);
-
-	// Context + worker for the WS12 eligible-entity parallel wave. The worker is
-	// a static member (not a free function) so it can reach the private
-	// WasCreatedDuringUpdate guard; its signature matches Zenith_TaskArrayFunction
-	// (void(*)(void*, u_int, u_int)) so &Zenith_SceneData::ParallelSimShardFunc is
-	// a valid task-array function pointer.
-	struct ParallelSimShardContext
-	{
-		Zenith_SceneData*                     m_pxSceneData   = nullptr;
-		const Zenith_Vector<Zenith_EntityID>* m_pxEligibleIDs = nullptr;
-		float                                 m_fDt           = 0.0f;
-		bool                                  m_bLateUpdate   = false; // false=OnUpdate, true=OnLateUpdate
-	};
-	static void ParallelSimShardFunc(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
-
-	// WS12 eligibility predicate for a single entity (the conservative parallel
-	// unit gate). Returns true ONLY if ALL hold: (a) the entity's aggregate
-	// per-frame-update access mask is a strict subset of
-	// {READS_TRANSFORM|WRITES_TRANSFORM} (no UNKNOWN/PHYSICS bit — see
-	// Zenith_AccessSet); (b) the entity has NO ColliderComponent (the hidden
-	// Tween->Jolt physics-write guard); (c) the entity has NO ScriptComponent
-	// (open-ended surface). Anything else -> serial/main-thread. Defined in the
-	// .cpp where the concrete component types are available.
-	bool IsEntityParallelEligible(Zenith_Entity& xEntity);
 	void DispatchOnUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
 		{ DispatchLifecycleHookForEntities(xSnapshotIDs, fDt, LifecycleHook::UPDATE); }
 	void DispatchOnLateUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
@@ -712,12 +661,7 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 template<typename T>
 bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 {
-	// WS12: also permitted during a parallel-sim OnUpdate wave — the eligible
-	// entities are provably disjoint (each Tween reads/writes only its own
-	// Transform), so concurrent component-map reads are race-free, exactly like
-	// the render-task window above.
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive() || Zenith_IsParallelSimWaveActive()
-		,
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(),
 		"EntityHasComponent must be called from main thread");
 	if (!EntityExists(xID)) return false;
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
@@ -728,9 +672,7 @@ bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 template<typename T>
 T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 {
-	// WS12: also permitted during a parallel-sim OnUpdate wave (disjoint eligible
-	// entities — each Tween touches only its own Transform). See EntityHasComponent.
-	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive() || Zenith_IsParallelSimWaveActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(),
 		"GetComponentFromEntity must be called from main thread");
 	Zenith_Assert(EntityExists(xID), "GetComponentFromEntity: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
 

@@ -167,12 +167,8 @@ void Zenith_ComponentMetaRegistry::FinalizeRegistration()
 	Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] Finalized with %u component types:", static_cast<u_int>(m_xMetasSorted.size()));
 	for (const auto* pxMeta : m_xMetasSorted)
 	{
-		// Surface the (inert) access-set masks alongside the serialization order
-		// so the populated metadata is observable at boot. No runtime consumer
-		// reads them yet — the future system scheduler will.
-		Zenith_Log(LOG_CATEGORY_ECS, "  [%u] %s (reads=0x%X writes=0x%X)",
-			pxMeta->m_uSerializationOrder, pxMeta->m_strTypeName.c_str(),
-			pxMeta->m_uReads, pxMeta->m_uWrites);
+		Zenith_Log(LOG_CATEGORY_ECS, "  [%u] %s",
+			pxMeta->m_uSerializationOrder, pxMeta->m_strTypeName.c_str());
 	}
 }
 

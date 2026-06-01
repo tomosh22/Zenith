@@ -193,9 +193,9 @@ public:
 	void SubmitTaskArray(Zenith_TaskArray* pxTaskArray);
 
 	// Number of worker threads created at Initialise (min(hw_concurrency-1, 16)).
-	// Used by data-parallel callers (e.g. WS12 parallel-sim) to size a
-	// Zenith_TaskArray's invocation count. May be 0 before Initialise / on a
-	// single-core box; callers must clamp to at least 1.
+	// Used by data-parallel callers to size a Zenith_TaskArray's invocation
+	// count. May be 0 before Initialise / on a single-core box; callers must
+	// clamp to at least 1.
 	u_int GetNumWorkerThreads() const { return m_uNumWorkerThreads; }
 
 	// Called by the static worker thread function. Public so the

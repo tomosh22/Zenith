@@ -929,7 +929,6 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_AccessSet.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />

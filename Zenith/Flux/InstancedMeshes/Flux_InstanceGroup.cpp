@@ -395,9 +395,8 @@ void Flux_InstanceGroup::ComputeVisibleIndices(Zenith_Vector<uint32_t>& xauVisib
 uint64_t Flux_InstanceGroup::HashVisibleStateForTest() const
 {
 	// FNV-1a over m_uVisibleCount followed by the ComputeVisibleIndices list.
-	// Mirrors the byte-feeding methodology of Zenith_HashSceneTransforms (the
-	// WS12 determinism cross-check): no struct memcpy, so no uninitialised
-	// padding ever feeds the hash.
+	// Byte-feeding methodology: no struct memcpy, so no uninitialised padding
+	// ever feeds the hash.
 	uint64_t uHash = 0xcbf29ce484222325ull;
 	auto Bytes = [&uHash](const void* p, size_t n)
 	{

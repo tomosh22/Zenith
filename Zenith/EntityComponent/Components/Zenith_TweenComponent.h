@@ -21,25 +21,6 @@ public:
 	// ECS lifecycle
 	void OnUpdate(float fDt);
 
-	// WS12 access-set declaration (AUDITED). Detected by HasAccessSet<T> and
-	// copied into the component meta at registration; read by the parallel-sim
-	// eligibility check (Zenith_AccessSet). Tween writes/reads only its own
-	// entity Transform; SetPosition syncs the Jolt body IFF the entity has a
-	// Collider, so the scheduler EXCLUDES collider-bearing entities from
-	// parallel dispatch; no cross-entity access, no scene mutation.
-	//
-	// We cannot include Zenith_ComponentMeta.h here (Entity -> Scene ->
-	// SceneData -> components would cycle), so the Zenith_ComponentAccess bit
-	// values are written directly, matching Zenith_TransformComponent. Keep in
-	// sync with the enum:
-	//     READS_TRANSFORM  = 1u << 0
-	//     WRITES_TRANSFORM = 1u << 1
-	static void DeclareAccess(u_int& uReads, u_int& uWrites)
-	{
-		uReads = (1u << 0);   // Zenith_ComponentAccess::READS_TRANSFORM
-		uWrites = (1u << 1);  // Zenith_ComponentAccess::WRITES_TRANSFORM
-	}
-
 	// Start a tween from current transform value to target
 	void TweenPosition(const Zenith_Maths::Vector3& xTo, float fDuration, Zenith_EasingType eEasing = EASING_QUAD_OUT);
 	void TweenScale(const Zenith_Maths::Vector3& xTo, float fDuration, Zenith_EasingType eEasing = EASING_QUAD_OUT);

@@ -83,42 +83,6 @@ using ComponentLifecycleFn = void(*)(Zenith_Entity&);
 using ComponentUpdateFn = void(*)(Zenith_Entity&, float);
 
 //------------------------------------------------------------------------------
-// Component access-set metadata (INERT this wave)
-//
-// Coarse, conservative description of which engine domains a component reads
-// and writes. This is metadata ONLY — nothing in the engine consumes it yet.
-// It is populated at component-type registration (compile-time detected, exactly
-// like the lifecycle hooks below) so the future system scheduler can read it to
-// decide which component updates may run in parallel. Shipping it inert now
-// de-risks that later keystone: the masks already exist and are populated.
-//
-// The values are a stable bit contract. Components opt in by declaring the
-// OPTIONAL static method (detected by HasAccessSet<T>):
-//
-//     static void DeclareAccess(u_int& uReads, u_int& uWrites)
-//     {
-//         uReads  = static_cast<u_int>(Zenith_ComponentAccess::READS_TRANSFORM);
-//         uWrites = static_cast<u_int>(Zenith_ComponentAccess::WRITES_TRANSFORM);
-//     }
-//
-// Components that don't declare it leave both masks at 0 (NONE).
-//
-// NOTE: components whose headers cannot include this one without a textual
-// cycle (e.g. Zenith_TransformComponent.h — see its DeclareAccess) write the
-// raw bit values directly and document the correspondence. Keep that bit
-// contract in sync with this enum.
-//------------------------------------------------------------------------------
-
-enum class Zenith_ComponentAccess : u_int
-{
-	NONE             = 0,
-	READS_TRANSFORM  = 1u << 0,
-	WRITES_TRANSFORM = 1u << 1,
-	READS_PHYSICS    = 1u << 2,
-	WRITES_PHYSICS   = 1u << 3,
-};
-
-//------------------------------------------------------------------------------
 // C++20 Concepts for optional lifecycle hooks
 //------------------------------------------------------------------------------
 
@@ -151,18 +115,10 @@ concept HasRegisterProperties = requires(Zenith_Vector<Zenith_PropertyDescriptor
 	{ T::RegisterProperties(a) } -> std::same_as<void>;
 };
 
-// Optional: a component declares its coarse read/write access set (see
-// Zenith_ComponentAccess above). Detected and populated at registration exactly
-// like the lifecycle hooks. Components without this static leave both masks 0.
-template<typename T>
-concept HasAccessSet = requires(u_int& uReads, u_int& uWrites) {
-	{ T::DeclareAccess(uReads, uWrites) } -> std::same_as<void>;
-};
-
 // Optional: a component declares the on-disk schema version of its serialized
 // payload (INERT this wave — see Zenith_ComponentMeta::m_uSchemaVersion). A
 // component opts in by adding `static constexpr u_int uSchemaVersion = N;`.
-// Detected at registration exactly like the access-set / lifecycle hooks.
+// Detected at registration exactly like the lifecycle hooks.
 template<typename T>
 concept HasSchemaVersion = requires { { T::uSchemaVersion } -> std::convertible_to<u_int>; };
 
@@ -223,13 +179,6 @@ struct Zenith_ComponentMeta
 	ComponentUpdateFn m_pfnOnLateUpdate = nullptr;  // Called after all OnUpdate calls
 	ComponentUpdateFn m_pfnOnFixedUpdate = nullptr; // Called at fixed timestep
 	ComponentLifecycleFn m_pfnOnDestroy = nullptr;  // Called before component is removed
-
-	// Coarse access-set metadata (INERT this wave — populated for the future
-	// system scheduler, no runtime consumer yet). Bitmasks of
-	// Zenith_ComponentAccess values. Both stay 0 (NONE) for components that
-	// don't implement DeclareAccess. See HasAccessSet<T> / Zenith_ComponentAccess.
-	u_int m_uReads = 0;
-	u_int m_uWrites = 0;
 
 	// On-disk schema version of this component's serialized payload (INERT this
 	// wave). Written per-component into scene v6 files OUTSIDE the size-prefixed
@@ -475,14 +424,6 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 	if constexpr (HasRegisterProperties<T>)
 	{
 		T::RegisterProperties(xMeta.m_axProperties);
-	}
-
-	// Detect the optional access-set declaration the same way. Components that
-	// declare DeclareAccess populate the coarse read/write masks; the rest keep
-	// the default 0/0. INERT this wave — no runtime consumer yet.
-	if constexpr (HasAccessSet<T>)
-	{
-		T::DeclareAccess(xMeta.m_uReads, xMeta.m_uWrites);
 	}
 
 	// Record the component's on-disk schema version (default 1; a component

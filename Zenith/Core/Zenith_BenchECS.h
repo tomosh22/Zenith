@@ -34,26 +34,3 @@ void Zenith_BenchECS_Run();
 // churn always dual-writes the sparse index regardless of path. Defaults to
 // true (sparse) so the existing Core/BenchECSSmoke call site is unchanged.
 u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters, bool bUseSparse = true);
-
-// ============================================================================
-// WS12 parallel-simulation bench + determinism soak (siblings of the ECS bench;
-// share this TU to avoid a Sharpmake regen). Both build N collider-free Tween
-// entities via the public ECS API and drive the per-frame OnUpdate chokepoint
-// (Zenith_SceneData::DispatchOnUpdateForEntities) with the parallel-sim flag
-// OFF then ON. Both are GPU-free, so they run cleanly in a headless process.
-// ============================================================================
-
-// --bench-sim entry point. For each canonical N (256, 1024, 4096): build the
-// scene, time M update passes with parallel OFF (serial) then ON (parallel),
-// print one BENCH line each + a ratio, and IN-BENCH Zenith_Assert that the
-// field-by-field state hash is identical across the two passes. Restores the
-// flag. Honest expectation: ~nil/modest speedup — the bench proves NO
-// REGRESSION when off + measures the wave-building overhead when on.
-void Zenith_BenchSim_Run();
-
-// --check-sim-determinism entry point (the heavy soak the orchestrator runs
-// explicitly). Builds a fixed scene of ~256 collider-free Tween entities, runs
-// ~300 fixed-dt frames serial to get a reference hash, then repeats the
-// parallel run ~16x asserting ALL parallel hashes equal the serial hash. Prints
-// a single clear PASS/FAIL line. Returns true on PASS.
-bool Zenith_CheckSimDeterminism_Run();

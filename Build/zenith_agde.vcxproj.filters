@@ -3471,9 +3471,6 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_AccessSet.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
