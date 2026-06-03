@@ -15,38 +15,11 @@ class Zenith_Prefab;
 class Zenith_DataStream;
 
 /**
- * Zenith_AssetHandle<T> - Smart handle for referencing assets
- *
- * This is THE primary way to reference assets in components and other assets.
- * Instead of storing raw pointers, store an AssetHandle which:
- * - Manages reference counting automatically (AddRef on copy, Release on destroy)
- * - Loads assets on demand via the registry
- * - Serializes by path for scene save/load
- * - Uses prefixed paths for cross-machine portability
- *
- * Path Prefixes:
- *   game:   - Game assets (e.g., "game:Textures/diffuse.ztxtr")
- *   engine: - Engine assets (e.g., "engine:Materials/default.zmat")
- *
- * Usage:
- *   // In component header
- *   TextureHandle m_xDiffuseTexture;
- *   MeshHandle m_xMesh;
- *
- *   // Set from prefixed path
- *   m_xDiffuseTexture = TextureHandle("game:Textures/diffuse.ztxtr");
- *
- *   // Resolve a file-based handle (lazy loads on first call, caches afterwards)
- *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.Resolve();
- *
- *   // Retrieve procedural assets (created via reg.Create<T>() and stored with Set())
- *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.GetDirect();
- *
- *   // Equivalent to Resolve(), but explicit about the registry call:
- *   Zenith_TextureAsset* pTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
- *
- *   // Check if valid
- *   if (m_xMesh) { ... }
+ * Zenith_AssetHandle<T> - smart, ref-counted handle; THE way to reference assets.
+ * Stores a prefixed path ("game:" / "engine:") and serializes by path.
+ *   Resolve()   - file-backed: lazy-loads via the registry and caches. Default accessor.
+ *   GetDirect() - procedural: returns the pointer stored via Set(), no registry call.
+ * See AssetHandling/CLAUDE.md for the full accessor breakdown.
  */
 template<typename T>
 class Zenith_AssetHandle

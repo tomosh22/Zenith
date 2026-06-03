@@ -539,32 +539,6 @@ void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, 
 
 void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void*, uint32_t) {
 	STUBBED
-		/*
-		Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
-
-		if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME)
-		{
-			vk::AccelerationStructureKHR& xTlas = *reinterpret_cast<vk::AccelerationStructureKHR*>(pxStruct);
-
-			vk::WriteDescriptorSetAccelerationStructureKHR xInfo = vk::WriteDescriptorSetAccelerationStructureKHR()
-				.setAccelerationStructureCount(1)
-				.setAccelerationStructures(xTlas);
-
-			vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-				.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-				//#TO index 0 for per frame set
-				.setDstSet(m_pxCurrentPipeline->m_axDescSets[m_pxRenderer->m_currentFrame][0])
-				.setDstBinding(uBindPoint)
-				.setDescriptorCount(1)
-				.setPNext(&xInfo);
-
-			m_pxRenderer->GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
-		}
-	#if 0
-		else if (m_eCurrentBindFreq == RendererAPI::BINDING_FREQUENCY_PER_DRAW)
-			m_xBindings[m_eCurrentBindFreq].m_xBuffers[uBindPoint] = reinterpret_cast<Buffer*>(pxBuffer);
-	#endif
-		*/
 }
 
 void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, u_int uBinding)

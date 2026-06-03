@@ -45,40 +45,11 @@ class Zenith_ScriptAsset;
 Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
 
 /**
- * Zenith_AssetRegistry - THE unified asset management system
- *
- * This singleton replaces all previous asset management systems:
- * - Zenith_AssetHandler (pools and caches)
- * - Zenith_AssetDatabase (GUID registry)
- * - Zenith_AssetRef caches (per-type static caches)
- * - Flux_MaterialAsset caches (material and texture caches)
- *
- * Features:
- * - Single unified cache for all asset types
- * - Path-based identification with prefixes (game: and engine:)
- * - Reference counting with automatic cleanup
- * - Support for procedural (code-created) assets
- * - Thread-safe operations
- * - Relative paths for cross-machine portability
- *
- * Path Prefixes:
- *   game:   - Resolves to GAME_ASSETS_DIR (e.g., "game:Textures/diffuse.ztxtr")
- *   engine: - Resolves to ENGINE_ASSETS_DIR (e.g., "engine:Materials/default.zmat")
- *
- * Usage:
- *   // Set directories at startup
- *   Zenith_AssetRegistry::SetGameAssetsDir(GAME_ASSETS_DIR);
- *   Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
- *   Zenith_AssetRegistry::Initialize();
- *
- *   // Load asset from file (using prefixed path)
- *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("game:Textures/diffuse.ztxtr");
- *
- *   // Create procedural asset
- *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Create<Zenith_MeshAsset>();
- *
- *   // Cleanup
- *   Zenith_AssetRegistry::UnloadUnused();  // Free assets with ref count 0
+ * Zenith_AssetRegistry - THE unified asset cache (singleton). Replaced the older
+ * Zenith_AssetHandler / Zenith_AssetDatabase / per-type AssetRef / material caches.
+ * Path-based IDs with "game:" / "engine:" prefixes for cross-machine portability;
+ * ref-counted with UnloadUnused() cleanup; thread-safe.
+ * See AssetHandling/CLAUDE.md for usage and two-phase init order.
  */
 class Zenith_AssetRegistry
 {

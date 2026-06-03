@@ -6,21 +6,9 @@
 
 #include <atomic>
 
-// ----------------------------------------------------------------------------
-// TaskSystem dependency model
-//
-// This is a flat task pool, NOT a dependency graph. Tasks do not wait on each
-// other and there is no DependsOn(...) API. To order work, the caller blocks
-// on WaitUntilComplete() of the predecessor task before submitting the next:
-//
-//     g_xEngine.Tasks().SubmitTask(&xTaskA);
-//     xTaskA.WaitUntilComplete();              // serialise A before B
-//     g_xEngine.Tasks().SubmitTask(&xTaskB);
-//
-// Use Zenith_TaskArray for data-parallel work where each invocation is
-// independent. Use multiple Zenith_Task submissions when the work items can
-// run concurrently but should all complete before a barrier (wait on each).
-// ----------------------------------------------------------------------------
+// TaskSystem is a FLAT task pool, NOT a dependency graph (no DependsOn API). To
+// order work, block on a task's WaitUntilComplete() before submitting its
+// successor. Use Zenith_TaskArray for data-parallel work (independent invocations).
 
 using Zenith_TaskFunction = void(*)(void* pData);
 using Zenith_TaskArrayFunction = void(*)(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
