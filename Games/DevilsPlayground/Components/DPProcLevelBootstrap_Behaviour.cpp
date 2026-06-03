@@ -14,6 +14,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Source/DPResources.h"
+#include "Source/DP_Archetypes.h"
 
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
 #include "Source/DPProcLevel/DPProcLevel_LevelLayout.h"
@@ -24,6 +25,10 @@
 #include "Source/DPMaterials.h"
 #include "Source/DPParticles.h"
 
+// Contract exception (creation/lifecycle, not cross-state reads): the bootstrap
+// is the scene's master spawn-factory -- it instantiates one entity per procgen
+// layout element using these concrete behaviours. Read cross-queries still go
+// through DP_* forwarders. See Components/CLAUDE.md.
 #include "Components/DPPentagram_Behaviour.h"
 #include "Components/DPForge_Behaviour.h"
 #include "Components/DPDoor_Behaviour.h"
@@ -367,6 +372,49 @@ void DPProcLevelBootstrap_Behaviour::FrameCameraToLevel()
 		fCentreX, fCentreZ, fOrbitDistance, fBoundsW, fBoundsD);
 }
 
+void DPProcLevelBootstrap_Behaviour::BuildVillagerArchetypeAssignment(
+	uint32_t uN, uint64_t uSeed, Zenith_Vector<const char*>& aszOut)
+{
+	aszOut.Clear();
+	if (uN == 0u) return;
+
+	// Reserve min_spawns of each non-Farmhand MVP archetype so all four MVP
+	// archetypes appear; Farmhand fills the remainder. Degrades gracefully to
+	// all-Farmhand if DP_Archetypes wasn't initialised.
+	for (size_t u = 0; u < DP_Archetypes::Count() && aszOut.GetSize() < uN; ++u)
+	{
+		const DP_Archetypes::Archetype* pxA = DP_Archetypes::GetByIndex(u);
+		if (pxA == nullptr || !pxA->mvp) continue;
+		if (pxA->id == "Farmhand") continue;
+		const int iCount = (pxA->min_spawns > 0) ? pxA->min_spawns : 1;
+		for (int k = 0; k < iCount && aszOut.GetSize() < uN; ++k)
+		{
+			aszOut.PushBack(pxA->id.c_str());  // stable: cache lives until Shutdown
+		}
+	}
+	while (aszOut.GetSize() < uN) aszOut.PushBack("Farmhand");
+
+	// Deterministic Fisher-Yates shuffle (splitmix64 seeded by the procgen
+	// seed, salted to decorrelate from the layout RNG) so specials spread
+	// spatially and vary per seed. Integer-only -> bit-reproducible.
+	uint64_t z = uSeed ^ 0xA11CE5571CECAFEFull;
+	auto Next = [&z]() -> uint64_t
+	{
+		z += 0x9e3779b97f4a7c15ull;
+		uint64_t v = z;
+		v = (v ^ (v >> 30)) * 0xbf58476d1ce4e5b9ull;
+		v = (v ^ (v >> 27)) * 0x94d049bb133111ebull;
+		return v ^ (v >> 31);
+	};
+	for (uint32_t i = aszOut.GetSize(); i > 1u; --i)
+	{
+		const uint32_t j = static_cast<uint32_t>(Next() % static_cast<uint64_t>(i));
+		const char* szTmp        = aszOut.Get(i - 1u);
+		aszOut.Get(i - 1u)       = aszOut.Get(j);
+		aszOut.Get(j)            = szTmp;
+	}
+}
+
 void DPProcLevelBootstrap_Behaviour::SpawnVillagers()
 {
 	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
@@ -374,12 +422,19 @@ void DPProcLevelBootstrap_Behaviour::SpawnVillagers()
 	if (pxScene == nullptr) return;
 
 	const uint32_t uN = m_xLayout.axVillagerSpawns.GetSize();
+
+	// #9: deterministic varied archetypes (Farmhand/Beggar/Devout/Child)
+	// instead of all-Farmhand. Indexed by villager spawn index.
+	Zenith_Vector<const char*> aszArchetype;
+	BuildVillagerArchetypeAssignment(uN, m_uSeed, aszArchetype);
+
 	uint32_t uSpawned = 0;
 	for (uint32_t i = 0; i < uN; ++i)
 	{
 		const DPProcLevel::VillagerSpawn& xV = m_xLayout.axVillagerSpawns.Get(i);
+		const char* szArch = (i < aszArchetype.GetSize()) ? aszArchetype.Get(i) : "Farmhand";
 		if (SpawnCharacterEntity(pxScene, "ProcVillager", i, xV.fX, xV.fZ,
-			xV.fYawRadians, /*bIsPriest=*/false))
+			xV.fYawRadians, /*bIsPriest=*/false, szArch))
 		{
 			++uSpawned;
 		}
@@ -412,7 +467,8 @@ bool DPProcLevelBootstrap_Behaviour::SpawnCharacterEntity(
 	float fX,
 	float fZ,
 	float fYawRadians,
-	bool bIsPriest)
+	bool bIsPriest,
+	const char* szArchetype)
 {
 	Zenith_Prefab* pxPrefab = bIsPriest
 		? DevilsPlayground::Resources().m_xPriestPrefab.GetDirect()
@@ -476,7 +532,18 @@ bool DPProcLevelBootstrap_Behaviour::SpawnCharacterEntity(
 	}
 	else
 	{
-		xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPVillager_Behaviour>();
+		Zenith_ScriptComponent& xScr = xEntity.AddComponent<Zenith_ScriptComponent>();
+		xScr.AddScript<DPVillager_Behaviour>();
+		// #9: apply the assigned archetype before the villager's OnAwake wave
+		// drains (OnAwake re-applies the same id -- idempotent). Without this
+		// every procgen villager defaulted to Farmhand.
+		if (szArchetype != nullptr)
+		{
+			if (DPVillager_Behaviour* pxV = xScr.GetScript<DPVillager_Behaviour>())
+			{
+				pxV->ApplyArchetype(szArchetype);
+			}
+		}
 	}
 
 	return true;

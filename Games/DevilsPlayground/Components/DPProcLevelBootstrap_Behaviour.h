@@ -77,6 +77,16 @@ public:
 	uint32_t GetSpawnedVillagerCount() const { return m_uSpawnedVillagers; }
 	bool     GetSpawnedPriest()        const { return m_bSpawnedPriest; }
 
+	// #9: deterministic per-villager archetype assignment. Honours each MVP
+	// archetype's min_spawns (from DP_Archetypes) so all four MVP archetypes
+	// appear; Farmhand (the bulk of the body pool) fills the rest; then a
+	// splitmix64 shuffle seeded by uSeed spreads the specials spatially and
+	// varies them per seed. Public+static so a test can pin it without a scene.
+	// The returned const char* point into the DP_Archetypes cache / string
+	// literals (stable for the spawn's duration).
+	static void BuildVillagerArchetypeAssignment(uint32_t uN, uint64_t uSeed,
+		Zenith_Vector<const char*>& aszOut);
+
 private:
 	void SpawnWalls();
 	void SpawnGameElements();
@@ -94,7 +104,8 @@ private:
 		float fX,
 		float fZ,
 		float fYawRadians,
-		bool bIsPriest);
+		bool bIsPriest,
+		const char* szArchetype = nullptr);
 
 	uint64_t                  m_uSeed = 0ull;
 	uint32_t                  m_uSpawnedWalls = 0u;
