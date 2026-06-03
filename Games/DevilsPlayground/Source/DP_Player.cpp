@@ -352,6 +352,23 @@ namespace DP_Player
 				});
 		}
 
+		// B2: skip the expensive all-scenes x all-AI-agents blackboard write
+		// unless the highest-scent target changed, or a reset / scene-load
+		// flagged the cache dirty. INVALID is a legitimate value, so an
+		// explicit dirty flag (not an INVALID sentinel) is required to force
+		// the first write after a reset. Cache is updated up-front -- the
+		// write below uses the same xHighestId regardless of order.
+		if (pxCtrl != nullptr)
+		{
+			if (!pxCtrl->m_bHighScentBlackboardDirty &&
+				xHighestId == pxCtrl->m_xLastWrittenHighScent)
+			{
+				return;
+			}
+			pxCtrl->m_xLastWrittenHighScent     = xHighestId;
+			pxCtrl->m_bHighScentBlackboardDirty = false;
+		}
+
 		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
 		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
 		{
@@ -417,6 +434,9 @@ namespace DP_Player
 		// (2026-05-22 Phase 5.2 migration).
 		pxCtrl->m_xHeldItems.Clear();
 		pxCtrl->m_xDemonScent.Clear();
+		// B2: force a fresh high-scent blackboard write next frame.
+		pxCtrl->m_xLastWrittenHighScent     = INVALID_ENTITY_ID;
+		pxCtrl->m_bHighScentBlackboardDirty = true;
 		pxCtrl->m_xPossessedVillager     = INVALID_ENTITY_ID;
 		pxCtrl->m_fPossessionCooldownSec = 0.0f;
 		pxCtrl->m_xPossessionAnchor      = Zenith_Maths::Vector3(0.0f);

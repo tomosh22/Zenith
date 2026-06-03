@@ -59,6 +59,9 @@ public:
 		Zenith_Assert(s_pxInstance == nullptr,
 			"DPPlayerController_Behaviour singleton double-instantiated");
 		s_pxInstance = this;
+		// B2: force a fresh high-scent blackboard write on the first OnUpdate
+		// so freshly-created AI agents (spawned at scene start) get the value.
+		m_bHighScentBlackboardDirty = true;
 	}
 
 	void OnDestroy() ZENITH_FINAL override
@@ -407,6 +410,13 @@ public:
 	// Demon-scent registry: per-villager scalar, accumulates on possession
 	// + decays per-frame via DP_Player::TickDemonScent.
 	Zenith_HashMap<Zenith_EntityID, float> m_xDemonScent;
+
+	// B2: cache for DP_Player::WriteHighestScentToBlackboard. The dirty flag
+	// forces the first write after OnAwake / ResetForNewRun even when the
+	// highest-scent id is INVALID (a legitimate value), so newly-created or
+	// reset AI blackboards always receive an authoritative value.
+	Zenith_EntityID m_xLastWrittenHighScent     = INVALID_ENTITY_ID;
+	bool            m_bHighScentBlackboardDirty = true;
 
 	// Possession state.
 	Zenith_EntityID       m_xPossessedVillager       = INVALID_ENTITY_ID;

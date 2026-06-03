@@ -87,6 +87,18 @@ public:
 		// at runtime.
 		ApplyArchetype(m_strArchetypeId.c_str());
 
+		// B1: cache the hot movement tuning keys once. They are read every
+		// frame from TickLife / TickMovement / TickFootsteps while possessed;
+		// DP_Tuning::Get is a linear scan + string compare, so per the
+		// "hot keys read once at OnAwake" convention they are cached here.
+		m_fSprintLifeCostExtra      = DP_Tuning::Get<float>("movement.sprint_life_cost_extra_per_s");
+		m_fSprintSpeed              = DP_Tuning::Get<float>("movement.sprint_speed_mps");
+		m_fWalkSpeed                = DP_Tuning::Get<float>("movement.walk_speed_mps");
+		m_fFootstepInterval         = DP_Tuning::Get<float>("movement.footstep_interval_s");
+		m_fFootstepLoudness         = DP_Tuning::Get<float>("movement.footstep_loudness");
+		m_fFootstepRadius           = DP_Tuning::Get<float>("movement.footstep_radius_m");
+		m_fWalkFootstepLoudnessMult = DP_Tuning::Get<float>("movement.walk_footstep_loudness_multiplier");
+
 		// Reset transient state — Editor Stop/Play would otherwise leave a
 		// stale possession flag from a previous play session.
 		m_bIsPossessed = false;
@@ -379,7 +391,7 @@ private:
 		if (m_bIsSprintingNow)
 		{
 			const float fExtra =
-				DP_Tuning::Get<float>("movement.sprint_life_cost_extra_per_s");
+				m_fSprintLifeCostExtra;
 			fDrain += fExtra * fDt;
 		}
 		m_fRemainingLife -= fDrain;
@@ -498,11 +510,11 @@ private:
 			float fSpeed = m_fMoveSpeed;
 			if (m_bIsSprintingNow)
 			{
-				fSpeed = DP_Tuning::Get<float>("movement.sprint_speed_mps");
+				fSpeed = m_fSprintSpeed;
 			}
 			else if (m_bIsWalkQuietNow)
 			{
-				fSpeed = DP_Tuning::Get<float>("movement.walk_speed_mps");
+				fSpeed = m_fWalkSpeed;
 			}
 			xVel = xDir * fSpeed;
 		}
@@ -531,15 +543,15 @@ private:
 		m_fFootstepCountdown -= fDt;
 		if (m_fFootstepCountdown > 0.0f) return;
 
-		const float fInterval = DP_Tuning::Get<float>("movement.footstep_interval_s");
+		const float fInterval = m_fFootstepInterval;
 		m_fFootstepCountdown = fInterval;
 
-		const float fBaseLoudness = DP_Tuning::Get<float>("movement.footstep_loudness");
-		const float fRadius = DP_Tuning::Get<float>("movement.footstep_radius_m");
+		const float fBaseLoudness = m_fFootstepLoudness;
+		const float fRadius = m_fFootstepRadius;
 		float fLoudness = fBaseLoudness;
 		if (m_bIsWalkQuietNow)
 		{
-			fLoudness *= DP_Tuning::Get<float>("movement.walk_footstep_loudness_multiplier");
+			fLoudness *= m_fWalkFootstepLoudnessMult;
 		}
 
 		Zenith_Maths::Vector3 xPos(0.0f);
@@ -742,6 +754,16 @@ private:
 	// that don't yet override per-villager. Updated through SetArchetype()
 	// before OnAwake or ApplyArchetype() at runtime.
 	std::string m_strArchetypeId = "Farmhand";
+
+	// B1: cached hot movement tuning, populated once in OnAwake (consumed
+	// every frame in TickLife/TickMovement/TickFootsteps while possessed).
+	float m_fSprintLifeCostExtra      = 0.0f;
+	float m_fSprintSpeed              = 0.0f;
+	float m_fWalkSpeed                = 0.0f;
+	float m_fFootstepInterval         = 0.0f;
+	float m_fFootstepLoudness         = 0.0f;
+	float m_fFootstepRadius           = 0.0f;
+	float m_fWalkFootstepLoudnessMult = 0.0f;
 	// 8 m/s — a brisk jog. The previous 4 m/s value made the
 	// HumanPlaythrough_Test miss the 3-minute wall-clock budget by a wide
 	// margin; doubling it cuts every walk leg in half without changing
