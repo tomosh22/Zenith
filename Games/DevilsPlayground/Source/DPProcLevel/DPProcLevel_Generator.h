@@ -41,10 +41,24 @@
 
 namespace DPProcLevel
 {
-	// Deterministic generation. Caller owns the LevelLayout; the
-	// function clears it before populating, so passing a recycled
-	// instance is fine. Returns true on success; only fails today
-	// for pathological GenConfigs (e.g. bounds smaller than
-	// fMinRoomSize). Failures are logged via Zenith_Warning.
+	// Deterministic generation. Caller owns the LevelLayout; the function
+	// clears it before populating, so passing a recycled instance is fine.
+	// Validates config once, then retries on a deterministically-derived seed
+	// until the layout is solvable (attempt 0 == the input seed, so already-
+	// solvable seeds are byte-identical to the pre-retry generator). Returns
+	// false ONLY when (a) the config is invalid (e.g. bounds smaller than
+	// 2*fMinRoomSize -- fails fast, no retry), or (b) every solvability retry
+	// was exhausted (xOut then holds the last attempt). Logged via Zenith_Warning.
 	bool Generate(uint64_t uSeed, const GenConfig& xConfig, LevelLayout& xOut);
+
+	// Thin public wrapper over the generator's internal reachability check.
+	// True iff the layout is solvable (spawn can reach the pentagram and craft
+	// enough keys for the locked doors). Exposed for tests.
+	bool IsLayoutSolvable(const LevelLayout& xLayout);
+
+	// Single-pass generation (NO solvability retry). Populates xOut for the
+	// exact seed regardless of solvability; returns false only for invalid
+	// config. Gameplay uses Generate() (which retries until solvable) -- this
+	// is for structural tests that need a specific seed's raw layout.
+	bool GenerateSinglePass(uint64_t uSeed, const GenConfig& xConfig, LevelLayout& xOut);
 }

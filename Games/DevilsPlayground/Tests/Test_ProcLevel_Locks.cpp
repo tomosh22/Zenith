@@ -86,7 +86,7 @@ static bool Step_LockedFractionRespected(int /*iFrame*/)
 	DPProcLevel::GenConfig xCfgZero;
 	xCfgZero.fDoorLockedFraction = 0.0f;
 	DPProcLevel::LevelLayout xLZero;
-	if (!DPProcLevel::Generate(kSeed, xCfgZero, xLZero))
+	if (!DPProcLevel::GenerateSinglePass(kSeed, xCfgZero, xLZero))
 	{
 		g_szReason = "Generate failed for fraction=0";
 		return false;
@@ -116,7 +116,7 @@ static bool Step_LockedFractionRespected(int /*iFrame*/)
 	DPProcLevel::GenConfig xCfgHalf;
 	xCfgHalf.fDoorLockedFraction = 0.5f;
 	DPProcLevel::LevelLayout xLHalf;
-	if (!DPProcLevel::Generate(kSeed, xCfgHalf, xLHalf))
+	if (!DPProcLevel::GenerateSinglePass(kSeed, xCfgHalf, xLHalf))
 	{
 		g_szReason = "Generate failed for fraction=0.5";
 		return false;
@@ -199,7 +199,7 @@ static bool Step_IronCountMatchesLocks(int /*iFrame*/)
 			DPProcLevel::GenConfig xCfg;
 			xCfg.fDoorLockedFraction = fFrac;
 			DPProcLevel::LevelLayout xL;
-			if (!DPProcLevel::Generate(uSeed, xCfg, xL))
+			if (!DPProcLevel::GenerateSinglePass(uSeed, xCfg, xL))
 			{
 				g_szReason = "Generate failed";
 				return false;

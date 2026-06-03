@@ -225,4 +225,62 @@ static const Zenith_AutomatedTest g_xProcLevelDeterminismCheckTest = {
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xProcLevelDeterminismCheckTest);
 
+// ============================================================================
+// Test_ProcLevel_RetriesUnsolvableSeed (D3)
+//
+// Seed 0 was historically unsolvable (Docs/Shortfalls.md excluded it from the
+// canonical matrix). DPProcLevel::Generate now retries on a deterministically-
+// derived seed until the layout is solvable, so Generate(0) must return true
+// AND produce a layout that passes the public IsLayoutSolvable oracle.
+// ============================================================================
+static bool g_bRetryPassed = false;
+static const char* g_szRetryReason = "";
+
+static void Setup_ProcLevelRetriesUnsolvableSeed()
+{
+	g_bRetryPassed = false;
+	g_szRetryReason = "";
+}
+
+static bool Step_ProcLevelRetriesUnsolvableSeed(int iFrame)
+{
+	if (iFrame > 0) return false;
+
+	DPProcLevel::GenConfig xCfg;
+	xCfg.fWallHalfThickness = 0.4f;  // match the procgen bootstrap's override
+	DPProcLevel::LevelLayout xL;
+	if (!DPProcLevel::Generate(0ull, xCfg, xL))
+	{
+		g_szRetryReason = "Generate(seed=0) returned false";
+		return false;
+	}
+	if (!DPProcLevel::IsLayoutSolvable(xL))
+	{
+		g_szRetryReason = "Generate(seed=0) produced an unsolvable layout";
+		return false;
+	}
+	g_bRetryPassed = true;
+	return false;
+}
+
+static bool Verify_ProcLevelRetriesUnsolvableSeed()
+{
+	if (!g_bRetryPassed)
+	{
+		Zenith_Log(LOG_CATEGORY_CORE,
+			"Test_ProcLevel_RetriesUnsolvableSeed: %s", g_szRetryReason);
+		return false;
+	}
+	return true;
+}
+
+static const Zenith_AutomatedTest g_xProcLevelRetriesUnsolvableSeedTest = {
+	"Test_ProcLevel_RetriesUnsolvableSeed",
+	&Setup_ProcLevelRetriesUnsolvableSeed,
+	&Step_ProcLevelRetriesUnsolvableSeed,
+	&Verify_ProcLevelRetriesUnsolvableSeed,
+	10
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xProcLevelRetriesUnsolvableSeedTest);
+
 #endif // ZENITH_INPUT_SIMULATOR
