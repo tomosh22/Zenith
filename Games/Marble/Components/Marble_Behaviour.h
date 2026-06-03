@@ -26,10 +26,11 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "UI/Zenith_UIButton.h"
 
@@ -301,7 +302,7 @@ private:
 		SetHUDVisible(true);
 
 		// Create level scene
-		m_xLevelScene = g_xEngine.Scenes().CreateEmptyScene("Level");
+		m_xLevelScene = g_xEngine.Scenes().LoadScene("Level", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
 
 		// Generate level (uses GetActiveScene internally)
@@ -350,7 +351,7 @@ private:
 		}
 
 		// Create fresh level scene
-		m_xLevelScene = g_xEngine.Scenes().CreateEmptyScene("Level");
+		m_xLevelScene = g_xEngine.Scenes().LoadScene("Level", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
 
 		// Generate level
@@ -450,7 +451,7 @@ private:
 		Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
 
 		// Get camera from persistent scene
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -501,7 +502,7 @@ private:
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

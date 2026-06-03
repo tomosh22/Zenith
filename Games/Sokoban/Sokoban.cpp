@@ -13,8 +13,8 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -88,38 +88,38 @@ static void InitializeSokobanResources()
 
 	// Tile prefab - basic entity (ModelComponent added at runtime with correct material)
 	{
-		Zenith_Entity xTileTemplate(pxSceneData, "TileTemplate");
+		Zenith_Entity xTileTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "TileTemplate");
 		// No ModelComponent - added by behaviour with appropriate material
 
 		Zenith_Prefab* pxTile = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxTile->CreateFromEntity(xTileTemplate, "Tile");
 		Resources().m_xTilePrefab.Set(pxTile);
 
-		g_xEngine.Scenes().Destroy(xTileTemplate);
+		xTileTemplate.Destroy();
 	}
 
 	// Box prefab - basic entity
 	{
-		Zenith_Entity xBoxTemplate(pxSceneData, "BoxTemplate");
+		Zenith_Entity xBoxTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "BoxTemplate");
 		// No ModelComponent - added by behaviour with appropriate material
 
 		Zenith_Prefab* pxBox = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBox->CreateFromEntity(xBoxTemplate, "Box");
 		Resources().m_xBoxPrefab.Set(pxBox);
 
-		g_xEngine.Scenes().Destroy(xBoxTemplate);
+		xBoxTemplate.Destroy();
 	}
 
 	// Player prefab - basic entity
 	{
-		Zenith_Entity xPlayerTemplate(pxSceneData, "PlayerTemplate");
+		Zenith_Entity xPlayerTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlayerTemplate");
 		// No ModelComponent - added by behaviour with player material
 
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
 
-		g_xEngine.Scenes().Destroy(xPlayerTemplate);
+		xPlayerTemplate.Destroy();
 	}
 
 	s_bResourcesInitialized = true;

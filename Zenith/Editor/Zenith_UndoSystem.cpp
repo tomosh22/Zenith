@@ -4,9 +4,10 @@
 
 #include "Zenith_UndoSystem.h"
 #include "Zenith_UndoSystem.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "Editor/Zenith_EditorSceneAccess.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -311,7 +312,7 @@ void Zenith_UndoCommand_CreateEntity::Undo()
 	}
 
 	// Remove entity from scene
-	pxSceneData->RemoveEntity(m_uEntityID);
+	Zenith_EditorSceneAccess::RemoveEntity(pxSceneData, m_uEntityID);
 	m_bCreated = false;
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Removed entity %u (%s)", m_uEntityID, m_strName.c_str());
@@ -379,7 +380,7 @@ void Zenith_UndoCommand_DeleteEntity::Execute()
 	}
 
 	// Remove entity from scene
-	pxSceneData->RemoveEntity(m_uEntityID);
+	Zenith_EditorSceneAccess::RemoveEntity(pxSceneData, m_uEntityID);
 	m_bDeleted = true;
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Deleted entity %u (%s)", m_uEntityID, m_strName.c_str());

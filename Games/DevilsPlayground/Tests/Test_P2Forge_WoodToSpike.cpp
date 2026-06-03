@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -131,7 +131,7 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 				if (!g_xVillager.IsValid()) g_xVillager = xId;
 			});
 
-		Zenith_Entity xForge(pxScene, std::string("Test_WoodForge"));
+		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_WoodForge"));
 		if (!xForge.IsValid()) { g_iPhase = kFW_Done; return false; }
 		g_xForge = xForge.GetEntityID();
 		if (xForge.HasComponent<Zenith_TransformComponent>())
@@ -158,7 +158,7 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 			g_iPhase = kFW_Done;
 			return false;
 		}
-		Zenith_Entity xInput(pxScene, std::string("ForgeIntake_Wood"));
+		Zenith_Entity xInput = g_xEngine.Scenes().CreateEntity(pxScene, std::string("ForgeIntake_Wood"));
 		if (!xInput.IsValid()) { g_iPhase = kFW_Done; return false; }
 		g_xInput = xInput.GetEntityID();
 		if (xInput.HasComponent<Zenith_TransformComponent>())

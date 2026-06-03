@@ -40,7 +40,7 @@
  */
 
 #include "Telemetry/Zenith_Telemetry.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 
 #include "Source/PublicInterfaces.h"
 

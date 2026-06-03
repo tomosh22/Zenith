@@ -2,11 +2,11 @@
 #include "Source/DPParticles.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 
 #include <array>
@@ -643,7 +643,7 @@ namespace DP_Particles
 			}
 
 			std::string strName = std::string("DPParticle_") + kKindNames[i];
-			Zenith_Entity xEnt(pxSceneData, strName.c_str());
+			Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, strName.c_str());
 			xEnt.AddComponent<Zenith_ParticleEmitterComponent>();
 			Zenith_ParticleEmitterComponent& xEmitter =
 				xEnt.GetComponent<Zenith_ParticleEmitterComponent>();
@@ -665,7 +665,7 @@ namespace DP_Particles
 				Zenith_Entity xEnt = pxSceneData->TryGetEntity(g_axEmitterEntities[i]);
 				if (xEnt.IsValid())
 				{
-					g_xEngine.Scenes().Destroy(xEnt);
+					xEnt.Destroy();
 				}
 			}
 			g_axEmitterEntities[i] = INVALID_ENTITY_ID;

@@ -24,7 +24,7 @@
  *   Survival_EventBus::QueueEvent(Survival_Event_CraftingComplete{ ITEM_TYPE_AXE });
  */
 
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include <cstdint>
 
 // ============================================================================
@@ -189,7 +189,7 @@ public:
 	template<typename TEvent, typename TCallback>
 	static Zenith_EventHandle SubscribeLambda(TCallback&& xCallback)
 	{
-		return Zenith_EventDispatcher::Get().SubscribeLambda<TEvent>(std::forward<TCallback>(xCallback));
+		return Zenith_EventDispatcher::Get().Subscribe<TEvent>(std::forward<TCallback>(xCallback));
 	}
 
 	/**

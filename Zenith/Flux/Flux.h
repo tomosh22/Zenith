@@ -392,10 +392,12 @@ struct Flux_PipelineSpecification
 	float m_fDepthBiasSlope = 0.0f;
 	float m_fDepthBiasClamp = 0.0f;
 
-	// Dynamic state flags — when set, the value in this spec is the initial/default,
-	// but can be overridden per-draw via Flux_CommandSetCullMode / Flux_CommandSetDepthBias.
-	// Requires VK_EXT_extended_dynamic_state (Vulkan 1.3 core).
-	bool m_bDynamicCullMode = false;
+	// Dynamic depth-bias: when set, this spec value is the initial/default but can
+	// be overridden per-draw via Flux_CommandSetDepthBias (vkCmdSetDepthBias, core
+	// Vulkan 1.0). NOTE: dynamic CULL mode was removed — cull is baked statically
+	// into the pipeline via m_eCullMode above; vkCmdSetCullMode is
+	// VK_EXT_extended_dynamic_state (Vulkan 1.3) and is not exported by the Android
+	// NDK libvulkan loader.
 	bool m_bDynamicDepthBias = false;
 };
 

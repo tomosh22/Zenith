@@ -2,8 +2,8 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Entity.h"
 
 // Forward declaration
 class Zenith_SceneData;

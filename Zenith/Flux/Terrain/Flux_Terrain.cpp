@@ -9,8 +9,10 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+// Zenith_Query.h arrives transitively via Zenith_SceneSystem.h (QueryAllScenes needs it);
+// including it explicitly here would add a new EC<->Flux cross-layer edge.
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -305,7 +307,8 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// RequestGraphRebuild on terrain construct/destroy), so the registry walked
 	// here always reflects the current scene's terrain set.
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+	xTerrains.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach([&xTerrains](Zenith_EntityID, Zenith_TerrainComponent& xTerrain){ xTerrains.PushBack(&xTerrain); });
 
 	// Pass 0: Reset visible-count buffers. One dispatch per terrain, each
 	// writes a single uint32 to the corresponding visible-count buffer. The
@@ -390,7 +393,8 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	g_xEngine.Terrain().m_uFrameCounter++;
 
 	// Get all terrain components
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(g_xEngine.Terrain().m_xTerrainComponentsToRender);
+	g_xEngine.Terrain().m_xTerrainComponentsToRender.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach([](Zenith_EntityID, Zenith_TerrainComponent& xTerrain){ g_xEngine.Terrain().m_xTerrainComponentsToRender.PushBack(&xTerrain); });
 
 	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Terrain().m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 

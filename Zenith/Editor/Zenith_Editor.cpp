@@ -30,12 +30,13 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
+#include "Zenith_EditorSceneAccess.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -506,7 +507,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 			if (pxSceneData)
 			{
-				pxSceneData->SaveToFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
+				Zenith_EditorSceneAccess::SaveToFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
 			}
 		}
@@ -620,11 +621,12 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
 		// game scene remains and UnloadScene would silently refuse to unload it.
 		Zenith_Vector<Zenith_Scene> axScenesToUnload;
-		uint32_t uSceneCount = g_xEngine.Scenes().GetLoadedSceneCount();
-		for (uint32_t i = 0; i < uSceneCount; ++i)
+		// GetSceneAt returns INVALID_SCENE past the last visible scene, so walk
+		// slot order until that sentinel (was bounded by GetLoadedSceneCount).
+		for (uint32_t i = 0; ; ++i)
 		{
 			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
-			if (!xScene.IsValid()) continue;
+			if (!xScene.IsValid()) break;
 			if (xScene == xPersistentScene) continue;
 			axScenesToUnload.PushBack(xScene);
 		}
@@ -641,14 +643,14 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		}
 
 		// 4. Create fresh scene with the original name and restore metadata
-		Zenith_Scene xRestoredScene = g_xEngine.Scenes().CreateEmptyScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName);
+		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(xRestoredScene);
 
 		Zenith_SceneData* pxRestoredData = g_xEngine.Scenes().GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			pxRestoredData->Editor_SetPath(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
-			pxRestoredData->Editor_SetBuildIndex(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
+			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
+			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
 		}
 	}
 
@@ -657,7 +659,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
-		pxSceneData->LoadFromFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
+		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
@@ -1013,12 +1015,13 @@ bool Zenith_Editor::EnterPlayMode()
 		return false;
 	}
 
-	pxSceneData->SaveToFile(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath, false);
+	Zenith_EditorSceneAccess::SaveToFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath, false);
 	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup = true;
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = xActiveScene.m_iHandle;
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName = pxSceneData->GetName();
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = pxSceneData->GetPath();
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = pxSceneData->GetBuildIndex();
+	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = xActiveScene.GetHandle();
+	const Zenith_SceneInfo xSceneInfo = g_xEngine.Scenes().GetSceneInfo(xActiveScene);
+	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName = xSceneInfo.m_strName;
+	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = xSceneInfo.m_strPath;
+	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = xSceneInfo.m_iBuildIndex;
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
 
@@ -1026,19 +1029,19 @@ bool Zenith_Editor::EnterPlayMode()
 	if (g_xEngine.Editor().m_uGameCameraEntity == INVALID_ENTITY_ID)
 	{
 		Zenith_Vector<Zenith_CameraComponent*> xCameras;
-		pxSceneData->GetAllOfComponentType<Zenith_CameraComponent>(xCameras);
+		Zenith_EditorSceneAccess::GetAllOfComponentType<Zenith_CameraComponent>(pxSceneData, xCameras);
 
 		for (Zenith_Vector<Zenith_CameraComponent*>::Iterator xIt(xCameras); !xIt.Done(); xIt.Next())
 		{
 			Zenith_CameraComponent* pxCam = xIt.GetData();
 			Zenith_Entity* pxEntity = &pxCam->GetParentEntity();
 			g_xEngine.Editor().m_uGameCameraEntity = pxEntity->GetEntityID();
-			pxSceneData->SetMainCameraEntity(g_xEngine.Editor().m_uGameCameraEntity);
+			Zenith_EditorSceneAccess::SetMainCameraEntity(pxSceneData, g_xEngine.Editor().m_uGameCameraEntity);
 			break;
 		}
 	}
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Dispatching OnAwake/OnEnable for %u entities", pxSceneData->GetEntityCount());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Dispatching OnAwake/OnEnable for %u entities", Zenith_EditorSceneAccess::GetEntityCount(pxSceneData));
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 
 	const Zenith_Vector<Zenith_EntityID>& xEntityIDs = pxSceneData->GetActiveEntities();
@@ -1080,7 +1083,7 @@ bool Zenith_Editor::EnterPlayMode()
 			{
 				xRegistry.DispatchOnStart(xEntity);
 			}
-			pxSceneData->Editor_MarkEntityStarted(uID);
+			Zenith_EditorSceneAccess::Editor_MarkEntityStarted(pxSceneData, uID);
 		}
 	}
 	return true;
@@ -1217,7 +1220,7 @@ void Zenith_Editor::HandlePendingSceneSave()
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData)
 		{
-			pxSceneData->SaveToFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
+			Zenith_EditorSceneAccess::SaveToFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
 		}
 	}
@@ -1254,11 +1257,13 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		// the "last scene" guard — after SCENE_LOAD_SINGLE during play only one
 		// game scene remains and UnloadScene would silently refuse to unload it.
 		Zenith_Vector<Zenith_Scene> axScenesToUnload;
-		const uint32_t uSceneCount = g_xEngine.Scenes().GetLoadedSceneCount();
-		for (uint32_t i = 0; i < uSceneCount; ++i)
+		// GetSceneAt returns INVALID_SCENE past the last visible scene, so walk
+		// slot order until that sentinel (was bounded by GetLoadedSceneCount).
+		for (uint32_t i = 0; ; ++i)
 		{
 			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
-			if (!xScene.IsValid() || xScene == xPersistentScene) continue;
+			if (!xScene.IsValid()) break;
+			if (xScene == xPersistentScene) continue;
 			axScenesToUnload.PushBack(xScene);
 		}
 		for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
@@ -1274,14 +1279,14 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		}
 
 		// 4. Create a fresh scene with the original name and restore metadata.
-		Zenith_Scene xRestoredScene = g_xEngine.Scenes().CreateEmptyScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName);
+		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(xRestoredScene);
 
 		Zenith_SceneData* pxRestoredData = g_xEngine.Scenes().GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			pxRestoredData->Editor_SetPath(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
-			pxRestoredData->Editor_SetBuildIndex(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
+			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
+			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
 		}
 	}
 
@@ -1289,7 +1294,7 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
-		pxSceneData->LoadFromFile(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
+		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
@@ -1511,7 +1516,7 @@ Zenith_EntityID Zenith_Editor::CreateEntity(const char* szName)
 	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Assert(pxData, "No active scene data");
 
-	Zenith_Entity xEntity(pxData, szName);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxData, szName);
 	xEntity.SetTransient(false);
 	Zenith_EntityID uID = xEntity.GetEntityID();
 	SelectEntity(uID);
@@ -1577,7 +1582,7 @@ void Zenith_Editor::SetSelectedAsMainCamera()
 		return;
 	}
 
-	pxSceneData->SetMainCameraEntity(pxEntity->GetEntityID());
+	Zenith_EditorSceneAccess::SetMainCameraEntity(pxSceneData, pxEntity->GetEntityID());
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set entity '%s' as main camera", pxEntity->GetName().c_str());
 }
 
@@ -1627,7 +1632,7 @@ void Zenith_Editor::AttachScriptForSerializationToSelected(const char* szBehavio
 
 void Zenith_Editor::CreateNewScene(const char* szName)
 {
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene(szName);
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene(szName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	g_xEngine.Scenes().SetActiveScene(xScene);
 	ClearSelection();
 
@@ -1640,7 +1645,7 @@ void Zenith_Editor::SaveActiveScene(const char* szPath)
 	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Assert(pxData, "No active scene data");
 
-	pxData->SaveToFile(szPath);
+	Zenith_EditorSceneAccess::SaveToFile(pxData, szPath);
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Saved scene to '%s'", szPath);
 }
 

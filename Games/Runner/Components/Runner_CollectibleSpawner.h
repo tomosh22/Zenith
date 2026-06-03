@@ -13,9 +13,9 @@
  * - Obstacles (jump over or slide under) in lanes
  */
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -125,7 +125,7 @@ public:
 			if (xColl.m_uEntityID.IsValid() && pxSceneData->EntityExists(xColl.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xColl.m_uEntityID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 		}
 		s_axCollectibles.clear();
@@ -135,7 +135,7 @@ public:
 			if (xObs.m_uEntityID.IsValid() && pxSceneData->EntityExists(xObs.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xObs.m_uEntityID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 		}
 		s_axObstacles.clear();
@@ -202,7 +202,7 @@ public:
 				xResult.m_uCollectedCount++;
 
 				// Destroy entity
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 				xColl.m_uEntityID = INVALID_ENTITY_ID;
 			}
 		}
@@ -463,7 +463,7 @@ private:
 				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
 					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
-					g_xEngine.Scenes().Destroy(xEntity);
+					xEntity.Destroy();
 				}
 				it = s_axCollectibles.erase(it);
 			}
@@ -481,7 +481,7 @@ private:
 				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
 					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
-					g_xEngine.Scenes().Destroy(xEntity);
+					xEntity.Destroy();
 				}
 				it = s_axObstacles.erase(it);
 			}

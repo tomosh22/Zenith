@@ -1,6 +1,6 @@
 #pragma once
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "Maths/Zenith_Maths.h"
 
 // Forward declarations for RegisterProperties() — full definition lives in
@@ -22,9 +22,23 @@ public:
 	Zenith_TransformComponent(Zenith_Entity& xEntity);
 	~Zenith_TransformComponent();
 
-	// Serialization methods for Zenith_DataStream
+	// On-disk schema version of the Transform's serialized payload.
+	//   < 7 : pos/rot/scale FOLLOWED BY the legacy hierarchy parent file-index
+	//         (scene v3/4/5/6 + pre-v7 prefab blobs). The 2-arg ReadFromDataStream
+	//         below migrates this: it consumes the parent and sinks it to the slot
+	//         pending-parent so ResolvePendingParents rebuilds the hierarchy.
+	//   >= 7: pos/rot/scale ONLY -- the parent moved to the entity record (scene v7).
+	// The meta registry stamps this per-component value into the file and hands it
+	// back to the 2-arg reader on load (see Zenith_ComponentMeta DeserializeEntityComponents).
+	static constexpr u_int uSchemaVersion = 7;
+
+	// Serialization methods for Zenith_DataStream. WriteToDataStream always emits the
+	// CURRENT (v7) layout: pos/rot/scale, no parent. The 1-arg ReadFromDataStream is the
+	// current-format reader (no parent); the 2-arg overload is the version-aware reader
+	// the meta registry prefers -- it migrates the in-blob parent for uSchemaVersion < 7.
 	void WriteToDataStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
+	void ReadFromDataStream(Zenith_DataStream& xStream, u_int uSchemaVersion);
 
 	// Property registration for prefab variant overrides. The reflection layer
 	// in Zenith_ComponentMeta calls this once at component-type registration.
@@ -50,60 +64,24 @@ public:
 	void BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut);
 
 	//--------------------------------------------------------------------------
-	// Parent/Child Hierarchy (Unity-style - hierarchy owned by Transform)
-	// Uses EntityIDs instead of raw pointers for safety (survives pool relocations)
+	// Parent/Child Hierarchy -- REMOVED (Phase 5b).
+	//
+	// The scene-graph hierarchy is owned exclusively by Zenith_EntitySlot (single
+	// source of truth, Phase 5a). The Transform's former hierarchy navigation API
+	// (SetParent / SetParentByID / TryGetParent / GetParentEntity / GetParentEntityID
+	// / pending-parent accessors / GetChildEntityIDs / GetChildCount / ForEachChild /
+	// TryGetChildAt / GetChildEntityAt / HasParent / IsRoot / DetachFromParent /
+	// DetachAllChildren / IsDescendantOf) was a set of forwarding shims into
+	// Zenith_Entity; all callers now use the Zenith_Entity slot API directly, so the
+	// shims and the three backing members are gone. Use Zenith_Entity / Zenith_Scene
+	// for hierarchy. BuildModelMatrix (above) still walks the slot parent chain;
+	// Write/ReadFromDataStream still bridge the parent index through the slot.
 	//--------------------------------------------------------------------------
 
-	void SetParent(Zenith_TransformComponent* pxParent);
-	void SetParentByID(Zenith_EntityID uParentID);
-
-	// Returns parent transform, or nullptr if no parent or parent entity doesn't exist
-	// NOTE: Named "Try" to indicate it may return nullptr - always check return value
-	Zenith_TransformComponent* TryGetParent() const;
-
-	// Returns parent entity by value (safe - no dangling pointers)
-	// Check IsValid() on returned entity before use
-	Zenith_Entity GetParentEntity() const;
-
-	Zenith_EntityID GetParentEntityID() const { return m_xParentEntityID; }
-
-	// Pending parent file index (for scene loading - maps old file index to new EntityID)
-	void SetPendingParentFileIndex(uint32_t uIndex) { m_uPendingParentFileIndex = uIndex; }
-	uint32_t GetPendingParentFileIndex() const { return m_uPendingParentFileIndex; }
-	void ClearPendingParentFileIndex() { m_uPendingParentFileIndex = Zenith_EntityID::INVALID_INDEX; }
-
-	// Child access - use ForEachChild for safe iteration
-	// Non-const overload is needed for scene deserialization to rebuild child lists
-	const Zenith_Vector<Zenith_EntityID>& GetChildEntityIDs() const { return m_xChildEntityIDs; }
-	Zenith_Vector<Zenith_EntityID>& GetChildEntityIDs() { return m_xChildEntityIDs; }
-	uint32_t GetChildCount() const { return static_cast<uint32_t>(m_xChildEntityIDs.GetSize()); }
-
-	// Safe child iteration - handles invalid entity IDs gracefully
-	template<typename Func>
-	void ForEachChild(Func&& func);
-
-	// Get child transform by index (returns nullptr if invalid)
-	// NOTE: Named "Try" to indicate it may return nullptr - always check return value
-	Zenith_TransformComponent* TryGetChildAt(uint32_t uIndex) const;
-
-	// Returns child entity by value (safe - no dangling pointers)
-	// Check IsValid() on returned entity before use
-	Zenith_Entity GetChildEntityAt(uint32_t uIndex) const;
-
-	bool HasParent() const { return m_xParentEntityID.IsValid(); }
-	bool IsRoot() const { return !m_xParentEntityID.IsValid(); }
-	void DetachFromParent();
-	void DetachAllChildren();
+	// The entity that owns this Transform (NOT the hierarchy parent). Retained so
+	// callers can recover the owning Zenith_Entity from a Transform reference.
 	Zenith_Entity& GetEntity() { return m_xOwningEntity; }
 	const Zenith_Entity& GetEntity() const { return m_xOwningEntity; }
-
-	// Hierarchy safety: Check if this transform is a descendant of the given entity
-	// Used to prevent circular hierarchies (e.g., parenting A to its own child)
-	bool IsDescendantOf(Zenith_EntityID uAncestorID) const;
-
-	// Unsafe version for internal use when scene mutex is already held
-	// ONLY call this when you already hold Zenith_SceneData::m_xMutex!
-	bool IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_SceneData& xSceneData) const;
 
 
 #ifdef ZENITH_TOOLS
@@ -154,44 +132,8 @@ private:
 	// The entity that owns this component (NOT the hierarchy parent)
 	Zenith_Entity m_xOwningEntity;
 
-	// Parent-child hierarchy (Unity-style) - uses EntityIDs for pointer safety
-	// EntityIDs survive component pool relocations (swap-and-pop removal)
-	// NOTE: This is the HIERARCHY parent, not the owning entity above
-	Zenith_EntityID m_xParentEntityID = INVALID_ENTITY_ID;
-	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
-
-	// Pending parent file index - used during scene loading to map old indices to new EntityIDs
-	uint32_t m_uPendingParentFileIndex = Zenith_EntityID::INVALID_INDEX;
+	// Phase 5b: the scene-graph hierarchy STORAGE (m_xParentEntityID /
+	// m_xChildEntityIDs / m_uPendingParentFileIndex) was deleted here -- it lives on
+	// Zenith_EntitySlot now (relocated in Phase 5a, single source of truth). The
+	// position/rotation/scale cache above is the Transform's only remaining state.
 };
-
-// Template implementation for ForEachChild - must be in header
-template<typename Func>
-void Zenith_TransformComponent::ForEachChild(Func&& func)
-{
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (!pxSceneData)
-	{
-		return;
-	}
-
-	// Copy child IDs to local vector to prevent invalidation during iteration
-	// This fixes the case where the callback modifies the child list (e.g., reparenting)
-	Zenith_Vector<Zenith_EntityID> xChildIDsCopy;
-	xChildIDsCopy.Reserve(m_xChildEntityIDs.GetSize());
-	for (u_int u = 0; u < m_xChildEntityIDs.GetSize(); ++u)
-	{
-		xChildIDsCopy.PushBack(m_xChildEntityIDs.Get(u));
-	}
-
-	// Now iterate the copy safely
-	for (u_int u = 0; u < xChildIDsCopy.GetSize(); ++u)
-	{
-		Zenith_EntityID uChildID = xChildIDsCopy.Get(u);
-		if (pxSceneData->EntityExists(uChildID))
-		{
-			Zenith_Entity xChildEntity = pxSceneData->GetEntity(uChildID);
-			Zenith_TransformComponent& xChildTransform = xChildEntity.GetComponent<Zenith_TransformComponent>();
-			func(xChildTransform);
-		}
-	}
-}

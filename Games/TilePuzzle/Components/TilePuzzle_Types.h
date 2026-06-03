@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <cstdint>
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 
 // ============================================================================
 // TilePuzzle Game Types and Structures

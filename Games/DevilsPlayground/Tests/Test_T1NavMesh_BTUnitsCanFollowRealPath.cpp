@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
@@ -82,7 +82,7 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kBT_Start:
-		g_xScene = g_xEngine.Scenes().CreateEmptyScene("BTUnitsCanFollowRealPath");
+		g_xScene = g_xEngine.Scenes().LoadScene("BTUnitsCanFollowRealPath", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(g_xScene);
 		g_iPhase = kBT_BuildScene;
 		return true;
@@ -93,7 +93,7 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 		if (pxScene == nullptr) { g_iPhase = kBT_Done; return false; }
 
 		// Floor: 20m x 0.2m x 20m centred at origin. Scale = full box size.
-		Zenith_Entity xFloor(pxScene, "Floor");
+		Zenith_Entity xFloor = g_xEngine.Scenes().CreateEntity(pxScene, "Floor");
 		Zenith_TransformComponent& xFloorT =
 			xFloor.GetComponent<Zenith_TransformComponent>();
 		xFloorT.SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -103,7 +103,7 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 		xFloorCol.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 
 		// Agent: a barebones entity with a TransformComponent we'll move.
-		g_xAgentEntity = Zenith_Entity(pxScene, "TestAgent");
+		g_xAgentEntity = g_xEngine.Scenes().CreateEntity(pxScene, "TestAgent");
 		Zenith_TransformComponent& xAgentT =
 			g_xAgentEntity.GetComponent<Zenith_TransformComponent>();
 		g_xStart       = Zenith_Maths::Vector3(-5.0f, 0.1f, 0.0f);

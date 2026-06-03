@@ -2,7 +2,7 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 
 //=============================================================================
 // Properties Panel

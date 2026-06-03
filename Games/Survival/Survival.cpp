@@ -14,8 +14,8 @@
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "UI/Zenith_UIButton.h"
 
 #include <cmath>
@@ -421,47 +421,47 @@ static void InitializeSurvivalResources()
 
 	// Player prefab
 	{
-		Zenith_Entity xPlayerTemplate(pxSceneData, "PlayerTemplate");
+		Zenith_Entity xPlayerTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlayerTemplate");
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
-		g_xEngine.Scenes().Destroy(xPlayerTemplate);
+		xPlayerTemplate.Destroy();
 	}
 
 	// Tree prefab (resource node)
 	{
-		Zenith_Entity xTreeTemplate(pxSceneData, "TreeTemplate");
+		Zenith_Entity xTreeTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "TreeTemplate");
 		Zenith_Prefab* pxTree = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxTree->CreateFromEntity(xTreeTemplate, "Tree");
 		Resources().m_xTreePrefab.Set(pxTree);
-		g_xEngine.Scenes().Destroy(xTreeTemplate);
+		xTreeTemplate.Destroy();
 	}
 
 	// Rock prefab (resource node)
 	{
-		Zenith_Entity xRockTemplate(pxSceneData, "RockTemplate");
+		Zenith_Entity xRockTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "RockTemplate");
 		Zenith_Prefab* pxRock = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxRock->CreateFromEntity(xRockTemplate, "Rock");
 		Resources().m_xRockPrefab.Set(pxRock);
-		g_xEngine.Scenes().Destroy(xRockTemplate);
+		xRockTemplate.Destroy();
 	}
 
 	// Berry bush prefab (resource node)
 	{
-		Zenith_Entity xBerryTemplate(pxSceneData, "BerryBushTemplate");
+		Zenith_Entity xBerryTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "BerryBushTemplate");
 		Zenith_Prefab* pxBerry = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBerry->CreateFromEntity(xBerryTemplate, "BerryBush");
 		Resources().m_xBerryBushPrefab.Set(pxBerry);
-		g_xEngine.Scenes().Destroy(xBerryTemplate);
+		xBerryTemplate.Destroy();
 	}
 
 	// Dropped item prefab
 	{
-		Zenith_Entity xDroppedItemTemplate(pxSceneData, "DroppedItemTemplate");
+		Zenith_Entity xDroppedItemTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "DroppedItemTemplate");
 		Zenith_Prefab* pxDropped = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxDropped->CreateFromEntity(xDroppedItemTemplate, "DroppedItem");
 		Resources().m_xDroppedItemPrefab.Set(pxDropped);
-		g_xEngine.Scenes().Destroy(xDroppedItemTemplate);
+		xDroppedItemTemplate.Destroy();
 	}
 
 	s_bResourcesInitialized = true;
@@ -475,7 +475,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 	// ========================================================================
 	// Create Ground
 	// ========================================================================
-	Zenith_Entity xGround(pxSceneData, "Ground");
+	Zenith_Entity xGround = g_xEngine.Scenes().CreateEntity(pxSceneData, "Ground");
 	xGround.SetTransient(false);
 
 	Zenith_TransformComponent& xGroundTransform = xGround.GetComponent<Zenith_TransformComponent>();

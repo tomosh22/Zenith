@@ -22,9 +22,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -405,7 +405,7 @@ private:
 		SetHUDVisible(true);
 
 		// Create puzzle scene for level entities
-		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		m_eState = SokobanGameState::PLAYING;
@@ -422,7 +422,7 @@ private:
 		}
 
 		// Create fresh puzzle scene
-		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		m_eState = SokobanGameState::PLAYING;

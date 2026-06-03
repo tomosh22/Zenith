@@ -27,9 +27,9 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "UI/Zenith_UIText.h"
@@ -62,7 +62,7 @@ public:
 		// First-time wiring: capture the gameplay scene then migrate to the
 		// persistent scene so we keep ticking while the gameplay scene is paused.
 		m_xGameplayScene = m_xParentEntity.GetScene();
-		g_xEngine.Scenes().MarkEntityPersistent(m_xParentEntity);
+		m_xParentEntity.DontDestroyOnLoad();
 		s_pxPersistentInstance = this;
 
 		// MVP-4.3.2: mirror DPHUDController's run-over flag so the R/Q
@@ -70,12 +70,12 @@ public:
 		// menu first. The HUD owns the user-facing prompt ("Press R to
 		// restart"); this controller owns the input handler. Both
 		// subscribe to the same two events.
-		m_xVictoryHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVictory>(
+		m_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(
 			[this](const DP_OnVictory&)
 			{
 				m_bRunOver = true;
 			});
-		m_xRunLostHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnRunLost>(
+		m_xRunLostHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnRunLost>(
 			[this](const DP_OnRunLost&)
 			{
 				m_bRunOver = true;

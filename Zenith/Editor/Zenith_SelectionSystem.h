@@ -3,7 +3,13 @@
 #ifdef ZENITH_TOOLS
 
 #include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
+// m_xEntityBoundingBoxes below is std::unordered_map<Zenith_EntityID, ...>, which
+// needs the std::hash<Zenith_EntityID> specialization (in Zenith_Entity.h) visible
+// BEFORE the member is declared. Scene.h is now an opaque handle that only
+// forward-declares Zenith_EntityID, so include Entity.h explicitly (post-7b);
+// relying on a transitive hash spec caused "specialization after instantiation".
+#include "ZenithECS/Zenith_Entity.h"
 
 #include <unordered_map>
 

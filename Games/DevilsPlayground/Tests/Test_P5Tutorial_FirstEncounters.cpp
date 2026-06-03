@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPTutorial.h"

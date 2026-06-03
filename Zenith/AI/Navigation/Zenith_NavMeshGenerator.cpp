@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Profiling/Zenith_Profiling.h"
 #include <algorithm>

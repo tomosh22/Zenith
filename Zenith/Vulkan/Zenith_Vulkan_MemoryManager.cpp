@@ -2263,18 +2263,31 @@ Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(PoolTag, const VmaAllocation xAllocation,
 	g_xEngine.VulkanMemory().IncreaseMemoryUsage(m_ulPoolSize);
 }
 
+// VMA treats VmaAllocation (= VmaAllocation_T*) as an OPAQUE handle; its internal
+// GetSize() member is only visible in a TU where the VMA *implementation* is
+// compiled. That happens to be true on Windows here, but VmaAllocation_T is an
+// incomplete type under the Android/clang TU, so GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation) fails to
+// compile there. Query the size through the public vmaGetAllocationInfo API
+// instead (works on every platform; mirrors the pool-size path above).
+static VkDeviceSize GetVmaAllocationSizeBytes(VmaAllocator xAllocator, VmaAllocation xAllocation)
+{
+	VmaAllocationInfo xInfo = {};
+	vmaGetAllocationInfo(xAllocator, xAllocation, &xInfo);
+	return xInfo.size;
+}
+
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
 	: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
 {
-	g_xEngine.VulkanMemory().IncreaseImageMemoryUsage(m_xAllocation->GetSize());
-	g_xEngine.VulkanMemory().IncreaseMemoryUsage(m_xAllocation->GetSize());
+	g_xEngine.VulkanMemory().IncreaseImageMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
+	g_xEngine.VulkanMemory().IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 }
 
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
 	: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize)
 {
-	g_xEngine.VulkanMemory().IncreaseBufferMemoryUsage(m_xAllocation->GetSize());
-	g_xEngine.VulkanMemory().IncreaseMemoryUsage(m_xAllocation->GetSize());
+	g_xEngine.VulkanMemory().IncreaseBufferMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
+	g_xEngine.VulkanMemory().IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 }
 
 Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
@@ -2303,17 +2316,24 @@ Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 
 	if (m_xAllocation != VK_NULL_HANDLE && m_xAllocator != VK_NULL_HANDLE)
 	{
+		// Query the allocation size ONCE, up front: vmaDestroyImage / vmaDestroyBuffer
+		// below FREE m_xAllocation, so querying it after the destroy (as the final
+		// DecreaseMemoryUsage call used to) is a use-after-free of the VMA allocation.
+		// (The previous m_xAllocation->GetSize() read a stale-but-intact cached field
+		// and happened not to fault; vmaGetAllocationInfo dereferences the freed
+		// allocation's memory handle and crashes.) Cache it before any destroy.
+		const VkDeviceSize ulAllocationSize = GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation);
 		if (m_xImage != VK_NULL_HANDLE)
 		{
-			g_xEngine.VulkanMemory().DecreaseImageMemoryUsage(m_xAllocation->GetSize());
+			g_xEngine.VulkanMemory().DecreaseImageMemoryUsage(ulAllocationSize);
 			vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
 		}
 		else if (m_xBuffer != VK_NULL_HANDLE)
 		{
-			g_xEngine.VulkanMemory().DecreaseBufferMemoryUsage(m_xAllocation->GetSize());
+			g_xEngine.VulkanMemory().DecreaseBufferMemoryUsage(ulAllocationSize);
 			vmaDestroyBuffer(m_xAllocator, m_xBuffer, m_xAllocation);
 		}
-		g_xEngine.VulkanMemory().DecreaseMemoryUsage(m_xAllocation->GetSize());
+		g_xEngine.VulkanMemory().DecreaseMemoryUsage(ulAllocationSize);
 	}
 	else
 	{

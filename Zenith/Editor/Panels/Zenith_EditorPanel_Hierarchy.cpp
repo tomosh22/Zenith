@@ -3,9 +3,10 @@
 
 #include "Zenith_EditorPanel_Hierarchy.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_EditorSceneAccess.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -88,7 +89,7 @@ static void RenderContextMenu_Hierarchy(Zenith_SceneData& xSceneData, Zenith_Ent
 {
 	if (ImGui::MenuItem("Create Child Entity"))
 	{
-		Zenith_Entity xNewEntity(&xSceneData, "New Child");
+		Zenith_Entity xNewEntity = g_xEngine.Scenes().CreateEntity(&xSceneData, "New Child");
 		xNewEntity.SetTransient(false);
 		xNewEntity.SetParent(uEntityID);
 		g_xEngine.Editor().SelectEntity(xNewEntity.GetEntityID());
@@ -112,16 +113,20 @@ static void RenderContextMenu_MoveToScene(Zenith_Entity xEntity)
 
 	if (ImGui::BeginMenu("Move To Scene"))
 	{
-		uint32_t uSceneCount = g_xEngine.Scenes().GetLoadedSceneCount();
-		for (uint32_t i = 0; i < uSceneCount; ++i)
+		// GetSceneAt returns INVALID_SCENE past the last visible scene, so walk
+		// slot order until that sentinel (was bounded by GetLoadedSceneCount).
+		for (uint32_t i = 0; ; ++i)
 		{
 			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
-			if (!xScene.IsValid() || xScene == xEntityScene)
+			if (!xScene.IsValid())
+				break;
+			if (xScene == xEntityScene)
 				continue;
 
-			if (ImGui::MenuItem(xScene.GetName().c_str()))
+			const Zenith_SceneInfo xInfo = g_xEngine.Scenes().GetSceneInfo(xScene);
+			if (ImGui::MenuItem(xInfo.m_strName.c_str()))
 			{
-				g_xEngine.Scenes().MoveEntityToScene(xEntity, xScene);
+				xEntity.MoveToScene(xScene);
 			}
 		}
 		ImGui::EndMenu();
@@ -146,7 +151,7 @@ static void RenderContextMenu_MoveToScene(Zenith_Entity xEntity)
 				xRoot = pxRootScene->GetEntity(xParentID);
 				pxRootScene = xRoot.GetSceneData();
 			}
-			g_xEngine.Scenes().MarkEntityPersistent(xRoot);
+			xRoot.DontDestroyOnLoad();
 		}
 	}
 }
@@ -378,6 +383,8 @@ static void RenderSceneContextMenu(
 	if (!ImGui::BeginPopupContextItem())
 		return;
 
+	const Zenith_SceneInfo xSceneInfo = g_xEngine.Scenes().GetSceneInfo(xScene);
+
 	if (ImGui::MenuItem("Set Active Scene", nullptr, false, !bIsActiveScene && !bIsPersistentScene))
 	{
 		g_xEngine.Scenes().SetActiveScene(xScene);
@@ -385,10 +392,10 @@ static void RenderSceneContextMenu(
 
 	ImGui::Separator();
 
-	if (ImGui::MenuItem("Save Scene", nullptr, false, !xSceneData.GetPath().empty()))
+	if (ImGui::MenuItem("Save Scene", nullptr, false, !xSceneInfo.m_strPath.empty()))
 	{
-		xSceneData.SaveToFile(xSceneData.GetPath());
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved: %s", xSceneData.GetPath().c_str());
+		Zenith_EditorSceneAccess::SaveToFile(&xSceneData, xSceneInfo.m_strPath);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved: %s", xSceneInfo.m_strPath.c_str());
 	}
 
 	if (ImGui::MenuItem("Save Scene As..."))
@@ -397,10 +404,10 @@ static void RenderSceneContextMenu(
 		std::string strFilePath = ::ShowSaveFileDialog(
 			"Zenith Scene Files (*" ZENITH_SCENE_EXT ")\0*" ZENITH_SCENE_EXT "\0All Files (*.*)\0*.*\0",
 			ZENITH_SCENE_EXT + 1,
-			(xSceneData.GetName() + ZENITH_SCENE_EXT).c_str());
+			(xSceneInfo.m_strName + ZENITH_SCENE_EXT).c_str());
 		if (!strFilePath.empty())
 		{
-			xSceneData.SaveToFile(strFilePath);
+			Zenith_EditorSceneAccess::SaveToFile(&xSceneData, strFilePath);
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved as: %s", strFilePath.c_str());
 		}
 #endif
@@ -479,16 +486,17 @@ static void RenderSceneHeaderAndBody(const HierarchyRenderContext& xCtx)
 	bool& bSceneUnloaded = *xCtx.m_pbSceneUnloaded;
 
 	// Build scene header text
-	std::string strSceneName = bIsPersistentScene ? "DontDestroyOnLoad" : xSceneData.GetName();
+	const Zenith_SceneInfo xSceneInfo = g_xEngine.Scenes().GetSceneInfo(xScene);
+	std::string strSceneName = bIsPersistentScene ? "DontDestroyOnLoad" : xSceneInfo.m_strName;
 	if (strSceneName.empty())
 		strSceneName = "Untitled";
 
 	// Add dirty indicator
-	if (xScene.HasUnsavedChanges())
+	if (xSceneInfo.m_bHasUnsavedChanges)
 		strSceneName += "*";
 
 	// Add entity count
-	strSceneName += " (" + std::to_string(xSceneData.GetEntityCount()) + ")";
+	strSceneName += " (" + std::to_string(Zenith_EditorSceneAccess::GetEntityCount(&xSceneData)) + ")";
 
 	// Active scene gets bold styling
 	if (bIsActiveScene)
@@ -500,7 +508,7 @@ static void RenderSceneHeaderAndBody(const HierarchyRenderContext& xCtx)
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
 	}
 
-	ImGui::PushID(xScene.m_iHandle);
+	ImGui::PushID(xScene.GetHandle());
 
 	ImGuiTreeNodeFlags eHeaderFlags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_AllowOverlap;
 	bool bHeaderOpen = ImGui::CollapsingHeader(strSceneName.c_str(), eHeaderFlags);
@@ -527,7 +535,7 @@ static void RenderSceneHeaderAndBody(const HierarchyRenderContext& xCtx)
 				Zenith_Scene xSourceScene = xSourceEntity.GetScene();
 				if (xSourceScene != xScene)
 				{
-					g_xEngine.Scenes().MoveEntityToScene(xSourceEntity, xScene);
+					xSourceEntity.MoveToScene(xScene);
 				}
 			}
 		}
@@ -578,7 +586,13 @@ void RenderScenesSection(
 	// Flag to break out of scene loop (replaces goto)
 	bool bSceneUnloaded = false;
 
-	uint32_t uSceneCount = g_xEngine.Scenes().GetLoadedSceneCount();
+	// Count visible scenes by walking slot order until GetSceneAt returns the
+	// INVALID_SCENE sentinel (was GetLoadedSceneCount). The count is forwarded as
+	// m_uSceneCount and gates "can unload" (needs >1 loaded scene), so it must
+	// match the old visible-scene total exactly.
+	uint32_t uSceneCount = 0;
+	while (g_xEngine.Scenes().GetSceneAt(uSceneCount).IsValid())
+		++uSceneCount;
 	for (uint32_t i = 0; i < uSceneCount && !bSceneUnloaded; ++i)
 	{
 		Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
@@ -593,7 +607,7 @@ void RenderScenesSection(
 		bool bIsPersistentScene = (xScene == xPersistentScene);
 
 		// Skip persistent scene if it has no entities
-		if (bIsPersistentScene && pxSceneData->GetEntityCount() == 0)
+		if (bIsPersistentScene && Zenith_EditorSceneAccess::GetEntityCount(pxSceneData) == 0)
 			continue;
 
 		HierarchyRenderContext xCtx;
@@ -673,7 +687,7 @@ void ProcessDeferredEntityDeletion(
 	Zenith_SceneData* pxDeleteData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityToDelete);
 	if (pxDeleteData)
 	{
-		pxDeleteData->RemoveEntity(uEntityToDelete);
+		Zenith_EditorSceneAccess::RemoveEntity(pxDeleteData, uEntityToDelete);
 	}
 }
 

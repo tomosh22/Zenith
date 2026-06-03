@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Gizmo.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Input/Zenith_Input.h"
 #include <glm/gtc/matrix_transform.hpp>

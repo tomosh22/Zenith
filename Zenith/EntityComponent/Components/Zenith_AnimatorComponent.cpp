@@ -2,7 +2,7 @@
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Core/Zenith_Engine.h"   // g_xEngine.AnimationControllers() — EC->Core, not a layering edge.
 // Flux animation types are resolved HERE (the forwarding-handle .cpp), not in
 // the component header. These .cpp -> Flux edges are allow-listed; the header

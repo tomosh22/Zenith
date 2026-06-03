@@ -1,7 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 // ============================================================================
@@ -156,7 +156,7 @@ void Zenith_UnitTests::TestGetEntityPositionValid(){
 	// Create a real entity in the active scene and verify GetEntityPosition finds it
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, "TacTestAgent");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "TacTestAgent");
 
 	Zenith_Maths::Vector3 xExpectedPos(5.0f, 3.0f, 7.0f);
 	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xExpectedPos);

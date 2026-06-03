@@ -12,8 +12,8 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -84,7 +84,7 @@ public:
 						Zenith_EventDispatcher::Get().Dispatch(
 							DP_OnItemEvaporated{
 								m_xParentEntity.GetEntityID(), m_eTag, xPos });
-						g_xEngine.Scenes().Destroy(xEnt);
+						xEnt.Destroy();
 					}
 				}
 				return;

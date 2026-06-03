@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_TweenComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 
 //=============================================================================
 // Construction / Move

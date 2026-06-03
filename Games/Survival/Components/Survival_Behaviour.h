@@ -28,9 +28,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // Include all game modules
@@ -740,7 +740,7 @@ private:
 		SetHUDVisible(true);
 
 		// Create world scene
-		m_xWorldScene = g_xEngine.Scenes().CreateEmptyScene("World");
+		m_xWorldScene = g_xEngine.Scenes().LoadScene("World", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xWorldScene);
 		Zenith_SceneData* pxWorldData = g_xEngine.Scenes().GetSceneData(m_xWorldScene);
 

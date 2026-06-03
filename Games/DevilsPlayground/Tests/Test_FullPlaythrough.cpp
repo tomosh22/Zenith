@@ -2,11 +2,12 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
@@ -239,7 +240,7 @@ namespace
 	// authored on the GameManager entity in the active gameplay scene,
 	// but DPPauseMenuController_Behaviour::OnStart migrates its parent
 	// entity (and the PauseOverlay text element on it) to the persistent
-	// scene via `g_xEngine.Scenes().MarkEntityPersistent` so the
+	// scene via `entity.DontDestroyOnLoad()` so the
 	// controller keeps ticking while the gameplay scene is paused.
 	//
 	// Originally this helper only walked the active scene -- the
@@ -438,7 +439,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		// Snapshot camera position BEFORE possession — must not change
 		// after possess + move (bird's-eye camera does not follow).
-		if (Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes())
+		if (Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes())
 		{
 			pxCam->GetPosition(g_xCamPosBeforePossess);
 		}
@@ -516,7 +517,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kFP_AssertOrbitCamera:
 	{
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		Zenith_Maths::Vector3 xVPos(0.0f);
 		if (pxCam) pxCam->GetPosition(g_xCamPosAfterMove);
 		TryGetEntityPos(g_xVillager, xVPos);
@@ -666,7 +667,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (!pxScene) { g_iPhase = kFP_Done; return false; }
 
-		Zenith_Entity xForge(pxScene, std::string("FullPlaythrough_Forge"));
+		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("FullPlaythrough_Forge"));
 		g_xForge = xForge.GetEntityID();
 		xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
 			Zenith_Maths::Vector3(80.0f, 0.0f, 80.0f));

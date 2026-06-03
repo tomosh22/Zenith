@@ -3,7 +3,8 @@
 #ifdef ZENITH_TOOLS
 
 #include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID + entity/component access (no longer transitive via the now-opaque Scene.h)
 #include "Collections/Zenith_Vector.h"
 #include <string>
 

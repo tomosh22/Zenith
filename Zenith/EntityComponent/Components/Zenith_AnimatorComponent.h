@@ -1,5 +1,5 @@
 #pragma once
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"   // Zenith_Maths::Vector3 in the IK accessor signatures
                                   // (previously pulled in transitively via the
                                   // now-removed Flux_AnimationController.h include).

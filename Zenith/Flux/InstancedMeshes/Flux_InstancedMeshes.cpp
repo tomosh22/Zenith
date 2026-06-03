@@ -17,7 +17,7 @@
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include <vector>
 

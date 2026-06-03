@@ -15,9 +15,9 @@
  * - Collectibles placed on platforms
  */
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -130,7 +130,7 @@ public:
 		if (xEntities.uBallEntityID.IsValid() && pxSceneData->EntityExists(xEntities.uBallEntityID))
 		{
 			Zenith_Entity xEntity = pxSceneData->GetEntity(xEntities.uBallEntityID);
-			g_xEngine.Scenes().Destroy(xEntity);
+			xEntity.Destroy();
 			xEntities.uBallEntityID = INVALID_ENTITY_ID;
 		}
 
@@ -139,7 +139,7 @@ public:
 			if (pxSceneData->EntityExists(uID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 		}
 		xEntities.axPlatformEntityIDs.clear();
@@ -149,7 +149,7 @@ public:
 			if (pxSceneData->EntityExists(uID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 		}
 		xEntities.axCollectibleEntityIDs.clear();
@@ -157,7 +157,7 @@ public:
 		if (xEntities.uGoalEntityID.IsValid() && pxSceneData->EntityExists(xEntities.uGoalEntityID))
 		{
 			Zenith_Entity xEntity = pxSceneData->GetEntity(xEntities.uGoalEntityID);
-			g_xEngine.Scenes().Destroy(xEntity);
+			xEntity.Destroy();
 			xEntities.uGoalEntityID = INVALID_ENTITY_ID;
 		}
 	}

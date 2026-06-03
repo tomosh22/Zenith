@@ -11,9 +11,9 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
@@ -162,7 +162,7 @@ protected:
 		// subscriptions and a destroyed entity doesn't leave a dangling
 		// `this` pointer in the dispatcher.
 		const Zenith_EntityID xMyId = m_xParentEntity.GetEntityID();
-		m_xInteractSubscription = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnInteract>(
+		m_xInteractSubscription = Zenith_EventDispatcher::Get().Subscribe<DP_OnInteract>(
 			[this, xMyId](const DP_OnInteract& xEvt)
 			{
 				if (xEvt.m_xTarget.m_uIndex     != xMyId.m_uIndex     ) return;

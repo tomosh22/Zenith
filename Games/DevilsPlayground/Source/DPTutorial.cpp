@@ -3,7 +3,7 @@
 #include "Source/DPTutorial.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 
 #include <cstring>
 

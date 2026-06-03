@@ -2,7 +2,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include <unordered_map>
 
 class Zenith_SceneData;

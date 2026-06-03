@@ -3,9 +3,9 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_EventSystem.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Maths/Zenith_Maths.h"
@@ -143,7 +143,7 @@ static bool Step_P2BellSoulRings(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kBS_Done; return false; }
-		Zenith_Entity xEnt(pxScene, std::string("Test_BellSoul"));
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_BellSoul"));
 		if (!xEnt.IsValid()) { g_iPhase = kBS_Done; return false; }
 		g_xBellSoul = xEnt.GetEntityID();
 		g_xBellSoulSpawnPos = Zenith_Maths::Vector3(300.0f, 0.0f, 300.0f);

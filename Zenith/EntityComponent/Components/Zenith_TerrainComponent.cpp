@@ -2,7 +2,7 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"

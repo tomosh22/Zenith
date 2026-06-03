@@ -105,7 +105,7 @@ namespace DPTelemetry
 	{
 		auto& xDisp = Zenith_EventDispatcher::Get();
 
-		m_xPickup = xDisp.SubscribeLambda<DP_OnItemPickedUp>(
+		m_xPickup = xDisp.Subscribe<DP_OnItemPickedUp>(
 			[](const DP_OnItemPickedUp& xEvt)
 			{
 				// Look up the picked-up item's tag for the analyzer so it
@@ -116,37 +116,37 @@ namespace DPTelemetry
 					static_cast<int32_t>(eTag), 0.0f, DP_ItemTagToString(eTag));
 			});
 
-		m_xInteract = xDisp.SubscribeLambda<DP_OnInteract>(
+		m_xInteract = xDisp.Subscribe<DP_OnInteract>(
 			[](const DP_OnInteract& xEvt)
 			{
 				EmitEvent(DPEventType::Interact, xEvt.m_xVillager, xEvt.m_xTarget);
 			});
 
-		m_xInteractBegin = xDisp.SubscribeLambda<DP_OnInteractionBegin>(
+		m_xInteractBegin = xDisp.Subscribe<DP_OnInteractionBegin>(
 			[](const DP_OnInteractionBegin& xEvt)
 			{
 				EmitEvent(DPEventType::InteractionBegin, xEvt.m_xVillager, xEvt.m_xTarget);
 			});
 
-		m_xInteractEnd = xDisp.SubscribeLambda<DP_OnInteractionEnd>(
+		m_xInteractEnd = xDisp.Subscribe<DP_OnInteractionEnd>(
 			[](const DP_OnInteractionEnd& xEvt)
 			{
 				EmitEvent(DPEventType::InteractionEnd, xEvt.m_xVillager, xEvt.m_xTarget);
 			});
 
-		m_xInteractCancel = xDisp.SubscribeLambda<DP_OnInteractionCancelled>(
+		m_xInteractCancel = xDisp.Subscribe<DP_OnInteractionCancelled>(
 			[](const DP_OnInteractionCancelled& xEvt)
 			{
 				EmitEvent(DPEventType::InteractionCancel, xEvt.m_xVillager, xEvt.m_xTarget);
 			});
 
-		m_xDied = xDisp.SubscribeLambda<DP_OnVillagerDied>(
+		m_xDied = xDisp.Subscribe<DP_OnVillagerDied>(
 			[](const DP_OnVillagerDied& xEvt)
 			{
 				EmitEvent(DPEventType::VillagerDied, xEvt.m_xVillager);
 			});
 
-		m_xVictory = xDisp.SubscribeLambda<DP_OnVictory>(
+		m_xVictory = xDisp.Subscribe<DP_OnVictory>(
 			[](const DP_OnVictory& xEvt)
 			{
 				// entityA = winning villager, entityB = pentagram.
@@ -159,7 +159,7 @@ namespace DPTelemetry
 					xEvt.m_xVillager, xEvt.m_xPentagram);
 			});
 
-		m_xRunLost = xDisp.SubscribeLambda<DP_OnRunLost>(
+		m_xRunLost = xDisp.Subscribe<DP_OnRunLost>(
 			[](const DP_OnRunLost& xEvt)
 			{
 				// entityA = primary actor (caught villager / dead
@@ -172,7 +172,7 @@ namespace DPTelemetry
 					/*szLabel=*/nullptr);
 			});
 
-		m_xBellRing = xDisp.SubscribeLambda<DP_OnBellRing>(
+		m_xBellRing = xDisp.Subscribe<DP_OnBellRing>(
 			[](const DP_OnBellRing& xEvt)
 			{
 				Zenith_Telemetry::Event xE;
@@ -186,7 +186,7 @@ namespace DPTelemetry
 			});
 
 		// ----- Phase-5-audit (2026-05-16) granular gameplay events -----
-		m_xPossessChanged = xDisp.SubscribeLambda<DP_OnPossessionChanged>(
+		m_xPossessChanged = xDisp.Subscribe<DP_OnPossessionChanged>(
 			[](const DP_OnPossessionChanged& xEvt)
 			{
 				// Unified PossessionChanged event with both old + new
@@ -197,7 +197,7 @@ namespace DPTelemetry
 					xEvt.m_xOldVillager, xEvt.m_xNewVillager);
 			});
 
-		m_xDoorOpened = xDisp.SubscribeLambda<DP_OnDoorOpened>(
+		m_xDoorOpened = xDisp.Subscribe<DP_OnDoorOpened>(
 			[](const DP_OnDoorOpened& xEvt)
 			{
 				EmitEvent(DPEventType::DoorOpened, xEvt.m_xVillager, xEvt.m_xDoor);
@@ -206,19 +206,19 @@ namespace DPTelemetry
 		// 2026-05-25: mirror DoorOpened. Doors became two-way; DoorClosed
 		// fires on the Open -> Closing transition (the F-press that
 		// swings the door shut, not the natural end of the close anim).
-		m_xDoorClosed = xDisp.SubscribeLambda<DP_OnDoorClosed>(
+		m_xDoorClosed = xDisp.Subscribe<DP_OnDoorClosed>(
 			[](const DP_OnDoorClosed& xEvt)
 			{
 				EmitEvent(DPEventType::DoorClosed, xEvt.m_xVillager, xEvt.m_xDoor);
 			});
 
-		m_xChestOpened = xDisp.SubscribeLambda<DP_OnChestOpened>(
+		m_xChestOpened = xDisp.Subscribe<DP_OnChestOpened>(
 			[](const DP_OnChestOpened& xEvt)
 			{
 				EmitEvent(DPEventType::ChestOpened, xEvt.m_xVillager, xEvt.m_xChest);
 			});
 
-		m_xForgeCrafted = xDisp.SubscribeLambda<DP_OnForgeCrafted>(
+		m_xForgeCrafted = xDisp.Subscribe<DP_OnForgeCrafted>(
 			[](const DP_OnForgeCrafted& xEvt)
 			{
 				// Output entity ID stashed in entityB's "second" slot
@@ -234,7 +234,7 @@ namespace DPTelemetry
 					DP_ItemTagToString(eTag));
 			});
 
-		m_xObjectivePlaced = xDisp.SubscribeLambda<DP_OnObjectivePlaced>(
+		m_xObjectivePlaced = xDisp.Subscribe<DP_OnObjectivePlaced>(
 			[](const DP_OnObjectivePlaced& xEvt)
 			{
 				EmitEvent(DPEventType::ObjectivePlaced,
@@ -243,7 +243,7 @@ namespace DPTelemetry
 			});
 
 		// ----- Telemetry-v3 (2026-05-19) subscriptions -----
-		m_xApprehendStart = xDisp.SubscribeLambda<DP_OnApprehendChannelStart>(
+		m_xApprehendStart = xDisp.Subscribe<DP_OnApprehendChannelStart>(
 			[](const DP_OnApprehendChannelStart& xEvt)
 			{
 				EmitEvent(DPEventType::ApprehendChannelStart,
@@ -252,7 +252,7 @@ namespace DPTelemetry
 					/*szLabel=*/nullptr, /*szSource=*/"Priest_BT");
 			});
 
-		m_xApprehendComplete = xDisp.SubscribeLambda<DP_OnApprehendChannelComplete>(
+		m_xApprehendComplete = xDisp.Subscribe<DP_OnApprehendChannelComplete>(
 			[](const DP_OnApprehendChannelComplete& xEvt)
 			{
 				EmitEvent(DPEventType::ApprehendChannelComplete,
@@ -261,7 +261,7 @@ namespace DPTelemetry
 					/*szLabel=*/nullptr, /*szSource=*/"Priest_BT");
 			});
 
-		m_xApprehendInterrupted = xDisp.SubscribeLambda<DP_OnApprehendChannelInterrupted>(
+		m_xApprehendInterrupted = xDisp.Subscribe<DP_OnApprehendChannelInterrupted>(
 			[](const DP_OnApprehendChannelInterrupted& xEvt)
 			{
 				EmitEvent(DPEventType::ApprehendChannelInterrupted,
@@ -270,7 +270,7 @@ namespace DPTelemetry
 					/*szLabel=*/nullptr, /*szSource=*/"Priest_BT");
 			});
 
-		m_xPauseToggle = xDisp.SubscribeLambda<DP_OnPauseToggle>(
+		m_xPauseToggle = xDisp.Subscribe<DP_OnPauseToggle>(
 			[](const DP_OnPauseToggle& xEvt)
 			{
 				EmitEvent(DPEventType::PauseToggle,
@@ -279,7 +279,7 @@ namespace DPTelemetry
 					/*szLabel=*/nullptr, /*szSource=*/"PauseCtrl");
 			});
 
-		m_xPerceptionBegin = xDisp.SubscribeLambda<DP_OnPerceptionContactBegin>(
+		m_xPerceptionBegin = xDisp.Subscribe<DP_OnPerceptionContactBegin>(
 			[](const DP_OnPerceptionContactBegin& xEvt)
 			{
 				EmitEvent(DPEventType::PerceptionContactBegin,
@@ -289,7 +289,7 @@ namespace DPTelemetry
 					/*szLabel=*/nullptr, /*szSource=*/"PerceptionPoll");
 			});
 
-		m_xPerceptionEnd = xDisp.SubscribeLambda<DP_OnPerceptionContactEnd>(
+		m_xPerceptionEnd = xDisp.Subscribe<DP_OnPerceptionContactEnd>(
 			[](const DP_OnPerceptionContactEnd& xEvt)
 			{
 				EmitEvent(DPEventType::PerceptionContactEnd,

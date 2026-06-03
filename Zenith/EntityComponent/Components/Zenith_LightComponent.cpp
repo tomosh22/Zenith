@@ -2,7 +2,7 @@
 
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 
 void Zenith_LightComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {

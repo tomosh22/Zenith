@@ -1,6 +1,7 @@
 #pragma once
 
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID + entity/component templates (no longer transitive via the now-opaque Scene.h)
 #include "Flux/Particles/Flux_ParticleData.h"
 #include <random>
 

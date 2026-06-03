@@ -5,10 +5,10 @@
 #include "Editor/Zenith_SelectionSystem.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -107,7 +107,7 @@ ZENITH_TEST(Editor, TransformRoundTrip)
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Create a test entity
-	Zenith_Entity xEntity(pxSceneData, "TestEntity");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestEntity");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	
 	// Test position round trip
@@ -146,7 +146,7 @@ ZENITH_TEST(Editor, MultiSelectSingle)
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Create a test entity
-	Zenith_Entity xEntity(pxSceneData, "MultiSelectEntity1");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "MultiSelectEntity1");
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// Clear selection first
@@ -172,9 +172,9 @@ ZENITH_TEST(Editor, MultiSelectCtrlClick)
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Create test entities
-	Zenith_Entity xEntity1(pxSceneData, "CtrlClickEntity1");
-	Zenith_Entity xEntity2(pxSceneData, "CtrlClickEntity2");
-	Zenith_Entity xEntity3(pxSceneData, "CtrlClickEntity3");
+	Zenith_Entity xEntity1 = g_xEngine.Scenes().CreateEntity(pxSceneData, "CtrlClickEntity1");
+	Zenith_Entity xEntity2 = g_xEngine.Scenes().CreateEntity(pxSceneData, "CtrlClickEntity2");
+	Zenith_Entity xEntity3 = g_xEngine.Scenes().CreateEntity(pxSceneData, "CtrlClickEntity3");
 
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
@@ -211,8 +211,8 @@ ZENITH_TEST(Editor, MultiSelectClear)
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Create and select multiple entities
-	Zenith_Entity xEntity1(pxSceneData, "ClearEntity1");
-	Zenith_Entity xEntity2(pxSceneData, "ClearEntity2");
+	Zenith_Entity xEntity1 = g_xEngine.Scenes().CreateEntity(pxSceneData, "ClearEntity1");
+	Zenith_Entity xEntity2 = g_xEngine.Scenes().CreateEntity(pxSceneData, "ClearEntity2");
 
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
@@ -237,8 +237,8 @@ ZENITH_TEST(Editor, MultiSelectAfterEntityDelete)
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 	// Create entities
-	Zenith_Entity xEntity1(pxSceneData, "DeleteTestEntity1");
-	Zenith_Entity xEntity2(pxSceneData, "DeleteTestEntity2");
+	Zenith_Entity xEntity1 = g_xEngine.Scenes().CreateEntity(pxSceneData, "DeleteTestEntity1");
+	Zenith_Entity xEntity2 = g_xEngine.Scenes().CreateEntity(pxSceneData, "DeleteTestEntity2");
 
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
@@ -516,10 +516,10 @@ ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 	Zenith_Scene xSavedActive = g_xEngine.Scenes().GetActiveScene();
 
 	// Create Scene A (active), put an entity there, capture its old transform.
-	Zenith_Scene xSceneA = g_xEngine.Scenes().CreateEmptyScene("Audit318_UndoSceneA");
+	Zenith_Scene xSceneA = g_xEngine.Scenes().LoadScene("Audit318_UndoSceneA", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	g_xEngine.Scenes().SetActiveScene(xSceneA);
 	Zenith_SceneData* pxSceneAData = g_xEngine.Scenes().GetSceneData(xSceneA);
-	Zenith_Entity xTargetEntity(pxSceneAData, "Audit318_UndoTarget");
+	Zenith_Entity xTargetEntity = g_xEngine.Scenes().CreateEntity(pxSceneAData, "Audit318_UndoTarget");
 	Zenith_EntityID xTargetID = xTargetEntity.GetEntityID();
 	Zenith_TransformComponent& xTransform = xTargetEntity.GetComponent<Zenith_TransformComponent>();
 
@@ -547,7 +547,7 @@ ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 	// broke undo: the command captured Scene A's handle, then Ctrl+Z would
 	// route through GetSceneData(m_xScene) but the selection-layer semantics
 	// would fail silently. With the EntityID-based resolution, undo survives.
-	Zenith_Scene xSceneB = g_xEngine.Scenes().CreateEmptyScene("Audit318_UndoSceneB");
+	Zenith_Scene xSceneB = g_xEngine.Scenes().LoadScene("Audit318_UndoSceneB", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	g_xEngine.Scenes().SetActiveScene(xSceneB);
 	ZENITH_ASSERT_EQ(g_xEngine.Scenes().GetActiveScene(), xSceneB, "Setup: Scene B should be active before undo");
 
@@ -910,10 +910,10 @@ ZENITH_TEST(Editor, TransformParentChild)
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
-	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
-	// Verify parent is set
-	ZENITH_ASSERT_EQ(xChildTransform.GetParentEntityID(), uParent, "Transform should have correct parent entity ID");
+	// Verify parent is set. Phase 5b: the hierarchy is slot-backed, queried via
+	// the Zenith_Entity API (the Transform's hierarchy shims were removed).
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Entity should have correct parent entity ID");
 
 	EDITOR_TEST_END(TestTransformParentChild);
 }
@@ -931,13 +931,21 @@ ZENITH_TEST(Editor, TransformHierarchyTraversal)
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
-	Zenith_TransformComponent& xParentTransform = xParent.GetComponent<Zenith_TransformComponent>();
 
-	// Count children via traversal
+	// Count children via traversal. Phase 5b: the former Transform::ForEachChild
+	// shim is gone; iterate the slot-backed child IDs on the entity and resolve
+	// each child's Transform through the scene (mirrors the old shim, which only
+	// visited existing children that carry a TransformComponent).
+	const Zenith_Vector<Zenith_EntityID>& axChildIDs = xParent.GetChildEntityIDs();
 	u_int uChildCount = 0;
-	xParentTransform.ForEachChild([&uChildCount](Zenith_TransformComponent&) {
+	for (u_int u = 0; u < axChildIDs.GetSize(); ++u)
+	{
+		Zenith_EntityID uChildID = axChildIDs.Get(u);
+		if (!pxSceneData->EntityExists(uChildID)) continue;
+		Zenith_TransformComponent& xChildTransform = pxSceneData->GetEntity(uChildID).GetComponent<Zenith_TransformComponent>();
+		(void)xChildTransform;
 		uChildCount++;
-	});
+	}
 
 	ZENITH_ASSERT_EQ(uChildCount, 2, "Parent should have 2 children");
 
@@ -957,18 +965,18 @@ ZENITH_TEST(Editor, TransformIsDescendantOf)
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
-	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
+	// Phase 5b: descendant queries run on the slot-backed Zenith_Entity API (the
+	// Transform::IsDescendantOf shim was removed). Same walk, same semantics.
 	// Child should be descendant of grandparent
-	ZENITH_ASSERT_TRUE(xChildTransform.IsDescendantOf(uGrandparent), "Child should be descendant of grandparent");
+	ZENITH_ASSERT_TRUE(xChild.IsDescendantOf(uGrandparent), "Child should be descendant of grandparent");
 
 	// Child should be descendant of parent
-	ZENITH_ASSERT_TRUE(xChildTransform.IsDescendantOf(uParent), "Child should be descendant of parent");
+	ZENITH_ASSERT_TRUE(xChild.IsDescendantOf(uParent), "Child should be descendant of parent");
 
 	// Grandparent should not be descendant of child
 	Zenith_Entity xGrandparent = pxSceneData->GetEntity(uGrandparent);
-	Zenith_TransformComponent& xGrandparentTransform = xGrandparent.GetComponent<Zenith_TransformComponent>();
-	ZENITH_ASSERT_FALSE(xGrandparentTransform.IsDescendantOf(uChild), "Grandparent should not be descendant of child");
+	ZENITH_ASSERT_FALSE(xGrandparent.IsDescendantOf(uChild), "Grandparent should not be descendant of child");
 
 	EDITOR_TEST_END(TestTransformIsDescendantOf);
 }
@@ -1361,7 +1369,7 @@ ZENITH_TEST(Editor, ContextMenuDeleteEntity)
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntity), "Entity should exist before deletion");
 
-	pxSceneData->RemoveEntity(uEntity);
+	Zenith_EditorSceneAccess::RemoveEntity(pxSceneData, uEntity);
 	ZENITH_ASSERT_FALSE(pxSceneData->EntityExists(uEntity), "Entity should not exist after deletion");
 
 	// Remove from fixture tracking since we deleted it

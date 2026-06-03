@@ -4,8 +4,8 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_AudioBus.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Maths/Zenith_Maths.h"
@@ -134,7 +134,7 @@ static bool Step_P2ForgeAudible(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFA_Done; return false; }
-		Zenith_Entity xForge(pxScene, std::string("Test_AudibleForge"));
+		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_AudibleForge"));
 		if (!xForge.IsValid()) { g_iPhase = kFA_Done; return false; }
 		g_xForge = xForge.GetEntityID();
 		g_xForgePos = Zenith_Maths::Vector3(150.0f, 0.0f, 150.0f);
@@ -154,7 +154,7 @@ static bool Step_P2ForgeAudible(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFA_Done; return false; }
-		Zenith_Entity xInput(pxScene, std::string("ForgeAudible_Iron"));
+		Zenith_Entity xInput = g_xEngine.Scenes().CreateEntity(pxScene, std::string("ForgeAudible_Iron"));
 		if (!xInput.IsValid()) { g_iPhase = kFA_Done; return false; }
 		g_xInput = xInput.GetEntityID();
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(

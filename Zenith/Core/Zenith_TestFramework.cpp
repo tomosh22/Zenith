@@ -3,7 +3,7 @@
 
 #ifdef ZENITH_TESTING
 
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 #include <cstring>
 #include <cmath>

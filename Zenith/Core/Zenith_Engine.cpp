@@ -12,8 +12,18 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "EntityComponent/Zenith_EntityStore.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Internal/Zenith_EntityStore.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+// ECS leaf-extraction Phase 4: needed so Initialise can install the engine-side
+// built-in component registrar onto the ECS reflection core
+// (SetComponentRegistrar) and force the one-time EnsureInitialized() drain. The
+// core itself names no concrete type; the engine wires the registrar in here.
+#include "ZenithECS/Zenith_ComponentMeta.h"
+// Engine-side (NOT the ECS leaf): needed so the m_pfnAddDefaultComponents hook
+// installed below can name Zenith_TransformComponent and add it via the
+// AddComponent<> template. Keeping this name on the engine side is exactly how
+// the ECS core stays Transform-free.
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_TouchInput.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -51,7 +61,7 @@
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -83,6 +93,13 @@ extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
 extern const char* Project_GetGameAssetsDir();
 extern void Project_RegisterScriptBehaviours();
 extern void Project_Shutdown();
+
+// Engine-side built-in component registrar (ECS leaf-extraction Phase 4). Defined
+// in EntityComponent/Zenith_ComponentMeta_Registration.cpp -- the single TU that
+// knows the concrete built-in component set. Forward-declared here (not via an
+// include) so the engine can install it on the ECS reflection core without the
+// core ever naming a concrete component type. Installed + invoked in Initialise.
+void Zenith_RegisterEngineComponents();
 
 #ifdef ZENITH_TOOLS
 extern void Project_InitializeResources();
@@ -166,12 +183,18 @@ Zenith_Physics& Zenith_Engine::Physics()
 
 Zenith_EntityStore& Zenith_Engine::EntityStore()
 {
-	// No assert: EntityStore is read on the hot path for every entity
-	// access (lifecycle queries, component lookups). Zenith_Engine::Initialise
-	// allocates m_pxEntityStore very early -- before SceneManager / Physics
-	// init -- so the store is always available once any subsystem touches
-	// entity slots.
-	return *m_pxEntityStore;
+	// Phase 2.1 (ECS leaf-extraction): the entity store is now OWNED by the
+	// Zenith_SceneSystem (m_pxScenes), not by the engine. This accessor forwards
+	// so every existing g_xEngine.EntityStore() call site keeps compiling and
+	// behaving identically; the bulk repoint of those call sites onto
+	// Zenith_SceneSystem::Get().GetEntityStore() is Phase 2.2.
+	//
+	// No assert (unchanged hot-path rationale): EntityStore is read on the hot
+	// path for every entity access (lifecycle queries, component lookups).
+	// Zenith_Engine::Initialise allocates m_pxScenes very early -- before
+	// Physics init / scene bootstrap -- and the SceneSystem ctor allocates the
+	// store, so it is always available once any subsystem touches entity slots.
+	return m_pxScenes->GetEntityStore();
 }
 
 Zenith_SceneSystem& Zenith_Engine::Scenes()
@@ -293,17 +316,18 @@ void Zenith_Engine::Initialise()
 	Zenith_Assert(m_pxFrame == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFrame = new FrameContext();
 
-	// Phase 5a: global entity storage. Allocate VERY EARLY -- any
-	// subsystem that touches entity slots reads g_xEngine.EntityStore()
-	// and would dereference nullptr if we wait. Empty store is fine
-	// until SceneManager / scene-load starts creating entities.
-	Zenith_Assert(m_pxEntityStore == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxEntityStore = new Zenith_EntityStore();
-
 	// Scene system state (slot table, generations, active / persistent handles,
-	// build-index map, name cache, callbacks, lifecycle). Allocated alongside
-	// EntityStore -- both must exist before Zenith_SceneSystem::InitialiseSubsystems
-	// creates the persistent scene.
+	// build-index map, name cache, callbacks, lifecycle). Allocate VERY EARLY --
+	// any subsystem that touches entity slots reads g_xEngine.EntityStore(),
+	// which now forwards to m_pxScenes->GetEntityStore(), and would dereference
+	// nullptr if we wait.
+	//
+	// Phase 2.1 (ECS leaf-extraction): the global entity storage (formerly the
+	// engine-owned m_pxEntityStore, allocated here VERY EARLY) is now owned by
+	// the Zenith_SceneSystem and allocated inside its ctor. So constructing
+	// m_pxScenes here brings the entity store online too -- preserving the old
+	// invariant that the store exists before Zenith_SceneSystem::InitialiseSubsystems
+	// (and before Physics::Initialise / the first scene load) creates entities.
 	Zenith_Assert(m_pxScenes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxScenes = new Zenith_SceneSystem();
 
@@ -506,8 +530,49 @@ void Zenith_Engine::Initialise()
 	Zenith_Assert(m_pxPhysics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxPhysics = new Zenith_Physics();
 	g_xEngine.Physics().Initialise();
+
+	// ECS leaf-extraction Phase 4: install the engine-side built-in component
+	// registrar onto the ECS reflection core, then force the one-time
+	// EnsureInitialized() drain. Done BEFORE scene bootstrap (and before the first
+	// scene load / serialize / lifecycle dispatch that would otherwise trigger the
+	// lazy init) so the registry is populated + sealed deterministically here. The
+	// registrar names every concrete built-in (and, in TOOLS, mirrors them into
+	// the editor "Add Component" menu); the ECS core stays leaf-clean by reaching
+	// it only through this opaque function pointer.
+	Zenith_ComponentMetaRegistry::Get().SetComponentRegistrar(&Zenith_RegisterEngineComponents);
+	Zenith_ComponentMetaRegistry::Get().EnsureInitialized();
+
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: scene system bootstrap...");
 	Zenith_SceneSystem::InitialiseSubsystems();
+
+	// Install the ECS-leaf runtime hooks (see Zenith_ECSRuntimeHooks.h). The ECS
+	// core's leaf-unsafe actions -- render-system reset, asset unload, physics
+	// reset, and the main-thread predicate -- are forwarded through these
+	// captureless function pointers so the ECS never names g_xEngine / Flux /
+	// Physics / AssetHandling directly. The reset bodies are copied VERBATIM from
+	// the former Zenith_SceneSystem::ResetAllRenderSystems() / UnloadUnusedAssets()
+	// / the SINGLE-teardown physics-reset line, so SCENE_LOAD_SINGLE behaviour is
+	// byte-for-byte identical. Installed here -- after the subsystems exist
+	// (Physics::Initialise above; Flux EarlyInitialise above; the rest are reached
+	// only when a SINGLE teardown fires, which cannot happen before the first
+	// scene load below) and before that first scene load -- so any teardown the
+	// initial load triggers sees the hooks already wired.
+	Zenith_ECSRuntimeHooks xHooks;
+	xHooks.m_pfnIsMainThread       = []() -> bool { return g_xEngine.Threading().IsMainThread(); };
+	xHooks.m_pfnResetRenderSystems = []() { g_xEngine.Terrain().Reset(); g_xEngine.Text().Reset(); g_xEngine.Particles().Reset(); g_xEngine.Skybox().Reset(); g_xEngine.Fog().Reset();
+#ifdef ZENITH_TOOLS
+		g_xEngine.Gizmos().Reset();
+#endif
+	};
+	xHooks.m_pfnUnloadUnusedAssets = []() { Zenith_AssetRegistry::UnloadUnused(); };
+	xHooks.m_pfnResetPhysics       = []() { g_xEngine.Physics().Reset(); };
+	// Default-components hook (Phase 3, ECS leaf-extraction): SceneSystem::CreateEntity
+	// runs this after allocating the slot so every newly-created (non-bare) entity
+	// gets a Transform — exactly what the old creating ctor did with its
+	// AddComponent<Zenith_TransformComponent>() call. Installed engine-side so the
+	// ECS leaf never names the component type.
+	xHooks.m_pfnAddDefaultComponents = [](Zenith_Entity& xEntity) { xEntity.AddComponent<Zenith_TransformComponent>(); };
+	g_xEngine.Scenes().SetRuntimeHooks(xHooks);
 
 	//#TO_TODO: move somewhere sensible
 	if (!Zenith_CommandLine::IsHeadless())
@@ -711,16 +776,18 @@ void Zenith_Engine::Shutdown()
 	delete m_pxThreading;
 	m_pxThreading = nullptr;
 
-	// 14. Free the per-Engine entity store. Done VERY LATE -- after
-	// SceneManager::Shutdown (step 3), Physics::Shutdown (step 4),
-	// Project_Shutdown (step 5), g_xEngine.FluxRenderer().Shutdown (step 8) which all
-	// may touch entity slots during teardown.
-	delete m_pxEntityStore;
-	m_pxEntityStore = nullptr;
-
-	// 15. Free the scene system. ShutdownSubsystems above already drained
+	// 14/15. Free the scene system. ShutdownSubsystems above already drained
 	// the slot table, cleared callback lists, terminated the animation task,
-	// etc.; this just reclaims the holder + the 4 internal members.
+	// etc.; this just reclaims the holder + its internal members.
+	//
+	// Phase 2.1 (ECS leaf-extraction): the per-process entity store is now OWNED
+	// by the Zenith_SceneSystem -- its dtor frees the store. There is no longer a
+	// separate `delete m_pxEntityStore`. This delete therefore frees the store
+	// too, and it stays VERY LATE (after SceneManager::ShutdownSubsystems step 3,
+	// Physics::Shutdown step 4, Project_Shutdown step 5, FluxRenderer::Shutdown
+	// step 8 -- all of which may touch entity slots during teardown), preserving
+	// the old store-teardown ordering since the store's lifetime == the
+	// SceneSystem's.
 	delete m_pxScenes;
 	m_pxScenes = nullptr;
 

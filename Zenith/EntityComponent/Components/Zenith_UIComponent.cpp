@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 
 Zenith_UIComponent::Zenith_UIComponent(Zenith_Entity& xParentEntity)
     : m_xParentEntity(xParentEntity)

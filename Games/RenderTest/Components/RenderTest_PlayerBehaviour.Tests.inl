@@ -1,8 +1,8 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_Input.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -46,19 +46,19 @@ namespace
 			Zenith_InputSimulator::Enable();
 			RenderTest_GameplayState::Reset();
 
-			xScene = g_xEngine.Scenes().CreateEmptyScene("RenderTestInputTestScene");
+			xScene = g_xEngine.Scenes().LoadScene("RenderTestInputTestScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 			g_xEngine.Scenes().SetActiveScene(xScene);
 			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 
 			// Player entity: Transform (auto-added) + Collider, name "Player"
 			// so FollowCamera can find it by name.
-			Zenith_Entity xPlayer(pxSceneData, "Player");
+			Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(pxSceneData, "Player");
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
 			xPlayer.AddComponent<Zenith_ColliderComponent>();
 			uPlayerID = xPlayer.GetEntityID();
 
 			// GameManager entity: Camera component for the FollowCamera.
-			Zenith_Entity xGameManager(pxSceneData, "GameManager");
+			Zenith_Entity xGameManager = g_xEngine.Scenes().CreateEntity(pxSceneData, "GameManager");
 			xGameManager.AddComponent<Zenith_CameraComponent>();
 			uGameManagerID = xGameManager.GetEntityID();
 

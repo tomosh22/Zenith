@@ -1,7 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 // ============================================================================
@@ -13,8 +13,8 @@ void Zenith_UnitTests::TestSightConeInRange(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xTarget(pxSceneData, "Target");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));
@@ -51,8 +51,8 @@ void Zenith_UnitTests::TestSightConeOutOfRange(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xTarget(pxSceneData, "Target");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 100.0f)); // Far away
@@ -86,8 +86,8 @@ void Zenith_UnitTests::TestSightConeOutOfFOV(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xTarget(pxSceneData, "Target");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxSceneData, "Target");
 
 	// Agent facing +Z, target behind at -Z
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -134,8 +134,8 @@ void Zenith_UnitTests::TestSightAwarenessGain(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xTarget(pxSceneData, "Target");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));
@@ -172,8 +172,8 @@ void Zenith_UnitTests::TestHearingStimulusInRange(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xSource(pxSceneData, "SoundSource");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xSource = g_xEngine.Scenes().CreateEntity(pxSceneData, "SoundSource");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 
@@ -213,8 +213,8 @@ void Zenith_UnitTests::TestHearingStimulusOutOfRange(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xSource(pxSceneData, "SoundSource");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xSource = g_xEngine.Scenes().CreateEntity(pxSceneData, "SoundSource");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 
@@ -249,8 +249,8 @@ void Zenith_UnitTests::TestMemoryRememberTarget(){
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "Agent");
-	Zenith_Entity xTarget(pxSceneData, "Target");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
+	Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));

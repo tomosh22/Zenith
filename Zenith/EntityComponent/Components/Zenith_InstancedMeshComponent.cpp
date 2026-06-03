@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 // The component header now forward-declares the Flux instance types (layering
 // decoupling, wave13.A); pull in the concrete definitions here where the

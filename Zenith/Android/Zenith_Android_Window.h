@@ -27,6 +27,13 @@ public:
 	void DisableCaptureCursor() {}
 	bool IsCursorCaptured() { return false; }
 
+	// On Windows (GLFW) this sets a should-close flag to exit the desktop poll
+	// loop -- the shared automated-test driver (Zenith_AutomatedTest.cpp) calls it
+	// after a run. Android's lifecycle is driven by the NativeActivity / glue main
+	// loop, not by this call, so it is a no-op here; it exists only to satisfy the
+	// cross-platform Zenith_Window API the driver compiles against on both platforms.
+	void RequestClose() {}
+
 	void GetSize(int32_t& iWidth, int32_t& iHeight);
 
 	void SetEventCallback(void(*pfnEventCallback)()) {

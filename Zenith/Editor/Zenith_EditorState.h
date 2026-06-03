@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "AssetHandling/Zenith_AssetHandle.h"  // MaterialHandle
+#include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID (by value) + entity/component access (no longer transitive via the now-opaque Scene.h)
 #include <vector>
 #include <string>
 #include <unordered_set>

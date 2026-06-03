@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Maths/Zenith_Maths.h"
@@ -138,7 +138,7 @@ namespace
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
-		Zenith_Entity xEnt(pxScene, std::string(szName));
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string(szName));
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
 		if (xEnt.HasComponent<Zenith_TransformComponent>())
 		{

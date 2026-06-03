@@ -103,6 +103,7 @@
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
+      <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
@@ -113,7 +114,7 @@
       <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libexploration.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
-      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;-l:libzenithecs.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libexploration.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
@@ -141,6 +142,7 @@
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
+      <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
@@ -151,7 +153,7 @@
       <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libexploration.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
-      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;-l:libzenithecs.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libexploration.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
@@ -176,6 +178,11 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\build\zenithecs_agde.vcxproj">
+      <Project>{893FFFA3-F1C1-876E-31C8-A4844FAEE75C}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\build\zenithbase_agde.vcxproj">
       <Project>{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

@@ -281,8 +281,14 @@ inline void Zenith_TestAssertLe(const T& xA, const U& xB,
 // Leading "" absorbs the empty __VA_ARGS__ case on MSVC without /Zc:preprocessor.
 #define ZENITH_ASSERT_TRUE(expr, ...)      Zenith_TestRunner::Instance().AssertTrue    ((expr), #expr, __FILE__, __LINE__, "" __VA_ARGS__)
 #define ZENITH_ASSERT_FALSE(expr, ...)     Zenith_TestRunner::Instance().AssertFalse   ((expr), #expr, __FILE__, __LINE__, "" __VA_ARGS__)
-#define ZENITH_ASSERT_NULL(ptr, ...)       Zenith_TestRunner::Instance().AssertNull    (static_cast<const void*>(ptr), #ptr, __FILE__, __LINE__, "" __VA_ARGS__)
-#define ZENITH_ASSERT_NOT_NULL(ptr, ...)   Zenith_TestRunner::Instance().AssertNotNull (static_cast<const void*>(ptr), #ptr, __FILE__, __LINE__, "" __VA_ARGS__)
+// reinterpret_cast (not static_cast): tests pass FUNCTION pointers here too (e.g.
+// component-meta lifecycle hooks like m_pfnOnDestroy). static_cast<void*>(fnptr)
+// is ill-formed and clang rejects it under -Werror (Android/agde); the
+// function->object pointer conversion is conditionally-supported via
+// reinterpret_cast and is clean under the agde flags (no -Wpedantic). Identical
+// to static_cast for ordinary object pointers.
+#define ZENITH_ASSERT_NULL(ptr, ...)       Zenith_TestRunner::Instance().AssertNull    (reinterpret_cast<const void*>(ptr), #ptr, __FILE__, __LINE__, "" __VA_ARGS__)
+#define ZENITH_ASSERT_NOT_NULL(ptr, ...)   Zenith_TestRunner::Instance().AssertNotNull (reinterpret_cast<const void*>(ptr), #ptr, __FILE__, __LINE__, "" __VA_ARGS__)
 #define ZENITH_ASSERT_STREQ(a, b, ...)     Zenith_TestRunner::Instance().AssertStrEq   ((a), (b), __FILE__, __LINE__, "" __VA_ARGS__)
 // Template comparisons - work with any type pair supporting the relevant operator.
 #define ZENITH_ASSERT_EQ(a, b, ...)        Zenith_TestAssertEq((a), (b), #a, #b, __FILE__, __LINE__, "" __VA_ARGS__)

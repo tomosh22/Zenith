@@ -1,5 +1,5 @@
 #pragma once
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 

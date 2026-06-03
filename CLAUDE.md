@@ -10,7 +10,8 @@ C++20 game engine with custom ECS, Vulkan-based renderer (Flux), and multi-threa
 
 ```
 Zenith/
-├── EntityComponent/   # Entity-Component System (see EntityComponent/CLAUDE.md)
+├── ZenithECS/         # ECS leaf lib: entity/scene/query/event/component-meta machinery (see ZenithECS/CLAUDE.md)
+├── EntityComponent/   # Concrete components + ECS<->engine glue (see EntityComponent/CLAUDE.md)
 ├── Flux/              # Vulkan renderer (see Flux/CLAUDE.md)
 │   ├── Fog/           # Volumetric fog (see Flux/Fog/CLAUDE.md)
 │   ├── Gizmos/        # Editor gizmos (see Flux/Gizmos/CLAUDE.md)

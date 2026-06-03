@@ -7,7 +7,7 @@
  * - Zenith_TransformComponent for position/scale
  * - Zenith_ModelComponent for mesh rendering
  * - Multi-scene architecture (entities in puzzle scene, camera in persistent scene)
- * - FindMainCameraAcrossScenes for cross-scene camera access
+ * - Zenith_GetMainCameraAcrossScenes for cross-scene camera access
  *
  * Key concepts:
  * - Prefabs as entity templates
@@ -18,9 +18,10 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -276,11 +277,11 @@ public:
 
 	/**
 	 * RepositionCamera - Adjust camera to fit the level in view
-	 * Uses FindMainCameraAcrossScenes to find the camera in the persistent scene.
+	 * Uses Zenith_GetMainCameraAcrossScenes to find the camera in the persistent scene.
 	 */
 	void RepositionCamera(uint32_t uGridWidth, uint32_t uGridHeight)
 	{
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

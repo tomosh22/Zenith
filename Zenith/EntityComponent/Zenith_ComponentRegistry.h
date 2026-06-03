@@ -2,8 +2,8 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Zenith_SceneData.h"
-#include "Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include <concepts>
 #include <string>
 #include <vector>

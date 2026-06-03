@@ -4,9 +4,10 @@
 
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_SelectionSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -211,7 +212,8 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 	// CalculateBoundingBox returns a small cube at the transform position when
 	// the entity has no ModelComponent.
 	Zenith_Vector<Zenith_TransformComponent*> xTransforms;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(xTransforms);
+	xTransforms.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TransformComponent>().ForEach([&xTransforms](Zenith_EntityID, Zenith_TransformComponent& xTransform){ xTransforms.PushBack(&xTransform); });
 
 	for (u_int i = 0; i < xTransforms.GetSize(); ++i)
 	{
@@ -305,7 +307,8 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
 
 	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
+	xModelComponents.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach([&xModelComponents](Zenith_EntityID, Zenith_ModelComponent& xModel){ xModelComponents.PushBack(&xModel); });
 
 	for (u_int i = 0; i < xModelComponents.GetSize(); ++i)
 	{
@@ -333,7 +336,7 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 static BoundingBox CalculateAABBForNoModelEntity(Zenith_SceneData* pxSceneData, Zenith_EntityID xEntityID)
 {
 	Zenith_TransformComponent& xTransform =
-		pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(xEntityID);
+		pxSceneData->GetEntity(xEntityID).GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xPos;
 	xTransform.GetPosition(xPos);
 	constexpr float fHalfExtent = 0.5f;
@@ -419,7 +422,7 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 		return CalculateAABBForNoModelEntity(pxSceneData, xEntityID);
 	}
 
-	Zenith_ModelComponent& xModel = pxSceneData->GetComponentFromEntity<Zenith_ModelComponent>(xEntityID);
+	Zenith_ModelComponent& xModel = pxSceneData->GetEntity(xEntityID).GetComponent<Zenith_ModelComponent>();
 	Zenith_Maths::Vector3 xMin, xMax;
 	CalculateModelSpaceBounds(xModel, xMin, xMax);
 	xBoundingBox.m_xMin = xMin;
@@ -430,7 +433,7 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	// for cheaper intersection tests.
 	if (pxSceneData->EntityHasComponent<Zenith_TransformComponent>(xEntityID))
 	{
-		Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(xEntityID);
+		Zenith_TransformComponent& xTransform = pxSceneData->GetEntity(xEntityID).GetComponent<Zenith_TransformComponent>();
 		Zenith_Maths::Matrix4 xTransformMatrix;
 		xTransform.BuildModelMatrix(xTransformMatrix);
 		xBoundingBox.Transform(xTransformMatrix);

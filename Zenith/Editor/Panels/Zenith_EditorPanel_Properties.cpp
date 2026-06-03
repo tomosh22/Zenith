@@ -5,8 +5,8 @@
 #include "Zenith_EditorPanel_Properties.h"
 #include "Editor/Zenith_Editor.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -27,9 +27,10 @@ namespace
 			return;
 
 		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
+		const Zenith_SceneInfo xInfo = g_xEngine.Scenes().GetSceneInfo(xEntityScene);
 		const char* szSceneName = (xEntityScene == xPersistentScene)
 			? "DontDestroyOnLoad"
-			: xEntityScene.GetName().c_str();
+			: xInfo.m_strName.c_str();
 		ImGui::TextDisabled("Scene: %s", szSceneName);
 	}
 

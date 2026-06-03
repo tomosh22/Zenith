@@ -3,8 +3,8 @@
 #include "AI/BehaviorTree/Zenith_BTNode.h"
 #include "AI/BehaviorTree/Zenith_BTComposites.h"
 #include "AI/BehaviorTree/Zenith_BTDecorators.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 // ============================================================================
 // Helper: Mock BT Node for testing
@@ -33,7 +33,7 @@ ZENITH_TEST(AI, BTSequenceAllSuccess) { Zenith_UnitTests::TestBTSequenceAllSucce
 void Zenith_UnitTests::TestBTSequenceAllSuccess(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSequence xSequence;
@@ -51,7 +51,7 @@ ZENITH_TEST(AI, BTSequenceFirstFails) { Zenith_UnitTests::TestBTSequenceFirstFai
 void Zenith_UnitTests::TestBTSequenceFirstFails(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxSecond = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -71,7 +71,7 @@ ZENITH_TEST(AI, BTSequenceRunning) { Zenith_UnitTests::TestBTSequenceRunning(); 
 void Zenith_UnitTests::TestBTSequenceRunning(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSequence xSequence;
@@ -89,7 +89,7 @@ ZENITH_TEST(AI, BTSelectorFirstSucceeds) { Zenith_UnitTests::TestBTSelectorFirst
 void Zenith_UnitTests::TestBTSelectorFirstSucceeds(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxSecond = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -109,7 +109,7 @@ ZENITH_TEST(AI, BTSelectorAllFail) { Zenith_UnitTests::TestBTSelectorAllFail(); 
 void Zenith_UnitTests::TestBTSelectorAllFail(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSelector xSelector;
@@ -127,7 +127,7 @@ ZENITH_TEST(AI, BTSelectorRunning) { Zenith_UnitTests::TestBTSelectorRunning(); 
 void Zenith_UnitTests::TestBTSelectorRunning(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSelector xSelector;
@@ -144,7 +144,7 @@ ZENITH_TEST(AI, BTParallelRequireOne) { Zenith_UnitTests::TestBTParallelRequireO
 void Zenith_UnitTests::TestBTParallelRequireOne(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ALL); // Require 1 success, fail on all failures
@@ -162,7 +162,7 @@ ZENITH_TEST(AI, BTParallelRequireAll) { Zenith_UnitTests::TestBTParallelRequireA
 void Zenith_UnitTests::TestBTParallelRequireAll(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ALL, Zenith_BTParallel::Policy::REQUIRE_ONE); // Require all, fail on 1
@@ -182,7 +182,7 @@ void Zenith_UnitTests::TestBTParallelAllRunning(){
 	// (rather than the default-to-FAILURE fallback for "all complete").
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ONE);
@@ -205,7 +205,7 @@ void Zenith_UnitTests::TestBTParallelNeitherPolicyMet(){
 	// preserve it).
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ALL, Zenith_BTParallel::Policy::REQUIRE_ALL);
@@ -224,7 +224,7 @@ void Zenith_UnitTests::TestBTParallelRequireOneAbortsRunning(){
 	// scheduler doesn't keep ticking them on the next frame.
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ALL);
@@ -253,7 +253,7 @@ void Zenith_UnitTests::TestBTParallelRequireOneSuccessWinsOverSimultaneousFailur
 	// but no existing test pinned the simultaneous-mixed-outcome case.
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ONE);
@@ -271,7 +271,7 @@ ZENITH_TEST(AI, BTInverter) { Zenith_UnitTests::TestBTInverter(); }
 void Zenith_UnitTests::TestBTInverter(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	// Test inverting SUCCESS
@@ -299,7 +299,7 @@ ZENITH_TEST(AI, BTRepeaterCount) { Zenith_UnitTests::TestBTRepeaterCount(); }
 void Zenith_UnitTests::TestBTRepeaterCount(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxChild = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -322,7 +322,7 @@ ZENITH_TEST(AI, BTCooldown) { Zenith_UnitTests::TestBTCooldown(); }
 void Zenith_UnitTests::TestBTCooldown(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxChild = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -345,7 +345,7 @@ ZENITH_TEST(AI, BTSucceeder) { Zenith_UnitTests::TestBTSucceeder(); }
 void Zenith_UnitTests::TestBTSucceeder(){
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSucceeder xSucceeder;

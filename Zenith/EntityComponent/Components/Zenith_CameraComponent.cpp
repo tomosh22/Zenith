@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Input/Zenith_Input.h"
 
 #ifdef ZENITH_TOOLS

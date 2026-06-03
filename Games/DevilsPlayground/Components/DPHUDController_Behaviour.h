@@ -19,9 +19,9 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_EventSystem.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "UI/Zenith_UIText.h"
@@ -59,7 +59,7 @@ public:
 		// Subscribe with a SubscribeLambda that captures `this` — we MUST
 		// unsubscribe in OnDisable/OnDestroy or the captured `this` will be
 		// dangling after script tear-down.
-		m_xVictoryHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVictory>(
+		m_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(
 			[this](const DP_OnVictory&)
 			{
 				m_bRunOver = true;
@@ -67,7 +67,7 @@ public:
 					Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f),
 					/*fHoldSeconds=*/0.0f /* permanent */);
 			});
-		m_xDeathHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVillagerDied>(
+		m_xDeathHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVillagerDied>(
 			[this](const DP_OnVillagerDied&)
 			{
 				SetStatusText("Possess another villager",
@@ -77,7 +77,7 @@ public:
 		// MVP-4.2 / 4.3.2: run-lost banner. Each cause has its own
 		// copy line that hangs permanently (run is over). The pause-
 		// menu R / Q shortcuts still work to restart / quit.
-		m_xRunLostHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnRunLost>(
+		m_xRunLostHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnRunLost>(
 			[this](const DP_OnRunLost& xEvt)
 			{
 				m_bRunLostReceived = true;
@@ -95,7 +95,7 @@ public:
 		// brief "LOCKED -- needs Key" line so the player understands
 		// why nothing happened. Tag is captured for the formatter so
 		// post-MVP keys (SkeletonKey) telegraph correctly.
-		m_xLockedDoorHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnDoorLockRejected>(
+		m_xLockedDoorHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnDoorLockRejected>(
 			[this](const DP_OnDoorLockRejected& xEvt)
 			{
 				m_eLastLockedDoorRequiredKey = xEvt.m_eRequiredKey;
@@ -106,7 +106,7 @@ public:
 		// recent-alert flash so the player notices the transition even
 		// if their eyes were on the playfield. Falling edge auto-clears
 		// when the priest returns to patrol.
-		m_xPriestAlertHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnPriestAlerted>(
+		m_xPriestAlertHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnPriestAlerted>(
 			[this](const DP_OnPriestAlerted& xEvt)
 			{
 				m_fAwarenessFlashRemaining = 1.0f;

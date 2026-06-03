@@ -135,7 +135,7 @@ Catches placeholder bloat early. An artist exporting a Mixamo character at full 
 The asset is spawned into a runtime scene and queried. This is the strongest possible verification of "the asset is wired up correctly."
 
 ```cpp
-Zenith_Entity xE(pxScene, "TestEntity");
+Zenith_Entity xE = g_xEngine.Scenes().CreateEntity(pxScene, "TestEntity");
 Zenith_ModelComponent& xMC = xE.AddComponent<Zenith_ModelComponent>();
 xMC.LoadModel("game:.../path.zmodel");
 ZENITH_ASSERT(xMC.GetModelInstance() != nullptr, "Model failed to instantiate");

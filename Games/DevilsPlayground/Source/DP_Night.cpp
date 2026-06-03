@@ -4,7 +4,7 @@
 #include "DP_Player.h"
 #include "DPCommonTypes.h"
 
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 
 #include "../Components/DPPlayerController_Behaviour.h"
 

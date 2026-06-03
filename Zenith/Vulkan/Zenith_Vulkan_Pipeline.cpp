@@ -637,10 +637,9 @@ static vk::PipelineDynamicStateCreateInfo BuildDynamicState(const Flux_PipelineS
 	aeOutDynamicState[1] = vk::DynamicState::eScissor;
 	uOutCount = 2;
 
-	if (xSpec.m_bDynamicCullMode)
-	{
-		aeOutDynamicState[uOutCount++] = vk::DynamicState::eCullMode;
-	}
+	// Dynamic cull mode removed: cull is baked statically into the pipeline via
+	// m_eCullMode (vk::DynamicState::eCullMode / vkCmdSetCullMode is Vulkan 1.3 and
+	// unavailable on the Android NDK loader, and the engine never set it per-draw).
 	if (xSpec.m_bDynamicDepthBias)
 	{
 		aeOutDynamicState[uOutCount++] = vk::DynamicState::eDepthBias;

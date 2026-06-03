@@ -5,7 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
 
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 // Phase 1 of the Zenith_Engine refactor: headless boot/shutdown smoke
 // test. Hosted in RenderTest because RenderTest is the primary

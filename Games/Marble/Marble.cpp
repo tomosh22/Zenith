@@ -7,8 +7,8 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -185,46 +185,46 @@ static void InitializeMarbleResources()
 
 	// Ball prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
-		Zenith_Entity xBallTemplate(pxSceneData, "BallTemplate");
+		Zenith_Entity xBallTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "BallTemplate");
 
 		Zenith_Prefab* pxBall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBall->CreateFromEntity(xBallTemplate, "Ball");
 		Resources().m_xBallPrefab.Set(pxBall);
 
-		g_xEngine.Scenes().Destroy(xBallTemplate);
+		xBallTemplate.Destroy();
 	}
 
 	// Platform prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
-		Zenith_Entity xPlatformTemplate(pxSceneData, "PlatformTemplate");
+		Zenith_Entity xPlatformTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlatformTemplate");
 
 		Zenith_Prefab* pxPlatform = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlatform->CreateFromEntity(xPlatformTemplate, "Platform");
 		Resources().m_xPlatformPrefab.Set(pxPlatform);
 
-		g_xEngine.Scenes().Destroy(xPlatformTemplate);
+		xPlatformTemplate.Destroy();
 	}
 
 	// Goal prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
-		Zenith_Entity xGoalTemplate(pxSceneData, "GoalTemplate");
+		Zenith_Entity xGoalTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "GoalTemplate");
 
 		Zenith_Prefab* pxGoal = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxGoal->CreateFromEntity(xGoalTemplate, "Goal");
 		Resources().m_xGoalPrefab.Set(pxGoal);
 
-		g_xEngine.Scenes().Destroy(xGoalTemplate);
+		xGoalTemplate.Destroy();
 	}
 
 	// Collectible prefab - basic entity (ModelComponent added at runtime, no collider - uses distance check)
 	{
-		Zenith_Entity xCollectibleTemplate(pxSceneData, "CollectibleTemplate");
+		Zenith_Entity xCollectibleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CollectibleTemplate");
 
 		Zenith_Prefab* pxCollectible = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCollectible->CreateFromEntity(xCollectibleTemplate, "Collectible");
 		Resources().m_xCollectiblePrefab.Set(pxCollectible);
 
-		g_xEngine.Scenes().Destroy(xCollectibleTemplate);
+		xCollectibleTemplate.Destroy();
 	}
 
 	s_bResourcesInitialized = true;

@@ -38,6 +38,9 @@ using System.IO;
 [Sharpmake.Generate]
 public class ZenithBaseLibProject : ZenithBaseProject
 {
+	// L0 leaf static lib — renderer-agnostic; must not link or propagate glfw/vulkan/slang.
+	protected override bool LinksRendererBackend => false;
+
 	public ZenithBaseLibProject()
 	{
 		Name = "ZenithBase";
@@ -284,6 +287,20 @@ public class ZenithProject : ZenithBaseProject
 		conf.SourceFilesBuildExcludeRegex.Add(@".*\\Core\\Zenith\.cpp$");
 		conf.SourceFilesBuildExcludeRegex.Add(@".*\\Core\\Zenith_String\.cpp$");
 
+		// ECS-leaf partition: the engine root glob (SourceRootPath = /Zenith) still
+		// SEES every ECS-core file under Zenith/ZenithECS/, so build-EXCLUDE the
+		// WHOLE subtree's .cpp. Every TU there — public root + everything under
+		// Internal/ — is a leaf TU compiled by ZenithECSLibProject, so the aggregate
+		// must produce NONE of them (duplicate-symbol link break otherwise). One
+		// anchored subtree pattern is the clean complement of that project's
+		// membership and auto-covers any new ECS TU.
+		//
+		// The aggregate STILL compiles the engine-side EntityComponent/ files
+		// (Zenith_ComponentMeta_Registration.cpp, Zenith_CameraResolve.cpp,
+		// Zenith_ComponentRegistry.cpp, and the entire Components/ subtree) — they
+		// live in a DIFFERENT directory and so are never matched here.
+		conf.SourceFilesBuildExcludeRegex.Add(@".*\\ZenithECS\\.*\.cpp$");
+
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
 
@@ -296,7 +313,16 @@ public class ZenithProject : ZenithBaseProject
 		// (not platform- or tools-gated), and already begins with
 		// `#include "Zenith.h"`. All other aggregate TUs compile /Yu against it.
 		conf.PrecompHeader = "Zenith.h";
-		conf.PrecompSource = "Zenith_Core.cpp";
+		// AGDE/clang precompiles the ENTIRE PrecompSource file via -xc++-header, so a
+		// definition-bearing TU bakes its symbols into Zenith.h.pch and EVERY TU that
+		// uses the PCH re-emits them -> hundreds of duplicate-symbol errors when a
+		// game .so links the engine archive. Zenith_Core.cpp defines functions
+		// (UpdateTimers / Zenith_MainLoop / ...) AND #includes Zenith_UnitTests.Tests.inl,
+		// so on AGDE use the definition-free Zenith_EnginePCH.cpp (just #include
+		// "Zenith.h") as the create TU instead. MSVC's /Yc captures only the header
+		// prefix (not the rest of the .cpp), so win64 is unaffected and keeps
+		// Zenith_Core.cpp as before.
+		conf.PrecompSource = (target.Platform == Platform.agde) ? "Zenith_EnginePCH.cpp" : "Zenith_Core.cpp";
 		conf.PrecompSourceExcludeFolders.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
 		conf.PrecompSourceExcludeFolders.Add(RootPath + "/Middleware/imgui-docking");
 		// android_native_app_glue is a plain C file from the NDK, no PCH
@@ -317,6 +343,17 @@ public class ZenithProject : ZenithBaseProject
 		// same paths via their own ConfigureCommonIncludePaths, so resolution is
 		// unchanged either way (no #include-path churn in any TU).
 		conf.AddPublicDependency<ZenithBaseLibProject>(target);
+
+		// Depend on the ZenithECS leaf lib (the ECS-core set). ECS-leaf
+		// extraction Phase 8: the dependency edge is wired now, but the
+		// aggregate does NOT yet build-exclude the ECS-core .cpp — they still
+		// glob in via SourceRootPath = /Zenith and compile into BOTH libs. That
+		// duplicate-symbol state is INTENTIONAL this phase (it validates that
+		// ZenithECS compiles standalone against ZenithBase); Phase 9 adds the
+		// matching SourceFilesBuildExcludeRegex here to make the two memberships
+		// a clean complement. PUBLIC so the edge re-exports to dependents, like
+		// the ZenithBase edge above.
+		conf.AddPublicDependency<ZenithECSLibProject>(target);
 
 		// Additional include paths
 		conf.IncludePaths.Add(RootPath + "/Middleware/vma");

@@ -6,8 +6,8 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -378,47 +378,47 @@ static void InitializeRunnerResources()
 
 	// Character prefab
 	{
-		Zenith_Entity xCharTemplate(pxSceneData, "CharacterTemplate");
+		Zenith_Entity xCharTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CharacterTemplate");
 		Zenith_Prefab* pxChar = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxChar->CreateFromEntity(xCharTemplate, "Runner");
 		Resources().m_xCharacterPrefab.Set(pxChar);
-		g_xEngine.Scenes().Destroy(xCharTemplate);
+		xCharTemplate.Destroy();
 	}
 
 	// Ground prefab
 	{
-		Zenith_Entity xGroundTemplate(pxSceneData, "GroundTemplate");
+		Zenith_Entity xGroundTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "GroundTemplate");
 		Zenith_Prefab* pxGround = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxGround->CreateFromEntity(xGroundTemplate, "Ground");
 		Resources().m_xGroundPrefab.Set(pxGround);
-		g_xEngine.Scenes().Destroy(xGroundTemplate);
+		xGroundTemplate.Destroy();
 	}
 
 	// Obstacle prefab
 	{
-		Zenith_Entity xObstacleTemplate(pxSceneData, "ObstacleTemplate");
+		Zenith_Entity xObstacleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ObstacleTemplate");
 		Zenith_Prefab* pxObstacle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxObstacle->CreateFromEntity(xObstacleTemplate, "Obstacle");
 		Resources().m_xObstaclePrefab.Set(pxObstacle);
-		g_xEngine.Scenes().Destroy(xObstacleTemplate);
+		xObstacleTemplate.Destroy();
 	}
 
 	// Collectible prefab
 	{
-		Zenith_Entity xCollectibleTemplate(pxSceneData, "CollectibleTemplate");
+		Zenith_Entity xCollectibleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CollectibleTemplate");
 		Zenith_Prefab* pxCollectible = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCollectible->CreateFromEntity(xCollectibleTemplate, "Collectible");
 		Resources().m_xCollectiblePrefab.Set(pxCollectible);
-		g_xEngine.Scenes().Destroy(xCollectibleTemplate);
+		xCollectibleTemplate.Destroy();
 	}
 
 	// Particle prefab
 	{
-		Zenith_Entity xParticleTemplate(pxSceneData, "ParticleTemplate");
+		Zenith_Entity xParticleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ParticleTemplate");
 		Zenith_Prefab* pxParticle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxParticle->CreateFromEntity(xParticleTemplate, "Particle");
 		Resources().m_xParticlePrefab.Set(pxParticle);
-		g_xEngine.Scenes().Destroy(xParticleTemplate);
+		xParticleTemplate.Destroy();
 	}
 
 	s_bResourcesInitialized = true;

@@ -3,7 +3,13 @@
 #ifdef ZENITH_TOOLS
 
 #include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Scene.h"
+// Scene.h is now an opaque handle and no longer transitively provides the full
+// Zenith_EntityID definition / Zenith_SceneData / entity-component templates (it
+// used to via its bottom SceneData include, removed in the 7b API contraction).
+// The editor stores EntityID by value (m_uPrimarySelectedEntityID) and drives
+// entity component access, so include SceneData.h explicitly.
+#include "ZenithECS/Zenith_SceneData.h"
 // NOTE: Zenith_EditorState.h is included AFTER the types it depends on
 // (ContentBrowserEntry, ConsoleLogEntry, EditorMode, etc.) — see below the
 // type definitions.

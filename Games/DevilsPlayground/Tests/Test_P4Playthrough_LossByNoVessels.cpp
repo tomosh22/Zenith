@@ -3,9 +3,9 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Collections/Zenith_Vector.h"
 #include "UI/Zenith_UIText.h"

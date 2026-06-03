@@ -91,6 +91,14 @@ public abstract class ZenithBaseProject : Project
 			conf.Options.Add(Options.Android.General.AndroidAPILevel.Android30);
 			// Cap VMA at Vulkan 1.1 - Android NDK libvulkan.so doesn't export 1.2/1.3 symbols
 			conf.Defines.Add("VMA_VULKAN_VERSION=1001000");
+			// Windows-host cross-compile: the AGDE platform emits the include paths in
+			// lowercase (e.g. ...\zenith\core, ...\middleware) while the on-disk dirs are
+			// Zenith\Core, Middleware. clang's -Wnonportable-include-path then flags every
+			// "Core/..."/"Middleware/..." #include as a case mismatch, and the AGDE default
+			// -Werror turns it fatal -- a false alarm on the case-INSENSITIVE Windows host
+			// (the lowercase paths resolve to the real files fine). Disable ONLY that one
+			// warning; every other -Werror diagnostic stays fatal.
+			conf.AdditionalCompilerOptions.Add("-Wno-nonportable-include-path");
 		}
 
 		conf.Defines.Add("ZENITH_VULKAN");
@@ -126,9 +134,18 @@ public abstract class ZenithBaseProject : Project
 		}
 	}
 
+	// True for projects that actually link the renderer backend (the aggregate
+	// engine lib + the games). FALSE for the L0/L1 leaf static libs (ZenithBase,
+	// ZenithECS) and the SentinelECS leaf-proof exe: those are renderer-agnostic
+	// and must NOT link OR PROPAGATE glfw/vulkan/slang. Propagating those libs out
+	// of the leaf static libs is exactly what let the SentinelECS link silently
+	// resolve an accidental ECS->renderer reference, defeating the leaf proof.
+	// (win64-only knob; agde links its system libs via Sharpmake_Games.cs.)
+	protected virtual bool LinksRendererBackend => true;
+
 	protected void ConfigureCommonLibraryPaths(Configuration conf, ZenithTarget target)
 	{
-		if (target.Platform == Platform.win64)
+		if (target.Platform == Platform.win64 && LinksRendererBackend)
 		{
 			conf.LibraryPaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Lib");
 			conf.LibraryPaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
@@ -186,7 +203,23 @@ public class ZenithSolution : Solution
 		// depends on it, so it would be pulled into the solution transitively;
 		// adding it explicitly keeps it visible/buildable on its own.
 		conf.AddProject<ZenithBaseLibProject>(target);
+		// ZenithECS: L1 static lib (ECS-core set), carved out in the ECS-leaf
+		// extraction. Depends on ZenithBase; ZenithProject publicly depends on
+		// it, so it too would arrive transitively — added explicitly to keep it
+		// visible/buildable on its own.
+		conf.AddProject<ZenithECSLibProject>(target);
 		conf.AddProject<ZenithProject>(target);
+		// SentinelECS: ECS leaf-proof EXE (Phase 9b). Links ONLY zenithecs.lib +
+		// zenithbase.lib; building it green proves the ECS core has no undefined
+		// engine externals. Win64 + ToolsEnabled.False ONLY (the project declares
+		// only those two configs -- a runtime build sheds the ZENITH_TOOLS /
+		// ZENITH_DEBUG_VARIABLES editor instrumentation that would otherwise pull
+		// engine symbols). The guard must match the project's target set, else
+		// solution-link fails ("cannot find target ... in project SentinelECS").
+		if (target.Platform == Platform.win64 && target.ToolsEnabled == ToolsEnabled.False)
+		{
+			conf.AddProject<SentinelECSProject>(target);
+		}
 		conf.AddProject<TestGameProject>(target);
 		conf.AddProject<MarbleGameProject>(target);
 		conf.AddProject<RunnerGameProject>(target);

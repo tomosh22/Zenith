@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 namespace
 {
@@ -400,7 +400,7 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 
 	// Non-variant path: create entity from this prefab's component data.
 	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
-	Zenith_Entity xEntity(pxSceneData, strName);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, strName);
 	DeserializeComponents(xEntity);
 
 	// Apply the spawn transform as the BASE transform (variant overrides, applied

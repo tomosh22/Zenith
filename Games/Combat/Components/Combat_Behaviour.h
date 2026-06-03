@@ -21,12 +21,13 @@
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -168,13 +169,13 @@ public:
 		}
 
 		// Subscribe to events (static queues avoid captured 'this')
-		s_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
+		s_uDamageEventHandle = Zenith_EventDispatcher::Get().Subscribe<Combat_DamageEvent>(
 			[](const Combat_DamageEvent& xEvent)
 			{
 				s_axDeferredDamageEvents.push_back(xEvent);
 			});
 
-		s_uDeathEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DeathEvent>(
+		s_uDeathEventHandle = Zenith_EventDispatcher::Get().Subscribe<Combat_DeathEvent>(
 			[](const Combat_DeathEvent& xEvent)
 			{
 				s_axDeferredDeathEvents.push_back(xEvent);
@@ -376,7 +377,7 @@ private:
 		SetHUDVisible(true);
 
 		// Create arena scene
-		m_xArenaScene = g_xEngine.Scenes().CreateEmptyScene("Arena");
+		m_xArenaScene = g_xEngine.Scenes().LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xArenaScene);
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xArenaScene);
 
@@ -424,7 +425,7 @@ private:
 		if (m_xArenaScene.IsValid())
 			g_xEngine.Scenes().UnloadScene(m_xArenaScene);
 
-		m_xArenaScene = g_xEngine.Scenes().CreateEmptyScene("Arena");
+		m_xArenaScene = g_xEngine.Scenes().LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xArenaScene);
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xArenaScene);
 
@@ -528,7 +529,7 @@ private:
 
 			char szName[32];
 			snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
-			Zenith_Entity xWall(pxSceneData, szName);
+			Zenith_Entity xWall = g_xEngine.Scenes().CreateEntity(pxSceneData, szName);
 
 			Zenith_TransformComponent& xWallTransform = xWall.GetComponent<Zenith_TransformComponent>();
 			xWallTransform.SetPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight * 0.5f, fZ));
@@ -618,7 +619,7 @@ private:
 		xPlayer.AddComponent<Zenith_ScriptComponent>().AddScript<Combat_PlayerBehaviour>();
 
 		// Create hit spark emitter in arena scene
-		Zenith_Entity xHitSparkEmitter(pxSceneData, "HitSparkEmitter");
+		Zenith_Entity xHitSparkEmitter = g_xEngine.Scenes().CreateEntity(pxSceneData, "HitSparkEmitter");
 		Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
 		xEmitter.SetConfig(Combat::Resources().m_pxHitSparkConfig);
 		Combat::Resources().m_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
@@ -797,7 +798,7 @@ private:
 			if (pxSceneData && pxSceneData->EntityExists(xEvent.m_uEntityID))
 			{
 				Zenith_Entity xDeadEntity = pxSceneData->GetEntity(xEvent.m_uEntityID);
-				g_xEngine.Scenes().Destroy(xDeadEntity, 3.0f);
+				xDeadEntity.Destroy(3.0f);
 			}
 		}
 	}
@@ -808,7 +809,7 @@ private:
 
 	void UpdateCamera(float fDt)
 	{
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -986,7 +987,7 @@ private:
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xArenaScene);
 
 		// Get camera for world-to-screen projection
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

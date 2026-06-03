@@ -93,6 +93,14 @@ public:
 		return m_ulCursor;
 	}
 
+	// Stream DATA LENGTH in bytes. After ReadFromFile this equals the file size
+	// (the common case, and what scene/asset validation relies on).
+	// FOOTGUN: for a default-constructed in-memory WRITE stream this is the buffer
+	// CAPACITY (uDEFAULT_INITIAL_SIZE), NOT the bytes written — writes advance the
+	// cursor (GetCursor()), not m_ulDataSize. So NEVER size-gate an in-memory
+	// write-then-rewound stream on GetSize(): use GetCursor() for "bytes written",
+	// or construct from an exact-size external buffer (Zenith_DataStream(p, n)).
+	// (This bit the Scene::SceneLoadValidation test — see project memory.)
 	uint64_t GetSize() const
 	{
 		return m_ulDataSize;

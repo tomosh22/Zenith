@@ -1,5 +1,5 @@
 #pragma once
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "Core/Zenith_Tween.h"
 
 //=============================================================================

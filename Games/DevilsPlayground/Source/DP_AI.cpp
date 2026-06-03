@@ -4,9 +4,9 @@
 #include "DP_Query.h"
 #include "DPCommonTypes.h"
 
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
@@ -155,7 +155,7 @@ namespace DP_AI
 			"DP_AI::GetOrBuildLevelNavMesh must be called from main thread");
 		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 		const int iActiveBuildIndex = xActive.IsValid()
-			? g_xEngine.Scenes().GetSceneData(xActive)->GetBuildIndex()
+			? g_xEngine.Scenes().GetSceneInfo(xActive).m_iBuildIndex
 			: -1;
 		if (g_pxLevelNavMesh != nullptr && iActiveBuildIndex >= 0
 			&& iActiveBuildIndex == g_iCachedNavMeshBuildIndex)

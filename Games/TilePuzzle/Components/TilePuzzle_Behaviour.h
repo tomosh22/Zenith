@@ -18,9 +18,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux_ModelInstance.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -1167,7 +1167,7 @@ private:
 		ShowScreen(SCREEN_HUD);
 
 		// Create puzzle scene for level entities
-		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		LoadLevelFromFile();
@@ -1187,7 +1187,7 @@ private:
 		}
 
 		// Create fresh puzzle scene
-		m_xPuzzleScene = g_xEngine.Scenes().CreateEmptyScene("Puzzle");
+		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
 
 		LoadLevelFromFile();
@@ -2985,7 +2985,7 @@ private:
 				if (xEntity.IsValid())
 				{
 					Zenith_TweenComponent::ScaleTo(xEntity, Zenith_Maths::Vector3(0.0f), s_fEliminationDuration, EASING_BACK_IN);
-					g_xEngine.Scenes().Destroy(xEntity, s_fEliminationDuration + 0.01f);
+					xEntity.Destroy(s_fEliminationDuration + 0.01f);
 				}
 			}
 		}
@@ -3088,7 +3088,7 @@ private:
 					xTween.TweenScaleFromTo(xPopScale, Zenith_Maths::Vector3(0.0f), 0.2f, EASING_BACK_IN);
 					xTween.SetDelay(0.08f);
 
-					g_xEngine.Scenes().Destroy(xCatEntity, s_fEliminationDuration + 0.01f);
+					xCatEntity.Destroy(s_fEliminationDuration + 0.01f);
 				}
 			}
 
@@ -3367,7 +3367,7 @@ private:
 
 		// Overhead light for specular highlights on shapes and cats
 		{
-			Zenith_Entity xLight(pxSceneData, "PuzzleLight");
+			Zenith_Entity xLight = g_xEngine.Scenes().CreateEntity(pxSceneData, "PuzzleLight");
 			Zenith_TransformComponent& xT = xLight.GetComponent<Zenith_TransformComponent>();
 			float fGridExtent = static_cast<float>(m_xCurrentLevel.uGridHeight > m_xCurrentLevel.uGridWidth ? m_xCurrentLevel.uGridHeight : m_xCurrentLevel.uGridWidth);
 			xT.SetPosition(Zenith_Maths::Vector3(0.f, fGridExtent * 0.8f, 0.f));

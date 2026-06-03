@@ -1,9 +1,9 @@
 #pragma once
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Query.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
 
 #include <cstdint>
 

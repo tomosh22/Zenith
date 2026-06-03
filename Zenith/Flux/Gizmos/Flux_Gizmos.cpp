@@ -5,10 +5,10 @@
 
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
@@ -162,7 +162,7 @@ Zenith_TransformComponent* Flux_GizmosImpl::GetEditableTransform()
 		return nullptr;
 	}
 
-	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(g_xEngine.Gizmos().m_pxTargetEntity->GetEntityID());
+	return &g_xEngine.Gizmos().m_pxTargetEntity->GetComponent<Zenith_TransformComponent>();
 }
 
 void Flux_GizmosImpl::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)

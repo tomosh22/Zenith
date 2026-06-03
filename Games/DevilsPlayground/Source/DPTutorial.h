@@ -23,7 +23,7 @@
 // each frame to populate the HUD element.
 // =============================================================================
 
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 
 namespace DP_Tutorial
 {

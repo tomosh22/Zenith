@@ -6,7 +6,7 @@
 // keyed by the entity SLOT index. It replaces the far heavier per-TU coupling
 // that the old Zenith_AnimatorComponent.h => Flux_AnimationController.h edge
 // caused (every TU touching the component dragged in the whole controller).
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 
 Flux_AnimationControllerStore::~Flux_AnimationControllerStore()
 {

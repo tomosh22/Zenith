@@ -9,7 +9,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Input/Zenith_InputSimulator.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
 #ifdef ZENITH_TOOLS

@@ -8,8 +8,8 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -548,7 +548,7 @@ static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 	}
 
 	// Create entity with instanced mesh component
-	Zenith_Entity xTreesEntity(pxSceneData, "InstancedTrees");
+	Zenith_Entity xTreesEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "InstancedTrees");
 	xTreesEntity.SetTransient(false);
 
 	Zenith_InstancedMeshComponent& xTrees = xTreesEntity.AddComponent<Zenith_InstancedMeshComponent>();
@@ -593,7 +593,7 @@ void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Creating terrain entity...");
 
-		Zenith_Entity xTerrainEntity(pxSceneData, "Terrain");
+		Zenith_Entity xTerrainEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "Terrain");
 		xTerrainEntity.SetTransient(false);
 
 		Zenith_TerrainComponent& xTerrain = xTerrainEntity.AddComponent<Zenith_TerrainComponent>(

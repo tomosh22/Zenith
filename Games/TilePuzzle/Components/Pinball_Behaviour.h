@@ -20,9 +20,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -545,7 +545,7 @@ public:
 			m_bGateActive = true;
 			TilePuzzle::g_uPinballRequestedGate = UINT32_MAX;
 
-			m_xPinballScene = g_xEngine.Scenes().CreateEmptyScene("PinballPlay");
+			m_xPinballScene = g_xEngine.Scenes().LoadScene("PinballPlay", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 			g_xEngine.Scenes().SetActiveScene(m_xPinballScene);
 
 			g_xEngine.HDR().SetBloomIntensity(0.8f);
@@ -583,7 +583,7 @@ public:
 			}
 			else
 			{
-				m_xPinballScene = g_xEngine.Scenes().CreateEmptyScene("PinballPlay");
+				m_xPinballScene = g_xEngine.Scenes().LoadScene("PinballPlay", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 				g_xEngine.Scenes().SetActiveScene(m_xPinballScene);
 
 				g_xEngine.HDR().SetBloomIntensity(0.8f);
@@ -1002,7 +1002,7 @@ private:
 			if (m_axPegEntityIDs[i].IsValid() && pxScene->EntityExists(m_axPegEntityIDs[i]))
 			{
 				Zenith_Entity xPeg = pxScene->GetEntity(m_axPegEntityIDs[i]);
-				g_xEngine.Scenes().Destroy(xPeg);
+				xPeg.Destroy();
 			}
 			m_axPegEntityIDs[i] = Zenith_EntityID();
 		}
@@ -1032,7 +1032,7 @@ private:
 		const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xScale,
 		MaterialHandle& xMaterial, bool bAddCollider = true)
 	{
-		Zenith_Entity xEntity(pxScene, szName);
+		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxScene, szName);
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
 		xTransform.SetScale(xScale);
@@ -1054,7 +1054,7 @@ private:
 		const Zenith_Maths::Vector3& xPos, float fScale,
 		MaterialHandle& xMaterial)
 	{
-		Zenith_Entity xEntity(pxScene, szName);
+		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxScene, szName);
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
 		// Paw-pad shape: flattened in Z for thematic paw-print look
@@ -1131,7 +1131,7 @@ private:
 		// Positive Z rotation = left end lower, right end higher.
 		// Ball hitting the underside gets deflected rightward.
 		{
-			Zenith_Entity xCurve(pxScene, "PB_TopCurve");
+			Zenith_Entity xCurve = g_xEngine.Scenes().CreateEntity(pxScene, "PB_TopCurve");
 			Zenith_TransformComponent& xT = xCurve.GetComponent<Zenith_TransformComponent>();
 			xT.SetPosition({ -1.8f, 7.5f, 0.f });
 			xT.SetScale({ 1.6f, s_fPB_WallThickness, 0.5f });
@@ -1149,7 +1149,7 @@ private:
 		// Second curve piece - continues guiding ball rightward into main field
 		// Ball arrives here traveling right and slightly down after curve 1
 		{
-			Zenith_Entity xCurve2(pxScene, "PB_TopCurve2");
+			Zenith_Entity xCurve2 = g_xEngine.Scenes().CreateEntity(pxScene, "PB_TopCurve2");
 			Zenith_TransformComponent& xT = xCurve2.GetComponent<Zenith_TransformComponent>();
 			xT.SetPosition({ 0.8f, 7.0f, 0.f });
 			xT.SetScale({ 1.4f, s_fPB_WallThickness, 0.5f });
@@ -1180,7 +1180,7 @@ private:
 
 		// === Score Target (bottom center) ===
 		{
-			Zenith_Entity xTarget(pxScene, "PB_Target");
+			Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxScene, "PB_Target");
 			Zenith_TransformComponent& xT = xTarget.GetComponent<Zenith_TransformComponent>();
 			xT.SetPosition({ 0.f, 0.8f, 0.f });
 			xT.SetScale({ 1.5f, 0.3f, 0.5f });
@@ -1198,7 +1198,7 @@ private:
 
 		// === Plunger (visual only, no collider) ===
 		{
-			Zenith_Entity xPlunger(pxScene, "PB_Plunger");
+			Zenith_Entity xPlunger = g_xEngine.Scenes().CreateEntity(pxScene, "PB_Plunger");
 			Zenith_TransformComponent& xT = xPlunger.GetComponent<Zenith_TransformComponent>();
 			xT.SetPosition({ (s_fPB_ChannelLeft + s_fPB_ChannelRight) * 0.5f, s_fPB_PlungerRestY, 0.f });
 			xT.SetScale({ 0.5f, 0.4f, 0.3f });
@@ -1223,7 +1223,7 @@ private:
 	{
 		// Top accent (cool blue)
 		{
-			Zenith_Entity xLight(pxScene, "PB_LightTop");
+			Zenith_Entity xLight = g_xEngine.Scenes().CreateEntity(pxScene, "PB_LightTop");
 			xLight.GetComponent<Zenith_TransformComponent>().SetPosition(
 				Zenith_Maths::Vector3(0.f, 7.0f, -1.5f));
 			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
@@ -1235,7 +1235,7 @@ private:
 
 		// Bottom accent (warm amber)
 		{
-			Zenith_Entity xLight(pxScene, "PB_LightBottom");
+			Zenith_Entity xLight = g_xEngine.Scenes().CreateEntity(pxScene, "PB_LightBottom");
 			xLight.GetComponent<Zenith_TransformComponent>().SetPosition(
 				Zenith_Maths::Vector3(0.f, 1.0f, -1.5f));
 			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
@@ -1249,7 +1249,7 @@ private:
 	Zenith_Entity CreateBoundaryWall(Zenith_SceneData* pxScene, const char* szName,
 		const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xScale)
 	{
-		Zenith_Entity xEntity(pxScene, szName);
+		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxScene, szName);
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
 		xTransform.SetScale(xScale);
@@ -1297,7 +1297,7 @@ private:
 
 		float fChannelCenterX = (s_fPB_ChannelLeft + s_fPB_ChannelRight) * 0.5f;
 
-		Zenith_Entity xBall(pxScene, "PB_Ball");
+		Zenith_Entity xBall = g_xEngine.Scenes().CreateEntity(pxScene, "PB_Ball");
 		Zenith_TransformComponent& xTransform = xBall.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition({ fChannelCenterX, s_fPB_BallStartY, 0.f });
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fPB_BallScale));
@@ -1338,7 +1338,7 @@ private:
 			return;
 
 		Zenith_Entity xBall = pxScene->GetEntity(m_xBallEntityID);
-		g_xEngine.Scenes().Destroy(xBall);
+		xBall.Destroy();
 		m_xBallEntityID = Zenith_EntityID();
 	}
 
@@ -2409,7 +2409,7 @@ private:
 		// Create dynamic scene and enter gameplay
 		if (!m_xPinballScene.IsValid())
 		{
-			m_xPinballScene = g_xEngine.Scenes().CreateEmptyScene("PinballPlay");
+			m_xPinballScene = g_xEngine.Scenes().LoadScene("PinballPlay", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 			g_xEngine.Scenes().SetActiveScene(m_xPinballScene);
 
 			g_xEngine.HDR().SetBloomIntensity(0.8f);
@@ -2439,7 +2439,7 @@ private:
 		// Create dynamic scene and enter gameplay
 		if (!m_xPinballScene.IsValid())
 		{
-			m_xPinballScene = g_xEngine.Scenes().CreateEmptyScene("PinballPlay");
+			m_xPinballScene = g_xEngine.Scenes().LoadScene("PinballPlay", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 			g_xEngine.Scenes().SetActiveScene(m_xPinballScene);
 
 			g_xEngine.HDR().SetBloomIntensity(0.8f);

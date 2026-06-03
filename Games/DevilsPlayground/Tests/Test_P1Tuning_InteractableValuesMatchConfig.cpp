@@ -3,9 +3,9 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
@@ -133,7 +133,7 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene == nullptr) { g_iPhase = kI_Done; return false; }
 
-		Zenith_Entity xDoor(pxScene, std::string("TuningTestDoubleDoor"));
+		Zenith_Entity xDoor = g_xEngine.Scenes().CreateEntity(pxScene, std::string("TuningTestDoubleDoor"));
 		xDoor.AddComponent<Zenith_ScriptComponent>()
 		     .AddScript<DPDoubleDoor_Behaviour>();
 

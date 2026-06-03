@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
 
 /**

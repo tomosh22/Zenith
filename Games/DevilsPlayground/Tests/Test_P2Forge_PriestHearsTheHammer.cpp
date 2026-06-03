@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
@@ -160,7 +160,7 @@ static bool Step_P2ForgePriestHears(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFP_Done; return false; }
-		Zenith_Entity xForge(pxScene, std::string("Test_PriestHearsForge"));
+		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_PriestHearsForge"));
 		if (!xForge.IsValid()) { g_iPhase = kFP_Done; return false; }
 		g_xForge = xForge.GetEntityID();
 		g_xForgePos = Zenith_Maths::Vector3(400.0f, 0.0f, 400.0f);
@@ -191,7 +191,7 @@ static bool Step_P2ForgePriestHears(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFP_Done; return false; }
-		Zenith_Entity xInput(pxScene, std::string("ForgePriestHears_Iron"));
+		Zenith_Entity xInput = g_xEngine.Scenes().CreateEntity(pxScene, std::string("ForgePriestHears_Iron"));
 		if (!xInput.IsValid()) { g_iPhase = kFP_Done; return false; }
 		g_xInput = xInput.GetEntityID();
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(

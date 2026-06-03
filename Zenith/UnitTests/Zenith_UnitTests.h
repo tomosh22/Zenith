@@ -1,6 +1,5 @@
 #pragma once
 #include <fstream>
-#include "UnitTests/Zenith_SceneTests.h"
 #include "UnitTests/Zenith_AITests.h"
 
 class Zenith_UnitTests

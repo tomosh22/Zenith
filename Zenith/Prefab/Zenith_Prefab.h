@@ -1,8 +1,8 @@
 #pragma once
 
 #include "DataStream/Zenith_DataStream.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_Asset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"

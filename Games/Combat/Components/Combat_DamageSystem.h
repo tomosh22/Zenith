@@ -14,10 +14,10 @@
  * - Combat_HitEvent: Visual feedback for hit registration
  */
 
-#include "EntityComponent/Zenith_EventSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
@@ -121,7 +121,7 @@ public:
 		}
 
 		// Subscribe to damage events
-		s_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
+		s_uDamageEventHandle = Zenith_EventDispatcher::Get().Subscribe<Combat_DamageEvent>(
 			[](const Combat_DamageEvent& xEvent)
 			{
 				HandleDamageEvent(xEvent);

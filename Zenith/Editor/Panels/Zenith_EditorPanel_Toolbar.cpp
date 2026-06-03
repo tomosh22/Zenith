@@ -4,8 +4,8 @@
 
 #include "Zenith_EditorPanel_Toolbar.h"
 
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -88,7 +88,7 @@ void Zenith_EditorPanelToolbar::RenderSceneSelectors(EditorMode& eEditorMode)
 
 	RenderActiveSceneCombo();
 
-	if (g_xEngine.Scenes().GetBuildSceneCount() > 0)
+	if (g_xEngine.Scenes().GetBuildIndexRegistrySize() > 0)
 	{
 		RenderRegisteredScenesCombo();
 	}
@@ -107,10 +107,9 @@ void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 
 	// Get active scene name for preview
 	std::string strActiveSceneName = "No Scene";
-	Zenith_SceneData* pxActiveData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	if (pxActiveData)
+	if (g_xEngine.Scenes().GetSceneData(xActiveScene))
 	{
-		strActiveSceneName = pxActiveData->GetName();
+		strActiveSceneName = g_xEngine.Scenes().GetSceneInfo(xActiveScene).m_strName;
 		if (strActiveSceneName.empty())
 			strActiveSceneName = "Untitled";
 	}
@@ -120,20 +119,20 @@ void Zenith_EditorPanelToolbar::RenderActiveSceneCombo()
 	ImGui::SetNextItemWidth(200.0f);
 	if (ImGui::BeginCombo("##ActiveScene", strActiveSceneName.c_str()))
 	{
-		uint32_t uSceneCount = g_xEngine.Scenes().GetLoadedSceneCount();
-		for (uint32_t i = 0; i < uSceneCount; ++i)
+		// GetSceneAt returns INVALID_SCENE past the last visible scene, so walk
+		// slot order until that sentinel (was bounded by GetLoadedSceneCount).
+		for (uint32_t i = 0; ; ++i)
 		{
 			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
 			if (!xScene.IsValid())
-				continue;
+				break;
 			if (xScene == xPersistentScene)
 				continue;
 
-			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
-			if (!pxSceneData)
+			if (!g_xEngine.Scenes().GetSceneData(xScene))
 				continue;
 
-			std::string strName = pxSceneData->GetName();
+			std::string strName = g_xEngine.Scenes().GetSceneInfo(xScene).m_strName;
 			if (strName.empty())
 				strName = "Untitled";
 

@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
@@ -182,7 +182,7 @@ static bool Step_P2BellSoulPriestHears(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kBP_Done; return false; }
-		Zenith_Entity xEnt(pxScene, std::string("Test_BellSoul_PriestHears"));
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_BellSoul_PriestHears"));
 		if (!xEnt.IsValid()) { g_iPhase = kBP_Done; return false; }
 		g_xBellSoul = xEnt.GetEntityID();
 		// Place the BellSoul far from the priest's start spot so the

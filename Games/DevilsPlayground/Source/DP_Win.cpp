@@ -4,7 +4,7 @@
 #include "DPCommonTypes.h"
 #include "DP_Tuning.h"
 
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "DevilsPlayground_Tags.h"
 
 #include "../Components/DPPlayerController_Behaviour.h"

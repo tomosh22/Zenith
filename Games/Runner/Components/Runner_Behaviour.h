@@ -23,10 +23,11 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "UI/Zenith_UIButton.h"
 
@@ -289,7 +290,7 @@ private:
 		SetHUDVisible(true);
 
 		// Create game scene
-		m_xGameScene = g_xEngine.Scenes().CreateEmptyScene("Run");
+		m_xGameScene = g_xEngine.Scenes().LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xGameScene);
 
 		// Initialize all systems (uses GetActiveScene internally)
@@ -331,7 +332,7 @@ private:
 		}
 
 		// Create fresh game scene
-		m_xGameScene = g_xEngine.Scenes().CreateEmptyScene("Run");
+		m_xGameScene = g_xEngine.Scenes().LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xGameScene);
 
 		// Re-initialize all systems
@@ -528,7 +529,7 @@ private:
 	// ========================================================================
 	void UpdateCamera(float fDt, const Zenith_Maths::Vector3& xPlayerPos)
 	{
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 

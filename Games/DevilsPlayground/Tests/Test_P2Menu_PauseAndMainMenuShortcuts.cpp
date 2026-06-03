@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "Components/DPMainMenuController_Behaviour.h"
 #include "Components/DPPauseMenuController_Behaviour.h"

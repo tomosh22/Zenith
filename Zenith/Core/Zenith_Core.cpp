@@ -13,9 +13,11 @@
 #endif
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -257,7 +259,8 @@ void Zenith_Core::Zenith_MainLoop()
 		{
 			Zenith_SceneUpdateDeferralGuard xUpdateGuard;
 			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-			g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
+			xUIComponents.Clear();
+			g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach([&xUIComponents](Zenith_EntityID, Zenith_UIComponent& xComp) { xUIComponents.PushBack(&xComp); });
 			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 			{
 				xIt.GetData()->Update(g_xEngine.Frame().GetDt());
@@ -268,7 +271,8 @@ void Zenith_Core::Zenith_MainLoop()
 		// scene's UI, not the destroyed one.
 		{
 			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-			g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
+			xUIComponents.Clear();
+			g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach([&xUIComponents](Zenith_EntityID, Zenith_UIComponent& xComp) { xUIComponents.PushBack(&xComp); });
 			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 			{
 				xIt.GetData()->Render();

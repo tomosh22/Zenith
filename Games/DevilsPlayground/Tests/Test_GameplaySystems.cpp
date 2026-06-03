@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -250,7 +250,7 @@ static bool Step_VillagerDeath(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kStart:
-		g_xHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVillagerDied>(
+		g_xHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVillagerDied>(
 			[](const DP_OnVillagerDied&) { g_bDeathFired = true; });
 		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kWait;

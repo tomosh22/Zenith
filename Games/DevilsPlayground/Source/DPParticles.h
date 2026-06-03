@@ -40,7 +40,7 @@
 // (sparks / ritual swirls glow; dust / steam don't).
 // =============================================================================
 
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
 
 namespace DP_Particles

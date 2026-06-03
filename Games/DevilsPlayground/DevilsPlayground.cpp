@@ -18,9 +18,9 @@
 #include <vector>
 
 #include "Core/Zenith_GraphicsOptions.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -100,7 +100,7 @@ namespace DevilsPlayground
 			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xPersistent);
 			if (pxScene == nullptr) return;
 
-			Zenith_Entity xTemplate(pxScene, std::string(szName) + "Template");
+			Zenith_Entity xTemplate = g_xEngine.Scenes().CreateEntity(pxScene, std::string(szName) + "Template");
 			xTemplate.AddComponent<Zenith_ModelComponent>().LoadModel(
 				std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT);
 			if (bWithCollider)
@@ -112,7 +112,7 @@ namespace DevilsPlayground
 			pxPrefab->CreateFromEntity(xTemplate, szName);
 			xOut.Set(pxPrefab);
 
-			g_xEngine.Scenes().Destroy(xTemplate);
+			xTemplate.Destroy();
 		}
 
 		void InitializeDPPrefabs()

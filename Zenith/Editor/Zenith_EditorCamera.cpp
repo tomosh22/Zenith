@@ -5,9 +5,10 @@
 
 #include "Zenith_Editor.h"
 #include "Zenith_Editor.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "Input/Zenith_Input.h"
 
 //==============================================================================
@@ -59,7 +60,7 @@ void Zenith_Editor::InitializeEditorCamera()
 	{
 		try
 		{
-			Zenith_CameraComponent& xSceneCamera = pxSceneData->GetMainCamera();
+			Zenith_CameraComponent& xSceneCamera = Zenith_GetMainCamera(pxSceneData);
 			xSceneCamera.GetPosition(g_xEngine.Editor().m_xEditorCameraPosition);
 			g_xEngine.Editor().m_fEditorCameraPitch = xSceneCamera.GetPitch();
 			g_xEngine.Editor().m_fEditorCameraYaw = xSceneCamera.GetYaw();
@@ -247,7 +248,7 @@ void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			pxSceneData->GetMainCamera().BuildViewMatrix(xOutMatrix);
+			Zenith_GetMainCamera(pxSceneData).BuildViewMatrix(xOutMatrix);
 			return;
 		}
 	}
@@ -285,7 +286,7 @@ void Zenith_Editor::GetCameraPosition(Zenith_Maths::Vector4& xOutPosition)
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			pxSceneData->GetMainCamera().GetPosition(xOutPosition);
+			Zenith_GetMainCamera(pxSceneData).GetPosition(xOutPosition);
 			return;
 		}
 	}
@@ -306,7 +307,7 @@ float Zenith_Editor::GetCameraNearPlane()
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return pxSceneData->GetMainCamera().GetNearPlane();
+			return Zenith_GetMainCamera(pxSceneData).GetNearPlane();
 		}
 	}
 
@@ -326,7 +327,7 @@ float Zenith_Editor::GetCameraFarPlane()
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return pxSceneData->GetMainCamera().GetFarPlane();
+			return Zenith_GetMainCamera(pxSceneData).GetFarPlane();
 		}
 	}
 
@@ -346,7 +347,7 @@ float Zenith_Editor::GetCameraFOV()
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return pxSceneData->GetMainCamera().GetFOV();
+			return Zenith_GetMainCamera(pxSceneData).GetFOV();
 		}
 	}
 
@@ -366,7 +367,7 @@ float Zenith_Editor::GetCameraAspectRatio()
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return pxSceneData->GetMainCamera().GetAspectRatio();
+			return Zenith_GetMainCamera(pxSceneData).GetAspectRatio();
 		}
 	}
 

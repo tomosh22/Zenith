@@ -3,17 +3,35 @@
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#ifdef ZENITH_TOOLS
+// Editor "Add Component" menu registry. Registering AIAgent here keeps the AI
+// module the single owner of its component's registration (meta + editor menu)
+// without the ECS reflection core ever naming AIAgent.
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+#endif
 
-// Registrar for the AI module's components, invoked from
-// Zenith_ComponentMetaRegistry::FinalizeRegistration via a forward declaration.
-// Defining it here (a TU that sees the full Zenith_AIAgentComponent header) keeps
-// the EntityComponent module free of any AI dependency.
+// Registrar for the AI module's components, invoked engine-side from
+// Zenith_RegisterEngineComponents() (EntityComponent/Zenith_ComponentMeta_Registration.cpp)
+// via a forward declaration. Defining it here (a TU that sees the full
+// Zenith_AIAgentComponent header) keeps the EntityComponent module free of any AI
+// dependency. Order 90 is passed explicitly now that the ECS core no longer holds
+// a name->order map; it matches the value AIAgent had in the former
+// GetSerializationOrder() map (serialized after the built-ins).
 void Zenith_AI_RegisterComponents()
 {
-	Zenith_ComponentMetaRegistry::Get().RegisterComponent<Zenith_AIAgentComponent>("AIAgent");
+	Zenith_ComponentMetaRegistry::Get().RegisterComponent<Zenith_AIAgentComponent>("AIAgent", 90);
+
+#ifdef ZENITH_TOOLS
+	// Mirror AIAgent into the editor menu registry. This is the side-effect that
+	// used to fire implicitly inside Zenith_ComponentMetaRegistry::RegisterComponent<T>
+	// before the ECS core was made leaf-clean; the AI module now owns it for its
+	// own component. Inserted after the built-ins (this forwarder runs last),
+	// preserving the historical menu ordering where AIAgent appeared last.
+	Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_AIAgentComponent>("AIAgent");
+#endif
 }
 
 Zenith_AIAgentComponent::Zenith_AIAgentComponent(Zenith_Entity& xParentEntity)

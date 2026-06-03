@@ -2,10 +2,10 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
 #include <string>

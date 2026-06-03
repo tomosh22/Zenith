@@ -16,9 +16,9 @@
  * collision callbacks (OnCollisionEnter, etc.)
  */
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
@@ -86,7 +86,7 @@ public:
 			if (fDist < fPickupDist)
 			{
 				// Collected!
-				g_xEngine.Scenes().Destroy(xColl);
+				xColl.Destroy();
 				axCollectibleEntityIDs.erase(axCollectibleEntityIDs.begin() + i);
 
 				xResult.uCollectedCount++;

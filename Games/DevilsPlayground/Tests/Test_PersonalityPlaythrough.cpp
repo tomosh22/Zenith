@@ -4,11 +4,12 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Telemetry/Zenith_Telemetry.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Physics/Zenith_Physics_Fwd.h"
@@ -1200,7 +1201,7 @@ namespace
 	// (mirrors its NDC convention exactly: clip.y/clip.w not flipped).
 	bool WorldToScreen(const Zenith_Maths::Vector3& xWorld, double& fOutX, double& fOutY)
 	{
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCam) return false;
 
 		Zenith_Window* pxWindow = Zenith_Window::GetInstance();
@@ -1230,7 +1231,7 @@ namespace
 	// DPVillager_Behaviour::TickMovement so WASD inputs land where we expect).
 	bool GetCameraHorizontalBasis(Zenith_Maths::Vector3& xForward, Zenith_Maths::Vector3& xRight)
 	{
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCam) return false;
 		pxCam->GetFacingDir(xForward);
 		xForward.y = 0.0f;
@@ -2470,7 +2471,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			(void)pxOrbit;  // orbit lives on GameManager, not the villager — defensive
 		}
 		// Look up the orbit on the camera's owning entity (GameManager).
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam)
 		{
 			// We don't expose orbit yaw directly; sample the camera's yaw as a
@@ -2542,7 +2543,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 30) return true;
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_Q, false);
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam) g_fYawAfterQ = static_cast<float>(pxCam->GetYaw());
 
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_E, true);
@@ -2556,7 +2557,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 30) return true;
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_E, false);
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam) g_fYawAfterE = static_cast<float>(pxCam->GetYaw());
 
 		// Mouse wheel zoom in (+ tightens orbit radius).
@@ -2570,7 +2571,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 2) return true;
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam)
 		{
 			Zenith_Maths::Vector3 xCamPos;
@@ -2590,7 +2591,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 2) return true;
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam)
 		{
 			Zenith_Maths::Vector3 xCamPos;

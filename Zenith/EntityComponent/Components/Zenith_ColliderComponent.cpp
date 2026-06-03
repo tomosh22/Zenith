@@ -5,7 +5,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Physics/Zenith_Physics.h"
 #include <Jolt/Jolt.h>

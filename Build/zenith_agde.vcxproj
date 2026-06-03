@@ -88,6 +88,7 @@
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
+      <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
@@ -119,6 +120,7 @@
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
+      <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
@@ -912,6 +914,7 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.Tests.inl" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorSceneAccess.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
@@ -929,18 +932,8 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EntityStore.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystem.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
@@ -1152,7 +1145,6 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AssertCapture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
-    <ClInclude Include="..\Zenith\UnitTests\Zenith_SceneTests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h" />
@@ -1168,6 +1160,22 @@
     <ClInclude Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
     <ClInclude Include="..\Zenith\Windows\Zenith_OS_Include.h" />
     <ClInclude Include="..\Zenith\Windows\Zenith_Windows_Window.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta_Detail.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentPool.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ECSRuntimeHooks.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_Entity.inl" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_EntityStore.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_EventSystem_Detail.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_QueryScratch.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_RenderTaskState.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_InternalScopes.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_ComponentMeta.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_Entity.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_EventSystem.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_Query.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_Scene.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_SceneData.h" />
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_SceneSystem.h" />
     <ClInclude Include="..\Zenith\Zenith_DebugBreak.h" />
   </ItemGroup>
   <ItemGroup>
@@ -1836,11 +1844,12 @@
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_BenchECS.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_CommandLine.cpp" />
-    <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
+    <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_EnginePCH.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
@@ -1944,18 +1953,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Callbacks.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_EntityOwnership.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Lifecycle.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Operations.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Registry.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_CameraResolve.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -2091,6 +2091,54 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_ECS.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_Entity.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_EventSystem.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_Scene.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneData.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneData_Serialization.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Callbacks.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_EntityOwnership.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Lifecycle.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Operations.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Registry.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

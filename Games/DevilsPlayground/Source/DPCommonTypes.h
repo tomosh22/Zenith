@@ -6,8 +6,8 @@
 // header split — each DP_* namespace now owns its own .h/.cpp pair, but the
 // event payloads + the Vec3 alias are still cross-cutting.
 
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "Maths/Zenith_Maths.h"
 #include "DevilsPlayground_Tags.h"
 

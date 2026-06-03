@@ -9,9 +9,10 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_Input.h"
 // NOTE: do not include "Windows/Zenith_Windows_Window.h" directly. Zenith.h
@@ -270,7 +271,7 @@ private:
 	{
 		if (!DP_Input::ReadPossessClickPressed()) return;
 
-		Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam == nullptr) return;
 
 		// Pick the villager whose world position projects closest to the

@@ -17,9 +17,9 @@
  * - Chunks are culled on GPU via compute shader
  */
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -97,7 +97,7 @@ public:
 			if (xChunk.m_uEntityID.IsValid() && pxSceneData->EntityExists(xChunk.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xChunk.m_uEntityID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 		}
 		s_axChunks.clear();
@@ -139,7 +139,7 @@ public:
 			if (s_axChunks.front().m_uEntityID.IsValid() && pxSceneData->EntityExists(s_axChunks.front().m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(s_axChunks.front().m_uEntityID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 			s_axChunks.erase(s_axChunks.begin());
 		}
@@ -174,7 +174,7 @@ public:
 	static void InitializeRealTerrain(Zenith_Scene& xScene)
 	{
 		// Create terrain entity
-		Zenith_Entity xTerrainEntity(&xScene, "Terrain");
+		Zenith_Entity xTerrainEntity = g_xEngine.Scenes().CreateEntity(&xScene, "Terrain");
 
 		// Create materials for terrain texture blending
 		// Material 0 = grass, Material 1 = dirt

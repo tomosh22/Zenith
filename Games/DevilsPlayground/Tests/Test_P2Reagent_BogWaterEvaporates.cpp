@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Maths/Zenith_Maths.h"
@@ -137,7 +137,7 @@ static bool Step_P2BogWaterEvap(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kBV_Done; return false; }
-		Zenith_Entity xEnt(pxScene, std::string("Test_BogWaterEvap"));
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_BogWaterEvap"));
 		if (!xEnt.IsValid()) { g_iPhase = kBV_Done; return false; }
 		g_xBogWater = xEnt.GetEntityID();
 		if (xEnt.HasComponent<Zenith_TransformComponent>())

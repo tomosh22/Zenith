@@ -598,6 +598,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_EnginePCH.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -718,40 +721,13 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Callbacks.cpp">
-      <Filter>EntityComponent\Internal</Filter>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_CameraResolve.cpp">
+      <Filter>EntityComponent</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_EntityOwnership.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Lifecycle.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Operations.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Internal\Zenith_SceneSystem_Registry.cpp">
-      <Filter>EntityComponent\Internal</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp">
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp">
-      <Filter>EntityComponent</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
@@ -1077,6 +1053,42 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp">
       <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_ECS.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_Entity.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_EventSystem.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_Scene.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneData.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneData_Serialization.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Callbacks.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_EntityOwnership.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Lifecycle.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Operations.cpp">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_Registry.cpp">
+      <Filter>ZenithECS\Internal</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -3420,6 +3432,9 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorSceneAccess.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
       <Filter>Editor</Filter>
     </ClInclude>
@@ -3471,40 +3486,10 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h">
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EntityStore.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h">
-      <Filter>EntityComponent</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneSystem.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
@@ -4140,9 +4125,6 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\UnitTests\Zenith_SceneTests.h">
-      <Filter>UnitTests</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
@@ -4187,6 +4169,54 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Windows\Zenith_Windows_Window.h">
       <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta_Detail.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentPool.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ECSRuntimeHooks.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_Entity.inl">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_EntityStore.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_EventSystem_Detail.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_QueryScratch.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_RenderTaskState.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_InternalScopes.h">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_ComponentMeta.h">
+      <Filter>ZenithECS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_Entity.h">
+      <Filter>ZenithECS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_EventSystem.h">
+      <Filter>ZenithECS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_Query.h">
+      <Filter>ZenithECS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_Scene.h">
+      <Filter>ZenithECS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_SceneData.h">
+      <Filter>ZenithECS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Zenith_SceneSystem.h">
+      <Filter>ZenithECS</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Zenith_DebugBreak.h" />
   </ItemGroup>
@@ -4267,9 +4297,6 @@
     </Filter>
     <Filter Include="EntityComponent\Components">
       <UniqueIdentifier>{3b216765-ec79-bfcc-94ac-e2c933d07988}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="EntityComponent\Internal">
-      <UniqueIdentifier>{234b8b40-849c-b63b-3e5d-cb18cee92448}</UniqueIdentifier>
     </Filter>
     <Filter Include="FileAccess">
       <UniqueIdentifier>{e87b3fc1-fb64-0e0b-4c25-883f5125c4d1}</UniqueIdentifier>
@@ -4690,6 +4717,12 @@
     </Filter>
     <Filter Include="Windows\Vulkan">
       <UniqueIdentifier>{f34ef997-ddf6-89b3-eede-71eeca367b15}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ZenithECS">
+      <UniqueIdentifier>{155316af-0e96-2557-de51-40a6e7561dd0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ZenithECS\Internal">
+      <UniqueIdentifier>{c9a1a90a-a859-ebfa-eea6-bcc14bf87d61}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

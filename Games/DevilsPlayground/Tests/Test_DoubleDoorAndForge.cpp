@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Maths/Zenith_Maths.h"
@@ -101,7 +101,7 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
-		Zenith_Entity xVillagerEnt(pxScene, std::string("DD_TestVillager"));
+		Zenith_Entity xVillagerEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("DD_TestVillager"));
 		g_xVillager = xVillagerEnt.GetEntityID();
 
 		g_iPhase = kDD_Build;
@@ -115,17 +115,17 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		if (pxScene == nullptr) return true;
 
 		// Construct the door entity with two named child leaves.
-		Zenith_Entity xDoor(pxScene, std::string("TestDoubleDoor"));
+		Zenith_Entity xDoor = g_xEngine.Scenes().CreateEntity(pxScene, std::string("TestDoubleDoor"));
 		g_xDoor = xDoor.GetEntityID();
 		// Position the door at origin so leaves land at known locations.
 		xDoor.GetComponent<Zenith_TransformComponent>().SetPosition(
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 
-		Zenith_Entity xLeft(pxScene, std::string("Leaf_L"));
+		Zenith_Entity xLeft = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Leaf_L"));
 		g_xLeftLeaf = xLeft.GetEntityID();
 		xLeft.SetParent(g_xDoor);
 
-		Zenith_Entity xRight(pxScene, std::string("Leaf_R"));
+		Zenith_Entity xRight = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Leaf_R"));
 		g_xRightLeaf = xRight.GetEntityID();
 		xRight.SetParent(g_xDoor);
 
@@ -292,7 +292,7 @@ static bool Step_Forge(int /*iFrame*/)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
-		Zenith_Entity xVillagerEnt(pxScene, std::string("Forge_TestVillager"));
+		Zenith_Entity xVillagerEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Forge_TestVillager"));
 		g_xVillager = xVillagerEnt.GetEntityID();
 		g_iPhase = kF_Build;
 		return true;
@@ -305,7 +305,7 @@ static bool Step_Forge(int /*iFrame*/)
 		if (pxScene == nullptr) return true;
 
 		// Build the forge entity at origin.
-		Zenith_Entity xForge(pxScene, std::string("TestForge"));
+		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("TestForge"));
 		g_xForge = xForge.GetEntityID();
 		xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -334,7 +334,7 @@ static bool Step_Forge(int /*iFrame*/)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxScene == nullptr) return true;
 
-		Zenith_Entity xIron(pxScene, std::string("TestIron"));
+		Zenith_Entity xIron = g_xEngine.Scenes().CreateEntity(pxScene, std::string("TestIron"));
 		g_xIronItem = xIron.GetEntityID();
 		// Register the tag DIRECTLY (no DPItemBase script): keeps the test
 		// minimal and avoids triggering DPItemBase's distance-based pickup

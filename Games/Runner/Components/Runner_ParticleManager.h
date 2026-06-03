@@ -16,9 +16,9 @@
  * the particle system requires texture assets.
  */
 
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -95,7 +95,7 @@ public:
 			if (xParticle.m_uEntityID.IsValid() && pxSceneData->EntityExists(xParticle.m_uEntityID))
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xParticle.m_uEntityID);
-				g_xEngine.Scenes().Destroy(xEntity);
+				xEntity.Destroy();
 			}
 		}
 		s_axParticles.clear();
@@ -132,7 +132,7 @@ public:
 				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
 					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
-					g_xEngine.Scenes().Destroy(xEntity);
+					xEntity.Destroy();
 				}
 				it = s_axParticles.erase(it);
 			}

@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
 #include "Components/DPProcLevelBootstrap_Behaviour.h"
@@ -44,7 +44,7 @@ static void Setup_ProcLevelBootstrap()
 	g_bPassed = false;
 	g_szFailureReason = "";
 
-	g_xScene = g_xEngine.Scenes().CreateEmptyScene("ProcLevelBootstrapTest");
+	g_xScene = g_xEngine.Scenes().LoadScene("ProcLevelBootstrapTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 	if (pxScene == nullptr)
 	{
@@ -63,7 +63,7 @@ static void Setup_ProcLevelBootstrap()
 	// "did the wire-up work" assertion. A SetSeedForTest call after
 	// the fact would be too late to affect the generated layout. A
 	// later PR can add a config-driven seed if needed.
-	Zenith_Entity xBootstrapEntity(pxScene, "ProcLevelBootstrap");
+	Zenith_Entity xBootstrapEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ProcLevelBootstrap");
 	auto& xScript = xBootstrapEntity.AddComponent<Zenith_ScriptComponent>();
 	xScript.AddScript<DPProcLevelBootstrap_Behaviour>();
 }

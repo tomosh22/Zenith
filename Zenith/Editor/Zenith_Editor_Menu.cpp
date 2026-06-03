@@ -5,10 +5,11 @@
 #include "Zenith_Editor.h"
 #include "Zenith_Editor.h"
 #include "Zenith_UndoSystem.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "Zenith_EditorSceneAccess.h"
 
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
@@ -71,14 +72,14 @@ void Zenith_Editor::RenderFileMenu()
 			{
 				g_xEngine.Scenes().UnloadSceneForced(xActiveScene);
 			}
-			Zenith_Scene xNewScene = g_xEngine.Scenes().CreateEmptyScene("Untitled");
+			Zenith_Scene xNewScene = g_xEngine.Scenes().LoadScene("Untitled", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 			g_xEngine.Scenes().SetActiveScene(xNewScene);
 
 			ClearSelection();
 			g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 			ResetEditorCameraToDefaults();
 			g_xEngine.UndoSystem().Clear();
-			Zenith_Log(LOG_CATEGORY_EDITOR, "New scene created (handle=%d, name='Untitled')", xNewScene.m_iHandle);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "New scene created (handle=%d, name='Untitled')", xNewScene.GetHandle());
 		}
 
 		if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
@@ -122,7 +123,7 @@ void Zenith_Editor::RenderFileMenu()
 				Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 				if (pxSceneData)
 				{
-					pxSceneData->SaveToFile(strFilePath);
+					Zenith_EditorSceneAccess::SaveToFile(pxSceneData, strFilePath);
 					Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", strFilePath.c_str());
 				}
 			}

@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Components/DPPauseMenuController_Behaviour.h"
@@ -73,7 +73,7 @@ namespace
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt(pxScene, std::string("Test_PauseRestart_Item"));
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_PauseRestart_Item"));
 		if (!xEnt.IsValid()) return;
 		xOut = xEnt.GetEntityID();
 	}

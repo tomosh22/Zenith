@@ -36,7 +36,7 @@
 #include "Zenith.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "PublicInterfaces.h"
 
 #include <cstdint>

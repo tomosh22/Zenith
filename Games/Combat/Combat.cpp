@@ -9,9 +9,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
-#include "EntityComponent/Zenith_EventSystem.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_EventSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -536,11 +536,11 @@ static void InitializeCombatResources()
 
 	// Player prefab
 	{
-		Zenith_Entity xPlayerTemplate(pxSceneData, "PlayerTemplate");
+		Zenith_Entity xPlayerTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlayerTemplate");
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
-		g_xEngine.Scenes().Destroy(xPlayerTemplate);
+		xPlayerTemplate.Destroy();
 	}
 
 	// Enemy prefab + three Scale variants demonstrating the variant override system.
@@ -549,11 +549,11 @@ static void InitializeCombatResources()
 	// Instantiate. Each variant overrides Transform.Scale to a different value
 	// (0.7 / 0.9 / 1.1) so the three enemy tiers visibly differ in size.
 	{
-		Zenith_Entity xEnemyTemplate(pxSceneData, "EnemyTemplate");
+		Zenith_Entity xEnemyTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "EnemyTemplate");
 		Zenith_Prefab* pxEnemy = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxEnemy->CreateFromEntity(xEnemyTemplate, "Enemy");
 		Resources().m_xEnemyPrefab.Set(pxEnemy);
-		g_xEngine.Scenes().Destroy(xEnemyTemplate);
+		xEnemyTemplate.Destroy();
 
 		// Persist the base to disk so PrefabHandle("EnemyBase.zpfb") resolves
 		// through the registry. Cheap relative-path write; the file is owned by
@@ -582,18 +582,18 @@ static void InitializeCombatResources()
 
 	// Arena prefab (for floor)
 	{
-		Zenith_Entity xArenaTemplate(pxSceneData, "ArenaTemplate");
+		Zenith_Entity xArenaTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ArenaTemplate");
 		Zenith_Prefab* pxArena = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxArena->CreateFromEntity(xArenaTemplate, "Arena");
 		Resources().m_xArenaPrefab.Set(pxArena);
-		g_xEngine.Scenes().Destroy(xArenaTemplate);
+		xArenaTemplate.Destroy();
 	}
 
 	// ArenaWall prefab with collider and particle emitter
 	// NOTE: ModelComponent is NOT included because mesh/material pointers don't serialize.
 	// ModelComponent is added after instantiation in CreateArena().
 	{
-		Zenith_Entity xWallTemplate(pxSceneData, "ArenaWallTemplate");
+		Zenith_Entity xWallTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ArenaWallTemplate");
 
 		// Add ColliderComponent for wall collision
 		xWallTemplate.AddComponent<Zenith_ColliderComponent>()
@@ -607,7 +607,7 @@ static void InitializeCombatResources()
 		Zenith_Prefab* pxWall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxWall->CreateFromEntity(xWallTemplate, "ArenaWall");
 		Resources().m_xArenaWallPrefab.Set(pxWall);
-		g_xEngine.Scenes().Destroy(xWallTemplate);
+		xWallTemplate.Destroy();
 	}
 
 	// Create hit spark particle config

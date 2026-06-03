@@ -16,9 +16,10 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
@@ -477,7 +478,7 @@ private:
 		// otherwise (gym map without camera entity).
 		Zenith_Maths::Vector3 xRight(1.0f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xForward(0.0f, 0.0f, 1.0f);
-		if (Zenith_CameraComponent* pxCam = g_xEngine.Scenes().FindMainCameraAcrossScenes())
+		if (Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes())
 		{
 			pxCam->GetFacingDir(xForward);
 			xForward.y = 0.0f;
@@ -722,7 +723,7 @@ private:
 		if (pxScene == nullptr) return;
 		Zenith_Entity xVisual = pxScene->TryGetEntity(xHandle);
 		if (!xVisual.IsValid()) return;
-		g_xEngine.Scenes().Destroy(xVisual);
+		xVisual.Destroy();
 	}
 
 	void OnDestroy() ZENITH_FINAL override

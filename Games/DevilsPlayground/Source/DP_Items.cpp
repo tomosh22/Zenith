@@ -2,10 +2,10 @@
 #include "DP_Items.h"
 #include "DP_Player.h"
 
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 
 #include "../Components/DPItemManager_Behaviour.h"
 
@@ -55,7 +55,7 @@ namespace DP_Items
 					Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
 					if (xEnt.IsValid())
 					{
-						g_xEngine.Scenes().Destroy(xEnt);
+						xEnt.Destroy();
 					}
 				}
 			}

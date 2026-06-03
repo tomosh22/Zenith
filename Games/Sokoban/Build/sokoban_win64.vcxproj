@@ -183,7 +183,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;zenithbase.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -270,7 +270,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -357,7 +357,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;zenithbase.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -444,7 +444,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -489,6 +489,11 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\build\msdfgen_win64.vcxproj">
       <Project>{8EC57622-53A0-0F1E-899A-13A5CA34A40A}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\zenithecs_win64.vcxproj">
+      <Project>{C835B780-6023-6555-CFB0-241C3E2F54EC}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>

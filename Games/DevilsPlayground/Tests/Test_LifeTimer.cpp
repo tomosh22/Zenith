@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Core.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Components/DPVillager_Behaviour.h"
 

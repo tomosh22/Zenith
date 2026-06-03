@@ -2,8 +2,8 @@
 #include "AI/BehaviorTree/Zenith_BTConditions.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include <random>
 

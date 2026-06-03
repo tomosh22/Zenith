@@ -49,7 +49,7 @@ protected:
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
 				if (xEnt.IsValid())
 				{
-					g_xEngine.Scenes().Destroy(xEnt);
+					xEnt.Destroy();
 				}
 			}
 		}

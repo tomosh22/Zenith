@@ -6,9 +6,9 @@
 // Zenith_Scene.h pulls in Zenith_SceneData.h AND Zenith_Entity.inl (the
 // AddComponent / GetComponent / HasComponent / RemoveComponent template
 // bodies), which is exactly what this TU needs to call those templates.
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Query.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
@@ -20,8 +20,9 @@
 // Zenith_BenchECS_RunOnce
 //
 // One self-contained benchmark pass. Uses ONLY the public ECS API:
-//   - g_xEngine.Scenes().CreateEmptyScene(...) for an empty in-memory scene
-//     (the documented procedural empty-scene path; no disk read, no GPU work).
+//   - g_xEngine.Scenes().LoadScene(name, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)
+//     for an empty in-memory scene (the documented procedural empty-scene path;
+//     no disk read, no GPU work).
 //   - Zenith_Entity(pxSceneData, name) to create entities (each auto-gets a
 //     Zenith_TransformComponent).
 //   - A second component (Zenith_LightComponent) added on a deterministic
@@ -45,7 +46,7 @@ u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters, bool bUseSpars
 	char acSceneName[128];
 	std::snprintf(acSceneName, sizeof(acSceneName), "BenchECS_%u", uNumEntities);
 
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene(acSceneName);
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene(acSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Assert(pxSceneData != nullptr, "Zenith_BenchECS_RunOnce: empty scene has no scene data");
 
@@ -58,7 +59,7 @@ u_int64 Zenith_BenchECS_RunOnce(u_int uNumEntities, u_int uIters, bool bUseSpars
 	{
 		char acEntityName[64];
 		std::snprintf(acEntityName, sizeof(acEntityName), "BenchEnt_%u", u);
-		Zenith_Entity xEntity(pxSceneData, acEntityName);
+		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, acEntityName);
 
 		// Touch the Transform so the work isn't optimised away and the data is
 		// deterministic.

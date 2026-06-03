@@ -13,11 +13,12 @@
  */
 
 #include "Input/Zenith_Input.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "Maths/Zenith_Maths.h"
 #include "Survival_EventBus.h"
 
@@ -254,7 +255,7 @@ public:
 			return;
 
 		// Get camera from persistent scene
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return;
 
@@ -294,7 +295,7 @@ public:
 	 */
 	static Zenith_Maths::Vector3 GetCameraPosition()
 	{
-		Zenith_CameraComponent* pxCamera = g_xEngine.Scenes().FindMainCameraAcrossScenes();
+		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 		if (!pxCamera)
 			return Zenith_Maths::Vector3(0.f);
 

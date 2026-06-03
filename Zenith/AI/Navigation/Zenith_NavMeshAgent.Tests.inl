@@ -1,8 +1,8 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 // ============================================================================
@@ -29,7 +29,7 @@ void Zenith_UnitTests::TestNavAgentSetDestination(){
 	// Create entity with transform for position
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, "NavAgent");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
@@ -66,7 +66,7 @@ void Zenith_UnitTests::TestNavAgentMovement(){
 	// Create entity with transform for position
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, "NavAgent");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	Zenith_Maths::Vector3 xStartPos(1.0f, 0.0f, 1.0f);
@@ -108,7 +108,7 @@ void Zenith_UnitTests::TestNavAgentArrival(){
 	// Create entity with transform for position
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, "NavAgent");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
@@ -150,7 +150,7 @@ void Zenith_UnitTests::TestNavAgentStop(){
 	// Create entity with transform for position
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, "NavAgent");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
@@ -219,7 +219,7 @@ void Zenith_UnitTests::TestNavAgentRemainingDistanceBounds(){
 	// Create entity for transform
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, "Agent");
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "Agent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 

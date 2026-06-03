@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include <string>
 #include <unordered_map>
 

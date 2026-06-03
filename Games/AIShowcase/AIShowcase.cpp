@@ -22,8 +22,8 @@
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "UI/Zenith_UIButton.h"
 

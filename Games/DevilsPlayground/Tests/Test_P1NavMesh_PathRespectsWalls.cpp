@@ -3,9 +3,9 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
@@ -64,7 +64,7 @@ namespace
 	                     const Zenith_Maths::Vector3& xPos,
 	                     const Zenith_Maths::Vector3& xScale)
 	{
-		Zenith_Entity xEnt(pxScene, szName);
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, szName);
 		Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
 		xT.SetPosition(xPos);
 		xT.SetScale(xScale);
@@ -91,7 +91,7 @@ static bool Step_P1NavMeshPathRespectsWalls(int iFrame)
 	switch (g_iPhase)
 	{
 	case kNW_Start:
-		g_xScene = g_xEngine.Scenes().CreateEmptyScene("NavMeshWallSpike");
+		g_xScene = g_xEngine.Scenes().LoadScene("NavMeshWallSpike", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(g_xScene);
 		g_iPhase = kNW_BuildScene;
 		return true;

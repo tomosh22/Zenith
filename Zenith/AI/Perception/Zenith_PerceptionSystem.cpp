@@ -1,8 +1,8 @@
 #include "Zenith.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 

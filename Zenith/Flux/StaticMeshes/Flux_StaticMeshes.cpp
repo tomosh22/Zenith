@@ -11,8 +11,10 @@
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+// Zenith_Query.h arrives transitively via Zenith_SceneSystem.h (QueryAllScenes needs it);
+// including it explicitly here would add a new EC<->Flux cross-layer edge.
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -149,7 +151,8 @@ void Flux_StaticMeshesImpl::GatherDrawPacket(void*)
 	xPacket.Clear();
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
+	xModels.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach([&xModels](Zenith_EntityID, Zenith_ModelComponent& xModel){ xModels.PushBack(&xModel); });
 
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{

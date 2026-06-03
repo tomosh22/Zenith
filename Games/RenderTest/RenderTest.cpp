@@ -18,10 +18,11 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -267,7 +268,12 @@ static bool RenderTest_AssertNoResidencyAlternation(const RenderTest_ResidencySn
 static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 {
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+	xTerrains.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(
+		[&xTerrains](Zenith_EntityID, Zenith_TerrainComponent& xTerrain)
+		{
+			xTerrains.PushBack(&xTerrain);
+		});
 
 	bool bPass = true;
 	const bool bStreamingWarm = uFrame >= 60;
@@ -639,7 +645,12 @@ private:
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)
 	{
 		Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-		g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+		xTerrains.Clear();
+		g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(
+			[&xTerrains](Zenith_EntityID, Zenith_TerrainComponent& xTerrain)
+			{
+				xTerrains.PushBack(&xTerrain);
+			});
 		axSnapshots.Clear();
 		for (u_int u = 0; u < xTerrains.GetSize(); u++)
 		{

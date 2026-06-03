@@ -5,14 +5,14 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "UI/Zenith_UI.h"
 #include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Prefab/Zenith_Prefab.h"
 
@@ -91,7 +91,7 @@ void PlayerController_Behaviour::Shoot()
 		s_axBulletEntities[s_uCurrentBulletIndex].DestroyImmediate();
 	}
 
-	s_axBulletEntities[s_uCurrentBulletIndex] = Zenith_Entity(pxSceneData, "Bullet" + std::to_string(s_uCurrentBulletIndex));
+	s_axBulletEntities[s_uCurrentBulletIndex] = g_xEngine.Scenes().CreateEntity(pxSceneData, "Bullet" + std::to_string(s_uCurrentBulletIndex));
 	Zenith_Entity& xBulletEntity = s_axBulletEntities[s_uCurrentBulletIndex];
 	s_uCurrentBulletIndex = (s_uCurrentBulletIndex + 1) % 128;
 

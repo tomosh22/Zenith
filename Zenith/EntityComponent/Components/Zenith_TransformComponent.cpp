@@ -4,7 +4,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Physics/Zenith_Physics.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -80,297 +80,25 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 		return;
 	}
 
-	// Safe to perform hierarchy cleanup
-	DetachFromParent();
-	DetachAllChildren();
+	// Safe to perform hierarchy cleanup. Phase 5b: the Transform's own
+	// DetachFromParent/DetachAllChildren shims were removed -- call the slot-backed
+	// Zenith_Entity API directly (the shims were 1:1 forwards to exactly these, so
+	// the cleanup is behaviour-identical: this entity is unparented and its children
+	// are detached on the slot, which is what CollectResetHierarchy /
+	// CollectHierarchyDepthFirst rely on when a Transform is destroyed individually).
+	m_xOwningEntity.DetachFromParent();
+	m_xOwningEntity.DetachAllChildren();
 }
 
-Zenith_TransformComponent* Zenith_TransformComponent::TryGetParent() const
-{
-	if (m_xParentEntityID == INVALID_ENTITY_ID)
-	{
-		return nullptr;
-	}
-
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (!pxSceneData)
-	{
-		return nullptr;
-	}
-
-	if (!pxSceneData->EntityExists(m_xParentEntityID))
-	{
-		return nullptr;
-	}
-
-	// Access component pool directly - safer than via temporary entity
-	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
-}
-
-Zenith_Entity Zenith_TransformComponent::GetParentEntity() const
-{
-	if (m_xParentEntityID == INVALID_ENTITY_ID)
-	{
-		return Zenith_Entity();
-	}
-
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (!pxSceneData)
-	{
-		return Zenith_Entity();
-	}
-
-	if (!pxSceneData->EntityExists(m_xParentEntityID))
-	{
-		return Zenith_Entity();
-	}
-
-	return pxSceneData->GetEntity(m_xParentEntityID);
-}
-
-Zenith_TransformComponent* Zenith_TransformComponent::TryGetChildAt(uint32_t uIndex) const
-{
-	if (uIndex >= m_xChildEntityIDs.GetSize())
-	{
-		return nullptr;
-	}
-
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (!pxSceneData)
-	{
-		return nullptr;
-	}
-
-	Zenith_EntityID uChildID = m_xChildEntityIDs.Get(uIndex);
-	if (!pxSceneData->EntityExists(uChildID))
-	{
-		return nullptr;
-	}
-
-	// Access component pool directly - safer than via temporary entity
-	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(uChildID);
-}
-
-Zenith_Entity Zenith_TransformComponent::GetChildEntityAt(uint32_t uIndex) const
-{
-	if (uIndex >= m_xChildEntityIDs.GetSize())
-	{
-		return Zenith_Entity();
-	}
-
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (!pxSceneData)
-	{
-		return Zenith_Entity();
-	}
-
-	Zenith_EntityID uChildID = m_xChildEntityIDs.Get(uIndex);
-	if (!pxSceneData->EntityExists(uChildID))
-	{
-		return Zenith_Entity();
-	}
-
-	return pxSceneData->GetEntity(uChildID);
-}
-
-void Zenith_TransformComponent::SetParent(Zenith_TransformComponent* pxParent)
-{
-	Zenith_EntityID uNewParentID = (pxParent != nullptr) ?
-		pxParent->GetEntity().GetEntityID() : INVALID_ENTITY_ID;
-	SetParentByID(uNewParentID);
-}
-
-bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) const
-{
-	if (uAncestorID == INVALID_ENTITY_ID)
-	{
-		return false;
-	}
-
-	// Use the owning entity's scene, not GetActiveScene()
-	// This allows hierarchy operations to work correctly on local/test scenes
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (pxSceneData == nullptr)
-	{
-		return false;
-	}
-	Zenith_EntityID uCurrentID = m_xParentEntityID;
-
-	// Walk up the parent chain looking for the ancestor
-	// Also includes depth limit as safety against corrupted data
-	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;
-	u_int uDepth = 0;
-
-	while (uCurrentID != INVALID_ENTITY_ID && uDepth < MAX_HIERARCHY_DEPTH)
-	{
-		if (uCurrentID == uAncestorID)
-		{
-			return true;
-		}
-
-		if (!pxSceneData->EntityExists(uCurrentID))
-		{
-			return false;
-		}
-
-		uCurrentID = pxSceneData->GetEntity(uCurrentID).GetComponent<Zenith_TransformComponent>().m_xParentEntityID;
-		++uDepth;
-	}
-
-	// If we hit MAX_DEPTH, likely circular reference or corrupted hierarchy
-	if (uDepth >= MAX_HIERARCHY_DEPTH)
-	{
-		Zenith_Error(LOG_CATEGORY_ECS, "IsDescendantOf: Max hierarchy depth %u exceeded for entity %u - possible circular reference",
-			MAX_HIERARCHY_DEPTH, m_xOwningEntity.GetEntityID().m_uIndex);
-	}
-
-	return false;
-}
-
-bool Zenith_TransformComponent::IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_SceneData& xSceneData) const
-{
-	// Unsafe version - assumes caller holds xSceneData.m_xMutex
-	// Used by SetParentByID to avoid recursive locking
-
-	if (uAncestorID == INVALID_ENTITY_ID)
-	{
-		return false;
-	}
-
-	Zenith_EntityID uCurrentID = m_xParentEntityID;
-
-	// Walk up the parent chain looking for the ancestor
-	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;
-	u_int uDepth = 0;
-
-	while (uCurrentID != INVALID_ENTITY_ID && uDepth < MAX_HIERARCHY_DEPTH)
-	{
-		if (uCurrentID == uAncestorID)
-		{
-			return true;
-		}
-
-		if (!xSceneData.EntityExists(uCurrentID))
-		{
-			return false;
-		}
-
-		uCurrentID = xSceneData.GetComponentFromEntity<Zenith_TransformComponent>(uCurrentID).m_xParentEntityID;
-		++uDepth;
-	}
-
-	Zenith_Assert(uDepth < MAX_HIERARCHY_DEPTH,
-		"IsDescendantOfUnsafe: Max depth exceeded - possible circular reference");
-
-	return false;
-}
-
-void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
-{
-	if (m_xParentEntityID == uNewParentID) return;
-
-	// Use the owning entity's scene, not GetActiveScene()
-	// This allows hierarchy operations to work correctly on local/test scenes
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (pxSceneData == nullptr)
-	{
-		Zenith_Warning(LOG_CATEGORY_ECS, "SetParentByID: Entity has no scene");
-		return;
-	}
-
-	Zenith_EntityID uMyEntityID = m_xOwningEntity.GetEntityID();
-
-	// CIRCULAR HIERARCHY CHECKS (Unity-style safety)
-	if (uNewParentID != INVALID_ENTITY_ID)
-	{
-		// Unity parity: Cannot parent to an entity in a different scene
-		// EntityExists checks global slots and would succeed for cross-scene entities,
-		// but GetComponentFromEntity uses per-scene pools and would access the wrong pool
-		int iParentScene = Zenith_SceneData::GetEntitySceneHandle(uNewParentID);
-		int iMyScene = Zenith_SceneData::GetEntitySceneHandle(uMyEntityID);
-		Zenith_Assert(iParentScene != -1, "SetParentByID: Parent entity index out of range");
-		Zenith_Assert(iParentScene == iMyScene,
-			"SetParentByID: Cannot parent entity to an entity in a different scene (child scene=%d, parent scene=%d)",
-			iMyScene, iParentScene);
-
-		// Cannot parent to self
-		if (uNewParentID == uMyEntityID)
-		{
-			Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to itself", uMyEntityID.m_uIndex);
-			return;
-		}
-
-		// Cannot parent to a descendant (would create cycle)
-		if (pxSceneData->EntityExists(uNewParentID))
-		{
-			Zenith_TransformComponent& xProposedParent = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(uNewParentID);
-			if (xProposedParent.IsDescendantOfUnsafe(uMyEntityID, *pxSceneData))
-			{
-				Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to %u - would create circular hierarchy",
-					uMyEntityID.m_uIndex, uNewParentID.m_uIndex);
-				return;
-			}
-		}
-		else
-		{
-			// Parent entity doesn't exist
-			Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to non-existent entity %u",
-				uMyEntityID.m_uIndex, uNewParentID.m_uIndex);
-			return;
-		}
-	}
-
-	// Remove from old parent's children (use unsafe methods since we hold lock)
-	if (m_xParentEntityID != INVALID_ENTITY_ID && pxSceneData->EntityExists(m_xParentEntityID))
-	{
-		Zenith_TransformComponent& xOldParent = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
-		xOldParent.m_xChildEntityIDs.EraseValue(uMyEntityID);
-	}
-
-	m_xParentEntityID = uNewParentID;
-
-	// Add to new parent's children
-	if (m_xParentEntityID != INVALID_ENTITY_ID && pxSceneData->EntityExists(m_xParentEntityID))
-	{
-		Zenith_TransformComponent& xNewParent = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
-		xNewParent.m_xChildEntityIDs.PushBack(uMyEntityID);
-	}
-
-	// Invalidate root entity cache since parent changed (entity may have become/stopped being a root)
-	pxSceneData->InvalidateRootEntityCache();
-}
-
-void Zenith_TransformComponent::DetachFromParent()
-{
-	SetParentByID(INVALID_ENTITY_ID);
-}
-
-void Zenith_TransformComponent::DetachAllChildren()
-{
-	// Use the owning entity's scene, not GetActiveScene()
-	// This allows hierarchy operations to work correctly on local/test scenes
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
-	if (pxSceneData == nullptr)
-	{
-		// No scene - just clear our list directly
-		m_xChildEntityIDs.Clear();
-		return;
-	}
-
-	// Clear each child's parent reference directly, then bulk-clear our list
-	// This avoids O(n^2) from per-child EraseValue on our child list
-	for (u_int i = 0; i < m_xChildEntityIDs.GetSize(); ++i)
-	{
-		Zenith_EntityID uChildID = m_xChildEntityIDs.Get(i);
-		if (pxSceneData->EntityExists(uChildID))
-		{
-			Zenith_TransformComponent& xChild = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(uChildID);
-			xChild.m_xParentEntityID = INVALID_ENTITY_ID;
-		}
-	}
-	m_xChildEntityIDs.Clear();
-	pxSceneData->InvalidateRootEntityCache();
-}
+// Phase 5b: the Transform hierarchy navigation implementations (TryGetParent /
+// GetParentEntity / TryGetChildAt / GetChildEntityAt / SetParent(Transform*), plus
+// the former inline shims SetParentByID / GetParentEntityID / GetChildEntityIDs /
+// GetChildCount / HasParent / IsRoot / DetachFromParent / DetachAllChildren /
+// IsDescendantOf / pending-parent accessors / ForEachChild) were all REMOVED. The
+// hierarchy is owned by Zenith_EntitySlot and queried through Zenith_Entity /
+// Zenith_Scene. IsDescendantOfUnsafe was already gone in 5a. Only the
+// position/rotation/scale pose, BuildModelMatrix (slot-walking), and the
+// serialization parent bridge remain below.
 
 void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 {
@@ -521,16 +249,24 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 
 	xMatOut = xTranslation * xRotation * xScaleMat;
 
-	// Walk parent chain via EntityIDs (safe against pool relocations)
-	Zenith_EntityID uParentID = m_xParentEntityID;
+	// Walk parent chain via EntityIDs (safe against pool relocations).
+	// Phase 5a: the parent links are read from the SLOT (single source of truth)
+	// via Zenith_SceneData::GetParentEntityIDUnchecked — the per-parent transform
+	// math (position/rotation/scale) is unchanged. That non-asserting leaf accessor
+	// preserves the prior thread-affinity of this hot path (the OLD code read the
+	// slot directly with no main-thread assert, and the parent Transform via
+	// GetComponentFromEntity, which permits render-task reads); its doc comment
+	// carries the render-task rationale.
 	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
 	if (!pxSceneData)
 	{
 		return;
 	}
+	Zenith_EntityID uMyID = m_xOwningEntity.GetEntityID();
+	Zenith_EntityID uParentID = pxSceneData->GetParentEntityIDUnchecked(uMyID);
 
 	// Depth limit to catch any circular references that slip through
-	// (should never happen with SetParentByID checks, but safety first)
+	// (should never happen with SetParent checks, but safety first)
 	constexpr u_int SOFT_HIERARCHY_DEPTH = 100;   // Warning threshold
 	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;   // Hard limit
 	u_int uDepth = 0;
@@ -563,15 +299,21 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 		glm::mat4 xParentMatrix = xParentTranslation * xParentRotation * xParentScale;
 
 		xMatOut = xParentMatrix * xMatOut;
-		uParentID = xParentTransform.m_xParentEntityID;
+		// Next parent: the current parent's SLOT link via the non-asserting leaf
+		// accessor (no main-thread assert — render-task safe).
+		uParentID = pxSceneData->GetParentEntityIDUnchecked(uParentID);
 		++uDepth;
 	}
 }
 
 void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream)
 {
-	// Write position, rotation, and scale
-	// Note: We get current values from physics if rigid body exists
+	// Scene v7 (Phase 7a): the Transform blob is pos/rot/scale ONLY. The hierarchy
+	// parent file-index moved OUT to the entity record (written by
+	// Zenith_Entity::WriteToDataStream). The per-component size prefix still wraps this
+	// blob, so dropping the parent simply shrinks the payload by one u32; the bounded
+	// component deserializer keeps every reader aligned (see Zenith_ComponentMeta).
+	// Note: We get current values from physics if a rigid body exists.
 	Zenith_Maths::Vector3 xPos;
 	Zenith_Maths::Quat xRot;
 	GetPosition(xPos);
@@ -580,23 +322,51 @@ void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream)
 	xStream << xPos;
 	xStream << xRot;
 	xStream << m_xScale;
-
-	// Write parent entity index for hierarchy reconstruction (generation is runtime only)
-	uint32_t uParentIndex = m_xParentEntityID.IsValid() ? m_xParentEntityID.m_uIndex : Zenith_EntityID::INVALID_INDEX;
-	xStream << uParentIndex;
 }
 
 void Zenith_TransformComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read position, rotation, and scale
+	// Current-format (v7) reader: pos/rot/scale only -- the parent lives in the entity
+	// record now and is sunk to the slot pending-parent by the entity-record reader.
+	xStream >> m_xPosition;
+	xStream >> m_xRotation;
+	xStream >> m_xScale;
+}
+
+void Zenith_TransformComponent::ReadFromDataStream(Zenith_DataStream& xStream, u_int uReadSchemaVersion)
+{
+	// Version-aware reader (preferred by the meta registry -- see ComponentMeta
+	// HasVersionedReadFromDataStream). The schema version comes from the file: for a
+	// scene v7 / current prefab blob it is uSchemaVersion (7); for a legacy scene
+	// v3/4/5/6 / pre-v7 prefab blob it is < 7 (v3/4/5 default to 1 because those scene
+	// versions wrote no per-component schemaVersion field; v6 wrote 1 because the
+	// Transform had not yet opted in).
+	//
+	// pos/rot/scale are common to every version. The LEGACY-FORMAT KNOWLEDGE -- that a
+	// pre-v7 blob ALSO carries the hierarchy parent file-index -- lives ONLY here, in
+	// this engine-side reader; the ECS core just runs ResolvePendingParents afterwards.
 	xStream >> m_xPosition;
 	xStream >> m_xRotation;
 	xStream >> m_xScale;
 
-	// Read parent file index - stored in pending member for scene to resolve after all entities loaded
-	uint32_t uParentFileIndex;
-	xStream >> uParentFileIndex;
-	m_uPendingParentFileIndex = uParentFileIndex;
-	// Note: Children are NOT serialized - they're rebuilt from parent references
-	// The scene will call SetParentByID after mapping file indices to new EntityIDs
+	if (uReadSchemaVersion < 7u)
+	{
+		// Legacy migration: consume the in-blob parent file-index and SINK it into the
+		// slot pending-parent (Phase 5a). The scene's post-load ResolvePendingParents
+		// maps the file-index to a real EntityID and calls Zenith_Entity::SetParent.
+		// Guard against a truncated tail: the bounded component deserializer forces the
+		// cursor to (payloadStart + declaredSize) regardless, so if the declared size
+		// does not actually include the parent u32 (e.g. a v7-format blob mislabelled
+		// as schema < 7 in a hand-crafted stream), we simply skip the read rather than
+		// over-read past end-of-stream.
+		if (xStream.GetCursor() + sizeof(uint32_t) <= xStream.GetSize())
+		{
+			uint32_t uParentFileIndex;
+			xStream >> uParentFileIndex;
+			m_xOwningEntity.SetPendingParentFileIndex(uParentFileIndex);
+		}
+		// Children are NOT serialized -- they are rebuilt from parent references during
+		// the post-load resolve pass.
+	}
+	// uReadSchemaVersion >= 7: nothing more to read; the parent came from the entity record.
 }

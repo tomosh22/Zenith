@@ -6,9 +6,10 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
+#include "Editor/Zenith_EditorSceneAccess.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 
 std::vector<Zenith_EntityID> Zenith_EditorTestFixture::s_axCreatedEntities;
 bool Zenith_EditorTestFixture::s_bIsSetUp = false;
@@ -32,7 +33,7 @@ void Zenith_EditorTestFixture::SetUp()
 	Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 	if (!xActive.IsValid() || g_xEngine.Scenes().GetSceneData(xActive) == nullptr)
 	{
-		s_xTestScene = g_xEngine.Scenes().CreateEmptyScene("EditorTestFixtureScene");
+		s_xTestScene = g_xEngine.Scenes().LoadScene("EditorTestFixtureScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(s_xTestScene);
 		s_bCreatedTestScene = true;
 	}
@@ -63,7 +64,7 @@ void Zenith_EditorTestFixture::TearDown()
 		{
 			if (it->IsValid() && pxSceneData->EntityExists(*it))
 			{
-				pxSceneData->RemoveEntity(*it);
+				Zenith_EditorSceneAccess::RemoveEntity(pxSceneData, *it);
 			}
 		}
 	}
@@ -90,7 +91,7 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntity(const std::string& st
 {
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	Zenith_Entity xEntity(pxSceneData, strName.c_str());
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, strName.c_str());
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 	s_axCreatedEntities.push_back(uEntityID);
 	return uEntityID;

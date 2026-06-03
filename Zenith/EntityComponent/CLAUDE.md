@@ -1,303 +1,71 @@
-# Entity-Component System
+# EntityComponent — concrete components + ECS↔engine glue
+
+This directory holds the **engine-side** half of the entity-component system: the
+concrete built-in components and the glue that wires the generic ECS to the rest
+of the engine. Everything here compiles into the aggregate **`Zenith`** engine lib
+(NOT the leaf), because these files name concrete component / Flux / Physics /
+editor types.
+
+> The **generic ECS machinery** — entities, scenes, queries, events, the
+> component-meta registry, the entity store — is the **`ZenithECS` leaf library**,
+> physically located in [../ZenithECS/](../ZenithECS/CLAUDE.md). Read that doc for
+> the ECS core (`Zenith_SceneSystem`, `Zenith_Entity`, `Zenith_Query`,
+> `Zenith_EventDispatcher`, `Zenith_ComponentMeta` machinery, component pools,
+> scene loading, lifecycle). This doc covers only what stays engine-side.
 
 ## Files
 
-### Core
-- **`Zenith_SceneSystem.h`** — the single scene API, reached via `g_xEngine.Scenes()`. One class (`Zenith_SceneSystem`) that merged the former Registry / OperationQueue / LifecycleScheduler / CallbackBus / EntityOwnership subsystems. The header also inlines the `SCENE_LOAD_*` enum, the callback typedefs (`Zenith_SceneChangedCallback`, `Zenith_SceneLoadedCallback`, `Zenith_SceneUnloadingCallback`, `Zenith_SceneUnloadedCallback`), and the RAII guard types (`Zenith_LifecycleDeferralGuard`, `Zenith_PrefabInstantiationGuard`, `Zenith_SceneUpdateDeferralGuard`, `Zenith_SceneCreationTargetScope`). There is **no** `Zenith_SceneSystem.cpp` — the implementation lives in the `Internal/` TUs (below). The regression suite is `Zenith/UnitTests/Zenith_SceneTests.h`.
-- `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
-- `Zenith_SceneData_Serialization.cpp` - `Zenith_SceneData` save/load (`.zscen` read / write / validate)
-- `Zenith_Scene.h/cpp` - Lightweight scene handle struct
-- `Zenith_Entity.h/cpp` - Entity wrapper class (scene pointer + entity ID + parent ID + child entity vector)
-- `Zenith_Entity.inl` - Template bodies for `AddComponent` / `GetComponent` / etc. (included from Zenith_Scene.h)
-- `Zenith_EntityStore.h` - Process-wide entity slot storage (slots, generations, component maps), owned by `Zenith_Engine`
-- `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations + property reflection
-- `Zenith_ComponentPool.h` - Per-type dense component pool (real swap-and-pop removal) and the `Zenith_Component` concept
-- `Zenith_ComponentRegistry.h/cpp` - Component type registration for editor UI
-- `Zenith_Query.h` - Multi-component entity queries
-- `Zenith_EventSystem.h/cpp` - Type-safe event dispatcher with deferred queue
-- `Zenith_RenderTaskState.h` - Free-function forwarder for the render-tasks-active flag (breaks a header cycle)
+### `Components/` — the concrete built-in components
+Each component lives in `Components/Zenith_*Component.{h,cpp}` and self-registers
+via `ZENITH_REGISTER_COMPONENT` semantics (the explicit set + order is installed by
+`Zenith_ComponentMeta_Registration.cpp`, below):
 
-### Internal/
-`Zenith_SceneSystem` is one class whose implementation is split across these TUs purely for file size — every function in them is a member of `Zenith_SceneSystem`. State lives as **private members** of the single instance; instance methods reach it directly, the `static` entity-ownership / bootstrap methods reach it via `g_xEngine.Scenes()`.
-
-- `Internal/Zenith_SceneSystem_Registry.cpp` - Slot table, generations, freelist, name cache, build-index registry, scene queries, creation/activation, `CanonicalisePath`
-- `Internal/Zenith_SceneSystem_Operations.cpp` - `LoadScene` / `LoadSceneByIndex`, unload + bulk teardown, render-system reset
-- `Internal/Zenith_SceneSystem_Lifecycle.cpp` - Bootstrap, per-frame `Update`, fixed-timestep, circular-load stacks, RAII guard bodies, `Shutdown`
-- `Internal/Zenith_SceneSystem_Callbacks.cpp` - Loaded / Unloading / Unloaded / ActiveSceneChanged dispatch + `ActiveSceneChangeSuppressionScope`
-- `Internal/Zenith_SceneSystem_EntityOwnership.cpp` - `MoveEntityToScene`, `MergeScenes`, `MarkEntityPersistent`, `Destroy*` (cross-scene entity moves)
-
-Use this table to jump to the owning TU for a given concern:
-
-| What you're looking for | TU |
+| Component | Purpose |
 |---|---|
-| Scene slot table, scene-name lookup, generation counters, scene queries | `..._Registry.cpp` |
-| Scene callbacks (`SceneLoaded`, `SceneUnloading`, `SceneUnloaded`, `ActiveSceneChanged`) | `..._Callbacks.cpp` |
-| `LoadScene` / `UnloadScene`, render reset | `..._Operations.cpp` |
-| Per-frame `Update`, lifecycle-deferral flags, fixed-timestep accumulator, bootstrap | `..._Lifecycle.cpp` |
-| `MoveEntityToScene`, `MarkEntityPersistent`, `DontDestroyOnLoad`, `Destroy*` | `..._EntityOwnership.cpp` |
+| `Zenith_TransformComponent` | Position, rotation, scale, model matrix; reads ECS slot hierarchy for parenting |
+| `Zenith_CameraComponent` | View/projection matrices |
+| `Zenith_ModelComponent` | Renderable mesh with material |
+| `Zenith_LightComponent` | Dynamic lights |
+| `Zenith_ColliderComponent` | Physics collision shapes (Jolt) |
+| `Zenith_TerrainComponent` | Heightmap-based terrain |
+| `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
+| `Zenith_ParticleEmitterComponent` | Particle effect emitters |
+| `Zenith_ScriptComponent` | Custom behaviour attachment (Unity-style; see below) |
+| `Zenith_UIComponent` | UI element support |
+| `Zenith_AnimatorComponent` | Skeletal animation state machine (separate from ModelComponent) |
+| `Zenith_TweenComponent` | Property tweening |
 
-The full design (synchronous LoadScene flow, re-entrancy rules, state-access convention, Unity-parity invariants) is in [Internal/ARCHITECTURE.md](Internal/ARCHITECTURE.md).
+These name Flux / Physics types and so cannot live in the leaf. The leaf stores and
+dispatches them generically through `Zenith_ComponentMeta` without naming a concrete
+type.
 
-### Components (in Components/ subdirectory)
-- `Zenith_TransformComponent` - Position, rotation, scale
-- `Zenith_CameraComponent` - View/projection matrices
-- `Zenith_ModelComponent` - Renderable mesh with material
-- `Zenith_LightComponent` - Dynamic lights
-- `Zenith_ColliderComponent` - Physics collision shapes (Jolt Physics)
-- `Zenith_TerrainComponent` - Heightmap-based terrain
-- `Zenith_InstancedMeshComponent` - GPU-instanced mesh rendering
-- `Zenith_ParticleEmitterComponent` - Particle effect emitters
-- `Zenith_ScriptComponent` - Custom behavior attachment
-- `Zenith_UIComponent` - UI element support
+### ECS↔engine glue (the wiring the leaf cannot contain)
+- **`Zenith_ComponentMeta_Registration.cpp`** — defines `Zenith_RegisterEngineComponents()`, which calls `RegisterComponent<T>(name, order)` for the 12 built-ins (Transform=0, Model=10, Tween=12, Animator=15, Camera=20, Light=25, Terrain=40, Collider=50, Script=60, UI=70, InstancedMesh=80, ParticleEmitter=85) then `Zenith_AI_RegisterComponents()` (AIAgent=90). In `ZENITH_TOOLS` builds it also mirrors the set into the editor "Add Component" registry. `Zenith_Engine::Initialise` installs this via `SetComponentRegistrar(&Zenith_RegisterEngineComponents)` then `EnsureInitialized()`. **Orders are centralised here.**
+- **`Zenith_CameraResolve.h/cpp`** — the engine-side main-camera resolver. The leaf exposes only `FindMainCameraEntityAcrossScenes()` / `GetMainCameraEntity()` (EntityID-only); `Zenith_GetMainCamera()` / `Zenith_GetMainCameraAcrossScenes()` here wrap that and resolve to a `Zenith_CameraComponent&` (naming the concrete type, hence engine-side).
+- **`Zenith_ComponentRegistry.h/cpp`** — the editor "Add Component" registry (display name + has/render/add callbacks per component type). Consumed by the editor property/hierarchy panels.
 
-## Architecture
+## How it wires to the leaf
+`Zenith_Engine::Initialise` (`../Core/Zenith_Engine.cpp`) installs everything the
+leaf needs through leaf-safe seams, so the leaf names no engine symbol:
+1. `SetComponentRegistrar(&Zenith_RegisterEngineComponents)` + `EnsureInitialized()` — the concrete component set.
+2. `Scenes().SetRuntimeHooks(xHooks)` — a `Zenith_ECSRuntimeHooks` with `m_pfnIsMainThread`, `m_pfnResetRenderSystems`, `m_pfnUnloadUnusedAssets`, `m_pfnResetPhysics`, and `m_pfnAddDefaultComponents` (the last adds a `Zenith_TransformComponent` on non-bare `CreateEntity`).
 
-### Entity
-Wrapper around scene data pointer, entity ID, parent entity ID, and child entity ID vector. Entity names are stored in the scene data (not the entity) via `GetName()`/`SetName()` accessors that delegate to the scene.
-
-#### Why entity slots are global, not per-scene
-`s_axEntitySlots` in `Zenith_SceneData.h` is intentionally a process-wide static array, not a per-scene pool. This keeps `EntityID.m_uIndex` stable when an entity moves between scenes (via `MoveEntityToScene` or persistence), so cached `Zenith_EntityID` handles survive cross-scene transfers. The slot entry itself records the owning scene handle, so destination resolution stays correct.
-
-Safety: slot reuse uses a 32-bit generation counter. A stale handle's `IsValid()` check reads the current slot's generation and rejects the handle when they differ. Generation collision requires ~4B reuses of the same slot index, which is not a design concern.
-
-### Scene Management (Multi-Scene Architecture)
-
-Zenith uses a multi-scene architecture inspired by Unity:
-
-- **Zenith_Scene** - Lightweight handle struct (`int m_iHandle` + `uint32_t m_uGeneration`). Can be copied freely, used to reference scenes. The generation counter lets `IsValid()` detect handles to scene slots that have been unloaded and recycled.
-- **Zenith_SceneData** - Internal class storing entities, components, and metadata. Not accessed directly by game code.
-- **Zenith_SceneSystem** - The single scene system, held by `Zenith_Engine` and reached via `g_xEngine.Scenes()`. Owns the slot table, callbacks, (synchronous) load/unload, the per-frame `Update`, and cross-scene entity ownership — the former Registry / OperationQueue / LifecycleScheduler / CallbackBus / EntityOwnership subsystems all merged in. Most of its surface is instance methods; the entity-ownership API (`CreateEntity`, `MoveEntityToScene`, `MarkEntityPersistent`, `Destroy*`) and the bootstrap orchestrators (`InitialiseSubsystems` / `ShutdownSubsystems` / `ResetForNextTest`) are `static`.
-
-Multiple scenes can be loaded simultaneously (additive loading). One scene is "active" at any time. Scene loading is **synchronous** — `LoadScene` returns a real `Zenith_Scene` once Awake/OnEnable have run and the `SceneLoaded` callback has fired.
-
-### Scene Loading Modes
-| Mode | Enum | Behavior |
-|------|------|----------|
-| Single | `SCENE_LOAD_SINGLE` | Unload all non-persistent scenes, load new |
-| Additive | `SCENE_LOAD_ADDITIVE` | Keep existing scenes, add new |
-| Additive Without Loading | `SCENE_LOAD_ADDITIVE_WITHOUT_LOADING` | Create a new empty scene without reading from disk. Use for procedural/editor-new scenes. |
-
-### Persistent Scene
-A special scene that is always loaded and never unloaded. Use `MarkEntityPersistent()` to move entities here. Entities in the persistent scene survive `SCENE_LOAD_SINGLE` operations.
-
-### Common Scene Management Patterns
-
-```cpp
-// Get active scene and create entity
-Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
-Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
-Zenith_Entity xEntity(pxSceneData, "MyEntity");
-
-// Load scene additively (synchronous — returns a valid handle)
-Zenith_Scene xLoaded = g_xEngine.Scenes().LoadScene("Levels/Level1.zscen", SCENE_LOAD_ADDITIVE);
-
-// Make entity persistent across scene loads (static, Unity-style)
-Zenith_SceneSystem::MarkEntityPersistent(xPlayerEntity);
-
-// Move entity between scenes (updates reference in-place, Unity behavior)
-Zenith_SceneSystem::MoveEntityToScene(xEntity, xTargetScene);
-// xEntity now points to the entity in the target scene
-
-// Register for scene events (callbacks are function pointers, so a captureless lambda)
-g_xEngine.Scenes().RegisterSceneLoaded([](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
-    // Handle scene load
-});
-```
-
-The `Zenith_SceneManager` class and header are gone — there is no facade or include manifold. Target `g_xEngine.Scenes()` (instance methods) or `Zenith_SceneSystem::` (the static entity-ownership / bootstrap methods) directly.
-
-### Component Pools
-Each component type has a dedicated `Zenith_ComponentPool<T>` (`Zenith_ComponentPool.h`) with:
-- `m_pxData` - Raw-memory array of component instances, explicit placement-new lifetimes
-- `m_uSize` / `m_uCapacity` - live-slot count and allocated capacity
-- `m_xOwningEntities` - Parallel array (size == `m_uSize`) tracking which entity owns each slot
-
-The pool is **dense**: live components occupy slots `[0, m_uSize)` with no holes. The per-entity component index is stored in exactly one place — `g_xEngine.EntityStore().m_axEntityComponents.Get(entityIdx)[typeID]`.
-
-**Swap-and-Pop Removal (real):** `RemoveAtSwapAndPop(uIndex)` is a true swap-and-pop. It captures the owner of the last live element first, destructs the slot at `uIndex`, and — unless `uIndex` was already the last element — **move-constructs** (not copy/memcpy, so components owning VRAM / Jolt handles transfer ownership) the last element into `uIndex`, destructs the old last slot, and decrements `m_uSize`. It returns the `Zenith_EntityID` that owned the moved element (or `INVALID_ENTITY_ID` if `uIndex` was the last/only slot).
-
-The single removal call site, `Zenith_SceneData::RemoveComponentFromEntity<T>`, calls `RemoveAtSwapAndPop`, erases the removed entity's `m_axEntityComponents` entry, and — when a different entity's component was moved into the freed slot — repoints that owner's stored index to `uIndex`. Cross-scene transfer (`TransferComponent`) does the same swap-and-pop on the source pool so it too stays dense. Component indices are therefore unstable after any removal; never cache a raw pool index across a removal — look it up through `m_axEntityComponents`.
-
-There is no component free-list, no per-slot generation array, and no `Zenith_ComponentHandle<T>`; the dense layout is the precondition for the future sparse-set index.
-
-## Component Meta System
-
-The `Zenith_ComponentMeta` system provides type-erased component operations using function pointers (no std::function for performance).
-
-### Registering Components
-Components are registered using the `ZENITH_REGISTER_COMPONENT` macro in their .cpp file:
-
-```cpp
-ZENITH_REGISTER_COMPONENT(Zenith_TransformComponent, "TransformComponent")
-```
-
-The macro creates a static auto-registrar that registers the component type at startup. Serialization order is determined automatically by component type name.
-
-### Type-Erased Operations
-Each registered component type has function pointers for:
-- Create, Has, Remove operations
-- Serialize/Deserialize via DataStream
-- Lifecycle hooks (OnAwake, OnStart, OnUpdate, etc.) if implemented
-
-## Lifecycle Hooks
-
-Components can optionally implement lifecycle hooks detected at compile-time using C++20 concepts:
-
-| Hook | Signature | When Called |
-|------|-----------|-------------|
-| `OnAwake()` | `void OnAwake()` | When component is created |
-| `OnStart()` | `void OnStart()` | Before first update |
-| `OnEnable()` | `void OnEnable()` | When component is enabled |
-| `OnDisable()` | `void OnDisable()` | When component is disabled |
-| `OnUpdate(float)` | `void OnUpdate(float fDt)` | Every frame |
-| `OnLateUpdate(float)` | `void OnLateUpdate(float fDt)` | After all OnUpdate calls |
-| `OnFixedUpdate(float)` | `void OnFixedUpdate(float fDt)` | At fixed timestep (physics) |
-| `OnDestroy()` | `void OnDestroy()` | Before component removal |
-
-Hooks are optional - if a component doesn't implement a hook, the corresponding function pointer is null and skipped during dispatch. Dispatch happens via `Zenith_ComponentMetaRegistry::DispatchOn*()` methods.
-
-## Query System
-
-Multi-component queries allow iterating entities that have specific component combinations:
-
-```cpp
-scene.Query<TransformComponent, ColliderComponent>()
-    .ForEach([](Zenith_EntityID uID, TransformComponent& xT, ColliderComponent& xC) {
-        // Process entities with both components
-    });
-```
-
-Query methods:
-- `ForEach(callback)` - Iterate all matching entities
-- `Count()` - Return number of matching entities
-- `First()` - Return first matching entity ID (or INVALID_ENTITY_ID)
-- `Any()` - Return true if at least one entity matches
-
-Queries iterate `m_xEntityComponents` and use fold expressions to check for all required component types.
-
-## Event System
-
-Type-safe event dispatcher with immediate and deferred dispatch modes:
-
-### Subscribing
-```cpp
-auto handle = Zenith_EventDispatcher::Get().Subscribe<EventType>(&CallbackFunction);
-// Or with lambda:
-auto handle = Zenith_EventDispatcher::Get().SubscribeLambda<EventType>(
-    [](const EventType& event) { /* handle */ });
-```
-
-### Dispatching
-```cpp
-// Immediate dispatch
-Zenith_EventDispatcher::Get().Dispatch(MyEvent{ data });
-
-// Deferred (thread-safe, processed later on main thread)
-Zenith_EventDispatcher::Get().QueueEvent(MyEvent{ data });
-Zenith_EventDispatcher::Get().ProcessDeferredEvents(); // Call from main thread
-```
-
-### Built-in Events
-- `Zenith_Event_EntityCreated` - Fired when entity is created
-- `Zenith_Event_EntityDestroyed` - Fired when entity is destroyed
-- `Zenith_Event_ComponentAdded` - Fired when component is added
-- `Zenith_Event_ComponentRemoved` - Fired when component is removed
+The leaf works with null hooks and no registrar (that is exactly what the
+`SentinelECS` link-proof exercises); the engine just installs richer behaviour.
 
 ## Script Components (Unity-style)
+Custom behaviours use `Zenith_ScriptComponent` + `Zenith_ScriptAsset`:
+1. Inherit from `Zenith_ScriptBehaviour`.
+2. Put `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` in the class body — auto-registration, no explicit call.
+3. Each entity has at most one `Zenith_ScriptComponent`, holding **multiple script slots** (each = asset path `game:Scripts/<TypeName>.zscript` + a behaviour instance with serialized params).
 
-Custom behaviors use the Zenith_ScriptComponent + Zenith_ScriptAsset pattern:
+Attach: `AddScript<T>()` / `AddScriptByAssetPath(...)` (runtime, runs OnAwake) or `AddScriptForSerialization<T>()` (build/scene load, no OnAwake) or `Zenith_EditorAutomation::AddStep_AttachScript("MyBehaviour")`. Query: `GetScriptCount()` / `GetScriptAt(i)` / `GetScript<T>()`. Remove: `RemoveScriptAt(i)` / `RemoveAllScripts()` (OnDestroy fires in REVERSE slot order). Lifecycle hooks per slot in insertion order; `OnDestroy` reversed (Unity convention); plus `OnCollisionEnter/Stay/Exit`.
 
-1. Inherit from `Zenith_ScriptBehaviour`
-2. Place `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` inside the class body
-3. **Auto-registration is automatic** - no explicit `RegisterBehaviour()` call needed. The macro generates a `static inline` initializer that registers the C++ factory with `Zenith_ScriptAsset` at program startup, before main().
+`Zenith_ScriptAsset::SyncRegisteredTypesToDisk()` runs once at TOOLS-build startup (from `Zenith_Main.cpp`), writing `<GAME_ASSETS_DIR>/Scripts/<TypeName>.zscript` per registered behaviour; orphans → `.stale`.
 
-Each entity has at most one `Zenith_ScriptComponent`, but the component can hold **multiple script slots** (Unity-style). Each slot stores an asset path (`game:Scripts/<TypeName>.zscript`) plus a behaviour instance with its own serialized parameters.
-
-### Attaching scripts
-
-- Runtime (calls OnAwake, marks entity awoken):
-  - `xScript.AddScript<MyBehaviour>()` — append a new slot of type T
-  - `xScript.AddScriptByAssetPath("game:Scripts/Foo.zscript")` — append from an asset path
-- Build-time / scene serialization (no OnAwake):
-  - `xScript.AddScriptForSerialization<MyBehaviour>()`
-  - `xScript.AddScriptForSerializationByAssetPath(...)`
-- EditorAutomation: `Zenith_EditorAutomation::AddStep_AttachScript("MyBehaviour")`
-
-### Querying attached scripts
-
-- `xScript.GetScriptCount()` returns slot count
-- `xScript.GetScriptAt(uIndex)` returns a `Zenith_ScriptBehaviour*`
-- `xScript.GetScript<MyBehaviour>()` returns the first slot whose behaviour matches type T (linear scan), or nullptr
-
-### Removal
-
-- `xScript.RemoveScriptAt(uIndex)` — calls OnDestroy on the slot, then deletes
-- `xScript.RemoveAllScripts()` — calls OnDestroy in REVERSE slot order, then clears
-
-### Asset files
-
-`Zenith_ScriptAsset::SyncRegisteredTypesToDisk()` runs once at TOOLS-build startup (called from `Zenith_Main.cpp`). It writes `<GAME_ASSETS_DIR>/Scripts/<TypeName>.zscript` for each registered behaviour. Orphan `.zscript` files (no matching C++ behaviour) are renamed to `.stale` rather than deleted.
-
-### Lifecycle callbacks
-
-`OnAwake()`, `OnStart()`, `OnEnable()`, `OnDisable()`, `OnUpdate(float)`, `OnFixedUpdate(float)`, `OnLateUpdate(float)`, `OnDestroy()`, `OnCollisionEnter(Zenith_Entity)`, `OnCollisionStay(Zenith_Entity)`, `OnCollisionExit(Zenith_EntityID)`. The component dispatches each hook to all attached slots in insertion order. `OnDestroy` fires in REVERSE order (Unity convention).
-
-## Key Concepts
-
-**Type Safety:** Template methods ensure compile-time type checking for component access.
-
-**Serialization:** All components implement `WriteToDataStream()` and `ReadFromDataStream()` for scene save/load. The ComponentMeta system handles serialization order (lower order = serialized first) to respect dependencies.
-
-**Thread Safety:**
-- Scene modifications during rendering handled via deferred operations
-- Event system provides thread-safe `QueueEvent()` for cross-thread event dispatch
-
-**Scene Loading Reset Order:**
-When `g_xEngine.Scenes().LoadScene()` loads a scene in `SCENE_LOAD_SINGLE` mode, systems are reset in this order:
-1. Flux render systems (Terrain, StaticMeshes, AnimatedMeshes, etc.)
-2. `SceneData::Reset()` - Destroys all entities and their components
-3. `Zenith_Physics::Reset()` - Clears physics world
-
-The physics reset MUST come AFTER scene reset because collider component destructors need the physics world to exist to remove their bodies. See [Physics/CLAUDE.md](../Physics/CLAUDE.md) for details.
-
-Note: In `SCENE_LOAD_ADDITIVE` mode, existing scenes are NOT unloaded - the new scene is simply added to the loaded scene list.
-
-**Entity Lifecycle:** Entities can have parent-child relationships via `m_uParentEntityID` member.
-
-## Design Rationale
-
-### Why Entity Is a Class, Not a POD Struct
-
-The `Zenith_Entity` class may appear over-engineered at first glance since it's a "thin wrapper" that delegates most operations to the Scene. However, this design is intentional:
-
-1. **Entity Creation Constructors Do Real Work**: The constructors allocate entity slots, register entities with the scene, set initial state, and auto-add TransformComponent. This is not trivial delegation.
-
-2. **Validation and Lifecycle Dispatch**: Methods like `SetEnabled()` include validation (`IsValid()` checks) and dispatch lifecycle events (`OnEnable`/`OnDisable`) to all components. This encapsulates complex logic.
-
-3. **Clean API Over Scattered Functions**: The class provides a clean object-oriented API (`entity.GetName()`, `entity.AddComponent<T>()`) vs verbose free functions (`GetEntityName(scene, id)`). This improves code readability throughout the codebase.
-
-4. **Value Semantics with Handle Pattern**: The class is intentionally a lightweight handle (scene pointer + ID) that can be freely copied. The documentation explicitly states this is a "VALUE TYPE."
-
-5. **Serialization Support**: The `WriteToDataStream`/`ReadFromDataStream` methods encapsulate entity serialization, keeping DataStream logic cohesive.
-
-Converting to a POD struct would scatter entity logic across the codebase, lose the clean OOP API, and not significantly reduce complexity - just move it elsewhere.
-
-### Why Event System Uses Virtual Inheritance
-
-The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_CallbackWrapper<T>`) serves a legitimate purpose:
-
-1. **Type Erasure for Deferred Queue**: The deferred event queue (`m_xDeferredEvents`) stores different event types. Type erasure requires polymorphism - either virtual dispatch or `std::function` (which uses virtual dispatch internally).
-
-2. **Subscription Storage**: Subscriptions are stored by handle in an `unordered_map`. Different event types have different callback signatures, requiring type erasure to store them uniformly.
-
-3. **No Performance Benefit from std::function**: Replacing with `std::function<void(const void*)>` would just substitute explicit virtual dispatch with implicit virtual dispatch. The overhead is equivalent.
-
-4. **Current Design Is Type-Safe**: The callback wrappers know the exact event type at compile time, preserving type safety within the wrapper while providing runtime polymorphism for storage.
-
-### Scene-system header ↔ SceneData.h: cycle broken (T2.4)
-
-`Zenith_SceneSystem.h` includes `Zenith_SceneData.h` at the bottom (for the `GetAllOfComponentTypeFromAllScenes` template body), so the back-edge from `SceneData.h` had to be removed to avoid a textual cycle. That was done by lifting the back-edge sources out of `SceneData.h`:
-
-1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This header is self-contained.
-
-2. **Render-task-active check** — `SceneData.h`'s template assertions now call the free function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` (defined in `Internal/Zenith_SceneSystem_Lifecycle.cpp`).
+## Static-init dead-strip pitfall
+`ZENITH_REGISTER_COMPONENT` does not fire if the component's `.obj` is never
+referenced (MSVC dead-strips it). Engine components are safe (the registrar names
+them explicitly); a game component that is only added at runtime can hit this —
+add it from script (`AddComponent<T>()` in `OnAwake`) rather than relying on the
+static registrar.

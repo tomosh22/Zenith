@@ -64,9 +64,9 @@ static void Setup_HeldItem()
 	// Internal_RegisterItemTag / SetHeldItem has to load a scene with
 	// both scripts attached -- otherwise the registration silently
 	// no-ops. Spin up a one-entity scene with both scripts attached.
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("HeldItemTest");
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("HeldItemTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
-	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
 	Zenith_ScriptComponent& xScripts =
 		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
 	xScripts.AddScript<DPItemManager_Behaviour>();
@@ -142,12 +142,12 @@ static void Setup_FindByTag()
 	// 2) Spin up an in-memory scene with a DPItemManager attached
 	// (creates DPItemManager_Behaviour::Instance()) + a real item
 	// entity to register against.
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("FindByTagTest");
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("FindByTagTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
-	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
 	xManagerEntity.AddComponent<Zenith_ScriptComponent>()
 		.AddScript<DPItemManager_Behaviour>();
-	Zenith_Entity xIronEntity(pxScene, "IronEntity");
+	Zenith_Entity xIronEntity = g_xEngine.Scenes().CreateEntity(pxScene, "IronEntity");
 	const Zenith_EntityID xIron = xIronEntity.GetEntityID();
 
 	// 3) Pre-register miss: manager exists but no Iron in table.
@@ -214,9 +214,9 @@ static void Setup_Win()
 	// Collected / Reset have to spin up a scene with the controller
 	// attached -- otherwise every call silently no-ops on a null
 	// Instance() and the assertions all fail. Mirrors Setup_HeldItem.
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("WinTest");
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("WinTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
-	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
 	Zenith_ScriptComponent& xScripts =
 		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
 	xScripts.AddScript<DPPlayerController_Behaviour>();
@@ -306,9 +306,9 @@ static void Setup_Fog()
 	// onto DPFogPass_Behaviour::m_xFogHoles. Tests now need that
 	// script attached to a scene entity for any of the DP_Fog::*
 	// forwarders to take effect (no-ops otherwise).
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("FogTest");
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("FogTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
-	Zenith_Entity xFogEntity(pxScene, "FogPassEntity");
+	Zenith_Entity xFogEntity = g_xEngine.Scenes().CreateEntity(pxScene, "FogPassEntity");
 	xFogEntity.AddComponent<Zenith_ScriptComponent>()
 		.AddScript<DPFogPass_Behaviour>();
 
@@ -356,9 +356,9 @@ static void Setup_Unlock()
 	// item-tag + held-item registrations below to take effect (see
 	// Setup_HeldItem's matching comment for the 2026-05-17 ownership-
 	// refactor rationale).
-	Zenith_Scene xScene = g_xEngine.Scenes().CreateEmptyScene("UnlockTest");
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("UnlockTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
-	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
 	Zenith_ScriptComponent& xScripts =
 		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
 	xScripts.AddScript<DPItemManager_Behaviour>();

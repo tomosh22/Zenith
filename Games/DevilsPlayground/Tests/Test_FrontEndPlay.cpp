@@ -3,9 +3,10 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -135,7 +136,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xActive);
 		if (pxData != nullptr)
 		{
-			Zenith_CameraComponent* pxCam = pxData->TryGetMainCamera();
+			Zenith_CameraComponent* pxCam = Zenith_TryGetMainCamera(pxData);
 			if (pxCam != nullptr)
 			{
 				g_bMainCameraSet = true;
@@ -152,7 +153,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		double fPitch = 0.0;
 		if (pxData != nullptr)
 		{
-			Zenith_CameraComponent* pxCam = pxData->TryGetMainCamera();
+			Zenith_CameraComponent* pxCam = Zenith_TryGetMainCamera(pxData);
 			if (pxCam != nullptr)
 			{
 				pxCam->GetPosition(xCamPos);

@@ -12,7 +12,7 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "UI/Zenith_UIButton.h"
 
 class DPMainMenuController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour

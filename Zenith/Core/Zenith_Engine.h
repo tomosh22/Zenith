@@ -185,7 +185,10 @@ private:
 	Zenith_Profiling*      m_pxProfiling   = nullptr;
 	Zenith_AssetRegistry*        m_pxAssets         = nullptr;
 	Zenith_Physics*          m_pxPhysics        = nullptr;
-	Zenith_EntityStore*          m_pxEntityStore    = nullptr;
+	// Phase 2.1 (ECS leaf-extraction): the entity store is no longer engine-owned.
+	// Zenith_SceneSystem owns it; Zenith_Engine::EntityStore() forwards to
+	// m_pxScenes->GetEntityStore(). (The Zenith_EntityStore forward-decl above is
+	// still needed for the EntityStore() accessor return type.)
 	Zenith_SceneSystem*             m_pxScenes          = nullptr;
 	Zenith_Input*                   m_pxInput           = nullptr;
 	Zenith_TouchInput*              m_pxTouch           = nullptr;

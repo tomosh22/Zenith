@@ -35,7 +35,7 @@ void CreateCatCafeDisplayEntity()
 	if (!pxMaterial || !TilePuzzle::Resources().m_pxCatMeshGeometry)
 		return;
 
-	m_xCatCafeDisplayEntity = Zenith_Entity(pxSceneData, "CatCafeDisplay");
+	m_xCatCafeDisplayEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "CatCafeDisplay");
 	Zenith_TransformComponent& xTransform = m_xCatCafeDisplayEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(0.f, 0.f, 0.f));
 	xTransform.SetScale(Zenith_Maths::Vector3(2.f, 2.f, 2.f));
@@ -48,7 +48,7 @@ void DestroyCatCafeDisplayEntity()
 {
 	if (m_xCatCafeDisplayEntity.IsValid())
 	{
-		g_xEngine.Scenes().Destroy(m_xCatCafeDisplayEntity);
+		m_xCatCafeDisplayEntity.Destroy();
 	}
 }
 

@@ -4,6 +4,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "ZenithECS/Zenith_Query.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include <unordered_map>
 #include <unordered_set>
@@ -747,7 +748,8 @@ iter, fCellSize,
 void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()
 {
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
+	xModels.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach([&xModels](Zenith_EntityID, Zenith_ModelComponent& xComp) { xModels.PushBack(&xComp); });
 
 	for (uint32_t i = 0; i < xModels.GetSize(); i++)
 	{
@@ -766,7 +768,8 @@ void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()
 	// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
 
 	Zenith_Vector<Zenith_ColliderComponent*> xColliders;
-	g_xEngine.Scenes().GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(xColliders);
+	xColliders.Clear();
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ColliderComponent>().ForEach([&xColliders](Zenith_EntityID, Zenith_ColliderComponent& xComp) { xColliders.PushBack(&xComp); });
 
 	for (uint32_t i = 0; i < xColliders.GetSize(); i++)
 	{

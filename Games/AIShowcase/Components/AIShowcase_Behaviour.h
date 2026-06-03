@@ -24,9 +24,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -280,7 +280,7 @@ private:
 		SetHUDVisible(true);
 
 		// Create arena scene
-		m_xArenaScene = g_xEngine.Scenes().CreateEmptyScene("Arena");
+		m_xArenaScene = g_xEngine.Scenes().LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xArenaScene);
 
 		// Initialize arena content
@@ -310,7 +310,7 @@ private:
 		Zenith_TacticalPointSystem::Initialise();
 
 		// Create fresh arena scene
-		m_xArenaScene = g_xEngine.Scenes().CreateEmptyScene("Arena");
+		m_xArenaScene = g_xEngine.Scenes().LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(m_xArenaScene);
 
 		// Reinitialize everything
@@ -407,7 +407,7 @@ private:
 
 	void CreateFloor(Zenith_SceneData* pxSceneData)
 	{
-		Zenith_Entity xFloor(pxSceneData, "Floor");
+		Zenith_Entity xFloor = g_xEngine.Scenes().CreateEntity(pxSceneData, "Floor");
 		xFloor.SetTransient(false);
 
 		Zenith_TransformComponent& xTransform = xFloor.GetComponent<Zenith_TransformComponent>();
@@ -450,7 +450,7 @@ private:
 		{
 			char szName[32];
 			sprintf_s(szName, sizeof(szName), "Wall_%u", u);
-			Zenith_Entity xWall(pxSceneData, szName);
+			Zenith_Entity xWall = g_xEngine.Scenes().CreateEntity(pxSceneData, szName);
 			xWall.SetTransient(false);
 
 			Zenith_TransformComponent& xTransform = xWall.GetComponent<Zenith_TransformComponent>();
@@ -494,7 +494,7 @@ private:
 		{
 			char szName[32];
 			sprintf_s(szName, sizeof(szName), "Obstacle_%u", u);
-			Zenith_Entity xObstacle(pxSceneData, szName);
+			Zenith_Entity xObstacle = g_xEngine.Scenes().CreateEntity(pxSceneData, szName);
 			xObstacle.SetTransient(false);
 
 			Zenith_TransformComponent& xTransform = xObstacle.GetComponent<Zenith_TransformComponent>();
@@ -520,7 +520,7 @@ private:
 		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
-		Zenith_Entity xPlayer(pxSceneData, "Player");
+		Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(pxSceneData, "Player");
 		xPlayer.SetTransient(false);
 
 		m_xPlayerPos = Zenith_Maths::Vector3(0.0f, 0.5f, 10.0f);
@@ -611,7 +611,7 @@ private:
 	{
 		char szName[32];
 		sprintf_s(szName, sizeof(szName), "Enemy_%u", m_uEnemyCount);
-		Zenith_Entity xEnemy(pxSceneData, szName);
+		Zenith_Entity xEnemy = g_xEngine.Scenes().CreateEntity(pxSceneData, szName);
 		xEnemy.SetTransient(false);
 
 		// Offset position based on index

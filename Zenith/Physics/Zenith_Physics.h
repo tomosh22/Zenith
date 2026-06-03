@@ -27,7 +27,7 @@
 #undef ZENITH_PHYSICS_ZONE_WAS_SET
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Collections/Zenith_Vector.h"
-#include "EntityComponent/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Entity.h"
 
 class Zenith_CameraComponent;
 

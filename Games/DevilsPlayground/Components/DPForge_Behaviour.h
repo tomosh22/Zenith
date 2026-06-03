@@ -18,8 +18,8 @@
 #include "Components/DPItemBase_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_AudioBus.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
@@ -85,7 +85,7 @@ protected:
 			if (pxInputScene != nullptr)
 			{
 				Zenith_Entity xInputEnt = pxInputScene->TryGetEntity(xInput);
-				if (xInputEnt.IsValid()) g_xEngine.Scenes().Destroy(xInputEnt);
+				if (xInputEnt.IsValid()) xInputEnt.Destroy();
 			}
 		}
 

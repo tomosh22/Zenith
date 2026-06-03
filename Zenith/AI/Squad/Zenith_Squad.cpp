@@ -2,8 +2,8 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Zenith_AIDebugVariables.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #ifdef ZENITH_TOOLS
