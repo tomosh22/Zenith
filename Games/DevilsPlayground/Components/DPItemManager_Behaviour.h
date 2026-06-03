@@ -48,6 +48,8 @@ public:
 	{
 		// Set the singleton ASAP — dependent OnAwake hooks may already query
 		// it (engine fires Awake on all entities before any OnStart).
+		Zenith_Assert(s_pxInstance == nullptr,
+			"DPItemManager_Behaviour singleton double-instantiated");
 		s_pxInstance = this;
 	}
 

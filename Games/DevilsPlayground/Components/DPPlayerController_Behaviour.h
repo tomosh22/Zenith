@@ -56,6 +56,8 @@ public:
 	{
 		// Singleton: per-scene script, set as soon as OnAwake fires
 		// (engine fires Awake on every script before any OnStart).
+		Zenith_Assert(s_pxInstance == nullptr,
+			"DPPlayerController_Behaviour singleton double-instantiated");
 		s_pxInstance = this;
 	}
 

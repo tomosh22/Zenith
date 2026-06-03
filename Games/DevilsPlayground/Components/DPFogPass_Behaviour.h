@@ -61,6 +61,8 @@ public:
 		// g_xFogHoles + g_xMemoryReveals in PublicInterfaces.cpp so the
 		// tables die with the scene that owns them (2026-05-17 Phase B
 		// ownership refactor).
+		Zenith_Assert(s_pxInstance == nullptr,
+			"DPFogPass_Behaviour singleton double-instantiated");
 		s_pxInstance = this;
 	}
 

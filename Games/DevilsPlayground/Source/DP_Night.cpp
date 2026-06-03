@@ -56,6 +56,10 @@ namespace DP_Night
 		return pxCtrl->m_fNightRemainingSec;
 	}
 
+	// "Night mode is running" -- stays true even after the dawn timer hits
+	// zero and DP_OnRunLost{Dawn} has been dispatched (the flag is only
+	// cleared by Reset() / a fresh StartNight). Callers that need the dawn
+	// EDGE specifically should use HasDawnReached() instead.
 	bool IsNightActive()
 	{
 		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();

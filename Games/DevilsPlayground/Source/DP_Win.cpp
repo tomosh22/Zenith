@@ -10,6 +10,7 @@
 #include "../Components/DPPlayerController_Behaviour.h"
 
 #include <cstdint>
+#include <bit>
 
 namespace DP_Win
 {
@@ -44,12 +45,9 @@ namespace DP_Win
 		// and "3 of 5" without touching code.
 		const int iRequired = DP_Tuning::Get<int>(
 			"night.reagents_required_for_victory");
-		// Manual popcount -- avoids std::popcount C++20 header dep.
-		int iCollected = 0;
-		for (uint32_t u = pxCtrl->m_uCollectedObjectivesMask; u; u >>= 1)
-		{
-			iCollected += static_cast<int>(u & 1u);
-		}
+		// Count set objective bits (3-of-5 default victory threshold).
+		const int iCollected =
+			static_cast<int>(std::popcount(pxCtrl->m_uCollectedObjectivesMask));
 		if (iCollected >= iRequired && !pxCtrl->m_bHasWon)
 		{
 			pxCtrl->m_bHasWon = true;

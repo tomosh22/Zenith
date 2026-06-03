@@ -118,7 +118,7 @@ namespace DPProcLevel
 
 	struct GameElement
 	{
-		GameElementType eType;
+		GameElementType eType       = GameElementType::SpawnPoint;
 		float           fX = 0.0f;
 		float           fZ = 0.0f;
 		// Which room this element sits in. For a Door (post-v2): the

@@ -312,7 +312,12 @@ public:
 		// over with a freshly requested path to the possessed villager.
 		const Zenith_EntityID xCurrentTarget =
 			xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-		if (xCurrentTarget.IsValid() && !m_xLastSeenTarget.IsValid())
+		// Reset on ANY change to a new valid target -- both INVALID->A and a
+		// direct A->B villager switch. The old `!m_xLastSeenTarget.IsValid()`
+		// edge only fired on INVALID->valid, so a direct possessed-target swap
+		// (valid A -> valid B) skipped the reset and left the priest pursuing A
+		// for the in-flight branch's remaining ~1s.
+		if (xCurrentTarget.IsValid() && xCurrentTarget != m_xLastSeenTarget)
 		{
 			m_xTree.Reset(m_xParentEntity, xBB);
 		}
@@ -557,15 +562,15 @@ private:
 	// init still produces sensible behaviour.
 	float m_fSuspicionRadius     = 15.0f;
 	float m_fInvestigateMaxAge   = 5.0f;
-	float m_fHearingRange        = 30.0f;
+	float m_fHearingRange        = 25.0f;
 	float m_fHearingLoudnessThr  = 0.05f;
-	float m_fSightRange          = 25.0f;
-	float m_fSightFOV            = 110.0f;
+	float m_fSightRange          = 17.0f;
+	float m_fSightFOV            = 90.0f;
 	float m_fSightPeripheral     = 130.0f;
 	float m_fSightEyeHeight      = 1.6f;
 	float m_fSightAwarenessGain  = 2.0f;
 	float m_fSightAwarenessDecay = 0.5f;
-	float m_fMoveSpeed           = 7.0f;
+	float m_fMoveSpeed           = 4.5f;
 	float m_fApprehendRange      = 2.0f;
 
 #ifdef ZENITH_INPUT_SIMULATOR

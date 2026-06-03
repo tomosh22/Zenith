@@ -41,6 +41,8 @@
 
 void DPProcLevelBootstrap_Behaviour::OnAwake()
 {
+	Zenith_Assert(s_pxInstance == nullptr,
+		"DPProcLevelBootstrap_Behaviour singleton double-instantiated");
 	s_pxInstance = this;
 
 #if defined(_MSC_VER)

@@ -33,7 +33,6 @@
 //     1; the policy lives here ready to flex when V2 lands.
 // ============================================================================
 
-#include "Zenith.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "ZenithECS/Zenith_Entity.h"

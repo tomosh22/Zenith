@@ -342,6 +342,12 @@ private:
 					// see the door knows it's locked. The particles system
 					// fires a red rejection puff; the HUD raises a
 					// "Locked -- needs <key>" line for ~2 s.
+						// Only the possessed (player) villager surfaces this --
+						// the priest + other non-possessed actors probe nearby
+						// doors every frame via DP_AI::OpenNearbyDoorsFor and
+						// would otherwise spam DP_OnDoorLockRejected (HUD flicker
+						// + false telemetry).
+						if (xVillager != DP_Player::GetPossessedVillager()) { return; }
 					Zenith_EventDispatcher::Get().Dispatch(
 						DP_OnDoorLockRejected{ xVillager,
 						                       m_xParentEntity.GetEntityID(),

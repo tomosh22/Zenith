@@ -769,7 +769,7 @@ namespace DPProcLevel
 		// --------------------------------------------------------------------
 		// Graph helpers (already integer; pulled from the original code).
 		// --------------------------------------------------------------------
-		Zenith_Vector<bool> BfsReachable(const LevelLayout& xLayout, RoomId iStart, int32_t iSkipCorridor)
+		Zenith_Vector<bool> DfsReachable(const LevelLayout& xLayout, RoomId iStart, int32_t iSkipCorridor)
 		{
 			Zenith_Vector<bool> abVisited;
 			for (uint32_t i = 0; i < xLayout.axRooms.GetSize(); ++i) abVisited.PushBack(false);
@@ -1304,7 +1304,7 @@ namespace DPProcLevel
 				return abVisited;
 			};
 			const Zenith_Vector<bool> abNoDoor   = BfsSkippingMany(xSpawn);
-			const Zenith_Vector<bool> abWithDoor = BfsReachable(xLayout, xSpawn, -1);
+			const Zenith_Vector<bool> abWithDoor = DfsReachable(xLayout, xSpawn, -1);
 
 			// Iron-reachability check scales with the locked-door count: each
 			// locked door needs ONE iron pickup the player can reach without

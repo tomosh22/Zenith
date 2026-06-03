@@ -735,8 +735,8 @@ private:
 		m_xHeldItemVisual = INVALID_ENTITY_ID;
 	}
 
-	float m_fMaxLife        = 30.0f;
-	float m_fRemainingLife  = 30.0f;
+	float m_fMaxLife        = 60.0f;
+	float m_fRemainingLife  = 60.0f;
 	// MVP-0.2.3: archetype id (resolved at OnAwake via DP_Archetypes). Default
 	// "Farmhand" keeps pre-MVP-0.2.3 stats (life=30s, jog=8m/s) for scenes
 	// that don't yet override per-villager. Updated through SetArchetype()
