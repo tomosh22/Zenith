@@ -397,16 +397,63 @@ private:
 		DP_Player::RemoveHeldItem(xVillager);
 	}
 
+	// Internal commit helper shared by the immediate-possession path and
+	// the channel-completion path in DP_Player::TryVoluntaryPossessSwitch /
+	// TickChannel. Was an anon-namespace free function in DP_Player.cpp;
+	// promoted to a private static member so it can write the private
+	// possession/anchor/scent state without befriending an unnameable
+	// anon-namespace function (Phase: encapsulation of the per-run state
+	// block below).
+	static void CommitVoluntaryPossession(
+		DPPlayerController_Behaviour& xCtrl,
+		Zenith_EntityID xId,
+		const Zenith_Maths::Vector3& xNewPos,
+		bool bGotNewPos);
+
 	static inline DPPlayerController_Behaviour* s_pxInstance = nullptr;
 
 	// State block (held-items + demon-scent maps + the per-run state
 	// migrated in Phase 5.2 from PublicInterfaces.cpp anon-namespace
-	// globals). Public so the DP_Player / DP_Win / DP_Night namespace
-	// functions in Source/ can read + write through Instance() without
-	// needing a forwarder per field. Lifetime is tied to this script
-	// instance, which is per-scene singleton — scene unload destroys
-	// every field via the script's OnDestroy.
-public:
+	// globals). PRIVATE: the DP_Player / DP_Win / DP_Night namespace
+	// functions in Source/ that read + write these fields are befriended
+	// individually below (the function declarations are visible because
+	// this header already includes Source/PublicInterfaces.h). Lifetime
+	// is tied to this script instance, which is per-scene singleton —
+	// scene unload destroys every field via the script's OnDestroy.
+private:
+	// --- Friends: the exact DP_* namespace functions that read/write the
+	//     per-run state members below. Keeping the data private while these
+	//     impls (in DP_Player.cpp / DP_Win.cpp / DP_Night.cpp) reach in via
+	//     Instance()->m_field requires friending each one by its exact
+	//     signature. CommitVoluntaryPossession is itself a private static
+	//     member (declared above), so its sole caller is in the list too.
+	friend Zenith_EntityID DP_Player::GetPossessedVillager();
+	friend void            DP_Player::SetPossessedVillager(Zenith_EntityID xId);
+	friend bool            DP_Player::TryVoluntaryPossessSwitch(Zenith_EntityID xId);
+	friend void            DP_Player::TickPossessionCooldown(float fDt);
+	friend float           DP_Player::GetPossessionCooldownRemaining();
+	friend void            DP_Player::WriteHighestScentToBlackboard();
+	friend bool            DP_Player::IsChanneling();
+	friend Zenith_EntityID DP_Player::GetChannelTarget();
+	friend float           DP_Player::GetChannelRemaining();
+	friend void            DP_Player::TickChannel(float fDt);
+	friend void            DP_Player::InterruptChannel();
+	friend void            DP_Player::ResetForNewRun();
+
+	friend uint32_t        DP_Win::GetCollectedObjectivesMask();
+	friend bool            DP_Win::HasWon();
+	friend void            DP_Win::NotifyObjectiveCollected(DP_ItemTag eObjective,
+	                                                        Zenith_EntityID xVillager,
+	                                                        Zenith_EntityID xPentagram);
+	friend void            DP_Win::Reset();
+
+	friend void            DP_Night::StartNight(float fDurationSeconds);
+	friend void            DP_Night::TickNight(float fDt);
+	friend float           DP_Night::GetNightTimeRemaining();
+	friend bool            DP_Night::IsNightActive();
+	friend bool            DP_Night::HasDawnReached();
+	friend void            DP_Night::Reset();
+
 	// Held-item registry: one entry per villager holding an item.
 	Zenith_HashMap<Zenith_EntityID, DPVillagerHeldRecord> m_xHeldItems;
 

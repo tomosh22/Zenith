@@ -37,42 +37,47 @@ namespace
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
 		return true;
 	}
+}
 
-	// Internal commit helper used by both the immediate-possession path
-	// and the channel-completion path in TryVoluntaryPossessSwitch.
-	void CommitVoluntaryPossession(
-		DPPlayerController_Behaviour& xCtrl,
-		Zenith_EntityID xId,
-		const Zenith_Maths::Vector3& xNewPos,
-		bool bGotNewPos)
+// Internal commit helper used by both the immediate-possession path and
+// the channel-completion path in TryVoluntaryPossessSwitch. Promoted from
+// an anon-namespace free function to a private static member of the
+// controller so it can write the now-private possession/anchor/scent
+// state (an anon-namespace free function can't be befriended). Its sole
+// callers, DP_Player::TryVoluntaryPossessSwitch + TickChannel, are in the
+// controller's friend list and so can call this private static member.
+void DPPlayerController_Behaviour::CommitVoluntaryPossession(
+	DPPlayerController_Behaviour& xCtrl,
+	Zenith_EntityID xId,
+	const Zenith_Maths::Vector3& xNewPos,
+	bool bGotNewPos)
+{
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+		"CommitVoluntaryPossession must be called from main thread");
+	xCtrl.m_xPossessedVillager = xId;
+	xCtrl.m_fPossessionCooldownSec =
+		DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+
+	if (bGotNewPos)
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
-			"CommitVoluntaryPossession must be called from main thread");
-		xCtrl.m_xPossessedVillager = xId;
-		xCtrl.m_fPossessionCooldownSec =
-			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+		xCtrl.m_xPossessionAnchor = xNewPos;
+		xCtrl.m_bHasPossessionAnchor = true;
+	}
+	else
+	{
+		xCtrl.m_bHasPossessionAnchor = false;
+	}
 
-		if (bGotNewPos)
-		{
-			xCtrl.m_xPossessionAnchor = xNewPos;
-			xCtrl.m_bHasPossessionAnchor = true;
-		}
-		else
-		{
-			xCtrl.m_bHasPossessionAnchor = false;
-		}
-
-		// MVP-1.6 scent: only successful possession bumps. Tuning.json's
-		// scent comment explicitly says channel-interrupted switches
-		// produce no scent.
-		if (xId.IsValid())
-		{
-			const float fPerPossession =
-				DP_Tuning::Get<float>("possession.demon_scent_per_possession");
-			const float fMaxScent =
-				DP_Tuning::Get<float>("possession.demon_scent_max");
-			xCtrl.BumpDemonScent(xId, fPerPossession, fMaxScent);
-		}
+	// MVP-1.6 scent: only successful possession bumps. Tuning.json's
+	// scent comment explicitly says channel-interrupted switches
+	// produce no scent.
+	if (xId.IsValid())
+	{
+		const float fPerPossession =
+			DP_Tuning::Get<float>("possession.demon_scent_per_possession");
+		const float fMaxScent =
+			DP_Tuning::Get<float>("possession.demon_scent_max");
+		xCtrl.BumpDemonScent(xId, fPerPossession, fMaxScent);
 	}
 }
 
@@ -202,7 +207,8 @@ namespace DP_Player
 			return true;
 		}
 
-		CommitVoluntaryPossession(*pxCtrl, xId, xNewPos, bGotNewPos);
+		DPPlayerController_Behaviour::CommitVoluntaryPossession(
+			*pxCtrl, xId, xNewPos, bGotNewPos);
 		return true;
 	}
 
@@ -289,7 +295,8 @@ namespace DP_Player
 			Zenith_Maths::Vector3 xCommitPos(0.0f);
 			const bool bGotPos =
 				xTarget.IsValid() && TryGetVillagerPos(xTarget, xCommitPos);
-			CommitVoluntaryPossession(*pxCtrl, xTarget, xCommitPos, bGotPos);
+			DPPlayerController_Behaviour::CommitVoluntaryPossession(
+				*pxCtrl, xTarget, xCommitPos, bGotPos);
 		}
 	}
 
