@@ -39,7 +39,6 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Components/DP_BT_Nodes.h"
-#include "Components/DPVillager_Behaviour.h"
 
 class Priest_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -312,7 +311,12 @@ public:
 		// over with a freshly requested path to the possessed villager.
 		const Zenith_EntityID xCurrentTarget =
 			xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-		if (xCurrentTarget.IsValid() && !m_xLastSeenTarget.IsValid())
+		// Reset on ANY change to a new valid target -- both INVALID->A and a
+		// direct A->B villager switch. The old `!m_xLastSeenTarget.IsValid()`
+		// edge only fired on INVALID->valid, so a direct possessed-target swap
+		// (valid A -> valid B) skipped the reset and left the priest pursuing A
+		// for the in-flight branch's remaining ~1s.
+		if (xCurrentTarget.IsValid() && xCurrentTarget != m_xLastSeenTarget)
 		{
 			m_xTree.Reset(m_xParentEntity, xBB);
 		}
@@ -436,14 +440,14 @@ private:
 			for (uint32_t i = 0; i < paxPerceived->GetSize(); ++i)
 			{
 				const Zenith_EntityID xCandidate = paxPerceived->Get(i).m_xEntityID;
-				if (!IsPossessedVillager(xCandidate)) continue;
+				if (!DP_Player::IsPossessedVillager(xCandidate)) continue;
 				// MVP-2.1.6: Beggar archetype filter. Even when
 				// possessed AND directly in sight, a Beggar is never
 				// the priest's target. (Future Variant aelfrics can
 				// override this -- their bridges will pick whichever
 				// archetype filter they care about; the canonical
 				// MVP Aelfric just skips Beggar.)
-				if (IsBeggarVillager(xCandidate)) continue;
+				if (DP_Player::IsBeggarVillager(xCandidate)) continue;
 				xTargetWithDevil = xCandidate;
 				break;
 			}
@@ -471,42 +475,6 @@ private:
 			xBB.SetVector3(DP_AI::BB_KEY_INVESTIGATE_POS, xHeard.m_xPosition);
 			xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, true);
 		}
-	}
-
-	bool IsPossessedVillager(Zenith_EntityID xCandidate) const
-	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
-		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		Zenith_ScriptComponent& xScript = xEnt.GetComponent<Zenith_ScriptComponent>();
-		DPVillager_Behaviour* pxV = xScript.GetScript<DPVillager_Behaviour>();
-		return pxV != nullptr && pxV->IsPossessed();
-	}
-
-	// MVP-2.1.6: Beggar archetype is invisible to Aelfric. The priest's
-	// perception still produces hearing/sight stimuli for the Beggar
-	// (which is correct -- physical bodies still cast shadows and make
-	// footsteps), but the BB_KEY_TARGET_WITH_DEVIL bridge filters them
-	// out so the BT's pursuit branch never selects a Beggar. The GDD
-	// framing: "Aelfric's gaze slides off Beggars; he can't fix on
-	// them as a target."
-	//
-	// Returns false for non-villager entities (priests, items, etc),
-	// for villagers without a Beggar archetype tag, and for unscriptd
-	// entities -- the filter only fires on explicit Beggar identity.
-	bool IsBeggarVillager(Zenith_EntityID xCandidate) const
-	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
-		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
-		if (pxV == nullptr) return false;
-		return pxV->GetArchetypeId() == "Beggar";
 	}
 
 	void ApplyVelocityToBodyIfPresent()
@@ -557,15 +525,15 @@ private:
 	// init still produces sensible behaviour.
 	float m_fSuspicionRadius     = 15.0f;
 	float m_fInvestigateMaxAge   = 5.0f;
-	float m_fHearingRange        = 30.0f;
+	float m_fHearingRange        = 25.0f;
 	float m_fHearingLoudnessThr  = 0.05f;
-	float m_fSightRange          = 25.0f;
-	float m_fSightFOV            = 110.0f;
+	float m_fSightRange          = 17.0f;
+	float m_fSightFOV            = 90.0f;
 	float m_fSightPeripheral     = 130.0f;
 	float m_fSightEyeHeight      = 1.6f;
 	float m_fSightAwarenessGain  = 2.0f;
 	float m_fSightAwarenessDecay = 0.5f;
-	float m_fMoveSpeed           = 7.0f;
+	float m_fMoveSpeed           = 4.5f;
 	float m_fApprehendRange      = 2.0f;
 
 #ifdef ZENITH_INPUT_SIMULATOR

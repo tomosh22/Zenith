@@ -229,7 +229,7 @@ The project supports Android (per Sharpmake configs) but the GDD targets Switch 
 
 **Bridge cost:** ~6 months engine-team work across all three platforms. Out of scope for this analysis but on the critical path.
 
-### 3.10 Procgen `ValidateSolvability` warns instead of reject + retry
+### 3.10 Procgen `ValidateSolvability` warns instead of reject + retry — RESOLVED 2026-06-03
 
 `DPProcLevel_Generator.cpp::ValidateSolvability` emits a warning when a generated layout is unsolvable but lets `Generate` return the layout anyway. Per the 2026-05-22 8-personality matrix, **seed 0** produces such a layout -- the pentagram is behind multiple locked-door corridors, the bot only forges 1 key per run, and no personality can deliver any objectives. Excluded from the canonical 10-seed test set.
 
@@ -241,9 +241,24 @@ The project supports Android (per Sharpmake configs) but the GDD targets Switch 
 
 Seed 1 now wins on 6 / 8 personalities (only Speedrunner + Relay still <3 placements). Seed 0 remains the only unwinnable seed in the canonical set (its problem is layout reachability, not cost).
 
-**Remaining fix (still deferred for seed 0):** make `ValidateSolvability` reject + retry with the next seed-rotation when reachability fails (the generator already supports re-seeding internally). Seed-cost gates aren't needed any more given the v33 bot-side + door-side fixes above.
+**RESOLVED 2026-06-03 (arch-review batch D3):** `Generate` now validates config
+once (hard failure, no retry) and then retries `GenerateOnce` on a
+deterministically-derived seed (splitmix64 of `base + attempt*GOLDEN`) until the
+layout is solvable, up to 16 attempts; it returns `false` only if every attempt
+is unsolvable (`xOut` then holds the last attempt). Attempt 0 uses the input seed
+verbatim, so already-solvable seeds are byte-identical to the pre-retry generator.
+Seed 0 is now solvable -- verified by `Test_ProcLevel_RetriesUnsolvableSeed`
+(asserts `Generate(0)` returns true AND the public `IsLayoutSolvable` oracle
+passes) -- so it can be re-added to the canonical matrix set. A new
+`GenerateSinglePass` entry point returns the raw single-pass layout (no retry)
+for structural tests that intentionally inspect possibly-unsolvable configs.
 
-**Bridge cost:** ~1 engineering day (procgen change + add a test that confirms `Generate` retries on a known-bad seed and produces a different solvable layout).
+**Follow-up (CI / not runnable in this checkout):** re-run the seed-matrix and
+re-validate the two balance criteria, and re-baseline the cross-config
+`[ProcGenHash]` goldens -- batch D's integer-math determinism fixes (forge-room
+selection + priest-spawn inset) and the objective-relocation shuffle change the
+generator output for all seeds (intended). The `Tools/` matrix scripts are not
+present in this checkout.
 
 ### 3.11 Bot pathfinding duplicates the engine navmesh
 

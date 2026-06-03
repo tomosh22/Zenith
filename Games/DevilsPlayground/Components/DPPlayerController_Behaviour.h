@@ -27,8 +27,6 @@
 #include "Source/DPInputActions.h"
 #include "Source/DPParticles.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
 
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
@@ -56,7 +54,12 @@ public:
 	{
 		// Singleton: per-scene script, set as soon as OnAwake fires
 		// (engine fires Awake on every script before any OnStart).
+		Zenith_Assert(s_pxInstance == nullptr,
+			"DPPlayerController_Behaviour singleton double-instantiated");
 		s_pxInstance = this;
+		// B2: force a fresh high-scent blackboard write on the first OnUpdate
+		// so freshly-created AI agents (spawned at scene start) get the value.
+		m_bHighScentBlackboardDirty = true;
 	}
 
 	void OnDestroy() ZENITH_FINAL override
@@ -219,23 +222,7 @@ public:
 		// state legible.
 		{
 			Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
-			bool bIsBeggar = false;
-			if (xPossessed.IsValid())
-			{
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPossessed);
-				if (pxScene != nullptr)
-				{
-					Zenith_Entity xV = pxScene->TryGetEntity(xPossessed);
-					if (xV.IsValid() && xV.HasComponent<Zenith_ScriptComponent>())
-					{
-						DPVillager_Behaviour* pxV =
-							xV.GetComponent<Zenith_ScriptComponent>()
-							  .GetScript<DPVillager_Behaviour>();
-						bIsBeggar = (pxV != nullptr && pxV->GetArchetypeId() == "Beggar");
-					}
-				}
-			}
+			bool bIsBeggar = xPossessed.IsValid() && DP_Player::IsBeggarVillager(xPossessed);
 			DP_Particles::UpdateBeggarStealthAura(xPossessed, bIsBeggar);
 
 			const Zenith_EntityID xChannelTarget = DP_Player::GetChannelTarget();
@@ -305,41 +292,69 @@ private:
 		// still snaps onto it.
 		constexpr double kMaxPixelDistSq = 120.0 * 120.0;
 
-		Zenith_EntityID xBest;
-		double fBestSq = kMaxPixelDistSq;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&](Zenith_EntityID xId, DPVillager_Behaviour&)
-			{
-				Zenith_SceneData* pxS = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-				if (pxS == nullptr) return;
-				Zenith_Entity xEnt = pxS->TryGetEntity(xId);
-				if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
-				Zenith_Maths::Vector3 xWorld;
-				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xWorld);
-				// Aim at body centre rather than feet — the visible silhouette
-				// is centred ~1 m above the entity origin.
-				xWorld.y += 1.0f;
-				const Zenith_Maths::Vector4 xClip = xVP *
-					Zenith_Maths::Vector4(xWorld.x, xWorld.y, xWorld.z, 1.0f);
-				if (xClip.w <= 1e-4f) return;
-				const float fNdcX = xClip.x / xClip.w;
-				const float fNdcY = xClip.y / xClip.w;
-				const double fSx = (fNdcX + 1.0f) * 0.5f * static_cast<float>(iW);
-				const double fSy = (fNdcY + 1.0f) * 0.5f * static_cast<float>(iH);
-				const double fDx = fSx - xMousePos.x;
-				const double fDy = fSy - xMousePos.y;
-				const double fSq = fDx * fDx + fDy * fDy;
-				if (fSq < fBestSq) { fBestSq = fSq; xBest = xId; }
-			});
+		// Screen-space pick context. Carried through DP_Player::ForEach-
+		// VillagerInActiveScene's function-pointer callback so the villager
+		// type-filter lives in PublicInterfaces.cpp (the controller header no
+		// longer needs DPVillager_Behaviour.h). The picking math itself is
+		// unchanged from the previous inline lambda.
+		PickContext xCtx;
+		xCtx.m_xVP        = xVP;
+		xCtx.m_iW         = iW;
+		xCtx.m_iH         = iH;
+		xCtx.m_xMousePos  = xMousePos;
+		xCtx.m_fBestSq    = kMaxPixelDistSq;
 
-		if (xBest.IsValid())
+		DP_Player::ForEachVillagerInActiveScene(&PickClosestVillagerCb, &xCtx);
+
+		if (xCtx.m_xBest.IsValid())
 		{
 			// Voluntary switch path -- triggers the cooldown gate. If the
 			// click lands within the cooldown window (1.5 s default) the
 			// possession refuses, silently. Cosmetic feedback (HUD flash /
 			// audio) is a future-MVP polish item.
-			DP_Player::TryVoluntaryPossessSwitch(xBest);
+			DP_Player::TryVoluntaryPossessSwitch(xCtx.m_xBest);
 		}
+	}
+
+	// Screen-space pick state shared between HandleClickToPossess and the
+	// function-pointer callback below.
+	struct PickContext
+	{
+		Zenith_Maths::Matrix4    m_xVP;
+		int32_t                  m_iW = 0;
+		int32_t                  m_iH = 0;
+		Zenith_Maths::Vector2_64 m_xMousePos;
+		double                   m_fBestSq = 0.0;
+		Zenith_EntityID          m_xBest;
+	};
+
+	// Per-villager screen-space projection + nearest-to-cursor pick. Identical
+	// math to the previous inline DP_Query lambda; relocated to a static
+	// callback so DP_Player::ForEachVillagerInActiveScene can drive it without
+	// the controller naming DPVillager_Behaviour.
+	static void PickClosestVillagerCb(Zenith_EntityID xId, void* pUser)
+	{
+		PickContext& xCtx = *static_cast<PickContext*>(pUser);
+		Zenith_SceneData* pxS = g_xEngine.Scenes().GetSceneDataForEntity(xId);
+		if (pxS == nullptr) return;
+		Zenith_Entity xEnt = pxS->TryGetEntity(xId);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Maths::Vector3 xWorld;
+		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xWorld);
+		// Aim at body centre rather than feet — the visible silhouette
+		// is centred ~1 m above the entity origin.
+		xWorld.y += 1.0f;
+		const Zenith_Maths::Vector4 xClip = xCtx.m_xVP *
+			Zenith_Maths::Vector4(xWorld.x, xWorld.y, xWorld.z, 1.0f);
+		if (xClip.w <= 1e-4f) return;
+		const float fNdcX = xClip.x / xClip.w;
+		const float fNdcY = xClip.y / xClip.w;
+		const double fSx = (fNdcX + 1.0f) * 0.5f * static_cast<float>(xCtx.m_iW);
+		const double fSy = (fNdcY + 1.0f) * 0.5f * static_cast<float>(xCtx.m_iH);
+		const double fDx = fSx - xCtx.m_xMousePos.x;
+		const double fDy = fSy - xCtx.m_xMousePos.y;
+		const double fSq = fDx * fDx + fDy * fDy;
+		if (fSq < xCtx.m_fBestSq) { xCtx.m_fBestSq = fSq; xCtx.m_xBest = xId; }
 	}
 
 	// MVP-1.4.5: drop verb. G releases the possessed villager's held
@@ -374,14 +389,7 @@ private:
 
 		// Arm the item's post-drop cooldown so DPItemBase::OnUpdate
 		// doesn't immediately re-pick-up from the foot position.
-		if (xI.HasComponent<Zenith_ScriptComponent>())
-		{
-			Zenith_ScriptComponent& xScr = xI.GetComponent<Zenith_ScriptComponent>();
-			if (DPItemBase_Behaviour* pxItemBeh = xScr.GetScript<DPItemBase_Behaviour>())
-			{
-				pxItemBeh->BeginPostDropCooldown();
-			}
-		}
+		DP_Items::BeginPostDropCooldownForItem(xItem);
 
 		// Clear the held-item side-table entry. The villager's
 		// floating held-item visual is rebuilt on the next OnUpdate
@@ -389,22 +397,76 @@ private:
 		DP_Player::RemoveHeldItem(xVillager);
 	}
 
+	// Internal commit helper shared by the immediate-possession path and
+	// the channel-completion path in DP_Player::TryVoluntaryPossessSwitch /
+	// TickChannel. Was an anon-namespace free function in DP_Player.cpp;
+	// promoted to a private static member so it can write the private
+	// possession/anchor/scent state without befriending an unnameable
+	// anon-namespace function (Phase: encapsulation of the per-run state
+	// block below).
+	static void CommitVoluntaryPossession(
+		DPPlayerController_Behaviour& xCtrl,
+		Zenith_EntityID xId,
+		const Zenith_Maths::Vector3& xNewPos,
+		bool bGotNewPos);
+
 	static inline DPPlayerController_Behaviour* s_pxInstance = nullptr;
 
 	// State block (held-items + demon-scent maps + the per-run state
 	// migrated in Phase 5.2 from PublicInterfaces.cpp anon-namespace
-	// globals). Public so the DP_Player / DP_Win / DP_Night namespace
-	// functions in Source/ can read + write through Instance() without
-	// needing a forwarder per field. Lifetime is tied to this script
-	// instance, which is per-scene singleton — scene unload destroys
-	// every field via the script's OnDestroy.
-public:
+	// globals). PRIVATE: the DP_Player / DP_Win / DP_Night namespace
+	// functions in Source/ that read + write these fields are befriended
+	// individually below (the function declarations are visible because
+	// this header already includes Source/PublicInterfaces.h). Lifetime
+	// is tied to this script instance, which is per-scene singleton —
+	// scene unload destroys every field via the script's OnDestroy.
+private:
+	// --- Friends: the exact DP_* namespace functions that read/write the
+	//     per-run state members below. Keeping the data private while these
+	//     impls (in DP_Player.cpp / DP_Win.cpp / DP_Night.cpp) reach in via
+	//     Instance()->m_field requires friending each one by its exact
+	//     signature. CommitVoluntaryPossession is itself a private static
+	//     member (declared above), so its sole caller is in the list too.
+	friend Zenith_EntityID DP_Player::GetPossessedVillager();
+	friend void            DP_Player::SetPossessedVillager(Zenith_EntityID xId);
+	friend bool            DP_Player::TryVoluntaryPossessSwitch(Zenith_EntityID xId);
+	friend void            DP_Player::TickPossessionCooldown(float fDt);
+	friend float           DP_Player::GetPossessionCooldownRemaining();
+	friend void            DP_Player::WriteHighestScentToBlackboard();
+	friend bool            DP_Player::IsChanneling();
+	friend Zenith_EntityID DP_Player::GetChannelTarget();
+	friend float           DP_Player::GetChannelRemaining();
+	friend void            DP_Player::TickChannel(float fDt);
+	friend void            DP_Player::InterruptChannel();
+	friend void            DP_Player::ResetForNewRun();
+
+	friend uint32_t        DP_Win::GetCollectedObjectivesMask();
+	friend bool            DP_Win::HasWon();
+	friend void            DP_Win::NotifyObjectiveCollected(DP_ItemTag eObjective,
+	                                                        Zenith_EntityID xVillager,
+	                                                        Zenith_EntityID xPentagram);
+	friend void            DP_Win::Reset();
+
+	friend void            DP_Night::StartNight(float fDurationSeconds);
+	friend void            DP_Night::TickNight(float fDt);
+	friend float           DP_Night::GetNightTimeRemaining();
+	friend bool            DP_Night::IsNightActive();
+	friend bool            DP_Night::HasDawnReached();
+	friend void            DP_Night::Reset();
+
 	// Held-item registry: one entry per villager holding an item.
 	Zenith_HashMap<Zenith_EntityID, DPVillagerHeldRecord> m_xHeldItems;
 
 	// Demon-scent registry: per-villager scalar, accumulates on possession
 	// + decays per-frame via DP_Player::TickDemonScent.
 	Zenith_HashMap<Zenith_EntityID, float> m_xDemonScent;
+
+	// B2: cache for DP_Player::WriteHighestScentToBlackboard. The dirty flag
+	// forces the first write after OnAwake / ResetForNewRun even when the
+	// highest-scent id is INVALID (a legitimate value), so newly-created or
+	// reset AI blackboards always receive an authoritative value.
+	Zenith_EntityID m_xLastWrittenHighScent     = INVALID_ENTITY_ID;
+	bool            m_bHighScentBlackboardDirty = true;
 
 	// Possession state.
 	Zenith_EntityID       m_xPossessedVillager       = INVALID_ENTITY_ID;

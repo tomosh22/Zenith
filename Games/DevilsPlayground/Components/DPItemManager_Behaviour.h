@@ -22,6 +22,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
+// Contract exception (creation/lifecycle, not a cross-state read): the manager
+// iterates its own DPItemSpawn anchors and instantiates DPItemBase item
+// entities at them. See Components/CLAUDE.md.
 #include "Components/DPItemSpawn_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
 #include "Physics/Zenith_Physics.h"
@@ -48,6 +51,8 @@ public:
 	{
 		// Set the singleton ASAP — dependent OnAwake hooks may already query
 		// it (engine fires Awake on all entities before any OnStart).
+		Zenith_Assert(s_pxInstance == nullptr,
+			"DPItemManager_Behaviour singleton double-instantiated");
 		s_pxInstance = this;
 	}
 

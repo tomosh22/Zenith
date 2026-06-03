@@ -22,4 +22,10 @@ namespace DP_Items
 	// the item-tag side-table that backs GetItemTag / FindItemByTag.
 	void Internal_RegisterItemTag(Zenith_EntityID xItem, DP_ItemTag eTag);
 	void Internal_UnregisterItemTag(Zenith_EntityID xItem);
+
+	// Cross-behaviour forwarder: begin an item's post-drop pickup cooldown.
+	// Mediates DPPlayerController_Behaviour <-> DPItemBase_Behaviour so the
+	// controller header doesn't include the item header (cross-behaviour
+	// rule). No-op when the item can't be resolved to a DPItemBase_Behaviour.
+	void BeginPostDropCooldownForItem(Zenith_EntityID xItem);
 }

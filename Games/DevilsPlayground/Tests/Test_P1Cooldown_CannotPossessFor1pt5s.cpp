@@ -98,6 +98,25 @@ namespace
 		return std::sqrt(fDx * fDx + fDz * fDz);
 	}
 
+	// #9: procgen now assigns varied archetypes. Force a chosen test villager
+	// to Farmhand so possession is IMMEDIATE -- this test isolates the cooldown
+	// gate, not the Devout 0.8s possession channel (covered by the DevoutChannel
+	// tests). ApplyArchetype re-seeds stats + resets life (villager isn't
+	// possessed yet at this point), which is fine for the cooldown sequence.
+	void ForceFarmhand(Zenith_EntityID xId)
+	{
+		if (!xId.IsValid()) return;
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
+		if (pxScene == nullptr) return;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return;
+		if (DPVillager_Behaviour* pxV =
+				xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>())
+		{
+			pxV->ApplyArchetype("Farmhand");
+		}
+	}
+
 	// Pick three distinct villagers that are MUTUALLY within
 	// `possession.range_from_anchor_m` of each other. Required because
 	// MVP-1.8's range gate also fires inside TryVoluntaryPossessSwitch
@@ -216,6 +235,11 @@ static bool Step_P1Cooldown(int iFrame)
 	}
 
 	case kCD_PossessA:
+		// #9: neutralise archetype variety -- force the three test villagers to
+		// Farmhand so each switch possesses immediately (no Devout channel).
+		ForceFarmhand(g_xA);
+		ForceFarmhand(g_xB);
+		ForceFarmhand(g_xC);
 		// Direct write -- baseline state, no cooldown.
 		DP_Player::SetPossessedVillager(g_xA);
 		g_iPhase = kCD_SwitchToB;

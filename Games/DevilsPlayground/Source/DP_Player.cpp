@@ -37,42 +37,47 @@ namespace
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
 		return true;
 	}
+}
 
-	// Internal commit helper used by both the immediate-possession path
-	// and the channel-completion path in TryVoluntaryPossessSwitch.
-	void CommitVoluntaryPossession(
-		DPPlayerController_Behaviour& xCtrl,
-		Zenith_EntityID xId,
-		const Zenith_Maths::Vector3& xNewPos,
-		bool bGotNewPos)
+// Internal commit helper used by both the immediate-possession path and
+// the channel-completion path in TryVoluntaryPossessSwitch. Promoted from
+// an anon-namespace free function to a private static member of the
+// controller so it can write the now-private possession/anchor/scent
+// state (an anon-namespace free function can't be befriended). Its sole
+// callers, DP_Player::TryVoluntaryPossessSwitch + TickChannel, are in the
+// controller's friend list and so can call this private static member.
+void DPPlayerController_Behaviour::CommitVoluntaryPossession(
+	DPPlayerController_Behaviour& xCtrl,
+	Zenith_EntityID xId,
+	const Zenith_Maths::Vector3& xNewPos,
+	bool bGotNewPos)
+{
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+		"CommitVoluntaryPossession must be called from main thread");
+	xCtrl.m_xPossessedVillager = xId;
+	xCtrl.m_fPossessionCooldownSec =
+		DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+
+	if (bGotNewPos)
 	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
-			"CommitVoluntaryPossession must be called from main thread");
-		xCtrl.m_xPossessedVillager = xId;
-		xCtrl.m_fPossessionCooldownSec =
-			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+		xCtrl.m_xPossessionAnchor = xNewPos;
+		xCtrl.m_bHasPossessionAnchor = true;
+	}
+	else
+	{
+		xCtrl.m_bHasPossessionAnchor = false;
+	}
 
-		if (bGotNewPos)
-		{
-			xCtrl.m_xPossessionAnchor = xNewPos;
-			xCtrl.m_bHasPossessionAnchor = true;
-		}
-		else
-		{
-			xCtrl.m_bHasPossessionAnchor = false;
-		}
-
-		// MVP-1.6 scent: only successful possession bumps. Tuning.json's
-		// scent comment explicitly says channel-interrupted switches
-		// produce no scent.
-		if (xId.IsValid())
-		{
-			const float fPerPossession =
-				DP_Tuning::Get<float>("possession.demon_scent_per_possession");
-			const float fMaxScent =
-				DP_Tuning::Get<float>("possession.demon_scent_max");
-			xCtrl.BumpDemonScent(xId, fPerPossession, fMaxScent);
-		}
+	// MVP-1.6 scent: only successful possession bumps. Tuning.json's
+	// scent comment explicitly says channel-interrupted switches
+	// produce no scent.
+	if (xId.IsValid())
+	{
+		const float fPerPossession =
+			DP_Tuning::Get<float>("possession.demon_scent_per_possession");
+		const float fMaxScent =
+			DP_Tuning::Get<float>("possession.demon_scent_max");
+		xCtrl.BumpDemonScent(xId, fPerPossession, fMaxScent);
 	}
 }
 
@@ -202,7 +207,8 @@ namespace DP_Player
 			return true;
 		}
 
-		CommitVoluntaryPossession(*pxCtrl, xId, xNewPos, bGotNewPos);
+		DPPlayerController_Behaviour::CommitVoluntaryPossession(
+			*pxCtrl, xId, xNewPos, bGotNewPos);
 		return true;
 	}
 
@@ -289,7 +295,8 @@ namespace DP_Player
 			Zenith_Maths::Vector3 xCommitPos(0.0f);
 			const bool bGotPos =
 				xTarget.IsValid() && TryGetVillagerPos(xTarget, xCommitPos);
-			CommitVoluntaryPossession(*pxCtrl, xTarget, xCommitPos, bGotPos);
+			DPPlayerController_Behaviour::CommitVoluntaryPossession(
+				*pxCtrl, xTarget, xCommitPos, bGotPos);
 		}
 	}
 
@@ -350,6 +357,23 @@ namespace DP_Player
 						xHighestId = xId;
 					}
 				});
+		}
+
+		// B2: skip the expensive all-scenes x all-AI-agents blackboard write
+		// unless the highest-scent target changed, or a reset / scene-load
+		// flagged the cache dirty. INVALID is a legitimate value, so an
+		// explicit dirty flag (not an INVALID sentinel) is required to force
+		// the first write after a reset. Cache is updated up-front -- the
+		// write below uses the same xHighestId regardless of order.
+		if (pxCtrl != nullptr)
+		{
+			if (!pxCtrl->m_bHighScentBlackboardDirty &&
+				xHighestId == pxCtrl->m_xLastWrittenHighScent)
+			{
+				return;
+			}
+			pxCtrl->m_xLastWrittenHighScent     = xHighestId;
+			pxCtrl->m_bHighScentBlackboardDirty = false;
 		}
 
 		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
@@ -417,6 +441,9 @@ namespace DP_Player
 		// (2026-05-22 Phase 5.2 migration).
 		pxCtrl->m_xHeldItems.Clear();
 		pxCtrl->m_xDemonScent.Clear();
+		// B2: force a fresh high-scent blackboard write next frame.
+		pxCtrl->m_xLastWrittenHighScent     = INVALID_ENTITY_ID;
+		pxCtrl->m_bHighScentBlackboardDirty = true;
 		pxCtrl->m_xPossessedVillager     = INVALID_ENTITY_ID;
 		pxCtrl->m_fPossessionCooldownSec = 0.0f;
 		pxCtrl->m_xPossessionAnchor      = Zenith_Maths::Vector3(0.0f);
@@ -424,5 +451,123 @@ namespace DP_Player
 		pxCtrl->m_xChannelTarget         = INVALID_ENTITY_ID;
 		pxCtrl->m_fChannelRemaining      = 0.0f;
 		pxCtrl->m_bChannelActive         = false;
+	}
+
+	// ========================================================================
+	// Cross-behaviour villager forwarders. Resolve the villager script and
+	// read the requested field. Moved here from Priest_Behaviour /
+	// DPItemBase_Behaviour / DPHUDController_Behaviour so those headers no
+	// longer include DPVillager_Behaviour.h (cross-behaviour rule).
+	// ========================================================================
+
+	bool IsPossessedVillager(Zenith_EntityID xCandidate)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->IsPossessed();
+	}
+
+	bool IsBeggarVillager(Zenith_EntityID xCandidate)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->GetArchetypeId() == "Beggar";
+	}
+
+	bool IsChildVillagerWithToolTag(Zenith_EntityID xVillager, DP_ItemTag eTag)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->GetArchetypeId() == "Child" && DP_IsToolTag(eTag);
+	}
+
+	float GetVillagerRemainingLife(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return 0.0f;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return 0.0f;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV ? pxV->GetRemainingLife() : 0.0f;
+	}
+
+	float GetVillagerMaxLife(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return 0.0f;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return 0.0f;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV ? pxV->GetMaxLife() : 0.0f;
+	}
+
+	const char* GetVillagerArchetypeId(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return "";
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return "";
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV ? pxV->GetArchetypeId().c_str() : "";
+	}
+
+	bool IsVillagerSprintingNow(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->IsSprintingNow();
+	}
+
+	bool IsVillagerWalkQuietNow(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->IsWalkQuietNow();
+	}
+
+	void CountVillagers(int& iOutAlive, int& iOutTotal)
+	{
+		iOutAlive = 0;
+		iOutTotal = 0;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&iOutAlive, &iOutTotal](Zenith_EntityID, DPVillager_Behaviour& xV)
+			{
+				++iOutTotal;
+				if (xV.GetRemainingLife() > 0.0f) ++iOutAlive;
+			});
+	}
+
+	void ForEachVillagerInActiveScene(void (*pfnCallback)(Zenith_EntityID, void*),
+	                                  void* pUserData)
+	{
+		if (pfnCallback == nullptr) return;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[pfnCallback, pUserData](Zenith_EntityID xId, DPVillager_Behaviour&)
+			{
+				pfnCallback(xId, pUserData);
+			});
 	}
 }

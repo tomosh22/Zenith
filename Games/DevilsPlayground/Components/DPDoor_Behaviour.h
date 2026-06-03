@@ -31,7 +31,6 @@
  */
 
 #include "Components/DPInteractable_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
 #include "Collections/Zenith_Vector.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -342,6 +341,12 @@ private:
 					// see the door knows it's locked. The particles system
 					// fires a red rejection puff; the HUD raises a
 					// "Locked -- needs <key>" line for ~2 s.
+						// Only the possessed (player) villager surfaces this --
+						// the priest + other non-possessed actors probe nearby
+						// doors every frame via DP_AI::OpenNearbyDoorsFor and
+						// would otherwise spam DP_OnDoorLockRejected (HUD flicker
+						// + false telemetry).
+						if (xVillager != DP_Player::GetPossessedVillager()) { return; }
 					Zenith_EventDispatcher::Get().Dispatch(
 						DP_OnDoorLockRejected{ xVillager,
 						                       m_xParentEntity.GetEntityID(),
@@ -409,7 +414,7 @@ private:
 			// To make the rule symmetric, also check whether the
 			// xVillager is the possessed villager AND a Pentagram
 			// is in range.
-			if (IsPentagramInRange(xVillager))
+			if (DP_Win::IsPentagramInRange(xVillager))
 			{
 				break;
 			}
@@ -492,6 +497,11 @@ private:
 		// m_axPolygons vector itself isn't reallocated; only the
 		// neighbour-slot data within polygons changes. The cast mirrors
 		// SetPolygonBlocked / SetBlockedAtPoint's existing convention.
+		// The const_cast is only safe because ALL DP navmesh mutation runs on
+		// the main thread (doors stitch in OnStart, toggle BLOCKED in OnUpdate);
+		// assert it so a future off-thread caller trips here rather than racing.
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DPDoor::StitchNavMeshPortal must run on the main thread (const_cast navmesh mutation)");
 		Zenith_NavMesh& xMutable = const_cast<Zenith_NavMesh&>(*pxNavMesh);
 
 		// Probe candidates: along the door's forward axis (most likely
@@ -576,37 +586,6 @@ private:
 		// opens by m_fOpenYaw degrees from wherever it was closed.
 		const float fAngle = glm::radians(m_fClosedYaw + m_fOpenYaw * m_fOpenT);
 		xT.SetRotation(glm::angleAxis(fAngle, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
-	}
-
-	// 2026-05-26: returns true if a Pentagram is within the villager's
-	// F-press range. Used to defer the door's close-on-F-press when
-	// the same F-press is targeting the adjacent pentagram. See the
-	// rationale comment in HandleInteractInternal's DoorAnim::Open case.
-	bool IsPentagramInRange(Zenith_EntityID xVillager) const
-	{
-		if (!xVillager.IsValid()) return false;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
-		if (!xV.IsValid() || !xV.HasComponent<Zenith_TransformComponent>()) return false;
-		Zenith_Maths::Vector3 xVPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
-
-		bool bInRange = false;
-		DP_Query::ForEachScriptInActiveScene<DPPentagram_Behaviour>(
-			[&bInRange, &xVPos, pxScene](Zenith_EntityID xId, DPPentagram_Behaviour& xPent)
-			{
-				if (bInRange) return;  // already found one
-				const float fR = xPent.GetInteractRadius();
-				Zenith_Entity xP = pxScene->TryGetEntity(xId);
-				if (!xP.IsValid() || !xP.HasComponent<Zenith_TransformComponent>()) return;
-				Zenith_Maths::Vector3 xPPos;
-				xP.GetComponent<Zenith_TransformComponent>().GetPosition(xPPos);
-				const float fDx = xVPos.x - xPPos.x;
-				const float fDz = xVPos.z - xPPos.z;
-				if (fDx * fDx + fDz * fDz <= fR * fR) bInRange = true;
-			});
-		return bInRange;
 	}
 
 	// 2026-05-25: re-tinting helper. Builds the variant from the cached

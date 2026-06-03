@@ -22,7 +22,6 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DPMaterials.h"
 #include "Source/DP_Reagents.h"
-#include "Components/DPVillager_Behaviour.h"
 
 class DPItemBase_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -133,29 +132,22 @@ public:
 		// pickup if it's "Child" AND the item is in the tool set
 		// (DP_IsToolTag -- Iron, Key). Objectives + SkeletonKey are
 		// exempt so a Child can still complete the run.
-		if (xV.HasComponent<Zenith_ScriptComponent>())
+		if (DP_Player::IsChildVillagerWithToolTag(xVillager, m_eTag))
 		{
-			DPVillager_Behaviour* pxV =
-				xV.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
-			if (pxV != nullptr
-				&& pxV->GetArchetypeId() == "Child"
-				&& DP_IsToolTag(m_eTag))
-			{
-				// 2026-05-21: telegraph the refusal so the player can
-				// SEE that the Child silently can't carry tools.
-				// Pre-fix this branch was a bare return -- the only
-				// indication was "I walked over an Iron and nothing
-				// happened." The DP_OnChildToolRefused event drives
-				// the ChildToolRefusal particle burst (red X) at the
-				// villager position.
-				Zenith_EventDispatcher::Get().Dispatch(
-					DP_OnChildToolRefused{
-						xVillager,
-						m_xParentEntity.GetEntityID(),
-						m_eTag,
-						xVPos });
-				return;
-			}
+			// 2026-05-21: telegraph the refusal so the player can
+			// SEE that the Child silently can't carry tools.
+			// Pre-fix this branch was a bare return -- the only
+			// indication was "I walked over an Iron and nothing
+			// happened." The DP_OnChildToolRefused event drives
+			// the ChildToolRefusal particle burst (red X) at the
+			// villager position.
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnChildToolRefused{
+					xVillager,
+					m_xParentEntity.GetEntityID(),
+					m_eTag,
+					xVPos });
+			return;
 		}
 
 		// MVP-2.2.2: per-tag pickup channel. For reagents,

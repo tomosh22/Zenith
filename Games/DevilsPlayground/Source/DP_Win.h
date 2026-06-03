@@ -16,4 +16,11 @@ namespace DP_Win
 	                              Zenith_EntityID xVillager  = Zenith_EntityID{},
 	                              Zenith_EntityID xPentagram = Zenith_EntityID{});
 	void Reset();
+
+	// Cross-behaviour forwarder: returns true if a pentagram is within the
+	// villager's F-press range. Mediates DPDoor_Behaviour <-> DPPentagram_Behaviour
+	// without the door header including the pentagram header (cross-behaviour
+	// rule). XZ squared-distance test against each pentagram's own interact
+	// radius; short-circuits on the first hit.
+	bool IsPentagramInRange(Zenith_EntityID xVillager);
 }

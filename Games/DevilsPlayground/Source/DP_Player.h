@@ -47,6 +47,55 @@ namespace DP_Player
 	// channel state.
 	void ResetForNewRun();
 
+	// ========================================================================
+	// Cross-behaviour villager forwarders. These mediate other behaviours'
+	// access to DPVillager_Behaviour state so the caller's header doesn't have
+	// to include the villager header (cross-behaviour rule). Each resolves the
+	// villager script via Zenith_ScriptComponent and reads the requested field.
+	// ========================================================================
+
+	// True if the candidate resolves to a possessed DPVillager_Behaviour.
+	// Used by Priest_Behaviour's perception->BB bridge.
+	bool IsPossessedVillager(Zenith_EntityID xCandidate);
+
+	// True if the candidate is a villager whose archetype id == "Beggar".
+	// Used by Priest_Behaviour (Beggar invisible to Aelfric) + the player
+	// controller's BeggarStealthAura.
+	bool IsBeggarVillager(Zenith_EntityID xCandidate);
+
+	// True if the villager is a "Child" archetype AND the tag is a tool tag.
+	// Used by DPItemBase_Behaviour's child-tool-refusal path.
+	bool IsChildVillagerWithToolTag(Zenith_EntityID xVillager, DP_ItemTag eTag);
+
+	// Possessed-villager life accessors for the HUD. Return 0.0f when the
+	// villager can't be resolved.
+	float GetVillagerRemainingLife(Zenith_EntityID xVillager);
+	float GetVillagerMaxLife(Zenith_EntityID xVillager);
+
+	// Possessed-villager archetype id for the HUD. Returns "" when the
+	// villager can't be resolved. The returned pointer is owned by the
+	// villager (valid while it exists -- fine for same-frame HUD use).
+	const char* GetVillagerArchetypeId(Zenith_EntityID xVillager);
+
+	// Possessed-villager movement-state flags for the HUD MovementMode
+	// readout. Both default false when the villager can't be resolved.
+	bool IsVillagerSprintingNow(Zenith_EntityID xVillager);
+	bool IsVillagerWalkQuietNow(Zenith_EntityID xVillager);
+
+	// Count villagers in the active scene. Writes total villager count to
+	// iOutTotal and the count with RemainingLife > 0 to iOutAlive. Both are
+	// initialised to 0 before the scan. Used by the HUD VillagersAlive readout.
+	void CountVillagers(int& iOutAlive, int& iOutTotal);
+
+	// Enumerate every villager EntityID in the active scene via a plain
+	// function-pointer callback (std::function is forbidden engine-wide). The
+	// callback receives the villager id + the opaque pUserData. Lets a caller
+	// iterate villagers WITHOUT naming DPVillager_Behaviour at its call site
+	// (the type filter lives in the .cpp), so the caller's header doesn't need
+	// the villager header. Used by DPPlayerController's click-to-possess pick.
+	void ForEachVillagerInActiveScene(void (*pfnCallback)(Zenith_EntityID, void*),
+	                                  void* pUserData);
+
 #ifdef ZENITH_INPUT_SIMULATOR
 	// Backward-compatible alias for tests that pre-date the rename.
 	inline void ResetForTest() { ResetForNewRun(); }

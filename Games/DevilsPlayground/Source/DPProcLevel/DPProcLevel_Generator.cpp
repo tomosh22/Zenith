@@ -60,6 +60,28 @@ namespace DPProcLevel
 		// freedom and makes the conversion bit-identical across configs.
 		constexpr float kFFromCoord(Coord c)    { return static_cast<float>(c) * 0.001f; }
 
+		// Deterministic integer floor-sqrt (Newton). Integer-only so /fp:fast
+		// can't perturb it across configs. Used by integer-math placement.
+		int64_t ISqrt(int64_t n)
+		{
+			if (n <= 0) return 0;
+			int64_t x = n;
+			int64_t y = (x + 1) / 2;
+			while (y < x) { x = y; y = (x + n / x) / 2; }
+			return x;
+		}
+
+		// Deterministic next-seed for the solvability retry. splitmix64
+		// finalizer on (base + attempt*GOLDEN); pure integer, identical
+		// across Debug/Release. Reuses RngInit's splitmix64 constants.
+		uint64_t DeriveRetrySeed(uint64_t uBaseSeed, uint32_t uAttempt)
+		{
+			uint64_t z = uBaseSeed + static_cast<uint64_t>(uAttempt) * 0x9e3779b97f4a7c15ull;
+			z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+			z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+			return z ^ (z >> 31);
+		}
+
 		// 32-step discrete rotation. Steps of 11.25 deg around +Y. Plenty
 		// of visual variety for a procgen village; eliminates continuous
 		// yaw + the cos/sin FP cascade that came with it.
@@ -769,7 +791,7 @@ namespace DPProcLevel
 		// --------------------------------------------------------------------
 		// Graph helpers (already integer; pulled from the original code).
 		// --------------------------------------------------------------------
-		Zenith_Vector<bool> BfsReachable(const LevelLayout& xLayout, RoomId iStart, int32_t iSkipCorridor)
+		Zenith_Vector<bool> DfsReachable(const LevelLayout& xLayout, RoomId iStart, int32_t iSkipCorridor)
 		{
 			Zenith_Vector<bool> abVisited;
 			for (uint32_t i = 0; i < xLayout.axRooms.GetSize(); ++i) abVisited.PushBack(false);
@@ -1178,18 +1200,21 @@ namespace DPProcLevel
 			// would need updates.
 			RoomId xForgeRoom = kInvalidRoomId;
 			{
-				const Room& xPentR = xLayout.axRooms.Get(static_cast<uint32_t>(xPentRoom));
-				float fBestDist = 1e30f;
+				// D1: integer squared-distance (exact, /fp:fast-safe) off the
+				// integer room centres. sqrt removed -- squared distance keeps
+				// the ordering; ties still break by iteration order (strict <).
+				const RoomI& xPentRI = axRoomsI.Get(static_cast<uint32_t>(xPentRoom));
+				int64_t iBestDistSq = -1;
 				for (uint32_t i = 0; i < axSpawnSide.GetSize(); ++i)
 				{
 					const RoomId xR = axSpawnSide.Get(i);
-					const Room& xRoom = xLayout.axRooms.Get(static_cast<uint32_t>(xR));
-					const float fDx = xRoom.fCentreX - xPentR.fCentreX;
-					const float fDz = xRoom.fCentreZ - xPentR.fCentreZ;
-					const float fDist = std::sqrt(fDx * fDx + fDz * fDz);
-					if (fDist < fBestDist)
+					const RoomI& xRoomI = axRoomsI.Get(static_cast<uint32_t>(xR));
+					const int64_t iDx = static_cast<int64_t>(xRoomI.cx) - xPentRI.cx;
+					const int64_t iDz = static_cast<int64_t>(xRoomI.cz) - xPentRI.cz;
+					const int64_t iDistSq = iDx * iDx + iDz * iDz;
+					if (iBestDistSq < 0 || iDistSq < iBestDistSq)
 					{
-						fBestDist = fDist;
+						iBestDistSq = iDistSq;
 						xForgeRoom = xR;
 					}
 				}
@@ -1304,7 +1329,7 @@ namespace DPProcLevel
 				return abVisited;
 			};
 			const Zenith_Vector<bool> abNoDoor   = BfsSkippingMany(xSpawn);
-			const Zenith_Vector<bool> abWithDoor = BfsReachable(xLayout, xSpawn, -1);
+			const Zenith_Vector<bool> abWithDoor = DfsReachable(xLayout, xSpawn, -1);
 
 			// Iron-reachability check scales with the locked-door count: each
 			// locked door needs ONE iron pickup the player can reach without
@@ -1604,20 +1629,26 @@ namespace DPProcLevel
 					// AI's 4 m OpenNearbyDoorsFor radius, so the
 					// door still opens from frame 1 -- just not while
 					// sweeping the priest's capsule.
-					const float fDx = pxDp->fX - xR.fCentreX;
-					const float fDz = pxDp->fZ - xR.fCentreZ;
-					const float fLen = std::sqrt(fDx * fDx + fDz * fDz);
-					if (fLen > 0.01f)
+					// D2: integer inset (exact, /fp:fast-safe). Room centre from
+					// the integer rooms; the doorpoint via kCoordFromF (single
+					// multiply+cast, no FMA). iTravel is clamped >= 0 so a
+					// doorpoint closer than the inset falls back to the room
+					// centre instead of overshooting past it.
+					const RoomI& xPriestRI = axRoomsI.Get(static_cast<uint32_t>(xPriestRoom));
+					const Coord cCx = xPriestRI.cx;
+					const Coord cCz = xPriestRI.cz;
+					const int64_t iDx = static_cast<int64_t>(kCoordFromF(pxDp->fX)) - cCx;
+					const int64_t iDz = static_cast<int64_t>(kCoordFromF(pxDp->fZ)) - cCz;
+					const int64_t iLenSq = iDx * iDx + iDz * iDz;
+					if (iLenSq > 100)  // > ~10 mm (matches the old fLen > 0.01 m guard)
 					{
-						const float fInset = 2.5f;
-						// If the doorpoint is so close to the room
-						// center that 2.5 m inset would overshoot
-						// (room is small), clamp at room center.
-						const float fT = (fLen > fInset)
-							? (fLen - fInset) / fLen
-							: 0.0f;
-						fSpawnX = xR.fCentreX + fT * fDx;
-						fSpawnZ = xR.fCentreZ + fT * fDz;
+						const int64_t iLen    = ISqrt(iLenSq);
+						const int64_t iInset  = 2500;  // 2.5 m in mm
+						const int64_t iTravel = (iLen > iInset) ? (iLen - iInset) : 0;
+						const Coord cSx = static_cast<Coord>(cCx + (iTravel * iDx) / iLen);
+						const Coord cSz = static_cast<Coord>(cCz + (iTravel * iDz) / iLen);
+						fSpawnX = kFFromCoord(cSx);
+						fSpawnZ = kFFromCoord(cSz);
 					}
 					else
 					{
@@ -1677,14 +1708,35 @@ namespace DPProcLevel
 			const Coord boundsMinZ = kCoordFromF(xLayout.fBoundsMinZ);
 			const Coord boundsMaxX = kCoordFromF(xLayout.fBoundsMaxX);
 			const Coord boundsMaxZ = kCoordFromF(xLayout.fBoundsMaxZ);
-			uint32_t uMoved = 0;
-			for (int i = static_cast<int>(xLayout.axGameElements.GetSize()) - 1;
-			     i >= 0 && uMoved < uCount; --i)
+			// D4: shuffle WHICH objectives go outdoor (was: a backward scan that
+			// always relocated the highest-numbered ones). Collect objective
+			// element indices, Fisher-Yates with the shared integer RNG
+			// (deterministic), then relocate the first uCount that find an
+			// outdoor point. A failed sample does NOT consume the count (matches
+			// the old uMoved<uCount loop).
+			Zenith_Vector<uint32_t> auObjIndices;
+			for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
 			{
-				GameElement& xE = xLayout.axGameElements.Get(static_cast<uint32_t>(i));
-				const uint8_t u = static_cast<uint8_t>(xE.eType);
-				if (u < static_cast<uint8_t>(GameElementType::Objective1) ||
-				    u > static_cast<uint8_t>(GameElementType::Objective5)) continue;
+				const uint8_t u = static_cast<uint8_t>(xLayout.axGameElements.Get(i).eType);
+				if (u >= static_cast<uint8_t>(GameElementType::Objective1) &&
+				    u <= static_cast<uint8_t>(GameElementType::Objective5))
+				{
+					auObjIndices.PushBack(i);
+				}
+			}
+			const uint32_t uN = auObjIndices.GetSize();
+			for (uint32_t i = uN; i > 1u; --i)
+			{
+				const uint32_t j =
+					static_cast<uint32_t>(RngRangeI(rng, 0, static_cast<int32_t>(i) - 1));
+				const uint32_t uTmp        = auObjIndices.Get(i - 1u);
+				auObjIndices.Get(i - 1u)   = auObjIndices.Get(j);
+				auObjIndices.Get(j)        = uTmp;
+			}
+			uint32_t uMoved = 0;
+			for (uint32_t k = 0; k < uN && uMoved < uCount; ++k)
+			{
+				GameElement& xE = xLayout.axGameElements.Get(auObjIndices.Get(k));
 				Coord cx, cz;
 				if (!SampleOutdoorPointI(axRoomsI,
 					boundsMinX, boundsMaxX, boundsMinZ, boundsMaxZ,
@@ -1698,12 +1750,12 @@ namespace DPProcLevel
 	}
 
 	// ============================================================================
-	// Public entry point. The pipeline is identical in shape to the original
-	// (BSP -> Rooms -> Doors+Corridors -> Walls -> GameElements -> AI), but every
-	// step now runs on integer coordinates. The public LevelLayout still uses
-	// float; we convert at the end of each step.
+	// Internal single-pass generation: runs the full integer-coord pipeline
+	// (BSP -> Rooms -> Doors+Corridors -> Walls -> GameElements -> AI) on the
+	// given effective seed and returns whether the result is solvable. The
+	// public Generate() below validates config once and drives the retry loop.
 	// ============================================================================
-	bool Generate(uint64_t uSeed, const GenConfig& xConfig, LevelLayout& xOut)
+	static bool GenerateOnce(uint64_t uSeed, const GenConfig& xConfig, LevelLayout& xOut)
 	{
 		xOut = LevelLayout();
 		xOut.uSeed       = uSeed;
@@ -1721,16 +1773,6 @@ namespace DPProcLevel
 		const Coord halfThick   = kCoordFromF(xConfig.fWallHalfThickness);
 		const Coord doorHalf    = kCoordFromF(xConfig.fDoorGapHalfWidth);
 		const Coord outdoorMargin = kCoordFromF(xConfig.fOutdoorMargin);
-
-		const Coord W = boundsMaxX - boundsMinX;
-		const Coord H = boundsMaxZ - boundsMinZ;
-		if (W < 2 * minRoomSize || H < 2 * minRoomSize)
-		{
-			Zenith_Warning(LOG_CATEGORY_CORE,
-				"DPProcLevel::Generate: bounds %d x %d mm too small for fMinRoomSize=%d mm",
-				W, H, minRoomSize);
-			return false;
-		}
 
 		Rng rng = RngInit(uSeed);
 
@@ -1832,18 +1874,94 @@ namespace DPProcLevel
 		OutdoorRelocateObjectivesI(axRoomsI, xOut, rng,
 			xConfig.uOutdoorObjectiveCount, outdoorMargin);
 
-		if (!ValidateSolvability(xOut))
-		{
-			Zenith_Warning(LOG_CATEGORY_CORE,
-				"DPProcLevel::Generate: seed %llu produced an unsolvable layout",
-				static_cast<unsigned long long>(uSeed));
-			// Same behaviour as the original: don't fail Generate, let the
-			// caller decide what to do with an unsolvable seed.
-		}
+		// Solvability is computed at the SAME point as before (after element
+		// placement / outdoor relocation, before AI placement), so a solvable
+		// seed's rng stream + output stay byte-identical to the pre-retry code.
+		const bool bSolvable = ValidateSolvability(xOut);
 
-		// 6. AI placement.
+		// 6. AI placement -- always runs so xOut is a complete layout even when
+		// unsolvable, and so rng is consumed in the same order as before.
 		PlaceAI_I(axRoomsI, xOut, rng, xConfig);
 
+		return bSolvable;
+	}
+
+	// ============================================================================
+	// Public entry point. Validates config once (hard failure, no retry), then
+	// retries GenerateOnce on a deterministically-derived seed until the layout
+	// is solvable or the attempt budget is exhausted. Attempt 0 uses the input
+	// seed verbatim, so already-solvable seeds are byte-identical to the
+	// pre-retry generator. Returns false only for invalid config, or if every
+	// attempt was unsolvable (xOut then holds the last attempt).
+	// ============================================================================
+	bool Generate(uint64_t uSeed, const GenConfig& xConfig, LevelLayout& xOut)
+	{
+		// Seed-independent config validation -- a too-small bounds config can
+		// never be fixed by a different seed, so fail fast (no retry) and don't
+		// conflate it with "unsolvable seed".
+		const Coord cMinRoom = kCoordFromF(xConfig.fMinRoomSize);
+		const Coord cW = kCoordFromF(xConfig.fBoundsMaxX) - kCoordFromF(xConfig.fBoundsMinX);
+		const Coord cH = kCoordFromF(xConfig.fBoundsMaxZ) - kCoordFromF(xConfig.fBoundsMinZ);
+		if (cW < 2 * cMinRoom || cH < 2 * cMinRoom)
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"DPProcLevel::Generate: bounds %d x %d mm too small for fMinRoomSize=%d mm",
+				cW, cH, cMinRoom);
+			return false;
+		}
+
+		constexpr uint32_t kMaxSolvabilityAttempts = 16u;
+		for (uint32_t uAttempt = 0u; uAttempt < kMaxSolvabilityAttempts; ++uAttempt)
+		{
+			const uint64_t uEffective =
+				(uAttempt == 0u) ? uSeed : DeriveRetrySeed(uSeed, uAttempt);
+			if (GenerateOnce(uEffective, xConfig, xOut))
+			{
+				xOut.uSeed = uSeed;  // echo the INPUT seed (cosmetic; not hashed)
+				return true;
+			}
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"DPProcLevel::Generate: seed %llu attempt %u (effective %llu) unsolvable%s",
+				static_cast<unsigned long long>(uSeed), uAttempt,
+				static_cast<unsigned long long>(uEffective),
+				(uAttempt + 1u < kMaxSolvabilityAttempts) ? " -- retrying" : "");
+		}
+
+		Zenith_Warning(LOG_CATEGORY_CORE,
+			"DPProcLevel::Generate: seed %llu unsolvable after %u attempts -- returning last layout",
+			static_cast<unsigned long long>(uSeed), kMaxSolvabilityAttempts);
+		xOut.uSeed = uSeed;
+		return false;
+	}
+
+	// Public solvability oracle (thin wrapper over the internal validator) so
+	// tests can assert reachability without exposing generator internals.
+	bool IsLayoutSolvable(const LevelLayout& xLayout)
+	{
+		return ValidateSolvability(xLayout);
+	}
+
+	// Single-pass generation for tests / inspection: runs exactly ONE pass on
+	// the given seed (NO solvability retry) and returns true if the config is
+	// valid. xOut is populated regardless of solvability -- query
+	// IsLayoutSolvable separately. Gameplay should use Generate(), which
+	// retries until solvable; this entry point exists so structural tests can
+	// inspect a specific seed's raw layout (e.g. lock-fraction mechanics on a
+	// deliberately-hard, possibly-unsolvable config).
+	bool GenerateSinglePass(uint64_t uSeed, const GenConfig& xConfig, LevelLayout& xOut)
+	{
+		const Coord cMinRoom = kCoordFromF(xConfig.fMinRoomSize);
+		const Coord cW = kCoordFromF(xConfig.fBoundsMaxX) - kCoordFromF(xConfig.fBoundsMinX);
+		const Coord cH = kCoordFromF(xConfig.fBoundsMaxZ) - kCoordFromF(xConfig.fBoundsMinZ);
+		if (cW < 2 * cMinRoom || cH < 2 * cMinRoom)
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"DPProcLevel::GenerateSinglePass: bounds %d x %d mm too small for fMinRoomSize=%d mm",
+				cW, cH, cMinRoom);
+			return false;
+		}
+		GenerateOnce(uSeed, xConfig, xOut);
+		xOut.uSeed = uSeed;
 		return true;
 	}
 }

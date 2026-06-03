@@ -5,8 +5,10 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
 #include "Source/DPProcLevel/DPProcLevel_LevelLayout.h"
+#include "Components/DPProcLevelBootstrap_Behaviour.h"
 
 #include <cstdio>
+#include <cstring>
 
 // ============================================================================
 // Test_ProcLevel_Locks -- P0 unit tests for the door-locking + iron-auto-scale
@@ -86,7 +88,7 @@ static bool Step_LockedFractionRespected(int /*iFrame*/)
 	DPProcLevel::GenConfig xCfgZero;
 	xCfgZero.fDoorLockedFraction = 0.0f;
 	DPProcLevel::LevelLayout xLZero;
-	if (!DPProcLevel::Generate(kSeed, xCfgZero, xLZero))
+	if (!DPProcLevel::GenerateSinglePass(kSeed, xCfgZero, xLZero))
 	{
 		g_szReason = "Generate failed for fraction=0";
 		return false;
@@ -116,7 +118,7 @@ static bool Step_LockedFractionRespected(int /*iFrame*/)
 	DPProcLevel::GenConfig xCfgHalf;
 	xCfgHalf.fDoorLockedFraction = 0.5f;
 	DPProcLevel::LevelLayout xLHalf;
-	if (!DPProcLevel::Generate(kSeed, xCfgHalf, xLHalf))
+	if (!DPProcLevel::GenerateSinglePass(kSeed, xCfgHalf, xLHalf))
 	{
 		g_szReason = "Generate failed for fraction=0.5";
 		return false;
@@ -199,7 +201,7 @@ static bool Step_IronCountMatchesLocks(int /*iFrame*/)
 			DPProcLevel::GenConfig xCfg;
 			xCfg.fDoorLockedFraction = fFrac;
 			DPProcLevel::LevelLayout xL;
-			if (!DPProcLevel::Generate(uSeed, xCfg, xL))
+			if (!DPProcLevel::GenerateSinglePass(uSeed, xCfg, xL))
 			{
 				g_szReason = "Generate failed";
 				return false;
@@ -235,5 +237,70 @@ static const Zenith_AutomatedTest g_xIronCountMatchesLocksTest = {
 	/*requiresGraphics*/ false
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xIronCountMatchesLocksTest);
+
+// -------------------------------------------------------------------------
+// Test_ProcLevel_ArchetypeVariety (#9)
+// The bootstrap assigns varied archetypes (not all Farmhand) to procgen
+// villagers, honouring each MVP archetype's min_spawns, deterministically
+// per seed. Pinned on the assignment helper (no scene needed).
+// -------------------------------------------------------------------------
+namespace ArchetypeVarietyState { bool g_bPass = false; const char* g_szReason = "not run"; }
+
+static void Setup_ArchetypeVariety()
+{
+	ArchetypeVarietyState::g_bPass = false;
+	ArchetypeVarietyState::g_szReason = "not run";
+}
+
+static bool Step_ArchetypeVariety(int /*iFrame*/)
+{
+	using namespace ArchetypeVarietyState;
+	auto CountId = [](const Zenith_Vector<const char*>& a, const char* szId) -> int
+	{
+		int n = 0;
+		for (uint32_t u = 0; u < a.GetSize(); ++u)
+			if (std::strcmp(a.Get(u), szId) == 0) ++n;
+		return n;
+	};
+
+	Zenith_Vector<const char*> a1;
+	DPProcLevelBootstrap_Behaviour::BuildVillagerArchetypeAssignment(17u, 12345ull, a1);
+	if (a1.GetSize() != 17u) { g_szReason = "assignment size != 17"; return false; }
+
+	// All four MVP archetypes must appear (the bug was all-Farmhand).
+	if (CountId(a1, "Farmhand") < 1 || CountId(a1, "Beggar") < 1 ||
+	    CountId(a1, "Devout")   < 1 || CountId(a1, "Child")  < 1)
+	{
+		std::printf("[ArchetypeVariety] missing MVP archetype: F=%d B=%d D=%d C=%d\n",
+			CountId(a1,"Farmhand"), CountId(a1,"Beggar"), CountId(a1,"Devout"), CountId(a1,"Child"));
+		std::fflush(stdout);
+		g_szReason = "not all four MVP archetypes present (archetype assignment missing?)";
+		return false;
+	}
+	// Farmhand stays the bulk of the body pool.
+	if (CountId(a1, "Farmhand") < 9) { g_szReason = "Farmhand not the bulk"; return false; }
+
+	// Deterministic: same seed -> identical assignment.
+	Zenith_Vector<const char*> a2;
+	DPProcLevelBootstrap_Behaviour::BuildVillagerArchetypeAssignment(17u, 12345ull, a2);
+	if (a2.GetSize() != a1.GetSize()) { g_szReason = "size mismatch on repeat"; return false; }
+	for (uint32_t u = 0; u < a1.GetSize(); ++u)
+		if (std::strcmp(a1.Get(u), a2.Get(u)) != 0) { g_szReason = "non-deterministic for same seed"; return false; }
+
+	g_bPass = true; g_szReason = "ok";
+	return false;
+}
+
+static bool Verify_ArchetypeVariety() { return ArchetypeVarietyState::g_bPass; }
+
+static const Zenith_AutomatedTest g_xArchetypeVarietyTest = {
+	"Test_ProcLevel_ArchetypeVariety",
+	&Setup_ArchetypeVariety,
+	&Step_ArchetypeVariety,
+	&Verify_ArchetypeVariety,
+	/*maxFrames*/ 2,
+	/*requiresGraphics*/ false
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xArchetypeVarietyTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
