@@ -40,6 +40,7 @@
 #include "Components/DPOrbitCamera_Behaviour.h"
 
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <cmath>
 #include <algorithm>
@@ -413,6 +414,22 @@ void DPProcLevelBootstrap_Behaviour::BuildVillagerArchetypeAssignment(
 		aszOut.Get(i - 1u)       = aszOut.Get(j);
 		aszOut.Get(j)            = szTmp;
 	}
+
+	// Visibility: log the archetype distribution (confirms #9 is active and
+	// shows the per-seed mix).
+	int iFarm = 0, iBeg = 0, iDev = 0, iChild = 0, iOther = 0;
+	for (uint32_t i = 0; i < aszOut.GetSize(); ++i)
+	{
+		const char* s = aszOut.Get(i);
+		if      (std::strcmp(s, "Farmhand") == 0) ++iFarm;
+		else if (std::strcmp(s, "Beggar")   == 0) ++iBeg;
+		else if (std::strcmp(s, "Devout")   == 0) ++iDev;
+		else if (std::strcmp(s, "Child")    == 0) ++iChild;
+		else                                      ++iOther;
+	}
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[DPProcLevelBootstrap] villager archetypes (n=%u): Farmhand=%d Beggar=%d Devout=%d Child=%d other=%d",
+		aszOut.GetSize(), iFarm, iBeg, iDev, iChild, iOther);
 }
 
 void DPProcLevelBootstrap_Behaviour::SpawnVillagers()
