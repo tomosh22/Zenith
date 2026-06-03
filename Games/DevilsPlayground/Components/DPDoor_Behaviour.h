@@ -497,6 +497,11 @@ private:
 		// m_axPolygons vector itself isn't reallocated; only the
 		// neighbour-slot data within polygons changes. The cast mirrors
 		// SetPolygonBlocked / SetBlockedAtPoint's existing convention.
+		// The const_cast is only safe because ALL DP navmesh mutation runs on
+		// the main thread (doors stitch in OnStart, toggle BLOCKED in OnUpdate);
+		// assert it so a future off-thread caller trips here rather than racing.
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DPDoor::StitchNavMeshPortal must run on the main thread (const_cast navmesh mutation)");
 		Zenith_NavMesh& xMutable = const_cast<Zenith_NavMesh&>(*pxNavMesh);
 
 		// Probe candidates: along the door's forward axis (most likely

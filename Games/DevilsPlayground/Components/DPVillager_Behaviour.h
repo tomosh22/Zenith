@@ -270,7 +270,10 @@ public:
 
 		// Re-anchor the held visual to the villager's current world position.
 		// The marker isn't a proper child entity (no auto-follow yet), so we
-		// reposition it every frame.
+		// reposition it every frame. Intentionally NOT gated behind
+		// m_bIsPossessed: a villager can still hold an item while unpossessed
+		// (e.g. a voluntary switch without a drop), and the IsValid() early-out
+		// makes the per-frame cost negligible for the villagers holding nothing.
 		if (m_xHeldItemVisual.IsValid())
 		{
 			PositionHeldItemVisual();
