@@ -238,6 +238,16 @@ A behaviour can read another behaviour's outputs via:
 Behaviours do **NOT** include each other's headers. That's the
 contract.
 
+**Documented exceptions (creation/lifecycle, not cross-state reads).** Two
+behaviours legitimately include a sibling behaviour header because they
+*create* / attach it — something a flat `DP_*` forwarder can't express
+cleanly: `DPItemManager_Behaviour` (iterates its own `DPItemSpawn` anchors and
+instantiates `DPItemBase` items) and `DPForge_Behaviour` (spawns an item entity
+and attaches `DPItemBase`). Each such include is marked `// Contract exception`
+in code (grep for it). Every *read* cross-query goes through a `DP_*` forwarder
+instead (e.g. `DP_Win::IsPentagramInRange`, `DP_Player::IsBeggarVillager`,
+`DP_AI::GetNearestPriestDistanceFrom`, `DP_Interactables::FindNearestInteractableType`).
+
 ### Subscription cleanup discipline
 
 If a behaviour subscribes to an event via a captured lambda

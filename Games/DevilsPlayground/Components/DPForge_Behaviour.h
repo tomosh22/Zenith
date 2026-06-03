@@ -15,6 +15,8 @@
  */
 
 #include "Components/DPInteractable_Behaviour.h"
+// Contract exception (creation/lifecycle, not a cross-state read): the forge
+// spawns an item entity and attaches DPItemBase to it. See Components/CLAUDE.md.
 #include "Components/DPItemBase_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
