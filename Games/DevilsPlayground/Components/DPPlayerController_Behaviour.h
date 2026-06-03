@@ -27,8 +27,6 @@
 #include "Source/DPInputActions.h"
 #include "Source/DPParticles.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
 
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
@@ -224,23 +222,7 @@ public:
 		// state legible.
 		{
 			Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
-			bool bIsBeggar = false;
-			if (xPossessed.IsValid())
-			{
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPossessed);
-				if (pxScene != nullptr)
-				{
-					Zenith_Entity xV = pxScene->TryGetEntity(xPossessed);
-					if (xV.IsValid() && xV.HasComponent<Zenith_ScriptComponent>())
-					{
-						DPVillager_Behaviour* pxV =
-							xV.GetComponent<Zenith_ScriptComponent>()
-							  .GetScript<DPVillager_Behaviour>();
-						bIsBeggar = (pxV != nullptr && pxV->GetArchetypeId() == "Beggar");
-					}
-				}
-			}
+			bool bIsBeggar = xPossessed.IsValid() && DP_Player::IsBeggarVillager(xPossessed);
 			DP_Particles::UpdateBeggarStealthAura(xPossessed, bIsBeggar);
 
 			const Zenith_EntityID xChannelTarget = DP_Player::GetChannelTarget();
@@ -310,41 +292,69 @@ private:
 		// still snaps onto it.
 		constexpr double kMaxPixelDistSq = 120.0 * 120.0;
 
-		Zenith_EntityID xBest;
-		double fBestSq = kMaxPixelDistSq;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&](Zenith_EntityID xId, DPVillager_Behaviour&)
-			{
-				Zenith_SceneData* pxS = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-				if (pxS == nullptr) return;
-				Zenith_Entity xEnt = pxS->TryGetEntity(xId);
-				if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
-				Zenith_Maths::Vector3 xWorld;
-				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xWorld);
-				// Aim at body centre rather than feet — the visible silhouette
-				// is centred ~1 m above the entity origin.
-				xWorld.y += 1.0f;
-				const Zenith_Maths::Vector4 xClip = xVP *
-					Zenith_Maths::Vector4(xWorld.x, xWorld.y, xWorld.z, 1.0f);
-				if (xClip.w <= 1e-4f) return;
-				const float fNdcX = xClip.x / xClip.w;
-				const float fNdcY = xClip.y / xClip.w;
-				const double fSx = (fNdcX + 1.0f) * 0.5f * static_cast<float>(iW);
-				const double fSy = (fNdcY + 1.0f) * 0.5f * static_cast<float>(iH);
-				const double fDx = fSx - xMousePos.x;
-				const double fDy = fSy - xMousePos.y;
-				const double fSq = fDx * fDx + fDy * fDy;
-				if (fSq < fBestSq) { fBestSq = fSq; xBest = xId; }
-			});
+		// Screen-space pick context. Carried through DP_Player::ForEach-
+		// VillagerInActiveScene's function-pointer callback so the villager
+		// type-filter lives in PublicInterfaces.cpp (the controller header no
+		// longer needs DPVillager_Behaviour.h). The picking math itself is
+		// unchanged from the previous inline lambda.
+		PickContext xCtx;
+		xCtx.m_xVP        = xVP;
+		xCtx.m_iW         = iW;
+		xCtx.m_iH         = iH;
+		xCtx.m_xMousePos  = xMousePos;
+		xCtx.m_fBestSq    = kMaxPixelDistSq;
 
-		if (xBest.IsValid())
+		DP_Player::ForEachVillagerInActiveScene(&PickClosestVillagerCb, &xCtx);
+
+		if (xCtx.m_xBest.IsValid())
 		{
 			// Voluntary switch path -- triggers the cooldown gate. If the
 			// click lands within the cooldown window (1.5 s default) the
 			// possession refuses, silently. Cosmetic feedback (HUD flash /
 			// audio) is a future-MVP polish item.
-			DP_Player::TryVoluntaryPossessSwitch(xBest);
+			DP_Player::TryVoluntaryPossessSwitch(xCtx.m_xBest);
 		}
+	}
+
+	// Screen-space pick state shared between HandleClickToPossess and the
+	// function-pointer callback below.
+	struct PickContext
+	{
+		Zenith_Maths::Matrix4    m_xVP;
+		int32_t                  m_iW = 0;
+		int32_t                  m_iH = 0;
+		Zenith_Maths::Vector2_64 m_xMousePos;
+		double                   m_fBestSq = 0.0;
+		Zenith_EntityID          m_xBest;
+	};
+
+	// Per-villager screen-space projection + nearest-to-cursor pick. Identical
+	// math to the previous inline DP_Query lambda; relocated to a static
+	// callback so DP_Player::ForEachVillagerInActiveScene can drive it without
+	// the controller naming DPVillager_Behaviour.
+	static void PickClosestVillagerCb(Zenith_EntityID xId, void* pUser)
+	{
+		PickContext& xCtx = *static_cast<PickContext*>(pUser);
+		Zenith_SceneData* pxS = g_xEngine.Scenes().GetSceneDataForEntity(xId);
+		if (pxS == nullptr) return;
+		Zenith_Entity xEnt = pxS->TryGetEntity(xId);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Maths::Vector3 xWorld;
+		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xWorld);
+		// Aim at body centre rather than feet — the visible silhouette
+		// is centred ~1 m above the entity origin.
+		xWorld.y += 1.0f;
+		const Zenith_Maths::Vector4 xClip = xCtx.m_xVP *
+			Zenith_Maths::Vector4(xWorld.x, xWorld.y, xWorld.z, 1.0f);
+		if (xClip.w <= 1e-4f) return;
+		const float fNdcX = xClip.x / xClip.w;
+		const float fNdcY = xClip.y / xClip.w;
+		const double fSx = (fNdcX + 1.0f) * 0.5f * static_cast<float>(xCtx.m_iW);
+		const double fSy = (fNdcY + 1.0f) * 0.5f * static_cast<float>(xCtx.m_iH);
+		const double fDx = fSx - xCtx.m_xMousePos.x;
+		const double fDy = fSy - xCtx.m_xMousePos.y;
+		const double fSq = fDx * fDx + fDy * fDy;
+		if (fSq < xCtx.m_fBestSq) { xCtx.m_fBestSq = fSq; xCtx.m_xBest = xId; }
 	}
 
 	// MVP-1.4.5: drop verb. G releases the possessed villager's held
@@ -379,14 +389,7 @@ private:
 
 		// Arm the item's post-drop cooldown so DPItemBase::OnUpdate
 		// doesn't immediately re-pick-up from the foot position.
-		if (xI.HasComponent<Zenith_ScriptComponent>())
-		{
-			Zenith_ScriptComponent& xScr = xI.GetComponent<Zenith_ScriptComponent>();
-			if (DPItemBase_Behaviour* pxItemBeh = xScr.GetScript<DPItemBase_Behaviour>())
-			{
-				pxItemBeh->BeginPostDropCooldown();
-			}
-		}
+		DP_Items::BeginPostDropCooldownForItem(xItem);
 
 		// Clear the held-item side-table entry. The villager's
 		// floating held-item visual is rebuilt on the next OnUpdate

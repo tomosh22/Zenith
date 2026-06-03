@@ -31,15 +31,9 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
+#include "Source/DP_Tuning.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DPTutorial.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
-#include "Components/DPChest_Behaviour.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
-#include "Components/DummyNoiseMachine_Behaviour.h"
 
 #include <cmath>
 #include <cstdio>
@@ -145,11 +139,21 @@ public:
 			{
 				pxBar->SetVisible(false);
 			}
-			else if (DPVillager_Behaviour* pxVB = TryGetVillager(xV))
+			else
 			{
-				const float fT = glm::clamp(pxVB->GetRemainingLife() / pxVB->GetMaxLife(), 0.0f, 1.0f);
-				BuildLifeBar(*pxBar, fT);
-				pxBar->SetVisible(true);
+				// A resolved villager always has max life > 0 (archetype /
+				// default seed); use that as the "villager resolved" gate so
+				// the bar is only built+shown when the forwarders resolve the
+				// villager -- matching the previous TryGetVillager non-null
+				// branch. Avoids a divide-by-zero too.
+				const float fMax = DP_Player::GetVillagerMaxLife(xV);
+				if (fMax > 0.0f)
+				{
+					const float fT = glm::clamp(
+						DP_Player::GetVillagerRemainingLife(xV) / fMax, 0.0f, 1.0f);
+					BuildLifeBar(*pxBar, fT);
+					pxBar->SetVisible(true);
+				}
 			}
 		}
 
@@ -306,11 +310,11 @@ public:
 		if (auto* pxArch = xUI.FindElement<Zenith_UI::Zenith_UIText>("ArchetypeStatus"))
 		{
 			const char* szLine = nullptr;
-			const char* szArchetype = nullptr;
-			DPVillager_Behaviour* pxLocalVB = bPossessed ? TryGetVillager(xV) : nullptr;
-			if (pxLocalVB != nullptr && !pxLocalVB->GetArchetypeId().empty())
+			// Forwarder returns "" when the villager can't be resolved OR the
+			// archetype id is empty -- both map to the previous "skip" branch.
+			const char* szArchetype = bPossessed ? DP_Player::GetVillagerArchetypeId(xV) : "";
+			if (szArchetype[0] != '\0')
 			{
-				szArchetype = pxLocalVB->GetArchetypeId().c_str();
 				szLine = BuildArchetypeStatusText(szArchetype);
 			}
 			if (szLine != nullptr)
@@ -368,16 +372,24 @@ public:
 			m_fRunTimerSeconds += fDt;
 		}
 
-		// VillagerInfo + LifeNumeric -- show possessed villager's archetype
-		// and life-seconds. Both gated on possessing. Formatting via the
-		// public static helpers so unit tests pin each case independently.
-		DPVillager_Behaviour* pxVB = bPossessed ? TryGetVillager(xV) : nullptr;
+		// VillagerInfo + LifeNumeric + MovementMode -- show possessed
+		// villager's archetype, life-seconds, and movement mode. All gated
+		// on the villager resolving. The forwarders replace the previous
+		// TryGetVillager helper; a resolved villager always has max life > 0
+		// (archetype / default seed), so that doubles as the "resolved" gate
+		// (matching the previous `pxVB != nullptr` checks). The archetype
+		// forwarder returns "" when unresolved, so VillagerInfo's empty-id
+		// guard is preserved.
+		const float fVMax = bPossessed ? DP_Player::GetVillagerMaxLife(xV) : 0.0f;
+		const bool bVillagerResolved = (fVMax > 0.0f);
 		if (auto* pxInfo = xUI.FindElement<Zenith_UI::Zenith_UIText>("VillagerInfo"))
 		{
-			if (pxVB != nullptr && !pxVB->GetArchetypeId().empty())
+			const char* szInfoArchetype =
+				bVillagerResolved ? DP_Player::GetVillagerArchetypeId(xV) : "";
+			if (szInfoArchetype[0] != '\0')
 			{
 				char buf[80];
-				BuildArchetypeText(buf, sizeof(buf), pxVB->GetArchetypeId().c_str());
+				BuildArchetypeText(buf, sizeof(buf), szInfoArchetype);
 				pxInfo->SetText(buf);
 				pxInfo->SetVisible(true);
 			}
@@ -388,10 +400,11 @@ public:
 		}
 		if (auto* pxLifeNum = xUI.FindElement<Zenith_UI::Zenith_UIText>("LifeNumeric"))
 		{
-			if (pxVB != nullptr)
+			if (bVillagerResolved)
 			{
 				char buf[48];
-				BuildLifeNumericText(buf, sizeof(buf), pxVB->GetRemainingLife(), pxVB->GetMaxLife());
+				BuildLifeNumericText(buf, sizeof(buf),
+					DP_Player::GetVillagerRemainingLife(xV), fVMax);
 				pxLifeNum->SetText(buf);
 				pxLifeNum->SetVisible(true);
 			}
@@ -405,10 +418,12 @@ public:
 		// villager's per-frame cache; format via BuildMovementModeText.
 		if (auto* pxMove = xUI.FindElement<Zenith_UI::Zenith_UIText>("MovementMode"))
 		{
-			if (pxVB != nullptr)
+			if (bVillagerResolved)
 			{
 				char buf[40];
-				BuildMovementModeText(buf, sizeof(buf), pxVB->IsSprintingNow(), pxVB->IsWalkQuietNow());
+				BuildMovementModeText(buf, sizeof(buf),
+					DP_Player::IsVillagerSprintingNow(xV),
+					DP_Player::IsVillagerWalkQuietNow(xV));
 				pxMove->SetText(buf);
 				pxMove->SetVisible(true);
 			}
@@ -424,12 +439,7 @@ public:
 		{
 			int iAlive = 0;
 			int iTotal = 0;
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[&iAlive, &iTotal](Zenith_EntityID, DPVillager_Behaviour& xVilla)
-				{
-					++iTotal;
-					if (xVilla.GetRemainingLife() > 0.0f) ++iAlive;
-				});
+			DP_Player::CountVillagers(iAlive, iTotal);
 			if (iTotal > 0)
 			{
 				char buf[40];
@@ -456,19 +466,10 @@ public:
 				float fClosestDist = -1.0f;
 				if (bHaveMyPos)
 				{
-					DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-						[&xMyPos, &fClosestDist](Zenith_EntityID xPriestId, Priest_Behaviour&)
-						{
-							Zenith_Maths::Vector3 xPPos(0.0f);
-							if (!TryGetEntityPos(xPriestId, xPPos)) return;
-							const float fDx = xPPos.x - xMyPos.x;
-							const float fDz = xPPos.z - xMyPos.z;
-							const float fD = std::sqrt(fDx * fDx + fDz * fDz);
-							if (fClosestDist < 0.0f || fD < fClosestDist)
-							{
-								fClosestDist = fD;
-							}
-						});
+					// Forwarder does the same priest scan (nearest XZ distance,
+					// -1 if no priest) so the HUD header no longer includes
+					// Priest_Behaviour.h.
+					fClosestDist = DP_AI::GetNearestPriestDistanceFrom(xMyPos);
 				}
 				if (fClosestDist >= 0.0f)
 				{
@@ -510,7 +511,7 @@ public:
 		// subclass since IsPlayerInRange is defined on the base.
 		if (auto* pxHint = xUI.FindElement<Zenith_UI::Zenith_UIText>("InteractHint"))
 		{
-			const char* szNearestType = bPossessed ? FindNearestInteractableType(xV) : nullptr;
+			const char* szNearestType = bPossessed ? DP_Interactables::FindNearestInteractableType(xV) : nullptr;
 			if (szNearestType != nullptr)
 			{
 				char buf[64];
@@ -1028,42 +1029,16 @@ public:
 	}
 #endif
 
-	// Compute the current Aelfric state. Iterates Priest_Behaviour
-	// scripts in the active scene (typically just 1 priest), reads
-	// the agent's blackboard, classifies.
+	// Compute the current Aelfric state. Classified from the DP_AI
+	// priest-state forwarders (which iterate Priest_Behaviour scripts in the
+	// active scene + read each agent's blackboard) so the HUD header no longer
+	// includes Priest_Behaviour.h. Priority order Pursuing > Suspicious > Calm
+	// matches the previous inline classification.
 	static AelfricState ComputeAelfricState()
 	{
-		AelfricState eOut = AelfricState::Calm;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&eOut](Zenith_EntityID xPriestId, Priest_Behaviour&)
-			{
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-				if (pxScene == nullptr) return;
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
-				if (!xEnt.IsValid()) return;
-				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
-				Zenith_AIAgentComponent& xAg =
-					xEnt.GetComponent<Zenith_AIAgentComponent>();
-				Zenith_Blackboard& xBB = xAg.GetBlackboard();
-				const Zenith_EntityID xTarget =
-					xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-				if (xTarget.IsValid())
-				{
-					eOut = AelfricState::Pursuing;
-					return;
-				}
-				const bool bHasInvestigate =
-					xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
-				if (bHasInvestigate)
-				{
-					if (eOut < AelfricState::Suspicious)
-					{
-						eOut = AelfricState::Suspicious;
-					}
-				}
-			});
-		return eOut;
+		if (DP_AI::IsAnyPriestPursuing())     return AelfricState::Pursuing;
+		if (DP_AI::IsAnyPriestInvestigating()) return AelfricState::Suspicious;
+		return AelfricState::Calm;
 	}
 
 private:
@@ -1120,16 +1095,6 @@ private:
 		xBar.SetColor(LifeColor(fT));
 	}
 
-	DPVillager_Behaviour* TryGetVillager(Zenith_EntityID xV)
-	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xV);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xV);
-		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
-	}
-
 	static bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
@@ -1141,46 +1106,9 @@ private:
 		return true;
 	}
 
-	// Walk every interactable subclass in the active scene; if the
-	// possessed villager is within range of any of them, return a
-	// human-readable type name ("door", "chest", "forge", "pentagram",
-	// "noise machine"). Returns nullptr if none in range.
-	template<typename TInteract>
-	static void ScanInteractables(const Zenith_Maths::Vector3& xMyPos,
-	                              const char* szTypeLabel,
-	                              const char*& szResult,
-	                              float& fClosestSq)
-	{
-		DP_Query::ForEachScriptInActiveScene<TInteract>(
-			[&xMyPos, &szResult, &fClosestSq, szTypeLabel]
-			(Zenith_EntityID xId, TInteract& xInteract)
-			{
-				Zenith_Maths::Vector3 xIPos(0.0f);
-				if (!TryGetEntityPos(xId, xIPos)) return;
-				const float fDx = xIPos.x - xMyPos.x;
-				const float fDz = xIPos.z - xMyPos.z;
-				const float fSq = fDx * fDx + fDz * fDz;
-				const float fR = xInteract.GetInteractRadius();
-				if (fSq <= fR * fR && fSq < fClosestSq)
-				{
-					fClosestSq = fSq;
-					szResult = szTypeLabel;
-				}
-			});
-	}
-	static const char* FindNearestInteractableType(Zenith_EntityID xVillager)
-	{
-		Zenith_Maths::Vector3 xMyPos(0.0f);
-		if (!TryGetEntityPos(xVillager, xMyPos)) return nullptr;
-		const char* szResult = nullptr;
-		float fClosestSq = 1e30f;
-		ScanInteractables<DPDoor_Behaviour>           (xMyPos, "door",          szResult, fClosestSq);
-		ScanInteractables<DPChest_Behaviour>          (xMyPos, "chest",         szResult, fClosestSq);
-		ScanInteractables<DPForge_Behaviour>          (xMyPos, "forge",         szResult, fClosestSq);
-		ScanInteractables<DPPentagram_Behaviour>      (xMyPos, "pentagram",     szResult, fClosestSq);
-		ScanInteractables<DummyNoiseMachine_Behaviour>(xMyPos, "noise machine", szResult, fClosestSq);
-		return szResult;
-	}
+	// (FindNearestInteractableType + its ScanInteractables<T> helper moved to
+	// DP_Interactables::FindNearestInteractableType so the HUD header no longer
+	// includes the interactable behaviour headers (cross-behaviour rule).)
 
 	// (ReagentHelpText moved to public section above so unit tests can
 	// pin each case; see ~line 580.)

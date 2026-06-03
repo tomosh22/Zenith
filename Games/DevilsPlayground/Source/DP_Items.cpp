@@ -4,10 +4,12 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 
 #include "../Components/DPItemManager_Behaviour.h"
+#include "../Components/DPItemBase_Behaviour.h"
 
 namespace DP_Items
 {
@@ -88,5 +90,22 @@ namespace DP_Items
 		DPItemManager_Behaviour* pxMgr = DPItemManager_Behaviour::Instance();
 		if (pxMgr == nullptr) return;
 		pxMgr->UnregisterItemTag(xItem);
+	}
+
+	// Cross-behaviour forwarder: arm the item's post-drop pickup cooldown so
+	// DPItemBase::OnUpdate doesn't immediately re-pick-up from the villager's
+	// foot position. Moved here from DPPlayerController_Behaviour::HandleDropItem
+	// so the controller header no longer includes DPItemBase_Behaviour.h.
+	void BeginPostDropCooldownForItem(Zenith_EntityID xItem)
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Items::BeginPostDropCooldownForItem must be called from main thread");
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
+		if (pxScene == nullptr) return;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return;
+		DPItemBase_Behaviour* pxItem =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPItemBase_Behaviour>();
+		if (pxItem) pxItem->BeginPostDropCooldown();
 	}
 }

@@ -16,7 +16,6 @@
 #include "ZenithECS/Zenith_Query.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
 
 #include "Collections/Zenith_HashMap.h"
 
@@ -149,28 +148,11 @@ public:
 		// can keep tabs on which idle villagers are getting close to the
 		// priest). Skeletal-grade: a fixed radius around the cube
 		// silhouette; Wave-4 polish could vary it by villager state.
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[this](Zenith_EntityID xId, DPVillager_Behaviour&)
-			{
-				DP_Fog::RegisterFogHole(xId, m_fVillagerHoleRadius);
-				// MVP-2.4.5: record memory reveals for each villager
-				// position each frame. Cells that stay in range keep
-				// their age at 0 (refreshed every frame); cells the
-				// villager moves AWAY from will age through the
-				// VisitedVisible -> VisitedDim -> VisitedHidden
-				// states over the next 30 s.
-				Zenith_Maths::Vector3 xVPos;
-				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-				if (pxScene != nullptr)
-				{
-					Zenith_Entity xV = pxScene->TryGetEntity(xId);
-					if (xV.IsValid() && xV.HasComponent<Zenith_TransformComponent>())
-					{
-						xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
-						DP_Fog::RecordMemoryReveal(xVPos);
-					}
-				}
-			});
+		// Relocated to DP_Fog::RegisterAllVillagerFogHoles so this header no
+		// longer includes DPVillager_Behaviour.h (cross-behaviour rule). The
+		// per-villager fog-hole + memory-reveal logic is unchanged; the
+		// m_fVillagerHoleRadius value is passed through as the hole radius.
+		DP_Fog::RegisterAllVillagerFogHoles(m_fVillagerHoleRadius);
 
 		// Lights — every dynamic light reveals an area around itself. Size
 		// the fog hole to the light's actual Range so dim torches with a

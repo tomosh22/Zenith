@@ -7,6 +7,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
@@ -15,6 +16,8 @@
 
 #include "../Components/Priest_Behaviour.h"
 #include "../Components/DPDoor_Behaviour.h"
+
+#include <cmath>
 
 namespace
 {
@@ -239,5 +242,85 @@ namespace DP_AI
 	const Zenith_Vector<Vec3>& GetPatrolNodes()
 	{
 		return g_axPatrolNodes;
+	}
+
+	// ========================================================================
+	// Cross-behaviour priest-state forwarders for the HUD. The BB-read pattern
+	// mirrors DPHUDController_Behaviour::ComputeAelfricState; the priest-position
+	// resolve mirrors the HUD's PriestDistance block. Moved here so the HUD
+	// header no longer includes Priest_Behaviour.h (cross-behaviour rule).
+	// ========================================================================
+
+	bool IsAnyPriestPursuing()
+	{
+		bool bPursuing = false;
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&bPursuing](Zenith_EntityID xPriestId, Priest_Behaviour&)
+			{
+				if (bPursuing) return;
+				Zenith_SceneData* pxScene =
+					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
+				if (pxScene == nullptr) return;
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				if (!xEnt.IsValid()) return;
+				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
+				Zenith_AIAgentComponent& xAg =
+					xEnt.GetComponent<Zenith_AIAgentComponent>();
+				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				if (xBB.GetEntityID(BB_KEY_TARGET_WITH_DEVIL).IsValid())
+				{
+					bPursuing = true;
+				}
+			});
+		return bPursuing;
+	}
+
+	bool IsAnyPriestInvestigating()
+	{
+		bool bInvestigating = false;
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&bInvestigating](Zenith_EntityID xPriestId, Priest_Behaviour&)
+			{
+				if (bInvestigating) return;
+				Zenith_SceneData* pxScene =
+					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
+				if (pxScene == nullptr) return;
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				if (!xEnt.IsValid()) return;
+				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
+				Zenith_AIAgentComponent& xAg =
+					xEnt.GetComponent<Zenith_AIAgentComponent>();
+				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				if (xBB.GetBool(BB_KEY_HAS_INVESTIGATE_POS))
+				{
+					bInvestigating = true;
+				}
+			});
+		return bInvestigating;
+	}
+
+	float GetNearestPriestDistanceFrom(const Vec3& xFrom)
+	{
+		float fClosestDist = -1.0f;
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&xFrom, &fClosestDist](Zenith_EntityID xPriestId, Priest_Behaviour&)
+			{
+				Zenith_SceneData* pxScene =
+					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
+				if (pxScene == nullptr) return;
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				if (!xEnt.IsValid()) return;
+				if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
+				Zenith_Maths::Vector3 xPPos(0.0f);
+				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPPos);
+				const float fDx = xPPos.x - xFrom.x;
+				const float fDz = xPPos.z - xFrom.z;
+				const float fD = std::sqrt(fDx * fDx + fDz * fDz);
+				if (fClosestDist < 0.0f || fD < fClosestDist)
+				{
+					fClosestDist = fD;
+				}
+			});
+		return fClosestDist;
 	}
 }

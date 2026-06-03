@@ -55,4 +55,21 @@ namespace DP_AI
 	// actors that don't hold the matching key).
 	void OpenNearbyDoorsFor(Zenith_EntityID xActor,
 	                        const Vec3& xActorPos);
+
+	// ========================================================================
+	// Cross-behaviour priest-state forwarders for the HUD. Iterate every
+	// Priest_Behaviour in the active scene and read its blackboard / position.
+	// Moved here from DPHUDController_Behaviour so the HUD header no longer
+	// includes Priest_Behaviour.h (cross-behaviour rule).
+	// ========================================================================
+
+	// True if any priest has a valid BB_KEY_TARGET_WITH_DEVIL (pursuing).
+	bool IsAnyPriestPursuing();
+
+	// True if any priest has BB_KEY_HAS_INVESTIGATE_POS set (investigating).
+	bool IsAnyPriestInvestigating();
+
+	// Horizontal (XZ) distance from xFrom to the nearest priest in the
+	// active scene, or -1.0f if there is no priest.
+	float GetNearestPriestDistanceFrom(const Vec3& xFrom);
 }

@@ -31,7 +31,6 @@
  */
 
 #include "Components/DPInteractable_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
 #include "Collections/Zenith_Vector.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -415,7 +414,7 @@ private:
 			// To make the rule symmetric, also check whether the
 			// xVillager is the possessed villager AND a Pentagram
 			// is in range.
-			if (IsPentagramInRange(xVillager))
+			if (DP_Win::IsPentagramInRange(xVillager))
 			{
 				break;
 			}
@@ -582,37 +581,6 @@ private:
 		// opens by m_fOpenYaw degrees from wherever it was closed.
 		const float fAngle = glm::radians(m_fClosedYaw + m_fOpenYaw * m_fOpenT);
 		xT.SetRotation(glm::angleAxis(fAngle, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
-	}
-
-	// 2026-05-26: returns true if a Pentagram is within the villager's
-	// F-press range. Used to defer the door's close-on-F-press when
-	// the same F-press is targeting the adjacent pentagram. See the
-	// rationale comment in HandleInteractInternal's DoorAnim::Open case.
-	bool IsPentagramInRange(Zenith_EntityID xVillager) const
-	{
-		if (!xVillager.IsValid()) return false;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
-		if (!xV.IsValid() || !xV.HasComponent<Zenith_TransformComponent>()) return false;
-		Zenith_Maths::Vector3 xVPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
-
-		bool bInRange = false;
-		DP_Query::ForEachScriptInActiveScene<DPPentagram_Behaviour>(
-			[&bInRange, &xVPos, pxScene](Zenith_EntityID xId, DPPentagram_Behaviour& xPent)
-			{
-				if (bInRange) return;  // already found one
-				const float fR = xPent.GetInteractRadius();
-				Zenith_Entity xP = pxScene->TryGetEntity(xId);
-				if (!xP.IsValid() || !xP.HasComponent<Zenith_TransformComponent>()) return;
-				Zenith_Maths::Vector3 xPPos;
-				xP.GetComponent<Zenith_TransformComponent>().GetPosition(xPPos);
-				const float fDx = xVPos.x - xPPos.x;
-				const float fDz = xVPos.z - xPPos.z;
-				if (fDx * fDx + fDz * fDz <= fR * fR) bInRange = true;
-			});
-		return bInRange;
 	}
 
 	// 2026-05-25: re-tinting helper. Builds the variant from the cached

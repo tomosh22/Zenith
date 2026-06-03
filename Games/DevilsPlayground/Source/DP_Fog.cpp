@@ -9,7 +9,9 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 
+#include "DP_Query.h"
 #include "../Components/DPFogPass_Behaviour.h"
+#include "../Components/DPVillager_Behaviour.h"
 
 #include <cmath>
 
@@ -147,5 +149,41 @@ namespace DP_Fog
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->ClearAllMemoryReveals();
+	}
+
+	// Cross-behaviour forwarder: every villager — possessed or idle — cuts a
+	// fog hole and records a memory reveal. Moved here from
+	// DPFogPass_Behaviour::OnUpdate so the fog-pass header no longer includes
+	// DPVillager_Behaviour.h. fRadius replaces the script's m_fVillagerHoleRadius.
+	void RegisterAllVillagerFogHoles(float fRadius)
+	{
+		// Every villager — possessed or idle — cuts a fog hole. The
+		// player needs to see ALL villagers at all times so they can pick
+		// the next one to possess after the current host expires (and
+		// can keep tabs on which idle villagers are getting close to the
+		// priest). Skeletal-grade: a fixed radius around the cube
+		// silhouette; Wave-4 polish could vary it by villager state.
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[fRadius](Zenith_EntityID xId, DPVillager_Behaviour&)
+			{
+				RegisterFogHole(xId, fRadius);
+				// MVP-2.4.5: record memory reveals for each villager
+				// position each frame. Cells that stay in range keep
+				// their age at 0 (refreshed every frame); cells the
+				// villager moves AWAY from will age through the
+				// VisitedVisible -> VisitedDim -> VisitedHidden
+				// states over the next 30 s.
+				Zenith_Maths::Vector3 xVPos;
+				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
+				if (pxScene != nullptr)
+				{
+					Zenith_Entity xV = pxScene->TryGetEntity(xId);
+					if (xV.IsValid() && xV.HasComponent<Zenith_TransformComponent>())
+					{
+						xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
+						RecordMemoryReveal(xVPos);
+					}
+				}
+			});
 	}
 }

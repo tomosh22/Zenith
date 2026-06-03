@@ -445,4 +445,122 @@ namespace DP_Player
 		pxCtrl->m_fChannelRemaining      = 0.0f;
 		pxCtrl->m_bChannelActive         = false;
 	}
+
+	// ========================================================================
+	// Cross-behaviour villager forwarders. Resolve the villager script and
+	// read the requested field. Moved here from Priest_Behaviour /
+	// DPItemBase_Behaviour / DPHUDController_Behaviour so those headers no
+	// longer include DPVillager_Behaviour.h (cross-behaviour rule).
+	// ========================================================================
+
+	bool IsPossessedVillager(Zenith_EntityID xCandidate)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->IsPossessed();
+	}
+
+	bool IsBeggarVillager(Zenith_EntityID xCandidate)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->GetArchetypeId() == "Beggar";
+	}
+
+	bool IsChildVillagerWithToolTag(Zenith_EntityID xVillager, DP_ItemTag eTag)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->GetArchetypeId() == "Child" && DP_IsToolTag(eTag);
+	}
+
+	float GetVillagerRemainingLife(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return 0.0f;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return 0.0f;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV ? pxV->GetRemainingLife() : 0.0f;
+	}
+
+	float GetVillagerMaxLife(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return 0.0f;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return 0.0f;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV ? pxV->GetMaxLife() : 0.0f;
+	}
+
+	const char* GetVillagerArchetypeId(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return "";
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return "";
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV ? pxV->GetArchetypeId().c_str() : "";
+	}
+
+	bool IsVillagerSprintingNow(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->IsSprintingNow();
+	}
+
+	bool IsVillagerWalkQuietNow(Zenith_EntityID xVillager)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
+		DPVillager_Behaviour* pxV =
+			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return pxV != nullptr && pxV->IsWalkQuietNow();
+	}
+
+	void CountVillagers(int& iOutAlive, int& iOutTotal)
+	{
+		iOutAlive = 0;
+		iOutTotal = 0;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&iOutAlive, &iOutTotal](Zenith_EntityID, DPVillager_Behaviour& xV)
+			{
+				++iOutTotal;
+				if (xV.GetRemainingLife() > 0.0f) ++iOutAlive;
+			});
+	}
+
+	void ForEachVillagerInActiveScene(void (*pfnCallback)(Zenith_EntityID, void*),
+	                                  void* pUserData)
+	{
+		if (pfnCallback == nullptr) return;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[pfnCallback, pUserData](Zenith_EntityID xId, DPVillager_Behaviour&)
+			{
+				pfnCallback(xId, pUserData);
+			});
+	}
 }

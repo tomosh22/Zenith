@@ -23,4 +23,12 @@ namespace DP_Interactables
 	};
 
 	void MarkAsInteractable(Zenith_EntityID xId, Kind eKind, void* pUserData);
+
+	// Cross-behaviour forwarder for the HUD InteractHint readout. Scans the 5
+	// interactable types in the active scene and returns a human-readable type
+	// label ("door" / "chest" / "forge" / "pentagram" / "noise machine") for
+	// the nearest one within the villager's range of it, or nullptr if none.
+	// Moved here from DPHUDController_Behaviour so the HUD header no longer
+	// includes the interactable behaviour headers (cross-behaviour rule).
+	const char* FindNearestInteractableType(Zenith_EntityID xVillager);
 }

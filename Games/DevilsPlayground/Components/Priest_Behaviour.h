@@ -39,7 +39,6 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Components/DP_BT_Nodes.h"
-#include "Components/DPVillager_Behaviour.h"
 
 class Priest_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -441,14 +440,14 @@ private:
 			for (uint32_t i = 0; i < paxPerceived->GetSize(); ++i)
 			{
 				const Zenith_EntityID xCandidate = paxPerceived->Get(i).m_xEntityID;
-				if (!IsPossessedVillager(xCandidate)) continue;
+				if (!DP_Player::IsPossessedVillager(xCandidate)) continue;
 				// MVP-2.1.6: Beggar archetype filter. Even when
 				// possessed AND directly in sight, a Beggar is never
 				// the priest's target. (Future Variant aelfrics can
 				// override this -- their bridges will pick whichever
 				// archetype filter they care about; the canonical
 				// MVP Aelfric just skips Beggar.)
-				if (IsBeggarVillager(xCandidate)) continue;
+				if (DP_Player::IsBeggarVillager(xCandidate)) continue;
 				xTargetWithDevil = xCandidate;
 				break;
 			}
@@ -476,42 +475,6 @@ private:
 			xBB.SetVector3(DP_AI::BB_KEY_INVESTIGATE_POS, xHeard.m_xPosition);
 			xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, true);
 		}
-	}
-
-	bool IsPossessedVillager(Zenith_EntityID xCandidate) const
-	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
-		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		Zenith_ScriptComponent& xScript = xEnt.GetComponent<Zenith_ScriptComponent>();
-		DPVillager_Behaviour* pxV = xScript.GetScript<DPVillager_Behaviour>();
-		return pxV != nullptr && pxV->IsPossessed();
-	}
-
-	// MVP-2.1.6: Beggar archetype is invisible to Aelfric. The priest's
-	// perception still produces hearing/sight stimuli for the Beggar
-	// (which is correct -- physical bodies still cast shadows and make
-	// footsteps), but the BB_KEY_TARGET_WITH_DEVIL bridge filters them
-	// out so the BT's pursuit branch never selects a Beggar. The GDD
-	// framing: "Aelfric's gaze slides off Beggars; he can't fix on
-	// them as a target."
-	//
-	// Returns false for non-villager entities (priests, items, etc),
-	// for villagers without a Beggar archetype tag, and for unscriptd
-	// entities -- the filter only fires on explicit Beggar identity.
-	bool IsBeggarVillager(Zenith_EntityID xCandidate) const
-	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
-		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
-		if (pxV == nullptr) return false;
-		return pxV->GetArchetypeId() == "Beggar";
 	}
 
 	void ApplyVelocityToBodyIfPresent()
