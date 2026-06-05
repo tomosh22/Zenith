@@ -257,7 +257,7 @@ static void CB_EnsureTerrainAssets()
 	// Hills heightmap -> chunk bake. Slow; gated on a version marker so it re-bakes
 	// once when the terrain shape changes, then the on-disk chunk meshes (which now
 	// carry the hill geometry) are reused.
-	const std::string strHillMarker = strTerrainDir + "terrain_hills_v1.marker";
+	const std::string strHillMarker = strTerrainDir + "terrain_hills_v4.marker";   // bump to force a re-bake when HillNorm changes
 	if (!std::filesystem::exists(strHillMarker))
 	{
 		const std::string strHeightmap = strTerrainDir + "CityHeightmap" ZENITH_TEXTURE_EXT;

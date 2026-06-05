@@ -38,6 +38,7 @@ public:
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
+		s_pxActive = this;   // expose the live controller (tests/automation tilt the view)
 		Zenith_Input& xInput = g_xEngine.Input();
 
 		// ---- Zoom (mouse wheel) ----
@@ -101,7 +102,12 @@ public:
 
 	CB_CameraController& GetController() { return m_xController; }
 
+	// The live camera behaviour (set each frame in OnUpdate). Lets tests/automation
+	// drive the orbit (e.g. an oblique angle to show the terrain relief).
+	static CB_CityCamera_Behaviour* GetActive() { return s_pxActive; }
+
 private:
+	static inline CB_CityCamera_Behaviour* s_pxActive = nullptr;
 	CB_CameraController m_xController;
 
 	float m_fZoomSpeed         = 20.0f;    // world units per wheel tick

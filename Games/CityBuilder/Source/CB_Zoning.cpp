@@ -61,7 +61,9 @@ void CB_Zoning::AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const 
 				CB_Lot xLot;
 				xLot.m_xPos     = xC + xPerp * (fOffset * fSide);
 				xLot.m_xFaceDir = xPerp * (-fSide);   // points back toward the road
-				xLot.m_fWorldY  = xField.GetHeightAt(xLot.m_xPos.x, xLot.m_xPos.y);
+				// Fine rendered surface (not the coarse field) so the zone tile + any building
+				// that grows here sit on the actual GPU mesh — see CB_TerrainHeightfield::GetRenderSurfaceY.
+				xLot.m_fWorldY  = xField.GetRenderSurfaceY(xLot.m_xPos.x, xLot.m_xPos.y);
 				xLot.m_uSegment = uSeg;
 				xLot.m_bActive  = true;
 				m_axLots.PushBack(xLot);
@@ -151,8 +153,11 @@ void CB_Zoning::RenderOverlay() const
 		{
 			continue;   // empty/unzoned, or built-on (the building shows instead)
 		}
+		// m_fWorldY is the fine rendered surface; lift the tile 0.30m clear so the mesh can't
+		// poke through it (the lot lands in the road's flattened bed, so the ground under the
+		// tile is level — no slope to clip the flat slab).
 		g_xEngine.Primitives().AddCube(
-			Zenith_Maths::Vector3(xLot.m_xPos.x, xLot.m_fWorldY + 0.12f, xLot.m_xPos.y),
+			Zenith_Maths::Vector3(xLot.m_xPos.x, xLot.m_fWorldY + 0.30f, xLot.m_xPos.y),
 			Zenith_Maths::Vector3(LOT_DEPTH * 0.4f, 0.05f, LOT_DEPTH * 0.4f),
 			ZoneColor(xLot.m_eZone));
 	}

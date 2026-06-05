@@ -13,7 +13,9 @@
 // is even in (x-2048) and (z-2048) — so the exporter's vertical flip can't make
 // the baked mesh disagree with the heightfield. Heights are normalized; the bake
 // (× MAX_TERRAIN_HEIGHT = 512) and the heightfield (× heightScale = 512) both
-// turn them into the same metres → a gentle ~6..34m rolling terrain.
+// turn them into the same metres → a ~16..150m rolling terrain. Higher-frequency
+// terms (~0.55..1.1km wavelengths) give visible local roll near the city (a single
+// ~4km swell read as flat); slopes stay ~10..18° so it's gentle rolling, not cliffs.
 // ============================================================================
 namespace CB_TerrainGen
 {
@@ -24,14 +26,16 @@ namespace CB_TerrainGen
 	{
 		const float dx = fWorldX - TERRAIN_CENTRE;
 		const float dz = fWorldZ - TERRAIN_CENTRE;
-		// All terms even in dx AND dz → symmetric → flip-proof.
+		// All terms even in dx AND dz → symmetric → flip-proof. Amplitudes sum to 0.45
+		// so h stays in ~[0.10, 1.0] (minimal clamping → smooth, no flat plateaus).
 		float h = 0.55f
-		        + 0.22f * std::cos(dx * 0.0016f) * std::cos(dz * 0.0013f)
-		        + 0.13f * std::cos(dx * 0.0034f) * std::cos(dz * 0.0021f)
-		        + 0.05f * (std::cos(dx * 0.0026f) + std::cos(dz * 0.0026f));
+		        + 0.12f  * std::cos(dx * 0.0024f) * std::cos(dz * 0.0020f)   // broad swells (~2.6km)
+		        + 0.15f  * std::cos(dx * 0.0058f) * std::cos(dz * 0.0050f)   // hills (~1.1km)
+		        + 0.13f  * std::cos(dx * 0.0115f) * std::cos(dz * 0.0099f)   // local rolls (~0.55km)
+		        + 0.025f * (std::cos(dx * 0.0085f) + std::cos(dz * 0.0078f));
 		if (h < 0.0f) { h = 0.0f; }
 		if (h > 1.0f) { h = 1.0f; }
-		return 0.012f + h * 0.055f;   // ~0.0175..0.067 → ~9..34m
+		return 0.012f + h * 0.28f;   // ~0.040..0.292 → ~20..150m
 	}
 
 	// The world-Y the runtime CPU heightfield reads for an UN-edited (pristine) hill:

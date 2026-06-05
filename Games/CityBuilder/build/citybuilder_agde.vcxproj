@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -174,10 +174,13 @@
     <ClInclude Include="..\Source\CB_CitizenManager.h" />
     <ClInclude Include="..\Source\CB_CityGrid.h" />
     <ClInclude Include="..\Source\CB_CityStats.h" />
+    <ClInclude Include="..\Source\CB_Conduits.h" />
     <ClInclude Include="..\Source\CB_Config.h" />
     <ClInclude Include="..\Source\CB_DayNight.h" />
+    <ClInclude Include="..\Source\CB_Districts.h" />
     <ClInclude Include="..\Source\CB_EconomyManager.h" />
     <ClInclude Include="..\Source\CB_Events.h" />
+    <ClInclude Include="..\Source\CB_Policy.h" />
     <ClInclude Include="..\Source\CB_PresentationView.h" />
     <ClInclude Include="..\Source\CB_RoadController.h" />
     <ClInclude Include="..\Source\CB_RoadGraph.h" />
@@ -194,8 +197,11 @@
     <ClInclude Include="..\Source\CB_TerrainGen.h" />
     <ClInclude Include="..\Source\CB_TerrainHeightfield.h" />
     <ClInclude Include="..\Source\CB_TerrainModifier.h" />
+    <ClInclude Include="..\Source\CB_ToolIconGen.h" />
+    <ClInclude Include="..\Source\CB_ToolIcons.h" />
     <ClInclude Include="..\Source\CB_ToolSystem.h" />
     <ClInclude Include="..\Source\CB_Traffic.h" />
+    <ClInclude Include="..\Source\CB_TransitLines.h" />
     <ClInclude Include="..\Source\CB_Zoning.h" />
   </ItemGroup>
   <ItemGroup>
@@ -227,13 +233,16 @@
     <ClCompile Include="..\Tests\CB_Play.cpp" />
     <ClCompile Include="..\Tests\CB_RoadCarve.cpp" />
     <ClCompile Include="..\Tests\CB_RoadDraw.cpp" />
+    <ClCompile Include="..\Tests\CB_RoadGhost.cpp" />
     <ClCompile Include="..\Tests\CB_Roads.cpp" />
     <ClCompile Include="..\Tests\CB_SaveLoad.cpp" />
     <ClCompile Include="..\Tests\CB_SaveLoadRoundtrip.cpp" />
     <ClCompile Include="..\Tests\CB_Sim.cpp" />
     <ClCompile Include="..\Tests\CB_SplineRoads.cpp" />
     <ClCompile Include="..\Tests\CB_Terrain.cpp" />
+    <ClCompile Include="..\Tests\CB_TerrainShowcase.cpp" />
     <ClCompile Include="..\Tests\CB_TrafficTest.cpp" />
+    <ClCompile Include="..\Tests\CB_UIShowcase.cpp" />
     <ClCompile Include="..\Tests\CB_ZoningLots.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -19,7 +19,10 @@
 class CB_RoadController
 {
 public:
-	static constexpr float ROAD_Y_OFFSET = 0.08f;   // ribbon sits just above the terrain (G1; G2 carves)
+	static constexpr float ROAD_Y_OFFSET = 0.30f;   // ribbon clearance above the fine rendered surface (GetRenderSurfaceY).
+	                                                // The ribbon edges already match the GPU mesh exactly, so this only has to
+	                                                // clear the flat-across-width-vs-curved residual + depth slop; with the road
+	                                                // carve recessing the bed 0.5m it leaves the road ~0.2m below the verges (embedded).
 	static constexpr float SNAP_RADIUS    = 7.0f;    // click within this of a node → snap (junction)
 	static constexpr float MIN_SEGMENT    = 2.0f;    // ignore segments shorter than this
 

@@ -104,6 +104,9 @@
     <ClCompile Include="..\Tests\CB_Terrain.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\CB_TerrainShowcase.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\CB_TrafficTest.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -83,6 +83,9 @@
     <ClCompile Include="..\Tests\CB_RoadDraw.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\CB_RoadGhost.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\CB_Roads.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -101,7 +104,13 @@
     <ClCompile Include="..\Tests\CB_Terrain.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\CB_TerrainShowcase.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\CB_TrafficTest.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\CB_UIShowcase.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\CB_ZoningLots.cpp">
@@ -139,16 +148,25 @@
     <ClInclude Include="..\Source\CB_CityStats.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\CB_Conduits.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\CB_Config.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\CB_DayNight.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\CB_Districts.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\CB_EconomyManager.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\CB_Events.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\CB_Policy.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\CB_PresentationView.h">
@@ -199,10 +217,19 @@
     <ClInclude Include="..\Source\CB_TerrainModifier.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\CB_ToolIconGen.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\CB_ToolIcons.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\CB_ToolSystem.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\CB_Traffic.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\CB_TransitLines.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\CB_Zoning.h">

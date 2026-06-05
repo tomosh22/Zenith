@@ -532,6 +532,7 @@
     <ClCompile Include="..\Tests\CB_Sim.cpp" />
     <ClCompile Include="..\Tests\CB_SplineRoads.cpp" />
     <ClCompile Include="..\Tests\CB_Terrain.cpp" />
+    <ClCompile Include="..\Tests\CB_TerrainShowcase.cpp" />
     <ClCompile Include="..\Tests\CB_TrafficTest.cpp" />
     <ClCompile Include="..\Tests\CB_UIShowcase.cpp" />
     <ClCompile Include="..\Tests\CB_ZoningLots.cpp" />

@@ -57,8 +57,11 @@ namespace CB_RoadMesh
 
 			const Zenith_Maths::Vector2 xL = xC + xPerp * fHalf;
 			const Zenith_Maths::Vector2 xR = xC - xPerp * fHalf;
-			const float fLY = xField.GetHeightAt(xL.x, xL.y) + fYOffset;
-			const float fRY = xField.GetHeightAt(xR.x, xR.y) + fYOffset;
+			// GetRenderSurfaceY (the fine GPU surface), NOT GetHeightAt (the coarse 16m field):
+			// on hills the two diverge by up to ~0.12m, which let the fine terrain mesh stab up
+			// through a ribbon placed at the coarse height → severe road/terrain z-fighting.
+			const float fLY = xField.GetRenderSurfaceY(xL.x, xL.y) + fYOffset;
+			const float fRY = xField.GetRenderSurfaceY(xR.x, xR.y) + fYOffset;
 			const Zenith_Maths::Vector3 xWL(xL.x, fLY, xL.y);
 			const Zenith_Maths::Vector3 xWR(xR.x, fRY, xR.y);
 

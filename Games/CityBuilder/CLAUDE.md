@@ -179,8 +179,18 @@ long-standing bug). The CPU `CB_TerrainHeightfield` is the single source of trut
    during the evict->reload gap — no race. (The old in-place `CarveTerrainMesh` /
    `RefreshTerrainRegionFromField` + `waitIdle` paths are superseded + dead, pending deletion.)
 
-To change the terrain shape: edit `HillNorm` + delete
-`Terrain/terrain_hills_v1.marker` (forces a one-time re-bake on the next windowed `_True` run).
+The hills are gentle rolling (`HillNorm` ≈ 20..150m, ~10..18° slopes — "slight", not
+mountainous), with higher-frequency terms (~0.55..1.1km wavelengths) so there is visible
+local relief near the city, not just one ~4km swell (which reads flat). They only read from
+an oblique camera — the default near-top-down view masks gentle slopes (see the windowed
+`CB_TerrainShowcase` test, which tilts `CB_CityCamera_Behaviour::GetActive()` low + zoomed
+out for a screenshot).
+
+To change the terrain shape: edit `HillNorm` + **bump the marker version** in
+`CityBuilder.cpp` (`terrain_hills_vN.marker`, currently **v4**) — that forces a one-time
+re-bake on the next **windowed `_True`** run (`CB_EnsureTerrainAssets` re-writes the 4096px
+heightmap + chunk meshes; takes a few minutes). `_False` only loads the baked chunks, so a
+`_True` run must bake first.
 
 The player can also **terraform** (the `T` tool, or `CB_CityManager_Behaviour::TerraformAt`
 for automation): a raise/lower brush edits the heightfield, then `RestreamTerraformRegion`

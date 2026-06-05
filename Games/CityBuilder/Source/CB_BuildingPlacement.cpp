@@ -621,7 +621,10 @@ void CB_BuildingPlacement::Render(const CB_Zoning& xZoning) const
 		// Burning buildings glow fiery orange (the disaster read-out).
 		const Zenith_Maths::Vector3 xCol = (xB.m_uFireTicks > 0)
 			? Zenith_Maths::Vector3(0.95f, 0.35f, 0.08f) : BuildingColor(xB.m_eType);
-		EmitBuilding(xLot.m_xPos, xLot.m_xFaceDir, 5.0f, xLot.m_fWorldY, fH, xCol, xB.m_uLevel, BuildHash(xB.m_uLot));
+		// Sink the base 0.6m: m_fWorldY is now the exact fine rendered surface, so a base placed
+		// right at it would be coplanar with the terrain mesh (a new base z-fight). Embedding lets
+		// the ground occlude the bottom face — the building emerges cleanly with no shimmer.
+		EmitBuilding(xLot.m_xPos, xLot.m_xFaceDir, 5.0f, xLot.m_fWorldY - 0.6f, fH, xCol, xB.m_uLevel, BuildHash(xB.m_uLot));
 	}
 
 	// Service / utility buildings (free-standing, larger footprint, distinct colours).
@@ -629,7 +632,9 @@ void CB_BuildingPlacement::Render(const CB_Zoning& xZoning) const
 	{
 		const CB_ServiceBuilding& xS = m_axServices.Get(i);
 		if (!xS.m_bActive) continue;
-		EmitBox(xS.m_xPos, Zenith_Maths::Vector2(0.0f, 1.0f), 9.0f, 9.0f, xS.m_fWorldY,
+		// Embed the base (see the building note): 0.6m > the coarse-vs-fine height gap, so the
+		// bottom face always sits below the rendered ground and the terrain occludes it.
+		EmitBox(xS.m_xPos, Zenith_Maths::Vector2(0.0f, 1.0f), 9.0f, 9.0f, xS.m_fWorldY - 0.6f,
 		        ServiceHeight(xS.m_eType), ServiceColor(xS.m_eType));
 	}
 }

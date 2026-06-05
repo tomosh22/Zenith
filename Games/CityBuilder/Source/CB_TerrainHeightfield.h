@@ -2,6 +2,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "CityBuilder/Source/CB_TerrainGen.h"
 #include <cmath>
 #include <cstdint>
 
@@ -104,6 +105,27 @@ public:
 		const float fBot = fH01 + (fH11 - fH01) * fTX;
 		const float fN   = fTop + (fBot - fTop) * fTZ;
 		return fN * m_fHeightScale;
+	}
+
+	// World-Y of the *rendered* GPU terrain surface at (x,z) — what ground-hugging debug
+	// primitives (road ribbons, zone tiles, building bases) must sit on so the fine baked
+	// mesh can't poke through them and z-fight.
+	//
+	// GetHeightAt samples the COARSE 16m gameplay field; the baked GPU mesh is the FINE
+	// per-pixel HillNorm, so on hills the two diverge by up to ~0.12m — enough for the fine
+	// mesh to stab through a primitive placed at the coarse height (severe geometric
+	// z-fighting; harmless on the old flat terrain where coarse==fine). This rebuilds the
+	// fine surface exactly as the engine carve does (CB_RoadTerrain.cpp): the fine baked
+	// height plus the player's edit delta, where the delta is the field's deviation from its
+	// own coarse base (GetHeightAt - HillFieldSample). Pristine terrain → delta ~0 → exactly
+	// HillNorm*scale (the baked vertex); under a road carve / terraform it follows the edited
+	// surface, matching the GPU mesh's stream-in hook. So a primitive at GetRenderSurfaceY+ε
+	// sits a uniform ε above the actual rendered ground everywhere.
+	float GetRenderSurfaceY(float fWorldX, float fWorldZ) const
+	{
+		const float fFineBaked = CB_TerrainGen::HillNorm(fWorldX, fWorldZ) * CB_TerrainGen::HEIGHT_SCALE;
+		const float fEditDelta = GetHeightAt(fWorldX, fWorldZ) - CB_TerrainGen::HillFieldSample(fWorldX, fWorldZ);
+		return fFineBaked + fEditDelta;
 	}
 
 	// Raw normalized sample accessor (tests / serialization / future GPU sync).
