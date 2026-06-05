@@ -40,8 +40,14 @@ they are skipped headless and only run in the windowed pass.
 ## Controls
 
 - **Camera:** right-drag orbit, middle-drag / WASD pan, wheel zoom, Q/E rotate.
-- **Road (5):** left-click two ground points → a smooth tangent-continuous spline
-  segment; endpoints snap to nearby nodes (junctions); right-click ends the road.
+- **Road (5):** SimCity/C:S-style — left-click a start point, then a **ghost preview**
+  (a green spline footprint, **cyan** when it would snap to an existing node) follows the
+  cursor; left-click again confirms the segment and continues from there; right-click ends
+  the road. Endpoints snap to nearby nodes (junctions); curves are tangent-continuous.
+  The ghost is `CB_RoadController`'s `RebuildPreview` (hover from `PickGroundPoint` each
+  frame, or `SetHoverPointForAutomation` in tests — see `CB_RoadGhost`); it is drawn as a
+  colour-keeping sphere outline because flat lit primitives wash to white (memory
+  `reference-screen-capture-and-primitive-winding`).
 - **Zones (1 Residential · 2 Commercial · 3 Industrial · 4 Park):** drag-paint onto
   frontage lots along the roads.
 - **Utilities/services:** 7 Power plant · 8 Water tower · 6 Services (click to place;

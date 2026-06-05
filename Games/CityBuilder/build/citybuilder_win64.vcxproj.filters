@@ -83,6 +83,9 @@
     <ClCompile Include="..\Tests\CB_RoadDraw.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\CB_RoadGhost.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\CB_Roads.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

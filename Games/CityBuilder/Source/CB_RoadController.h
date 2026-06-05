@@ -59,7 +59,23 @@ public:
 	// Rebuild the ribbon triangle cache from the graph (call after edits).
 	void RebuildMesh(const CB_TerrainHeightfield& xField);
 
+	// Automation/test hook: drive the ghost-preview cursor to a world point directly
+	// (bypasses the camera-unproject picker) so tests can screenshot the preview
+	// deterministically. Real gameplay never calls this (the picker drives the hover).
+	void SetHoverPointForAutomation(float fWorldX, float fWorldZ)
+	{
+		m_xHoverPos      = Zenith_Maths::Vector2(fWorldX, fWorldZ);
+		m_bHaveHover     = true;
+		m_bHoverOverride = true;
+	}
+	// Triangle-vertex count of the current ghost-preview ribbon (0 = none). For tests.
+	uint32_t GetPreviewTriVertCount() const { return m_xPreviewTris.GetSize(); }
+
 private:
+	// Rebuild the ghost-preview ribbon + endpoint markers from the pending node to the
+	// (snapped) hover point. Called every frame the road tool is active.
+	void RebuildPreview(const CB_TerrainHeightfield& xField);
+
 	CB_RoadGraph m_xGraph;
 
 	// In-progress road state.
@@ -70,6 +86,19 @@ private:
 
 	// Render cache: flat ribbon triangles (3 verts each), world space.
 	Zenith_Vector<Zenith_Maths::Vector3> m_xRoadTris;
+
+	// --- Ghost preview (windowed; road tool only) ---
+	Zenith_Maths::Vector2 m_xHoverPos      = Zenith_Maths::Vector2(0.0f, 0.0f);  // cursor ground point
+	bool                  m_bHaveHover     = false;
+	bool                  m_bHoverOverride = false;   // a test drives the hover (skip the picker)
+	Zenith_Vector<Zenith_Maths::Vector3> m_xPreviewTris;                          // ghost ribbon (filled)
+	Zenith_Vector<Zenith_Maths::Vector3> m_xPreviewEdgeL;                         // footprint outline (bright, color-keeping)
+	Zenith_Vector<Zenith_Maths::Vector3> m_xPreviewEdgeR;
+	bool                  m_bPreviewSnap   = false;   // hover end snapped to an existing node
+	Zenith_Maths::Vector3 m_xPreviewStart  = Zenith_Maths::Vector3(0.0f);         // anchored-start marker
+	bool                  m_bPreviewStartValid = false;
+	Zenith_Maths::Vector3 m_xPreviewEnd    = Zenith_Maths::Vector3(0.0f);         // cursor / snap marker
+	bool                  m_bPreviewEndValid   = false;
 
 	// Edge-trigger latches for the simulator's frame-held button state.
 	bool m_bPrevLeft  = false;

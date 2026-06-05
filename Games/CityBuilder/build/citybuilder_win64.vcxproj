@@ -525,6 +525,7 @@
     <ClCompile Include="..\Tests\CB_Play.cpp" />
     <ClCompile Include="..\Tests\CB_RoadCarve.cpp" />
     <ClCompile Include="..\Tests\CB_RoadDraw.cpp" />
+    <ClCompile Include="..\Tests\CB_RoadGhost.cpp" />
     <ClCompile Include="..\Tests\CB_Roads.cpp" />
     <ClCompile Include="..\Tests\CB_SaveLoad.cpp" />
     <ClCompile Include="..\Tests\CB_SaveLoadRoundtrip.cpp" />
