@@ -2,6 +2,8 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AIShowcase", "..\Games\AIShowcase\build\aishowcase_win64.vcxproj", "{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CityBuilder", "..\Games\CityBuilder\build\citybuilder_win64.vcxproj", "{2E753480-B5EF-00FD-47D4-4AA64B5F1462}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Combat", "..\Games\Combat\build\combat_win64.vcxproj", "{19FF9295-5CA7-AD0E-181D-F2B242060690}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DevilsPlayground", "..\Games\DevilsPlayground\Build\devilsplayground_win64.vcxproj", "{5068D760-E47D-2A7C-2CB8-267FC5E49316}"
@@ -56,6 +58,14 @@ Global
 		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
 		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
 		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{2E753480-B5EF-00FD-47D4-4AA64B5F1462}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64

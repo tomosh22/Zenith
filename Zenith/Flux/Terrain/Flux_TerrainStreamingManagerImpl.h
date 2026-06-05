@@ -129,6 +129,18 @@ struct Flux_TerrainStreamingState
 
 	Zenith_TerrainComponent*    m_pxOwner = nullptr;
 
+	// ========== Game-supplied per-chunk vertex deformation hook (e.g. CityBuilder road carve) ==========
+	// Called in StreamInLOD after the baked chunk mesh loads and BEFORE the GPU upload, so a
+	// re-streamed HIGH chunk is re-deformed every time it loads (the deformation persists across
+	// streaming — no game-side re-carve countdown). Streaming is main-thread (PreRenderUpdate), so
+	// this runs on the main thread; the upload targets a deferred-safe slot (never-used, or evicted
+	// MAX_FRAMES_IN_FLIGHT+1 frames ago so the GPU is guaranteed done reading it) — no GPU sync
+	// needed here, unlike an in-place edit of an actively-rendered resident chunk. Null = no
+	// deformation. Args: (pUser, chunkX, chunkY, pVertexData, numVerts, vertexStride).
+	typedef void (*ChunkVertexHook)(void*, uint32_t, uint32_t, void*, uint32_t, uint32_t);
+	ChunkVertexHook m_pfnChunkVertexHook   = nullptr;
+	void*           m_pChunkVertexHookUser = nullptr;
+
 	// ========== Unified Terrain Buffers (relocated from Zenith_TerrainComponent) ==========
 	// Contains LOW LOD (always-resident) data at the beginning, followed by
 	// streaming space for HIGH LOD. Owned here (one streaming state per terrain

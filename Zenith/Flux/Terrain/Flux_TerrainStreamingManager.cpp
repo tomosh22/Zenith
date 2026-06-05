@@ -702,6 +702,18 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	const uint64_t ulIndexDataSize     = static_cast<uint64_t>(uNumIndices) * sizeof(uint32_t);
 	const uint64_t ulIndexOffsetBytes  = static_cast<uint64_t>(uAbsoluteIndexOffset)  * sizeof(uint32_t);
 
+	// Game-supplied per-chunk vertex deformation (e.g. the CityBuilder road carve): re-apply it
+	// to this freshly-loaded chunk's verts BEFORE the upload, so the deformation survives a
+	// stream-out/stream-in cycle (no game-side re-carve countdown). The upload below targets a
+	// deferred-safe slot (just allocated, or evicted long enough ago that the GPU is done reading
+	// it), so — unlike an in-place edit of an actively-rendered resident chunk — this needs no GPU
+	// sync. Runs on the main thread (streaming is driven from PreRenderUpdate).
+	if (xState.m_pfnChunkVertexHook != nullptr)
+	{
+		xState.m_pfnChunkVertexHook(xState.m_pChunkVertexHookUser, uChunkX, uChunkY,
+			xChunkMesh.m_pVertexData, uNumVerts, uVertexStride);
+	}
+
 	// Upload to GPU
 	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
 		xState.m_xUnifiedVertexBuffer.GetBuffer().m_xVRAMHandle,

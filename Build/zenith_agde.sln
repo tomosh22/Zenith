@@ -2,6 +2,8 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AIShowcase", "..\Games\AIShowcase\build\aishowcase_agde.vcxproj", "{3BAA4C3F-F8BD-362B-B920-D21EE5F89FD5}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CityBuilder", "..\Games\CityBuilder\build\citybuilder_agde.vcxproj", "{224529EC-C5B0-B1A9-BE7E-916D479DFB45}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Combat", "..\Games\Combat\build\combat_agde.vcxproj", "{40EF43E7-D41C-D314-A802-1D7B7E04B249}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DevilsPlayground", "..\Games\DevilsPlayground\Build\devilsplayground_agde.vcxproj", "{279BB029-A025-65EA-9AA6-391327564B7B}"
@@ -36,6 +38,10 @@ Global
 		{3BAA4C3F-F8BD-362B-B920-D21EE5F89FD5}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{3BAA4C3F-F8BD-362B-B920-D21EE5F89FD5}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{3BAA4C3F-F8BD-362B-B920-D21EE5F89FD5}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{224529EC-C5B0-B1A9-BE7E-916D479DFB45}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{224529EC-C5B0-B1A9-BE7E-916D479DFB45}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{224529EC-C5B0-B1A9-BE7E-916D479DFB45}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{224529EC-C5B0-B1A9-BE7E-916D479DFB45}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{40EF43E7-D41C-D314-A802-1D7B7E04B249}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{40EF43E7-D41C-D314-A802-1D7B7E04B249}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{40EF43E7-D41C-D314-A802-1D7B7E04B249}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a

@@ -1,0 +1,566 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="vs2022_Debug_Win64_False|x64">
+      <Configuration>vs2022_Debug_Win64_False</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Debug_Win64_True|x64">
+      <Configuration>vs2022_Debug_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Release_Win64_False|x64">
+      <Configuration>vs2022_Release_Win64_False</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Release_Win64_True|x64">
+      <Configuration>vs2022_Release_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{2E753480-B5EF-00FD-47D4-4AA64B5F1462}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>CityBuilder</RootNamespace>
+    <ProjectName>CityBuilder</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
+    <TargetName>citybuilder</TargetName>
+    <OutDir>output\win64\vs2022_debug_win64_false\</OutDir>
+    <IntDir>obj\win64\vs2022_debug_win64_false\</IntDir>
+    <TargetExt>.exe</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_debug_win64_false\citybuilder.exe</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+    <TargetName>citybuilder</TargetName>
+    <OutDir>output\win64\vs2022_debug_win64_true\</OutDir>
+    <IntDir>obj\win64\vs2022_debug_win64_true\</IntDir>
+    <TargetExt>.exe</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_debug_win64_true\citybuilder.exe</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
+    <TargetName>citybuilder</TargetName>
+    <OutDir>output\win64\vs2022_release_win64_false\</OutDir>
+    <IntDir>obj\win64\vs2022_release_win64_false\</IntDir>
+    <TargetExt>.exe</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_release_win64_false\citybuilder.exe</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+    <TargetName>citybuilder</TargetName>
+    <OutDir>output\win64\vs2022_release_win64_true\</OutDir>
+    <IntDir>obj\win64\vs2022_release_win64_true\</IntDir>
+    <TargetExt>.exe</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_release_win64_true\citybuilder.exe</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/CityBuilder/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_false\citybuilder_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>output\win64\vs2022_debug_win64_false\citybuilder.exe</OutputFile>
+      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_debug_win64_false;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib</AdditionalLibraryDirectories>
+      <ProgramDatabaseFile>output\win64\vs2022_debug_win64_false\citybuilder.pdb</ProgramDatabaseFile>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>false</MapExports>
+      <SwapRunFromCD>false</SwapRunFromCD>
+      <SwapRunFromNET>false</SwapRunFromNET>
+      <Driver>NotSet</Driver>
+      <OptimizeReferences>false</OptimizeReferences>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <ProfileGuidedDatabase>
+      </ProfileGuidedDatabase>
+      <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
+      <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
+      <TypeLibraryResourceID>1</TypeLibraryResourceID>
+      <NoEntryPoint>false</NoEntryPoint>
+      <SetChecksum>false</SetChecksum>
+      <TurnOffAssemblyGeneration>false</TurnOffAssemblyGeneration>
+      <TargetMachine>MachineX64</TargetMachine>
+      <Profile>false</Profile>
+      <CLRImageType>Default</CLRImageType>
+      <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
+      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
+      <LargeAddressAware>true</LargeAddressAware>
+      <MapFileName>output\win64\vs2022_debug_win64_false\citybuilder.map</MapFileName>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/CityBuilder/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\freetype\include;..\..\..\tools\middleware\msdf-atlas-gen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_true\citybuilder_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>output\win64\vs2022_debug_win64_true\citybuilder.exe</OutputFile>
+      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>..\..\..\build\output\freetype\debug;..\..\..\build\output\msdfatlasgen\debug;..\..\..\build\output\msdfgen\debug;..\..\..\build\output\win64\vs2022_debug_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
+      <ProgramDatabaseFile>output\win64\vs2022_debug_win64_true\citybuilder.pdb</ProgramDatabaseFile>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>false</MapExports>
+      <SwapRunFromCD>false</SwapRunFromCD>
+      <SwapRunFromNET>false</SwapRunFromNET>
+      <Driver>NotSet</Driver>
+      <OptimizeReferences>false</OptimizeReferences>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <ProfileGuidedDatabase>
+      </ProfileGuidedDatabase>
+      <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
+      <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
+      <TypeLibraryResourceID>1</TypeLibraryResourceID>
+      <NoEntryPoint>false</NoEntryPoint>
+      <SetChecksum>false</SetChecksum>
+      <TurnOffAssemblyGeneration>false</TurnOffAssemblyGeneration>
+      <TargetMachine>MachineX64</TargetMachine>
+      <Profile>false</Profile>
+      <CLRImageType>Default</CLRImageType>
+      <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
+      <LargeAddressAware>true</LargeAddressAware>
+      <MapFileName>output\win64\vs2022_debug_win64_true\citybuilder.map</MapFileName>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/CityBuilder/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_release_win64_false\citybuilder_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>output\win64\vs2022_release_win64_false\citybuilder.exe</OutputFile>
+      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_release_win64_false;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib</AdditionalLibraryDirectories>
+      <ProgramDatabaseFile>output\win64\vs2022_release_win64_false\citybuilder.pdb</ProgramDatabaseFile>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>false</MapExports>
+      <SwapRunFromCD>false</SwapRunFromCD>
+      <SwapRunFromNET>false</SwapRunFromNET>
+      <Driver>NotSet</Driver>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <ProfileGuidedDatabase>
+      </ProfileGuidedDatabase>
+      <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
+      <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
+      <TypeLibraryResourceID>1</TypeLibraryResourceID>
+      <NoEntryPoint>false</NoEntryPoint>
+      <SetChecksum>false</SetChecksum>
+      <TurnOffAssemblyGeneration>false</TurnOffAssemblyGeneration>
+      <TargetMachine>MachineX64</TargetMachine>
+      <Profile>false</Profile>
+      <CLRImageType>Default</CLRImageType>
+      <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
+      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <LargeAddressAware>true</LargeAddressAware>
+      <MapFileName>output\win64\vs2022_release_win64_false\citybuilder.map</MapFileName>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/CityBuilder/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\freetype\include;..\..\..\tools\middleware\msdf-atlas-gen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_release_win64_true\citybuilder_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>output\win64\vs2022_release_win64_true\citybuilder.exe</OutputFile>
+      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>..\..\..\build\output\freetype\release;..\..\..\build\output\msdfatlasgen\release;..\..\..\build\output\msdfgen\release;..\..\..\build\output\win64\vs2022_release_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
+      <ProgramDatabaseFile>output\win64\vs2022_release_win64_true\citybuilder.pdb</ProgramDatabaseFile>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>false</MapExports>
+      <SwapRunFromCD>false</SwapRunFromCD>
+      <SwapRunFromNET>false</SwapRunFromNET>
+      <Driver>NotSet</Driver>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <ProfileGuidedDatabase>
+      </ProfileGuidedDatabase>
+      <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
+      <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
+      <TypeLibraryResourceID>1</TypeLibraryResourceID>
+      <NoEntryPoint>false</NoEntryPoint>
+      <SetChecksum>false</SetChecksum>
+      <TurnOffAssemblyGeneration>false</TurnOffAssemblyGeneration>
+      <TargetMachine>MachineX64</TargetMachine>
+      <Profile>false</Profile>
+      <CLRImageType>Default</CLRImageType>
+      <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <LargeAddressAware>true</LargeAddressAware>
+      <MapFileName>output\win64\vs2022_release_win64_true\citybuilder.map</MapFileName>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Components\CB_CityCamera_Behaviour.h" />
+    <ClInclude Include="..\Components\CB_CityManager_Behaviour.h" />
+    <ClInclude Include="..\Components\CB_DayNightCycle_Behaviour.h" />
+    <ClInclude Include="..\Source\CB_BuildingDefs.h" />
+    <ClInclude Include="..\Source\CB_BuildingManager.h" />
+    <ClInclude Include="..\Source\CB_BuildingPlacement.h" />
+    <ClInclude Include="..\Source\CB_CameraController.h" />
+    <ClInclude Include="..\Source\CB_CitizenManager.h" />
+    <ClInclude Include="..\Source\CB_CityGrid.h" />
+    <ClInclude Include="..\Source\CB_CityStats.h" />
+    <ClInclude Include="..\Source\CB_Config.h" />
+    <ClInclude Include="..\Source\CB_DayNight.h" />
+    <ClInclude Include="..\Source\CB_EconomyManager.h" />
+    <ClInclude Include="..\Source\CB_Events.h" />
+    <ClInclude Include="..\Source\CB_PresentationView.h" />
+    <ClInclude Include="..\Source\CB_RoadController.h" />
+    <ClInclude Include="..\Source\CB_RoadGraph.h" />
+    <ClInclude Include="..\Source\CB_RoadMesh.h" />
+    <ClInclude Include="..\Source\CB_RoadNetwork.h" />
+    <ClInclude Include="..\Source\CB_RoadTerrain.h" />
+    <ClInclude Include="..\Source\CB_SaveLoad.h" />
+    <ClInclude Include="..\Source\CB_SaveLoadFreeform.h" />
+    <ClInclude Include="..\Source\CB_Serialize.h" />
+    <ClInclude Include="..\Source\CB_ServiceManager.h" />
+    <ClInclude Include="..\Source\CB_SimulationTick.h" />
+    <ClInclude Include="..\Source\CB_Spline.h" />
+    <ClInclude Include="..\Source\CB_Telemetry.h" />
+    <ClInclude Include="..\Source\CB_TerrainGen.h" />
+    <ClInclude Include="..\Source\CB_TerrainHeightfield.h" />
+    <ClInclude Include="..\Source\CB_TerrainModifier.h" />
+    <ClInclude Include="..\Source\CB_ToolSystem.h" />
+    <ClInclude Include="..\Source\CB_Traffic.h" />
+    <ClInclude Include="..\Source\CB_Zoning.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\CityBuilder.cpp" />
+    <ClCompile Include="..\Source\CB_BuildingManager.cpp" />
+    <ClCompile Include="..\Source\CB_BuildingPlacement.cpp" />
+    <ClCompile Include="..\Source\CB_CitizenManager.cpp" />
+    <ClCompile Include="..\Source\CB_CityGrid.cpp" />
+    <ClCompile Include="..\Source\CB_EconomyManager.cpp" />
+    <ClCompile Include="..\Source\CB_PresentationView.cpp" />
+    <ClCompile Include="..\Source\CB_RoadController.cpp" />
+    <ClCompile Include="..\Source\CB_RoadGraph.cpp" />
+    <ClCompile Include="..\Source\CB_RoadNetwork.cpp" />
+    <ClCompile Include="..\Source\CB_RoadTerrain.cpp" />
+    <ClCompile Include="..\Source\CB_ServiceManager.cpp" />
+    <ClCompile Include="..\Source\CB_SimulationTick.cpp" />
+    <ClCompile Include="..\Source\CB_Telemetry.cpp" />
+    <ClCompile Include="..\Source\CB_ToolSystem.cpp" />
+    <ClCompile Include="..\Source\CB_Traffic.cpp" />
+    <ClCompile Include="..\Source\CB_Zoning.cpp" />
+    <ClCompile Include="..\Tests\CB_Boot.cpp" />
+    <ClCompile Include="..\Tests\CB_BuildingGrow.cpp" />
+    <ClCompile Include="..\Tests\CB_Buildings.cpp" />
+    <ClCompile Include="..\Tests\CB_Citizens.cpp" />
+    <ClCompile Include="..\Tests\CB_CityGrow.cpp" />
+    <ClCompile Include="..\Tests\CB_CityServices.cpp" />
+    <ClCompile Include="..\Tests\CB_Grid.cpp" />
+    <ClCompile Include="..\Tests\CB_HumanSession.cpp" />
+    <ClCompile Include="..\Tests\CB_Play.cpp" />
+    <ClCompile Include="..\Tests\CB_RoadCarve.cpp" />
+    <ClCompile Include="..\Tests\CB_RoadDraw.cpp" />
+    <ClCompile Include="..\Tests\CB_Roads.cpp" />
+    <ClCompile Include="..\Tests\CB_SaveLoad.cpp" />
+    <ClCompile Include="..\Tests\CB_SaveLoadRoundtrip.cpp" />
+    <ClCompile Include="..\Tests\CB_Sim.cpp" />
+    <ClCompile Include="..\Tests\CB_SplineRoads.cpp" />
+    <ClCompile Include="..\Tests\CB_Terrain.cpp" />
+    <ClCompile Include="..\Tests\CB_TrafficTest.cpp" />
+    <ClCompile Include="..\Tests\CB_ZoningLots.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\build\zenithbase_win64.vcxproj">
+      <Project>{04AE3503-34B5-40D1-B5EA-687E4EBDA542}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\zenith_win64.vcxproj">
+      <Project>{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\freetype_win64.vcxproj">
+      <Project>{344E0FC1-1BED-6B65-10B3-6D38E6A2E5F7}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\msdfgen_win64.vcxproj">
+      <Project>{8EC57622-53A0-0F1E-899A-13A5CA34A40A}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\zenithecs_win64.vcxproj">
+      <Project>{C835B780-6023-6555-CFB0-241C3E2F54EC}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\msdf-atlas-gen_win64.vcxproj">
+      <Project>{CE98799E-A399-5D8C-D6E4-CC12C760014F}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

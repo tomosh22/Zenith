@@ -230,6 +230,7 @@ public class ZenithSolution : Solution
 		conf.AddProject<TilePuzzleGameProject>(target);
 		conf.AddProject<AIShowcaseGameProject>(target);
 		conf.AddProject<DevilsPlaygroundGameProject>(target);
+		conf.AddProject<CityBuilderGameProject>(target);
 
 		// Windows-only tools
 		if (target.Platform == Platform.win64)

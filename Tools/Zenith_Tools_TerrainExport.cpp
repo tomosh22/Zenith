@@ -25,7 +25,12 @@ static std::string GetGameAssetsDirectory()
 
 #include "TaskSystem/Zenith_TaskSystem.h"
 
-#define MAX_TERRAIN_HEIGHT 4096
+// Peak terrain height in world units. Capped at the engine's AABB assumption
+// (Flux_TerrainConfig::MAX_TERRAIN_HEIGHT = 512) so chunk frustum bounds stay
+// valid. Was 4096, which only stayed in-bounds because of the buggy 0.1 XZ
+// scale below (4096 * 0.1 = 409.6m); with the corrected 1.0 scale a value of
+// 4096 would put vertices 8x above the culling AABB.
+#define MAX_TERRAIN_HEIGHT 512
 
 //-----------------------------------------------------------------------------
 // Packing helpers for terrain vertex format optimization
@@ -234,8 +239,11 @@ static cv::Mat LoadHeightmapAuto(const std::string& strPath)
 
 //#TO width/height that heightmap is divided into
 #define TERRAIN_SIZE 64
-//#TO multiplier for vertex positions
-#define TERRAIN_SCALE 0.1f
+//#TO world units per heightmap pixel. 1.0 => a 4096px heightmap bakes a
+// 4096-unit-wide terrain, which is what Flux_TerrainConfig (CHUNK_SIZE_WORLD=64
+// * CHUNK_GRID_SIZE=64 = 4096) and the games assume. Was 0.1f, a long-standing
+// bug that produced a 409.6-unit terrain mismatched with the config/LOD/docs.
+#define TERRAIN_SCALE 1.0f
 
 void GenerateFullTerrain(const cv::Mat& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
 {

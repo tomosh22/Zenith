@@ -262,3 +262,16 @@ public class DevilsPlaygroundGameProject : GameProject
 		// DevilsPlayground-specific configuration if needed
 	}
 }
+
+// CityBuilder game project - SimCity/Cities-Skylines-style city builder with
+// runtime terrain deformation (Flux_TerrainModification engine subsystem).
+[Sharpmake.Generate]
+public class CityBuilderGameProject : GameProject
+{
+	public override string GameName => "CityBuilder";
+
+	public CityBuilderGameProject() : base()
+	{
+		// CityBuilder-specific configuration if needed
+	}
+}
