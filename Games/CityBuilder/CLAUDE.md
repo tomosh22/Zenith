@@ -86,7 +86,29 @@ CB_TerrainHeightfield.h    # CPU heightfield: GetHeightAt + runtime deform brush
                            #   flatten/smooth; shaped to CB_TerrainGen hills; drives the terraform tool)
 CB_BuildingDefs.h          # 20 building types (RCI + power/water/police/fire/hospital/school/park/
                            #   landfill/sewage/bus-depot/post-office) + tuning (constexpr table)
+CB_ToolIcons.h             # toolbar icon filenames + hover-tooltip text (shared: generator + HUD)
+CB_ToolIconGen.h           # procedural toolbar-icon drawing (tools-build): white glyph + outline -> RGBA8
 ```
+
+## HUD / toolbar (`CB_CityManager_Behaviour::BuildGameUI`)
+
+The in-game HUD (built on the Zenith UI suite, rendered in ALL configs incl. `_False`)
+is a SimCity/C:S-style layout: a top info bar (treasury/tax/pop/jobs/happiness/buildings/
+services) + speed controls, a top-right info panel (power/water/pollution/traffic/garbage/
+sewage/fires), a bottom-left RCI demand meter, and a **bottom tool palette** — one button
+per tool with a **procedurally-generated icon** + a **hover tooltip** describing the tool.
+The UI **rebuilds on canvas-size change** (`m_fUIBuiltW/H`) so the pixel-anchored layout
+tracks window resize / DPI.
+
+Icons are drawn at tools-build (`CB_EnsureUIIcons` in `CityBuilder.cpp`, fired from
+`Project_RegisterScriptBehaviours` under `ZENITH_TOOLS`, version-marker-gated) into
+`Assets/UI/Icons/cb_<name>.ztxtr` and shown via a **`UIImage` overlay** centred on each
+button — NOT `UIButton`'s `ICON_ONLY` (which doesn't mark the texture bindless, so it never
+renders; `UIImage` does). See memory `reference-zenith-ui-icon-textures`. Capture
+screenshots **DPI-aware** (`SetProcessDPIAware()`) or the bottom/right of the HUD is cropped
+out of the shot (see `reference-screen-capture-and-primitive-winding`). The windowed
+`CB_UIShowcase` test builds a small city + rotates a simulated hover across tools so the
+icons + tooltips can be screenshotted.
 
 Behaviours (`Components/`): `CB_CityManager_Behaviour` owns every subsystem and drives
 sim + tools + render + HUD + traffic each frame; `CB_CityCamera_Behaviour` (RTS camera);

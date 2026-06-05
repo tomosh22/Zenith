@@ -23,8 +23,18 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "CityBuilder/Source/CB_PresentationView.h"
 #include "CityBuilder/Source/CB_Config.h"
+#include "CityBuilder/Source/CB_ToolIcons.h"   // toolbar icon filenames + hover tooltips
+#include <cstring>                              // strlen (tooltip width estimate)
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "UI/Zenith_UIText.h"
+#include "UI/Zenith_UIRect.h"
+#include "UI/Zenith_UIButton.h"
+#include "UI/Zenith_UIImage.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Input/Zenith_InputSimulator.h"
+#endif
 #include "Input/Zenith_Input.h"
 #include "Core/Zenith_CommandLine.h"
 #include "CityBuilder/Source/CB_Events.h"
@@ -216,7 +226,17 @@ public:
 			m_xBuild.Render(m_xZoning);// road-facing building boxes
 			if (m_xSim.GetSpeed() != CB_SIM_PAUSED) { m_xTraffic.Update(m_xRoadCtrl.GetGraph(), m_xHeightfield, fDt); }
 			m_xTraffic.Render();       // cars driving the spline network
-			UpdateHUD();
+			if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			{
+				Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+				// (Re)build the UI on first use AND whenever the window/canvas size changes, so the
+				// pixel-anchored layout always matches the live framebuffer (handles maximize/DPI/resize).
+				const Zenith_Maths::Vector2 xCanvasSz = xUI.GetCanvas().GetSize();
+				const bool bSizeChanged = (xCanvasSz.x > 1.0f) &&
+					(fabsf(static_cast<float>(xCanvasSz.x) - m_fUIBuiltW) > 1.0f || fabsf(static_cast<float>(xCanvasSz.y) - m_fUIBuiltH) > 1.0f);
+				if (!m_bUIBuilt || bSizeChanged) { BuildGameUI(xUI); m_bUIBuilt = true; }
+				UpdateGameUI(xUI);
+			}
 		}
 	}
 
@@ -385,6 +405,380 @@ public:
 				const float fY2 = m_xHeightfield.GetHeightAt(xNxt.m_fX, xNxt.m_fZ) + 2.0f;
 				g_xEngine.Primitives().AddLine(Zenith_Maths::Vector3(xS.m_fX, fY, xS.m_fZ),
 					Zenith_Maths::Vector3(xNxt.m_fX, fY2, xNxt.m_fZ), xAmber, 1.0f);
+			}
+		}
+	}
+
+	// ===================== Game UI (SimCity / Cities:Skylines-parity HUD) =====================
+	// Built once at runtime (works in BOTH _True and _False — no editor automation needed) onto
+	// the entity's UIComponent canvas. Top info bar + speed controls, RCI demand meter, a full
+	// tool palette (zones/roads/utilities/services/garbage/sewage/transit/mail/districts/conduit/
+	// terraform), and a live info panel. Buttons are real Zenith_UIButtons with click callbacks.
+
+	// Set the active build tool (and, for the services category, the placed service sub-type).
+	void SelectUITool(CB_ETool eTool, CB_EBuildingType eService)
+	{
+		m_xTools.SetTool(eTool);
+		if (eTool == CB_TOOL_POLICE && eService != CB_BUILDING_NONE) { m_xRoadCtrl.SetServiceType(eService); }
+	}
+	void SetUISpeed(CB_ESimSpeed eSpeed) { m_xSim.SetSpeed(eSpeed); }
+
+	// Button callbacks (UIButtonCallback = void(*)(void*)). The tool + service sub-type are packed
+	// into the userdata pointer (tool in byte 0, service in byte 1); the speed is the raw value.
+	static void UICb_Tool(void* pUser)
+	{
+		const uintptr_t uCode = reinterpret_cast<uintptr_t>(pUser);
+		if (CB_CityManager_Behaviour* pxMgr = GetActive())
+		{
+			pxMgr->SelectUITool(static_cast<CB_ETool>(uCode & 0xFFu), static_cast<CB_EBuildingType>((uCode >> 8) & 0xFFu));
+		}
+	}
+	static void UICb_Speed(void* pUser)
+	{
+		if (CB_CityManager_Behaviour* pxMgr = GetActive())
+		{
+			pxMgr->SetUISpeed(static_cast<CB_ESimSpeed>(reinterpret_cast<uintptr_t>(pUser)));
+		}
+	}
+
+	struct CB_UIToolDesc { CB_ETool eTool; CB_EBuildingType eService; const char* szLabel; float fR, fG, fB; };
+
+	// The toolbar: one button per tool (services expanded to one button each). Static so both
+	// the build and the per-frame active-highlight can read it.
+	static const CB_UIToolDesc* ToolDescs(int& iCountOut)
+	{
+		static const CB_UIToolDesc s_axTools[] = {
+			{ CB_TOOL_BULLDOZE,  CB_BUILDING_NONE,         "Bulldoze", 0.82f, 0.28f, 0.22f },
+			{ CB_TOOL_ROAD,      CB_BUILDING_NONE,         "Road",     0.52f, 0.54f, 0.58f },
+			{ CB_TOOL_ZONE_RES,  CB_BUILDING_NONE,         "Res",      0.24f, 0.72f, 0.32f },
+			{ CB_TOOL_ZONE_COM,  CB_BUILDING_NONE,         "Com",      0.24f, 0.48f, 0.88f },
+			{ CB_TOOL_ZONE_IND,  CB_BUILDING_NONE,         "Ind",      0.88f, 0.72f, 0.22f },
+			{ CB_TOOL_ZONE_PARK, CB_BUILDING_NONE,         "Park",     0.30f, 0.66f, 0.34f },
+			{ CB_TOOL_POWER,     CB_BUILDING_NONE,         "Power",    0.90f, 0.80f, 0.22f },
+			{ CB_TOOL_WATER,     CB_BUILDING_NONE,         "Water",    0.30f, 0.66f, 0.90f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_POLICE,       "Police",   0.22f, 0.32f, 0.76f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_FIRE,         "Fire",     0.90f, 0.44f, 0.16f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_HOSPITAL,     "Health",   0.88f, 0.30f, 0.40f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_SCHOOL,       "School",   0.58f, 0.44f, 0.86f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_LANDFILL,     "Garbage",  0.52f, 0.44f, 0.30f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_SEWAGE_PLANT, "Sewage",   0.40f, 0.52f, 0.42f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_BUS_DEPOT,    "Transit",  0.16f, 0.56f, 0.62f },
+			{ CB_TOOL_POLICE,    CB_BUILDING_POST_OFFICE,  "Mail",     0.26f, 0.36f, 0.80f },
+			{ CB_TOOL_DISTRICT,  CB_BUILDING_NONE,         "District", 0.68f, 0.48f, 0.86f },
+			{ CB_TOOL_TRANSIT,   CB_BUILDING_NONE,         "BusLine",  0.20f, 0.60f, 0.66f },
+			{ CB_TOOL_CONDUIT,   CB_BUILDING_NONE,         "Conduit",  0.38f, 0.74f, 0.86f },
+			{ CB_TOOL_TERRAFORM, CB_BUILDING_NONE,         "Terrain",  0.60f, 0.50f, 0.34f },
+		};
+		iCountOut = static_cast<int>(sizeof(s_axTools) / sizeof(s_axTools[0]));
+		return s_axTools;
+	}
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	// Automation/showcase helper: park the simulated cursor at the centre of tool button
+	// iTool so its hover tooltip appears (for a screenshot). Re-read each frame so it tracks
+	// the live window/canvas size. Returns the tool's tooltip text (or nullptr).
+	static const char* ShowcaseHoverTool(int iTool)
+	{
+		CB_CityManager_Behaviour* pxMgr = GetActive();
+		if (pxMgr == nullptr || !pxMgr->m_xParentEntity.HasComponent<Zenith_UIComponent>()) { return nullptr; }
+		Zenith_UIComponent& xUI = pxMgr->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		char acName[24]; snprintf(acName, sizeof(acName), "CB_Tool_%d", iTool);
+		Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(acName);
+		if (pxBtn == nullptr) { return nullptr; }
+		const Zenith_Maths::Vector4 xB = pxBtn->GetScreenBounds();
+		Zenith_InputSimulator::SimulateMousePosition(static_cast<double>((xB.x + xB.z) * 0.5f), static_cast<double>((xB.y + xB.w) * 0.5f));
+		int iN = 0; const CB_ToolIcons::Def* pxD = CB_ToolIcons::All(iN);
+		return (iTool >= 0 && iTool < iN) ? pxD[iTool].szTooltip : nullptr;
+	}
+#endif
+
+	void BuildGameUI(Zenith_UIComponent& xUI)
+	{
+		using namespace Zenith_UI;
+		// SetReferenceResolution triggers UpdateSize so GetSize() returns the real window size;
+		// then re-set the reference to that size so the scale factor is 1.0 and we lay out in raw
+		// window pixels (full width, edges anchored correctly — no aspect-ratio surprises).
+		xUI.GetCanvas().SetReferenceResolution(1920.0f, 1080.0f);
+		const Zenith_Maths::Vector2 xCv = xUI.GetCanvas().GetSize();
+		const float fW = (xCv.x > 200.0f) ? xCv.x : 1920.0f;
+		const float fH = (xCv.y > 200.0f) ? xCv.y : 1080.0f;
+		xUI.GetCanvas().SetReferenceResolution(fW, fH);
+		m_fUIBuiltW = fW; m_fUIBuiltH = fH;   // remember the size we laid out for (rebuild on resize)
+		xUI.ClearElements();   // drop the old text-only HUD
+
+		const Zenith_Maths::Vector4 xBG    = { 0.07f, 0.09f, 0.12f, 0.95f };
+		const Zenith_Maths::Vector4 xWhite = { 0.92f, 0.94f, 0.97f, 1.0f };
+		const Zenith_Maths::Vector4 xDim   = { 0.70f, 0.73f, 0.78f, 1.0f };
+
+		// ---------- Top info bar ----------
+		Zenith_UIRect* pxTop = xUI.CreateRect("CB_TopBar");
+		pxTop->SetAnchorAndPivot(AnchorPreset::TopLeft);
+		pxTop->SetPosition(0.0f, 0.0f); pxTop->SetSize(fW, 50.0f);
+		pxTop->SetColor(xBG); pxTop->SetSortOrder(50);
+
+		Zenith_UIText* pxTitle = xUI.CreateText("CB_Title", "ZENITH CITY");
+		pxTitle->SetAnchorAndPivot(AnchorPreset::TopLeft);
+		pxTitle->SetPosition(22.0f, 11.0f); pxTitle->SetSize(250.0f, 30.0f);
+		pxTitle->SetColor({ 0.96f, 0.84f, 0.42f, 1.0f }); pxTitle->SetFontSize(26.0f); pxTitle->SetSortOrder(50);
+
+		auto MakeStat = [&](const char* szName, float fX, float fW)
+		{
+			Zenith_UIText* p = xUI.CreateText(szName, "");
+			p->SetAnchorAndPivot(AnchorPreset::TopLeft);
+			p->SetPosition(fX, 14.0f); p->SetSize(fW, 24.0f);
+			p->SetColor(xWhite); p->SetFontSize(20.0f); p->SetSortOrder(50);
+		};
+		MakeStat("CB_UI_Money", 300.0f, 230.0f);
+		MakeStat("CB_UI_Pop",   560.0f, 220.0f);
+		MakeStat("CB_UI_Happy", 800.0f, 360.0f);
+
+		// ---------- Speed controls (top-right) ----------
+		struct SpeedBtn { const char* szName; const char* szLabel; CB_ESimSpeed eSpeed; };
+		const SpeedBtn axSpeed[] = {
+			{ "CB_UI_Pause", "II",   CB_SIM_PAUSED },
+			{ "CB_UI_Play",  ">",    CB_SIM_NORMAL },
+			{ "CB_UI_Fast",  ">>",   CB_SIM_FAST   },
+		};
+		for (int i = 0; i < 3; ++i)
+		{
+			Zenith_UIButton* p = xUI.CreateButton(axSpeed[i].szName, axSpeed[i].szLabel);
+			p->SetAnchorAndPivot(AnchorPreset::TopRight);
+			p->SetPosition(-(18.0f + (2 - i) * 46.0f), 8.0f); p->SetSize(42.0f, 34.0f);
+			p->SetNormalColor({ 0.20f, 0.23f, 0.28f, 1.0f });
+			p->SetHoverColor({ 0.30f, 0.35f, 0.42f, 1.0f });
+			p->SetPressedColor({ 0.45f, 0.55f, 0.68f, 1.0f });
+			p->SetCornerRadius(4.0f); p->SetFontSize(18.0f); p->SetTextColor(xWhite);
+			p->SetOnClick(&UICb_Speed, reinterpret_cast<void*>(static_cast<uintptr_t>(axSpeed[i].eSpeed)));
+			p->SetSortOrder(50);
+		}
+
+		// ---------- RCI demand meter (bottom-left, above the toolbar) ----------
+		Zenith_UIRect* pxRCI = xUI.CreateRect("CB_RCIPanel");
+		pxRCI->SetAnchorAndPivot(AnchorPreset::BottomLeft);
+		pxRCI->SetPosition(14.0f, -108.0f); pxRCI->SetSize(122.0f, 96.0f);
+		pxRCI->SetColor(xBG); pxRCI->SetCornerRadius(6.0f); pxRCI->SetSortOrder(50);
+		{
+			Zenith_UIText* p = xUI.CreateText("CB_RCILbl", "DEMAND");
+			p->SetAnchorAndPivot(AnchorPreset::BottomLeft); p->SetPosition(26.0f, -100.0f); p->SetSize(100.0f, 18.0f);
+			p->SetColor(xDim); p->SetFontSize(14.0f); p->SetSortOrder(50);
+		}
+		struct RCIBar { const char* szName; float fR, fG, fB; };
+		const RCIBar axRCI[] = { { "CB_RCI_R", 0.26f, 0.74f, 0.34f }, { "CB_RCI_C", 0.26f, 0.50f, 0.90f }, { "CB_RCI_I", 0.90f, 0.74f, 0.24f } };
+		for (int i = 0; i < 3; ++i)
+		{
+			Zenith_UIRect* p = xUI.CreateRect(axRCI[i].szName);
+			p->SetAnchorAndPivot(AnchorPreset::BottomLeft);
+			p->SetPosition(28.0f + i * 32.0f, -22.0f); p->SetSize(24.0f, 58.0f);
+			p->SetColor({ axRCI[i].fR, axRCI[i].fG, axRCI[i].fB, 1.0f });
+			p->SetFillDirection(FillDirection::BottomToTop); p->SetFillAmount(0.5f);
+			p->SetCornerRadius(2.0f); p->SetSortOrder(50);
+		}
+
+		// ---------- Active-tool label (centred, above the toolbar) ----------
+		{
+			Zenith_UIText* p = xUI.CreateText("CB_UI_ToolLbl", "");
+			p->SetAnchorAndPivot(AnchorPreset::BottomCenter);
+			p->SetPosition(0.0f, -100.0f); p->SetSize(480.0f, 24.0f);
+			p->SetColor({ 0.96f, 0.90f, 0.60f, 1.0f }); p->SetFontSize(20.0f); p->SetSortOrder(50);
+		}
+
+		// ---------- Info panel (top-right, below the bar) ----------
+		Zenith_UIRect* pxInfo = xUI.CreateRect("CB_InfoPanel");
+		pxInfo->SetAnchorAndPivot(AnchorPreset::TopRight);
+		pxInfo->SetPosition(-14.0f, 60.0f); pxInfo->SetSize(290.0f, 178.0f);
+		pxInfo->SetColor(xBG); pxInfo->SetCornerRadius(6.0f); pxInfo->SetSortOrder(50);
+		{
+			const char* aszInfo[] = { "CB_UI_Budget", "CB_UI_Power", "CB_UI_Water", "CB_UI_Env", "CB_UI_Svc" };
+			for (int i = 0; i < 5; ++i)
+			{
+				Zenith_UIText* p = xUI.CreateText(aszInfo[i], "");
+				p->SetAnchorAndPivot(AnchorPreset::TopRight);
+				p->SetPosition(-26.0f, 72.0f + i * 30.0f); p->SetSize(264.0f, 26.0f);
+				p->SetColor(xWhite); p->SetFontSize(18.0f); p->SetSortOrder(50);
+			}
+		}
+
+		// ---------- Bottom tool palette ----------
+		Zenith_UIRect* pxBar = xUI.CreateRect("CB_ToolBar");
+		pxBar->SetAnchorAndPivot(AnchorPreset::BottomLeft);
+		pxBar->SetPosition(0.0f, 0.0f); pxBar->SetSize(fW, 92.0f);
+		pxBar->SetColor(xBG); pxBar->SetSortOrder(50);
+
+		int iTools = 0;
+		const CB_UIToolDesc* pxTools = ToolDescs(iTools);
+		int iIcons = 0;
+		const CB_ToolIcons::Def* pxIcons = CB_ToolIcons::All(iIcons);
+		const float fGap = 4.0f;
+		// Adaptive button width so all tools always fit the bar (shrinks on narrow windows).
+		const float fFitW = (fW - 24.0f) / iTools - fGap;
+		const float fBtnW = (fFitW < 90.0f) ? fFitW : 90.0f;
+		const float fBtnH = 66.0f;
+		const float fIcon = ((fBtnW < fBtnH) ? fBtnW : fBtnH) - 16.0f;   // square icon, centred
+		const float fTotalW = iTools * fBtnW + (iTools - 1) * fGap;
+		const float fStartX = (fW - fTotalW) * 0.5f;
+		for (int i = 0; i < iTools; ++i)
+		{
+			char acName[24];
+			snprintf(acName, sizeof(acName), "CB_Tool_%d", i);
+			// Icon-only button (the procedural glyph reads the tool; hover shows the description).
+			Zenith_UIButton* p = xUI.CreateButton(acName, "");
+			p->SetAnchorAndPivot(AnchorPreset::BottomLeft);
+			p->SetPosition(fStartX + i * (fBtnW + fGap), -13.0f); p->SetSize(fBtnW, fBtnH);
+			p->SetNormalColor({ pxTools[i].fR * 0.55f, pxTools[i].fG * 0.55f, pxTools[i].fB * 0.55f, 1.0f });
+			p->SetHoverColor({ pxTools[i].fR * 0.82f, pxTools[i].fG * 0.82f, pxTools[i].fB * 0.82f, 1.0f });
+			p->SetPressedColor({ pxTools[i].fR, pxTools[i].fG, pxTools[i].fB, 1.0f });
+			p->SetCornerRadius(5.0f); p->SetFontSize(15.0f); p->SetTextColor(xWhite);
+			p->SetBorderColor({ 0.95f, 0.92f, 0.55f, 1.0f }); p->SetBorderThickness(0.0f);
+			const uintptr_t uCode = static_cast<uintptr_t>(pxTools[i].eTool) | (static_cast<uintptr_t>(pxTools[i].eService) << 8);
+			p->SetOnClick(&UICb_Tool, reinterpret_cast<void*>(uCode));
+			p->SetSortOrder(50);
+
+			// Icon: a UIImage overlay centred on the button (UIButton's own ICON_ONLY path does
+			// not render the bindless texture; UIImage does + marks the texture bindless itself).
+			if (i < iIcons)
+			{
+				char acIcon[28];
+				snprintf(acIcon, sizeof(acIcon), "CB_ToolIcon_%d", i);
+				Zenith_UIImage* pxImg = xUI.CreateImage(acIcon);
+				pxImg->SetAnchorAndPivot(AnchorPreset::BottomLeft);
+				pxImg->SetPosition(fStartX + i * (fBtnW + fGap) + (fBtnW - fIcon) * 0.5f, -13.0f - (fBtnH - fIcon) * 0.5f);
+				pxImg->SetSize(fIcon, fIcon);
+				pxImg->SetTexturePath(std::string(GAME_ASSETS_DIR) + "UI/Icons/cb_" + pxIcons[i].szIcon + ".ztxtr");
+				pxImg->SetSortOrder(51);
+			}
+		}
+
+		// ---------- Hover tooltip (positioned over the hovered tool button each frame) ----------
+		{
+			Zenith_UIRect* pxTip = xUI.CreateRect("CB_Tooltip");
+			pxTip->SetAnchorAndPivot(AnchorPreset::TopLeft);
+			pxTip->SetSize(240.0f, 34.0f);
+			pxTip->SetColor({ 0.04f, 0.05f, 0.08f, 0.96f });
+			pxTip->SetCornerRadius(5.0f);
+			pxTip->SetBorderColor({ 0.95f, 0.92f, 0.55f, 0.9f }); pxTip->SetBorderThickness(1.5f);
+			pxTip->SetSortOrder(60); pxTip->SetVisible(false);
+
+			Zenith_UIText* pxTipTxt = xUI.CreateText("CB_TooltipTxt", "");
+			pxTipTxt->SetAnchorAndPivot(AnchorPreset::TopLeft);
+			pxTipTxt->SetSize(220.0f, 26.0f);
+			pxTipTxt->SetColor({ 0.96f, 0.97f, 0.99f, 1.0f });
+			pxTipTxt->SetFontSize(17.0f); pxTipTxt->SetSortOrder(61); pxTipTxt->SetVisible(false);
+		}
+
+	}
+
+	// Show the hovered tool button's description in the tooltip, positioned above it.
+	void UpdateToolTooltip(Zenith_UIComponent& xUI)
+	{
+		using namespace Zenith_UI;
+		Zenith_UIRect* pxTip = xUI.FindElement<Zenith_UIRect>("CB_Tooltip");
+		Zenith_UIText* pxTxt = xUI.FindElement<Zenith_UIText>("CB_TooltipTxt");
+		if (!pxTip || !pxTxt) { return; }
+
+		int iIcons = 0;
+		const CB_ToolIcons::Def* pxIcons = CB_ToolIcons::All(iIcons);
+		Zenith_UIButton* pxHover = nullptr;
+		const char* szTip = nullptr;
+		for (int i = 0; i < iIcons; ++i)
+		{
+			char acName[24]; snprintf(acName, sizeof(acName), "CB_Tool_%d", i);
+			Zenith_UIButton* b = xUI.FindElement<Zenith_UIButton>(acName);
+			if (b && b->GetState() == Zenith_UIButton::ButtonState::HOVERED) { pxHover = b; szTip = pxIcons[i].szTooltip; break; }
+		}
+
+		if (!pxHover || !szTip)
+		{
+			pxTip->SetVisible(false); pxTxt->SetVisible(false);
+			return;
+		}
+
+		const float fFont = 17.0f;
+		const float fTipW = 20.0f + static_cast<float>(strlen(szTip)) * fFont * 0.52f;
+		const float fTipH = 32.0f;
+		const Zenith_Maths::Vector4 xB = pxHover->GetScreenBounds();
+		const Zenith_Maths::Vector2 xCanvas = xUI.GetCanvas().GetSize();
+		float fTx = (xB.x + xB.z) * 0.5f - fTipW * 0.5f;
+		if (fTx < 6.0f) { fTx = 6.0f; }
+		if (fTx + fTipW > static_cast<float>(xCanvas.x) - 6.0f) { fTx = static_cast<float>(xCanvas.x) - 6.0f - fTipW; }
+		const float fTy = xB.y - fTipH - 8.0f;
+
+		pxTip->SetPosition(fTx, fTy); pxTip->SetSize(fTipW, fTipH); pxTip->SetVisible(true);
+		pxTxt->SetPosition(fTx + 11.0f, fTy + 7.0f); pxTxt->SetSize(fTipW - 22.0f, fTipH - 12.0f);
+		pxTxt->SetText(szTip); pxTxt->SetFontSize(fFont); pxTxt->SetVisible(true);
+	}
+
+	void UpdateGameUI(Zenith_UIComponent& xUI)
+	{
+		using namespace Zenith_UI;
+		char acBuf[160];
+		UpdateToolTooltip(xUI);
+
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Money"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "$%d   Tax %d%%", static_cast<int>(m_xBuild.GetTreasury()), static_cast<int>(m_xBuild.GetTaxRate() * 100.0f));
+			p->SetText(acBuf);
+			p->SetColor(m_xBuild.GetTreasury() >= 0.0f ? Zenith_Maths::Vector4{ 0.55f, 0.90f, 0.55f, 1.0f } : Zenith_Maths::Vector4{ 0.95f, 0.45f, 0.45f, 1.0f });
+		}
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Pop"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Pop %u  Jobs %u", m_xBuild.GetPopulation(), m_xBuild.GetJobs());
+			p->SetText(acBuf);
+		}
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Happy"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Happy %d%%   Bldgs %u   Svc %u", static_cast<int>(m_xBuild.GetHappiness() * 100.0f), m_xBuild.GetActiveBuildings(), m_xBuild.GetActiveServices());
+			p->SetText(acBuf);
+		}
+
+		if (Zenith_UIRect* p = xUI.FindElement<Zenith_UIRect>("CB_RCI_R")) { p->SetFillAmount(m_xBuild.GetResDemand()); }
+		if (Zenith_UIRect* p = xUI.FindElement<Zenith_UIRect>("CB_RCI_C")) { p->SetFillAmount(m_xBuild.GetComDemand()); }
+		if (Zenith_UIRect* p = xUI.FindElement<Zenith_UIRect>("CB_RCI_I")) { p->SetFillAmount(m_xBuild.GetIndDemand()); }
+
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Budget"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Treasury $%d  Debt $%d", static_cast<int>(m_xBuild.GetTreasury()), static_cast<int>(m_xBuild.GetDebt()));
+			p->SetText(acBuf);
+		}
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Power"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Power %d / %d", static_cast<int>(m_xBuild.GetPowerConsumed()), static_cast<int>(m_xBuild.GetPowerProduced()));
+			p->SetText(acBuf);
+		}
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Water"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Water %d / %d", static_cast<int>(m_xBuild.GetWaterConsumed()), static_cast<int>(m_xBuild.GetWaterProduced()));
+			p->SetText(acBuf);
+		}
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Env"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Poll %d%%  Traffic %d%%  Fires %u", static_cast<int>(m_xBuild.GetPollution() * 100.0f), static_cast<int>(m_xBuild.GetCongestion() * 100.0f), m_xBuild.GetActiveFires());
+			p->SetText(acBuf);
+		}
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_Svc"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "Garbage %d%%  Sewage %d%%", static_cast<int>(m_xBuild.GetGarbage() * 100.0f), static_cast<int>(m_xBuild.GetSewage() * 100.0f));
+			p->SetText(acBuf);
+		}
+
+		// Active-tool label + highlight the matching toolbar button (border on).
+		const CB_ETool eTool = m_xTools.GetTool();
+		const CB_EBuildingType eSvc = m_xRoadCtrl.GetServiceType();
+		if (Zenith_UIText* p = xUI.FindElement<Zenith_UIText>("CB_UI_ToolLbl"))
+		{
+			snprintf(acBuf, sizeof(acBuf), "%s", eTool == CB_TOOL_NONE ? "" : CB_ToolSystem::ToolName(eTool));
+			p->SetText(acBuf);
+		}
+		int iTools = 0;
+		const CB_UIToolDesc* pxTools = ToolDescs(iTools);
+		for (int i = 0; i < iTools; ++i)
+		{
+			char acName[24];
+			snprintf(acName, sizeof(acName), "CB_Tool_%d", i);
+			if (Zenith_UIButton* p = xUI.FindElement<Zenith_UIButton>(acName))
+			{
+				const bool bActive = (pxTools[i].eTool == eTool) &&
+					(eTool != CB_TOOL_POLICE || pxTools[i].eService == eSvc);
+				p->SetBorderThickness(bActive ? 3.0f : 0.0f);
 			}
 		}
 	}
@@ -566,6 +960,9 @@ private:
 	uint32_t                 m_uLastCarveSegs = 0;     // re-carve when the road count changes
 	CB_RoadTerrain::CarveContext m_xCarveCtx;          // road samples for the stream-in carve hook (engine holds a ptr to this)
 	uint32_t                 m_uTerraformTick  = 0;    // throttles the terraform GPU re-upload while dragging
+	bool                     m_bUIBuilt = false;       // the parity game UI is built on the first windowed frame
+	float                    m_fUIBuiltW = 0.0f;       // canvas size the UI was last laid out for (rebuild on resize)
+	float                    m_fUIBuiltH = 0.0f;
 	bool                     m_bPrevTransitLeft  = false;  // transit-tool click edge latches
 	bool                     m_bPrevTransitRight = false;
 

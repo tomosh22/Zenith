@@ -26,9 +26,11 @@
 #include "CityBuilder/Components/CB_CityManager_Behaviour.h"
 #include "CityBuilder/Components/CB_CityCamera_Behaviour.h"
 #include "CityBuilder/Components/CB_DayNightCycle_Behaviour.h"
+#include "CityBuilder/Source/CB_ToolIcons.h"
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "CityBuilder/Source/CB_ToolIconGen.h"   // procedural toolbar-icon drawing (tools build)
 // Offline terrain bake (engine lib, ZENITH_TOOLS): heightmap -> chunk meshes.
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
 #endif
@@ -267,6 +269,32 @@ static void CB_EnsureTerrainAssets()
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[CityBuilder] Terrain bake complete.");
 	}
 }
+
+// Procedurally generate the 20 toolbar-button icons (white glyph + dark outline,
+// 64px RGBA8 .ztxtr) into <GAME_ASSETS_DIR>/UI/Icons/. Tools-build only; the HUD
+// loads them at runtime (both configs) via game:UI/Icons/cb_<name>.ztxtr. Gated on
+// a version marker so it only runs once — bump CB_UI_ICONS_VERSION to force a redraw.
+static constexpr int CB_UI_ICONS_VERSION = 1;
+static void CB_EnsureUIIcons()
+{
+	const std::string strIconDir = std::string(GAME_ASSETS_DIR) + "UI/Icons/";
+	const std::string strMarker  = strIconDir + "icons_v" + std::to_string(CB_UI_ICONS_VERSION) + ".marker";
+	if (std::filesystem::exists(strMarker))
+	{
+		return;
+	}
+	std::filesystem::create_directories(strIconDir);
+	int iCount = 0;
+	const CB_ToolIcons::Def* pxDefs = CB_ToolIcons::All(iCount);
+	std::vector<uint8_t> xBuf;
+	for (int i = 0; i < iCount; ++i)
+	{
+		CB_ToolIconGen::RenderToolIcon(i, 64, xBuf);
+		CB_WriteRGBA8Texture(strIconDir + "cb_" + pxDefs[i].szIcon + ZENITH_TEXTURE_EXT, 64, xBuf);
+	}
+	Zenith_DataStream xMark; xMark << static_cast<int32_t>(CB_UI_ICONS_VERSION); xMark.WriteToFile(strMarker.c_str());
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[CityBuilder] Generated %d toolbar icons -> UI/Icons/.", iCount);
+}
 #endif // ZENITH_TOOLS
 
 const char* Project_GetName() { return "CityBuilder"; }
@@ -295,6 +323,11 @@ void Project_RegisterScriptBehaviours()
 	// Terrain materials are created here (tools + runtime) so the loaded scene's
 	// terrain entity resolves its material slots.
 	CB_InitTerrainResources();
+#ifdef ZENITH_TOOLS
+	// Tools build: (re)generate the toolbar button icons on disk. Runs on every
+	// tools-build startup but is a no-op once the version marker exists.
+	CB_EnsureUIIcons();
+#endif
 }
 
 void Project_Shutdown()

@@ -53,6 +53,8 @@ public:
 	// Current services-category sub-type (police/fire/hospital/school), cycled by
 	// re-pressing the services tool key. Power/water are their own tools.
 	CB_EBuildingType GetServiceType() const { return m_eServiceType; }
+	// Set the services-category sub-type directly (the UI toolbar has a button per service).
+	void SetServiceType(CB_EBuildingType eType) { m_eServiceType = eType; }
 
 	// Rebuild the ribbon triangle cache from the graph (call after edits).
 	void RebuildMesh(const CB_TerrainHeightfield& xField);
