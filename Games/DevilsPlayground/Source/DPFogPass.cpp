@@ -38,10 +38,17 @@ namespace
 
 	bool s_bInitialised = false;
 
-	// Owning shader + pipeline. Built lazily on the first ExecuteDPFog call so
-	// the engine's Flux subsystems have completed their own Initialise().
-	Flux_Shader   s_xShader;
-	Flux_Pipeline s_xPipeline;
+	// Owning shader + pipeline. HEAP-allocated (raw pointers, not file-scope value
+	// objects) so Shutdown() can delete them DURING the engine shutdown sequence,
+	// while the Vulkan device is still alive. As static value objects, their
+	// device-touching dtors ran at C++ static-exit -- after
+	// Zenith_Engine::Shutdown() freed g_xEngine.Vulkan() -- which is the
+	// 0xC0000005 (hit even by --list-automated-tests: the pipeline is never
+	// built, but the static dtor still ran Reset(), which dereferences
+	// g_xEngine.Vulkan() before its null-handle guard). Built lazily on the
+	// first ExecuteDPFog call once the engine's Flux subsystems have inited.
+	Flux_Shader*   s_pxShader = nullptr;
+	Flux_Pipeline* s_pxPipeline = nullptr;
 	bool          s_bPipelineBuilt = false;
 
 	// CBV layout constants. DP_FOG_HOLE_CAP must match DP_FOG_MAX_HOLES in
@@ -71,7 +78,10 @@ namespace
 
 	void BuildPipelines()
 	{
-		s_xShader.Initialise(FluxShaderProgram::DevilsPlayground_DPFog);
+		if (!s_pxShader)   s_pxShader   = new Flux_Shader();
+		if (!s_pxPipeline) s_pxPipeline = new Flux_Pipeline();
+
+		s_pxShader->Initialise(FluxShaderProgram::DevilsPlayground_DPFog);
 
 		Flux_VertexInputDescription xVertexDesc;
 		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -79,7 +89,7 @@ namespace
 		Flux_PipelineSpecification xPipelineSpec;
 		xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 		xPipelineSpec.m_uNumColourAttachments = 1;
-		xPipelineSpec.m_pxShader = &s_xShader;
+		xPipelineSpec.m_pxShader = s_pxShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 		xPipelineSpec.m_bDepthTestEnabled = false;
 		xPipelineSpec.m_bDepthWriteEnabled = false;
@@ -92,9 +102,9 @@ namespace
 		xPipelineSpec.m_axBlendStates[0].m_eSrcAlphaBlendFactor = BLEND_FACTOR_ONE;
 		xPipelineSpec.m_axBlendStates[0].m_eDstAlphaBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-		s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+		s_pxShader->GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
-		Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(*s_pxPipeline, xPipelineSpec);
 	}
 
 	// Runtime-tunable fog knobs. Bound at Init time and read each frame in
@@ -157,8 +167,15 @@ void DPFogPass::Shutdown()
 	{
 		g_xEngine.Fog().SetExternallyOverridden(false);
 	}
-	s_xPipeline.Reset();
-	s_xShader.Reset();
+	// delete (not Reset) so the device-touching destructors run HERE, in the
+	// shutdown sequence with the Vulkan device still alive -- not at C++
+	// static-exit, by which time g_xEngine.Vulkan() has been freed (the
+	// 0xC0000005). delete on nullptr (pipeline never built, e.g.
+	// --list-automated-tests) is a safe no-op.
+	delete s_pxPipeline;
+	s_pxPipeline = nullptr;
+	delete s_pxShader;
+	s_pxShader = nullptr;
 	s_bPipelineBuilt = false;
 }
 
@@ -226,15 +243,15 @@ namespace
 		s_xPayload.m_xFogColor_Density = Zenith_Maths::Vector4(
 			s_fDebugColorR, s_fDebugColorG, s_fDebugColorB, s_fDebugDensity);
 
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+		pxCommandList->AddCommand<Flux_CommandSetPipeline>(s_pxPipeline);
 
 		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindSRV(s_xShader, "g_xDepthTex",     g_xEngine.FluxGraphics().GetDepthStencilSRV());
-		xBinder.BindDrawConstants(s_xShader, "DPFogConstants", &s_xPayload, sizeof(s_xPayload));
+		xBinder.BindCBV(*s_pxShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindSRV(*s_pxShader, "g_xDepthTex",     g_xEngine.FluxGraphics().GetDepthStencilSRV());
+		xBinder.BindDrawConstants(*s_pxShader, "DPFogConstants", &s_xPayload, sizeof(s_xPayload));
 
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 	}
