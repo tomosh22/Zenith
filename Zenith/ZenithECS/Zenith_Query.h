@@ -1,13 +1,15 @@
 #pragma once
 
 #include "ZenithECS/Zenith_SceneData.h"
-#include "ZenithECS/Zenith_SceneSystem.h"
 #include "Collections/Zenith_Vector.h"
 // WS10: the sparse-set read toggle is read through the free-function forwarder
-// Zenith_AreSparseQueryReadsEnabled() (declared here, defined in
-// Zenith_SceneSystem_Lifecycle.cpp). Including Zenith_SceneSystem.h is already
-// done above, but routing through the forwarder keeps the toggle read uniform
-// with the render-task-active pattern and independent of accessor inlining.
+// Zenith_AreSparseQueryReadsEnabled() (declared in Zenith_RenderTaskState.h,
+// included below; defined in Zenith_SceneSystem_Lifecycle.cpp). Routing the read
+// through the forwarder -- rather than #including Zenith_SceneSystem.h for the
+// accessor -- keeps it uniform with the render-task-active pattern, independent
+// of accessor inlining, and breaks what would otherwise be a
+// Zenith_SceneSystem.h <-> Zenith_Query.h include cycle (Zenith_SceneSystem.h
+// pulls this header for its AllScenesQuery templates).
 #include "ZenithECS/Internal/Zenith_RenderTaskState.h"
 
 //------------------------------------------------------------------------------

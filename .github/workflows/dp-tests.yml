@@ -239,7 +239,7 @@ jobs:
         shell: pwsh
         working-directory: Build
         run: |
-          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_FreeType.cs', 'Sharpmake_Msdfgen.cs', 'Sharpmake_MsdfAtlasGen.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_ZenithECS.cs', 'Sharpmake_SentinelECS.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build DevilsPlayground

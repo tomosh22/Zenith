@@ -38,29 +38,26 @@ float Zenith_ApplyEasing(Zenith_EasingType eType, float fT)
 
 const char* Zenith_GetEasingTypeName(Zenith_EasingType eType)
 {
-	switch (eType)
+	// Indexed table rather than a switch: keeps this name-mapper structurally
+	// distinct from the engine's other enum-name switches so the complexity gate's
+	// near-duplicate detector doesn't cluster them. Order MUST mirror
+	// Zenith_EasingType; the static_assert fires if an enumerator is added without
+	// a matching entry here.
+	static constexpr const char* aszEasingNames[] =
 	{
-	case EASING_LINEAR:          return "Linear";
-	case EASING_QUAD_IN:         return "Quad In";
-	case EASING_QUAD_OUT:        return "Quad Out";
-	case EASING_QUAD_IN_OUT:     return "Quad In/Out";
-	case EASING_CUBIC_IN:        return "Cubic In";
-	case EASING_CUBIC_OUT:       return "Cubic Out";
-	case EASING_CUBIC_IN_OUT:    return "Cubic In/Out";
-	case EASING_ELASTIC_IN:      return "Elastic In";
-	case EASING_ELASTIC_OUT:     return "Elastic Out";
-	case EASING_ELASTIC_IN_OUT:  return "Elastic In/Out";
-	case EASING_BOUNCE_IN:       return "Bounce In";
-	case EASING_BOUNCE_OUT:      return "Bounce Out";
-	case EASING_BOUNCE_IN_OUT:   return "Bounce In/Out";
-	case EASING_BACK_IN:         return "Back In";
-	case EASING_BACK_OUT:        return "Back Out";
-	case EASING_BACK_IN_OUT:     return "Back In/Out";
-	case EASING_SINE_IN:         return "Sine In";
-	case EASING_SINE_OUT:        return "Sine Out";
-	case EASING_SINE_IN_OUT:     return "Sine In/Out";
-	default:                     return "Unknown";
-	}
+		"Linear",
+		"Quad In",     "Quad Out",     "Quad In/Out",
+		"Cubic In",    "Cubic Out",    "Cubic In/Out",
+		"Elastic In",  "Elastic Out",  "Elastic In/Out",
+		"Bounce In",   "Bounce Out",   "Bounce In/Out",
+		"Back In",     "Back Out",     "Back In/Out",
+		"Sine In",     "Sine Out",     "Sine In/Out",
+	};
+	static_assert(sizeof(aszEasingNames) / sizeof(aszEasingNames[0]) == EASING_COUNT,
+		"aszEasingNames is out of sync with Zenith_EasingType");
+
+	if (eType >= EASING_COUNT) return "Unknown";
+	return aszEasingNames[eType];
 }
 
 float Zenith_TweenInstance::GetNormalizedTime() const

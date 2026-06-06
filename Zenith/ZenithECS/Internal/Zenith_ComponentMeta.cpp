@@ -291,107 +291,77 @@ void Zenith_ComponentMetaRegistry::RemoveAllComponents(Zenith_Entity& xEntity) c
 // Lifecycle Hook Dispatch Implementation
 //------------------------------------------------------------------------------
 
+namespace
+{
+	// Shared body for the FORWARD-iterating lifecycle dispatchers (OnAwake / OnStart
+	// / OnEnable / OnDisable / OnUpdate / OnLateUpdate / OnFixedUpdate). They differ
+	// only by which m_pfnOnX hook is read and whether a float dt is forwarded, so the
+	// loop lives here exactly once (pfnHook is a pointer-to-member naming the field).
+	//
+	// The IsValid() probe between iterations is load-bearing: a user-side hook
+	// (typically ScriptComponent::OnUpdate dispatching to a Zenith_ScriptBehaviour)
+	// may call xEntity.DestroyImmediate() on itself. Once the slot is freed, the next
+	// iteration's m_pfnHasComponent lookup would assert "Entity has no scene". The
+	// regression is covered by Scene::DestroyImmediateDuringSelfOnUpdate.
+	//
+	// DispatchOnDestroy is intentionally NOT routed through here — it iterates in
+	// REVERSE (last-added, first-destroyed) and has no IsValid guard.
+	template<typename HookFn, typename... Args>
+	void DispatchLifecycleHook(
+		const std::vector<const Zenith_ComponentMeta*>& xMetasSorted,
+		Zenith_Entity& xEntity,
+		HookFn Zenith_ComponentMeta::* pfnHook,
+		Args... xArgs)
+	{
+		for (const Zenith_ComponentMeta* pxMeta : xMetasSorted)
+		{
+			if (!xEntity.IsValid()) return;
+			if (pxMeta->*pfnHook && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
+				(pxMeta->*pfnHook)(xEntity, xArgs...);
+		}
+	}
+}
+
 void Zenith_ComponentMetaRegistry::DispatchOnAwake(Zenith_Entity& xEntity) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		// Same self-DestroyImmediate guard as the Update/Disable loops —
-		// an OnAwake hook may free its own entity (e.g., a fail-validation
-		// pattern where AddComponent's awake decides the entity is invalid
-		// and tears it down). Without this check the next iteration's
-		// m_pfnHasComponent lookup would assert "Entity has no scene".
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnAwake && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnAwake(xEntity);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnAwake);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnStart(Zenith_Entity& xEntity) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		// Same self-DestroyImmediate guard as the other Dispatch* loops —
-		// OnStart is a particularly common place for "check world state and
-		// suicide if invalid" patterns, so the guard is doubly load-bearing
-		// here.
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnStart && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnStart(xEntity);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnStart);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnEnable(Zenith_Entity& xEntity) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		// Same self-DestroyImmediate guard as the other Dispatch* loops —
-		// an OnEnable hook may legitimately free its own entity (e.g., a
-		// pooling system reclaiming the slot the moment the component
-		// activates), and the next iteration's m_pfnHasComponent lookup
-		// would assert "Entity has no scene" without this check.
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnEnable && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnEnable(xEntity);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnEnable);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnDisable(Zenith_Entity& xEntity) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		// Same self-DestroyImmediate guard as the other Dispatch* loops —
-		// an OnDisable hook may legitimately free its own entity (e.g., a
-		// pooling system reclaiming the slot the moment the component
-		// deactivates), and the next iteration's m_pfnHasComponent lookup
-		// would assert "Entity has no scene" without this check.
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnDisable && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnDisable(xEntity);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnDisable);
 }
 
-// A user-side hook (typically ScriptComponent::OnUpdate dispatching to a
-// Zenith_ScriptBehaviour) is allowed to call xEntity.DestroyImmediate() on
-// itself. Once that happens the entity slot is freed, m_pfnHasComponent's
-// subsequent lookup asserts ("Entity has no scene"), and the loop crashes
-// before its remaining iterations would have had nothing to dispatch
-// anyway. Probe IsValid() between iterations and return — the regression
-// is covered by Scene::DestroyImmediateDuringSelfOnUpdate.
 void Zenith_ComponentMetaRegistry::DispatchOnUpdate(Zenith_Entity& xEntity, float fDt) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnUpdate && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnUpdate(xEntity, fDt);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnUpdate, fDt);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnLateUpdate(Zenith_Entity& xEntity, float fDt) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnLateUpdate && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnLateUpdate(xEntity, fDt);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnLateUpdate, fDt);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnFixedUpdate(Zenith_Entity& xEntity, float fDt) const
 {
 	EnsureInitialized();
-	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
-	{
-		if (!xEntity.IsValid()) return;
-		if (pxMeta->m_pfnOnFixedUpdate && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-			pxMeta->m_pfnOnFixedUpdate(xEntity, fDt);
-	}
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnFixedUpdate, fDt);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnDestroy(Zenith_Entity& xEntity) const
