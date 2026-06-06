@@ -124,6 +124,67 @@ public:
 		return fBest;
 	}
 
+	// Parameter t in [0,1] of the closest point on the curve to xP (sampled). Used to place a
+	// T-junction where a new road meets an existing one mid-span.
+	float ClosestParam(const Zenith_Maths::Vector2& xP, uint32_t uSamples = 24) const
+	{
+		if (uSamples < 1) uSamples = 1;
+		float fBest = 1e30f, fBestT = 0.0f;
+		for (uint32_t i = 0; i <= uSamples; ++i)
+		{
+			const float ft = static_cast<float>(i) / static_cast<float>(uSamples);
+			const float fd = Distance(Evaluate(ft), xP);
+			if (fd < fBest) { fBest = fd; fBestT = ft; }
+		}
+		return fBestT;
+	}
+
+	// Split this cubic Bézier at parameter fT into two sub-curves (de Casteljau). The split
+	// point xLeft.P3 == xRight.P0 == Evaluate(fT). Used to insert road intersections.
+	void SplitAt(float fT, CB_Spline& xLeft, CB_Spline& xRight) const
+	{
+		const Zenith_Maths::Vector2 p0 = m_axControl[0], p1 = m_axControl[1], p2 = m_axControl[2], p3 = m_axControl[3];
+		const Zenith_Maths::Vector2 p01  = p0  + (p1  - p0 ) * fT;
+		const Zenith_Maths::Vector2 p12  = p1  + (p2  - p1 ) * fT;
+		const Zenith_Maths::Vector2 p23  = p2  + (p3  - p2 ) * fT;
+		const Zenith_Maths::Vector2 p012 = p01 + (p12 - p01) * fT;
+		const Zenith_Maths::Vector2 p123 = p12 + (p23 - p12) * fT;
+		const Zenith_Maths::Vector2 pMid = p012 + (p123 - p012) * fT;
+		xLeft  = CB_Spline(p0,   p01,  p012, pMid);
+		xRight = CB_Spline(pMid, p123, p23,  p3);
+	}
+
+	// The sub-curve over [fT0,fT1] (0<=t0<t1<=1) as its own cubic Bézier (exact for any curve).
+	CB_Spline SubSpline(float fT0, float fT1) const
+	{
+		CB_Spline xL, xR;
+		if (fT0 <= 1e-5f) { SplitAt(fT1, xL, xR); return xL; }    // [0,t1]
+		SplitAt(fT0, xL, xR);                                     // xR spans [t0,1]
+		const float fDen  = 1.0f - fT0;
+		const float fT1b  = (fDen > 1e-6f) ? ((fT1 - fT0) / fDen) : 1.0f;
+		CB_Spline xL2, xR2;
+		xR.SplitAt(fT1b, xL2, xR2);                               // xL2 spans [t0,t1]
+		return xL2;
+	}
+
+	// Intersect planar segments [p,p2] and [q,q2]; on a crossing returns true + the params
+	// tP,tQ in [0,1] along each. Parallel/disjoint → false.
+	static bool SegSegIntersect(const Zenith_Maths::Vector2& p, const Zenith_Maths::Vector2& p2,
+	                            const Zenith_Maths::Vector2& q, const Zenith_Maths::Vector2& q2,
+	                            float& tP, float& tQ)
+	{
+		const Zenith_Maths::Vector2 r = p2 - p;
+		const Zenith_Maths::Vector2 s = q2 - q;
+		const float fRxS = r.x * s.y - r.y * s.x;
+		if (std::fabs(fRxS) < 1e-9f) { return false; }            // parallel
+		const Zenith_Maths::Vector2 qp = q - p;
+		const float t = (qp.x * s.y - qp.y * s.x) / fRxS;
+		const float u = (qp.x * r.y - qp.y * r.x) / fRxS;
+		if (t < 0.0f || t > 1.0f || u < 0.0f || u > 1.0f) { return false; }
+		tP = t; tQ = u;
+		return true;
+	}
+
 	// --- small helpers (static, reusable) ---
 	static float Distance(const Zenith_Maths::Vector2& xA, const Zenith_Maths::Vector2& xB)
 	{

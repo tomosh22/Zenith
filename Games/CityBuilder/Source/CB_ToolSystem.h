@@ -1,18 +1,18 @@
 #pragma once
 
-#include "CityBuilder/Source/CB_CityGrid.h"
-#include "CityBuilder/Source/CB_RoadNetwork.h"
-#include "CityBuilder/Source/CB_BuildingManager.h"
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
 #include <cstdint>
 
 // ============================================================================
-// CB_ToolSystem — player build tools. Reads input, picks the ground cell under
-// the cursor (camera unproject -> ground plane), and applies the active tool on
-// left-click / drag. Number keys 1-9 switch tools.
+// CB_ToolSystem — the player's active build tool + the terrain-aware mouse picker.
+// Update() reads the tool-selection hotkeys (1-9/0/T/B/L/K); the free-form tools
+// themselves are applied by CB_RoadController (road/zone/service/bulldoze) which
+// reads GetTool(). PickGroundPoint unprojects the cursor and ray-marches it onto
+// the hilly terrain surface — the world point every free-form tool builds at.
 //
 //   1 Residential  2 Commercial  3 Industrial  4 Park  5 Road
-//   6 Police       7 Power       8 Water       9 Bulldoze   T Terraform
+//   6 Services(cycle)  7 Power  8 Water  9 Bulldoze  0 None
+//   T Terraform  B District  L Transit  K Conduit
 // ============================================================================
 
 enum CB_ETool : uint8_t
@@ -39,25 +39,24 @@ class CB_ToolSystem
 public:
 	void     SetTool(CB_ETool eTool) { m_eTool = eTool; }
 	CB_ETool GetTool() const         { return m_eTool; }
-	void     SetBrushRadius(uint32_t u) { m_uBrushRadius = u; }
 
-	// Read input (tool keys + click), pick the ground cell, apply the tool.
-	void Update(CB_CityGrid& xGrid, CB_RoadNetwork& xRoads, CB_BuildingManager& xBuildings, CB_TerrainHeightfield& xTerrain);
+	// Heightfield used for terrain-aware picking — the cursor ray is intersected with the
+	// hilly terrain SURFACE, not a flat y=0 plane (which drifts tens of metres on hills).
+	// Set once by the manager; null → PickGroundPoint falls back to the y=0 plane.
+	void     SetTerrainField(const CB_TerrainHeightfield* pxField) { m_pxTerrainField = pxField; }
 
-	// Unproject the mouse onto the ground plane and convert to a grid cell.
-	bool PickGroundCell(const CB_CityGrid& xGrid, uint32_t& uOutX, uint32_t& uOutZ) const;
+	// Read the tool-selection hotkeys; dispatches CB_OnToolSelected on a change. The free-form
+	// tools are applied by CB_RoadController (which reads GetTool()).
+	void Update();
 
-	// Unproject the mouse onto the ground plane (y=0); returns the world hit point.
-	// Used by the free-form spline road tool (no grid).
+	// Unproject the mouse + ray-march onto the terrain SURFACE (the hilly heightfield set via
+	// SetTerrainField); returns the world hit point. Falls back to the flat y=0 plane if no
+	// terrain is set. Used by every free-form tool (road/zone/service/terraform/...).
 	bool PickGroundPoint(float& fOutX, float& fOutZ) const;
-
-	// Apply the active tool at a grid cell (also callable by tests).
-	void ApplyToolAt(uint32_t uX, uint32_t uZ, CB_CityGrid& xGrid, CB_RoadNetwork& xRoads,
-	                 CB_BuildingManager& xBuildings, CB_TerrainHeightfield& xTerrain);
 
 	static const char* ToolName(CB_ETool eTool);
 
 private:
-	CB_ETool m_eTool       = CB_TOOL_NONE;
-	uint32_t m_uBrushRadius = 2;
+	CB_ETool m_eTool = CB_TOOL_NONE;
+	const CB_TerrainHeightfield* m_pxTerrainField = nullptr;   // for terrain-aware picking
 };

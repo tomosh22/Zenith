@@ -4,7 +4,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "CityBuilder/Source/CB_RoadGraph.h"
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
-#include "CityBuilder/Source/CB_CityGrid.h"   // CB_EZoneType
+#include "CityBuilder/Source/CB_Zones.h"   // CB_EZoneType
 #include <cstdint>
 
 // ============================================================================
@@ -47,6 +47,18 @@ public:
 	// Render the zone overlay (flat colour-coded quads on zoned lots) — windowed.
 	void RenderOverlay() const;
 
+	// Render "ghost" markers (colour-keeping ring outlines, in eActiveZone's colour) on every
+	// AVAILABLE placement lot — active, unzoned, unbuilt frontage — so when an R/C/I tool is
+	// selected the player sees exactly where a zone can be placed. Returns the number of ghosts
+	// drawn (telemetry). Windowed (immediate-mode primitives). Filled lit slabs wash to white,
+	// so rings (AddCircle) are used to keep the hue (memory reference-screen-capture-...-winding).
+	uint32_t RenderPlacementGhosts(CB_EZoneType eActiveZone) const;
+
+	// Pure count of available placement lots (active, unzoned, unbuilt) — headless-safe; the
+	// number of ghosts RenderPlacementGhosts would draw. Lets a logic test assert availability
+	// without the GPU.
+	uint32_t CountAvailableLots() const;
+
 	uint32_t      GetLotSlotCount() const { return m_axLots.GetSize(); }
 	const CB_Lot& GetLot(uint32_t i) const { return m_axLots.Get(i); }
 	CB_Lot&       GetLotMutable(uint32_t i) { return m_axLots.Get(i); }
@@ -59,8 +71,13 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	void AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const CB_TerrainHeightfield& xField);
+	void AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const CB_RoadGraph& xGraph, const CB_TerrainHeightfield& xField);
 	void RemoveSegmentLots(uint32_t uSeg);
+	// True if a candidate lot centre is clear of EVERY road carriageway (by fRoadClear beyond each
+	// road's half-width) AND of every already-placed active lot (by fMinLotDist). Stops lots
+	// overlapping the road / intersections / each other at junctions + between close parallel roads.
+	bool IsLotPositionClear(const Zenith_Maths::Vector2& xPos, const CB_RoadGraph& xGraph,
+	                        float fRoadClear, float fMinLotDist) const;
 
 	Zenith_Vector<CB_Lot> m_axLots;
 	Zenith_Vector<bool>   m_abSegHasLots;   // indexed by segment slot

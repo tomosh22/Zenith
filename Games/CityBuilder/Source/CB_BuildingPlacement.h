@@ -10,6 +10,7 @@
 class CB_Districts;     // policy provider (city-wide + per-district), queried per building
 class CB_TransitLines;  // public-transport stops; gates transit ridership by reach
 class CB_Conduits;      // utility conduits; extend power/water reach along connected chains
+class Zenith_InstancedMeshComponent;  // GPU building meshes (per-instance albedo tint = zone colour)
 
 // ============================================================================
 // CB_BuildingPlacement — Cities: Skylines-style zoned growth. Buildings spawn in
@@ -67,6 +68,15 @@ public:
 
 	// Render each building as a road-facing rotated box + service buildings (windowed).
 	void Render(const CB_Zoning& xZoning) const;
+
+	// Render every building as a GPU-instanced cube MESH coloured via the per-instance albedo
+	// tint of a lit PBR material — the DevilsPlayground way (real materials, not washed-out
+	// debug primitives; no emissive). R/C/I buildings take their zone colour (residential
+	// green, commercial blue, industrial yellow) and face the road; burning buildings tint
+	// fiery orange; service / utility buildings take their distinct service colour. Falls back
+	// to the all-primitive Render() when pxInstances is null (e.g. headless). The manager owns
+	// the instanced-mesh component on a render-only entity.
+	void RenderInstanced(const CB_Zoning& xZoning, Zenith_InstancedMeshComponent* pxInstances) const;
 
 	uint32_t GetActiveBuildings() const { return m_uActiveBuildings; }
 	uint32_t GetActiveServices()  const { return m_uActiveServices; }

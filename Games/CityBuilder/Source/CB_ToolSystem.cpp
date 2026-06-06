@@ -6,7 +6,6 @@
 #include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 #include "CityBuilder/Source/CB_Events.h"
-#include "CityBuilder/Source/CB_Config.h"
 #include "ZenithECS/Zenith_EventSystem.h"
 #include <cmath>
 
@@ -47,6 +46,42 @@ bool CB_ToolSystem::PickGroundPoint(float& fOutX, float& fOutZ) const
 		Zenith_Maths::Vector3(static_cast<float>(xMouse.x), static_cast<float>(xMouse.y), 1.0f));
 
 	const Zenith_Maths::Vector3 xDir = xFar - xNear;
+
+	// Terrain-aware pick: march the cursor ray and find where it crosses the rendered terrain
+	// SURFACE. The old flat-plane (y=0) intersection is correct only when the ground is flat;
+	// with hills it lands tens of metres past the cursor toward the horizon (the ray reaches
+	// y=0 well beyond where it actually hits the hillside), so the road/zone tools drift.
+	if (m_pxTerrainField != nullptr && m_pxTerrainField->IsInitialized())
+	{
+		const int   iSTEPS = 1024;
+		float fPrevDiff = xNear.y - m_pxTerrainField->GetRenderSurfaceY(xNear.x, xNear.z);
+		float fPrevT    = 0.0f;
+		for (int i = 1; i <= iSTEPS; ++i)
+		{
+			const float fS = static_cast<float>(i) / static_cast<float>(iSTEPS);
+			const Zenith_Maths::Vector3 xP = xNear + xDir * fS;
+			const float fDiff = xP.y - m_pxTerrainField->GetRenderSurfaceY(xP.x, xP.z);
+			if (fPrevDiff > 0.0f && fDiff <= 0.0f)   // descended through the surface
+			{
+				float fa = fPrevT, fb = fS;          // bisect for the exact crossing
+				for (int j = 0; j < 20; ++j)
+				{
+					const float fm = (fa + fb) * 0.5f;
+					const Zenith_Maths::Vector3 xm = xNear + xDir * fm;
+					if (xm.y - m_pxTerrainField->GetRenderSurfaceY(xm.x, xm.z) > 0.0f) { fa = fm; }
+					else                                                                { fb = fm; }
+				}
+				const Zenith_Maths::Vector3 xHit = xNear + xDir * ((fa + fb) * 0.5f);
+				fOutX = xHit.x;
+				fOutZ = xHit.z;
+				return true;
+			}
+			fPrevDiff = fDiff;
+			fPrevT    = fS;
+		}
+		// No crossing (cursor points above the horizon / off the terrain) → fall back to y=0.
+	}
+
 	if (std::fabs(xDir.y) < 1e-6f)
 	{
 		return false;
@@ -61,62 +96,12 @@ bool CB_ToolSystem::PickGroundPoint(float& fOutX, float& fOutZ) const
 	return true;
 }
 
-bool CB_ToolSystem::PickGroundCell(const CB_CityGrid& xGrid, uint32_t& uOutX, uint32_t& uOutZ) const
-{
-	float fHitX = 0.0f, fHitZ = 0.0f;
-	if (!PickGroundPoint(fHitX, fHitZ))
-	{
-		return false;
-	}
-	return xGrid.WorldToGrid(fHitX, fHitZ, uOutX, uOutZ);
-}
-
-void CB_ToolSystem::ApplyToolAt(uint32_t uX, uint32_t uZ, CB_CityGrid& xGrid, CB_RoadNetwork& xRoads,
-                                CB_BuildingManager& xBuildings, CB_TerrainHeightfield& xTerrain)
-{
-	Zenith_EventDispatcher& xDisp = Zenith_EventDispatcher::Get();
-	switch (m_eTool)
-	{
-	case CB_TOOL_ZONE_RES:  xGrid.PaintZone(uX, uZ, m_uBrushRadius, CB_ZONE_RESIDENTIAL, 0); xDisp.Dispatch(CB_OnZonePainted{ uX, uZ, static_cast<uint8_t>(CB_ZONE_RESIDENTIAL) }); break;
-	case CB_TOOL_ZONE_COM:  xGrid.PaintZone(uX, uZ, m_uBrushRadius, CB_ZONE_COMMERCIAL, 0);  xDisp.Dispatch(CB_OnZonePainted{ uX, uZ, static_cast<uint8_t>(CB_ZONE_COMMERCIAL) });  break;
-	case CB_TOOL_ZONE_IND:  xGrid.PaintZone(uX, uZ, m_uBrushRadius, CB_ZONE_INDUSTRIAL, 0);  xDisp.Dispatch(CB_OnZonePainted{ uX, uZ, static_cast<uint8_t>(CB_ZONE_INDUSTRIAL) });  break;
-	case CB_TOOL_ZONE_PARK: xGrid.PaintZone(uX, uZ, m_uBrushRadius, CB_ZONE_PARK, 0);        xDisp.Dispatch(CB_OnZonePainted{ uX, uZ, static_cast<uint8_t>(CB_ZONE_PARK) });        break;
-	case CB_TOOL_ROAD:
-	{
-		if (xRoads.PlaceRoad(uX, uZ, CB_ROAD_SMALL))
-		{
-			float fWX, fWZ;
-			xGrid.GridToWorld(uX, uZ, fWX, fWZ);
-			CB_TerrainBrush xBrush;
-			xBrush.m_eMode = CB_TERRAIN_BRUSH_FLATTEN;
-			xBrush.m_fCentreX = fWX; xBrush.m_fCentreZ = fWZ;
-			xBrush.m_fRadius = xGrid.GetCellSize(); xBrush.m_fStrength = 1.0f;
-			xBrush.m_fTargetWorldY = xTerrain.GetHeightAt(fWX, fWZ);
-			xTerrain.ApplyBrush(xBrush);
-			xDisp.Dispatch(CB_OnRoadPlaced{ uX, uZ });
-		}
-		break;
-	}
-	case CB_TOOL_POLICE: if (xBuildings.SpawnBuilding(CB_BUILDING_POLICE, uX, uZ)      != CB_BuildingManager::INVALID) { xDisp.Dispatch(CB_OnServicePlaced{ uX, uZ, static_cast<uint8_t>(CB_BUILDING_POLICE) }); }      break;
-	case CB_TOOL_POWER:  if (xBuildings.SpawnBuilding(CB_BUILDING_POWER_PLANT, uX, uZ) != CB_BuildingManager::INVALID) { xDisp.Dispatch(CB_OnServicePlaced{ uX, uZ, static_cast<uint8_t>(CB_BUILDING_POWER_PLANT) }); } break;
-	case CB_TOOL_WATER:  if (xBuildings.SpawnBuilding(CB_BUILDING_WATER_TOWER, uX, uZ) != CB_BuildingManager::INVALID) { xDisp.Dispatch(CB_OnServicePlaced{ uX, uZ, static_cast<uint8_t>(CB_BUILDING_WATER_TOWER) }); } break;
-	case CB_TOOL_BULLDOZE:
-	{
-		bool bRemoved = xBuildings.RemoveBuildingAtCell(uX, uZ);
-		if (!bRemoved) { bRemoved = xRoads.RemoveRoad(uX, uZ); }
-		if (!bRemoved) { xGrid.ClearZone(uX, uZ, 0); }
-		if (bRemoved)  { xDisp.Dispatch(CB_OnBulldozed{ uX, uZ }); }
-		break;
-	}
-	default: break;
-	}
-}
-
-void CB_ToolSystem::Update(CB_CityGrid& xGrid, CB_RoadNetwork& xRoads, CB_BuildingManager& xBuildings, CB_TerrainHeightfield& xTerrain)
+void CB_ToolSystem::Update()
 {
 	Zenith_Input& xInput = g_xEngine.Input();
 
-	// Tool selection.
+	// Tool selection. The free-form tools themselves are applied by CB_RoadController (road / zone /
+	// service / bulldoze), which reads GetTool() + uses PickGroundPoint for the world cursor.
 	const CB_ETool eOldTool = m_eTool;
 	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_1)) { m_eTool = CB_TOOL_ZONE_RES; }
 	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_2)) { m_eTool = CB_TOOL_ZONE_COM; }
@@ -137,33 +122,4 @@ void CB_ToolSystem::Update(CB_CityGrid& xGrid, CB_RoadNetwork& xRoads, CB_Buildi
 	{
 		Zenith_EventDispatcher::Get().Dispatch(CB_OnToolSelected{ static_cast<uint8_t>(m_eTool) });
 	}
-
-	if (m_eTool == CB_TOOL_NONE)
-	{
-		return;
-	}
-
-#if CB_USE_LEGACY_GRID
-	// Legacy grid placement: pick the cell under the cursor and apply the tool.
-	// In the Cities: Skylines rebuild the road/zone/building tools are free-form
-	// (CB_RoadController etc.), so this whole path is compiled out.
-	uint32_t uCX = 0, uCZ = 0;
-	if (!PickGroundCell(xGrid, uCX, uCZ))
-	{
-		return;
-	}
-
-	const bool bPress = xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
-	const bool bHeld  = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-	const bool bDragTool = (m_eTool == CB_TOOL_ROAD) ||
-	                       (m_eTool >= CB_TOOL_ZONE_RES && m_eTool <= CB_TOOL_ZONE_PARK) ||
-	                       (m_eTool == CB_TOOL_BULLDOZE);
-
-	if (bPress || (bHeld && bDragTool))
-	{
-		ApplyToolAt(uCX, uCZ, xGrid, xRoads, xBuildings, xTerrain);
-	}
-#else
-	(void)xGrid; (void)xRoads; (void)xBuildings; (void)xTerrain;
-#endif
 }

@@ -2,13 +2,7 @@
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
-#include "CityBuilder/Source/CB_CityGrid.h"
-#include "CityBuilder/Source/CB_RoadNetwork.h"
-#include "CityBuilder/Source/CB_BuildingManager.h"
-#include "CityBuilder/Source/CB_ServiceManager.h"
-#include "CityBuilder/Source/CB_EconomyManager.h"
-#include "CityBuilder/Source/CB_CitizenManager.h"
-#include "CityBuilder/Source/CB_SimulationTick.h"
+#include "CityBuilder/Source/CB_SimSpeed.h"
 #include "CityBuilder/Source/CB_ToolSystem.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_Zoning.h"
@@ -16,13 +10,12 @@
 #include "CityBuilder/Source/CB_Districts.h"
 #include "CityBuilder/Source/CB_TransitLines.h"
 #include "CityBuilder/Source/CB_Conduits.h"
+#include "CityBuilder/Source/CB_SaveLoadFreeform.h"   // F5/F9 quick save/load
 #include "CityBuilder/Source/CB_Traffic.h"
 #include "CityBuilder/Source/CB_TerrainGen.h"
 #include "CityBuilder/Source/CB_RoadTerrain.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"   // district overlay rings
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "CityBuilder/Source/CB_PresentationView.h"
-#include "CityBuilder/Source/CB_Config.h"
 #include "CityBuilder/Source/CB_ToolIcons.h"   // toolbar icon filenames + hover tooltips
 #include <cstring>                              // strlen (tooltip width estimate)
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -32,6 +25,10 @@
 #include "UI/Zenith_UIImage.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"                          // building material (per-zone albedo)
+#include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"   // GPU-instanced building cube meshes
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"                         // GenerateUnitCube
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"                         // CreateFromGeometry
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -85,31 +82,15 @@ public:
 			}
 		}
 		s_pxActiveHeightfield = &m_xHeightfield;
-
-		// City grid: 1024x1024 cells @ 4m = 4096m world, origin 0 (matches the
-		// terrain footprint). 16MB. Authoritative spatial model for zones, roads,
-		// buildings and derived data.
-		m_xGrid.Initialize(1024, 1024, 4.0f, 0.0f, 0.0f);
-		s_pxActiveGrid = &m_xGrid;
-
-		m_xRoads.Initialize(&m_xGrid);
-		s_pxActiveRoads = &m_xRoads;
-
-		m_xBuildings.Initialize(&m_xGrid);
-		m_xServices.Initialize(&m_xGrid);
-		m_xEconomy.Initialize();
-		m_xCitizens.Initialize(&m_xGrid, &m_xRoads);
-		m_xSim.Initialize(&m_xGrid, &m_xRoads, &m_xBuildings, &m_xServices, &m_xEconomy, &m_xCitizens);
+		m_xTools.SetTerrainField(&m_xHeightfield);   // terrain-aware cursor picking (ray vs hills, not y=0)
 
 		s_pxActive = this;
 
-		// Free-form spline road network (Cities: Skylines rebuild). Owns its own
-		// graph; the legacy grid CB_RoadNetwork stays initialised but idle behind
-		// CB_USE_LEGACY_GRID during the transition.
+		// Free-form spline road network (Cities: Skylines-style). Owns its own graph.
 		m_xRoadCtrl.Reset();
 		s_pxActiveRoadCtrl = &m_xRoadCtrl;
 
-		// Road-relative zoning (frontage lots) — Cities: Skylines rebuild.
+		// Road-relative zoning (frontage lots).
 		m_xZoning.Reset();
 		s_pxActiveZoning = &m_xZoning;
 
@@ -133,11 +114,29 @@ public:
 		m_xBuild.SetAutoDisasters(true);   // rare random fires (fire stations contain them)
 		s_pxActiveBuild = &m_xBuild;
 
-		// Visual road traffic.
+		// Demand-driven road traffic (SimCity/C:S OD-trip model — homes drive to jobs/shops).
 		m_xTraffic.Reset();
+		s_pxActiveTraffic = &m_xTraffic;
 
-		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[CityBuilder] CityManager started (grid %ux%u)",
-			m_xGrid.GetWidth(), m_xGrid.GetHeight());
+		// Buildings render as GPU-instanced cube MESHES with a lit PBR material, coloured per
+		// zone (residential green / commercial blue / industrial yellow) via the per-instance
+		// albedo tint — the DevilsPlayground material approach (real materials, no emissive),
+		// NOT washed-out debug primitives. Windowed only (GPU upload + instanced render).
+		m_pxBuildingInst = nullptr;
+		if (!Zenith_CommandLine::IsHeadless())
+		{
+			EnsureBuildingMeshAssets();
+			Zenith_Entity xBuildings = g_xEngine.Scenes().CreateEntity(m_xParentEntity.GetSceneData(), "CityBuildings");
+			xBuildings.SetTransient(true);   // render-only; rebuilt each session, not serialized
+			Zenith_InstancedMeshComponent& xInst = xBuildings.AddComponent<Zenith_InstancedMeshComponent>();
+			xInst.SetMesh(s_pxBuildingCubeMesh);
+			xInst.SetMaterial(s_pxBuildingMat);
+			xInst.Reserve(256);
+			m_pxBuildingInst = &xInst;
+		}
+
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[CityBuilder] CityManager started (free-form, %u road segments)",
+			m_xRoadCtrl.GetGraph().GetActiveSegmentCount());
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
@@ -147,12 +146,37 @@ public:
 		// P toggles pause.
 		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 		{
-			m_xSim.SetSpeed(m_xSim.GetSpeed() == CB_SIM_PAUSED ? CB_SIM_NORMAL : CB_SIM_PAUSED);
-			Zenith_EventDispatcher::Get().Dispatch(CB_OnPauseToggled{ m_xSim.GetSpeed() == CB_SIM_PAUSED });
+			m_eSpeed = (m_eSpeed == CB_SIM_PAUSED) ? CB_SIM_NORMAL : CB_SIM_PAUSED;
+			Zenith_EventDispatcher::Get().Dispatch(CB_OnPauseToggled{ m_eSpeed == CB_SIM_PAUSED });
 		}
 
-		m_xSim.Update(fDt);
-		m_xTools.Update(m_xGrid, m_xRoads, m_xBuildings, m_xHeightfield);
+		// --- Keyboard shortcuts for the build / economy actions the HUD exposes only as
+		//     buttons (or not at all), so the whole game is keyboard-operable. Tool selection
+		//     is keys 1-9/0/T/B/L/K (CB_ToolSystem); these complete the set so a player — or
+		//     the automated human test — can drive every mechanic from the keyboard. ---
+		{
+			Zenith_Input& xKb = g_xEngine.Input();
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F8)) { NewCity(); }                                 // start over
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_R))                                                  // cycle road class
+			{
+				m_xRoadCtrl.SetRoadClass(static_cast<CB_ERoadClass>((m_xRoadCtrl.GetRoadClass() + 1) % CB_ROADCLASS_COUNT));
+			}
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_MINUS)) { m_xBuild.SetTaxRate(m_xBuild.GetTaxRate() - 0.1f); }  // tax down
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_EQUAL)) { m_xBuild.SetTaxRate(m_xBuild.GetTaxRate() + 0.1f); }  // tax up
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_G))     { m_xBuild.TakeLoan(20000.0f); }              // take a development loan
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_COMMA)) { CycleSpeed(-1); }                          // slower
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_PERIOD)){ CycleSpeed(+1); }                          // faster
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F5))    { SaveCity(); }                              // quick-save
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F9))    { LoadCity(); }                              // quick-load
+			// Ignite a fire under the cursor (disaster drill: covering fire stations contain it).
+			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F))
+			{
+				float fFX = 0.0f, fFZ = 0.0f;
+				if (m_xTools.PickGroundPoint(fFX, fFZ)) { m_xBuild.TriggerFireAt(fFX, fFZ); }
+			}
+		}
+
+		m_xTools.Update();   // tool-selection hotkeys; the free-form tools are applied by m_xRoadCtrl below
 		// Free-form spline road tool (draw / bulldoze curved roads, paint zones).
 		// Headless-safe (no mouse input → no edits); GPU submit is in the render block.
 		m_xRoadCtrl.Update(m_xTools, m_xHeightfield, m_xZoning, m_xBuild);
@@ -160,7 +184,7 @@ public:
 		m_xZoning.SyncToGraph(m_xRoadCtrl.GetGraph(), m_xHeightfield);
 
 		// Demand-driven building growth (self-rate-limits; paused respects speed).
-		if (m_xSim.GetSpeed() != CB_SIM_PAUSED)
+		if (m_eSpeed != CB_SIM_PAUSED)
 		{
 			m_xBuild.SetRoadCapacity(m_xRoadCtrl.GetGraph().GetTotalActiveLength());
 			m_xBuild.Tick(m_xZoning);
@@ -211,6 +235,8 @@ public:
 				CB_RoadTerrain::RegisterStreamHook(m_pxTerrain, m_xHeightfield);
 				CB_RoadTerrain::ForceRestreamCarveChunks(m_xCarveCtx, m_pxTerrain);
 			}
+			// Terraform tool: raise (LMB) / lower (RMB) the ground under the cursor.
+			if (m_xTools.GetTool() == CB_TOOL_TERRAFORM) { UpdateTerraform(); }
 			// Districts + policy ordinances (paint with the district tool; F1-F4 toggle).
 			UpdateDistrictTool();
 			RenderDistrictOverlay();
@@ -218,14 +244,37 @@ public:
 			UpdateTransitTool();
 			RenderTransitOverlay();
 			RenderConduitOverlay();
-#if CB_USE_LEGACY_GRID
-			CB_PresentationView::Render(m_xGrid, m_xRoads, m_xBuildings, m_xHeightfield);
-#endif
 			m_xRoadCtrl.Render();     // free-form spline roads (terrain-following ribbons)
 			m_xZoning.RenderOverlay();// zone colour overlay on unbuilt frontage lots
-			m_xBuild.Render(m_xZoning);// road-facing building boxes
-			if (m_xSim.GetSpeed() != CB_SIM_PAUSED) { m_xTraffic.Update(m_xRoadCtrl.GetGraph(), m_xHeightfield, fDt); }
-			m_xTraffic.Render();       // cars driving the spline network
+			// SimCity/C:S affordance: while an R/C/I zone tool is selected, ghost EVERY available
+			// placement lot (open frontage) in the tool's colour so the player sees where a zone can
+			// go. Telemetry: s_uLastGhostCount (the ghosts drawn this frame; 0 when no zone tool).
+			{
+				const CB_ETool eGhostTool = m_xTools.GetTool();
+				if (eGhostTool >= CB_TOOL_ZONE_RES && eGhostTool <= CB_TOOL_ZONE_IND)
+				{
+					s_uLastGhostCount = m_xZoning.RenderPlacementGhosts(static_cast<CB_EZoneType>(eGhostTool));
+					if ((s_uUpdateCount % 90u) == 0u)
+					{
+						Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+							"[CityBuilder] Zone tool %u active: %u available placement ghosts rendered",
+							static_cast<uint32_t>(eGhostTool), s_uLastGhostCount);
+					}
+				}
+				else
+				{
+					s_uLastGhostCount = 0;
+				}
+			}
+			m_xBuild.RenderInstanced(m_xZoning, m_pxBuildingInst);// R/C/I = lit instanced cube meshes (green/blue/yellow); services = primitives
+			if (m_eSpeed != CB_SIM_PAUSED)
+			{
+				BuildTrafficEndpoints();   // homes (origins) + jobs/shops (destinations) from the live city
+				const uint32_t uTarget = m_xBuild.GetPopulation() / POP_PER_CAR;   // concurrent trips scale with population
+				const float fTrafficDt = fDt * CB_SpeedMultiplier(m_eSpeed);   // cars speed up with the sim clock
+				m_xTraffic.Update(m_xRoadCtrl.GetGraph(), m_xHeightfield, fTrafficDt, m_auTrafficOrigins, m_auTrafficDests, uTarget);
+			}
+			m_xTraffic.Render();       // cars driving their routed home→work/shop trips
 			if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 			{
 				Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
@@ -243,6 +292,24 @@ public:
 	static constexpr float TERRAFORM_RADIUS = 45.0f;   // world-space brush radius
 
 	// Find + cache the scene's terrain component (the GPU carve / terraform target).
+	// Build the shared unit-cube mesh + lit building material once (process lifetime). The cube is
+	// uploaded to the GPU by GenerateUnitCube; the material is white (base colour 1,1,1) so the
+	// per-instance albedo tint set per building IS the rendered colour. No emissive (DevilsPlayground
+	// colours via the albedo, not a glow). Windowed only — GenerateUnitCube touches the GPU.
+	static void EnsureBuildingMeshAssets()
+	{
+		if (s_pxBuildingCubeMesh != nullptr) { return; }
+		s_pxBuildingCubeGeom = new Flux_MeshGeometry();
+		Flux_MeshGeometry::GenerateUnitCube(*s_pxBuildingCubeGeom);
+		s_pxBuildingCubeMesh = Flux_MeshInstance::CreateFromGeometry(s_pxBuildingCubeGeom);
+
+		s_pxBuildingMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		s_pxBuildingMat->SetName("CBBuildingMaterial");
+		s_pxBuildingMat->SetBaseColor(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));   // white → per-instance tint is the colour
+		s_pxBuildingMat->SetRoughness(0.65f);
+		s_pxBuildingMat->SetMetallic(0.0f);
+	}
+
 	void EnsureTerrainPtr()
 	{
 		if (m_pxTerrain != nullptr) { return; }
@@ -293,6 +360,68 @@ public:
 		if ((m_uTerraformTick++ % 6u) == 0u)   // refresh the GPU mesh a few times a second
 		{
 			RestreamTerraformRegion(fWX, fWZ);
+		}
+	}
+
+	// --- Keyboard-shortcut helpers (driven by OnUpdate's hotkey block + the human test) ---
+	void NewCity()
+	{
+		m_xRoadCtrl.Reset();
+		m_xZoning.Reset();
+		m_xBuild.Reset();
+		m_xDistricts.Reset();
+		m_xTransit.Reset();
+		m_xConduits.Reset();
+		m_uMilestoneMask = 0u;
+		m_uLastCarveSegs = 0u;
+	}
+	void CycleSpeed(int iDir)
+	{
+		int iS = static_cast<int>(m_eSpeed) + iDir;
+		if (iS < static_cast<int>(CB_SIM_PAUSED)) { iS = static_cast<int>(CB_SIM_PAUSED); }
+		if (iS > static_cast<int>(CB_SIM_ULTRA))  { iS = static_cast<int>(CB_SIM_ULTRA); }
+		m_eSpeed = static_cast<CB_ESimSpeed>(iS);
+	}
+	const char* QuickSavePath() const { return "cb_quicksave_freeform.dat"; }
+	void SaveCity()
+	{
+		CB_SaveLoadFreeform::SaveToFile(m_xRoadCtrl.GetGraph(), m_xZoning, m_xBuild,
+			m_xDistricts, m_xTransit, m_xConduits, QuickSavePath());
+	}
+	void LoadCity()
+	{
+		if (CB_SaveLoadFreeform::LoadFromFile(m_xRoadCtrl.GetGraph(), m_xZoning, m_xBuild,
+			m_xDistricts, m_xTransit, m_xConduits, QuickSavePath()))
+		{
+			m_xRoadCtrl.RebuildMesh(m_xHeightfield);
+		}
+	}
+
+	// Traffic trip endpoints from the live city: residential built lots are HOMES (trip origins),
+	// commercial/industrial built lots are JOBS/SHOPS (destinations); each maps to its road
+	// segment's node. Rebuilt each tick (cheap). No homes or no jobs ⇒ no trips ⇒ no traffic.
+	static constexpr uint32_t POP_PER_CAR = 30;   // ~one concurrent trip per 30 residents
+	void BuildTrafficEndpoints()
+	{
+		m_auTrafficOrigins.Clear();
+		m_auTrafficDests.Clear();
+		const CB_RoadGraph& xGraph   = m_xRoadCtrl.GetGraph();
+		const uint32_t      uSegSlots = xGraph.GetSegmentSlotCount();
+		const uint32_t      uLots     = m_xZoning.GetLotSlotCount();
+		for (uint32_t i = 0; i < uLots; ++i)
+		{
+			const CB_Lot& xLot = m_xZoning.GetLot(i);
+			if (!xLot.m_bActive || xLot.m_uBuildingId == CB_Zoning::INVALID) { continue; }   // built lots only
+			if (xLot.m_uSegment >= uSegSlots || !xGraph.GetSegment(xLot.m_uSegment).m_bActive) { continue; }
+			const uint32_t uNode = xGraph.GetSegment(xLot.m_uSegment).m_uNodeA;   // the lot's road-access node
+			if (xLot.m_eZone == CB_ZONE_RESIDENTIAL)
+			{
+				m_auTrafficOrigins.PushBack(uNode);
+			}
+			else if (xLot.m_eZone == CB_ZONE_COMMERCIAL || xLot.m_eZone == CB_ZONE_INDUSTRIAL)
+			{
+				m_auTrafficDests.PushBack(uNode);
+			}
 		}
 	}
 
@@ -421,7 +550,7 @@ public:
 		m_xTools.SetTool(eTool);
 		if (eTool == CB_TOOL_POLICE && eService != CB_BUILDING_NONE) { m_xRoadCtrl.SetServiceType(eService); }
 	}
-	void SetUISpeed(CB_ESimSpeed eSpeed) { m_xSim.SetSpeed(eSpeed); }
+	void SetUISpeed(CB_ESimSpeed eSpeed) { m_eSpeed = eSpeed; }
 
 	// Button callbacks (UIButtonCallback = void(*)(void*)). The tool + service sub-type are packed
 	// into the userdata pointer (tool in byte 0, service in byte 1); the speed is the raw value.
@@ -799,7 +928,7 @@ public:
 		{
 			const uint32_t uPol = m_xDistricts.GetCityPolicyMask();
 			snprintf(acBuf, sizeof(acBuf), "%s  [P]   Districts:%u  Policy:%s%s%s%s",
-				m_xSim.GetSpeed() == CB_SIM_PAUSED ? "PAUSED" : "PLAYING", m_xDistricts.GetActiveCount(),
+				m_eSpeed == CB_SIM_PAUSED ? "PAUSED" : "PLAYING", m_xDistricts.GetActiveCount(),
 				(uPol & CB_PolicyBit(CB_POLICY_RECYCLING))         ? " Recycle" : "",
 				(uPol & CB_PolicyBit(CB_POLICY_FREE_TRANSIT))      ? " FreeTransit" : "",
 				(uPol & CB_PolicyBit(CB_POLICY_POLLUTION_CONTROL)) ? " PollCtrl" : "",
@@ -842,14 +971,6 @@ public:
 		if (s_pxActiveHeightfield == &m_xHeightfield)
 		{
 			s_pxActiveHeightfield = nullptr;
-		}
-		if (s_pxActiveGrid == &m_xGrid)
-		{
-			s_pxActiveGrid = nullptr;
-		}
-		if (s_pxActiveRoads == &m_xRoads)
-		{
-			s_pxActiveRoads = nullptr;
 		}
 		if (s_pxActive == this)
 		{
@@ -898,18 +1019,8 @@ public:
 			RestreamTerraformRegion(fWX, fWZ);
 		}
 	}
-	CB_CityGrid&                 GetGrid()              { return m_xGrid; }
-	const CB_CityGrid&           GetGrid() const        { return m_xGrid; }
-	CB_RoadNetwork&              GetRoads()             { return m_xRoads; }
-	const CB_RoadNetwork&        GetRoads() const       { return m_xRoads; }
-	CB_BuildingManager&          GetBuildings()         { return m_xBuildings; }
-	const CB_BuildingManager&    GetBuildings() const   { return m_xBuildings; }
-	CB_ServiceManager&           GetServices()          { return m_xServices; }
-	CB_EconomyManager&           GetEconomy()           { return m_xEconomy; }
-	CB_CitizenManager&           GetCitizens()          { return m_xCitizens; }
-	CB_SimulationTick&           GetSim()               { return m_xSim; }
-	const CB_SimulationTick&     GetSim() const         { return m_xSim; }
-	const CB_CityStats&          GetStats() const       { return m_xSim.GetStats(); }
+	CB_ESimSpeed                 GetSpeed() const       { return m_eSpeed; }
+	void                         SetSpeed(CB_ESimSpeed eSpeed) { m_eSpeed = eSpeed; }
 	CB_ToolSystem&               GetTools()             { return m_xTools; }
 	CB_RoadController&           GetRoadController()    { return m_xRoadCtrl; }
 	const CB_RoadController&     GetRoadController() const { return m_xRoadCtrl; }
@@ -928,26 +1039,22 @@ public:
 	static CB_Districts*      GetActiveDistricts()      { return s_pxActiveDistricts; }
 	static CB_TransitLines*   GetActiveTransit()        { return s_pxActiveTransit; }
 	static CB_Conduits*       GetActiveConduits()       { return s_pxActiveConduits; }
+	static CB_Traffic*        GetActiveTraffic()        { return s_pxActiveTraffic; }
 
 	// Liveness accessors consumed by the CB_Boot automated test.
 	static bool     WasStarted()     { return s_bStarted; }
 	static uint32_t GetUpdateCount() { return s_uUpdateCount; }
+	// Telemetry: number of available-placement-zone ghosts drawn last frame (0 unless an R/C/I
+	// zone tool is active). Proves the placement-ghost affordance is live + tracks tool state.
+	static uint32_t GetLastGhostCount() { return s_uLastGhostCount; }
 
 	// Active-subsystem accessors for game-side bridges/tests (null when no
 	// CityManager is live).
 	static CB_TerrainHeightfield* GetActiveHeightfield() { return s_pxActiveHeightfield; }
-	static CB_CityGrid*           GetActiveGrid()        { return s_pxActiveGrid; }
-	static CB_RoadNetwork*        GetActiveRoads()       { return s_pxActiveRoads; }
 
 private:
 	CB_TerrainHeightfield m_xHeightfield;
-	CB_CityGrid           m_xGrid;
-	CB_RoadNetwork        m_xRoads;
-	CB_BuildingManager    m_xBuildings;
-	CB_ServiceManager     m_xServices;
-	CB_EconomyManager     m_xEconomy;
-	CB_CitizenManager     m_xCitizens;
-	CB_SimulationTick     m_xSim;
+	CB_ESimSpeed          m_eSpeed = CB_SIM_NORMAL;   // sim clock (pause/normal/fast/ultra); gates growth + scales traffic dt
 	CB_ToolSystem         m_xTools;
 	CB_RoadController     m_xRoadCtrl;             // free-form spline road network + draw tool
 	CB_Zoning             m_xZoning;               // road-relative frontage lots + zone paint
@@ -955,10 +1062,19 @@ private:
 	CB_Districts          m_xDistricts;            // named regions + city/district policy ordinances
 	CB_TransitLines       m_xTransit;              // public-transport lines + stops (ridership reach)
 	CB_Conduits           m_xConduits;             // utility conduit network (power/water reach)
-	CB_Traffic            m_xTraffic;             // visual road traffic (cars on the spline network)
+	CB_Traffic            m_xTraffic;             // demand-driven OD-trip road traffic (home→work/shop)
+	Zenith_Vector<uint32_t> m_auTrafficOrigins;   // home nodes (trip origins), rebuilt each tick
+	Zenith_Vector<uint32_t> m_auTrafficDests;     // job/shop nodes (trip destinations), rebuilt each tick
 	Zenith_TerrainComponent* m_pxTerrain   = nullptr;  // cached GPU terrain for the road carve
 	uint32_t                 m_uLastCarveSegs = 0;     // re-carve when the road count changes
 	CB_RoadTerrain::CarveContext m_xCarveCtx;          // road samples for the stream-in carve hook (engine holds a ptr to this)
+	// Buildings render as instanced cube meshes (lit PBR material, per-instance albedo tint =
+	// zone colour). The component lives on a render-only "CityBuildings" entity (created windowed
+	// in OnStart); the shared unit-cube mesh + material are process-lifetime singletons.
+	Zenith_InstancedMeshComponent* m_pxBuildingInst = nullptr;
+	static inline Flux_MeshGeometry*    s_pxBuildingCubeGeom = nullptr;
+	static inline Flux_MeshInstance*    s_pxBuildingCubeMesh = nullptr;
+	static inline Zenith_MaterialAsset* s_pxBuildingMat      = nullptr;
 	uint32_t                 m_uTerraformTick  = 0;    // throttles the terraform GPU re-upload while dragging
 	bool                     m_bUIBuilt = false;       // the parity game UI is built on the first windowed frame
 	float                    m_fUIBuiltW = 0.0f;       // canvas size the UI was last laid out for (rebuild on resize)
@@ -970,9 +1086,8 @@ private:
 
 	static inline bool                       s_bStarted            = false;
 	static inline uint32_t                   s_uUpdateCount        = 0;
+	static inline uint32_t                   s_uLastGhostCount     = 0;   // available-placement ghosts drawn last frame
 	static inline CB_TerrainHeightfield*     s_pxActiveHeightfield = nullptr;
-	static inline CB_CityGrid*               s_pxActiveGrid        = nullptr;
-	static inline CB_RoadNetwork*            s_pxActiveRoads       = nullptr;
 	static inline CB_CityManager_Behaviour*  s_pxActive            = nullptr;
 	static inline CB_RoadController*         s_pxActiveRoadCtrl    = nullptr;
 	static inline CB_Zoning*                 s_pxActiveZoning      = nullptr;
@@ -980,4 +1095,5 @@ private:
 	static inline CB_Districts*              s_pxActiveDistricts   = nullptr;
 	static inline CB_TransitLines*           s_pxActiveTransit     = nullptr;
 	static inline CB_Conduits*               s_pxActiveConduits    = nullptr;
+	static inline CB_Traffic*                s_pxActiveTraffic     = nullptr;
 };

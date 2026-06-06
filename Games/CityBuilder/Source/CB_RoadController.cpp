@@ -48,7 +48,8 @@ void CB_RoadController::Reset()
 void CB_RoadController::HandleClick(float fWorldX, float fWorldZ)
 {
 	const Zenith_Maths::Vector2 xP(fWorldX, fWorldZ);
-	const uint32_t uNode = m_xGraph.FindOrAddNode(xP, SNAP_RADIUS);
+	// Snap to an existing node, else T-junction onto a road the click lands on, else a fresh node.
+	const uint32_t uNode = m_xGraph.FindOrSplitNodeAt(xP, SNAP_RADIUS);
 
 	if (m_uPendingNode == CB_RoadGraph::INVALID)
 	{
@@ -76,7 +77,9 @@ void CB_RoadController::HandleClick(float fWorldX, float fWorldZ)
 	const Zenith_Maths::Vector2 xDirB = (xA - xB) * (1.0f / fChordLen);
 	const CB_Spline xSpline = CB_Spline::Curved(xA, xDirA, xB, xDirB);
 
-	m_xGraph.AddSegment(m_uPendingNode, uNode, xSpline, m_eClass);
+	// Auto-junction: where this road crosses existing roads, split both at the crossing + insert a
+	// shared junction node, so the network is always a connected graph (SimCity / Cities: Skylines).
+	m_xGraph.AddSegmentWithJunctions(m_uPendingNode, uNode, xSpline, m_eClass);
 	m_xLastDir     = xChord;
 	m_bHaveLastDir = true;
 	m_uPendingNode = uNode;  // continue the road from B

@@ -173,7 +173,7 @@ Each project supports these configurations:
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
 | ZenithTools | Asset tools (Windows only) | Executable (.exe) |
-| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test | Executable (.exe) / Shared lib (.so) |
+| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 

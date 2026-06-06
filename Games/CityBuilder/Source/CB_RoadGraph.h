@@ -62,12 +62,22 @@ public:
 	uint32_t FindNodeNear(const Zenith_Maths::Vector2& xPos, float fRadius) const;
 	// Snap to an existing node within fRadius, else create one.
 	uint32_t FindOrAddNode(const Zenith_Maths::Vector2& xPos, float fSnapRadius);
+	// Like FindOrAddNode, but if no node is near yet the point lands ON an existing segment, SPLIT
+	// that segment there and return the new junction node (a T-junction) — SimCity/C:S behaviour.
+	uint32_t FindOrSplitNodeAt(const Zenith_Maths::Vector2& xPos, float fSnapRadius);
 
 	// --- segments ---
 	// Links nodeA/nodeB (ref-counts them) and stores the spline + width-by-class.
 	// Returns the segment index (stable). The spline's P0/P3 should be the node
 	// positions; this is not enforced.
 	uint32_t AddSegment(uint32_t uNodeA, uint32_t uNodeB, const CB_Spline& xSpline, CB_ERoadClass eClass);
+	// Add a segment AND auto-junction it: wherever its centreline crosses an existing active segment,
+	// split BOTH at the crossing (inserting a shared junction node) so the network stays a connected
+	// graph — SimCity / Cities: Skylines-style intersections. Returns the first sub-segment's index.
+	uint32_t AddSegmentWithJunctions(uint32_t uNodeA, uint32_t uNodeB, const CB_Spline& xSpline, CB_ERoadClass eClass);
+	// Split active segment uSeg at spline parameter fT (0<fT<1): inserts a junction node at the split
+	// point + replaces the segment with two sub-segments (same class). Returns the node (INVALID if fT≈end).
+	uint32_t SplitSegmentAt(uint32_t uSegment, float fT);
 	// Soft-delete: deactivates the segment, decrements node refs, frees orphan nodes.
 	void     RemoveSegment(uint32_t uSegment);
 	// Nearest active segment whose centreline passes within fMaxDist of (wx,wz), or INVALID.
@@ -88,6 +98,10 @@ public:
 
 	// How many active segments touch a node (for junction rendering: >= 2 = junction).
 	uint32_t CountSegmentsAtNode(uint32_t uNode) const;
+
+	// --- road-network telemetry (SimCity / Cities: Skylines parity proof) ---
+	uint32_t CountConnectedComponents() const;   // disjoint road sub-networks (1 = fully connected)
+	uint32_t CountJunctions() const;             // active nodes where >= 3 segments meet (intersections)
 
 	// Minimum distance (XZ) from a world point to ANY active road centreline
 	// (INF if no roads). Used by terrain carving + zoning in later phases.

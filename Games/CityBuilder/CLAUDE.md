@@ -13,15 +13,40 @@ milestone grants**, adjustable **tax rate**), **happiness**, **pollution**, **tr
 congestion**, **districts + policy
 ordinances** (recycling / free-transit / pollution-control / parks-mandate, city-wide or
 per-district), **rolling-hills terrain** that **roads carve** and the player can
-**terraform**, **save/load**, and **visual traffic** (cars driving the splines, A*
-routing). All gameplay logic is pure data/logic with headless `Zenith_AutomatedTest`
-coverage; the presentation renders the city with engine debug primitives and lets
+**terraform**, **save/load**, and **demand-driven traffic** (SimCity/C:S model: cars are
+home→job/shop **trips** routed by A*, scaling with population, congesting busy roads — a
+bare network carries none). All gameplay logic is pure data/logic with headless `Zenith_AutomatedTest`
+coverage; the presentation renders buildings as colour-tinted instanced cube meshes and everything
+else (roads, zone overlay, placement ghosts, services, traffic) with engine debug primitives, and lets
 the player build with the mouse.
 
-The original **grid** foundation (CB_CityGrid / CB_RoadNetwork / CB_BuildingManager /
-CB_PresentationView / CB_SimulationTick) is retained but **gated off** behind
-`CB_USE_LEGACY_GRID` (= 0 in `Source/CB_Config.h`); the free-form systems below
-replace it. Full rebuild plan: `~/.claude/plans/citybuilder-full-tidy-hoare.md`.
+
+## Documentation map
+
+This file is the overview (build, controls, terrain, city systems, conventions). The per-file detail
+lives in per-directory docs (engine convention):
+
+| Doc | Covers |
+|---|---|
+| [`Source/CLAUDE.md`](Source/CLAUDE.md) | every gameplay system — roads (spline/graph/mesh/controller/tools), zoning, buildings + defs, the sim, districts/policies/transit/conduits, traffic, terrain (gen/heightfield/carve/modifier), save/serialize, zones/sim-speed/events/telemetry/icons/camera/day-night. Public types, key API, constants, invariants. |
+| [`Components/CLAUDE.md`](Components/CLAUDE.md) | the 3 behaviours — `CB_CityManager_Behaviour` (orchestrator: owned subsystems, lifecycle, **static accessors**, HUD, hotkeys), `CB_CityCamera_Behaviour`, `CB_DayNightCycle_Behaviour`. |
+| [`Tests/CLAUDE.md`](Tests/CLAUDE.md) | the test suite — headless logic vs windowed, how to run (incl. the `_True`-only headless gate), the no-reentrant-simulator rule, and `CB_HumanSession` (the pure-input playthrough). |
+
+### Directory layout
+```
+Games/CityBuilder/
+  CityBuilder.cpp        # Project_* hooks: terrain/material/icon asset bake + City scene creation
+  CLAUDE.md              # this overview
+  Source/                # headless gameplay systems (CB_*.{h,cpp}) — see Source/CLAUDE.md
+  Components/            # the 3 Zenith_ScriptBehaviour classes — see Components/CLAUDE.md
+  Tests/                 # Zenith_AutomatedTest coverage — see Tests/CLAUDE.md
+  Assets/                # Scenes (City.zscen), Terrain (baked heightmap + chunk meshes), UI/Icons, Scripts
+  Build/ , Android/      # generated solution output + Android (AGDE) project
+```
+`CityBuilder.cpp` bakes the terrain (4096px heightmap from `CB_TerrainGen::HillNorm` + 4 materials +
+splatmap, marker-gated `terrain_hills_vN`) and the 20 toolbar icons (`CB_UI_ICONS_VERSION`, tools-build),
+registers the 3 behaviours, disables SS*/shadows/fog (keeps skybox + IBL), and loads the City scene
+(build index 0).
 
 ## Build + autonomous test gate
 
@@ -43,18 +68,31 @@ they are skipped headless and only run in the windowed pass.
 - **Road (5):** SimCity/C:S-style — left-click a start point, then a **ghost preview**
   (a green spline footprint, **cyan** when it would snap to an existing node) follows the
   cursor; left-click again confirms the segment and continues from there; right-click ends
-  the road. Endpoints snap to nearby nodes (junctions); curves are tangent-continuous.
+  the road. Endpoints snap to nearby nodes; **AUTO-INTERSECTIONS** form like SimCity/C:S —
+  where a road crosses an existing road both split at the crossing + share a new junction node
+  (X-junction), and a road ending mid-span on another splits it (T-junction), so the network is
+  always a connected graph (`CB_RoadGraph::AddSegmentWithJunctions` / `SplitSegmentAt` /
+  `FindOrSplitNodeAt`; `CB_Spline::SplitAt`/`SubSpline`/`SegSegIntersect`). Curves are tangent-continuous.
   The ghost is `CB_RoadController`'s `RebuildPreview` (hover from `PickGroundPoint` each
   frame, or `SetHoverPointForAutomation` in tests — see `CB_RoadGhost`); it is drawn as a
   colour-keeping sphere outline because flat lit primitives wash to white (memory
   `reference-screen-capture-and-primitive-winding`).
 - **Zones (1 Residential · 2 Commercial · 3 Industrial · 4 Park):** drag-paint onto
-  frontage lots along the roads.
+  frontage lots along the roads. While an R/C/I tool is selected the game renders **ghosts
+  of the available placement lots** (a flat slab in the tool's colour on every open, unzoned
+  frontage lot — `CB_Zoning::RenderPlacementGhosts`), so you can see exactly where a zone can
+  go before painting; they clear as lots are zoned/built or when the tool is deselected.
+  Telemetry: `CB_CityManager_Behaviour::GetLastGhostCount()` (asserted in `CB_HumanSession`).
 - **Utilities/services:** 7 Power plant · 8 Water tower · 6 Services (click to place;
   press 6 again to cycle Police → Fire → Hospital → School → Landfill → Sewage Plant →
   Bus Depot → Post Office).
-- **9 Bulldoze** (nearest road) · **0 None** · **P** pause.
+- **9 Bulldoze** (nearest road) · **0 None** · **P** pause · **, / .** speed down/up.
 - **T Terraform:** hold **LMB** to raise / **RMB** to lower the ground under the cursor.
+- **Economy / session hotkeys:** **R** cycle road class (small→medium→large) · **- / =** tax
+  down/up · **G** take a development loan · **F5 / F9** quick save / load · **F8** new (clear)
+  city · **F** ignite a fire under the cursor (disaster drill). The whole game is
+  keyboard-operable so a player — or the `CB_HumanSession` test — can drive every mechanic
+  from the keyboard + mouse, purely through `Zenith_InputSimulator`.
 - **B District:** left-click paints a circular district; **F1-F4** toggle the four policy
   ordinances (Recycling / Free Transit / Pollution Control / Parks Mandate) — on the
   current district while the District tool is active, else city-wide.
@@ -63,16 +101,23 @@ they are skipped headless and only run in the windowed pass.
 - **K Utility conduit:** left-click lays a conduit node; a connected chain carries power +
   water from a source out to buildings beyond its radius (energized = cyan in the overlay).
 
-## Free-form architecture (`Source/`)
+## Architecture (`Source/`)
 
 ```
-CB_Config.h                # CB_USE_LEGACY_GRID switch (0 = free-form)
+CB_Zones.h                 # CB_EZoneType (Residential/Commercial/Industrial/Park) — shared enum
+CB_SimSpeed.h              # CB_ESimSpeed + CB_SpeedMultiplier (pause/normal/fast/ultra clock)
 CB_Spline.h                # cubic Bézier in XZ: Evaluate/Tangent/UnitTangent/Length/Distance
-CB_RoadGraph.{h,cpp}       # nodes + spline segments; snap/junction/ref-count/bulldoze; serialize
+CB_RoadGraph.{h,cpp}       # nodes + spline segments; snap, AUTO-INTERSECTIONS (AddSegmentWithJunctions /
+                           #   SplitSegmentAt / FindOrSplitNodeAt → X + T junctions), ref-count/bulldoze;
+                           #   connectivity telemetry (CountConnectedComponents / CountJunctions); serialize
 CB_RoadMesh.h              # terrain-following road-ribbon triangle generation
 CB_RoadController.{h,cpp}  # owns the graph; the road/zone/service/bulldoze tools (reads the
                            #   camera-unproject picker); services sub-type cycle; ribbon render
-CB_Zoning.{h,cpp}          # per-segment frontage lots; paint R/C/I; zone overlay; serialize
+CB_Zoning.{h,cpp}          # per-segment frontage lots (placed with IsLotPositionClear: kept clear of
+                           #   EVERY road carriageway + intersections + other lots, so zones/buildings never
+                           #   overlap a road or each other — esp. at junctions + between close parallels);
+                           #   paint R/C/I; zone overlay; placement-zone ghosts (RenderPlacementGhosts: open
+                           #   lots when an R/C/I tool is active); serialize
 CB_BuildingPlacement.{h,cpp} # the city sim: demand-driven growth + level-up; service-building
                            #   placement; utilities/coverage/garbage/sewage/transit/pollution/
                            #   congestion/happiness/economy/policy-effects; render; serialize
@@ -82,7 +127,10 @@ CB_Districts.h             # painted regions + city/district policy masks; GetPo
 CB_TransitLines.h          # bus lines = ordered stops; IsNearAnyStop gates transit ridership reach
 CB_Conduits.h              # utility conduits; Energize() floods power/water along connected chains,
                            #   IsPowered/IsWatered extends source reach to far buildings; serialize
-CB_Traffic.{h,cpp}         # vehicle pool driving the spline network + A* (FindPath) over the graph
+CB_Traffic.{h,cpp}         # demand-driven OD-trip traffic (SimCity/C:S): homes→jobs/shops routed by A*
+                           #   (FindPath), count scales with population, per-segment congestion + telemetry
+                           #   (CB_TrafficStats). Manager passes origin/dest nodes from built lots; needs a
+                           #   CONNECTED road graph — auto-intersections keep crossing roads connected
 CB_TerrainGen.h            # the ONE shared hill-height function (bake + heightfield agree); flip-proof
 CB_RoadTerrain.{h,cpp}     # roads CARVE the terrain: SurfaceHeight (hill, levelled+recessed under
                            #   roads) → FlattenHeightfield (CPU) + CarveTerrainMesh (re-upload GPU chunks)
@@ -135,11 +183,14 @@ density (level-up) additionally needs **land value** (happiness from service cov
   **terraform raise/lower**), `CB_SaveLoadRoundtrip` (now also round-trips districts +
   policies), `CB_TrafficTest` (A* + drive).
 - **Windowed:** `CB_RoadDraw` (curved road), `CB_CityGrow` (full free-form render),
-  `CB_HumanSession` (the headline ~15s playthrough: draw a road + place a plant with the
-  real tool+picker, lay a road grid, zone R/C/I, power/water/service it, watch it grow to
-  a sizeable city, zone a second wave, pause/resume, bulldoze + rebuild, save + load).
-- **Legacy** logic tests still run; the legacy windowed `CB_Play` is gated behind
-  `CB_USE_LEGACY_GRID`.
+  `CB_HumanSession` (the headline **pure-input** playthrough: drives the game ONLY through
+  `Zenith_InputSimulator` — simulated mouse moves/clicks/wheel + key presses, with NO direct
+  subsystem calls — to build a sizeable city and exercise EVERY mechanic: roads (all 3
+  classes), R/C/I zones + parks, all 11 utility/service types via the 6-cycle, districts +
+  the 4 policies, transit lines, conduits, terraform, bulldoze, loans/tax, speed/pause,
+  save/load + a fire drill. Authored as a flat input "script" (`g_xScript`) processed one
+  action per frame; PROBE actions snapshot state + Verify asserts a solvent, served city
+  (~60 buildings) AND that each mechanic fired. ~43s windowed).
 
 ## Conventions (engine-wide; see root CLAUDE.md)
 
@@ -218,10 +269,22 @@ fraction of buildings it covers — a **district** (`CB_Districts`) policy hits 
 a city-wide policy hits everything. Happiness folds in coverage, utilities, congestion,
 pollution, garbage, sewage and the parks-mandate policy.
 
+## Building rendering (current)
+
+R/C/I buildings render as **GPU-instanced cube meshes** with a lit PBR material, coloured per zone via
+the per-instance albedo tint — **residential green, commercial blue, industrial yellow** (burning =
+orange); service buildings take their own colours. This is the DevilsPlayground material approach
+(albedo, **no emissive**) and replaced the old washed-out debug-primitive boxes. The shared unit-cube
+mesh + white material are process-lifetime singletons; the instances live on a transient `CityBuildings`
+entity, rebuilt each frame from the live city by `CB_BuildingPlacement::RenderInstanced` (the manager
+passes `m_pxBuildingInst`). Roads/zone-overlay/placement-ghosts/services/traffic still use
+`g_xEngine.Primitives()`. See `Source/CLAUDE.md` (CB_BuildingPlacement) + `Components/CLAUDE.md`.
+
 ## Remaining / deferred
 
-- **Real textured/instanced building + vehicle models** — asset-blocked (no external spend,
-  CC0/free only); the asset-free substitute is procedural building variety (`EmitBuilding`).
+- **Real textured ART models** for buildings + vehicles — asset-blocked (no external spend, CC0/free
+  only). Buildings already use instanced cube *meshes* with materials (above); the deferred item is
+  authored detailed models. Vehicles are still debug primitives.
 - Road carves now **persist** across streaming via the `StreamInLOD` engine hook (see Terrain).
   A *terraformed* (non-road) HIGH chunk that re-streams still reverts — the hook re-applies the
   road `SurfaceHeight`, not the player's terraform delta; terraform is best near the resident city.

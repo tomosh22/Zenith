@@ -27,7 +27,37 @@ void CB_Zoning::Reset()
 	m_uActiveLots = 0;
 }
 
-void CB_Zoning::AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const CB_TerrainHeightfield& xField)
+bool CB_Zoning::IsLotPositionClear(const Zenith_Maths::Vector2& xPos, const CB_RoadGraph& xGraph,
+                                   float fRoadClear, float fMinLotDist) const
+{
+	// Clear of EVERY road carriageway. The lot's OWN road is ~8m off its centreline (fOffset), well
+	// beyond fRoadClear, so it passes; a CROSSING road near a junction is within reach → reject,
+	// which keeps lots off the carriageway and out of intersections. Also catches close parallels.
+	const uint32_t uSegs = xGraph.GetSegmentSlotCount();
+	for (uint32_t s = 0; s < uSegs; ++s)
+	{
+		const CB_RoadSegment& xSeg = xGraph.GetSegment(s);
+		if (!xSeg.m_bActive) { continue; }
+		if (xSeg.m_xSpline.DistanceToPoint(xPos) < xSeg.m_fWidth * 0.5f + fRoadClear)
+		{
+			return false;
+		}
+	}
+	// Clear of every already-placed active lot (junctions otherwise cluster lots from the several
+	// segments that meet there; a tight inside curve otherwise bunches consecutive lots).
+	const float fMin2 = fMinLotDist * fMinLotDist;
+	for (uint32_t i = 0; i < m_axLots.GetSize(); ++i)
+	{
+		const CB_Lot& xLot = m_axLots.Get(i);
+		if (!xLot.m_bActive) { continue; }
+		const float dx = xLot.m_xPos.x - xPos.x;
+		const float dz = xLot.m_xPos.y - xPos.y;
+		if (dx * dx + dz * dz < fMin2) { return false; }
+	}
+	return true;
+}
+
+void CB_Zoning::AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const CB_RoadGraph& xGraph, const CB_TerrainHeightfield& xField)
 {
 	const float fLen = xSeg.m_xSpline.Length();
 	if (fLen < LOT_SPACING * 0.6f)
@@ -36,6 +66,13 @@ void CB_Zoning::AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const 
 	}
 	const float fOffset = xSeg.m_fWidth * 0.5f + LOT_DEPTH * 0.5f + 1.0f;  // plot centre, back from the road edge
 	const uint32_t uSteps = std::max<uint32_t>(8u, static_cast<uint32_t>(fLen));  // ~1m sub-steps
+
+	// A candidate is only placed if it is clear of every road and every existing lot — otherwise lots
+	// from crossing segments collided at junctions (overlapping each other + landing on the road) and
+	// close parallel roads' lots overlapped. fRoadClear < the 8m own-road offset so a lot always
+	// clears its OWN road; ~10m min spacing keeps building footprints (≈9m) from overlapping.
+	const float fRoadClear  = 5.5f;
+	const float fMinLotDist = LOT_SPACING * 0.72f;
 
 	float fAccum   = 0.0f;
 	float fNextLot = LOT_SPACING * 0.5f;
@@ -58,8 +95,13 @@ void CB_Zoning::AddSegmentLots(uint32_t uSeg, const CB_RoadSegment& xSeg, const 
 			for (int s = 0; s < 2; ++s)
 			{
 				const float fSide = (s == 0) ? 1.0f : -1.0f;
+				const Zenith_Maths::Vector2 xPos = xC + xPerp * (fOffset * fSide);
+				if (!IsLotPositionClear(xPos, xGraph, fRoadClear, fMinLotDist))
+				{
+					continue;   // would overlap a road / intersection / another lot — skip it
+				}
 				CB_Lot xLot;
-				xLot.m_xPos     = xC + xPerp * (fOffset * fSide);
+				xLot.m_xPos     = xPos;
 				xLot.m_xFaceDir = xPerp * (-fSide);   // points back toward the road
 				// Fine rendered surface (not the coarse field) so the zone tile + any building
 				// that grows here sit on the actual GPU mesh — see CB_TerrainHeightfield::GetRenderSurfaceY.
@@ -102,7 +144,7 @@ void CB_Zoning::SyncToGraph(const CB_RoadGraph& xGraph, const CB_TerrainHeightfi
 		const bool bHas    = m_abSegHasLots.Get(s);
 		if (bActive && !bHas)
 		{
-			AddSegmentLots(s, xGraph.GetSegment(s), xField);
+			AddSegmentLots(s, xGraph.GetSegment(s), xGraph, xField);
 			m_abSegHasLots.Get(s) = true;
 		}
 		else if (!bActive && bHas)
@@ -161,6 +203,48 @@ void CB_Zoning::RenderOverlay() const
 			Zenith_Maths::Vector3(LOT_DEPTH * 0.4f, 0.05f, LOT_DEPTH * 0.4f),
 			ZoneColor(xLot.m_eZone));
 	}
+}
+
+uint32_t CB_Zoning::RenderPlacementGhosts(CB_EZoneType eActiveZone) const
+{
+	// Cap as a backstop so a pathologically large unzoned network can't overflow the primitive
+	// instance buffer. Each ghost is ONE cube instance (~tens of bytes — cheap, exactly like the
+	// overlay tiles). 250 covers any normal grid; CountAvailableLots() reports the true total.
+	// (A ring outline was tried first but cost 14 line-instances per lot and overflowed the buffer.)
+	constexpr uint32_t MAX_GHOSTS = 250u;
+	const Zenith_Maths::Vector3 xCol = ZoneColor(eActiveZone);
+	uint32_t uCount = 0;
+	for (uint32_t i = 0; i < m_axLots.GetSize() && uCount < MAX_GHOSTS; ++i)
+	{
+		const CB_Lot& xLot = m_axLots.Get(i);
+		if (!xLot.m_bActive || xLot.m_eZone != CB_ZONE_NONE || xLot.m_uBuildingId != INVALID)
+		{
+			continue;   // only EMPTY, unzoned, unbuilt frontage is an "available placement zone"
+		}
+		// A flat slab in the ACTIVE TOOL's colour on each open lot. Distinct from a PAINTED overlay
+		// tile (CB_ZONE colour, 0.40 half-extent @ +0.30) by being smaller + lower, so a ghost reads
+		// as "available, not yet placed". m_fWorldY is the fine rendered surface; lift it clear.
+		g_xEngine.Primitives().AddCube(
+			Zenith_Maths::Vector3(xLot.m_xPos.x, xLot.m_fWorldY + 0.22f, xLot.m_xPos.y),
+			Zenith_Maths::Vector3(LOT_DEPTH * 0.30f, 0.04f, LOT_DEPTH * 0.30f),
+			xCol);
+		++uCount;
+	}
+	return uCount;
+}
+
+uint32_t CB_Zoning::CountAvailableLots() const
+{
+	uint32_t uCount = 0;
+	for (uint32_t i = 0; i < m_axLots.GetSize(); ++i)
+	{
+		const CB_Lot& xLot = m_axLots.Get(i);
+		if (xLot.m_bActive && xLot.m_eZone == CB_ZONE_NONE && xLot.m_uBuildingId == INVALID)
+		{
+			++uCount;
+		}
+	}
+	return uCount;
 }
 
 void CB_Zoning::WriteToDataStream(Zenith_DataStream& xStream) const

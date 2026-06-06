@@ -45,8 +45,10 @@ namespace
 void CB_Traffic::Reset()
 {
 	m_axVehicles.Clear();
-	m_uActive = 0;
-	m_uRng    = 0x1234567u;
+	m_auSegLoad.Clear();
+	m_xPathScratch.Clear();
+	m_xStats = CB_TrafficStats{};
+	m_uRng   = 0x1234567u;
 }
 
 uint32_t CB_Traffic::NextRand()
@@ -124,24 +126,46 @@ bool CB_Traffic::FindPath(const CB_RoadGraph& xGraph, uint32_t uStart, uint32_t 
 	return true;
 }
 
-bool CB_Traffic::SpawnVehicle(const CB_RoadGraph& xGraph, CB_Vehicle& xV)
+uint32_t CB_Traffic::SegCapacity(const CB_RoadSegment& xSeg)
 {
-	const uint32_t uSegs = xGraph.GetSegmentSlotCount();
-	if (uSegs == 0) { return false; }
-	for (uint32_t uTry = 0; uTry < 32; ++uTry)
+	// Vehicles a segment carries freely before it congests — wider class = more lanes.
+	switch (xSeg.m_eClass)
 	{
-		const uint32_t s = NextRand() % uSegs;
-		const CB_RoadSegment& xSeg = xGraph.GetSegment(s);
-		if (!xSeg.m_bActive) { continue; }
-		xV.m_uSeg      = s;
-		xV.m_uFromNode = xSeg.m_uNodeA;
-		xV.m_fT        = static_cast<float>(NextRand() % 100u) / 100.0f;
-		xV.m_fSpeed    = 12.0f + static_cast<float>(NextRand() % 10u);
-		xV.m_xColor    = CarColor(NextRand());
-		xV.m_bActive   = true;
-		return true;
+	case CB_ROADCLASS_SMALL:  return 3u;
+	case CB_ROADCLASS_MEDIUM: return 6u;
+	case CB_ROADCLASS_LARGE:  return 10u;
+	default:                  return 4u;
 	}
-	return false;
+}
+
+// Dispatch one trip: a random home (origin node) → a random job/shop (destination node),
+// routed via A* over the road graph. Fails (no trip) if there are no homes or no jobs, or
+// the two are not road-connected — so a bare or disconnected network carries no traffic.
+bool CB_Traffic::SpawnTrip(const CB_RoadGraph& xGraph, const Zenith_Vector<uint32_t>& xOrigins,
+                           const Zenith_Vector<uint32_t>& xDests, CB_Vehicle& xV)
+{
+	if (xOrigins.GetSize() == 0u || xDests.GetSize() == 0u) { return false; }
+	const uint32_t uOrigin = xOrigins.Get(NextRand() % xOrigins.GetSize());
+	const uint32_t uDest   = xDests.Get(NextRand() % xDests.GetSize());
+	if (uOrigin == uDest) { return false; }
+
+	if (!FindPath(xGraph, uOrigin, uDest, m_xPathScratch)) { return false; }   // unreachable
+	const uint32_t uLen = m_xPathScratch.GetSize();
+	if (uLen == 0u) { return false; }                                          // adjacent / no segments
+
+	const uint32_t uClamp = (uLen < CB_Vehicle::MAX_TRIP_SEGS) ? uLen : CB_Vehicle::MAX_TRIP_SEGS;
+	for (uint32_t i = 0; i < uClamp; ++i) { xV.m_auPath[i] = m_xPathScratch.Get(i); }
+	xV.m_uPathLen  = uClamp;
+	xV.m_uPathIdx  = 0u;
+	xV.m_uSeg      = xV.m_auPath[0];
+	xV.m_uFromNode = uOrigin;                                // path[0] begins at the origin node
+	xV.m_uGoalNode = uDest;
+	xV.m_fT        = 0.0f;
+	xV.m_fTripTime = 0.0f;
+	xV.m_fSpeed    = 12.0f + static_cast<float>(NextRand() % 8u);
+	xV.m_xColor    = CarColor(NextRand());
+	xV.m_bActive   = true;
+	return true;
 }
 
 void CB_Traffic::AdvanceVehicle(const CB_RoadGraph& xGraph, const CB_TerrainHeightfield& xField, CB_Vehicle& xV, float fDt)
@@ -151,27 +175,44 @@ void CB_Traffic::AdvanceVehicle(const CB_RoadGraph& xGraph, const CB_TerrainHeig
 	float fLen = pxSeg->m_xSpline.Length();
 	if (fLen < 0.01f) { xV.m_bActive = false; return; }
 
-	xV.m_fT += (xV.m_fSpeed * fDt) / fLen;
+	xV.m_fTripTime += fDt;
+
+	// Congestion: cars on an over-capacity segment crawl (capacity ÷ load, floored so they
+	// never fully gridlock). This is what makes busy corridors back up.
+	float fSpeedScale = 1.0f;
+	if (xV.m_uSeg < m_auSegLoad.GetSize())
+	{
+		const float fLoad = static_cast<float>(m_auSegLoad.Get(xV.m_uSeg));
+		const float fCap  = static_cast<float>(SegCapacity(*pxSeg));
+		if (fLoad > fCap && fCap > 0.0f)
+		{
+			fSpeedScale = fCap / fLoad;
+			if (fSpeedScale < 0.2f) { fSpeedScale = 0.2f; }
+		}
+	}
+
+	xV.m_fT += (xV.m_fSpeed * fSpeedScale * fDt) / fLen;
 
 	if (xV.m_fT >= 1.0f)
 	{
-		// Arrived at the far node; turn onto a random connected road (avoid U-turns
-		// where possible, else turn around at a dead end).
+		// Reached the far node of the current segment; step to the next segment on the ROUTE
+		// (not a random turn — vehicles follow their A* path from home to job/shop).
 		const uint32_t uArrive = (xV.m_uFromNode == pxSeg->m_uNodeA) ? pxSeg->m_uNodeB : pxSeg->m_uNodeA;
-		uint32_t auCand[16];
-		uint32_t uNum = 0;
-		const uint32_t uSegs = xGraph.GetSegmentSlotCount();
-		for (uint32_t s = 0; s < uSegs && uNum < 16u; ++s)
+		++xV.m_uPathIdx;
+		if (xV.m_uPathIdx >= xV.m_uPathLen)
 		{
-			const CB_RoadSegment& xS = xGraph.GetSegment(s);
-			if (!xS.m_bActive || s == xV.m_uSeg) { continue; }
-			if (xS.m_uNodeA == uArrive || xS.m_uNodeB == uArrive) { auCand[uNum++] = s; }
+			// Arrived at the destination → trip complete; the slot frees for a new trip.
+			xV.m_bActive = false;
+			++m_xStats.m_uTripsCompleted;
+			m_xStats.m_fAvgTripTime = (m_xStats.m_fAvgTripTime <= 0.0f)
+				? xV.m_fTripTime : (m_xStats.m_fAvgTripTime * 0.9f + xV.m_fTripTime * 0.1f);
+			return;
 		}
-		const uint32_t uNext = (uNum > 0) ? auCand[NextRand() % uNum] : xV.m_uSeg;  // dead end → U-turn
-		xV.m_uSeg      = uNext;
-		xV.m_uFromNode = uArrive;
+		xV.m_uSeg      = xV.m_auPath[xV.m_uPathIdx];
+		pxSeg          = &xGraph.GetSegment(xV.m_uSeg);
+		if (!pxSeg->m_bActive) { xV.m_bActive = false; return; }   // route broken (bulldozed) → abort
+		xV.m_uFromNode = uArrive;                                   // consecutive path segments share this node
 		xV.m_fT        = 0.0f;
-		pxSeg = &xGraph.GetSegment(xV.m_uSeg);
 	}
 
 	// World position + facing along the travel direction.
@@ -184,42 +225,75 @@ void CB_Traffic::AdvanceVehicle(const CB_RoadGraph& xGraph, const CB_TerrainHeig
 	xV.m_xPos = Zenith_Maths::Vector3(xP.x, xField.GetHeightAt(xP.x, xP.y) + 0.4f, xP.y);
 }
 
-void CB_Traffic::Update(const CB_RoadGraph& xGraph, const CB_TerrainHeightfield& xField, float fDt)
+void CB_Traffic::Update(const CB_RoadGraph& xGraph, const CB_TerrainHeightfield& xField, float fDt,
+                        const Zenith_Vector<uint32_t>& xOriginNodes, const Zenith_Vector<uint32_t>& xDestNodes,
+                        uint32_t uTargetVehicles)
 {
-	if (xGraph.GetActiveSegmentCount() == 0)
+	// No roads → no traffic at all.
+	if (xGraph.GetActiveSegmentCount() == 0u)
 	{
 		for (uint32_t i = 0; i < m_axVehicles.GetSize(); ++i) { m_axVehicles.Get(i).m_bActive = false; }
-		m_uActive = 0;
+		m_xStats.m_uActive = 0u; m_xStats.m_uMaxSegmentLoad = 0u; m_xStats.m_uCongestedSegs = 0u;
 		return;
 	}
 
+	// 1) Tally per-segment vehicle load from current positions — drives congestion + telemetry.
+	const uint32_t uSegSlots = xGraph.GetSegmentSlotCount();
+	m_auSegLoad.Clear();
+	for (uint32_t s = 0; s < uSegSlots; ++s) { m_auSegLoad.PushBack(0u); }
+	for (uint32_t i = 0; i < m_axVehicles.GetSize(); ++i)
+	{
+		const CB_Vehicle& xV = m_axVehicles.Get(i);
+		if (xV.m_bActive && xV.m_uSeg < uSegSlots) { ++m_auSegLoad.Get(xV.m_uSeg); }
+	}
+	uint32_t uMaxLoad = 0u, uCongested = 0u;
+	for (uint32_t s = 0; s < uSegSlots; ++s)
+	{
+		const uint32_t uLoad = m_auSegLoad.Get(s);
+		if (uLoad > uMaxLoad) { uMaxLoad = uLoad; }
+		const CB_RoadSegment& xS = xGraph.GetSegment(s);
+		if (xS.m_bActive && uLoad > SegCapacity(xS)) { ++uCongested; }
+	}
+	m_xStats.m_uMaxSegmentLoad = uMaxLoad;
+	m_xStats.m_uCongestedSegs  = uCongested;
+
+	// 2) Advance every live trip (despawns arrivals + counts completions inside AdvanceVehicle).
 	for (uint32_t i = 0; i < m_axVehicles.GetSize(); ++i)
 	{
 		CB_Vehicle& xV = m_axVehicles.Get(i);
 		if (xV.m_bActive) { AdvanceVehicle(xGraph, xField, xV, fDt); }
 	}
 
-	m_uActive = 0;
-	for (uint32_t i = 0; i < m_axVehicles.GetSize(); ++i) { if (m_axVehicles.Get(i).m_bActive) { ++m_uActive; } }
+	// 3) Dispatch new trips up to the population-derived target. DEMAND-DRIVEN: a trip needs a
+	//    home (origin) AND a job/shop (destination), so with no built buildings there is no traffic.
+	uint32_t uActive = 0u;
+	for (uint32_t i = 0; i < m_axVehicles.GetSize(); ++i) { if (m_axVehicles.Get(i).m_bActive) { ++uActive; } }
 
-	uint32_t uGuard = 0;
-	while (m_uActive < TARGET_VEHICLES && uGuard++ < TARGET_VEHICLES + 4u)
+	const uint32_t uTarget = (uTargetVehicles < MAX_VEHICLES) ? uTargetVehicles : MAX_VEHICLES;
+	uint32_t uAttempts = 0u;
+	while (uActive < uTarget && uAttempts < uTarget * 2u + 8u
+	       && xOriginNodes.GetSize() > 0u && xDestNodes.GetSize() > 0u)
 	{
+		++uAttempts;
 		uint32_t uSlot = CB_RoadGraph::INVALID;
 		for (uint32_t i = 0; i < m_axVehicles.GetSize(); ++i) { if (!m_axVehicles.Get(i).m_bActive) { uSlot = i; break; } }
 		if (uSlot == CB_RoadGraph::INVALID)
 		{
+			if (m_axVehicles.GetSize() >= MAX_VEHICLES) { break; }
 			CB_Vehicle xNew;
 			m_axVehicles.PushBack(xNew);
 			uSlot = m_axVehicles.GetSize() - 1u;
 		}
-		if (SpawnVehicle(xGraph, m_axVehicles.Get(uSlot)))
+		if (SpawnTrip(xGraph, xOriginNodes, xDestNodes, m_axVehicles.Get(uSlot)))
 		{
-			AdvanceVehicle(xGraph, xField, m_axVehicles.Get(uSlot), 0.0f);
-			++m_uActive;
+			AdvanceVehicle(xGraph, xField, m_axVehicles.Get(uSlot), 0.0f);   // place it on the road this frame
+			++m_xStats.m_uTripsStarted;
+			++uActive;
 		}
-		else { break; }
+		// failed pair (unreachable) → slot stays free, loop retries another random O/D
 	}
+
+	m_xStats.m_uActive = uActive;
 }
 
 void CB_Traffic::Render() const

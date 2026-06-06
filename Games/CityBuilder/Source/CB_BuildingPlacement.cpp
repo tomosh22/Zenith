@@ -6,7 +6,9 @@
 #include "CityBuilder/Source/CB_TransitLines.h"
 #include "CityBuilder/Source/CB_Conduits.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
+#include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"   // instanced building cube meshes
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -33,9 +35,12 @@ namespace
 	{
 		switch (eType)
 		{
-		case CB_BUILDING_RES_LOW: case CB_BUILDING_RES_MED: case CB_BUILDING_RES_HIGH: return Zenith_Maths::Vector3(0.30f, 0.72f, 0.34f);  // green
-		case CB_BUILDING_COM_LOW: case CB_BUILDING_COM_MED: case CB_BUILDING_COM_HIGH: return Zenith_Maths::Vector3(0.28f, 0.50f, 0.88f);  // blue
-		case CB_BUILDING_IND_LOW: case CB_BUILDING_IND_MED: case CB_BUILDING_IND_HIGH: return Zenith_Maths::Vector3(0.85f, 0.70f, 0.24f);  // amber
+		// Albedo for the per-instance tint of the lit building mesh (RenderInstanced) — residential
+		// green, commercial blue, industrial yellow (matches the zone-overlay colours). Saturated so
+		// the hue reads clearly once lit by the sun + IBL ambient on the PBR cube.
+		case CB_BUILDING_RES_LOW: case CB_BUILDING_RES_MED: case CB_BUILDING_RES_HIGH: return Zenith_Maths::Vector3(0.05f, 0.70f, 0.10f);  // green
+		case CB_BUILDING_COM_LOW: case CB_BUILDING_COM_MED: case CB_BUILDING_COM_HIGH: return Zenith_Maths::Vector3(0.04f, 0.22f, 0.95f);  // blue
+		case CB_BUILDING_IND_LOW: case CB_BUILDING_IND_MED: case CB_BUILDING_IND_HIGH: return Zenith_Maths::Vector3(0.95f, 0.72f, 0.03f);  // yellow
 		default:                   return Zenith_Maths::Vector3(0.7f, 0.7f, 0.7f);
 		}
 	}
@@ -95,7 +100,7 @@ namespace
 		}
 	}
 
-	// Service-building tuning. The def radius is in 4m legacy cells; scale to metres.
+	// Service-building tuning. The def radius is in 4m grid units; scale to metres.
 	constexpr float COVERAGE_SCALE = 4.0f;
 
 	// Utility-network reach: a building is "connected" only within this distance of
@@ -636,6 +641,62 @@ void CB_BuildingPlacement::Render(const CB_Zoning& xZoning) const
 		// bottom face always sits below the rendered ground and the terrain occludes it.
 		EmitBox(xS.m_xPos, Zenith_Maths::Vector2(0.0f, 1.0f), 9.0f, 9.0f, xS.m_fWorldY - 0.6f,
 		        ServiceHeight(xS.m_eType), ServiceColor(xS.m_eType));
+	}
+}
+
+void CB_BuildingPlacement::RenderInstanced(const CB_Zoning& xZoning, Zenith_InstancedMeshComponent* pxInstances) const
+{
+	if (pxInstances == nullptr)
+	{
+		Render(xZoning);   // no GPU instanced entity (e.g. headless) — fall back to debug primitives
+		return;
+	}
+
+	// Rebuild the building instances each frame from the live city (cheap for the dozens of
+	// buildings; the instance buffer re-uploads). R/C/I buildings render as PBR-lit cube meshes
+	// whose per-instance albedo tint is the zone colour (green/blue/yellow) — the DevilsPlayground
+	// material approach, NO emissive. The unit cube is centred at the origin ([-0.5,0.5]^3), so the
+	// instance centre = base + height/2 and the scale = footprint x height.
+	pxInstances->ClearInstances();
+	for (uint32_t i = 0; i < m_axBuildings.GetSize(); ++i)
+	{
+		const CB_Building& xB = m_axBuildings.Get(i);
+		if (!xB.m_bActive || xB.m_uLot >= xZoning.GetLotSlotCount()) continue;
+		const CB_Lot& xLot = xZoning.GetLot(xB.m_uLot);
+		if (!xLot.m_bActive) continue;
+
+		const float fH     = BuildingHeight(xB.m_eType);
+		const float fBaseY = xLot.m_fWorldY - 0.6f;   // embed 0.6m (terrain occludes the base, as in Render)
+		const float fFoot  = 9.0f;                    // footprint full extent (the primitive box used a 5m half-extent)
+		const Zenith_Maths::Vector3 xPos(xLot.m_xPos.x, fBaseY + fH * 0.5f, xLot.m_xPos.y);
+		const Zenith_Maths::Vector3 xScale(fFoot, fH, fFoot);
+
+		// Face the road: yaw about +Y from the lot facing direction (XZ). Quat is (w,x,y,z).
+		const float fHalfYaw = 0.5f * std::atan2(xLot.m_xFaceDir.x, xLot.m_xFaceDir.y);
+		const Zenith_Maths::Quat xRot(std::cos(fHalfYaw), 0.0f, std::sin(fHalfYaw), 0.0f);
+
+		const uint32_t uId = pxInstances->SpawnInstance(xPos, xRot, xScale);
+
+		// Per-instance albedo tint = the zone colour (fiery orange while the building burns).
+		const Zenith_Maths::Vector3 xCol = (xB.m_uFireTicks > 0)
+			? Zenith_Maths::Vector3(0.95f, 0.35f, 0.08f) : BuildingColor(xB.m_eType);
+		pxInstances->SetInstanceColor(uId, Zenith_Maths::Vector4(xCol.x, xCol.y, xCol.z, 1.0f));
+	}
+
+	// Service / utility buildings: the SAME instanced cube mesh (larger 18m footprint), tinted
+	// with their distinct service colours — so they read as proper lit meshes too, not washed-out
+	// white debug primitives. Axis-aligned (no road-facing).
+	for (uint32_t i = 0; i < m_axServices.GetSize(); ++i)
+	{
+		const CB_ServiceBuilding& xS = m_axServices.Get(i);
+		if (!xS.m_bActive) continue;
+		const float fSH    = ServiceHeight(xS.m_eType);
+		const float fBaseY = xS.m_fWorldY - 0.6f;
+		const Zenith_Maths::Vector3 xPos(xS.m_xPos.x, fBaseY + fSH * 0.5f, xS.m_xPos.y);
+		const Zenith_Maths::Vector3 xScale(18.0f, fSH, 18.0f);
+		const uint32_t uId = pxInstances->SpawnInstance(xPos, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), xScale);
+		const Zenith_Maths::Vector3 xCol = ServiceColor(xS.m_eType);
+		pxInstances->SetInstanceColor(uId, Zenith_Maths::Vector4(xCol.x, xCol.y, xCol.z, 1.0f));
 	}
 }
 

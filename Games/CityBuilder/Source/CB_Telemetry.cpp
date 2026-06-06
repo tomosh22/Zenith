@@ -94,13 +94,13 @@ namespace CB_Telemetry
 		CB_CityManager_Behaviour* pxMgr = CB_CityManager_Behaviour::GetActive();
 		if (pxMgr == nullptr) return;
 
-		const CB_CityStats& xS = pxMgr->GetStats();
+		const CB_BuildingPlacement& xB = pxMgr->GetBuild();
 		EmitEvent(CB_EventType::CitySnapshot,
-			static_cast<int32_t>(xS.m_uPopulation),
-			static_cast<int32_t>(pxMgr->GetBuildings().GetActiveCount()),
-			static_cast<int32_t>(pxMgr->GetRoads().GetRoadCellCount()),
-			static_cast<int32_t>(xS.m_uJobs),
-			xS.m_fTreasury, xS.m_fResDemand, xS.m_fComDemand, xS.m_fIndDemand);
+			static_cast<int32_t>(xB.GetPopulation()),
+			static_cast<int32_t>(xB.GetActiveBuildings()),
+			static_cast<int32_t>(pxMgr->GetRoadController().GetGraph().GetActiveSegmentCount()),
+			static_cast<int32_t>(xB.GetJobs()),
+			xB.GetTreasury(), xB.GetResDemand(), xB.GetComDemand(), xB.GetIndDemand());
 
 		// Camera FrameSample — "what was the player looking at" replay aid.
 		Zenith_Telemetry::FrameSample xF;
@@ -122,13 +122,13 @@ namespace CB_Telemetry
 		if (!Zenith_Telemetry::GetRecorder().IsRecording()) return;
 		if (CB_CityManager_Behaviour* pxMgr = CB_CityManager_Behaviour::GetActive())
 		{
-			const CB_CityStats& xS = pxMgr->GetStats();
+			const CB_BuildingPlacement& xB = pxMgr->GetBuild();
 			EmitEvent(CB_EventType::SessionEnd,
-				static_cast<int32_t>(xS.m_uPopulation),
-				static_cast<int32_t>(pxMgr->GetBuildings().GetActiveCount()),
-				static_cast<int32_t>(pxMgr->GetRoads().GetRoadCellCount()),
-				static_cast<int32_t>(xS.m_uJobs),
-				xS.m_fTreasury);
+				static_cast<int32_t>(xB.GetPopulation()),
+				static_cast<int32_t>(xB.GetActiveBuildings()),
+				static_cast<int32_t>(pxMgr->GetRoadController().GetGraph().GetActiveSegmentCount()),
+				static_cast<int32_t>(xB.GetJobs()),
+				xB.GetTreasury());
 		}
 		else
 		{

@@ -62,7 +62,9 @@ static bool Verify_CB_Traffic_Drive()
 
 	CB_Traffic xT;
 	xT.Reset();
-	for (int i = 0; i < 12; ++i) { xT.Update(xG, xF, 1.0f / 60.0f); }   // spawn + drive
+	Zenith_Vector<uint32_t> auHomes; auHomes.PushBack(uA);   // residential origin (home)
+	Zenith_Vector<uint32_t> auJobs;  auJobs.PushBack(uC);    // job/shop destination
+	for (int i = 0; i < 12; ++i) { xT.Update(xG, xF, 1.0f / 60.0f, auHomes, auJobs, 6u); }   // dispatch trips + drive
 
 	bool bOk = true;
 	if (xT.GetActiveVehicleCount() == 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Traffic_Drive: no vehicles spawned"); return false; }
@@ -71,7 +73,7 @@ static bool Verify_CB_Traffic_Drive()
 	// and the fleet as a whole moves (it isn't frozen).
 	Zenith_Vector<Zenith_Maths::Vector3> axBefore;
 	for (uint32_t i = 0; i < xT.GetVehicleSlotCount(); ++i) { axBefore.PushBack(xT.GetVehicle(i).m_xPos); }
-	xT.Update(xG, xF, 1.0f / 60.0f);
+	xT.Update(xG, xF, 1.0f / 60.0f, auHomes, auJobs, 6u);
 	float fMax = 0.0f, fSum = 0.0f;
 	for (uint32_t i = 0; i < xT.GetVehicleSlotCount() && i < axBefore.GetSize(); ++i)
 	{
@@ -89,19 +91,60 @@ static bool Verify_CB_Traffic_Drive()
 	// Bulldoze the whole network → vehicles despawn.
 	xG.RemoveSegment(0);
 	xG.RemoveSegment(1);
-	xT.Update(xG, xF, 1.0f / 60.0f);
+	xT.Update(xG, xF, 1.0f / 60.0f, auHomes, auJobs, 6u);
 	if (xT.GetActiveVehicleCount() != 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Traffic_Drive: %u vehicles survived an empty network", xT.GetActiveVehicleCount()); bOk = false; }
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Traffic_Drive: fleet moved %.1fm/step, max %.2fm", fSum, fMax);
 	return bOk;
 }
 
+// Auto-intersections (SimCity / Cities: Skylines): roads drawn as a CROSSING grid (no shared
+// endpoints) must auto-split at each crossing + insert junction nodes, so the whole grid becomes
+// ONE connected component that A* can route across.
+static bool Verify_CB_RoadJunctions()
+{
+	CB_RoadGraph xG;
+	auto AddRoad = [&](float ax, float az, float bx, float bz)
+	{
+		const uint32_t a = xG.FindOrSplitNodeAt(V2(ax, az), 6.0f);
+		const uint32_t b = xG.FindOrSplitNodeAt(V2(bx, bz), 6.0f);
+		xG.AddSegmentWithJunctions(a, b, CB_Spline::Straight(V2(ax, az), V2(bx, bz)), CB_ROADCLASS_SMALL);
+	};
+	AddRoad(0.0f,   100.0f, 400.0f, 100.0f);   // horizontal 1
+	AddRoad(0.0f,   300.0f, 400.0f, 300.0f);   // horizontal 2
+	AddRoad(100.0f, 0.0f,   100.0f, 400.0f);   // vertical 1 → crosses both horizontals
+	AddRoad(300.0f, 0.0f,   300.0f, 400.0f);   // vertical 2 → crosses both horizontals (4 crossings total)
+
+	bool bOk = true;
+	const uint32_t uComp = xG.CountConnectedComponents();
+	const uint32_t uJunc = xG.CountJunctions();
+	if (uComp != 1u) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_RoadJunctions: crossing grid NOT connected (%u components)", uComp); bOk = false; }
+	if (uJunc != 4u) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_RoadJunctions: expected 4 junctions, got %u", uJunc); bOk = false; }
+
+	// A T-junction: a road ending mid-span on an existing road splits it + joins (still 1 component).
+	AddRoad(200.0f, 300.0f, 200.0f, 500.0f);   // starts ON horizontal 2 at (200,300)
+	if (xG.CountConnectedComponents() != 1u) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_RoadJunctions: T-junction didn't connect"); bOk = false; }
+
+	// A* must route corner-to-corner across the auto-junctioned network.
+	Zenith_Vector<uint32_t> auPath;
+	const uint32_t uA = xG.FindNodeNear(V2(0.0f, 100.0f), 6.0f);
+	const uint32_t uB = xG.FindNodeNear(V2(400.0f, 300.0f), 6.0f);
+	if (uA == CB_RoadGraph::INVALID || uB == CB_RoadGraph::INVALID || !CB_Traffic::FindPath(xG, uA, uB, auPath))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_RoadJunctions: no route across the connected grid"); bOk = false;
+	}
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_RoadJunctions: components=%u junctions=%u (+T-junction)", uComp, uJunc);
+	return bOk;
+}
+
 static bool Step_Once(int iFrame) { return iFrame < 1; }
 
-static const Zenith_AutomatedTest g_xTrafficAStar = { "CB_Traffic_AStar", nullptr, &Step_Once, &Verify_CB_Traffic_AStar, 30, false };
-static const Zenith_AutomatedTest g_xTrafficDrive = { "CB_Traffic_Drive", nullptr, &Step_Once, &Verify_CB_Traffic_Drive, 30, false };
+static const Zenith_AutomatedTest g_xTrafficAStar   = { "CB_Traffic_AStar",  nullptr, &Step_Once, &Verify_CB_Traffic_AStar, 30, false };
+static const Zenith_AutomatedTest g_xTrafficDrive   = { "CB_Traffic_Drive",  nullptr, &Step_Once, &Verify_CB_Traffic_Drive, 30, false };
+static const Zenith_AutomatedTest g_xRoadJunctions  = { "CB_RoadJunctions",  nullptr, &Step_Once, &Verify_CB_RoadJunctions, 30, false };
 
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTrafficAStar);
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTrafficDrive);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xRoadJunctions);
 
 #endif // ZENITH_INPUT_SIMULATOR

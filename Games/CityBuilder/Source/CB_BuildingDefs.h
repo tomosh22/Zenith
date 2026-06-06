@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CityBuilder/Source/CB_CityGrid.h"
+#include "CityBuilder/Source/CB_Zones.h"   // CB_EZoneType
 #include <cstdint>
 
 // ============================================================================
