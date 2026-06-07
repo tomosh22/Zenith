@@ -17,6 +17,10 @@
 #include "Flux/Flux_Types.h"
 
 class Zenith_Vulkan_VRAM;
+class Zenith_Vulkan;
+class Zenith_Vulkan_Swapchain;
+class Flux_RendererImpl;
+class Flux_GraphicsImpl;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
@@ -49,7 +53,7 @@ public:
 	Zenith_Vulkan_MemoryManager(const Zenith_Vulkan_MemoryManager&) = delete;
 	Zenith_Vulkan_MemoryManager& operator=(const Zenith_Vulkan_MemoryManager&) = delete;
 
-	void Initialise();
+	void Initialise(); // no-arg per FluxBackendMemoryAlloc concept; self-wires deps from g_xEngine
 	void Shutdown();
 
 
@@ -352,6 +356,16 @@ private:
 		Flux_ImageViewHandle m_xSRV;
 		Flux_ImageViewHandle m_xUAV;
 	};
+
+	// Injected cross-subsystem dependencies (stored in Initialise). Replace the
+	// former g_xEngine.Vulkan() / VulkanSwapchain() / FluxRenderer() /
+	// FluxGraphics() reaches in instance methods, removing the hard global
+	// coupling. Static callbacks and the Zenith_Vulkan_VRAM ctor/dtor (a
+	// different class with no Initialise seam) still route through g_xEngine.
+	Zenith_Vulkan*           m_pxVulkan          = nullptr;
+	Zenith_Vulkan_Swapchain* m_pxVulkanSwapchain = nullptr;
+	Flux_RendererImpl*       m_pxFluxRenderer    = nullptr;
+	Flux_GraphicsImpl*       m_pxFluxGraphics    = nullptr;
 public:
 	// ===== Data members (was Zenith_Vulkan_MemoryManager) =====
 

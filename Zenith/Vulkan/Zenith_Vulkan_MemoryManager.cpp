@@ -30,11 +30,11 @@ static Zenith_HashMap<u_int64, ProbeCacheEntry> s_xProbeCache;
 
 Zenith_Vulkan_MemoryManager::PerFrameStaging& Zenith_Vulkan_MemoryManager::CurrentStaging()
 {
-	const u_int uFrameIndex = g_xEngine.VulkanSwapchain().GetCurrentFrameIndex();
+	const u_int uFrameIndex = m_pxVulkanSwapchain->GetCurrentFrameIndex();
 	Zenith_Assert(uFrameIndex < MAX_FRAMES_IN_FLIGHT,
 		"CurrentStaging: frame index %u out of range (max %u). Swapchain not initialised before staging access?",
 		uFrameIndex, MAX_FRAMES_IN_FLIGHT);
-	return g_xEngine.VulkanMemory().m_axStaging[uFrameIndex];
+	return m_axStaging[uFrameIndex];
 }
 
 void Zenith_Vulkan_MemoryManager::IncreaseImageMemoryUsage(u_int64 ulSize)  { m_ulImageMemoryUsed += ulSize; }
@@ -50,8 +50,8 @@ VmaAllocator   Zenith_Vulkan_MemoryManager::GetVMAAllocator()               { re
 
 void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 {
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	const vk::PhysicalDevice& xPhysicalDevice = g_xEngine.Vulkan().GetPhysicalDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	const vk::PhysicalDevice& xPhysicalDevice = m_pxVulkan->GetPhysicalDevice();
 	const vk::PhysicalDeviceMemoryProperties xMemProps = xPhysicalDevice.getMemoryProperties();
 
 	// Staging is a host-coherent memcpy target — every upload path here maps
@@ -72,7 +72,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 
 	for (u_int uSlot = 0; uSlot < MAX_FRAMES_IN_FLIGHT; uSlot++)
 	{
-		PerFrameStaging& xSlot = g_xEngine.VulkanMemory().m_axStaging[uSlot];
+		PerFrameStaging& xSlot = m_axStaging[uSlot];
 
 		vk::BufferCreateInfo xInfo = vk::BufferCreateInfo()
 			.setSize(g_uStagingPoolSize)
@@ -110,12 +110,20 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 
 void Zenith_Vulkan_MemoryManager::Initialise()
 {
-	
+	// Self-wire cross-subsystem deps into member pointers; Initialise() stays
+	// no-arg to satisfy the FluxBackendMemoryAlloc concept. Vulkan is already
+	// Initialised by this point (Flux.cpp orders Vulkan().Initialise() first);
+	// the others are only USED later at runtime, so caching their up-front
+	// pointers here is safe.
+	m_pxVulkan          = &g_xEngine.Vulkan();
+	m_pxVulkanSwapchain = &g_xEngine.VulkanSwapchain();
+	m_pxFluxRenderer    = &g_xEngine.FluxRenderer();
+	m_pxFluxGraphics    = &g_xEngine.FluxGraphics();
 
 	VmaAllocatorCreateInfo xCreateInfo = {};
-	xCreateInfo.device = g_xEngine.Vulkan().GetDevice();
-	xCreateInfo.physicalDevice = g_xEngine.Vulkan().GetPhysicalDevice();
-	xCreateInfo.instance = g_xEngine.Vulkan().GetInstance();
+	xCreateInfo.device = m_pxVulkan->GetDevice();
+	xCreateInfo.physicalDevice = m_pxVulkan->GetPhysicalDevice();
+	xCreateInfo.instance = m_pxVulkan->GetInstance();
 #ifdef ZENITH_ANDROID
 	xCreateInfo.vulkanApiVersion = VK_API_VERSION_1_1;
 #elif defined(VK_VERSION_1_3)
@@ -124,21 +132,21 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 #error check vulkan version
 #endif
 
-	vmaCreateAllocator(&xCreateInfo, &g_xEngine.VulkanMemory().m_xAllocator);
+	vmaCreateAllocator(&xCreateInfo, &m_xAllocator);
 
 	// Probe cache starts empty on each engine init. Populated lazily inside
 	// ProbeImageMemoryRequirements; the cache is valid for the device's
 	// lifetime and is cleared in Shutdown below.
 	s_xProbeCache.Clear();
 
-	g_xEngine.VulkanMemory().m_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
+	m_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
 
 	InitialiseStagingBuffer();
 
 	#ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Image Memory Used" }, g_xEngine.VulkanMemory().m_ulImageMemoryUsed);
-	g_xEngine.DebugVariables().AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Buffer Memory Used" }, g_xEngine.VulkanMemory().m_ulBufferMemoryUsed);
-	g_xEngine.DebugVariables().AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Total Memory Used" }, g_xEngine.VulkanMemory().m_ulMemoryUsed);
+	g_xEngine.DebugVariables().AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Image Memory Used" }, m_ulImageMemoryUsed);
+	g_xEngine.DebugVariables().AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Buffer Memory Used" }, m_ulBufferMemoryUsed);
+	g_xEngine.DebugVariables().AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Total Memory Used" }, m_ulMemoryUsed);
 
 	// Per-slot staging counters. The high-water mark surfaces how close the
 	// bump allocator is getting to the pool size (any value approaching
@@ -147,7 +155,7 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	// path fired on each slot since boot.
 	for (u_int uSlot = 0; uSlot < MAX_FRAMES_IN_FLIGHT; uSlot++)
 	{
-		PerFrameStaging& xSlot = g_xEngine.VulkanMemory().m_axStaging[uSlot];
+		PerFrameStaging& xSlot = m_axStaging[uSlot];
 		const std::string strSlotLabel = "Slot " + std::to_string(uSlot);
 		// AddUInt64_ReadOnly takes a uint64_t&. size_t is uint64_t on x64,
 		// but reinterpret to be safe across platforms.
@@ -167,7 +175,7 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	// the natural begin-then-end ordering is preserved. Counted in
 	// FLUX_PERFRAME_END_SUBSCRIBER_TALLY (Flux_PerFrame.cpp): bump that tally
 	// if you add another end callback.
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd, nullptr);
+	m_pxFluxRenderer->RegisterEndFrameCallback(&Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd, nullptr);
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager initialised");
 }
@@ -185,7 +193,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasPoolVRAM(u_int64 ulSize,
                                                                   AliasPoolMemoryKind eMemoryKind)
 {
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return Flux_VRAMHandle();
 	}
@@ -225,15 +233,15 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasPoolVRAM(u_int64 ulSize,
 	xCreateInfo.flags         = VMA_ALLOCATION_CREATE_CAN_ALIAS_BIT;
 
 	VmaAllocation xAllocation = VK_NULL_HANDLE;
-	VkResult eResult = vmaAllocateMemory(g_xEngine.VulkanMemory().m_xAllocator, &xReqs, &xCreateInfo, &xAllocation, nullptr);
+	VkResult eResult = vmaAllocateMemory(m_xAllocator, &xReqs, &xCreateInfo, &xAllocation, nullptr);
 	Zenith_Assert(eResult == VK_SUCCESS, "vmaAllocateMemory (alias pool) failed: %d", static_cast<int>(eResult));
 	if (eResult != VK_SUCCESS)
 	{
 		return Flux_VRAMHandle();
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(Zenith_Vulkan_VRAM::PoolTag{}, xAllocation, g_xEngine.VulkanMemory().m_xAllocator, ulSize);
-	return g_xEngine.Vulkan().RegisterVRAM(pxVRAM);
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(Zenith_Vulkan_VRAM::PoolTag{}, xAllocation, m_xAllocator, ulSize);
+	return m_pxVulkan->RegisterVRAM(pxVRAM);
 }
 
 // Shared helper — builds the VkImageCreateInfo used by both the probe path
@@ -247,18 +255,22 @@ static vk::ImageCreateInfo BuildAliasedImageCreateInfo(const Flux_SurfaceInfo& x
 	const bool bIsDepthStencil = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
 	Zenith_Assert(bIsColour ^ bIsDepthStencil, "BuildAliasedImageCreateInfo: format must be colour XOR depth/stencil");
 
+	// File-static free function — no 'this' to inject through. Recover the
+	// Vulkan singleton once and route both format conversions through it.
+	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+
 	vk::Format xFormat;
 	vk::ImageUsageFlags eUsageFlags;
 	if (bIsColour)
 	{
-		xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+		xFormat = xVulkan.ConvertToVkFormat_Colour(xInfo.m_eFormat);
 		eUsageFlags = vk::ImageUsageFlagBits::eColorAttachment;
 		if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS)
 			eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
 	}
 	else
 	{
-		xFormat = g_xEngine.Vulkan().ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+		xFormat = xVulkan.ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 		eUsageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 	}
 	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ)
@@ -359,7 +371,7 @@ void Zenith_Vulkan_MemoryManager::ProbeImageMemoryRequirements(const Flux_Surfac
 
 	const vk::ImageCreateInfo xImageInfo = BuildAliasedImageCreateInfo(xInfo);
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	vk::Image xProbeImage;
 	vk::Result eCreateResult = xDevice.createImage(&xImageInfo, nullptr, &xProbeImage);
 	if (eCreateResult != vk::Result::eSuccess)
@@ -391,13 +403,13 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasedImageVRAM(const Flux_S
                                                                     u_int64 ulOffsetInPool)
 {
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return Flux_VRAMHandle();
 	}
 
 	Zenith_Assert(xPoolHandle.IsValid(), "CreateAliasedImageVRAM: invalid pool handle");
-	Zenith_Vulkan_VRAM* pxPoolVRAM = g_xEngine.Vulkan().GetVRAM(xPoolHandle);
+	Zenith_Vulkan_VRAM* pxPoolVRAM = m_pxVulkan->GetVRAM(xPoolHandle);
 	Zenith_Assert(pxPoolVRAM != nullptr && pxPoolVRAM->IsPool(),
 		"CreateAliasedImageVRAM: pool handle does not reference a pool VRAM");
 
@@ -410,7 +422,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasedImageVRAM(const Flux_S
 
 	VkImage xImage = VK_NULL_HANDLE;
 	VkResult eResult = vmaCreateAliasingImage2(
-		g_xEngine.VulkanMemory().m_xAllocator,
+		m_xAllocator,
 		pxPoolVRAM->GetAllocation(),
 		ulOffsetInPool,
 		&xImageInfoNative,
@@ -426,8 +438,8 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasedImageVRAM(const Flux_S
 		Zenith_Vulkan_VRAM::AliasedImageTag{},
 		vk::Image(xImage),
 		pxPoolVRAM->GetAllocation(),
-		g_xEngine.VulkanMemory().m_xAllocator);
-	return g_xEngine.Vulkan().RegisterVRAM(pxVRAM);
+		m_xAllocator);
+	return m_pxVulkan->RegisterVRAM(pxVRAM);
 }
 
 void Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd(u_int /*uRingIndex*/, void* /*pUserData*/)
@@ -445,13 +457,13 @@ Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
 {
 	VMAStats xStats = {};
 
-	if (g_xEngine.VulkanMemory().m_xAllocator == nullptr)
+	if (m_xAllocator == nullptr)
 	{
 		return xStats;
 	}
 
 	VmaTotalStatistics xVmaStats;
-	vmaCalculateStatistics(g_xEngine.VulkanMemory().m_xAllocator, &xVmaStats);
+	vmaCalculateStatistics(m_xAllocator, &xVmaStats);
 
 	// Sum up all heap statistics
 	xStats.m_ulTotalAllocatedBytes = xVmaStats.total.statistics.blockBytes;
@@ -463,7 +475,7 @@ Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
 
 void Zenith_Vulkan_MemoryManager::Shutdown()
 {
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	// Drain all pending deletions. Each iteration decrements every entry's
 	// counter by 1, so we need enough iterations for the longest-lived counter
@@ -475,18 +487,18 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	// safety cap is belt-and-braces in case a re-queueing path gets introduced.
 	constexpr u_int uDrainSafetyCap = 64;
 	u_int uDrainIterations = 0;
-	while (g_xEngine.VulkanMemory().m_xPendingDeletions.GetSize() > 0 && uDrainIterations < uDrainSafetyCap)
+	while (m_xPendingDeletions.GetSize() > 0 && uDrainIterations < uDrainSafetyCap)
 	{
 		ProcessDeferredDeletions();
 		uDrainIterations++;
 	}
-	Zenith_Assert(g_xEngine.VulkanMemory().m_xPendingDeletions.GetSize() == 0,
+	Zenith_Assert(m_xPendingDeletions.GetSize() == 0,
 		"Zenith_Vulkan_MemoryManager::Shutdown: drain exceeded %u iterations with %u entries still pending",
-		uDrainSafetyCap, g_xEngine.VulkanMemory().m_xPendingDeletions.GetSize());
+		uDrainSafetyCap, m_xPendingDeletions.GetSize());
 
 	// Destroy all remaining VRAM allocations that weren't explicitly freed
 	// This handles game resources that weren't cleaned up before shutdown
-	std::vector<Zenith_Vulkan_VRAM*>& xVRAMRegistry = g_xEngine.Vulkan().m_xVRAMRegistry;
+	std::vector<Zenith_Vulkan_VRAM*>& xVRAMRegistry = m_pxVulkan->m_xVRAMRegistry;
 	u_int uLeakedAllocations = 0;
 	for (size_t i = 0; i < xVRAMRegistry.size(); i++)
 	{
@@ -508,7 +520,7 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	// single shared pair would leave MFIF-1 buffers leaked.
 	for (u_int uSlot = 0; uSlot < MAX_FRAMES_IN_FLIGHT; uSlot++)
 	{
-		PerFrameStaging& xSlot = g_xEngine.VulkanMemory().m_axStaging[uSlot];
+		PerFrameStaging& xSlot = m_axStaging[uSlot];
 		if (xSlot.m_xBuffer)
 		{
 			xDevice.destroyBuffer(xSlot.m_xBuffer);
@@ -530,12 +542,12 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	// Must happen before vmaDestroyAllocator or the blocks leak.
 	for (u_int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		g_xEngine.Vulkan().m_axPerFrame[i].ShutdownScratchBuffer();
+		m_pxVulkan->m_axPerFrame[i].ShutdownScratchBuffer();
 	}
 
 	// Destroy VMA allocator
-	vmaDestroyAllocator(g_xEngine.VulkanMemory().m_xAllocator);
-	g_xEngine.VulkanMemory().m_xAllocator = nullptr;
+	vmaDestroyAllocator(m_xAllocator);
+	m_xAllocator = nullptr;
 
 	// Probe cache is tied to the VMA allocator's device lifetime; drop it now
 	// so a subsequent Initialise starts from a known empty state.
@@ -545,88 +557,88 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 }
 
 Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_MemoryManager::GetCommandBuffer() {
-	return g_xEngine.VulkanMemory().m_xCommandBuffer;
+	return m_xCommandBuffer;
 }
 
 // ImageView handle registry implementation
 Flux_ImageViewHandle Zenith_Vulkan_MemoryManager::RegisterImageView(vk::ImageView xView)
 {
 	Flux_ImageViewHandle xHandle;
-	if (g_xEngine.VulkanMemory().m_xFreeImageViewHandles.GetSize() > 0)
+	if (m_xFreeImageViewHandles.GetSize() > 0)
 	{
-		u_int uIndex = g_xEngine.VulkanMemory().m_xFreeImageViewHandles.GetBack();
-		g_xEngine.VulkanMemory().m_xFreeImageViewHandles.PopBack();
-		g_xEngine.VulkanMemory().m_xImageViewRegistry.Get(uIndex) = xView;
+		u_int uIndex = m_xFreeImageViewHandles.GetBack();
+		m_xFreeImageViewHandles.PopBack();
+		m_xImageViewRegistry.Get(uIndex) = xView;
 		xHandle.SetValue(uIndex);
 	}
 	else
 	{
-		xHandle.SetValue(g_xEngine.VulkanMemory().m_xImageViewRegistry.GetSize());
-		g_xEngine.VulkanMemory().m_xImageViewRegistry.PushBack(xView);
+		xHandle.SetValue(m_xImageViewRegistry.GetSize());
+		m_xImageViewRegistry.PushBack(xView);
 	}
 	return xHandle;
 }
 
 vk::ImageView Zenith_Vulkan_MemoryManager::GetImageView(Flux_ImageViewHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= g_xEngine.VulkanMemory().m_xImageViewRegistry.GetSize())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= m_xImageViewRegistry.GetSize())
 	{
 		return VK_NULL_HANDLE;
 	}
-	return g_xEngine.VulkanMemory().m_xImageViewRegistry.Get(xHandle.AsUInt());
+	return m_xImageViewRegistry.Get(xHandle.AsUInt());
 }
 
 void Zenith_Vulkan_MemoryManager::ReleaseImageViewHandle(Flux_ImageViewHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= g_xEngine.VulkanMemory().m_xImageViewRegistry.GetSize())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= m_xImageViewRegistry.GetSize())
 	{
 		return;
 	}
-	g_xEngine.VulkanMemory().m_xImageViewRegistry.Get(xHandle.AsUInt()) = VK_NULL_HANDLE;
-	g_xEngine.VulkanMemory().m_xFreeImageViewHandles.PushBack(xHandle.AsUInt());
+	m_xImageViewRegistry.Get(xHandle.AsUInt()) = VK_NULL_HANDLE;
+	m_xFreeImageViewHandles.PushBack(xHandle.AsUInt());
 }
 
 // BufferDescriptor handle registry implementation
 Flux_BufferDescriptorHandle Zenith_Vulkan_MemoryManager::RegisterBufferDescriptor(const vk::DescriptorBufferInfo& xInfo)
 {
 	Flux_BufferDescriptorHandle xHandle;
-	if (g_xEngine.VulkanMemory().m_xFreeBufferDescHandles.GetSize() > 0)
+	if (m_xFreeBufferDescHandles.GetSize() > 0)
 	{
-		u_int uIndex = g_xEngine.VulkanMemory().m_xFreeBufferDescHandles.GetBack();
-		g_xEngine.VulkanMemory().m_xFreeBufferDescHandles.PopBack();
-		g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.Get(uIndex) = xInfo;
+		u_int uIndex = m_xFreeBufferDescHandles.GetBack();
+		m_xFreeBufferDescHandles.PopBack();
+		m_xBufferDescriptorRegistry.Get(uIndex) = xInfo;
 		xHandle.SetValue(uIndex);
 	}
 	else
 	{
-		xHandle.SetValue(g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.GetSize());
-		g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.PushBack(xInfo);
+		xHandle.SetValue(m_xBufferDescriptorRegistry.GetSize());
+		m_xBufferDescriptorRegistry.PushBack(xInfo);
 	}
 	return xHandle;
 }
 
 vk::DescriptorBufferInfo Zenith_Vulkan_MemoryManager::GetBufferDescriptor(Flux_BufferDescriptorHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.GetSize())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= m_xBufferDescriptorRegistry.GetSize())
 	{
 		return vk::DescriptorBufferInfo();
 	}
-	return g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.Get(xHandle.AsUInt());
+	return m_xBufferDescriptorRegistry.Get(xHandle.AsUInt());
 }
 
 void Zenith_Vulkan_MemoryManager::ReleaseBufferDescriptorHandle(Flux_BufferDescriptorHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.GetSize())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= m_xBufferDescriptorRegistry.GetSize())
 	{
 		return;
 	}
-	g_xEngine.VulkanMemory().m_xBufferDescriptorRegistry.Get(xHandle.AsUInt()) = vk::DescriptorBufferInfo();
-	g_xEngine.VulkanMemory().m_xFreeBufferDescHandles.PushBack(xHandle.AsUInt());
+	m_xBufferDescriptorRegistry.Get(xHandle.AsUInt()) = vk::DescriptorBufferInfo();
+	m_xFreeBufferDescHandles.PushBack(xHandle.AsUInt());
 }
 
 void Zenith_Vulkan_MemoryManager::BeginFrame()
 {
-	g_xEngine.VulkanMemory().m_xCommandBuffer.BeginRecording();
+	m_xCommandBuffer.BeginRecording();
 
 	//#TO_TODO: asset handler
 	//AssetHandler* pxAssetHandler = pxApp->m_pxAssetHandler;
@@ -646,18 +658,18 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 
 	if (bDefer)
 	{
-		VkCheck(g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer().end());
-		g_xEngine.Vulkan().m_pxMemoryUpdateCmdBuf = &g_xEngine.VulkanMemory().m_xCommandBuffer;
+		VkCheck(m_xCommandBuffer.GetCurrentCmdBuffer().end());
+		m_pxVulkan->m_pxMemoryUpdateCmdBuf = &m_xCommandBuffer;
 	}
 	else
 	{
-		g_xEngine.VulkanMemory().m_xCommandBuffer.EndAndCpuWait(false);
+		m_xCommandBuffer.EndAndCpuWait(false);
 	}
 }
 
 void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel, uint32_t uLayer)
 {
-	g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xImage, eOldLayout, eNewLayout, eAspect, eSrcStage, eDstStage, uMipLevel, uLayer);
+	m_xCommandBuffer.ImageTransitionBarrier(xImage, eOldLayout, eNewLayout, eAspect, eSrcStage, eDstStage, uMipLevel, uLayer);
 }
 
 void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
@@ -706,7 +718,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, si
 	xBuffer.m_xVRAMHandle = xHandle;
 	xBuffer.m_ulSize = uSize;
 
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
 	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
 
 	vk::DescriptorBufferInfo xBufferInfo;
@@ -733,12 +745,18 @@ void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, si
 static Flux_BufferDescriptorHandle InitialiseDynamicBufferFrame(
 	const void* pData, size_t uSize, MemoryFlags eFlags, Flux_Buffer& xBufferOut)
 {
-	Flux_VRAMHandle xHandle = g_xEngine.VulkanMemory().CreateBufferVRAM(
+	// File-static free function — no 'this' to inject through. Recover the
+	// memory-manager + Vulkan singletons once and route all member reaches
+	// through these refs (the legitimate single re-entry per accessor).
+	Zenith_Vulkan_MemoryManager& xSelf = g_xEngine.VulkanMemory();
+	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+
+	Flux_VRAMHandle xHandle = xSelf.CreateBufferVRAM(
 		static_cast<u_int>(uSize), eFlags, MEMORY_RESIDENCY_CPU);
 	xBufferOut.m_xVRAMHandle = xHandle;
 	xBufferOut.m_ulSize = uSize;
 
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = xVulkan.GetVRAM(xHandle);
 	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
 
 	vk::DescriptorBufferInfo xBufferInfo;
@@ -746,11 +764,11 @@ static Flux_BufferDescriptorHandle InitialiseDynamicBufferFrame(
 	xBufferInfo.setOffset(0);
 	xBufferInfo.setRange(uSize);
 
-	const Flux_BufferDescriptorHandle xDesc = g_xEngine.VulkanMemory().RegisterBufferDescriptor(xBufferInfo);
+	const Flux_BufferDescriptorHandle xDesc = xSelf.RegisterBufferDescriptor(xBufferInfo);
 
 	if (pData)
 	{
-		g_xEngine.VulkanMemory().UploadBufferData(xHandle, pData, uSize);
+		xSelf.UploadBufferData(xHandle, pData, uSize);
 	}
 	return xDesc;
 }
@@ -775,7 +793,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndirectBuffer(size_t uSize, Flux_In
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
 	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
 
 	vk::DescriptorBufferInfo xBufferInfo;
@@ -794,7 +812,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, s
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
 	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
 
 	vk::DescriptorBufferInfo xBufferInfo;
@@ -857,7 +875,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 	// g_xEngine.VulkanMemory().m_xAllocator stays VK_NULL_HANDLE. Upstream asset-load paths still
 	// invoke buffer creation; return an empty handle so they get a benign
 	// invalid VRAM handle to store rather than asserting in vmaCreateBuffer.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return Flux_VRAMHandle();
 	}
@@ -896,7 +914,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 
 	VkBuffer xBuffer = VK_NULL_HANDLE;
 	VmaAllocation xAllocation = VK_NULL_HANDLE;
-	VkResult eResult = vmaCreateBuffer(g_xEngine.VulkanMemory().m_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xAllocation, nullptr);
+	VkResult eResult = vmaCreateBuffer(m_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xAllocation, nullptr);
 	// Wave9.1 (c) / mirrors WS8.3: surface a GPU-OOM (or any vmaCreateBuffer
 	// failure) via the release-survivable check tier — logged for diagnosability
 	// in all shipping configs — but keep the existing invalid-handle contract that
@@ -908,8 +926,8 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 		return Flux_VRAMHandle();
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Buffer(xBuffer), xAllocation, g_xEngine.VulkanMemory().m_xAllocator, uSize);
-	Flux_VRAMHandle xHandle = g_xEngine.Vulkan().RegisterVRAM(pxVRAM);
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Buffer(xBuffer), xAllocation, m_xAllocator, uSize);
+	Flux_VRAMHandle xHandle = m_pxVulkan->RegisterVRAM(pxVRAM);
 
 	return xHandle;
 }
@@ -920,7 +938,7 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 	xResult.m_uSize = uSize;
 
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return xResult;
 	}
@@ -939,7 +957,7 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 
 	VkBuffer xBuffer = VK_NULL_HANDLE;
 	VmaAllocationInfo xAllocationInfo = {};
-	VkResult eResult = vmaCreateBuffer(g_xEngine.VulkanMemory().m_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xResult.m_xAllocation, &xAllocationInfo);
+	VkResult eResult = vmaCreateBuffer(m_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xResult.m_xAllocation, &xAllocationInfo);
 	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateBuffer failed for persistent buffer with result %d", static_cast<int>(eResult));
 
 	xResult.m_xBuffer = vk::Buffer(xBuffer);
@@ -953,7 +971,7 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
 {
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return Flux_VRAMHandle();
 	}
@@ -969,7 +987,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	
 	if (bIsColour)
 	{
-		xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+		xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 		eUsageFlags = vk::ImageUsageFlagBits::eColorAttachment;
 		eAspectFlags = vk::ImageAspectFlagBits::eColor;
 		eInitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -979,7 +997,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	}
 	else // bIsDepthStencil
 	{
-		xFormat = g_xEngine.Vulkan().ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+		xFormat = m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 		eUsageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 		eAspectFlags = vk::ImageAspectFlagBits::eDepth;
 		eInitialLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
@@ -1024,7 +1042,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 
 	VkImage xImage = VK_NULL_HANDLE;
 	VmaAllocation xAllocation = VK_NULL_HANDLE;
-	VkResult eResult = vmaCreateImage(g_xEngine.VulkanMemory().m_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
+	VkResult eResult = vmaCreateImage(m_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
 	// Wave14 B3 / mirrors WS9.2 CreateBufferVRAM: surface a GPU-OOM (or any
 	// vmaCreateImage failure) via the release-survivable check tier — logged for
 	// diagnosability in all shipping configs — but keep the existing invalid-handle
@@ -1037,8 +1055,8 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 		return Flux_VRAMHandle();
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, g_xEngine.VulkanMemory().m_xAllocator);
-	Flux_VRAMHandle xHandle = g_xEngine.Vulkan().RegisterVRAM(pxVRAM);
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, m_xAllocator);
+	Flux_VRAMHandle xHandle = m_pxVulkan->RegisterVRAM(pxVRAM);
 
 	if (bIsDepthStencil)
 	{
@@ -1067,7 +1085,7 @@ void Zenith_Vulkan_MemoryManager::NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, 
 
 vk::ImageCreateInfo Zenith_Vulkan_MemoryManager::BuildImageCreateInfo(const Flux_SurfaceInfo& xInfo)
 {
-	vk::Format xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
 	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
@@ -1104,7 +1122,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::
 	VkImage& xImageOut, VmaAllocation& xAllocationOut)
 {
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		xImageOut = VK_NULL_HANDLE;
 		xAllocationOut = VK_NULL_HANDLE;
@@ -1118,7 +1136,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::
 
 	xImageOut = VK_NULL_HANDLE;
 	xAllocationOut = VK_NULL_HANDLE;
-	VkResult eResult = vmaCreateImage(g_xEngine.VulkanMemory().m_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImageOut, &xAllocationOut, nullptr);
+	VkResult eResult = vmaCreateImage(m_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImageOut, &xAllocationOut, nullptr);
 	// Wave14 B3 / mirrors WS9.2 CreateBufferVRAM: surface a GPU-OOM (or any
 	// vmaCreateImage failure) via the release-survivable check tier — logged for
 	// diagnosability in all shipping configs — but keep the existing invalid-handle
@@ -1130,38 +1148,38 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::
 		return Flux_VRAMHandle();
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImageOut), xAllocationOut, g_xEngine.VulkanMemory().m_xAllocator);
-	return g_xEngine.Vulkan().RegisterVRAM(pxVRAM);
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImageOut), xAllocationOut, m_xAllocator);
+	return m_pxVulkan->RegisterVRAM(pxVRAM);
 }
 
 void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
 	const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize)
 {
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return;
 	}
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
-	g_xEngine.VulkanMemory().m_xMutex.Lock();
+	m_xMutex.Lock();
 
 	VkMemoryPropertyFlags eMemoryProps;
-	vmaGetAllocationMemoryProperties(g_xEngine.VulkanMemory().m_xAllocator, xAllocation, &eMemoryProps);
+	vmaGetAllocationMemoryProperties(m_xAllocator, xAllocation, &eMemoryProps);
 
 	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	{
 		// Direct upload to host-visible memory.
 		VmaAllocationInfo xImageAllocInfo;
-		vmaGetAllocationInfo(g_xEngine.VulkanMemory().m_xAllocator, xAllocation, &xImageAllocInfo);
+		vmaGetAllocationInfo(m_xAllocator, xAllocation, &xImageAllocInfo);
 		memcpy(xImageAllocInfo.pMappedData, pData, ulDataSize);
-		vmaFlushAllocation(g_xEngine.VulkanMemory().m_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
+		vmaFlushAllocation(m_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
 	}
 	else if (ulDataSize > g_uStagingPoolSize)
 	{
 		// Allocation larger than the staging buffer — unlock and chunk.
-		g_xEngine.VulkanMemory().m_xMutex.Unlock();
+		m_xMutex.Unlock();
 		UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uNumMips, xInfo.m_uNumLayers);
 		return;
 	}
@@ -1175,13 +1193,13 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		if (xStaging.m_uNextFreeOffset + ulDataSize > g_uStagingPoolSize)
 		{
 			// HandleStagingBufferFull does an EndFrame(false) -> EndAndCpuWait
-			// which blocks for multi-second GPU work. Holding g_xEngine.VulkanMemory().m_xMutex across
+			// which blocks for multi-second GPU work. Holding m_xMutex across
 			// that wait stalls every other thread doing uploads (smoke runs
 			// showed 20-second "Wait for Mutex" events from worker threads
 			// piling up here). Release the mutex during the GPU wait.
-			g_xEngine.VulkanMemory().m_xMutex.Unlock();
+			m_xMutex.Unlock();
 			HandleStagingBufferFull();
-			g_xEngine.VulkanMemory().m_xMutex.Lock();
+			m_xMutex.Lock();
 		}
 
 		StagingMemoryAllocation xStagingAlloc;
@@ -1213,7 +1231,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		if (xStagingAfter.m_uNextFreeOffset > xStagingAfter.m_uHighWaterMark)
 			xStagingAfter.m_uHighWaterMark = xStagingAfter.m_uNextFreeOffset;
 	}
-	g_xEngine.VulkanMemory().m_xMutex.Unlock();
+	m_xMutex.Unlock();
 }
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
@@ -1276,12 +1294,12 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_V
 	Flux_RenderTargetView xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateRenderTargetView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
-	vk::Format xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	// Determine view type based on texture type
 	const bool bIs3D = xInfo.m_eTextureType == TEXTURE_TYPE_3D;
@@ -1313,12 +1331,12 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetViewForLaye
 	Flux_RenderTargetView xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateRenderTargetViewForLayer");
 	if (!pxVRAM) return xView;
 
-	vk::Format xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	// Create a 2D view for a single layer/face of a cubemap or array texture
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
@@ -1344,12 +1362,12 @@ Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_V
 	Flux_DepthStencilView xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateDepthStencilView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
-	vk::Format xFormat = g_xEngine.Vulkan().ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
@@ -1376,13 +1394,13 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 	Flux_ShaderResourceView xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateShaderResourceView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
-	vk::Format xFormat = bIsDepth ? g_xEngine.Vulkan().ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = bIsDepth ? m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	// Determine view type based on texture type
 	const bool bIs3D = xInfo.m_eTextureType == TEXTURE_TYPE_3D;
@@ -1412,10 +1430,10 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 
 	if ((xInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) && xView.m_xImageViewHandle.IsValid())
 	{
-		g_xEngine.Vulkan().WriteBindlessDescriptor(
+		m_pxVulkan->WriteBindlessDescriptor(
 			xView.m_xImageViewHandle.AsUInt(),
 			xVkView,
-			g_xEngine.FluxGraphics().m_xClampSampler.GetSampler());
+			m_pxFluxGraphics->m_xClampSampler.GetSampler());
 	}
 
 	return xView;
@@ -1426,13 +1444,13 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 	Flux_ShaderResourceView xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateShaderResourceViewForLayer");
 	if (!pxVRAM) return xView;
 
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
-	vk::Format xFormat = bIsDepth ? g_xEngine.Vulkan().ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = bIsDepth ? m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	// Create a 2D view for a single layer/face of a cubemap or array texture
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
@@ -1456,10 +1474,10 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 
 	if ((xInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) && xView.m_xImageViewHandle.IsValid())
 	{
-		g_xEngine.Vulkan().WriteBindlessDescriptor(
+		m_pxVulkan->WriteBindlessDescriptor(
 			xView.m_xImageViewHandle.AsUInt(),
 			xVkView,
-			g_xEngine.FluxGraphics().m_xClampSampler.GetSampler());
+			m_pxFluxGraphics->m_xClampSampler.GetSampler());
 	}
 
 	return xView;
@@ -1470,12 +1488,12 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 	Flux_UnorderedAccessView_Texture xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateUnorderedAccessView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
-	vk::Format xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	// Determine view type based on texture type
 	const bool bIs3D = xInfo.m_eTextureType == TEXTURE_TYPE_3D;
@@ -1509,12 +1527,12 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 	xView.m_xVRAMHandle = xVRAMHandle;
 	xView.m_uMipLevel = uMipLevel;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xVRAMHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateUnorderedAccessViewForSlice");
 	if (!pxVRAM) return xView;
 
-	vk::Format xFormat = g_xEngine.Vulkan().ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -1541,45 +1559,45 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	// Headless guard: see CreateBufferVRAM for rationale. With no allocator, all
 	// upstream CreateBufferVRAM calls returned invalid handles, so GetVRAM would
 	// hit the null-assert below — bail before that.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return;
 	}
 
-	g_xEngine.VulkanMemory().m_xMutex.Lock();
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	m_xMutex.Lock();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xBufferHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xBufferHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in UploadBufferData");
 	if (!pxVRAM)
 	{
-		g_xEngine.VulkanMemory().m_xMutex.Unlock();
+		m_xMutex.Unlock();
 		return;  // Safety guard for release builds
 	}
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;
-	vmaGetAllocationMemoryProperties(g_xEngine.VulkanMemory().m_xAllocator, xAlloc, &eMemoryProps);
+	vmaGetAllocationMemoryProperties(m_xAllocator, xAlloc, &eMemoryProps);
 
 	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	{
 		void* pMap = nullptr;
-		vmaMapMemory(g_xEngine.VulkanMemory().m_xAllocator, xAlloc, &pMap);
+		vmaMapMemory(m_xAllocator, xAlloc, &pMap);
 		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
 		memcpy(pMap, pData, uSize);
 #ifdef ZENITH_ASSERT
 		VkResult eResult =
 #endif
-		vmaFlushAllocation(g_xEngine.VulkanMemory().m_xAllocator, xAlloc, 0, uSize);
+		vmaFlushAllocation(m_xAllocator, xAlloc, 0, uSize);
 		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
 
-		vmaUnmapMemory(g_xEngine.VulkanMemory().m_xAllocator, xAlloc);
+		vmaUnmapMemory(m_xAllocator, xAlloc);
 	}
 	else
 	{
 		// If the allocation is larger than the entire staging buffer, use chunked upload
 		if (uSize > g_uStagingPoolSize)
 		{
-			g_xEngine.VulkanMemory().m_xMutex.Unlock();
+			m_xMutex.Unlock();
 			UploadBufferDataChunked(pxVRAM->GetBuffer(), pData, uSize);
 			return;
 		}
@@ -1590,9 +1608,9 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 			// HandleStagingBufferFull blocks multi-seconds on GPU; release
 			// the mutex so other threads' uploads aren't stalled. See
 			// matching comment in UploadTextureData above.
-			g_xEngine.VulkanMemory().m_xMutex.Unlock();
+			m_xMutex.Unlock();
 			HandleStagingBufferFull();
-			g_xEngine.VulkanMemory().m_xMutex.Lock();
+			m_xMutex.Lock();
 		}
 
 		// Re-resolve staging slot in case HandleStagingBufferFull recycled it.
@@ -1617,7 +1635,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		if (xStagingAfter.m_uNextFreeOffset > xStagingAfter.m_uHighWaterMark)
 			xStagingAfter.m_uHighWaterMark = xStagingAfter.m_uNextFreeOffset;
 	}
-	g_xEngine.VulkanMemory().m_xMutex.Unlock();
+	m_xMutex.Unlock();
 }
 
 void Zenith_Vulkan_MemoryManager::DestroySimpleBuffer(Flux_VRAMHandle& xHandle)
@@ -1627,7 +1645,7 @@ void Zenith_Vulkan_MemoryManager::DestroySimpleBuffer(Flux_VRAMHandle& xHandle)
 		return;
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
 	if (pxVRAM)
 	{
 		QueueVRAMDeletion(pxVRAM, xHandle);
@@ -1704,25 +1722,25 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 
 	// Headless guard: see CreateBufferVRAM for rationale.
-	if (g_xEngine.VulkanMemory().m_xAllocator == VK_NULL_HANDLE)
+	if (m_xAllocator == VK_NULL_HANDLE)
 	{
 		return;
 	}
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xBufferHandle);
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xBufferHandle);
 	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in UploadBufferDataAtOffset");
 	if (!pxVRAM) return;  // Safety guard for release builds
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;
-	vmaGetAllocationMemoryProperties(g_xEngine.VulkanMemory().m_xAllocator, xAlloc, &eMemoryProps);
+	vmaGetAllocationMemoryProperties(m_xAllocator, xAlloc, &eMemoryProps);
 
 	// For host-visible memory, map and copy directly with offset
 	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	{
-		g_xEngine.VulkanMemory().m_xMutex.Lock();
+		m_xMutex.Lock();
 		void* pMap = nullptr;
-		vmaMapMemory(g_xEngine.VulkanMemory().m_xAllocator, xAlloc, &pMap);
+		vmaMapMemory(m_xAllocator, xAlloc, &pMap);
 		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
 
 		// Copy to the destination offset
@@ -1731,11 +1749,11 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 #ifdef ZENITH_ASSERT
 		VkResult eResult =
 #endif
-		vmaFlushAllocation(g_xEngine.VulkanMemory().m_xAllocator, xAlloc, uDestOffset, uSize);
+		vmaFlushAllocation(m_xAllocator, xAlloc, uDestOffset, uSize);
 		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
 
-		vmaUnmapMemory(g_xEngine.VulkanMemory().m_xAllocator, xAlloc);
-		g_xEngine.VulkanMemory().m_xMutex.Unlock();
+		vmaUnmapMemory(m_xAllocator, xAlloc);
+		m_xMutex.Unlock();
 	}
 	else
 	{
@@ -1751,7 +1769,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 		{
 			const size_t uChunkSize = (std::min)(uRemainingSize, g_uStagingPoolSize - 4096);
 
-			g_xEngine.VulkanMemory().m_xMutex.Lock();
+			m_xMutex.Lock();
 
 			PerFrameStaging& xStaging = CurrentStaging();
 			if (xStaging.m_uNextFreeOffset + uChunkSize > g_uStagingPoolSize)
@@ -1780,7 +1798,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 			if (xStagingPost.m_uNextFreeOffset > xStagingPost.m_uHighWaterMark)
 				xStagingPost.m_uHighWaterMark = xStagingPost.m_uNextFreeOffset;
 
-			g_xEngine.VulkanMemory().m_xMutex.Unlock();
+			m_xMutex.Unlock();
 
 			uCurrentSrcOffset += uChunkSize;
 			uCurrentDestOffset += uChunkSize;
@@ -1792,7 +1810,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed)
 {
 	// Mip 0 is already in TRANSFER_DST_OPTIMAL from the copy. Transition to TRANSFER_SRC for blit source.
-	g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+	m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
 	// Compressed formats (BC1, BC3, BC5, BC7) cannot use blit for mipmap generation;
 	// they must have pre-generated mipmaps in the source data.
@@ -1826,20 +1844,20 @@ void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::I
 				.setDstOffsets(axDstOffsets)
 				.setDstSubresource(xDstSubresource);
 
-			g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xImage, vk::ImageLayout::eTransferSrcOptimal, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
-			g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+			m_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xImage, vk::ImageLayout::eTransferSrcOptimal, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
+			m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 		}
 	}
 
 	// Transition all mips to shader-read layout
-	g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+	m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
 	for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
 	{
 		// Compressed mips 1+ are still in TRANSFER_DST (no blit was done).
 		// Non-compressed mips were transitioned to TRANSFER_SRC after each blit.
 		vk::ImageLayout eSrcLayout = bIsCompressed ? vk::ImageLayout::eTransferDstOptimal : vk::ImageLayout::eTransferSrcOptimal;
-		g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xImage, eSrcLayout, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		m_xCommandBuffer.ImageTransitionBarrier(xImage, eSrcLayout, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 	}
 }
 
@@ -1870,12 +1888,12 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBufferAllocation(const StagingMemo
 	const vk::DeviceSize uDestOffset = static_cast<vk::DeviceSize>(xMeta.m_uDestOffset);
 	const vk::DeviceSize uSize = static_cast<vk::DeviceSize>(xAlloc.m_uSize);
 
-	EmitTransferWriteBarrier(g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer(), xMeta.m_xBuffer, uDestOffset, uSize);
+	EmitTransferWriteBarrier(m_xCommandBuffer.GetCurrentCmdBuffer(), xMeta.m_xBuffer, uDestOffset, uSize);
 
 	// Source comes from the current frame's staging slot — the same slot the
 	// allocation was bumped from in UploadBufferData / UploadBufferDataAtOffset.
 	vk::BufferCopy xCopyRegion(uSrcOffset, uDestOffset, uSize);
-	g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(CurrentStaging().m_xBuffer, xMeta.m_xBuffer, xCopyRegion);
+	m_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(CurrentStaging().m_xBuffer, xMeta.m_xBuffer, xCopyRegion);
 }
 
 void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc)
@@ -1888,7 +1906,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMem
 	{
 		for (uint32_t uMip = 0; uMip < xMeta.m_uNumMips; uMip++)
 		{
-			g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+			m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 		}
 	}
 
@@ -1907,7 +1925,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMem
 		.setImageOffset({ 0, 0, 0 })
 		.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, xMeta.m_uDepth });
 
-	g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(CurrentStaging().m_xBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+	m_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(CurrentStaging().m_xBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 	// Generate mipmaps (via blit for non-compressed) and transition to shader-read
 	const bool bIsCompressed = IsCompressedFormat(xMeta.m_eFormat);
@@ -1957,8 +1975,8 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 // m_uNextFreeOffset reset to 0.
 void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 {
-	const u_int uFrameSlot = g_xEngine.VulkanSwapchain().GetCurrentFrameIndex();
-	PerFrameStaging& xSlot = g_xEngine.VulkanMemory().m_axStaging[uFrameSlot];
+	const u_int uFrameSlot = m_pxVulkanSwapchain->GetCurrentFrameIndex();
+	PerFrameStaging& xSlot = m_axStaging[uFrameSlot];
 	xSlot.m_uMidFrameFlushCount++;
 	Zenith_Log(LOG_CATEGORY_VULKAN,
 		"Staging buffer full on slot %u (offset=%llu / pool=%llu, mid-frame flush #%u). Forcing mid-frame submit.",
@@ -1975,7 +1993,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Uploading large buffer in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
 	size_t uRemainingSize = uSize;
 	size_t uCurrentOffset = 0;
@@ -1986,7 +2004,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		// Calculate chunk size (leave some headroom for alignment)
 		const size_t uChunkSize = (std::min)(uRemainingSize, g_uStagingPoolSize - 4096);
 
-		g_xEngine.VulkanMemory().m_xMutex.Lock();
+		m_xMutex.Lock();
 
 		PerFrameStaging& xStaging = CurrentStaging();
 		// Ensure the current slot is empty before this synchronous chunk; this
@@ -2011,12 +2029,12 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(xStaging.m_xMemory);
 
-		EmitTransferWriteBarrier(g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer(), xDestBuffer, uCurrentOffset, uChunkSize);
+		EmitTransferWriteBarrier(m_xCommandBuffer.GetCurrentCmdBuffer(), xDestBuffer, uCurrentOffset, uChunkSize);
 
 		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);
-		g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(xStaging.m_xBuffer, xDestBuffer, xCopyRegion);
+		m_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(xStaging.m_xBuffer, xDestBuffer, xCopyRegion);
 
-		g_xEngine.VulkanMemory().m_xCommandBuffer.EndAndCpuWait(false);
+		m_xCommandBuffer.EndAndCpuWait(false);
 
 		// Clear staging allocations after flush
 		xStaging.m_xAllocations.Clear();
@@ -2027,9 +2045,9 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		uRemainingSize -= uChunkSize;
 
 		// Restart command buffer for next chunk
-		g_xEngine.VulkanMemory().m_xCommandBuffer.BeginRecording();
+		m_xCommandBuffer.BeginRecording();
 
-		g_xEngine.VulkanMemory().m_xMutex.Unlock();
+		m_xMutex.Unlock();
 	}
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked buffer upload complete");
@@ -2040,7 +2058,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Uploading large texture in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
 	size_t uCurrentOffset = 0;
 
@@ -2053,12 +2071,12 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	uint32_t uCurrentRow = 0;
 
 	// Transition entire image to transfer dst layout first
-	g_xEngine.VulkanMemory().m_xCommandBuffer.BeginRecording();
+	m_xCommandBuffer.BeginRecording();
 	for (uint32_t uLayer = 0; uLayer < uNumLayers; uLayer++)
 	{
 		for (uint32_t uMip = 0; uMip < uNumMips; uMip++)
 		{
-			g_xEngine.VulkanMemory().m_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+			m_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 		}
 	}
 
@@ -2069,14 +2087,14 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 		const uint32_t uRemainingRows = static_cast<uint32_t>(std::min(uChunkHeight, static_cast<size_t>(uHeight - uRowInLayer)));
 		const size_t uChunkSize = uRemainingRows * uBytesPerRow;
 
-		g_xEngine.VulkanMemory().m_xMutex.Lock();
+		m_xMutex.Lock();
 
 		// Ensure the current slot's staging is empty before this chunk row
 		if (CurrentStaging().m_uNextFreeOffset != 0)
 		{
-			g_xEngine.VulkanMemory().m_xMutex.Unlock();
+			m_xMutex.Unlock();
 			HandleStagingBufferFull();
-			g_xEngine.VulkanMemory().m_xMutex.Lock();
+			m_xMutex.Lock();
 		}
 
 		PerFrameStaging& xStaging = CurrentStaging();
@@ -2086,7 +2104,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(xStaging.m_xMemory);
 
-		g_xEngine.VulkanMemory().m_xMutex.Unlock();
+		m_xMutex.Unlock();
 
 		// Copy this chunk to the image
 		vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
@@ -2103,7 +2121,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 			.setImageOffset({ 0, static_cast<int32_t>(uRowInLayer), 0 })
 			.setImageExtent({ uWidth, uRemainingRows, 1 });
 
-		g_xEngine.VulkanMemory().m_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(xStaging.m_xBuffer, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+		m_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(xStaging.m_xBuffer, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 		uCurrentOffset += uChunkSize;
 		uCurrentRow += uRemainingRows;
@@ -2116,7 +2134,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	}
 
 	// Execute and wait
-	g_xEngine.VulkanMemory().m_xCommandBuffer.EndAndCpuWait(false);
+	m_xCommandBuffer.EndAndCpuWait(false);
 
 	// Clean up the current slot
 	{
@@ -2126,7 +2144,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	}
 
 	// Restart command buffer for next operations
-	g_xEngine.VulkanMemory().m_xCommandBuffer.BeginRecording();
+	m_xCommandBuffer.BeginRecording();
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked texture upload complete");
 }
@@ -2164,7 +2182,7 @@ void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, 
 	// iteration doesn't preserve within-frame order). The assert above enforces this
 	// invariant at the queue point rather than waiting for the validation layer.
 	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT + 1 + uExtraFrameDelay;
-	g_xEngine.VulkanMemory().m_xPendingDeletions.PushBack(xDeletion);
+	m_xPendingDeletions.PushBack(xDeletion);
 
 	// Auto-invalidate the caller's handle to prevent double-free
 	xHandle = Flux_VRAMHandle();
@@ -2196,7 +2214,7 @@ void Zenith_Vulkan_MemoryManager::DestroyImageViewIfValid(const vk::Device& xDev
 
 void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 {
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	// Note on within-frame ordering: RemoveSwap reorders the vector by moving
 	// the last element into the slot of the removed one. Any ordering between
@@ -2206,9 +2224,9 @@ void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 	// uExtraFrameDelay >= 1 assertion on pool VRAMs. If that assertion ever
 	// has to be relaxed, either introduce a second pool-only deletion queue
 	// or replace RemoveSwap here with order-preserving removal.
-	for (u_int i = 0; i < g_xEngine.VulkanMemory().m_xPendingDeletions.GetSize();)
+	for (u_int i = 0; i < m_xPendingDeletions.GetSize();)
 	{
-		PendingVRAMDeletion& xDeletion = g_xEngine.VulkanMemory().m_xPendingDeletions.Get(i);
+		PendingVRAMDeletion& xDeletion = m_xPendingDeletions.Get(i);
 		xDeletion.m_uFramesRemaining--;
 
 		if (xDeletion.m_uFramesRemaining == 0)
@@ -2223,10 +2241,10 @@ void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 			if (xDeletion.m_pxVRAM != nullptr)
 			{
 				delete xDeletion.m_pxVRAM;
-				g_xEngine.Vulkan().ReleaseVRAMHandle(xDeletion.m_xHandle);
+				m_pxVulkan->ReleaseVRAMHandle(xDeletion.m_xHandle);
 			}
 
-			g_xEngine.VulkanMemory().m_xPendingDeletions.RemoveSwap(i);
+			m_xPendingDeletions.RemoveSwap(i);
 			// Don't increment - check the swapped-in element
 		}
 		else

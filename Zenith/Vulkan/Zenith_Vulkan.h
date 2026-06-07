@@ -44,6 +44,12 @@ inline T VkUnwrap(T xValue) { return xValue; }
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan_VRAM;
 class Flux_CommandList;
+// Injected cross-subsystem dependencies (stored as raw pointers, wired in
+// Initialise() by the composition root — see Zenith_Vulkan.cpp::Initialise).
+class Flux_RendererImpl;
+class Zenith_TaskSystem;
+class Zenith_Vulkan_Swapchain;
+class Zenith_Vulkan_MemoryManager;
 
 class Zenith_Vulkan_PerFrame
 {
@@ -122,7 +128,13 @@ public:
 	vk::DescriptorSet CreateDescriptorSet(const vk::DescriptorSetLayout& xLayout, const vk::DescriptorPool& xPool);
 
 	// ===== Bootstrap =====
-	void Initialise();
+	// The one-shot singleton boot seam (called once from the composition root
+	// during engine boot). Cross-subsystem dependencies are injected here and
+	// stored as member pointers so steady-state methods route through them
+	// instead of reaching back through g_xEngine. (The *Impl objects are all
+	// allocated up-front, so storing a not-yet-Initialised sibling pointer here
+	// is safe — each reach still fires at exactly the same moment it did before.)
+	void Initialise(); // no-arg per FluxBackendDevice concept; self-wires deps from g_xEngine
 	void InitialiseScratchBuffers(); // Must be called after g_xEngine.VulkanMemory().Initialise()
 	void CreateInstance();
 #ifdef ZENITH_DEBUG
@@ -257,6 +269,16 @@ public:
 
 	// Transfer command buffer used for staging-buffer flushes.
 	Zenith_Vulkan_CommandBuffer*  m_pxMemoryUpdateCmdBuf = nullptr;
+
+	// Injected cross-subsystem dependencies (wired in Initialise). Stored as
+	// member pointers so instance methods route through them rather than
+	// reaching back through g_xEngine. NOT used by the static callbacks
+	// (OnFluxPerFrameBegin / RecordCommandBuffersTask) — those have no 'this'
+	// and recover the singleton directly.
+	Flux_RendererImpl*            m_pxFluxRenderer    = nullptr;
+	Zenith_TaskSystem*            m_pxTasks           = nullptr;
+	Zenith_Vulkan_Swapchain*      m_pxVulkanSwapchain = nullptr;
+	Zenith_Vulkan_MemoryManager*  m_pxVulkanMemory    = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// ImGui integration resources.

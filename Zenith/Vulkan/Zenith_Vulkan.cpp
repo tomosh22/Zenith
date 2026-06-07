@@ -158,17 +158,17 @@ DEBUGVAR u_int dbg_uNumDescSetAllocations = 0;
 
 const vk::DescriptorPool& Zenith_Vulkan::GetPerFrameDescriptorPool(u_int uWorkerIndex)
 {
-	return g_xEngine.Vulkan().m_pxCurrentFrame->GetDescriptorPoolForWorkerIndex(uWorkerIndex);
+	return m_pxCurrentFrame->GetDescriptorPoolForWorkerIndex(uWorkerIndex);
 }
 
 const vk::CommandPool& Zenith_Vulkan::GetWorkerCommandPool(u_int uThreadIndex)
 {
-	return g_xEngine.Vulkan().m_pxCurrentFrame->GetCommandPoolForWorkerIndex(uThreadIndex);
+	return m_pxCurrentFrame->GetCommandPoolForWorkerIndex(uThreadIndex);
 }
 
 vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 {
-	return g_xEngine.Vulkan().m_pxCurrentFrame->m_xFence;
+	return m_pxCurrentFrame->m_xFence;
 }
 
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
@@ -180,6 +180,17 @@ void Zenith_Vulkan::IncrementDescriptorSetAllocations(){ dbg_uNumDescSetAllocati
 
 void Zenith_Vulkan::Initialise()
 {
+	// Self-wire cross-subsystem dependencies once, here, into member pointers so
+	// every steady-state instance method routes through them instead of g_xEngine.
+	// Initialise() stays no-arg to satisfy the FluxBackendDevice backend concept;
+	// the sibling *Impl objects are allocated up-front, so caching their pointers
+	// here (even before they are themselves Initialised) is safe — the cached
+	// objects are only USED later at runtime, exactly as before.
+	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
+	m_pxTasks = &g_xEngine.Tasks();
+	m_pxVulkanSwapchain = &g_xEngine.VulkanSwapchain();
+	m_pxVulkanMemory = &g_xEngine.VulkanMemory();
+
 	CreateInstance();
 #ifdef ZENITH_DEBUG
 	CreateDebugMessenger();
@@ -190,13 +201,13 @@ void Zenith_Vulkan::Initialise()
 	CreateQueueFamilies();
 	CreateDevice();
 #ifdef ZENITH_FLUX_PROFILING
-	g_xEngine.Vulkan().m_xDispatchLoader = vk::DispatchLoaderDynamic(g_xEngine.Vulkan().m_xInstance, vkGetInstanceProcAddr, g_xEngine.Vulkan().m_xDevice, vkGetDeviceProcAddr);
+	m_xDispatchLoader = vk::DispatchLoaderDynamic(m_xInstance, vkGetInstanceProcAddr, m_xDevice, vkGetDeviceProcAddr);
 #endif
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
 	CreateBindlessTexturesDescriptorPool();
 
-	for (Zenith_Vulkan_PerFrame& xFrame : g_xEngine.Vulkan().m_axPerFrame)
+	for (Zenith_Vulkan_PerFrame& xFrame : m_axPerFrame)
 	{
 		xFrame.Initialise();
 	}
@@ -209,7 +220,7 @@ void Zenith_Vulkan::Initialise()
 	g_xEngine.DebugVariables().AddUInt32_ReadOnly({ "Vulkan", "Descriptor Sets Allocated" }, dbg_uNumDescSetAllocations);
 #endif
 
-	g_xEngine.Vulkan().m_pxCurrentFrame = &g_xEngine.Vulkan().m_axPerFrame[0];
+	m_pxCurrentFrame = &m_axPerFrame[0];
 
 	g_xCommandBuffer.Initialise();
 
@@ -219,12 +230,12 @@ void Zenith_Vulkan::Initialise()
 	// it FIRST so it runs before any other backend's begin callback that might
 	// touch the slot. Counted in FLUX_PERFRAME_BEGIN_SUBSCRIBER_TALLY
 	// (Flux_PerFrame.cpp): bump that tally if you add another begin callback.
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
+	m_pxFluxRenderer->RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
 }
 
 void Zenith_Vulkan::InitialiseScratchBuffers()
 {
-	for (Zenith_Vulkan_PerFrame& xFrame : g_xEngine.Vulkan().m_axPerFrame)
+	for (Zenith_Vulkan_PerFrame& xFrame : m_axPerFrame)
 	{
 		xFrame.InitialiseScratchBuffers();
 	}
@@ -236,8 +247,11 @@ void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
 	// receives the current ring index directly (no longer pulled from the
 	// swapchain). The swapchain itself will read GetCurrentFrameIndex()
 	// which is now a thin wrapper over g_xEngine.FluxRenderer().GetRingIndex().
-	g_xEngine.Vulkan().m_pxCurrentFrame = &g_xEngine.Vulkan().m_axPerFrame[uRingIndex];
-	g_xEngine.Vulkan().m_pxCurrentFrame->BeginFrame();
+	// Static callback (no 'this'): recover the Vulkan singleton once and route
+	// all member reaches through xSelf.
+	Zenith_Vulkan& xSelf = g_xEngine.Vulkan();
+	xSelf.m_pxCurrentFrame = &xSelf.m_axPerFrame[uRingIndex];
+	xSelf.m_pxCurrentFrame->BeginFrame();
 
 #ifdef ZENITH_TOOLS
 	// Update shader hot reload system (checks for file changes)
@@ -429,7 +443,9 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 {
 	const Flux_WorkDistribution* pWorkDistribution = static_cast<const Flux_WorkDistribution*>(pData);
 
-	Zenith_Vulkan_CommandBuffer& xCommandBuffer = g_xEngine.Vulkan().m_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
+	// Static task entry point (no 'this'): recover the Vulkan singleton once.
+	Zenith_Vulkan& xSelf = g_xEngine.Vulkan();
+	Zenith_Vulkan_CommandBuffer& xCommandBuffer = xSelf.m_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
 	xCommandBuffer.BeginRecording();
 
 	RenderPassRecordingState xState;
@@ -471,22 +487,22 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	vk::PipelineStageFlags eMemWaitStages = vk::PipelineStageFlagBits::eAllCommands;
 	vk::PipelineStageFlags eRenderWaitStages = vk::PipelineStageFlagBits::eAllCommands;
 
-	const vk::Semaphore& xMemorySemaphore = g_xEngine.Vulkan().m_pxCurrentFrame->GetMemorySemaphore();
+	const vk::Semaphore& xMemorySemaphore = m_pxCurrentFrame->GetMemorySemaphore();
 
 	std::vector<vk::CommandBuffer> xPlatformMemoryCmdBufs;
-	if (g_xEngine.Vulkan().m_pxMemoryUpdateCmdBuf)
+	if (m_pxMemoryUpdateCmdBuf)
 	{
-		xPlatformMemoryCmdBufs.push_back(g_xEngine.Vulkan().m_pxMemoryUpdateCmdBuf->GetCurrentCmdBuffer());
-		g_xEngine.Vulkan().m_pxMemoryUpdateCmdBuf = nullptr;
+		xPlatformMemoryCmdBufs.push_back(m_pxMemoryUpdateCmdBuf->GetCurrentCmdBuffer());
+		m_pxMemoryUpdateCmdBuf = nullptr;
 
 	}
 
 	// Prepare frame work distribution in platform-independent layer
 	// Do this BEFORE memory submit so we know whether to signal the semaphore
 	Flux_WorkDistribution xWorkDistribution;
-	const bool bHasRenderWork = bSubmitRenderWork && g_xEngine.FluxRenderer().PrepareFrame(xWorkDistribution);
+	const bool bHasRenderWork = bSubmitRenderWork && m_pxFluxRenderer->PrepareFrame(xWorkDistribution);
 
-	const bool bShouldWait = g_xEngine.VulkanSwapchain().ShouldWaitOnImageAvailableSemaphore();
+	const bool bShouldWait = m_pxVulkanSwapchain->ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(static_cast<uint32_t>(xPlatformMemoryCmdBufs.size()))
 		.setPCommandBuffers(xPlatformMemoryCmdBufs.data())
@@ -494,11 +510,11 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		.setPSignalSemaphores(bHasRenderWork ? &xMemorySemaphore : nullptr)
 		.setSignalSemaphoreCount(bHasRenderWork ? 1 : 0)
 		.setWaitDstStageMask(eMemWaitStages)
-		.setPWaitSemaphores(bShouldWait ? &g_xEngine.VulkanSwapchain().GetCurrentImageAvailableSemaphore() : nullptr)
+		.setPWaitSemaphores(bShouldWait ? &m_pxVulkanSwapchain->GetCurrentImageAvailableSemaphore() : nullptr)
 		.setWaitSemaphoreCount(bShouldWait);
 
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
-	VkCheck(g_xEngine.Vulkan().m_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE));
+	VkCheck(m_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE));
 
 	if (!bHasRenderWork)
 	{
@@ -506,7 +522,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		// Without this, stale command list entries accumulate across frames and can
 		// cause access violations when those entries are processed in subsequent frames
 		// after scene resources have been destroyed and recreated
-		g_xEngine.FluxRenderer().ClearPendingCommandLists();
+		m_pxFluxRenderer->ClearPendingCommandLists();
 		return; // No work to do this frame
 	}
 	
@@ -520,19 +536,19 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		true
 	);
 	
-	g_xEngine.Tasks().SubmitTaskArray(&xRecordingTask);
+	m_pxTasks->SubmitTaskArray(&xRecordingTask);
 	xRecordingTask.WaitUntilComplete();
-	
+
 	// Clear all pending command lists now that recording is complete
-	g_xEngine.FluxRenderer().ClearPendingCommandLists();
-	
+	m_pxFluxRenderer->ClearPendingCommandLists();
+
 	// Submit all worker command buffers in order (0 to 7)
 	// This maintains correct render order since work is distributed contiguously
 	std::vector<vk::CommandBuffer> xCommandBuffersToSubmit;
 	xCommandBuffersToSubmit.reserve(FLUX_NUM_WORKER_THREADS);
 	for (u_int i = 0; i < FLUX_NUM_WORKER_THREADS; i++)
 	{
-		xCommandBuffersToSubmit.push_back(g_xEngine.Vulkan().m_pxCurrentFrame->GetWorkerCommandBuffer(i).GetCurrentCmdBuffer());
+		xCommandBuffersToSubmit.push_back(m_pxCurrentFrame->GetWorkerCommandBuffer(i).GetCurrentCmdBuffer());
 	}
 	
 	// Submit all recorded command buffers in correct order
@@ -549,7 +565,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 			.setPSignalSemaphores(nullptr)
 			.setSignalSemaphoreCount(0);
 
-		VkCheck(g_xEngine.Vulkan().m_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE));
+		VkCheck(m_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE));
 	}
 
 }
@@ -559,7 +575,7 @@ void Zenith_Vulkan::WaitForGPUIdle()
 	// Wait for all GPU work to complete
 	// This is expensive (stalls the entire pipeline) but necessary for critical synchronization
 	// Use cases: scene transitions, shutdown, debugging
-	VkCheck(g_xEngine.Vulkan().m_xDevice.waitIdle());
+	VkCheck(m_xDevice.waitIdle());
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU idle wait completed");
 }
@@ -643,7 +659,7 @@ void Zenith_Vulkan::CreateInstance()
 #else
 		.setEnabledLayerCount(0);
 #endif
-	g_xEngine.Vulkan().m_xInstance = VkUnwrap(vk::createInstance(xInstanceInfo));
+	m_xInstance = VkUnwrap(vk::createInstance(xInstanceInfo));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan instance created");
 }
@@ -679,10 +695,10 @@ void Zenith_Vulkan::CreateDebugMessenger()
 			vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
 		.setPfnUserCallback((PFN_vkDebugUtilsMessengerCallbackEXT)DebugCallback)
 		.setPUserData(nullptr);
-	g_xEngine.Vulkan().m_xDebugMessenger = VkUnwrap(g_xEngine.Vulkan().m_xInstance.createDebugUtilsMessengerEXT(
+	m_xDebugMessenger = VkUnwrap(m_xInstance.createDebugUtilsMessengerEXT(
 		xCreateInfo,
 		nullptr,
-		vk::DispatchLoaderDynamic(g_xEngine.Vulkan().m_xInstance, vkGetInstanceProcAddr)
+		vk::DispatchLoaderDynamic(m_xInstance, vkGetInstanceProcAddr)
 	));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan debug messenger created");
@@ -692,7 +708,7 @@ void Zenith_Vulkan::CreateDebugMessenger()
 void Zenith_Vulkan::CreateSurface()
 {
 	// Use platform abstraction for surface creation
-	g_xEngine.Vulkan().m_xSurface = Zenith_Vulkan_Platform::CreateSurface(g_xEngine.Vulkan().m_xInstance);
+	m_xSurface = Zenith_Vulkan_Platform::CreateSurface(m_xInstance);
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan surface created");
 }
@@ -700,28 +716,28 @@ void Zenith_Vulkan::CreateSurface()
 void Zenith_Vulkan::CreatePhysicalDevice()
 {
 	uint32_t uNumDevices;
-	vk::Result eResult = g_xEngine.Vulkan().m_xInstance.enumeratePhysicalDevices(&uNumDevices, nullptr);
+	vk::Result eResult = m_xInstance.enumeratePhysicalDevices(&uNumDevices, nullptr);
 	Zenith_Assert(eResult == vk::Result::eSuccess && uNumDevices > 0, "Failed to find any physical devices with Vulkan support");
 	Zenith_Log(LOG_CATEGORY_VULKAN, "%u physical vulkan devices to choose from", uNumDevices);
 	std::vector<vk::PhysicalDevice> xDevices;
 	xDevices.resize(uNumDevices);
-	eResult = g_xEngine.Vulkan().m_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
+	eResult = m_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to enumerate physical devices");
 	for (const vk::PhysicalDevice& xDevice : xDevices)
 	{
 		//#TO_TODO: check if physical device is suitable
 		if (true)
 		{
-			g_xEngine.Vulkan().m_xPhysicalDevice = xDevice;
+			m_xPhysicalDevice = xDevice;
 			break;
 		}
 	}
 
-	const vk::PhysicalDeviceProperties& xProps = g_xEngine.Vulkan().m_xPhysicalDevice.getProperties();
-	g_xEngine.Vulkan().m_xGPUCapabilties.m_uMaxTextureWidth = xProps.limits.maxImageDimension2D;
-	g_xEngine.Vulkan().m_xGPUCapabilties.m_uMaxTextureHeight = xProps.limits.maxImageDimension2D;
-	g_xEngine.Vulkan().m_xGPUCapabilties.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
-	g_xEngine.Vulkan().m_xGPUCapabilties.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
+	const vk::PhysicalDeviceProperties& xProps = m_xPhysicalDevice.getProperties();
+	m_xGPUCapabilties.m_uMaxTextureWidth = xProps.limits.maxImageDimension2D;
+	m_xGPUCapabilties.m_uMaxTextureHeight = xProps.limits.maxImageDimension2D;
+	m_xGPUCapabilties.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
+	m_xGPUCapabilties.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU: %s", xProps.deviceName);
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU API version: %u.%u.%u",
@@ -734,7 +750,7 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Max memory alloc count: %u", xProps.limits.maxMemoryAllocationCount);
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Max bound descriptor sets: %u", xProps.limits.maxBoundDescriptorSets);
 
-	vk::PhysicalDeviceMemoryProperties xMemProps = g_xEngine.Vulkan().m_xPhysicalDevice.getMemoryProperties();
+	vk::PhysicalDeviceMemoryProperties xMemProps = m_xPhysicalDevice.getMemoryProperties();
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Memory heaps: %u, Memory types: %u", xMemProps.memoryHeapCount, xMemProps.memoryTypeCount);
 	for (uint32_t i = 0; i < xMemProps.memoryHeapCount; i++)
 	{
@@ -766,7 +782,7 @@ void Zenith_Vulkan::LogFormatSupport()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "=== Format support check ===");
 	for (const FormatCheck& xCheck : axFormats)
 	{
-		vk::FormatProperties xProps = g_xEngine.Vulkan().m_xPhysicalDevice.getFormatProperties(xCheck.m_eFormat);
+		vk::FormatProperties xProps = m_xPhysicalDevice.getFormatProperties(xCheck.m_eFormat);
 		bool bOptimalSupported = (xProps.optimalTilingFeatures & xCheck.m_eRequired) == xCheck.m_eRequired;
 		Zenith_Log(LOG_CATEGORY_VULKAN, "  %s: optimal=%s linear=0x%x optimal=0x%x buffer=0x%x",
 			xCheck.m_szName,
@@ -784,41 +800,41 @@ void Zenith_Vulkan::LogFormatSupport()
 
 void Zenith_Vulkan::CreateQueueFamilies()
 {
-	for (uint32_t& uIndex : g_xEngine.Vulkan().m_auQueueIndices)
+	for (uint32_t& uIndex : m_auQueueIndices)
 	{
 		uIndex = UINT32_MAX;
 	}
 
-	std::vector<vk::QueueFamilyProperties> xQueueFamilyProperties = g_xEngine.Vulkan().m_xPhysicalDevice.getQueueFamilyProperties();
+	std::vector<vk::QueueFamilyProperties> xQueueFamilyProperties = m_xPhysicalDevice.getQueueFamilyProperties();
 
 	VkBool32 uSupportsPresent = false;
 
 	for (uint32_t i = 0; i < xQueueFamilyProperties.size(); ++i)
 	{
-		uSupportsPresent = static_cast<VkBool32>(VkUnwrap(g_xEngine.Vulkan().m_xPhysicalDevice.getSurfaceSupportKHR(i, g_xEngine.Vulkan().m_xSurface)));
+		uSupportsPresent = static_cast<VkBool32>(VkUnwrap(m_xPhysicalDevice.getSurfaceSupportKHR(i, m_xSurface)));
 
-		if (g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_GRAPHICS] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
+		if (m_auQueueIndices[COMMANDTYPE_GRAPHICS] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
 		{
-			g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_GRAPHICS] = i;
-			if (uSupportsPresent && g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_PRESENT] == UINT32_MAX) {
-				g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_PRESENT] = i;
+			m_auQueueIndices[COMMANDTYPE_GRAPHICS] = i;
+			if (uSupportsPresent && m_auQueueIndices[COMMANDTYPE_PRESENT] == UINT32_MAX) {
+				m_auQueueIndices[COMMANDTYPE_PRESENT] = i;
 			}
 		}
 
-		if (g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_GRAPHICS] != i && g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_COMPUTE] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute)
+		if (m_auQueueIndices[COMMANDTYPE_GRAPHICS] != i && m_auQueueIndices[COMMANDTYPE_COMPUTE] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute)
 		{
-			g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_COMPUTE] = i;
+			m_auQueueIndices[COMMANDTYPE_COMPUTE] = i;
 		}
 
-		if (g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_COPY] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eTransfer && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
+		if (m_auQueueIndices[COMMANDTYPE_COPY] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eTransfer && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
 		{
-			g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_COPY] = i;
+			m_auQueueIndices[COMMANDTYPE_COPY] = i;
 		}
 	}
 
 	for (uint32_t uType = 0; uType < COMMANDTYPE_MAX; uType++)
 	{
-		Zenith_Assert(g_xEngine.Vulkan().m_auQueueIndices[uType] != UINT32_MAX, "Couldn't find queue index");
+		Zenith_Assert(m_auQueueIndices[uType] != UINT32_MAX, "Couldn't find queue index");
 	}
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan queue families created");
@@ -830,7 +846,7 @@ void Zenith_Vulkan::CreateDevice()
 	std::set<uint32_t> xUniqueFamilies;
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
-		xUniqueFamilies.insert(g_xEngine.Vulkan().m_auQueueIndices[i]);
+		xUniqueFamilies.insert(m_auQueueIndices[i]);
 	}
 	float fQueuePriority = 1;
 	for (uint32_t uFamily : xUniqueFamilies)
@@ -885,18 +901,18 @@ void Zenith_Vulkan::CreateDevice()
 	vk::PhysicalDeviceFeatures2 xTemp;
 	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR xTempBary;
 	xTemp.setPNext(&xTempBary);
-	g_xEngine.Vulkan().m_xPhysicalDevice.getFeatures2(&xTemp);
+	m_xPhysicalDevice.getFeatures2(&xTemp);
 	xTempBary.setPNext(&xIndexingFeatures);
 	xDeviceCreateInfo.setPNext(&xTempBary);
 #else
 	xDeviceCreateInfo.setPNext(&xIndexingFeatures);
 #endif
 
-	g_xEngine.Vulkan().m_xDevice = VkUnwrap(g_xEngine.Vulkan().m_xPhysicalDevice.createDevice(xDeviceCreateInfo));
+	m_xDevice = VkUnwrap(m_xPhysicalDevice.createDevice(xDeviceCreateInfo));
 
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
-		g_xEngine.Vulkan().m_axQueues[i] = g_xEngine.Vulkan().m_xDevice.getQueue(g_xEngine.Vulkan().m_auQueueIndices[i], 0);
+		m_axQueues[i] = m_xDevice.getQueue(m_auQueueIndices[i], 0);
 	}
 
 
@@ -907,7 +923,7 @@ void Zenith_Vulkan::CreateCommandPools()
 {
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
-		g_xEngine.Vulkan().m_axCommandPools[i] = VkUnwrap(g_xEngine.Vulkan().m_xDevice.createCommandPool(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_xEngine.Vulkan().m_auQueueIndices[i])));
+		m_axCommandPools[i] = VkUnwrap(m_xDevice.createCommandPool(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_auQueueIndices[i])));
 	}
 	
 	// Note: Worker thread command pools are now created per-frame in Zenith_Vulkan_PerFrame::Initialise()
@@ -938,7 +954,7 @@ void Zenith_Vulkan::CreateDefaultDescriptorPool()
 		.setMaxSets(10000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
-	g_xEngine.Vulkan().m_xDefaultDescriptorPool = VkUnwrap(g_xEngine.Vulkan().m_xDevice.createDescriptorPool(xPoolInfo));
+	m_xDefaultDescriptorPool = VkUnwrap(m_xDevice.createDescriptorPool(xPoolInfo));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan default descriptor pool created");
 }
@@ -956,7 +972,7 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 		.setMaxSets(1)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
-	g_xEngine.Vulkan().m_xBindlessTexturesDescriptorPool = VkUnwrap(g_xEngine.Vulkan().m_xDevice.createDescriptorPool(xPoolInfo));
+	m_xBindlessTexturesDescriptorPool = VkUnwrap(m_xDevice.createDescriptorPool(xPoolInfo));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan bindless textures descriptor pool created");
 
@@ -979,14 +995,14 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 		.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool)
 		.setPNext(&xBindingFlagsInfo);
 
-	g_xEngine.Vulkan().m_xBindlessTexturesDescriptorSetLayout = VkUnwrap(g_xEngine.Vulkan().m_xDevice.createDescriptorSetLayout(xLayoutInfo));
+	m_xBindlessTexturesDescriptorSetLayout = VkUnwrap(m_xDevice.createDescriptorSetLayout(xLayoutInfo));
 
 	vk::DescriptorSetAllocateInfo xSetInfo = vk::DescriptorSetAllocateInfo()
-		.setDescriptorPool(g_xEngine.Vulkan().m_xBindlessTexturesDescriptorPool)
+		.setDescriptorPool(m_xBindlessTexturesDescriptorPool)
 		.setDescriptorSetCount(1)
-		.setPSetLayouts(&g_xEngine.Vulkan().m_xBindlessTexturesDescriptorSetLayout);
+		.setPSetLayouts(&m_xBindlessTexturesDescriptorSetLayout);
 
-	g_xEngine.Vulkan().m_xBindlessTexturesDescriptorSet = VkUnwrap(g_xEngine.Vulkan().m_xDevice.allocateDescriptorSets(xSetInfo))[0];
+	m_xBindlessTexturesDescriptorSet = VkUnwrap(m_xDevice.allocateDescriptorSets(xSetInfo))[0];
 }
 
 void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler)
@@ -997,19 +1013,19 @@ void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImag
 		.setSampler(xSampler);
 
 	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-		.setDstSet(g_xEngine.Vulkan().m_xBindlessTexturesDescriptorSet)
+		.setDstSet(m_xBindlessTexturesDescriptorSet)
 		.setDstBinding(0)
 		.setDstArrayElement(uIndex)
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 		.setDescriptorCount(1)
 		.setPImageInfo(&xImageInfo);
 
-	g_xEngine.Vulkan().m_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
+	m_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
 }
 
 void Zenith_Vulkan::WriteBindlessTextureSlot(uint32_t uIndex, const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler)
 {
-	const vk::ImageView xVkView = g_xEngine.VulkanMemory().GetImageView(xView.m_xImageViewHandle);
+	const vk::ImageView xVkView = m_pxVulkanMemory->GetImageView(xView.m_xImageViewHandle);
 	WriteBindlessDescriptor(uIndex, xVkView, xSampler.GetSampler());
 }
 
@@ -1028,13 +1044,13 @@ uint64_t Zenith_Vulkan::CreateImGuiTextureID(const Flux_ShaderResourceView& xVie
 	vk::DescriptorSetAllocateInfo xAllocInfo = vk::DescriptorSetAllocateInfo()
 		.setDescriptorPool(GetPerFrameDescriptorPool(0))
 		.setDescriptorSetCount(1)
-		.setPSetLayouts(&g_xEngine.Vulkan().m_xImGuiPreviewLayout);
+		.setPSetLayouts(&m_xImGuiPreviewLayout);
 
-	vk::DescriptorSet xSet = g_xEngine.Vulkan().m_xDevice.allocateDescriptorSets(xAllocInfo)[0];
+	vk::DescriptorSet xSet = m_xDevice.allocateDescriptorSets(xAllocInfo)[0];
 
 	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
 		.setSampler(xSampler.GetSampler())
-		.setImageView(g_xEngine.VulkanMemory().GetImageView(xView.m_xImageViewHandle))
+		.setImageView(m_pxVulkanMemory->GetImageView(xView.m_xImageViewHandle))
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
 	vk::WriteDescriptorSet xWriteInfo = vk::WriteDescriptorSet()
@@ -1045,7 +1061,7 @@ uint64_t Zenith_Vulkan::CreateImGuiTextureID(const Flux_ShaderResourceView& xVie
 		.setDescriptorCount(1)
 		.setPImageInfo(&xImageInfo);
 
-	g_xEngine.Vulkan().m_xDevice.updateDescriptorSets(1, &xWriteInfo, 0, nullptr);
+	m_xDevice.updateDescriptorSets(1, &xWriteInfo, 0, nullptr);
 
 	return reinterpret_cast<uint64_t>(static_cast<VkDescriptorSet>(xSet));
 }
@@ -1077,7 +1093,7 @@ void Zenith_Vulkan::InitialiseImGui()
 		.setMaxSets(1000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 
-	g_xEngine.Vulkan().m_xImGuiDescriptorPool = g_xEngine.Vulkan().m_xDevice.createDescriptorPool(xImGuiPoolInfo);
+	m_xImGuiDescriptorPool = m_xDevice.createDescriptorPool(xImGuiPoolInfo);
 
 	// One reusable layout for ImGui preview widgets (CreateImGuiTextureID). The
 	// layout never changes — 1 combined-image-sampler binding in the fragment
@@ -1090,7 +1106,7 @@ void Zenith_Vulkan::InitialiseImGui()
 	vk::DescriptorSetLayoutCreateInfo xPreviewLayoutInfo = vk::DescriptorSetLayoutCreateInfo()
 		.setBindingCount(1)
 		.setPBindings(&xPreviewBinding);
-	g_xEngine.Vulkan().m_xImGuiPreviewLayout = g_xEngine.Vulkan().m_xDevice.createDescriptorSetLayout(xPreviewLayoutInfo);
+	m_xImGuiPreviewLayout = m_xDevice.createDescriptorSetLayout(xPreviewLayoutInfo);
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui dedicated descriptor pool created");
 
@@ -1113,17 +1129,17 @@ void Zenith_Vulkan::InitialiseImGui()
 	ImGui_ImplGlfw_InitForVulkan(pxWindow, true);
 	
 	ImGui_ImplVulkan_InitInfo xInitInfo = {};
-	xInitInfo.Instance = g_xEngine.Vulkan().m_xInstance;
-	xInitInfo.PhysicalDevice = g_xEngine.Vulkan().m_xPhysicalDevice;
-	xInitInfo.Device = g_xEngine.Vulkan().m_xDevice;
-	xInitInfo.QueueFamily = g_xEngine.Vulkan().m_auQueueIndices[COMMANDTYPE_GRAPHICS];
-	xInitInfo.Queue = g_xEngine.Vulkan().m_axQueues[COMMANDTYPE_GRAPHICS];
-	xInitInfo.DescriptorPool = g_xEngine.Vulkan().m_xImGuiDescriptorPool;  // Use dedicated ImGui pool
+	xInitInfo.Instance = m_xInstance;
+	xInitInfo.PhysicalDevice = m_xPhysicalDevice;
+	xInitInfo.Device = m_xDevice;
+	xInitInfo.QueueFamily = m_auQueueIndices[COMMANDTYPE_GRAPHICS];
+	xInitInfo.Queue = m_axQueues[COMMANDTYPE_GRAPHICS];
+	xInitInfo.DescriptorPool = m_xImGuiDescriptorPool;  // Use dedicated ImGui pool
 	xInitInfo.MinImageCount = MAX_FRAMES_IN_FLIGHT;
 	xInitInfo.ImageCount = MAX_FRAMES_IN_FLIGHT;
 	
 	// Set up pipeline info for main viewport (newer ImGui API)
-	xInitInfo.PipelineInfoMain.RenderPass = g_xEngine.Vulkan().m_xImGuiRenderPass;
+	xInitInfo.PipelineInfoMain.RenderPass = m_xImGuiRenderPass;
 	xInitInfo.PipelineInfoMain.Subpass = 0;
 	xInitInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 	
@@ -1137,7 +1153,7 @@ void Zenith_Vulkan::InitialiseImGuiRenderPass()
 {
 	// Use swapchain format (BGRA8_SRGB) since ImGui will render directly to the swapchain
 	vk::AttachmentDescription xColorAttachment = vk::AttachmentDescription()
-		.setFormat(g_xEngine.VulkanSwapchain().GetFormat())
+		.setFormat(m_pxVulkanSwapchain->GetFormat())
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setLoadOp(vk::AttachmentLoadOp::eLoad)
 		.setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -1163,7 +1179,7 @@ void Zenith_Vulkan::InitialiseImGuiRenderPass()
 		.setDependencyCount(0)
 		.setPDependencies(nullptr);
 	
-	g_xEngine.Vulkan().m_xImGuiRenderPass = g_xEngine.Vulkan().m_xDevice.createRenderPass(xRenderPassInfo);
+	m_xImGuiRenderPass = m_xDevice.createRenderPass(xRenderPassInfo);
 }
 
 void Zenith_Vulkan::ImGuiBeginFrame()
@@ -1178,7 +1194,7 @@ void Zenith_Vulkan::ImGuiBeginFrame()
 void Zenith_Vulkan::ShutdownImGui()
 {
 	// Wait for GPU to finish before destroying ImGui resources
-	VkCheck(g_xEngine.Vulkan().m_xDevice.waitIdle());
+	VkCheck(m_xDevice.waitIdle());
 
 	// Shutdown ImGui backends
 	ImGui_ImplVulkan_Shutdown();
@@ -1188,10 +1204,10 @@ void Zenith_Vulkan::ShutdownImGui()
 	ImGui::DestroyContext();
 
 	// Destroy ImGui Vulkan resources
-	g_xEngine.Vulkan().m_xDevice.destroyRenderPass(g_xEngine.Vulkan().m_xImGuiRenderPass);
-	g_xEngine.Vulkan().m_xDevice.destroyDescriptorPool(g_xEngine.Vulkan().m_xImGuiDescriptorPool);
-	g_xEngine.Vulkan().m_xDevice.destroyDescriptorSetLayout(g_xEngine.Vulkan().m_xImGuiPreviewLayout);
-	g_xEngine.Vulkan().m_xImGuiPreviewLayout = vk::DescriptorSetLayout();
+	m_xDevice.destroyRenderPass(m_xImGuiRenderPass);
+	m_xDevice.destroyDescriptorPool(m_xImGuiDescriptorPool);
+	m_xDevice.destroyDescriptorSetLayout(m_xImGuiPreviewLayout);
+	m_xImGuiPreviewLayout = vk::DescriptorSetLayout();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui shut down");
 }
@@ -1392,19 +1408,19 @@ Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
 	Flux_VRAMHandle xHandle;
 	
 	// Check if there are any free handles to recycle
-	if (!g_xEngine.Vulkan().m_xFreeVRAMHandles.empty())
+	if (!m_xFreeVRAMHandles.empty())
 	{
-		uint32_t uFreeIndex = g_xEngine.Vulkan().m_xFreeVRAMHandles.back();
-		g_xEngine.Vulkan().m_xFreeVRAMHandles.pop_back();
-		
+		uint32_t uFreeIndex = m_xFreeVRAMHandles.back();
+		m_xFreeVRAMHandles.pop_back();
+
 		xHandle.SetValue(uFreeIndex);
-		g_xEngine.Vulkan().m_xVRAMRegistry[uFreeIndex] = pxVRAM;
+		m_xVRAMRegistry[uFreeIndex] = pxVRAM;
 	}
 	else
 	{
 		// No free handles, grow the registry
-		xHandle.SetValue(static_cast<u_int>(g_xEngine.Vulkan().m_xVRAMRegistry.size()));
-		g_xEngine.Vulkan().m_xVRAMRegistry.push_back(pxVRAM);
+		xHandle.SetValue(static_cast<u_int>(m_xVRAMRegistry.size()));
+		m_xVRAMRegistry.push_back(pxVRAM);
 	}
 	
 	return xHandle;
@@ -1420,8 +1436,8 @@ Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(const Flux_VRAMHandle xHandle)
 	{
 		return nullptr;
 	}
-	Zenith_Assert(xHandle.AsUInt() < g_xEngine.Vulkan().m_xVRAMRegistry.size(), "Invalid VRAM handle");
-	return g_xEngine.Vulkan().m_xVRAMRegistry[xHandle.AsUInt()];
+	Zenith_Assert(xHandle.AsUInt() < m_xVRAMRegistry.size(), "Invalid VRAM handle");
+	return m_xVRAMRegistry[xHandle.AsUInt()];
 }
 
 void Zenith_Vulkan::ReleaseVRAMHandle(const Flux_VRAMHandle xHandle)
@@ -1431,13 +1447,13 @@ void Zenith_Vulkan::ReleaseVRAMHandle(const Flux_VRAMHandle xHandle)
 		return;
 	}
 	
-	Zenith_Assert(xHandle.AsUInt() < g_xEngine.Vulkan().m_xVRAMRegistry.size(), "Invalid VRAM handle");
-	
+	Zenith_Assert(xHandle.AsUInt() < m_xVRAMRegistry.size(), "Invalid VRAM handle");
+
 	// Mark slot as free by setting to nullptr
-	g_xEngine.Vulkan().m_xVRAMRegistry[xHandle.AsUInt()] = nullptr;
-	
+	m_xVRAMRegistry[xHandle.AsUInt()] = nullptr;
+
 	// Add index to free list for recycling
-	g_xEngine.Vulkan().m_xFreeVRAMHandles.push_back(xHandle.AsUInt());
+	m_xFreeVRAMHandles.push_back(xHandle.AsUInt());
 }
 
 vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
@@ -1560,5 +1576,5 @@ vk::DescriptorSet Zenith_Vulkan::CreateDescriptorSet(const vk::DescriptorSetLayo
 		.setDescriptorSetCount(1)
 		.setPSetLayouts(&xLayout);
 
-	return VkUnwrap(g_xEngine.Vulkan().m_xDevice.allocateDescriptorSets(xInfo))[0];
+	return VkUnwrap(m_xDevice.allocateDescriptorSets(xInfo))[0];
 }
