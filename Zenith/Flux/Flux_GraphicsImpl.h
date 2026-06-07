@@ -5,6 +5,14 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 
+// Cross-subsystem dependencies injected into Initialise (aggressive DI pass):
+// engine-infra + Shadows reaches that used to be g_xEngine.X() lookups inside
+// instance methods are now passed in and stored as member pointers. Forward-
+// declared here; full headers are pulled in by Flux_Graphics.cpp.
+class Zenith_Vulkan_MemoryManager;
+class Zenith_Vulkan_Swapchain;
+class Flux_ShadowsImpl;
+
 // ---- Core render-target format constants --------------------------------
 static constexpr TextureFormat MRT_FORMAT_DIFFUSE         = TEXTURE_FORMAT_RGBA8_UNORM;
 static constexpr TextureFormat MRT_FORMAT_NORMALSAMBIENT  = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
@@ -47,7 +55,7 @@ public:
 	};
 
 	void InitialiseSamplers();
-	void Initialise();
+	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan_Swapchain& xVulkanSwapchain, Flux_ShadowsImpl& xShadows);
 	void ReleaseAssetReferences();
 	void Shutdown();
 	void UploadFrameConstants();
@@ -116,4 +124,9 @@ public:
 	Flux_TransientHandle        m_xFinalRTHandle;
 	Flux_TransientHandle        m_xDepthHandle;
 	Flux_RenderGraph*           m_pxGraph = nullptr;
+
+	// Injected cross-subsystem deps (set in Initialise, nulled in Shutdown).
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Zenith_Vulkan_Swapchain*     m_pxVulkanSwapchain = nullptr;
+	Flux_ShadowsImpl*            m_pxShadows = nullptr;
 };

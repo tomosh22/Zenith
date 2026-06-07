@@ -225,7 +225,7 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_ShaderHotReload::Initialise();
 #endif
 
-	g_xEngine.FluxGraphics().Initialise();
+	g_xEngine.FluxGraphics().Initialise(g_xEngine.VulkanMemory(), g_xEngine.VulkanSwapchain(), g_xEngine.Shadows());
 
 #ifdef ZENITH_TOOLS
 	// ImGui is the tail of the inline prologue. It depends only on the Vulkan
