@@ -55,6 +55,14 @@ public:
 	void Render(void*);
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// Promoted from file-static free functions so their per-emitter / per-buffer
+	// self-references route through 'this' instead of re-entering via
+	// g_xEngine.Particles(). Called from Render (main-thread Prepare). The ECS
+	// gather inside UpdateEmittersAndBuildInstanceBuffer keeps g_xEngine.Scenes()
+	// self-routed (injecting it would reopen the Flux<->ECS layering gate).
+	void UpdateEmittersAndBuildInstanceBuffer(float fDt);
+	void UploadInstanceData();
+
 	Flux_Shader              m_xShader;
 	Flux_Pipeline            m_xPipelineAlpha;
 	Flux_Pipeline            m_xPipelineAdditive;

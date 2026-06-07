@@ -139,10 +139,14 @@ void Flux_ParticlesImpl::Shutdown()
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
 }
 
-static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
+void Flux_ParticlesImpl::UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
-	g_xEngine.Particles().m_uAlphaInstanceCount = 0;
-	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
+	// Promoted from a file-static free function to an instance member so the
+	// per-emitter self-references resolve through 'this' instead of re-entering
+	// via g_xEngine.Particles(). g_xEngine.Scenes() (the ECS Prepare-gather) STAYS
+	// self-routed — injecting it would reopen the Flux<->ECS layering gate.
+	m_uAlphaInstanceCount = 0;
+	m_uAdditiveInstanceCount = 0;
 
 	// Query all particle emitter components from ALL loaded scenes
 	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
@@ -154,7 +158,7 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 		}
 
 		pxSceneData->Query<Zenith_ParticleEmitterComponent>()
-			.ForEach([fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
+			.ForEach([this, fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
 			{
 				// Update ALL emitters (handles spawning for both CPU and GPU)
 				xEmitter.Update(fDt);
@@ -173,8 +177,8 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
 				bool bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
 
-				Flux_ParticleInstance* pxTargetBuffer = bAdditive ? g_xEngine.Particles().m_axAdditiveInstances : g_xEngine.Particles().m_axAlphaInstances;
-				uint32_t& uTargetCount = bAdditive ? g_xEngine.Particles().m_uAdditiveInstanceCount : g_xEngine.Particles().m_uAlphaInstanceCount;
+				Flux_ParticleInstance* pxTargetBuffer = bAdditive ? m_axAdditiveInstances : m_axAlphaInstances;
+				uint32_t& uTargetCount = bAdditive ? m_uAdditiveInstanceCount : m_uAlphaInstanceCount;
 
 				for (uint32_t i = 0; i < uAliveCount && uTargetCount < s_uMaxParticles; ++i)
 				{
@@ -190,22 +194,25 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 	}
 }
 
-static void UploadInstanceData()
+void Flux_ParticlesImpl::UploadInstanceData()
 {
-	if (g_xEngine.Particles().m_uAlphaInstanceCount > 0)
+	// Promoted from a file-static free function to an instance member: buffer/count
+	// self-references now resolve through 'this'. VulkanMemory() stays a direct
+	// g_xEngine lookup (engine-infra carve-out, same as SSAO/Quads).
+	if (m_uAlphaInstanceCount > 0)
 	{
 		g_xEngine.VulkanMemory().UploadBufferData(
-			g_xEngine.Particles().m_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
-			g_xEngine.Particles().m_axAlphaInstances,
-			g_xEngine.Particles().m_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
+			m_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
+			m_axAlphaInstances,
+			m_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
 		);
 	}
-	if (g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
+	if (m_uAdditiveInstanceCount > 0)
 	{
 		g_xEngine.VulkanMemory().UploadBufferData(
-			g_xEngine.Particles().m_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
-			g_xEngine.Particles().m_axAdditiveInstances,
-			g_xEngine.Particles().m_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)
+			m_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
+			m_axAdditiveInstances,
+			m_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)
 		);
 	}
 }
@@ -217,7 +224,8 @@ void Flux_ParticlesImpl::Render(void*)
 		return;
 	}
 
-	// Update all emitters (both CPU and GPU) and build the CPU instance buffers
+	// Update all emitters (both CPU and GPU) and build the CPU instance buffers.
+	// Frame() stays a direct g_xEngine lookup (engine-infra carve-out).
 	float fDt = g_xEngine.Frame().GetDt();
 	UpdateEmittersAndBuildInstanceBuffer(fDt);
 
