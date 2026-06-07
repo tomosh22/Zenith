@@ -54,16 +54,19 @@ void Flux_SDFsImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(this->m_xPipeline, xPipelineSpec);
 }
 
-void Flux_SDFsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
+void Flux_SDFsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR,
+	Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame)
 {
-	// Wave-14 DI seam: store the injected cross-subsystem deps. Every later
-	// instance-method reach-in routes through these instead of g_xEngine.
-	m_pxGraphics = &xGraphics;
-	m_pxHDR      = &xHDR;
+	// Wave-14 DI seam (Wave-4 extension): store the injected cross-subsystem deps.
+	// Every later instance-method reach-in routes through these instead of g_xEngine.
+	m_pxGraphics     = &xGraphics;
+	m_pxHDR          = &xHDR;
+	m_pxVulkanMemory = &xVulkanMemory;
+	m_pxFrame        = &xFrame;
 
 	BuildPipelines();
 
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), this->m_xSpheresBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), this->m_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif
@@ -81,29 +84,31 @@ void Flux_SDFsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
 
 void Flux_SDFsImpl::Shutdown()
 {
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(this->m_xSpheresBuffer);
+	m_pxVulkanMemory->DestroyDynamicConstantBuffer(this->m_xSpheresBuffer);
 	// Drop the injected deps so the instance returns to a clean default state.
-	m_pxGraphics = nullptr;
-	m_pxHDR      = nullptr;
+	m_pxGraphics     = nullptr;
+	m_pxHDR          = nullptr;
+	m_pxVulkanMemory = nullptr;
+	m_pxFrame        = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs shut down");
 }
 
-void UploadSpheres()
+void Flux_SDFsImpl::UploadSpheres()
 {
 	s_axSphereData.m_uNumSpheres = 2;
 
 	{
 		Sphere& xSphere = s_axSphereData.m_axSpheres[0];
-		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + sin(g_xEngine.Frame().GetTimePassed()) * 200, 2000, 100);
+		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + sin(m_pxFrame->GetTimePassed()) * 200, 2000, 100);
 		xSphere.m_xColour = Zenith_Maths::Vector4(1., 0., 0., 1.);
 	}
 	{
 		Sphere& xSphere = s_axSphereData.m_axSpheres[1];
-		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + cos(g_xEngine.Frame().GetTimePassed()) * 200, 2000, 100);
+		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + cos(m_pxFrame->GetTimePassed()) * 200, 2000, 100);
 		xSphere.m_xColour = Zenith_Maths::Vector4(0., 1., 0., 1.);
 	}
 
-	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.SDFs().m_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
+	m_pxVulkanMemory->UploadBufferData(this->m_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
 }
 
 void Flux_SDFsImpl::Render(void*)
@@ -124,13 +129,13 @@ static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	UploadSpheres();
-
 	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
 	// cannot capture, so it re-enters via g_xEngine.SDFs() to reach the singleton
-	// instance, then routes its FluxGraphics reach-ins through the injected
-	// member (mirrors ExecuteSSAOGenerate).
+	// instance, then routes its reach-ins (UploadSpheres + FluxGraphics) through
+	// the instance's injected members (mirrors ExecuteSSAOGenerate).
 	Flux_SDFsImpl& xSDFs = g_xEngine.SDFs();
+
+	xSDFs.UploadSpheres();
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSDFs.m_xPipeline);
 

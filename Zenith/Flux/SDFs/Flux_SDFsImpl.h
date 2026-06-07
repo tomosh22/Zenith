@@ -11,6 +11,8 @@ class Flux_RenderGraph;
 // seams). Forward-declared here; full headers are pulled in by Flux_SDFs.cpp.
 class Flux_GraphicsImpl;
 class Flux_HDRImpl;
+class Zenith_Vulkan_MemoryManager;
+class FrameContext;
 
 // Phase 9: state + behaviour for SDFs subsystem.
 //
@@ -35,11 +37,17 @@ public:
 	// Cross-subsystem deps are injected here and stored into the member pointers
 	// below. This is the WS9.2 DI template: explicit ref params -> stored member
 	// pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR,
+		Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame);
 	void BuildPipelines();
 	void Shutdown();
 
 	void Render(void*);
+
+	// Refresh the sphere constant buffer for this frame. Was a file-static free
+	// function; promoted to a member so its VulkanMemory + Frame reach-ins route
+	// through the injected deps instead of g_xEngine (Wave-4 DI-seam extension).
+	void UploadSpheres();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
@@ -52,4 +60,6 @@ public:
 	// path wires them through the Flux_FeatureRegistry SDFs init trampoline.
 	Flux_GraphicsImpl* m_pxGraphics = nullptr;
 	Flux_HDRImpl*      m_pxHDR      = nullptr;
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	FrameContext*                m_pxFrame        = nullptr;
 };
