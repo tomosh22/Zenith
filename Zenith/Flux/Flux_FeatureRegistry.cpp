@@ -404,19 +404,21 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToShutdownWalk(uSkybox);
 	xReg.AddToShutdownWalk(uShadows);
 
-#if defined(ZENITH_ASSERT) || defined(ZENITH_DEBUG)
+#ifdef ZENITH_RUNTIME_CHECKS
 	xReg.VerifyOrder();
 #endif
 }
 
-#if defined(ZENITH_ASSERT) || defined(ZENITH_DEBUG)
+#ifdef ZENITH_RUNTIME_CHECKS
 // ---------------------------------------------------------------------------
-// GOLDEN-ORDER ASSERT (mandatory backstop).
+// GOLDEN-ORDER CHECK (W6.2: release-survivable lifecycle backstop).
 //
 // Each golden array is transcribed from the pre-refactor Flux.cpp and is the
-// authority. VerifyOrder asserts the registry's emitted sequences EXACTLY match
-// them, so any future accidental reorder of the Register / AddTo* calls trips a
-// hard break at boot rather than silently corrupting init / render / teardown.
+// authority. VerifyOrder checks the registry's emitted sequences EXACTLY match
+// them, so any future accidental reorder of the Register / AddTo* calls is caught
+// at boot (logged via Zenith_Check, which survives Release — only a future Final
+// config that undefines ZENITH_RUNTIME_CHECKS strips it) rather than silently
+// corrupting init / render / teardown.
 // ---------------------------------------------------------------------------
 namespace
 {
@@ -522,12 +524,12 @@ namespace
 void Flux_FeatureRegistry::VerifyOrder() const
 {
 	// ---- INIT order ----
-	Zenith_Assert(m_uNumFeatures == COUNT_OF(s_aszGoldenInitOrder),
+	Zenith_Check(m_uNumFeatures == COUNT_OF(s_aszGoldenInitOrder),
 		"Flux_FeatureRegistry::VerifyOrder: init count %u != golden %u — a feature was added/removed without updating the golden init array",
 		m_uNumFeatures, (u_int)COUNT_OF(s_aszGoldenInitOrder));
 	for (u_int u = 0; u < m_uNumFeatures; u++)
 	{
-		Zenith_Assert(strcmp(m_axFeatures[u].m_szName, s_aszGoldenInitOrder[u]) == 0,
+		Zenith_Check(strcmp(m_axFeatures[u].m_szName, s_aszGoldenInitOrder[u]) == 0,
 			"Flux_FeatureRegistry::VerifyOrder: init order mismatch at %u: registry '%s' != golden '%s'",
 			u, m_axFeatures[u].m_szName, s_aszGoldenInitOrder[u]);
 	}
@@ -553,30 +555,30 @@ void Flux_FeatureRegistry::VerifyOrder() const
 		{
 			if (m_aeSetupPhase[u] != xGolden.ePhase)
 				continue;
-			Zenith_Assert(uSeen < xGolden.uCount,
+			Zenith_Check(uSeen < xGolden.uCount,
 				"Flux_FeatureRegistry::VerifyOrder: setup phase %u has more features than golden (%u)",
 				(u_int)xGolden.ePhase, xGolden.uCount);
 			const char* szName = m_axFeatures[m_auSetupOrder[u]].m_szName;
-			Zenith_Assert(strcmp(szName, xGolden.aszGolden[uSeen]) == 0,
+			Zenith_Check(strcmp(szName, xGolden.aszGolden[uSeen]) == 0,
 				"Flux_FeatureRegistry::VerifyOrder: setup phase %u mismatch at %u: registry '%s' != golden '%s'",
 				(u_int)xGolden.ePhase, uSeen, szName, xGolden.aszGolden[uSeen]);
 			uSeen++;
 		}
-		Zenith_Assert(uSeen == xGolden.uCount,
+		Zenith_Check(uSeen == xGolden.uCount,
 			"Flux_FeatureRegistry::VerifyOrder: setup phase %u count %u != golden %u",
 			(u_int)xGolden.ePhase, uSeen, xGolden.uCount);
 	}
 
 	// ---- SHUTDOWN order ----
-	Zenith_Assert(m_uNumShutdown == COUNT_OF(s_aszGoldenShutdownOrder),
+	Zenith_Check(m_uNumShutdown == COUNT_OF(s_aszGoldenShutdownOrder),
 		"Flux_FeatureRegistry::VerifyOrder: shutdown count %u != golden %u",
 		m_uNumShutdown, (u_int)COUNT_OF(s_aszGoldenShutdownOrder));
 	for (u_int u = 0; u < m_uNumShutdown; u++)
 	{
 		const char* szName = m_axFeatures[m_auShutdownOrder[u]].m_szName;
-		Zenith_Assert(strcmp(szName, s_aszGoldenShutdownOrder[u]) == 0,
+		Zenith_Check(strcmp(szName, s_aszGoldenShutdownOrder[u]) == 0,
 			"Flux_FeatureRegistry::VerifyOrder: shutdown order mismatch at %u: registry '%s' != golden '%s'",
 			u, szName, s_aszGoldenShutdownOrder[u]);
 	}
 }
-#endif // ZENITH_ASSERT || ZENITH_DEBUG
+#endif // ZENITH_RUNTIME_CHECKS

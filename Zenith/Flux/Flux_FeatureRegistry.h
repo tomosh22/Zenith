@@ -128,12 +128,13 @@ public:
 	// Walk the explicit shutdown order, invoking m_pfnShutdown where non-null.
 	void RunShutdown() const;
 
-#if defined(ZENITH_ASSERT) || defined(ZENITH_DEBUG)
-	// Debug backstop: assert the emitted init-name sequence, each setup sub-walk
-	// name sequence, and the shutdown-name sequence EXACTLY equal the golden
+#ifdef ZENITH_RUNTIME_CHECKS
+	// Lifecycle backstop (W6.2): verify the emitted init-name sequence, each setup
+	// sub-walk name sequence, and the shutdown-name sequence EXACTLY equal the golden
 	// arrays transcribed from the pre-refactor Flux.cpp. Called at the tail of
-	// RegisterDefaultFeatures. A reorder fires here at boot rather than as a
-	// subtle render/teardown corruption later.
+	// RegisterDefaultFeatures. A reorder is caught here at boot (via Zenith_Check, so
+	// it now SURVIVES Release builds — not just Debug) rather than as a subtle
+	// render/teardown corruption later.
 	void VerifyOrder() const;
 #endif
 
