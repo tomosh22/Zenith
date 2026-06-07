@@ -2,8 +2,9 @@
 #
 # This workflow used to also build Games/Test (a project that no longer
 # exists; the build was red since at least 2026-05-07). The build job
-# was removed once .github/workflows/dp-pr.yml became the canonical DP
-# build. Complexity gate kept because it has cross-game value -- it
+# was removed once .github/workflows/dp-tests.yml became the canonical
+# DP build (it compiles + links the game before running the test suite).
+# Complexity gate kept because it has cross-game value -- it
 # catches engine-source complexity regressions independent of any
 # specific game's build.
 #

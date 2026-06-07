@@ -133,7 +133,7 @@ public class GameProject : ZenithBaseProject
 		// exe failing with STATUS_DLL_NOT_FOUND on machines that hadn't
 		// manually populated the output dir from another game's build. The
 		// wildcard is a no-op on CI runners that only have a placeholder
-		// slang.dll in Middleware/slang/bin (per dp-pr.yml).
+		// slang.dll in Middleware/slang/bin.
 		if (target.Platform == Platform.win64)
 		{
 			// Use zenithRoot which is the actual project root (one level up from Build/)
