@@ -2,7 +2,7 @@
   "name": "Test_T0NavMesh_QueryCountIncrements",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.237,
+  "durationMs": 0.235,
   "failures": [],
   "skipped": false
 }

@@ -1,0 +1,8 @@
+{
+  "name": "CB_Boot",
+  "passed": true,
+  "frames": 6,
+  "durationMs": 0.124,
+  "failures": [],
+  "skipped": false
+}

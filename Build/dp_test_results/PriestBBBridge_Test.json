@@ -1,8 +1,8 @@
 {
   "name": "PriestBBBridge_Test",
-  "passed": false,
-  "frames": 9,
-  "durationMs": 878.588,
+  "passed": true,
+  "frames": 5,
+  "durationMs": 976.587,
   "failures": [],
   "skipped": false
 }

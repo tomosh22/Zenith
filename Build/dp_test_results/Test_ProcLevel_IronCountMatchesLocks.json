@@ -2,7 +2,7 @@
   "name": "Test_ProcLevel_IronCountMatchesLocks",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.446,
+  "durationMs": 0.229,
   "failures": [],
   "skipped": false
 }
