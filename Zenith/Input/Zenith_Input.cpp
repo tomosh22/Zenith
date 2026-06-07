@@ -8,10 +8,11 @@
 #endif
 
 // Phase 5.5a: per-frame input state lives on Zenith_Input held by
-// Zenith_Engine. Every former file-static (g_xEngine.Input().m_xFrameKeyPresses /
-// g_xEngine.Input().m_xLastMousePosition / g_xEngine.Input().m_xMouseDelta / g_xEngine.Input().m_fMouseWheelDelta / g_xEngine.Input().m_bFirstFrame
-// / g_xEngine.Input().m_bSimWasEnabledLastFrame / g_xEngine.Input().m_xLastGamepadState / g_xEngine.Input().m_xCurrentGamepadState
-// / g_xEngine.Input().m_bGamepadStateInitialized) is reached via g_xEngine.Input().m_xXxx.
+// Zenith_Engine. Within these instance methods the per-frame state
+// (m_xFrameKeyPresses / m_xLastMousePosition / m_xMouseDelta /
+// m_fMouseWheelDelta / m_bFirstFrame / m_bSimWasEnabledLastFrame /
+// m_xLastGamepadState / m_xCurrentGamepadState / m_bGamepadStateInitialized)
+// is reached directly via the member (self-reference, no g_xEngine round-trip).
 #ifdef ZENITH_WINDOWS
 static constexpr int MAX_GAMEPADS = Zenith_Input::MAX_GAMEPADS;
 #endif
@@ -33,73 +34,73 @@ void Zenith_Input::BeginFrame()
 		// Skip delta on the first simulator frame OR the frame we transitioned
 		// from real input — the saved last-position is from a different domain
 		// and would produce a single huge spurious delta.
-		if (g_xEngine.Input().m_bFirstFrame || !g_xEngine.Input().m_bSimWasEnabledLastFrame)
+		if (m_bFirstFrame || !m_bSimWasEnabledLastFrame)
 		{
-			g_xEngine.Input().m_xMouseDelta = { 0.0, 0.0 };
-			g_xEngine.Input().m_bFirstFrame = false;
+			m_xMouseDelta = { 0.0, 0.0 };
+			m_bFirstFrame = false;
 		}
 		else
 		{
-			g_xEngine.Input().m_xMouseDelta.x = xCurrentMousePos.x - g_xEngine.Input().m_xLastMousePosition.x;
-			g_xEngine.Input().m_xMouseDelta.y = xCurrentMousePos.y - g_xEngine.Input().m_xLastMousePosition.y;
+			m_xMouseDelta.x = xCurrentMousePos.x - m_xLastMousePosition.x;
+			m_xMouseDelta.y = xCurrentMousePos.y - m_xLastMousePosition.y;
 		}
-		g_xEngine.Input().m_xLastMousePosition = xCurrentMousePos;
-		g_xEngine.Input().m_bSimWasEnabledLastFrame = true;
+		m_xLastMousePosition = xCurrentMousePos;
+		m_bSimWasEnabledLastFrame = true;
 		return;
 	}
 	// Simulator just disabled this frame — skip one frame's delta to avoid the
 	// (sim-position) -> (real-cursor-position) jump.
-	const bool bJustLeftSimMode = g_xEngine.Input().m_bSimWasEnabledLastFrame;
-	g_xEngine.Input().m_bSimWasEnabledLastFrame = false;
+	const bool bJustLeftSimMode = m_bSimWasEnabledLastFrame;
+	m_bSimWasEnabledLastFrame = false;
 #endif
 
-	g_xEngine.Input().m_xFrameKeyPresses.clear();
+	m_xFrameKeyPresses.clear();
 	// Reset wheel accumulator BEFORE poll — GLFW scroll callbacks accumulate
 	// during this BeginFrame's poll cycle; game code reads after.
-	g_xEngine.Input().m_fMouseWheelDelta = 0.0f;
+	m_fMouseWheelDelta = 0.0f;
 
 	// Calculate mouse delta
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
 	Zenith_Window::GetInstance()->GetMousePosition(xCurrentMousePos);
 
 #ifdef ZENITH_INPUT_SIMULATOR
-	if (g_xEngine.Input().m_bFirstFrame || bJustLeftSimMode)
+	if (m_bFirstFrame || bJustLeftSimMode)
 #else
-	if (g_xEngine.Input().m_bFirstFrame)
+	if (m_bFirstFrame)
 #endif
 	{
-		g_xEngine.Input().m_xMouseDelta = { 0.0, 0.0 };
-		g_xEngine.Input().m_bFirstFrame = false;
+		m_xMouseDelta = { 0.0, 0.0 };
+		m_bFirstFrame = false;
 	}
 	else
 	{
-		g_xEngine.Input().m_xMouseDelta.x = xCurrentMousePos.x - g_xEngine.Input().m_xLastMousePosition.x;
-		g_xEngine.Input().m_xMouseDelta.y = xCurrentMousePos.y - g_xEngine.Input().m_xLastMousePosition.y;
+		m_xMouseDelta.x = xCurrentMousePos.x - m_xLastMousePosition.x;
+		m_xMouseDelta.y = xCurrentMousePos.y - m_xLastMousePosition.y;
 	}
 
-	g_xEngine.Input().m_xLastMousePosition = xCurrentMousePos;
+	m_xLastMousePosition = xCurrentMousePos;
 
 #ifdef ZENITH_WINDOWS
 	// Update gamepad state for all connected gamepads
 	for (int i = 0; i < MAX_GAMEPADS; i++)
 	{
 		// Copy current state to last state
-		g_xEngine.Input().m_xLastGamepadState[i] = g_xEngine.Input().m_xCurrentGamepadState[i];
+		m_xLastGamepadState[i] = m_xCurrentGamepadState[i];
 
 		// Get new current state
 		int iJoystickID = GLFW_JOYSTICK_1 + i;
 		if (glfwJoystickIsGamepad(iJoystickID))
 		{
-			glfwGetGamepadState(iJoystickID, &g_xEngine.Input().m_xCurrentGamepadState[i]);
-			g_xEngine.Input().m_bGamepadStateInitialized[i] = true;
+			glfwGetGamepadState(iJoystickID, &m_xCurrentGamepadState[i]);
+			m_bGamepadStateInitialized[i] = true;
 		}
 		else
 		{
 			// Clear state if gamepad disconnected
-			if (g_xEngine.Input().m_bGamepadStateInitialized[i])
+			if (m_bGamepadStateInitialized[i])
 			{
-				memset(&g_xEngine.Input().m_xCurrentGamepadState[i], 0, sizeof(GLFWgamepadstate));
-				g_xEngine.Input().m_bGamepadStateInitialized[i] = false;
+				memset(&m_xCurrentGamepadState[i], 0, sizeof(GLFWgamepadstate));
+				m_bGamepadStateInitialized[i] = false;
 			}
 		}
 	}
@@ -125,19 +126,19 @@ float Zenith_Input::GetMouseWheelDelta() const
 
 void Zenith_Input::KeyPressedCallback(Zenith_KeyCode iKey)
 {
-	g_xEngine.Input().m_xFrameKeyPresses.insert(iKey);
+	m_xFrameKeyPresses.insert(iKey);
 }
 
 void Zenith_Input::MouseButtonPressedCallback(Zenith_KeyCode iKey)
 {
-	g_xEngine.Input().m_xFrameKeyPresses.insert(iKey);
+	m_xFrameKeyPresses.insert(iKey);
 }
 
 void Zenith_Input::MouseWheelCallback(double /*fXOffset*/, double fYOffset)
 {
 	// Accumulate within the frame — multiple scroll callbacks may fire
 	// between two BeginFrame calls.
-	g_xEngine.Input().m_fMouseWheelDelta += static_cast<float>(fYOffset);
+	m_fMouseWheelDelta += static_cast<float>(fYOffset);
 }
 
 
@@ -155,7 +156,7 @@ void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 
 void Zenith_Input::GetMouseDelta(Zenith_Maths::Vector2_64& xOut)
 {
-	xOut = g_xEngine.Input().m_xMouseDelta;
+	xOut = m_xMouseDelta;
 }
 
 bool Zenith_Input::IsKeyDown(Zenith_KeyCode iKey)
@@ -177,7 +178,7 @@ bool Zenith_Input::WasKeyPressedThisFrame(Zenith_KeyCode iKey)
 		return Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(iKey);
 	}
 #endif
-	return g_xEngine.Input().m_xFrameKeyPresses.find(iKey) != g_xEngine.Input().m_xFrameKeyPresses.end();
+	return m_xFrameKeyPresses.find(iKey) != m_xFrameKeyPresses.end();
 }
 
 // ========== Gamepad Functions ==========
@@ -195,20 +196,20 @@ bool Zenith_Input::IsGamepadButtonDown(int iButton, int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return false;
 	if (iButton < 0 || iButton > GLFW_GAMEPAD_BUTTON_LAST) return false;
-	if (!g_xEngine.Input().m_bGamepadStateInitialized[iGamepad]) return false;
+	if (!m_bGamepadStateInitialized[iGamepad]) return false;
 
-	return g_xEngine.Input().m_xCurrentGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
+	return m_xCurrentGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
 }
 
 bool Zenith_Input::WasGamepadButtonPressedThisFrame(int iButton, int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return false;
 	if (iButton < 0 || iButton > GLFW_GAMEPAD_BUTTON_LAST) return false;
-	if (!g_xEngine.Input().m_bGamepadStateInitialized[iGamepad]) return false;
+	if (!m_bGamepadStateInitialized[iGamepad]) return false;
 
 	// Button is pressed this frame if it's down now but wasn't down last frame
-	bool bDownNow = g_xEngine.Input().m_xCurrentGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
-	bool bDownBefore = g_xEngine.Input().m_xLastGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
+	bool bDownNow = m_xCurrentGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
+	bool bDownBefore = m_xLastGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
 	return bDownNow && !bDownBefore;
 }
 
@@ -216,9 +217,9 @@ float Zenith_Input::GetGamepadAxis(int iAxis, int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return 0.0f;
 	if (iAxis < 0 || iAxis > GLFW_GAMEPAD_AXIS_LAST) return 0.0f;
-	if (!g_xEngine.Input().m_bGamepadStateInitialized[iGamepad]) return 0.0f;
+	if (!m_bGamepadStateInitialized[iGamepad]) return 0.0f;
 
-	float fValue = g_xEngine.Input().m_xCurrentGamepadState[iGamepad].axes[iAxis];
+	float fValue = m_xCurrentGamepadState[iGamepad].axes[iAxis];
 
 	// Apply deadzone for stick axes (not triggers)
 	if (iAxis <= GLFW_GAMEPAD_AXIS_RIGHT_Y)

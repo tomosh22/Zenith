@@ -3,6 +3,7 @@
 #include "Profiling/Zenith_Profiling.h"
 
 #include "Core/Zenith_Engine.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux.h"
 
@@ -31,59 +32,68 @@ thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> 
 // the in-flight TOTAL_FRAME scope so the displayed final frame is well-formed.
 DEBUGVAR bool dbg_bPauseRequested = false;
 
-void Zenith_Profiling::Initialise()
+void Zenith_Profiling::Initialise(Zenith_Multithreading& xThreading)
 {
+	m_pxThreading = &xThreading;
+
 	tl_g_uCurrentDepth = 0;
 	memset(tl_g_aeIndices, ZENITH_PROFILE_INDEX__TOTAL_FRAME, sizeof(tl_g_aeIndices));
 	memset(tl_g_aszLabels, 0, sizeof(tl_g_aszLabels));
 	memset(tl_g_axStartPoints, 0, sizeof(tl_g_axStartPoints));
 	memset(tl_g_axEndPoints, 0, sizeof(tl_g_axEndPoints));
-	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
-	g_xEngine.Profiling().m_xEvents.clear();
+	Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
+	m_xEvents.clear();
 }
 
 void Zenith_Profiling::RegisterThread()
 {
-	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
-	Zenith_Assert(g_xEngine.Profiling().m_xEvents.find(g_xEngine.Threading().GetCurrentThreadID()) == g_xEngine.Profiling().m_xEvents.end(), "Thread already registered");
-	g_xEngine.Profiling().m_xEvents.insert({ g_xEngine.Threading().GetCurrentThreadID(), {} });
+	// NOTE: this runs during engine bootstrap BEFORE Initialise() stores
+	// m_pxThreading (Zenith_Engine::Initialise calls Threading().RegisterThread()
+	// -> here, then Profiling().Initialise()). m_pxThreading is therefore not
+	// guaranteed valid yet, so the thread-id query stays on g_xEngine.Threading()
+	// rather than the injected member. The injected m_pxThreading covers the
+	// frame-loop sites (EndProfile + the GetOrCreateThreadEvents helper).
+	const u_int uThreadID = g_xEngine.Threading().GetCurrentThreadID();
+	Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
+	Zenith_Assert(m_xEvents.find(uThreadID) == m_xEvents.end(), "Thread already registered");
+	m_xEvents.insert({ uThreadID, {} });
 }
 
 void Zenith_Profiling::BeginFrame()
 {
-	if (g_xEngine.Profiling().m_bPauseEffective) return;
+	if (m_bPauseEffective) return;
 
 	{
-		Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
+		Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
 		// Save previous frame's data for rendering
-		g_xEngine.Profiling().m_xPreviousFrameEvents = g_xEngine.Profiling().m_xEvents;
-		g_xEngine.Profiling().m_xPreviousFrameStart = g_xEngine.Profiling().m_xFrameStart;
-		g_xEngine.Profiling().m_xPreviousFrameEnd = g_xEngine.Profiling().m_xFrameEnd;
+		m_xPreviousFrameEvents = m_xEvents;
+		m_xPreviousFrameStart = m_xFrameStart;
+		m_xPreviousFrameEnd = m_xFrameEnd;
 
-		for (auto xIt = g_xEngine.Profiling().m_xEvents.begin(); xIt != g_xEngine.Profiling().m_xEvents.end(); xIt++)
+		for (auto xIt = m_xEvents.begin(); xIt != m_xEvents.end(); xIt++)
 		{
 			xIt->second.Clear();
 		}
 	}
 
-	g_xEngine.Profiling().m_xFrameStart = std::chrono::high_resolution_clock::now();
+	m_xFrameStart = std::chrono::high_resolution_clock::now();
 	BeginProfile(ZENITH_PROFILE_INDEX__TOTAL_FRAME);
 }
 
 void Zenith_Profiling::EndFrame()
 {
-	if (dbg_bPauseRequested != g_xEngine.Profiling().m_bPauseEffective)
+	if (dbg_bPauseRequested != m_bPauseEffective)
 	{
 		EndProfile(ZENITH_PROFILE_INDEX__TOTAL_FRAME);
-		g_xEngine.Profiling().m_xFrameEnd = std::chrono::high_resolution_clock::now();
-		g_xEngine.Profiling().m_bPauseEffective = dbg_bPauseRequested;
+		m_xFrameEnd = std::chrono::high_resolution_clock::now();
+		m_bPauseEffective = dbg_bPauseRequested;
 		return;
 	}
-	g_xEngine.Profiling().m_bPauseEffective = dbg_bPauseRequested;
-	if (g_xEngine.Profiling().m_bPauseEffective) return;
+	m_bPauseEffective = dbg_bPauseRequested;
+	if (m_bPauseEffective) return;
 
 	EndProfile(ZENITH_PROFILE_INDEX__TOTAL_FRAME);
-	g_xEngine.Profiling().m_xFrameEnd = std::chrono::high_resolution_clock::now();
+	m_xFrameEnd = std::chrono::high_resolution_clock::now();
 }
 
 #ifdef ZENITH_TOOLS
@@ -136,13 +146,13 @@ void Zenith_Profiling::RenderToImGui()
 	static u_int ls_uSelectedThreadID = 0;
 
 	// Frame statistics
-	const float fFrameDurationMs = std::chrono::duration_cast<std::chrono::microseconds>(g_xEngine.Profiling().m_xPreviousFrameEnd - g_xEngine.Profiling().m_xPreviousFrameStart).count() / 1000.0f;
+	const float fFrameDurationMs = std::chrono::duration_cast<std::chrono::microseconds>(m_xPreviousFrameEnd - m_xPreviousFrameStart).count() / 1000.0f;
 	const float fFPS = (fFrameDurationMs > 0.0f) ? (1000.0f / fFrameDurationMs) : 0.0f;
 
 	if (ls_bShowStats)
 	{
 		ImGui::Text("Frame Time: %.3f ms (%.1f FPS)", fFrameDurationMs, fFPS);
-		ImGui::Text("Threads: %zu", g_xEngine.Profiling().m_xPreviousFrameEvents.size());
+		ImGui::Text("Threads: %zu", m_xPreviousFrameEvents.size());
 		ImGui::Separator();
 	}
 
@@ -204,8 +214,11 @@ struct TimelineHoveredEvent
 // (so the caller can render a tooltip outside the loop).
 static TimelineHoveredEvent RenderTimelineEvents(const TimelineRenderContext& xCtx)
 {
+	// Static free function: cannot use 'this'. Recover the engine-owned
+	// instance once and route every member reach through xSelf.
+	auto& xSelf = g_xEngine.Profiling();
 	TimelineHoveredEvent xHovered;
-	for (const auto& [uThreadID, xEvents] : g_xEngine.Profiling().m_xPreviousFrameEvents)
+	for (const auto& [uThreadID, xEvents] : xSelf.m_xPreviousFrameEvents)
 	{
 		const float fThreadBaseY = xCtx.xCanvasPos.y + uThreadID * xCtx.fThreadHeight;
 
@@ -225,8 +238,8 @@ static TimelineHoveredEvent RenderTimelineEvents(const TimelineRenderContext& xC
 				? (xEvent.m_uDepth - static_cast<u_int>(xCtx.iMinDepthToRender))
 				: (static_cast<u_int>(xCtx.iMaxDepthToRenderSeparately) - static_cast<u_int>(xCtx.iMinDepthToRender));
 
-			const float fEventStartNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xEngine.Profiling().m_xPreviousFrameStart).count());
-			const float fEventEndNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xEngine.Profiling().m_xPreviousFrameStart).count());
+			const float fEventStartNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - xSelf.m_xPreviousFrameStart).count());
+			const float fEventEndNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - xSelf.m_xPreviousFrameStart).count());
 			const float fEventDurationNs = fEventEndNs - fEventStartNs;
 
 			const float fStartPx = (fEventStartNs * xCtx.fCanvasTimeScale) - xCtx.fTimelineScroll;
@@ -328,7 +341,7 @@ void Zenith_Profiling::RenderTimelineView(TimelineViewState& xState)
 	const float fThreadHeight = uRowsPerThread * (fRowHeight + fRowSpacing) + fTHREAD_SPACING;
 
 	const float fCanvasWidth = ImGui::GetContentRegionAvail().x;
-	const float fTotalHeight = static_cast<float>(g_xEngine.Profiling().m_xPreviousFrameEvents.size()) * fThreadHeight;
+	const float fTotalHeight = static_cast<float>(m_xPreviousFrameEvents.size()) * fThreadHeight;
 
 	ImGui::BeginChild("Timeline", ImVec2(0, 0), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -376,7 +389,7 @@ void Zenith_Profiling::RenderTimelineView(TimelineViewState& xState)
 		ls_bOnce = false;
 	}
 
-	const float fFrameDuration = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(g_xEngine.Profiling().m_xPreviousFrameEnd - g_xEngine.Profiling().m_xPreviousFrameStart).count());
+	const float fFrameDuration = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(m_xPreviousFrameEnd - m_xPreviousFrameStart).count());
 	const float fCanvasTimeScale = (fCanvasWidth * xState.m_fTimelineZoom) / fFrameDuration;
 
 	TimelineRenderContext xCtx;
@@ -532,8 +545,10 @@ static void RenderThreadSelector(u_int& uThreadID)
 {
 	ImGui::Text("Select Thread:");
 
+	// Static free function: recover the engine-owned instance once.
+	auto& xSelf = g_xEngine.Profiling();
 	Zenith_Vector<u_int> xAvailableThreads;
-	for (const auto& [uID, xEvents] : g_xEngine.Profiling().m_xPreviousFrameEvents)
+	for (const auto& [uID, xEvents] : xSelf.m_xPreviousFrameEvents)
 	{
 		xAvailableThreads.PushBack(uID);
 	}
@@ -653,8 +668,8 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 	RenderThreadSelector(uThreadID);
 	ImGui::Separator();
 
-	auto xThreadIt = g_xEngine.Profiling().m_xPreviousFrameEvents.find(uThreadID);
-	if (xThreadIt == g_xEngine.Profiling().m_xPreviousFrameEvents.end())
+	auto xThreadIt = m_xPreviousFrameEvents.find(uThreadID);
+	if (xThreadIt == m_xPreviousFrameEvents.end())
 	{
 		ImGui::Text("Thread %u not found in profiling data", uThreadID);
 		return;
@@ -708,19 +723,23 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 
 static Zenith_Vector<Zenith_Profiling::Event>& GetOrCreateThreadEvents()
 {
-	u_int uThreadID = g_xEngine.Threading().GetCurrentThreadID();
-	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
-	auto xIt = g_xEngine.Profiling().m_xEvents.find(uThreadID);
-	if (xIt == g_xEngine.Profiling().m_xEvents.end())
+	// Static free function: recover the engine-owned instance once and route
+	// both the thread-id query (via the injected m_pxThreading) and the event
+	// map through xSelf.
+	auto& xSelf = g_xEngine.Profiling();
+	u_int uThreadID = xSelf.m_pxThreading->GetCurrentThreadID();
+	Zenith_ScopedMutexLock_T xLock(xSelf.m_xEventsMutex);
+	auto xIt = xSelf.m_xEvents.find(uThreadID);
+	if (xIt == xSelf.m_xEvents.end())
 	{
-		xIt = g_xEngine.Profiling().m_xEvents.insert({ uThreadID, {} }).first;
+		xIt = xSelf.m_xEvents.insert({ uThreadID, {} }).first;
 	}
 	return xIt->second;
 }
 
 void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel)
 {
-	if (g_xEngine.Profiling().m_bPauseEffective) return;
+	if (m_bPauseEffective) return;
 
 	Zenith_Assert(tl_g_uCurrentDepth < uMAX_PROFILE_DEPTH, "Profiling has nested too far");
 
@@ -733,7 +752,7 @@ void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex, const char
 
 void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 {
-	if (g_xEngine.Profiling().m_bPauseEffective) return;
+	if (m_bPauseEffective) return;
 
 	Zenith_Assert(tl_g_uCurrentDepth > 0, "Ending profiling but it never started");
 	Zenith_Assert(tl_g_aeIndices[tl_g_uCurrentDepth - 1] == eIndex, "Expecting to end profile index %u but %u was found", eIndex, tl_g_aeIndices[tl_g_uCurrentDepth]);
@@ -757,7 +776,7 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 			szEventName,
 			fDurationSeconds * 1000.0f,
 			fPROFILING_MAX_EVENT_TIME_SECONDS * 1000.0f,
-			g_xEngine.Threading().GetCurrentThreadID());
+			m_pxThreading->GetCurrentThreadID());
 	}
 
 	GetOrCreateThreadEvents().PushBack(xEvent);
@@ -774,13 +793,13 @@ const Zenith_ProfileIndex Zenith_Profiling::GetCurrentIndex()
 
 const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& Zenith_Profiling::GetEvents()
 {
-	return g_xEngine.Profiling().m_xEvents;
+	return m_xEvents;
 }
 
 void Zenith_Profiling::ClearEvents()
 {
-	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
-	for (auto xIt = g_xEngine.Profiling().m_xEvents.begin(); xIt != g_xEngine.Profiling().m_xEvents.end(); xIt++)
+	Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
+	for (auto xIt = m_xEvents.begin(); xIt != m_xEvents.end(); xIt++)
 	{
 		xIt->second.Clear();
 	}
@@ -788,7 +807,7 @@ void Zenith_Profiling::ClearEvents()
 
 void Zenith_Profiling::WriteTextReport(FILE* pFile)
 {
-	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
+	Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
 
 	struct IndexStats
 	{
@@ -806,7 +825,7 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 	u_int uTotalEvents = 0;
 	u_int uThreadCount = 0;
 
-	for (const auto& [uThreadID, xEvents] : g_xEngine.Profiling().m_xEvents)
+	for (const auto& [uThreadID, xEvents] : m_xEvents)
 	{
 		u_int uEventCount = xEvents.GetSize();
 		if (uEventCount > 0)

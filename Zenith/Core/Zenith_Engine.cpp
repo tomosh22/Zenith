@@ -472,7 +472,7 @@ void Zenith_Engine::Initialise()
 	m_pxProfiling = new Zenith_Profiling();
 
 	g_xEngine.Threading().RegisterThread(true);
-	g_xEngine.Profiling().Initialise();
+	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
 
 	// Phase 3b: per-Engine TaskSystem state. Allocate BEFORE
 	// g_xEngine.Tasks().Initialise() below, which spawns worker
@@ -529,7 +529,7 @@ void Zenith_Engine::Initialise()
 	// piece of state it used to keep as Zenith_Physics::s_*.
 	Zenith_Assert(m_pxPhysics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxPhysics = new Zenith_Physics();
-	g_xEngine.Physics().Initialise();
+	g_xEngine.Physics().Initialise(g_xEngine.Input());
 
 	// ECS leaf-extraction Phase 4: install the engine-side built-in component
 	// registrar onto the ECS reflection core, then force the one-time

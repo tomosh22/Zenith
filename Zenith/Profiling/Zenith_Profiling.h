@@ -5,6 +5,11 @@
 #include <chrono>
 #include <unordered_map>
 
+// Forward-declared so Initialise(Zenith_Multithreading&) can take the thread
+// subsystem by reference (injected at the composition root) without dragging
+// the full Multithreading header into this widely-included file.
+class Zenith_Multithreading;
+
 enum Zenith_ProfileIndex
 {
 	ZENITH_PROFILE_INDEX__TOTAL_FRAME,
@@ -252,7 +257,7 @@ public:
 		const char* m_szLabel;
 	};
 
-	void Initialise();
+	void Initialise(Zenith_Multithreading& xThreading);
 
 	void RegisterThread();
 
@@ -311,6 +316,13 @@ public:
 	// nothing). The 5 thread-local profile-stack variables stay as
 	// file-scope statics in the .cpp; they're per-OS-thread, not
 	// per-Engine.
+	// Injected at Initialise() from the composition root. Used for
+	// per-thread id queries (RegisterThread / EndProfile / the static
+	// GetOrCreateThreadEvents helper, which reaches it through the
+	// recovered g_xEngine.Profiling() ref). Public so that static helper
+	// can read it — matching the existing public-member design here.
+	Zenith_Multithreading*                          m_pxThreading = nullptr;
+
 	std::unordered_map<u_int, Zenith_Vector<Event>> m_xEvents;
 	std::unordered_map<u_int, Zenith_Vector<Event>> m_xPreviousFrameEvents;
 	Zenith_Mutex_NoProfiling                        m_xEventsMutex;

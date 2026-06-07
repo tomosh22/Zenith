@@ -30,6 +30,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 
 class Zenith_CameraComponent;
+class Zenith_Input;
 
 // State + behaviour for the Physics subsystem. Held on g_xEngine and
 // accessed via g_xEngine.Physics().
@@ -42,7 +43,7 @@ public:
 	Zenith_Physics(const Zenith_Physics&) = delete;
 	Zenith_Physics& operator=(const Zenith_Physics&) = delete;
 
-	void Initialise();
+	void Initialise(Zenith_Input& xInput);
 	void Update(float fDt);
 	void Reset();
 	void Shutdown();
@@ -142,6 +143,11 @@ public:
 	uint32_t                              m_uDroppedEventCount = 0;
 
 	bool m_bInitialised = false;
+
+	// Injected cross-subsystem dependency (composition root wires this in
+	// Initialise). Routes mouse-position reads through Zenith_Input so they
+	// respect Zenith_InputSimulator overrides.
+	Zenith_Input* m_pxInput = nullptr;
 
 	friend void QueueCollisionEventInternal(Zenith_EntityID, Zenith_EntityID, CollisionEventType);
 };
