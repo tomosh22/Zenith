@@ -17,15 +17,14 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-// Wave-15 DI seam (mirrors Flux_QuadsImpl): the lone cross-subsystem dep
-// (Flux_GraphicsImpl) is injected into Initialise and stored in m_pxGraphics;
-// instance methods read their own members via this-> and route FluxGraphics
-// reach-ins through m_pxGraphics. g_xEngine.Text() self-lookup survives only in
-// the non-capturing ExecuteText / hot-reload fn-pointer trampolines below, which
-// route their FluxGraphics reach-ins through xText.m_pxGraphics;
-// VulkanMemory()/DebugVariables() stay direct engine-infra lookups. The
-// Zenith_UI::Zenith_UICanvas statics + the FontHandle asset are not g_xEngine
-// subsystems and remain direct (out of scope for this seam).
+// Wave-15 DI seam (Wave-4 extension): the deps (Flux_GraphicsImpl + VulkanMemory)
+// are injected into Initialise and stored in m_pxGraphics / m_pxVulkanMemory;
+// instance methods route their reach-ins through those pointers. g_xEngine.Text()
+// self-lookup survives only in the non-capturing ExecuteText / hot-reload
+// fn-pointer trampolines below (they re-enter to recover the singleton instance).
+// DebugVariables() stays a direct g_xEngine lookup (ZENITH_TOOLS-only, reached once
+// under #ifdef ZENITH_DEBUG_VARIABLES). The Zenith_UI::Zenith_UICanvas statics + the
+// FontHandle asset are not g_xEngine subsystems (out of scope for this seam).
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 
@@ -64,17 +63,17 @@ void Flux_TextImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(this->m_xPipeline, xPipelineSpec);
 }
 
-void Flux_TextImpl::Initialise(Flux_GraphicsImpl& xGraphics)
+void Flux_TextImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory)
 {
-	// Wave-15 DI seam: store the injected cross-subsystem dep. The FluxGraphics
-	// reach-ins (in ExecuteText / SetupRenderGraph) route through this instead of
-	// g_xEngine.FluxGraphics().
-	this->m_pxGraphics = &xGraphics;
+	// Wave-15 DI seam (Wave-4 extension): store the injected deps. FluxGraphics +
+	// VulkanMemory reach-ins route through these instead of g_xEngine.
+	this->m_pxGraphics     = &xGraphics;
+	this->m_pxVulkanMemory = &xVulkanMemory;
 
 	BuildPipelines();
 
 	constexpr bool bDeviceLocal = false;
-	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), this->m_xInstanceBuffer, bDeviceLocal);
+	this->m_pxVulkanMemory->InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), this->m_xInstanceBuffer, bDeviceLocal);
 
 	// Load the MSDF font asset. Path resolved via Zenith_AssetRegistry; the
 	// asset itself reads the .zfont header and constructs a procedural texture
@@ -113,9 +112,10 @@ void Flux_TextImpl::ReleaseAssetReferences()
 
 void Flux_TextImpl::Shutdown()
 {
-	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(this->m_xInstanceBuffer);
-	// Drop the injected dep so the instance returns to a clean default state.
-	this->m_pxGraphics = nullptr;
+	this->m_pxVulkanMemory->DestroyDynamicVertexBuffer(this->m_xInstanceBuffer);
+	// Drop the injected deps so the instance returns to a clean default state.
+	this->m_pxGraphics     = nullptr;
+	this->m_pxVulkanMemory = nullptr;
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text shut down");
 }
 
@@ -262,7 +262,7 @@ uint32_t Flux_TextImpl::UploadChars()
 
 	if (xVertices.GetSize() > 0)
 	{
-		g_xEngine.VulkanMemory().UploadBufferData(this->m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
+		this->m_pxVulkanMemory->UploadBufferData(this->m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
 	}
 
 	this->m_uTotalCharCount = uCharCount;

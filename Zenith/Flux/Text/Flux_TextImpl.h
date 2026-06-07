@@ -8,16 +8,17 @@
 class Flux_RenderGraph;
 class Zenith_FontAsset;
 
-// Cross-subsystem dependency injected into Initialise (Wave-15 DI seam, built on
-// the WS9.2 Flux_HiZImpl / Wave-11 Flux_SSAOImpl / Wave-14 Flux_QuadsImpl
-// template). Forward-declared here; the full header is pulled in by
-// Flux_Text.cpp. Flux_GraphicsImpl is the ONLY cross-subsystem dep — its
-// m_xQuadMesh / m_xFrameConstantsBuffer / GetFinalRenderTarget() back the text
-// overlay draw. VulkanMemory()/DebugVariables() are engine-infra singletons and
-// stay direct g_xEngine lookups (same carve-out as Quads/SSAO/HiZ). The
+// Dependencies injected into Initialise (Wave-15 DI seam, built on the WS9.2
+// Flux_HiZImpl / Wave-11 Flux_SSAOImpl / Wave-14 Flux_QuadsImpl template; Wave-4
+// extends it to ALSO inject VulkanMemory per the aggressive g_xEngine-shrink
+// directive). Forward-declared here; full headers are pulled in by Flux_Text.cpp.
+// (DebugVariables() stays a direct g_xEngine lookup — it is a ZENITH_TOOLS-only
+// accessor reached once under #ifdef ZENITH_DEBUG_VARIABLES, so injecting it would
+// force conditional compilation into the Initialise signature. The
 // Zenith_UI::Zenith_UICanvas statics + the FontHandle asset are not g_xEngine
-// subsystems, so they are out of scope for this seam.
+// subsystems, so they are out of scope.)
 class Flux_GraphicsImpl;
+class Zenith_Vulkan_MemoryManager;
 
 // Per-glyph instance vertex pushed to the GPU. One per visible glyph quad.
 // Layout matches the vertex input description in Flux_TextImpl::BuildPipelines.
@@ -63,7 +64,7 @@ public:
 
 	// Cross-subsystem dep is injected here and stored into m_pxGraphics below.
 	// This is the WS9.2 DI template: explicit ref param -> stored member pointer.
-	void Initialise(Flux_GraphicsImpl& xGraphics);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory);
 	void BuildPipelines();
 	void ReleaseAssetReferences();
 	void Shutdown();
@@ -97,4 +98,5 @@ public:
 	// so a default-constructed instance is headless-safe; the real boot path wires
 	// it in via the Text init trampoline (Flux_FeatureRegistry.cpp).
 	Flux_GraphicsImpl*       m_pxGraphics            = nullptr;
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory    = nullptr;
 };

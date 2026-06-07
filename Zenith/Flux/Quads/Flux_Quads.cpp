@@ -18,12 +18,12 @@
 
 // Phase 7b: state on Flux_QuadsImpl held by Zenith_Engine.
 //
-// Wave-14 DI seam (mirrors Flux_SSAOImpl): the lone cross-subsystem dep
-// (Flux_GraphicsImpl) is injected into Initialise and stored in m_pxGraphics;
-// instance methods read their own members via this-> and route FluxGraphics
-// reach-ins through m_pxGraphics. g_xEngine.Quads() self-lookup survives only in
-// the non-capturing ExecuteQuads / hot-reload fn-pointer trampolines below;
-// VulkanMemory()/DebugVariables() stay direct engine-infra lookups.
+// Wave-14 DI seam (Wave-4 extension): the deps (Flux_GraphicsImpl + VulkanMemory)
+// are injected into Initialise and stored in m_pxGraphics / m_pxVulkanMemory;
+// instance methods read their own members via this-> and route reach-ins through
+// those pointers. g_xEngine.Quads() self-lookup survives only in the non-capturing
+// ExecuteQuads / hot-reload fn-pointer trampolines below (they cannot capture, so
+// they re-enter via g_xEngine.Quads() to recover the singleton instance).
 
 
 
@@ -61,16 +61,16 @@ void Flux_QuadsImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics)
+void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory)
 {
-	// Wave-14 DI seam: store the injected cross-subsystem dep. The FluxGraphics
-	// reach-ins (in ExecuteQuads / SetupRenderGraph) route through this instead of
-	// g_xEngine.FluxGraphics().
-	m_pxGraphics = &xGraphics;
+	// Wave-14 DI seam (Wave-4 extension): store the injected deps. The FluxGraphics
+	// + VulkanMemory reach-ins route through these instead of g_xEngine.
+	m_pxGraphics     = &xGraphics;
+	m_pxVulkanMemory = &xVulkanMemory;
 
 	BuildPipelines();
 
-	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), m_xInstanceBuffer, false);
+	m_pxVulkanMemory->InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), m_xInstanceBuffer, false);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -85,15 +85,16 @@ void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 
 void Flux_QuadsImpl::Shutdown()
 {
-	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(m_xInstanceBuffer);
-	// Drop the injected dep so the instance returns to a clean default state.
-	m_pxGraphics = nullptr;
+	m_pxVulkanMemory->DestroyDynamicVertexBuffer(m_xInstanceBuffer);
+	// Drop the injected deps so the instance returns to a clean default state.
+	m_pxGraphics     = nullptr;
+	m_pxVulkanMemory = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads shut down");
 }
 
 void Flux_QuadsImpl::UploadInstanceData()
 {
-	g_xEngine.VulkanMemory().UploadBufferData(m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, m_axQuadsToRender, sizeof(Quad) * m_uQuadRenderIndex);
+	m_pxVulkanMemory->UploadBufferData(m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, m_axQuadsToRender, sizeof(Quad) * m_uQuadRenderIndex);
 }
 
 void Flux_QuadsImpl::Render(void*)
