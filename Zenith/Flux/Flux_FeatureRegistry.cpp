@@ -219,7 +219,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.Shadows().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Shadows().Shutdown(); });
 	const u_int uSkybox = xReg.Register(szFLUX_FEATURE_SKYBOX,
-		+[](){ g_xEngine.Skybox().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR()); },
+		+[](){ g_xEngine.Skybox().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.VulkanMemory(), g_xEngine.Vulkan()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Skybox().SetupRenderGraph(g); }, // Skybox's aerial-perspective pass is a separate method invoked inline as an irregular.
 		+[](){ g_xEngine.Skybox().Shutdown(); });
 	const u_int uIBL = xReg.Register(szFLUX_FEATURE_IBL,

@@ -31,8 +31,14 @@
 // Wave-15 DI seam (twin of Flux_StaticMeshesImpl; mirrors Flux_QuadsImpl): the
 // lone render dep (Flux_GraphicsImpl) is injected into Initialise and stored in
 // m_pxGraphics; instance methods route FluxGraphics reach-ins through
-// m_pxGraphics. g_xEngine.AnimatedMeshes() self-lookup survives only in the
-// non-capturing ExecuteGBuffer / hot-reload fn-pointer trampolines below. The WS7
+// m_pxGraphics, and every other former g_xEngine.AnimatedMeshes() self-lookup in
+// an instance method (BuildPipelines / Shutdown / GatherDrawPacket /
+// RenderToShadowMap) is now plain direct member access. g_xEngine.AnimatedMeshes()
+// survives ONLY in the non-capturing fn-pointer trampolines below — the
+// ExecuteGBuffer graph callback (which acquires the instance once into xZZ and
+// routes its members + the injected FluxGraphics member through it), the
+// SetupRenderGraph Prepare lambda, and the ZENITH_TOOLS hot-reload lambda — since
+// those cannot capture and must re-enter to recover the singleton. The WS7
 // Prepare-gather's g_xEngine.Scenes() reach is an ECS lookup and stays
 // self-routed (NOT injected); bone buffers come from the gathered
 // Flux_SkeletonInstance (sourced from Zenith_AnimatorComponent), not a render dep.
@@ -42,8 +48,11 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
 
 void Flux_AnimatedMeshesImpl::BuildPipelines()
 {
-	g_xEngine.AnimatedMeshes().m_xGBufferShader.Initialise(FluxShaderProgram::AnimatedMesh_ToGBuffer);
-	g_xEngine.AnimatedMeshes().m_xShadowShader.Initialise(FluxShaderProgram::AnimatedMesh_ToShadowmap);
+	// Instance method: every member touched here belongs to THIS instance, so
+	// the old g_xEngine.AnimatedMeshes() self-lookups are replaced with direct
+	// member access (no singleton round-trip).
+	m_xGBufferShader.Initialise(FluxShaderProgram::AnimatedMesh_ToGBuffer);
+	m_xShadowShader.Initialise(FluxShaderProgram::AnimatedMesh_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -65,10 +74,10 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &g_xEngine.AnimatedMeshes().m_xGBufferShader;
+		xPipelineSpec.m_pxShader = &m_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		g_xEngine.AnimatedMeshes().m_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+		m_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -77,7 +86,7 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 			xBlendState.m_bBlendEnabled = false;
 		}
 
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.AnimatedMeshes().m_xGBufferPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipeline, xPipelineSpec);
 	}
 
 	{
@@ -87,14 +96,14 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
-		xShadowPipelineSpec.m_pxShader = &g_xEngine.AnimatedMeshes().m_xShadowShader;
+		xShadowPipelineSpec.m_pxShader = &m_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
 		xShadowPipelineSpec.m_bDepthBias = false;
 
-		g_xEngine.AnimatedMeshes().m_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
+		m_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.AnimatedMeshes().m_xShadowPipeline, xShadowPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xShadowPipeline, xShadowPipelineSpec);
 	}
 }
 
@@ -121,11 +130,12 @@ void Flux_AnimatedMeshesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 
 void Flux_AnimatedMeshesImpl::Shutdown()
 {
-	// Pipelines reference their shaders, so destroy pipelines first.
-	g_xEngine.AnimatedMeshes().m_xGBufferPipeline.Reset();
-	g_xEngine.AnimatedMeshes().m_xShadowPipeline.Reset();
-	g_xEngine.AnimatedMeshes().m_xGBufferShader.Reset();
-	g_xEngine.AnimatedMeshes().m_xShadowShader.Reset();
+	// Pipelines reference their shaders, so destroy pipelines first. Instance
+	// method: direct member access, no g_xEngine.AnimatedMeshes() self-lookup.
+	m_xGBufferPipeline.Reset();
+	m_xShadowPipeline.Reset();
+	m_xGBufferShader.Reset();
+	m_xShadowShader.Reset();
 
 	// Drop the injected dep so the instance returns to a clean default state.
 	m_pxGraphics = nullptr;
@@ -160,7 +170,10 @@ void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // callback so the same set of models renders, in the same order.
 void Flux_AnimatedMeshesImpl::GatherDrawPacket(void*)
 {
-	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = g_xEngine.AnimatedMeshes().m_xDrawPacket;
+	// Instance method: the packet is our own member (direct access). The
+	// g_xEngine.Scenes() reach below is an ECS lookup and stays self-routed
+	// (deliberately NOT injected).
+	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = m_xDrawPacket;
 	xPacket.Clear();
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
@@ -201,21 +214,26 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.AnimatedMeshes().m_xGBufferPipeline);
+	// Non-capturing graph callback: it cannot capture state, so it re-enters
+	// via g_xEngine.AnimatedMeshes() ONCE to recover the singleton instance,
+	// then routes everything (its own members + the injected FluxGraphics
+	// member) through xZZ (mirrors ExecuteSSAOGenerate / ExecuteQuads).
+	Flux_AnimatedMeshesImpl& xZZ = g_xEngine.AnimatedMeshes();
+
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xGBufferPipeline);
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	// Bind FrameConstants once per command list (set 0 - per-frame data). Non-
-	// capturing graph callback: it re-enters via g_xEngine.AnimatedMeshes() to
-	// reach the singleton instance, then routes its lone FluxGraphics reach-in
-	// through the injected member (mirrors ExecuteSSAOGenerate / ExecuteQuads).
-	xBinder.BindCBV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.AnimatedMeshes().m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	// Bind FrameConstants once per command list (set 0 - per-frame data). The
+	// lone FluxGraphics reach-in routes through the recovered instance's
+	// injected member.
+	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &xZZ.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
 	// access here — this runs on a worker thread; only heap-stable Flux objects
 	// (model instance, skeleton instance) are dereferenced.
-	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = g_xEngine.AnimatedMeshes().m_xDrawPacket;
+	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = xZZ.m_xDrawPacket;
 
 	static bool s_bLoggedOnce = false;
 	for (u_int uItem = 0; uItem < xPacket.GetSize(); uItem++)
@@ -269,15 +287,15 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
 			MaterialDrawConstants xPushConstants;
 			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-			xBinder.BindDrawConstants(g_xEngine.AnimatedMeshes().m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+			xBinder.BindDrawConstants(xZZ.m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
 			// Bind set 1: bone buffer and material textures (named bindings)
-			xBinder.BindCBV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "Bones", &xBoneBuffer.GetCBV());
-			xBinder.BindSRV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-			xBinder.BindSRV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-			xBinder.BindSRV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-			xBinder.BindSRV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-			xBinder.BindSRV(g_xEngine.AnimatedMeshes().m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+			xBinder.BindCBV(xZZ.m_xGBufferShader, "Bones", &xBoneBuffer.GetCBV());
+			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
@@ -297,7 +315,8 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const
 	// the same packet the GBuffer pass consumes; it is shared across all shadow
 	// cascades. No ECS access here — this runs on a worker thread; only
 	// heap-stable Flux objects (model instance, skeleton instance) are touched.
-	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = g_xEngine.AnimatedMeshes().m_xDrawPacket;
+	// Instance method: the packet/shader are our own members (direct access).
+	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = m_xDrawPacket;
 	for (u_int uItem = 0; uItem < xPacket.GetSize(); uItem++)
 	{
 		const Flux_AnimatedMeshDrawItem& xItem = xPacket.Get(uItem);
@@ -320,11 +339,11 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const
 			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
 			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
-			xBinder.BindDrawConstants(g_xEngine.AnimatedMeshes().m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
+			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
 
 			// Bind set 1: bone buffer and shadow matrix (named bindings)
-			xBinder.BindCBV(g_xEngine.AnimatedMeshes().m_xShadowShader, "Bones", &xBoneBuffer.GetCBV());
-			xBinder.BindCBV(g_xEngine.AnimatedMeshes().m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindCBV(m_xShadowShader, "Bones", &xBoneBuffer.GetCBV());
+			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
 			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}

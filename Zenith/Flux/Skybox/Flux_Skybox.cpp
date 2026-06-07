@@ -145,19 +145,21 @@ void Flux_SkyboxImpl::BuildPipelines()
 	}
 }
 
-void Flux_SkyboxImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
+void Flux_SkyboxImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan& xVulkan)
 {
 	// Wave-15 DI seam: store the injected cross-subsystem deps. Every later
 	// instance-method reach-in routes through these instead of g_xEngine.
-	m_pxGraphics = &xGraphics;
-	m_pxHDR      = &xHDR;
+	m_pxGraphics     = &xGraphics;
+	m_pxHDR          = &xHDR;
+	m_pxVulkanMemory = &xVulkanMemory;
+	m_pxVulkan       = &xVulkan;
 
 	CreateRenderTargets();
 
 	// Atmosphere & solid-colour CB allocations are one-time — kept in
 	// Initialise so hot-reload's BuildPipelines() doesn't leak them.
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
 
 	BuildPipelines();
 
@@ -190,11 +192,13 @@ void Flux_SkyboxImpl::ReleaseAssetReferences()
 void Flux_SkyboxImpl::Shutdown()
 {
 	DestroyRenderTargets();
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(this->m_xAtmosphereConstantsBuffer);
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(this->m_xSolidColourConstantsBuffer);
+	m_pxVulkanMemory->DestroyDynamicConstantBuffer(this->m_xAtmosphereConstantsBuffer);
+	m_pxVulkanMemory->DestroyDynamicConstantBuffer(this->m_xSolidColourConstantsBuffer);
 	// Drop the injected deps so the instance returns to a clean default state.
-	m_pxGraphics = nullptr;
-	m_pxHDR      = nullptr;
+	m_pxGraphics     = nullptr;
+	m_pxHDR          = nullptr;
+	m_pxVulkanMemory = nullptr;
+	m_pxVulkan       = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
@@ -220,8 +224,8 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 {
 	if (this->m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
-		Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(this->m_xTransmittanceLUT.m_xVRAMHandle);
-		g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, this->m_xTransmittanceLUT.m_xVRAMHandle,
+		Flux_VRAM* pxVRAM = m_pxVulkan->GetVRAM(this->m_xTransmittanceLUT.m_xVRAMHandle);
+		m_pxVulkanMemory->QueueVRAMDeletion(pxVRAM, this->m_xTransmittanceLUT.m_xVRAMHandle,
 			this->m_xTransmittanceLUT.RTV().m_xImageViewHandle, this->m_xTransmittanceLUT.DSV().m_xImageViewHandle,
 			this->m_xTransmittanceLUT.SRV().m_xImageViewHandle, this->m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
 	}
@@ -231,8 +235,8 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 static void PreExecuteSkybox(void*)
 {
 	// Non-capturing graph callback (void(*)(void*)) — it cannot capture, so it
-	// re-enters via g_xEngine.Skybox() to reach the singleton instance. VulkanMemory
-	// stays a direct infra reach-in.
+	// re-enters via g_xEngine.Skybox() to reach the singleton instance, then routes
+	// its VulkanMemory reach-ins through the injected member (mirrors ExecuteSkybox).
 	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
 
 	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
@@ -240,7 +244,7 @@ static void PreExecuteSkybox(void*)
 	if (!xOpts.m_bSkyboxEnabled)
 	{
 		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
-		g_xEngine.VulkanMemory().UploadBufferData(xSkybox.m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
+		xSkybox.m_pxVulkanMemory->UploadBufferData(xSkybox.m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
 	else if (xSkybox.IsAtmosphereEnabled())
 	{
@@ -270,7 +274,7 @@ static void PreExecuteSkybox(void*)
 		s_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
 		s_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
 
-		g_xEngine.VulkanMemory().UploadBufferData(xSkybox.m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
+		xSkybox.m_pxVulkanMemory->UploadBufferData(xSkybox.m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
 	}
 }
 

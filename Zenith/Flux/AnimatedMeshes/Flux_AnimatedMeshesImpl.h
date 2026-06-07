@@ -39,13 +39,16 @@ struct Flux_AnimatedMeshDrawItem
 // Wave-15 DI seam (twin of Flux_StaticMeshesImpl; mirrors Flux_QuadsImpl): the
 // lone render dependency (Flux_GraphicsImpl) is INJECTED through Initialise as an
 // explicit reference and stored as a member pointer, rather than reached for via
-// g_xEngine.FluxGraphics() inside the instance methods. The only place g_xEngine
-// self-lookup survives is the non-capturing fn-pointer trampoline (the
-// ExecuteGBuffer graph callback, and the ZENITH_TOOLS hot-reload callback) —
-// those cannot capture state, so they re-enter via g_xEngine.AnimatedMeshes() to
-// reach this singleton instance and then route their FluxGraphics reach-in
-// through the injected member. The WS7 Prepare-gather's g_xEngine.Scenes() reach
-// is an ECS lookup and stays self-routed (deliberately NOT injected).
+// g_xEngine.FluxGraphics() inside the instance methods. Instance methods now also
+// use plain direct member access for their own state instead of round-tripping
+// through g_xEngine.AnimatedMeshes(). The only place g_xEngine self-lookup
+// survives is the non-capturing fn-pointer trampolines (the ExecuteGBuffer graph
+// callback, the SetupRenderGraph Prepare lambda, and the ZENITH_TOOLS hot-reload
+// callback) — those cannot capture state, so they re-enter via
+// g_xEngine.AnimatedMeshes() to recover this singleton instance and then route
+// their members + FluxGraphics reach-in through it. The WS7 Prepare-gather's
+// g_xEngine.Scenes() reach is an ECS lookup and stays self-routed (deliberately
+// NOT injected).
 class Flux_AnimatedMeshesImpl
 {
 public:
