@@ -22,6 +22,12 @@ static_assert(sizeof(Flux_DrawIndexedIndirectCommand) == 20, "DrawIndexedIndirec
 
 Flux_InstanceGroup::Flux_InstanceGroup()
 {
+	// Self-wire cross-subsystem deps ONCE (de-globalisation). One boundary reach
+	// per dep; every other reach in this TU routes through the member pointer.
+	// The *Impl objects are allocated up-front in Zenith_Engine::Initialise() and
+	// groups are only constructed at runtime, so both are non-null here.
+	m_pxVulkanMemory = &g_xEngine.VulkanMemory();
+	m_pxThreading = &g_xEngine.Threading();
 }
 
 Flux_InstanceGroup::~Flux_InstanceGroup()
@@ -222,27 +228,27 @@ void Flux_InstanceGroup::InitialiseGPUBuffers()
 
 	// Transform buffer (mat4 per instance)
 	const size_t ulTransformSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, ulTransformSize, m_xTransformBuffer);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, ulTransformSize, m_xTransformBuffer);
 
 	// Animation data buffer
 	const size_t ulAnimDataSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, ulAnimDataSize, m_xAnimDataBuffer);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, ulAnimDataSize, m_xAnimDataBuffer);
 
 	// Visible index buffer (worst case: all visible)
 	const size_t ulVisibleIndexSize = m_uCapacity * sizeof(uint32_t);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, ulVisibleIndexSize, m_xVisibleIndexBuffer);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, ulVisibleIndexSize, m_xVisibleIndexBuffer);
 
 	// Bounds buffer (single bounding sphere, replicated conceptually but stored once)
 	// Actually we store per-instance bounds in case we want per-instance bounds later
 	const size_t ulBoundsSize = sizeof(Flux_InstanceBounds);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(&m_xBounds, ulBoundsSize, m_xBoundsBuffer);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(&m_xBounds, ulBoundsSize, m_xBoundsBuffer);
 
 	// Indirect draw command buffer
-	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(sizeof(Flux_DrawIndexedIndirectCommand), m_xIndirectBuffer);
+	m_pxVulkanMemory->InitialiseIndirectBuffer(sizeof(Flux_DrawIndexedIndirectCommand), m_xIndirectBuffer);
 
 	// Visible count buffer (single uint32 for atomic counter)
 	uint32_t uZero = 0;
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(&uZero, sizeof(uint32_t), m_xVisibleCountBuffer);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(&uZero, sizeof(uint32_t), m_xVisibleCountBuffer);
 
 	m_bBuffersInitialised = true;
 	m_bTransformsDirty = true;
@@ -258,22 +264,22 @@ void Flux_InstanceGroup::DestroyGPUBuffers()
 
 	// Queue buffers for deferred deletion
 	if (m_xTransformBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xTransformBuffer);
+		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xTransformBuffer);
 
 	if (m_xAnimDataBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xAnimDataBuffer);
+		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xAnimDataBuffer);
 
 	if (m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
+		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
 
 	if (m_xBoundsBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xBoundsBuffer);
+		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xBoundsBuffer);
 
 	if (m_xIndirectBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xIndirectBuffer);
+		m_pxVulkanMemory->DestroyIndirectBuffer(m_xIndirectBuffer);
 
 	if (m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xVisibleCountBuffer);
+		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xVisibleCountBuffer);
 
 	m_bBuffersInitialised = false;
 }
@@ -291,7 +297,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	if (m_bTransformsDirty)
 	{
 		const size_t ulSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
-		g_xEngine.VulkanMemory().UploadBufferData(
+		m_pxVulkanMemory->UploadBufferData(
 			m_xTransformBuffer.GetBuffer().m_xVRAMHandle,
 			m_axTransforms.data(),
 			ulSize);
@@ -302,7 +308,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	if (m_bAnimDataDirty)
 	{
 		const size_t ulSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
-		g_xEngine.VulkanMemory().UploadBufferData(
+		m_pxVulkanMemory->UploadBufferData(
 			m_xAnimDataBuffer.GetBuffer().m_xVRAMHandle,
 			m_axAnimData.data(),
 			ulSize);
@@ -322,7 +328,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 		if (auVisibleIndices.GetSize() > 0)
 		{
 			const size_t ulSize = static_cast<size_t>(auVisibleIndices.GetSize()) * sizeof(uint32_t);
-			g_xEngine.VulkanMemory().UploadBufferData(
+			m_pxVulkanMemory->UploadBufferData(
 				m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle,
 				auVisibleIndices.GetDataPointer(),
 				ulSize);
@@ -348,7 +354,7 @@ void Flux_InstanceGroup::ResetVisibleCount()
 
 	// Reset the atomic counter to 0 for culling pass
 	uint32_t uZero = 0;
-	g_xEngine.VulkanMemory().UploadBufferData(
+	m_pxVulkanMemory->UploadBufferData(
 		m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle,
 		&uZero,
 		sizeof(uint32_t));
@@ -364,7 +370,7 @@ void Flux_InstanceGroup::ResetVisibleCount()
 		xCmd.m_iVertexOffset = 0;
 		xCmd.m_uFirstInstance = 0;
 
-		g_xEngine.VulkanMemory().UploadBufferData(
+		m_pxVulkanMemory->UploadBufferData(
 			m_xIndirectBuffer.GetBuffer().m_xVRAMHandle,
 			&xCmd,
 			sizeof(xCmd));
@@ -480,7 +486,7 @@ void Flux_InstanceGroup::AssertMainThreadMutation(const char* szWhat) const
 	// removed) trips here. NOT a !AreRenderTasksActive check: the render-task
 	// window spans both Prepare (main thread) and record (workers), so only
 	// thread affinity distinguishes the legitimate single writer.
-	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+	Zenith_Assert(m_pxThreading->IsMainThread(),
 		"Flux_InstanceGroup::%s must run on the main thread (WS7 Prepare gather is the single writer)", szWhat);
 }
 

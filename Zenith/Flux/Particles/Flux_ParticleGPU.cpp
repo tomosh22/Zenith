@@ -70,28 +70,31 @@ void Flux_ParticleGPUImpl::BuildPipelines()
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_ParticleGPUImpl::Initialise()
+void Flux_ParticleGPUImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame)
 {
+	m_pxVulkanMemory = &xVulkanMemory;
+	m_pxFrame = &xFrame;
+
 	BuildPipelines();
 
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(
 		nullptr,
 		sizeof(Flux_Particle) * s_uMaxGPUParticles,
 		m_xParticleBufferA
 	);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(
 		nullptr,
 		sizeof(Flux_Particle) * s_uMaxGPUParticles,
 		m_xParticleBufferB
 	);
 
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(
 		nullptr,
 		sizeof(Flux_ParticleInstance) * s_uMaxGPUParticles,
 		m_xInstanceBuffer
 	);
 
-	g_xEngine.VulkanMemory().InitialiseIndirectBuffer(
+	m_pxVulkanMemory->InitialiseIndirectBuffer(
 		sizeof(uint32_t),
 		m_xCounterBuffer
 	);
@@ -109,10 +112,10 @@ void Flux_ParticleGPUImpl::Shutdown()
 	m_xComputeRootSig = Flux_RootSig();
 	m_xComputeCommandList.Reset();
 
-	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xParticleBufferA);
-	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xParticleBufferB);
-	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(m_xInstanceBuffer);
-	g_xEngine.VulkanMemory().DestroyIndirectBuffer(m_xCounterBuffer);
+	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xParticleBufferA);
+	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xParticleBufferB);
+	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xInstanceBuffer);
+	m_pxVulkanMemory->DestroyIndirectBuffer(m_xCounterBuffer);
 
 	delete[] m_pxStagingBuffer;
 	m_pxStagingBuffer = nullptr;
@@ -121,6 +124,9 @@ void Flux_ParticleGPUImpl::Shutdown()
 	m_axEmitters.Clear();
 	m_uNextEmitterID = 0;
 	m_uTotalAllocatedParticles = 0;
+
+	m_pxVulkanMemory = nullptr;
+	m_pxFrame = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticleGPU shut down");
 }
@@ -270,7 +276,7 @@ void Flux_ParticleGPUImpl::ProcessPendingSpawns()
 		}
 
 		uint32_t uUploadOffset = xEmitter.m_uBaseOffset + xEmitter.m_uCurrentParticleCount;
-		g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
+		m_pxVulkanMemory->UploadBufferDataAtOffset(
 			xInputBuffer.GetBuffer().m_xVRAMHandle,
 			m_pxStagingBuffer,
 			uSpawnCount * sizeof(Flux_Particle),
@@ -293,7 +299,7 @@ void Flux_ParticleGPUImpl::PreExecuteCompute()
 	ProcessPendingSpawns();
 
 	uint32_t uZero = 0;
-	g_xEngine.VulkanMemory().UploadBufferData(
+	m_pxVulkanMemory->UploadBufferData(
 		m_xCounterBuffer.GetBuffer().m_xVRAMHandle,
 		&uZero,
 		sizeof(uint32_t)
@@ -305,7 +311,7 @@ void Flux_ParticleGPUImpl::DispatchCompute(Flux_CommandList* pxCmdList)
 	if (!Zenith_GraphicsOptions::Get().m_bGPUParticlesEnabled || m_axEmitters.GetSize() == 0)
 		return;
 
-	float fDt = g_xEngine.Frame().GetDt();
+	float fDt = m_pxFrame->GetDt();
 
 	Flux_ReadWriteBuffer& xInputBuffer  = m_bUseBufferA ? m_xParticleBufferA : m_xParticleBufferB;
 	Flux_ReadWriteBuffer& xOutputBuffer = m_bUseBufferA ? m_xParticleBufferB : m_xParticleBufferA;

@@ -10,6 +10,8 @@
 
 class Flux_ParticleEmitterConfig;
 class Flux_CommandList;
+class Zenith_Vulkan_MemoryManager;
+class FrameContext;
 
 /**
  * GPU-based particle compute system.
@@ -35,7 +37,7 @@ public:
 	Flux_ParticleGPUImpl(const Flux_ParticleGPUImpl&) = delete;
 	Flux_ParticleGPUImpl& operator=(const Flux_ParticleGPUImpl&) = delete;
 
-	void Initialise();
+	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame);
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -102,6 +104,10 @@ public:
 		Zenith_Maths::Vector3       m_xSpawnPosition;
 		Zenith_Maths::Vector3       m_xSpawnDirection;
 	};
+
+	// Injected cross-subsystem dependencies (stored in Initialise).
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory       = nullptr;
+	FrameContext*                m_pxFrame              = nullptr;
 
 	Zenith_Vector<EmitterData> m_axEmitters;
 	uint32_t                   m_uNextEmitterID         = 0;

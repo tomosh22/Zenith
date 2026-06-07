@@ -12,6 +12,11 @@ class Flux_IndirectBuffer;
 class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_Sampler;
+class Zenith_Vulkan;
+class Zenith_Vulkan_MemoryManager;
+class Zenith_Vulkan_Swapchain;
+class Flux_GraphicsImpl;
+class Zenith_Profiling;
 struct Flux_Buffer;
 class Flux_ReadWriteBuffer;
 struct Flux_ConstantBufferView;
@@ -176,6 +181,19 @@ private:
 
 	CommandType m_eCommandType;
 	u_int m_uWorkerIndex;
+
+	// Injected subsystem dependencies (self-wired from g_xEngine once in
+	// Initialise / InitialiseWithCustomPool). These replace scattered
+	// g_xEngine.X() reaches throughout the recorder. Both init entry points
+	// set them because worker / copy command buffers go through
+	// InitialiseWithCustomPool, not Initialise; the call-sites (Zenith_Vulkan.cpp,
+	// Zenith_Vulkan_MemoryManager.cpp, Zenith_Vulkan_Swapchain.cpp) are not the
+	// Zenith_Engine.cpp composition root, so the signatures stay unchanged.
+	Zenith_Vulkan*               m_pxVulkan       = nullptr;
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Zenith_Vulkan_Swapchain*     m_pxVulkanSwapchain = nullptr;
+	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
+	Zenith_Profiling*            m_pxProfiling    = nullptr;
 
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_BINDING_GROUPS] = { VK_NULL_HANDLE };
 	u_int m_uDescriptorDirty = true;

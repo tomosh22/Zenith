@@ -6,6 +6,8 @@
 #include <vector>
 
 class Flux_AnimationTexture;
+class Zenith_Vulkan_MemoryManager;
+class Zenith_Multithreading;
 
 //=============================================================================
 // Per-instance animation and color data (16 bytes, GPU-aligned)
@@ -222,4 +224,19 @@ private:
 	MaterialHandle m_xMaterial;
 	Flux_AnimationTexture* m_pxAnimationTexture = nullptr;
 	Flux_InstanceBounds m_xBounds = {};
+
+	//-------------------------------------------------------------------------
+	// Self-wired cross-subsystem deps (de-globalisation). Flux_InstanceGroup is
+	// NOT an engine singleton — it is heap-allocated per Zenith_InstancedMeshComponent
+	// and has no engine-composition-root Initialise() seam to inject through, and
+	// its constructor's caller (the component) is off-limits. So instead of an
+	// Initialise(...) signature change + call-site wiring, recover each dep ONCE in
+	// the constructor (one boundary reach per dep) and route every other reach
+	// through the member. Safe regardless of init ordering: the *Impl objects are
+	// allocated up-front in Zenith_Engine::Initialise(), groups are only ever
+	// constructed long after boot (first instance added at runtime), and we only
+	// store the pointer here — no method is called at construction time.
+	//-------------------------------------------------------------------------
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Zenith_Multithreading* m_pxThreading = nullptr;
 };
