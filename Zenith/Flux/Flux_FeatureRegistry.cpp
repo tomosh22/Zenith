@@ -241,7 +241,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.AnimatedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.AnimatedMeshes().Shutdown(); });
 	const u_int uInstancedMeshes = xReg.Register(szFLUX_FEATURE_INSTANCED_MESHES,
-		+[](){ g_xEngine.InstancedMeshes().Initialise(); },
+		+[](){ g_xEngine.InstancedMeshes().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.InstancedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.InstancedMeshes().Shutdown(); });
 	const u_int uTerrain = xReg.Register(szFLUX_FEATURE_TERRAIN,
@@ -281,7 +281,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.LightClustering().SetupRenderGraph(g); },
 		+[](){ g_xEngine.LightClustering().Shutdown(); });
 	const u_int uDeferredShading = xReg.Register(szFLUX_FEATURE_DEFERRED_SHADING,
-		+[](){ g_xEngine.DeferredShading().Initialise(); },
+		+[](){ g_xEngine.DeferredShading().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.Shadows(), g_xEngine.IBL(), g_xEngine.SSR(), g_xEngine.SSGI(), g_xEngine.DynamicLights(), g_xEngine.LightClustering()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.DeferredShading().SetupRenderGraph(g); },
 		+[](){ g_xEngine.DeferredShading().Shutdown(); });
 	const u_int uDecals = xReg.Register(szFLUX_FEATURE_DECALS,

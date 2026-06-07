@@ -7,6 +7,11 @@
 
 class Flux_DynamicConstantBuffer;
 class Flux_InstanceGroup;
+class Flux_MeshInstance;
+class Flux_ShaderBinder;
+class Flux_CommandList;
+class Flux_GraphicsImpl;
+class Zenith_Vulkan_MemoryManager;
 
 // Phase 9: state + behaviour for InstancedMeshes subsystem.
 class Flux_InstancedMeshesImpl
@@ -18,7 +23,7 @@ public:
 	Flux_InstancedMeshesImpl(const Flux_InstancedMeshesImpl&) = delete;
 	Flux_InstancedMeshesImpl& operator=(const Flux_InstancedMeshesImpl&) = delete;
 
-	void Initialise();
+	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics);
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -41,6 +46,11 @@ public:
 	// and ExecuteCulling / ExecuteInstancedGBuffer are pure readers.
 	void GatherInstancedPacket(void*);
 
+	// Promoted from a file-static helper so the ExecuteInstancedGBuffer trampoline
+	// can route material/instance-buffer binding through this subsystem's members
+	// (m_xGBufferShader) and the injected graphics singleton.
+	void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup);
+
 	uint32_t GetTotalInstanceCount() const   { return m_uTotalInstances; }
 	uint32_t GetVisibleInstanceCount() const { return m_uVisibleInstances; }
 	uint32_t GetGroupCount() const           { return static_cast<uint32_t>(m_apxInstanceGroups.size()); }
@@ -61,4 +71,8 @@ public:
 
 	uint32_t                   m_uTotalInstances     = 0;
 	uint32_t                   m_uVisibleInstances   = 0;
+
+	// Injected engine-infra singletons (de-globalization pass).
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 };
