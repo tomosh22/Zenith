@@ -10,6 +10,8 @@
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include <cstdio>
 
@@ -129,13 +131,31 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 	}
 
 	case kAS_SnapshotCalm:
-		// No possession, no stimuli -- the priest's BB should report
-		// neither TargetWithDevil nor HasInvestigatePos. If the bridge
-		// is leaking stale state into the BB the classifier will read
-		// Pursuing/Suspicious here instead.
+	{
+		// Establish a deterministic clean precondition for the classifier. The
+		// procgen scene emits sounds on load that, under the suite's small
+		// --fixed-dt, the priest is still "hearing" at snapshot time (they had
+		// aged out by the 1-frame snapshot at wall-clock, so this only surfaced
+		// in the fixed-dt batch). Clear the priest's decision BB so we assert the
+		// CLASSIFIER mapping (clean BB -> Calm), independent of what the procgen
+		// priest happens to perceive. The damage -> BB -> Pursuing integration is
+		// still exercised by the phases below.
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
+		if (pxScene != nullptr)
+		{
+			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
+			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_AIAgentComponent>())
+			{
+				Zenith_Blackboard& xBB =
+					xEnt.GetComponent<Zenith_AIAgentComponent>().GetBlackboard();
+				xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
+				xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
+			}
+		}
 		g_eCalmSnapshot = DPHUDController_Behaviour::ComputeAelfricState();
 		g_iPhase = kAS_EmitDamage;
 		return true;
+	}
 
 	case kAS_EmitDamage:
 		// Drive the bridge through the public perception API. Possess

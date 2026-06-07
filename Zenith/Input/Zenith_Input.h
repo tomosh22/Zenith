@@ -31,7 +31,7 @@ public:
 	bool WasKeyPressedThisFrame(Zenith_KeyCode iKey);
 
 	void MouseWheelCallback(double fXOffset, double fYOffset);
-	float GetMouseWheelDelta() const { return m_fMouseWheelDelta; }
+	float GetMouseWheelDelta() const;  // sim-aware; defined in .cpp
 
 	bool IsGamepadConnected(int iGamepad = 0);
 	bool IsGamepadButtonDown(int iButton, int iGamepad = 0);

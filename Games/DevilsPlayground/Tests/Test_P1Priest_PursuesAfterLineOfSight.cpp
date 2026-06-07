@@ -78,6 +78,37 @@ namespace
 		return true;
 	}
 
+	// Place xVillager fDist metres along the priest's ACTUAL facing (read from
+	// its transform), so it lands in the priest's sight cone regardless of the
+	// procgen spawn orientation. The original test assumed the priest faced +Z
+	// (authored yaw 0), but on procgen the navmesh agent faces its patrol
+	// target, so a +Z-placed villager fell outside the FOV and sight never
+	// fired. Re-call each frame as the priest rotates. (Matches the perception
+	// system's forward = quat * +Z for a yaw-only agent.)
+	void PlaceInPriestFOV(Zenith_EntityID xPriest, Zenith_EntityID xVillager, float fDist)
+	{
+		Zenith_Maths::Vector3 xPriestPos;
+		if (!TryGetEntityPos(xPriest, xPriestPos)) return;
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
+		if (pxScene == nullptr) return;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriest);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Maths::Quaternion xQuat;
+		xEnt.GetComponent<Zenith_TransformComponent>().GetRotation(xQuat);
+		// HORIZONTAL forward (zero the Y, renormalise) to match the perception
+		// system's yaw-only sight forward, and place at the priest's OWN height.
+		// A forward with any vertical component drops the villager off the sight
+		// cone's vertical centre, and a far placement can land past a wall the
+		// procgen priest happens to face -- both give awareness 0 in batch.
+		Zenith_Maths::Vector3 xFwd = xQuat * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		xFwd.y = 0.0f;
+		const float fLen = std::sqrt(xFwd.x * xFwd.x + xFwd.z * xFwd.z);
+		if (fLen > 1e-4f) { xFwd.x /= fLen; xFwd.z /= fLen; }
+		Zenith_Maths::Vector3 xPos = xPriestPos + xFwd * fDist;
+		xPos.y = xPriestPos.y;
+		TrySetEntityPos(xVillager, xPos);
+	}
+
 	Zenith_EntityID ReadPriestBBTarget(Zenith_EntityID xPriestId)
 	{
 		Zenith_SceneData* pxScene =
@@ -144,20 +175,11 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 		// to feed the priest BT in non-fallback mode.
 		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
 
-		// Place the villager 4 m IN FRONT of the priest. Priest's
-		// authored yaw is 0 (facing +Z by Zenith convention -- the
-		// default "no rotation" forward direction). Putting the
-		// villager at priest + (0, 0, +4) puts it directly in the
-		// priest's primary FOV cone.
-		Zenith_Maths::Vector3 xPriestPos;
-		if (!TryGetEntityPos(g_xPriest, xPriestPos))
-		{
-			g_iPhase = kLS_Done;
-			return false;
-		}
-		Zenith_Maths::Vector3 xVillagerPos(
-			xPriestPos.x, xPriestPos.y, xPriestPos.z + 4.0f);
-		TrySetEntityPos(g_xVillager, xVillagerPos);
+		// Place the villager along the priest's ACTUAL facing (see
+		// PlaceInPriestFOV) so it lands in the sight cone regardless of the
+		// procgen spawn orientation -- the old +Z assumption only held for the
+		// retired hand-authored level.
+		PlaceInPriestFOV(g_xPriest, g_xVillager, 2.0f);
 		DP_Player::SetPossessedVillager(g_xVillager);
 		g_iRunFrames = 0;
 		g_iPhase = kLS_RunFrames;
@@ -166,6 +188,9 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 
 	case kLS_RunFrames:
 	{
+		// Re-place each frame: the priest rotates (navmesh patrol), so keep the
+		// villager in its current FOV until sight acquires it.
+		PlaceInPriestFOV(g_xPriest, g_xVillager, 2.0f);
 		++g_iRunFrames;
 		if (g_iFrameTargetFirstSeen < 0)
 		{
@@ -184,13 +209,23 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 	}
 
 	case kLS_Verify:
+	{
+		const float fAware = Zenith_PerceptionSystem::GetAwarenessOf(g_xPriest, g_xVillager);
+		const bool bIsAgent = Zenith_PerceptionSystem::GetPerceivedTargets(g_xPriest) != nullptr;
+		const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
+		Zenith_Maths::Vector3 xPP(0.0f), xVP(0.0f);
+		TryGetEntityPos(g_xPriest, xPP);
+		TryGetEntityPos(g_xVillager, xVP);
+		const float fDist = std::sqrt((xPP.x - xVP.x) * (xPP.x - xVP.x) + (xPP.z - xVP.z) * (xPP.z - xVP.z));
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P1PursuesAfterLOS: firstSightingFrame=%d target=(%u/%u) expected=(%u/%u)",
+			"P1PursuesAfterLOS: firstSightingFrame=%d target=(%u/%u) expected=(%u/%u) aware=%.2f isAgent=%d possessed=(%u/%u) dist=%.1f",
 			g_iFrameTargetFirstSeen,
 			g_xTargetAtFirstSighting.m_uIndex, g_xTargetAtFirstSighting.m_uGeneration,
-			g_xVillager.m_uIndex, g_xVillager.m_uGeneration);
+			g_xVillager.m_uIndex, g_xVillager.m_uGeneration,
+			fAware, (int)bIsAgent, xPossessed.m_uIndex, xPossessed.m_uGeneration, fDist);
 		g_iPhase = kLS_Done;
 		return false;
+	}
 
 	case kLS_Done:
 	default:

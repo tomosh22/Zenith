@@ -106,6 +106,23 @@ void Zenith_Input::BeginFrame()
 #endif
 }
 
+float Zenith_Input::GetMouseWheelDelta() const
+{
+#ifdef ZENITH_INPUT_SIMULATOR
+	// Under the input simulator there is no GLFW scroll callback feeding
+	// m_fMouseWheelDelta, so read the simulator's per-frame wheel value
+	// directly. SimulateMouseWheel() typically runs in a test's Setup, which
+	// the harness invokes AFTER Zenith_Input::BeginFrame in the SAME main-loop
+	// tick -- so a BeginFrame-time copy would be a frame stale. Reading through
+	// reflects it the same frame; EndOfFrameTickComplete clears it per frame.
+	if (Zenith_InputSimulator::IsEnabled())
+	{
+		return Zenith_InputSimulator::GetMouseWheelDeltaSimulated();
+	}
+#endif
+	return m_fMouseWheelDelta;
+}
+
 void Zenith_Input::KeyPressedCallback(Zenith_KeyCode iKey)
 {
 	g_xEngine.Input().m_xFrameKeyPresses.insert(iKey);

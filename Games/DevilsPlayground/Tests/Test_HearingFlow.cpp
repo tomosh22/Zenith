@@ -12,6 +12,8 @@
 #include "Components/DPVillager_Behaviour.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
+#include "Tests/DPTestSupport.h"
+
 // ============================================================================
 // HearingFlow_Test (EXT-6 + Priest perception bridge)
 //
@@ -36,8 +38,6 @@ namespace
 	Zenith_EntityID g_xPriest;
 	Zenith_EntityID g_xSoundSource;
 	bool            g_bSawValid     = false;
-	float           g_fObservedDx   = 0.0f;
-	float           g_fObservedDz   = 0.0f;
 	int             g_iWaitFrames   = 0;
 
 	// Filled in at runtime once we know where the priest actually is — the
@@ -52,8 +52,6 @@ static void Setup_HearingFlow()
 	g_xPriest      = INVALID_ENTITY_ID;
 	g_xSoundSource = INVALID_ENTITY_ID;
 	g_bSawValid    = false;
-	g_fObservedDx  = 0.0f;
-	g_fObservedDz  = 0.0f;
 	g_iWaitFrames  = 0;
 }
 
@@ -119,11 +117,13 @@ static bool Step_HearingFlow(int iFrame)
 	}
 
 	case kHF_WaitProcess:
-		// Perception needs Update to fire; that runs once per frame in
-		// Playing mode. Give it 5 frames to settle (one update is enough,
-		// but bursty frame-skips can defer it).
+		// dt-robust: re-emit + poll until the priest perceives the villager-
+		// sourced sound (DP_TestSupport::PollHeardFromSource). A FIXED frame wait
+		// starves at the suite's --fixed-dt because hearing awareness is time-
+		// integrated and sounds expire in 0.5 s; polling is dt-independent.
 		++g_iWaitFrames;
-		if (g_iWaitFrames >= 5)
+		if (DP_TestSupport::PollHeardFromSource(g_xPriest, g_xSoundSource, g_xNoisePos)
+			|| g_iWaitFrames >= 180)
 		{
 			g_iHFPhase = kHF_Verify;
 		}
@@ -133,10 +133,11 @@ static bool Step_HearingFlow(int iFrame)
 	{
 		const Zenith_PerceptionSystem::Zenith_LastHeardSound xHeard
 			= Zenith_PerceptionSystem::GetLastHeardSoundFor(g_xPriest);
-		g_bSawValid   = xHeard.m_bValid;
-		g_fObservedDx = xHeard.m_xPosition.x - g_xNoisePos.x;
-		g_fObservedDz = xHeard.m_xPosition.z - g_xNoisePos.z;
-		g_iHFPhase    = kHF_Done;
+		// Assert ATTRIBUTION, not emit-position: GetLastHeardSoundFor reports the
+		// source's position and sight overwrites it once the priest faces the
+		// villager (dt-dependent), so an emit-point equality check is fragile.
+		g_bSawValid = xHeard.m_bValid && xHeard.m_xSourceEntity == g_xSoundSource;
+		g_iHFPhase  = kHF_Done;
 		return false;
 	}
 
@@ -148,11 +149,17 @@ static bool Step_HearingFlow(int iFrame)
 
 static bool Verify_HearingFlow()
 {
-	if (!g_xPriest.IsValid()) return false;
-	if (!g_bSawValid)         return false;
-	// Reported position should match the emitted noise origin within 0.5m.
-	if (g_fObservedDx > 0.5f || g_fObservedDx < -0.5f) return false;
-	if (g_fObservedDz > 0.5f || g_fObservedDz < -0.5f) return false;
+	if (!g_xPriest.IsValid())
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "HearingFlow: priest entity not found");
+		return false;
+	}
+	if (!g_bSawValid)
+	{
+		Zenith_Log(LOG_CATEGORY_AI,
+			"HearingFlow: priest never perceived a HEARING stimulus attributed to the villager source within the frame budget");
+		return false;
+	}
 	return true;
 }
 

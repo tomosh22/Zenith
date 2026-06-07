@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "Core/Zenith_GraphicsOptions.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -211,6 +212,11 @@ namespace DevilsPlayground
 			DP_Fog::ClearAllMemoryReveals();
 			DP_AI::ResetLevelNavMesh();
 			DPPauseMenuController_Behaviour::ResetForTest();
+			// Reset engine perception state (per-agent awareness, registered
+			// targets, active sounds) between tests. It has no entity owner and
+			// is never cleared on scene reload, so it would otherwise leak across
+			// the batch (Reset() previously had zero callers anywhere).
+			Zenith_PerceptionSystem::Reset();
 			// Drop emitter entities + zero burst counts so the next test
 			// gets a fresh particle slate. Configs + subscriptions stay
 			// alive across tests (they're process-global).

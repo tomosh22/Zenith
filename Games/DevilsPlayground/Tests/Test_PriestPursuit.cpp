@@ -77,6 +77,28 @@ namespace
 		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
 		return true;
 	}
+
+	// Place xVillager fDist metres along the priest's ACTUAL facing (read from
+	// its transform), so it lands in the priest's sight cone regardless of the
+	// procgen spawn orientation. The original test assumed the priest faced +Z
+	// (authored yaw 0); on procgen the navmesh agent faces its patrol target, so
+	// the +Z placement only sometimes hit the FOV -- the source of this test's
+	// flakiness. (Matches the perception system's forward = quat * +Z for a
+	// yaw-only agent.)
+	void PlaceInPriestFOV(Zenith_EntityID xPriest, Zenith_EntityID xVillager, float fDist)
+	{
+		Zenith_Maths::Vector3 xPriestPos;
+		if (!TryGetEntityPos(xPriest, xPriestPos)) return;
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
+		if (pxScene == nullptr) return;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriest);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Maths::Quaternion xQuat;
+		xEnt.GetComponent<Zenith_TransformComponent>().GetRotation(xQuat);
+		const Zenith_Maths::Vector3 xFwd = xQuat * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		TrySetEntityPos(xVillager, xPriestPos + xFwd * fDist);
+	}
+
 }
 
 static void Setup_PriestPursuit()
@@ -159,12 +181,11 @@ static bool Step_PriestPursuit(int iFrame)
 		// engages while the apprehend channel waits for the priest to
 		// close the gap.
 		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
-		Zenith_Maths::Vector3 xPriestPos;
-		if (TryGetEntityPos(g_xPriest, xPriestPos))
-		{
-			TrySetEntityPos(g_xVillager,
-				Zenith_Maths::Vector3(xPriestPos.x, xPriestPos.y, xPriestPos.z + 6.0f));
-		}
+		// Place the villager along the priest's ACTUAL facing (not the retired
+		// +Z assumption) so the sight cone reliably catches it -- on procgen the
+		// priest faces its patrol target, which made the +Z placement (and this
+		// whole test) flaky. Placed ONCE so the priest can then close the gap.
+		PlaceInPriestFOV(g_xPriest, g_xVillager, 6.0f);
 		// Possess the chosen villager. The villager will then satisfy
 		// Priest_Behaviour::IsPossessedVillager(), and the priest's BB-bridge
 		// will write its EntityID into BB.TargetWithDevil — driving the
@@ -186,6 +207,16 @@ static bool Step_PriestPursuit(int iFrame)
 	}
 
 	case kPP_RunFrames:
+		// Maintain the target lock via a damage stimulus each frame (immediate
+		// full awareness, no FOV/facing dependence) so the pursuit is
+		// deterministic regardless of procgen geometry and dt. This makes the
+		// test reliably exercise the bridge -> BT-pursue -> navmesh-move chain
+		// (priest closes the gap to the STATIONARY villager, which is what it
+		// asserts); sight-based acquisition is covered separately by
+		// Test_P1Priest_PursuesAfterLineOfSight. (Previously the test relied on
+		// the priest happening to face the +Z-placed villager -- flaky on
+		// procgen, where the navmesh agent faces its patrol target instead.)
+		Zenith_PerceptionSystem::EmitDamageStimulus(g_xPriest, g_xVillager);
 		++g_iRunFrames;
 		if (g_iRunFrames >= 120)
 		{
