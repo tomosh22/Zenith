@@ -21,7 +21,10 @@ jobs:
   layering-gate:
     name: layering-gate
     runs-on: windows-latest
-    timeout-minutes: 5
+    # Bumped 5 -> 15 (2026-06-07): this job is checkout/runner-setup bound on
+    # windows-latest (~4-5 min); the 5-min ceiling flaked when a slow runner
+    # pushed total time to ~5m8s (the layering scan itself takes seconds).
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
