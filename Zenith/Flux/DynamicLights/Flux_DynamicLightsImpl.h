@@ -6,6 +6,9 @@
 
 struct LightInstance;
 
+class Zenith_Vulkan_MemoryManager;
+class Flux_GraphicsImpl;
+
 // Phase 9: state + behaviour for DynamicLights subsystem.
 class Flux_DynamicLightsImpl
 {
@@ -16,7 +19,7 @@ public:
 	Flux_DynamicLightsImpl(const Flux_DynamicLightsImpl&) = delete;
 	Flux_DynamicLightsImpl& operator=(const Flux_DynamicLightsImpl&) = delete;
 
-	void Initialise();
+	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics);
 	void Shutdown();
 	void Reset();
 
@@ -34,4 +37,7 @@ public:
 	Zenith_Frustum              m_xCameraFrustum;
 	u_int                       m_uLightCount = 0;
 	Flux_DynamicReadWriteBuffer m_xLightBuffer;
+
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 };

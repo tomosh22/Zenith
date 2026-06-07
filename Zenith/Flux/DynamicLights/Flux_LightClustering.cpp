@@ -8,6 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -46,13 +47,15 @@ struct LightClusteringPushConstants
 
 void Flux_LightClusteringImpl::BuildPipelines()
 {
-	g_xEngine.LightClustering().m_xComputeShader.Initialise(FluxShaderProgram::LightClustering);
-	Flux_RootSigBuilder::FromReflection(g_xEngine.LightClustering().m_xComputeRootSig, g_xEngine.LightClustering().m_xComputeShader.GetReflection());
-	Flux_ComputePipelineBuilder::BuildFromShader(g_xEngine.LightClustering().m_xComputePipeline, g_xEngine.LightClustering().m_xComputeShader, g_xEngine.LightClustering().m_xComputeRootSig);
+	m_xComputeShader.Initialise(FluxShaderProgram::LightClustering);
+	Flux_RootSigBuilder::FromReflection(m_xComputeRootSig, m_xComputeShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_LightClusteringImpl::Initialise()
+void Flux_LightClusteringImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory)
 {
+	m_pxVulkanMemory = &xVulkanMemory;
+
 	// Cluster light counts: 3456 * 4 bytes ≈ 14 KB.
 	const u_int64 ulCountBufferSize = uCLUSTER_COUNT * sizeof(u_int);
 	// Cluster light indices: 3456 * 64 * 4 bytes ≈ 884 KB.
@@ -62,11 +65,11 @@ void Flux_LightClusteringImpl::Initialise()
 	// cluster loop in the fragment shader will run zero iterations.
 	Zenith_Vector<u_int> xZeroedCounts(uCLUSTER_COUNT);
 	for (u_int u = 0; u < uCLUSTER_COUNT; ++u) xZeroedCounts.PushBack(0);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(xZeroedCounts.GetDataPointer(), ulCountBufferSize, g_xEngine.LightClustering().m_xClusterLightCounts);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(xZeroedCounts.GetDataPointer(), ulCountBufferSize, m_xClusterLightCounts);
 
 	Zenith_Vector<u_int> xZeroedIndices(uCLUSTER_COUNT * uMAX_LIGHTS_PER_CLUSTER);
 	for (u_int u = 0; u < uCLUSTER_COUNT * uMAX_LIGHTS_PER_CLUSTER; ++u) xZeroedIndices.PushBack(0);
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, g_xEngine.LightClustering().m_xClusterLightIndices);
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, m_xClusterLightIndices);
 
 	BuildPipelines();
 
@@ -87,9 +90,10 @@ void Flux_LightClusteringImpl::Shutdown()
 {
 	if (!m_bInitialised) return;
 
-	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightCounts);
-	g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightIndices);
+	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xClusterLightCounts);
+	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xClusterLightIndices);
 
+	m_pxVulkanMemory = nullptr;
 	m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering shut down");
 }
@@ -108,13 +112,21 @@ void Flux_LightClusteringImpl::Shutdown()
 // Zenith_TerrainComponent.cpp's MarkBufferHostWritten note).
 static void PrepareLightClustering(void* /*pUserData*/)
 {
-	if (!g_xEngine.LightClustering().IsInitialised()) return;
+	// Trampoline (non-capturing graph callback): recover the subsystem singleton
+	// up front, then route through it. GatherLightsFromScene lives on the sibling
+	// DynamicLights subsystem, which is reached directly here.
+	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
+	if (!xLightClustering.IsInitialised()) return;
 	g_xEngine.DynamicLights().GatherLightsFromScene();
 }
 
 static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUserData*/)
 {
-	if (!g_xEngine.LightClustering().IsInitialised()) return;
+	// Trampoline (non-capturing graph callback): recover the subsystem singleton
+	// up front, then route every LightClustering reach through it. DynamicLights
+	// and FluxGraphics are sibling subsystems, reached directly here.
+	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
+	if (!xLightClustering.IsInitialised()) return;
 
 	// Always dispatch — even when no lights exist or dynamic lights are
 	// disabled. The shader writes count = 0 to every cluster, ensuring
@@ -123,28 +135,28 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	// zero would leave the buffer dirty.
 	const u_int uLightCount = g_xEngine.DynamicLights().GetLightCount();
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.LightClustering().m_xComputePipeline);
+	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xLightClustering.m_xComputePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Inputs.
-	xBinder.BindCBV(g_xEngine.LightClustering().m_xComputeShader, "FrameConstants",
+	xBinder.BindCBV(xLightClustering.m_xComputeShader, "FrameConstants",
 		&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV_Buffer(g_xEngine.LightClustering().m_xComputeShader, "LightBuffer",
+	xBinder.BindSRV_Buffer(xLightClustering.m_xComputeShader, "LightBuffer",
 		g_xEngine.DynamicLights().GetLightBufferSRV());
 
 	// Outputs (UAVs).
-	xBinder.BindUAV_Buffer(g_xEngine.LightClustering().m_xComputeShader, "ClusterLightCounts",
-		&g_xEngine.LightClustering().m_xClusterLightCounts.GetUAV());
-	xBinder.BindUAV_Buffer(g_xEngine.LightClustering().m_xComputeShader, "ClusterLightIndices",
-		&g_xEngine.LightClustering().m_xClusterLightIndices.GetUAV());
+	xBinder.BindUAV_Buffer(xLightClustering.m_xComputeShader, "ClusterLightCounts",
+		&xLightClustering.m_xClusterLightCounts.GetUAV());
+	xBinder.BindUAV_Buffer(xLightClustering.m_xComputeShader, "ClusterLightIndices",
+		&xLightClustering.m_xClusterLightIndices.GetUAV());
 
 	LightClusteringPushConstants xConstants;
 	xConstants.m_uLightCount = uLightCount;
 	xConstants.m_uPad0 = 0;
 	xConstants.m_uPad1 = 0;
 	xConstants.m_uPad2 = 0;
-	xBinder.BindDrawConstants(g_xEngine.LightClustering().m_xComputeShader, "PushConstants",
+	xBinder.BindDrawConstants(xLightClustering.m_xComputeShader, "PushConstants",
 		&xConstants, sizeof(LightClusteringPushConstants));
 
 	// Total threads = 16 × 9 × 24 = 3456, one per cluster. The compute
@@ -164,8 +176,8 @@ void Flux_LightClusteringImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// frame-0 pointer that's stale on every subsequent frame (its
 	// GetBuffer() returns a different physical buffer per frame). See
 	// the comment on PrepareLightClustering for the full rationale.
-	Flux_Buffer& xCountsBuffer = g_xEngine.LightClustering().m_xClusterLightCounts.GetBuffer();
-	Flux_Buffer& xIndicesBuf   = g_xEngine.LightClustering().m_xClusterLightIndices.GetBuffer();
+	Flux_Buffer& xCountsBuffer = m_xClusterLightCounts.GetBuffer();
+	Flux_Buffer& xIndicesBuf   = m_xClusterLightIndices.GetBuffer();
 
 	xGraph.AddPass("Light Clustering", ExecuteLightClustering)
 		.Prepare(PrepareLightClustering)
@@ -175,12 +187,12 @@ void Flux_LightClusteringImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 Flux_ShaderResourceView_Buffer& Flux_LightClusteringImpl::GetClusterLightCountsSRV()
 {
-	return g_xEngine.LightClustering().m_xClusterLightCounts.GetSRV();
+	return m_xClusterLightCounts.GetSRV();
 }
 
 Flux_ShaderResourceView_Buffer& Flux_LightClusteringImpl::GetClusterLightIndicesSRV()
 {
-	return g_xEngine.LightClustering().m_xClusterLightIndices.GetSRV();
+	return m_xClusterLightIndices.GetSRV();
 }
 
 

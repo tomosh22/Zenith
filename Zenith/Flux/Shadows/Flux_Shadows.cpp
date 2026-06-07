@@ -7,7 +7,8 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
@@ -24,10 +25,10 @@
 
 DEBUGVAR float dbg_fZMultiplier = 8.f;
 
-static Flux_RenderAttachment& GetCSM(u_int uIndex)
+Flux_RenderAttachment& Flux_ShadowsImpl::GetCSM(u_int uIndex)
 {
-	Zenith_Assert(g_xEngine.Shadows().m_pxGraph, "Flux_ShadowsImpl::GetCSM: graph pointer is null");
-	return g_xEngine.Shadows().m_pxGraph->GetTransientAttachment(g_xEngine.Shadows().m_axCSMHandles[uIndex]);
+	Zenith_Assert(m_pxGraph, "Flux_ShadowsImpl::GetCSM: graph pointer is null");
+	return m_pxGraph->GetTransientAttachment(m_axCSMHandles[uIndex]);
 }
 
 struct FrustumCorners
@@ -83,11 +84,15 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 	return xRet;
 }
 
-void Flux_ShadowsImpl::Initialise()
+void Flux_ShadowsImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling)
 {
+	m_pxVulkanMemory = &xVulkanMemory;
+	m_pxFluxGraphics = &xFluxGraphics;
+	m_pxProfiling = &xProfiling;
+
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+		m_pxVulkanMemory->InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), m_xShadowMatrixBuffers[u]);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -99,10 +104,14 @@ void Flux_ShadowsImpl::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+		m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xShadowMatrixBuffers[u]);
 	}
 
-	g_xEngine.Shadows().m_pxGraph = nullptr;
+	m_pxGraph = nullptr;
+
+	m_pxVulkanMemory = nullptr;
+	m_pxFluxGraphics = nullptr;
+	m_pxProfiling = nullptr;
 }
 
 // Persistent pass names (W1: prevents dangling stack-buffer pointers passed to AddPass).
@@ -139,23 +148,28 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 
 	const uint32_t u = Flux_UnpackUserData<uint32_t>(pUserData);
 
+	// Non-capturing trampoline: recover the Shadows singleton, then route its
+	// own state (matrix buffers) through xZZ. Sibling subsystems (StaticMeshes /
+	// AnimatedMeshes) are recovered as their own singletons.
+	Flux_ShadowsImpl& xZZ = g_xEngine.Shadows();
+
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.StaticMeshes().GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	g_xEngine.StaticMeshes().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+	g_xEngine.StaticMeshes().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.AnimatedMeshes().GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	g_xEngine.AnimatedMeshes().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+	g_xEngine.AnimatedMeshes().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 
 	// #TODO: Enable terrain shadow casting
-	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 }
 
 void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	g_xEngine.Shadows().m_pxGraph = &xGraph;
+	m_pxGraph = &xGraph;
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
@@ -166,7 +180,7 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		xCSMDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 		xCSMDesc.m_bIsDepthStencil = true;
 
-		g_xEngine.Shadows().m_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
+		m_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
 	}
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
@@ -177,7 +191,7 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
 			.UserData(u)
 			.ClearTargets()
-			.WritesTransient(g_xEngine.Shadows().m_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
+			.WritesTransient(m_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
 		if (u == 0)
 			xGraph.SetPrepare(xPass, PreExecuteShadowMatrices);
 	}
@@ -207,41 +221,41 @@ Flux_RenderAttachment* Flux_ShadowsImpl::GetCSMTargetSetup(const uint32_t uIndex
 
 Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 {
-	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
+	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : m_pxFluxGraphics->m_xWhiteTexture.GetDirect()->m_xSRV;
 }
 
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
-	const Zenith_Maths::Matrix4& xViewMat = g_xEngine.FluxGraphics().GetViewMatrix();
-	
+	m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	const Zenith_Maths::Matrix4& xViewMat = m_pxFluxGraphics->GetViewMatrix();
+
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		const float fNearPlane = g_xEngine.FluxGraphics().GetFarPlane() / s_afCSMLevels[u];
-		const float fFarPlane = g_xEngine.FluxGraphics().GetFarPlane() / s_afCSMLevels[u + 1];
+		const float fNearPlane = m_pxFluxGraphics->GetFarPlane() / s_afCSMLevels[u];
+		const float fFarPlane = m_pxFluxGraphics->GetFarPlane() / s_afCSMLevels[u + 1];
 
-		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(g_xEngine.FluxGraphics().GetFOV(), g_xEngine.FluxGraphics().GetAspectRatio(), fNearPlane, fFarPlane);
+		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(m_pxFluxGraphics->GetFOV(), m_pxFluxGraphics->GetAspectRatio(), fNearPlane, fFarPlane);
 		const Zenith_Maths::Matrix4 xInvViewProjMat = glm::inverse(xProjMat * xViewMat);
 
 		const FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
 		const Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
 
-		const Zenith_Maths::Vector3& xSunDir = g_xEngine.FluxGraphics().GetSunDir();
+		const Zenith_Maths::Vector3& xSunDir = m_pxFluxGraphics->GetSunDir();
 		const Zenith_Maths::Vector3 xUp(0, 1, 0);
-		
+
 		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir, xFrustumCenter, xUp);
-		
+
 		const AABB3D xLightAABB = ComputeAABBFromTransformedPoints(xFrustumCorners.m_axCorners, 8, xSunViewMat);
 
 		const float fZRange = xLightAABB.m_xMax.z - xLightAABB.m_xMin.z;
 
 		xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir * (xLightAABB.m_xMax.z + fZRange * dbg_fZMultiplier), xFrustumCenter, xUp);
 
-		g_xEngine.Shadows().m_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
+		m_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
 
-		g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Shadows().m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_xEngine.Shadows().m_axSunViewProjMats[u], sizeof(g_xEngine.Shadows().m_axSunViewProjMats[u]));
+		m_pxVulkanMemory->UploadBufferData(m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &m_axSunViewProjMats[u], sizeof(m_axSunViewProjMats[u]));
 	}
 
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 }

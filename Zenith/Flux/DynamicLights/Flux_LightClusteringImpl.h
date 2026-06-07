@@ -4,6 +4,8 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+class Zenith_Vulkan_MemoryManager;
+
 // Phase 9: state + behaviour for LightClustering subsystem.
 class Flux_LightClusteringImpl
 {
@@ -14,7 +16,9 @@ public:
 	Flux_LightClusteringImpl(const Flux_LightClusteringImpl&) = delete;
 	Flux_LightClusteringImpl& operator=(const Flux_LightClusteringImpl&) = delete;
 
-	void Initialise();
+	// xVulkanMemory owns the cluster-output GPU buffers' lifetime; stored so
+	// Shutdown can release them without reaching back through g_xEngine.
+	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory);
 	void BuildPipelines();
 	void Shutdown();
 
@@ -40,4 +44,7 @@ public:
 	Flux_RootSig         m_xComputeRootSig;
 	Flux_ReadWriteBuffer m_xClusterLightCounts;
 	Flux_ReadWriteBuffer m_xClusterLightIndices;
+
+	// Injected engine-infra dependency (de-globalization). Null until Initialise.
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
 };

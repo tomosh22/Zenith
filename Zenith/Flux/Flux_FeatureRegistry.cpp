@@ -215,7 +215,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](){ g_xEngine.Gizmos().Shutdown(); });
 #endif
 	const u_int uShadows = xReg.Register(szFLUX_FEATURE_SHADOWS,
-		+[](){ g_xEngine.Shadows().Initialise(); },
+		+[](){ g_xEngine.Shadows().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Shadows().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Shadows().Shutdown(); });
 	const u_int uSkybox = xReg.Register(szFLUX_FEATURE_SKYBOX,
@@ -273,11 +273,11 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.SSGI().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSGI().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
 	const u_int uDynamicLights = xReg.Register(szFLUX_FEATURE_DYNAMIC_LIGHTS,
-		+[](){ g_xEngine.DynamicLights().Initialise(); },
+		+[](){ g_xEngine.DynamicLights().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics()); },
 		nullptr, // DynamicLights has no SetupRenderGraph (gather/upload front-end only).
 		+[](){ g_xEngine.DynamicLights().Shutdown(); });
 	const u_int uLightClustering = xReg.Register(szFLUX_FEATURE_LIGHT_CLUSTERING,
-		+[](){ g_xEngine.LightClustering().Initialise(); },
+		+[](){ g_xEngine.LightClustering().Initialise(g_xEngine.VulkanMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.LightClustering().SetupRenderGraph(g); },
 		+[](){ g_xEngine.LightClustering().Shutdown(); });
 	const u_int uDeferredShading = xReg.Register(szFLUX_FEATURE_DEFERRED_SHADING,
