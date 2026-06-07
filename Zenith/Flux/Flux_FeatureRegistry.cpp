@@ -114,10 +114,11 @@ u_int Flux_FeatureRegistry::Register(const char* szName,
 		"Flux_FeatureRegistry::Register: FLUX_MAX_FEATURES (%u) exceeded registering '%s' — raise the cap in Flux_FeatureRegistry.h",
 		FLUX_MAX_FEATURES, szName);
 
-#if defined(ZENITH_ASSERT) || defined(ZENITH_DEBUG)
+#ifdef ZENITH_RUNTIME_CHECKS
+	// W6.2: duplicate-registration integrity check now survives Release (Zenith_Check).
 	for (u_int u = 0; u < m_uNumFeatures; u++)
 	{
-		Zenith_Assert(strcmp(m_axFeatures[u].m_szName, szName) != 0,
+		Zenith_Check(strcmp(m_axFeatures[u].m_szName, szName) != 0,
 			"Flux_FeatureRegistry::Register: duplicate feature name '%s'", szName);
 	}
 #endif
