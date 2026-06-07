@@ -8,6 +8,10 @@
 
 class Flux_DynamicConstantBuffer;
 class Zenith_TerrainComponent;
+class Zenith_Vulkan_MemoryManager;
+class Flux_GraphicsImpl;
+class Zenith_Profiling;
+class Flux_TerrainStreamingManagerImpl;
 
 // Phase 9: state + behaviour for Terrain subsystem.
 class Flux_TerrainImpl
@@ -19,7 +23,7 @@ public:
 	Flux_TerrainImpl(const Flux_TerrainImpl&) = delete;
 	Flux_TerrainImpl& operator=(const Flux_TerrainImpl&) = delete;
 
-	void Initialise();
+	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming);
 	void BuildPipelines();
 
 	void ReleaseAssetReferences();
@@ -39,6 +43,10 @@ public:
 
 	u_int& GetDebugMode();
 	bool& GetWireframeMode();
+
+	// Lazily-built 1x1 fallback splatmap SRV. Public so the ExecuteGBuffer
+	// graph trampoline (which re-acquires the singleton) can reach it.
+	const Flux_ShaderResourceView& GetFallbackSplatmapSRV();
 
 	// Per-frame list of terrain components contributing to the current draw.
 	Zenith_Vector<Zenith_TerrainComponent*> m_xTerrainComponentsToRender;
@@ -77,4 +85,13 @@ public:
 
 	// Terrain constants buffer (TerrainConstants GPU struct is .cpp-local).
 	Flux_DynamicConstantBuffer m_xTerrainConstantsBuffer;
+
+	// Injected cross-subsystem deps (de-globalisation DI seam). Stored in
+	// Initialise, nulled in Shutdown. Instance methods + the static graph
+	// trampolines (which re-acquire the singleton via g_xEngine.Terrain())
+	// route their reaches through these instead of g_xEngine.<Accessor>().
+	Zenith_Vulkan_MemoryManager*      m_pxVulkanMemory     = nullptr;
+	Flux_GraphicsImpl*                m_pxFluxGraphics     = nullptr;
+	Zenith_Profiling*                 m_pxProfiling        = nullptr;
+	Flux_TerrainStreamingManagerImpl* m_pxTerrainStreaming = nullptr;
 };

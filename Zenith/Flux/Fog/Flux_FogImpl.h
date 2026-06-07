@@ -6,6 +6,14 @@
 class Flux_CommandList;
 class Flux_RenderGraph;
 
+class Flux_VolumeFogImpl;
+class Flux_GodRaysFogImpl;
+class Flux_RaymarchFogImpl;
+class Flux_FroxelFogImpl;
+class Flux_HDRImpl;
+class Flux_GraphicsImpl;
+class Flux_RendererImpl;
+
 // Phase 9: state + behaviour for top-level Fog orchestrator subsystem.
 class Flux_FogImpl
 {
@@ -16,7 +24,9 @@ public:
 	Flux_FogImpl(const Flux_FogImpl&) = delete;
 	Flux_FogImpl& operator=(const Flux_FogImpl&) = delete;
 
-	void Initialise();
+	void Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImpl& xGodRaysFog,
+		Flux_RaymarchFogImpl& xRaymarchFog, Flux_FroxelFogImpl& xFroxelFog,
+		Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics, Flux_RendererImpl& xFluxRenderer);
 	void BuildPipelines();
 	void Reset();
 
@@ -28,6 +38,9 @@ public:
 	bool IsExternallyOverridden() const { return m_bExternallyOverridden; }
 
 	void ReapplyOverrideToCurrentGraph();
+
+	// Public so the file-static graph trampolines can drive pass enable/disable.
+	void DisableAllFogPasses(Flux_RenderGraph& xGraph);
 
 	Flux_PassHandle m_xSimpleFogPass;
 	Flux_PassHandle m_xFroxelInjectPass;
@@ -41,4 +54,13 @@ public:
 
 	Flux_Shader     m_xShader;
 	Flux_Pipeline   m_xPipeline;
+
+	// Injected engine-infra / sibling-subsystem dependencies (de-globalization).
+	Flux_VolumeFogImpl*   m_pxVolumeFog    = nullptr;
+	Flux_GodRaysFogImpl*  m_pxGodRaysFog   = nullptr;
+	Flux_RaymarchFogImpl* m_pxRaymarchFog  = nullptr;
+	Flux_FroxelFogImpl*   m_pxFroxelFog    = nullptr;
+	Flux_HDRImpl*         m_pxHDR          = nullptr;
+	Flux_GraphicsImpl*    m_pxFluxGraphics = nullptr;
+	Flux_RendererImpl*    m_pxFluxRenderer = nullptr;
 };

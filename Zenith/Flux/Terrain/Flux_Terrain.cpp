@@ -7,6 +7,8 @@
 
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -78,9 +80,9 @@ namespace
 // Pinned via TextureHandle so UnloadUnused never frees the fallback splatmap mid-frame.
 // (Owned by Flux_TerrainImpl as m_xFallbackSplatmap.)
 
-static const Flux_ShaderResourceView& GetFallbackSplatmapSRV()
+const Flux_ShaderResourceView& Flux_TerrainImpl::GetFallbackSplatmapSRV()
 {
-	if (!g_xEngine.Terrain().m_xFallbackSplatmap)
+	if (!m_xFallbackSplatmap)
 	{
 		const u_int8 aucRGBA[4] = { 255u, 0u, 0u, 0u };
 		Flux_SurfaceInfo xInfo;
@@ -95,9 +97,9 @@ static const Flux_ShaderResourceView& GetFallbackSplatmapSRV()
 		Zenith_TextureAsset* pxFallback = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 		Zenith_Assert(pxFallback != nullptr, "Failed to create terrain fallback splatmap texture asset");
 		pxFallback->CreateFromData(aucRGBA, xInfo, /*bCreateMips*/ false);
-		g_xEngine.Terrain().m_xFallbackSplatmap.Set(pxFallback);
+		m_xFallbackSplatmap.Set(pxFallback);
 	}
-	return g_xEngine.Terrain().m_xFallbackSplatmap.GetDirect()->m_xSRV;
+	return m_xFallbackSplatmap.GetDirect()->m_xSRV;
 }
 
 // GPU-Driven Terrain Culling Pipeline + ResetCounters + per-frame stats all
@@ -131,8 +133,8 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 
 void Flux_TerrainImpl::BuildPipelines()
 {
-	g_xEngine.Terrain().m_xTerrainGBufferShader.Initialise(FluxShaderProgram::Terrain_ToGBuffer);
-	g_xEngine.Terrain().m_xTerrainShadowShader.Initialise(FluxShaderProgram::Terrain_ToShadowmap);
+	m_xTerrainGBufferShader.Initialise(FluxShaderProgram::Terrain_ToGBuffer);
+	m_xTerrainShadowShader.Initialise(FluxShaderProgram::Terrain_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -150,10 +152,10 @@ void Flux_TerrainImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &g_xEngine.Terrain().m_xTerrainGBufferShader;
+		xPipelineSpec.m_pxShader = &m_xTerrainGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		g_xEngine.Terrain().m_xTerrainGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+		m_xTerrainGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -162,10 +164,10 @@ void Flux_TerrainImpl::BuildPipelines()
 			xBlendState.m_bBlendEnabled = false;
 		}
 
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Terrain().m_xTerrainGBufferPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xTerrainGBufferPipeline, xPipelineSpec);
 
 		xPipelineSpec.m_bWireframe = true;
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Terrain().m_xTerrainWireframePipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xTerrainWireframePipeline, xPipelineSpec);
 	}
 
 
@@ -173,20 +175,20 @@ void Flux_TerrainImpl::BuildPipelines()
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
-		xShadowPipelineSpec.m_pxShader = &g_xEngine.Terrain().m_xTerrainShadowShader;
+		xShadowPipelineSpec.m_pxShader = &m_xTerrainShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		g_xEngine.Terrain().m_xTerrainShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
+		m_xTerrainShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
 		xShadowPipelineSpec.m_bDepthTestEnabled = true;
 		xShadowPipelineSpec.m_bDepthWriteEnabled = true;
 		xShadowPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Terrain().m_xTerrainShadowPipeline, xShadowPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xTerrainShadowPipeline, xShadowPipelineSpec);
 	}
 
 	{
-		g_xEngine.Terrain().m_xWaterShader.Initialise(FluxShaderProgram::Water);
+		m_xWaterShader.Initialise(FluxShaderProgram::Water);
 
 		Flux_VertexInputDescription xWaterVertexDesc;
 		xWaterVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -198,52 +200,60 @@ void Flux_TerrainImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 		xPipelineSpec.m_uNumColourAttachments = 1;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &g_xEngine.Terrain().m_xWaterShader;
+		xPipelineSpec.m_pxShader = &m_xWaterShader;
 		xPipelineSpec.m_xVertexInputDesc = xWaterVertexDesc;
 
-		g_xEngine.Terrain().m_xWaterShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+		m_xWaterShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		xPipelineSpec.m_bDepthWriteEnabled = false;
 
-		Flux_PipelineBuilder::FromSpecification(g_xEngine.Terrain().m_xWaterPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(m_xWaterPipeline, xPipelineSpec);
 	}
 
 	// ========== GPU-Driven Terrain Culling Compute Pipeline ==========
-	g_xEngine.Terrain().m_xCullingShader.Initialise(FluxShaderProgram::TerrainCulling);
+	m_xCullingShader.Initialise(FluxShaderProgram::TerrainCulling);
 
 	// Build compute root signature from shader reflection
-	const Flux_ShaderReflection& xCullingReflection = g_xEngine.Terrain().m_xCullingShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(g_xEngine.Terrain().m_xCullingRootSig, xCullingReflection);
+	const Flux_ShaderReflection& xCullingReflection = m_xCullingShader.GetReflection();
+	Flux_RootSigBuilder::FromReflection(m_xCullingRootSig, xCullingReflection);
 
 	// Build compute pipeline
 	Flux_ComputePipelineBuilder xCullingBuilder;
-	xCullingBuilder.WithShader(g_xEngine.Terrain().m_xCullingShader)
-		.WithLayout(g_xEngine.Terrain().m_xCullingRootSig.m_xLayout)
-		.Build(g_xEngine.Terrain().m_xCullingPipeline);
+	xCullingBuilder.WithShader(m_xCullingShader)
+		.WithLayout(m_xCullingRootSig.m_xLayout)
+		.Build(m_xCullingPipeline);
 
-	g_xEngine.Terrain().m_xCullingPipeline.m_xRootSig = g_xEngine.Terrain().m_xCullingRootSig;
+	m_xCullingPipeline.m_xRootSig = m_xCullingRootSig;
 
 	// ========== Visible-Count Reset Compute Pipeline ==========
 	// Single dispatch, single thread. See the slang module for rationale.
-	g_xEngine.Terrain().m_xResetCountersShader.Initialise(FluxShaderProgram::TerrainResetCounters);
-	const Flux_ShaderReflection& xResetReflection = g_xEngine.Terrain().m_xResetCountersShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(g_xEngine.Terrain().m_xResetCountersRootSig, xResetReflection);
+	m_xResetCountersShader.Initialise(FluxShaderProgram::TerrainResetCounters);
+	const Flux_ShaderReflection& xResetReflection = m_xResetCountersShader.GetReflection();
+	Flux_RootSigBuilder::FromReflection(m_xResetCountersRootSig, xResetReflection);
 	Flux_ComputePipelineBuilder xResetBuilder;
-	xResetBuilder.WithShader(g_xEngine.Terrain().m_xResetCountersShader)
-		.WithLayout(g_xEngine.Terrain().m_xResetCountersRootSig.m_xLayout)
-		.Build(g_xEngine.Terrain().m_xResetCountersPipeline);
-	g_xEngine.Terrain().m_xResetCountersPipeline.m_xRootSig = g_xEngine.Terrain().m_xResetCountersRootSig;
+	xResetBuilder.WithShader(m_xResetCountersShader)
+		.WithLayout(m_xResetCountersRootSig.m_xLayout)
+		.Build(m_xResetCountersPipeline);
+	m_xResetCountersPipeline.m_xRootSig = m_xResetCountersRootSig;
 }
 
-void Flux_TerrainImpl::Initialise()
+void Flux_TerrainImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming)
 {
+	// De-globalisation DI seam: store the injected cross-subsystem deps. Every
+	// later reach (including from the static graph trampolines, which re-acquire
+	// the singleton via g_xEngine.Terrain()) routes through these members.
+	m_pxVulkanMemory     = &xVulkanMemory;
+	m_pxFluxGraphics     = &xFluxGraphics;
+	m_pxProfiling        = &xProfiling;
+	m_pxTerrainStreaming = &xTerrainStreaming;
+
 	BuildPipelines();
 
 	// Take a ref-counted copy of the global water normal texture handle (set during init in Zenith_Main).
-	g_xEngine.Terrain().m_xWaterNormalTexture = g_xEngine.FluxGraphics().m_xWaterNormalTexture;
+	m_xWaterNormalTexture = m_pxFluxGraphics->m_xWaterNormalTexture;
 
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
-		), g_xEngine.Terrain().m_xTerrainConstantsBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
+		), m_xTerrainConstantsBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
@@ -267,7 +277,7 @@ void Flux_TerrainImpl::Initialise()
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========
-	g_xEngine.TerrainStreaming().Initialize();
+	m_pxTerrainStreaming->Initialize();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain initialised");
 }
@@ -276,26 +286,31 @@ void Flux_TerrainImpl::Reset()
 {
 	// Reset is handled by the render graph
 	// Clear cached terrain components (will be repopulated next frame)
-	g_xEngine.Terrain().m_xTerrainComponentsToRender.Clear();
+	m_xTerrainComponentsToRender.Clear();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainImpl::Reset()");
 }
 
 void Flux_TerrainImpl::ReleaseAssetReferences()
 {
-	g_xEngine.Terrain().m_xWaterNormalTexture.Clear();
-	g_xEngine.Terrain().m_xFallbackSplatmap.Clear();
+	m_xWaterNormalTexture.Clear();
+	m_xFallbackSplatmap.Clear();
 }
 
 void Flux_TerrainImpl::Shutdown()
 {
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Terrain().m_xTerrainConstantsBuffer);
+	m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xTerrainConstantsBuffer);
 
 	// Manager Shutdown asserts the per-terrain state registry is empty —
 	// any terrain component still alive at engine teardown is a leak that
 	// will trip the assert here, instead of silently freeing the manager
 	// out from under live state.
-	g_xEngine.TerrainStreaming().Shutdown();
+	m_pxTerrainStreaming->Shutdown();
+
+	m_pxVulkanMemory     = nullptr;
+	m_pxFluxGraphics     = nullptr;
+	m_pxProfiling        = nullptr;
+	m_pxTerrainStreaming = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain shut down");
 }
@@ -368,10 +383,10 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// pass after culling and let the graph synthesise the correct memory +
 	// pipeline-stage barriers between the compute writes and these reads.
 	Flux_PassHandle xGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
+		.Writes(m_pxFluxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxFluxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxFluxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(m_pxFluxGraphics->GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
@@ -390,13 +405,15 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 {
-	g_xEngine.Terrain().m_uFrameCounter++;
+	m_uFrameCounter++;
 
 	// Get all terrain components
-	g_xEngine.Terrain().m_xTerrainComponentsToRender.Clear();
-	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach([](Zenith_EntityID, Zenith_TerrainComponent& xTerrain){ g_xEngine.Terrain().m_xTerrainComponentsToRender.PushBack(&xTerrain); });
+	m_xTerrainComponentsToRender.Clear();
+	// g_xEngine.Scenes() kept self-routed: injecting the ECS would create a
+	// forbidden Flux<-EntityComponent cross-layer edge.
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach([this](Zenith_EntityID, Zenith_TerrainComponent& xTerrain){ m_xTerrainComponentsToRender.PushBack(&xTerrain); });
 
-	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Terrain().m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
+	m_pxVulkanMemory->UploadBufferData(m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
 	// ========== Per-Terrain Streaming + Chunk Data Upload ==========
 	// Each terrain has its own Flux_TerrainStreamingState, so streaming
@@ -406,13 +423,13 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// uploads happen here in the Prepare phase and become visible to the
 	// compute pass via vkSubmit's implicit host-write-available barrier.
 	// Frame indexing eliminates cross-frame CPU/GPU races on shared memory.
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
-	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
-	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
-	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
+	m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
+	const Zenith_Maths::Vector3 xCameraPos = m_pxFluxGraphics->GetCameraPosition();
+	const Zenith_Maths::Matrix4& xViewProj = m_pxFluxGraphics->m_xFrameConstants.m_xViewProjMat;
+	for (u_int u = 0; u < m_xTerrainComponentsToRender.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = g_xEngine.Terrain().m_xTerrainComponentsToRender.Get(u);
-		g_xEngine.TerrainStreaming().UpdateStreamingForTerrain(pxTerrain, xCameraPos);
+		Zenith_TerrainComponent* pxTerrain = m_xTerrainComponentsToRender.Get(u);
+		m_pxTerrainStreaming->UpdateStreamingForTerrain(pxTerrain, xCameraPos);
 		pxTerrain->UpdateChunkLODAllocations();
 		pxTerrain->UploadFrustumPlanesForFrame(xViewProj);
 
@@ -421,7 +438,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		// covers visibility, and frame indexing prevents cross-frame races).
 		// See SetupRenderGraph for why it isn't in the graph at all.
 	}
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
+	m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 }
 
 static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
@@ -431,11 +448,17 @@ static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.Terrain().m_xResetCountersPipeline);
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// capture, so it re-enters via g_xEngine.Terrain() to reach the singleton
+	// instance, then routes all further reaches through the instance + its
+	// injected members.
+	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
 
-	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
+	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xTerrain.m_xResetCountersPipeline);
+
+	for (u_int u = 0; u < xTerrain.m_xTerrainComponentsToRender.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = g_xEngine.Terrain().m_xTerrainComponentsToRender.Get(u);
+		Zenith_TerrainComponent* pxTerrain = xTerrain.m_xTerrainComponentsToRender.Get(u);
 		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
 
@@ -456,22 +479,26 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	// Non-capturing graph callback — re-acquire the singleton first, then route
+	// the Profiling reaches through its injected member.
+	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
+
+	xTerrain.m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 
 	// Bind the terrain culling compute pipeline once (owned by Flux_Terrain)
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.Terrain().m_xCullingPipeline);
+	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xTerrain.m_xCullingPipeline);
 
 	// For each terrain component, dispatch culling using its own buffers
-	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
+	for (u_int u = 0; u < xTerrain.m_xTerrainComponentsToRender.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = g_xEngine.Terrain().m_xTerrainComponentsToRender.Get(u);
+		Zenith_TerrainComponent* pxTerrain = xTerrain.m_xTerrainComponentsToRender.Get(u);
 
 		// Component records buffer bindings and dispatch (assumes pipeline already bound).
 		// Frustum upload + visible-count reset happened upstream (PreRenderUpdate, reset pass).
 		pxTerrain->UpdateCullingAndLod(*pxCmdList);
 	}
 
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	xTerrain.m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 }
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
@@ -481,18 +508,23 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &g_xEngine.Terrain().m_xTerrainWireframePipeline : &g_xEngine.Terrain().m_xTerrainGBufferPipeline);
+	// Non-capturing graph callback — re-acquire the singleton first, then route
+	// the FluxGraphics reaches through its injected member + the fallback
+	// splatmap through the promoted member helper.
+	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
+
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &xTerrain.m_xTerrainWireframePipeline : &xTerrain.m_xTerrainGBufferPipeline);
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind set 0 (per-frame data) once per command list
-	xBinder.BindCBV(g_xEngine.Terrain().m_xTerrainGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindCBV(g_xEngine.Terrain().m_xTerrainGBufferShader, "TerrainConstants", &g_xEngine.Terrain().m_xTerrainConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xTerrain.m_xTerrainGBufferShader, "FrameConstants", &xTerrain.m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xTerrain.m_xTerrainGBufferShader, "TerrainConstants", &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
 
-	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
+	for (u_int u = 0; u < xTerrain.m_xTerrainComponentsToRender.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* const pxTerrain = g_xEngine.Terrain().m_xTerrainComponentsToRender.Get(u);
+		Zenith_TerrainComponent* const pxTerrain = xTerrain.m_xTerrainComponentsToRender.Get(u);
 		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
 
 		// Gather 4 material pointers
@@ -504,14 +536,14 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		TerrainMaterialDrawConstants xTerrainMatConst;
 		BuildTerrainMaterialDrawConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
 			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
-		xBinder.BindDrawConstants(g_xEngine.Terrain().m_xTerrainGBufferShader, "TerrainMaterialConstants", &xTerrainMatConst, sizeof(xTerrainMatConst));
+		xBinder.BindDrawConstants(xTerrain.m_xTerrainGBufferShader, "TerrainMaterialConstants", &xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		// Bind LOD level buffer (per-terrain, set 1). The shader declares this
 		// as StructuredBuffer<uint> (read-only — see Generated/Terrain.h
 		// kLODLevelBuffer kind: StructuredBuffer); route through BindSRV_Buffer
 		// so the render-graph declaration RESOURCE_ACCESS_READ_BUFFER_SRV
 		// matches the bind direction.
-		xBinder.BindSRV_Buffer(g_xEngine.Terrain().m_xTerrainGBufferShader, "LODLevelBuffer", pxTerrain->GetLODLevelBuffer().GetSRV());
+		xBinder.BindSRV_Buffer(xTerrain.m_xTerrainGBufferShader, "LODLevelBuffer", pxTerrain->GetLODLevelBuffer().GetSRV());
 
 		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
@@ -520,21 +552,22 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		// SRV slot the shader is declared to read). Falls back to the 1x1
 		// "material 0 only" texture when the component has no splatmap.
 		Zenith_TextureAsset* pxSplatmap = pxTerrain->GetSplatmapTexture();
-		xBinder.BindSRV(g_xEngine.Terrain().m_xTerrainGBufferShader, "g_xSplatmap",
-			pxSplatmap ? &pxSplatmap->m_xSRV : &GetFallbackSplatmapSRV());
+		xBinder.BindSRV(xTerrain.m_xTerrainGBufferShader, "g_xSplatmap",
+			pxSplatmap ? &pxSplatmap->m_xSRV : &xTerrain.GetFallbackSplatmapSRV());
 
 		// Bind material textures (set 1, named bindings) — 4 slots × 5 channels.
 		// Per-channel defaulting (white / normal-up) is already handled by
 		// Zenith_MaterialAsset::GetXxxTexture(); the fallback here is at the
-		// slot level: a null material falls back to g_xEngine.FluxGraphics().m_xBlankMaterial,
+		// slot level: a null material falls back to FluxGraphics().m_xBlankMaterial,
 		// whose channel getters return the engine-wide defaults. The binding
 		// table at file scope (s_axTerrainTexBindings) holds stable codegen
 		// name pointers — see comment there for why.
-		auto ResolveSRV = [](Zenith_MaterialAsset* pxMat,
+		Flux_GraphicsImpl* const pxFluxGraphics = xTerrain.m_pxFluxGraphics;
+		auto ResolveSRV = [pxFluxGraphics](Zenith_MaterialAsset* pxMat,
 			Zenith_TextureAsset* (Zenith_MaterialAsset::*pfn)()) -> const Flux_ShaderResourceView*
 		{
-			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
-			Zenith_Assert(pxResolved != nullptr, "g_xEngine.FluxGraphics().m_xBlankMaterial not initialised — g_xEngine.FluxGraphics().Initialise must run before terrain renders");
+			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : pxFluxGraphics->m_xBlankMaterial.GetDirect();
+			Zenith_Assert(pxResolved != nullptr, "FluxGraphics().m_xBlankMaterial not initialised — FluxGraphics().Initialise must run before terrain renders");
 			Zenith_TextureAsset* pxTex = (pxResolved->*pfn)();
 			Zenith_Assert(pxTex != nullptr, "Material channel getter returned null — Zenith_MaterialAsset defaults should guarantee non-null");
 			return &pxTex->m_xSRV;
@@ -543,7 +576,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		for (const TerrainTexBinding& xB : s_axTerrainTexBindings)
 		{
 			xBinder.BindSRV(
-				g_xEngine.Terrain().m_xTerrainGBufferShader,
+				xTerrain.m_xTerrainGBufferShader,
 				xB.m_szName,
 				ResolveSRV(apxMaterials[xB.m_uMaterialSlot], xB.m_pfnGet));
 		}

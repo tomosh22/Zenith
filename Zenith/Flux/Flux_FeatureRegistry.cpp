@@ -210,7 +210,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](){ g_xEngine.HDR().Shutdown(); });
 #ifdef ZENITH_TOOLS
 	const u_int uGizmos = xReg.Register(szFLUX_FEATURE_GIZMOS,
-		+[](){ g_xEngine.Gizmos().Initialise(); },
+		+[](){ g_xEngine.Gizmos().Initialise(g_xEngine.FluxGraphics(), g_xEngine.Primitives(), g_xEngine.VulkanMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Gizmos().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Gizmos().Shutdown(); });
 #endif
@@ -245,7 +245,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.InstancedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.InstancedMeshes().Shutdown(); });
 	const u_int uTerrain = xReg.Register(szFLUX_FEATURE_TERRAIN,
-		+[](){ g_xEngine.Terrain().Initialise(); },
+		+[](){ g_xEngine.Terrain().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling(), g_xEngine.TerrainStreaming()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Terrain().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Terrain().Shutdown(); });
 	const u_int uGrass = xReg.Register(szFLUX_FEATURE_GRASS,
@@ -295,7 +295,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.SSAO().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSAO().Shutdown(); });
 	const u_int uFog = xReg.Register(szFLUX_FEATURE_FOG,
-		+[](){ g_xEngine.Fog().Initialise(); },
+		+[](){ g_xEngine.Fog().Initialise(g_xEngine.VolumeFog(), g_xEngine.GodRaysFog(), g_xEngine.RaymarchFog(), g_xEngine.FroxelFog(), g_xEngine.HDR(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Fog().SetupRenderGraph(g); },
 		nullptr); // Fog has no Shutdown() — RAII / stateless.
 	const u_int uSDFs = xReg.Register(szFLUX_FEATURE_SDFS,
