@@ -4,11 +4,10 @@
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "ZenithECS/Zenith_Scene.h"
-#include "ZenithECS/Zenith_SceneSystem.h"
-#include "ZenithECS/Zenith_Query.h"
-#include "EntityComponent/Components/Zenith_LightComponent.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
+// Wave 3: lights are gathered EC-side into renderer-neutral Zenith_LightRenderData
+// (no Zenith_LightComponent.h / Zenith_TransformComponent.h here). The renderer keeps
+// the frustum cull, intensity threshold, direction validation and GPU staging.
+#include "Core/Zenith_RenderGather.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Core/Zenith_GraphicsOptions.h"
 
@@ -307,21 +306,18 @@ static void StagePending(u_int& uLightCount, const PendingLight& xL)
 	}
 }
 
-// Build a candidate point-light from a Zenith_LightComponent. Returns nullopt
+// Build a candidate point-light from gathered Zenith_LightRenderData. Returns nullopt
 // if the light is frustum-culled.
-static std::optional<PendingLight> ProcessPointLightCandidate(const Zenith_Frustum& xFrustum, Zenith_LightComponent& xLight,
-	const Zenith_Maths::Vector3& xColor, float fIntensity)
+static std::optional<PendingLight> ProcessPointLightCandidate(const Zenith_Frustum& xFrustum, const Zenith_LightRenderData& xData)
 {
-	Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
-	float fRange = xLight.GetRange();
-	if (!IsSphereFrustumVisible(xFrustum, xPosition, fRange)) return std::nullopt;
+	if (!IsSphereFrustumVisible(xFrustum, xData.m_xWorldPosition, xData.m_fRange)) return std::nullopt;
 
 	PendingLight xL;
 	xL.m_eType = PendingLight::POINT;
-	xL.m_xColor = xColor;
-	xL.m_fIntensity = fIntensity;
-	xL.m_xPosition = xPosition;
-	xL.m_fRange = fRange;
+	xL.m_xColor = xData.m_xColor;
+	xL.m_fIntensity = xData.m_fIntensity;
+	xL.m_xPosition = xData.m_xWorldPosition;
+	xL.m_fRange = xData.m_fRange;
 	xL.m_xDirection = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
 	xL.m_fCosInner = 0.0f;
 	xL.m_fCosOuter = 0.0f;
@@ -330,24 +326,23 @@ static std::optional<PendingLight> ProcessPointLightCandidate(const Zenith_Frust
 
 // Build a candidate spot-light. Returns nullopt if zero-direction (logs and
 // skips) or frustum-culled. Validates inner <= outer and outer angle range.
-static std::optional<PendingLight> ProcessSpotLightCandidate(const Zenith_Frustum& xFrustum, Zenith_LightComponent& xLight,
-	const Zenith_Maths::Vector3& xColor, float fIntensity, Zenith_EntityID uID)
+static std::optional<PendingLight> ProcessSpotLightCandidate(const Zenith_Frustum& xFrustum, const Zenith_LightRenderData& xData)
 {
-	Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
-	float fRange = xLight.GetRange();
+	Zenith_Maths::Vector3 xPosition = xData.m_xWorldPosition;
+	float fRange = xData.m_fRange;
 
-	float fInnerAngle = xLight.GetSpotInnerAngle();
-	float fOuterAngle = xLight.GetSpotOuterAngle();
+	float fInnerAngle = xData.m_fSpotInnerAngle;
+	float fOuterAngle = xData.m_fSpotOuterAngle;
 	Zenith_Assert(fInnerAngle <= fOuterAngle,
 		"Spot light inner angle (%.2f) must be <= outer angle (%.2f)", fInnerAngle, fOuterAngle);
 	Zenith_Assert(fOuterAngle > 0.0f && fOuterAngle < glm::pi<float>(),
 		"Spot light outer angle (%.2f) out of valid range", fOuterAngle);
 
-	Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
+	Zenith_Maths::Vector3 xDirection = xData.m_xWorldDirection;
 	float fDirLength = Zenith_Maths::Length(xDirection);
 	if (fDirLength < fDIRECTION_EPSILON)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID.m_uIndex);
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", xData.m_uEntityIndex);
 		return std::nullopt;
 	}
 	xDirection /= fDirLength;
@@ -356,8 +351,8 @@ static std::optional<PendingLight> ProcessSpotLightCandidate(const Zenith_Frustu
 
 	PendingLight xL;
 	xL.m_eType = PendingLight::SPOT;
-	xL.m_xColor = xColor;
-	xL.m_fIntensity = fIntensity;
+	xL.m_xColor = xData.m_xColor;
+	xL.m_fIntensity = xData.m_fIntensity;
 	xL.m_xPosition = xPosition;
 	xL.m_fRange = fRange;
 	xL.m_xDirection = xDirection;
@@ -368,22 +363,21 @@ static std::optional<PendingLight> ProcessSpotLightCandidate(const Zenith_Frustu
 
 // Build a candidate directional-light. Returns nullopt if zero-direction.
 // Directionals are not frustum-culled (they're effectively at infinity).
-static std::optional<PendingLight> ProcessDirectionalLightCandidate(Zenith_LightComponent& xLight,
-	const Zenith_Maths::Vector3& xColor, float fIntensity, Zenith_EntityID uID)
+static std::optional<PendingLight> ProcessDirectionalLightCandidate(const Zenith_LightRenderData& xData)
 {
-	Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
+	Zenith_Maths::Vector3 xDirection = xData.m_xWorldDirection;
 	float fDirLength = Zenith_Maths::Length(xDirection);
 	if (fDirLength < fDIRECTION_EPSILON)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID.m_uIndex);
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", xData.m_uEntityIndex);
 		return std::nullopt;
 	}
 	xDirection /= fDirLength;
 
 	PendingLight xL;
 	xL.m_eType = PendingLight::DIRECTIONAL;
-	xL.m_xColor = xColor;
-	xL.m_fIntensity = fIntensity;
+	xL.m_xColor = xData.m_xColor;
+	xL.m_fIntensity = xData.m_fIntensity;
 	xL.m_xPosition = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
 	xL.m_fRange = 0.0f;
 	xL.m_xDirection = xDirection;
@@ -501,31 +495,24 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 	Zenith_Vector<PendingLight> xPending;
 	xPending.Reserve(uMAX_LIGHTS * 2);
 
-	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+	// Wave 3: lights arrive from the EC-side gatherer as renderer-neutral data.
+	// The renderer keeps the intensity threshold + frustum cull + candidate build.
+	Zenith_Vector<Zenith_LightRenderData> xLights;
+	if (g_pfnZenithLightGather) g_pfnZenithLightGather(xLights);
+
+	for (u_int uLight = 0; uLight < xLights.GetSize(); ++uLight)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
-		if (!pxSceneData || !pxSceneData->IsLoaded()) continue;
+		const Zenith_LightRenderData& xData = xLights.Get(uLight);
+		if (xData.m_fIntensity < fMIN_LIGHT_INTENSITY) continue;
 
-		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
-			.ForEach([&xPending, &xFrustum](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
+		std::optional<PendingLight> xCandidate;
+		switch (xData.m_eType)
 		{
-			LIGHT_TYPE eType = xLight.GetLightType();
-			Zenith_Assert(eType < LIGHT_TYPE_COUNT, "Invalid light type: %u", static_cast<u_int>(eType));
-
-			const Zenith_Maths::Vector3& xColor = xLight.GetColor();
-			float fIntensity = xLight.GetIntensity();
-			if (fIntensity < fMIN_LIGHT_INTENSITY) return;
-
-			std::optional<PendingLight> xCandidate;
-			switch (eType)
-			{
-			case LIGHT_TYPE_POINT:       xCandidate = ProcessPointLightCandidate(xFrustum, xLight, xColor, fIntensity); break;
-			case LIGHT_TYPE_SPOT:        xCandidate = ProcessSpotLightCandidate(xFrustum, xLight, xColor, fIntensity, uID); break;
-			case LIGHT_TYPE_DIRECTIONAL: xCandidate = ProcessDirectionalLightCandidate(xLight, xColor, fIntensity, uID); break;
-			default: return;
-			}
-			if (xCandidate.has_value()) xPending.PushBack(*xCandidate);
-		});
+		case ZENITH_LIGHT_RENDER_POINT:       xCandidate = ProcessPointLightCandidate(xFrustum, xData); break;
+		case ZENITH_LIGHT_RENDER_SPOT:        xCandidate = ProcessSpotLightCandidate(xFrustum, xData); break;
+		case ZENITH_LIGHT_RENDER_DIRECTIONAL: xCandidate = ProcessDirectionalLightCandidate(xData); break;
+		}
+		if (xCandidate.has_value()) xPending.PushBack(*xCandidate);
 	}
 
 	StageLightsWithPriority(*m_pxFluxGraphics, m_uLightCount, xPending, xPending.GetSize());

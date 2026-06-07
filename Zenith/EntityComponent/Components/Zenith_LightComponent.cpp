@@ -4,6 +4,14 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
+// Wave 3: EC-side render-gather (publishes neutral light data to the renderer so
+// Flux_DynamicLights no longer #includes Zenith_LightComponent.h / TransformComponent.h).
+#include "Core/Zenith_RenderGather.h"
+#include "Core/Zenith_Engine.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Query.h"
+
 void Zenith_LightComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// LIGHT_TYPE is intentionally omitted — its DataStream `>>` path goes through
@@ -310,3 +318,47 @@ void Zenith_LightComponent::RenderTransformOffsets()
 	}
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// Wave 3: light render-gather. Extracts every Zenith_LightComponent (+ its
+// entity transform) into the renderer-neutral Zenith_LightRenderData list that
+// Flux_DynamicLights consumes. This is the EC->renderer (forward) direction;
+// the renderer no longer reaches into EntityComponent. The frustum cull,
+// intensity threshold, direction validation and GPU staging stay renderer-side
+// (they need the camera frustum + Flux buffers) — this only does the typed
+// query + raw field extraction the renderer previously did itself.
+// ---------------------------------------------------------------------------
+static void Zenith_GatherLightsImpl(Zenith_Vector<Zenith_LightRenderData>& xOut)
+{
+	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+	{
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
+		if (!pxSceneData || !pxSceneData->IsLoaded()) continue;
+
+		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
+			.ForEach([&xOut](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
+		{
+			Zenith_LightRenderData xData;
+			switch (xLight.GetLightType())
+			{
+			case LIGHT_TYPE_POINT:       xData.m_eType = ZENITH_LIGHT_RENDER_POINT;       break;
+			case LIGHT_TYPE_SPOT:        xData.m_eType = ZENITH_LIGHT_RENDER_SPOT;        break;
+			case LIGHT_TYPE_DIRECTIONAL: xData.m_eType = ZENITH_LIGHT_RENDER_DIRECTIONAL; break;
+			default: return; // invalid type — skip (renderer previously asserted; here we just drop)
+			}
+			xData.m_xColor          = xLight.GetColor();
+			xData.m_fIntensity      = xLight.GetIntensity();
+			xData.m_xWorldPosition  = xLight.GetWorldPosition();
+			xData.m_fRange          = xLight.GetRange();
+			xData.m_xWorldDirection = xLight.GetWorldDirection();
+			xData.m_fSpotInnerAngle = xLight.GetSpotInnerAngle();
+			xData.m_fSpotOuterAngle = xLight.GetSpotOuterAngle();
+			xData.m_uEntityIndex    = uID.m_uIndex;
+			xOut.PushBack(xData);
+		});
+	}
+}
+
+// Published to the renderer. Constant-initialised, so referencing g_pfnZenithLightGather
+// from Flux_DynamicLights pulls this TU in (no static-init-order or dead-strip hazard).
+Zenith_LightGatherFn g_pfnZenithLightGather = &Zenith_GatherLightsImpl;
