@@ -4,8 +4,8 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -18,14 +18,15 @@
 
 // Phase 7g: subsystem state moved to Flux_PrimitivesImpl held by Zenith_Engine.
 //
-// Wave-15 DI seam (mirrors Flux_QuadsImpl): the lone cross-subsystem dep
-// (Flux_GraphicsImpl) is injected into Initialise and stored in m_pxGraphics;
-// SetupRenderGraph routes its FluxGraphics reach-ins through m_pxGraphics.
-// g_xEngine.Primitives() self-lookup survives only in the non-capturing
-// ExecuteGBuffer / hot-reload fn-pointer trampolines below (which then route
-// FluxGraphics through the injected member); VulkanMemory()/DebugVariables() stay
-// direct engine-infra lookups. The Add*/Render instance methods only self-look-up
-// g_xEngine.Primitives() under the mutex idiom and are untouched.
+// Aggressive de-globalization: BOTH cross-subsystem deps (Flux_GraphicsImpl and
+// Zenith_Vulkan_MemoryManager) are injected into Initialise and stored in
+// m_pxGraphics / m_pxVulkanMemory. SetupRenderGraph routes FluxGraphics through
+// m_pxGraphics; the buffer (de)allocation in Initialise/Shutdown and the dynamic
+// upload in RenderTrianglePrimitives route VulkanMemory through m_pxVulkanMemory.
+// The former file-static render helpers are now Flux_PrimitivesImpl members so their
+// self-reaches resolve through `this`. g_xEngine.Primitives() self-lookup survives
+// only in the non-capturing ExecuteGBuffer / hot-reload fn-pointer trampolines below
+// (which recover the singleton and then route reach-ins through the injected members).
 //
 // The per-primitive instance structs are also there (named Flux_PrimitivesXxxInstance);
 // these aliases preserve the original short names used throughout this file.
@@ -379,7 +380,7 @@ static void GenerateUnitLine(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith_V
 void Flux_PrimitivesImpl::BuildPipelines()
 {
 	// Load shaders
-	g_xEngine.Primitives().m_xPrimitivesShader.Initialise(FluxShaderProgram::Primitives);
+	m_xPrimitivesShader.Initialise(FluxShaderProgram::Primitives);
 
 	// Define vertex layout (Position, Normal, Color)
 	Flux_VertexInputDescription xVertexDesc;
@@ -396,10 +397,10 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 	xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &g_xEngine.Primitives().m_xPrimitivesShader;
+	xPipelineSpec.m_pxShader = &m_xPrimitivesShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	g_xEngine.Primitives().m_xPrimitivesShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	m_xPrimitivesShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	// Standard depth testing for opaque geometry
 	xPipelineSpec.m_bDepthTestEnabled = true;
@@ -414,21 +415,23 @@ void Flux_PrimitivesImpl::BuildPipelines()
 		xBlendState.m_bBlendEnabled = false;
 	}
 
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.Primitives().m_xPrimitivesPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(m_xPrimitivesPipeline, xPipelineSpec);
 
 	// Wireframe variant
 	xPipelineSpec.m_bWireframe = true;
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.Primitives().m_xPrimitivesWireframePipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(m_xPrimitivesWireframePipeline, xPipelineSpec);
 }
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 
-void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
+void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory)
 {
-	// Wave-15 DI seam: store the injected cross-subsystem dep. The FluxGraphics
-	// reach-ins (in ExecuteGBuffer / SetupRenderGraph) route through this instead
-	// of g_xEngine.FluxGraphics().
+	// Store the injected cross-subsystem deps. The FluxGraphics reach-ins (in
+	// ExecuteGBuffer / SetupRenderGraph) route through m_pxGraphics; the buffer
+	// (de)allocation + dynamic upload route through m_pxVulkanMemory instead of
+	// g_xEngine.FluxGraphics() / g_xEngine.VulkanMemory().
 	m_pxGraphics = &xGraphics;
+	m_pxVulkanMemory = &xVulkanMemory;
 
 	// Generate procedural meshes
 	Zenith_Vector<PrimitiveVertex> xVertices;
@@ -436,33 +439,33 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 
 	// Unit sphere
 	GenerateUnitSphere(xVertices, xIndices);
-	g_xEngine.Primitives().m_uSphereIndexCount = xIndices.GetSize();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xSphereVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xSphereIndexBuffer);
+	m_uSphereIndexCount = xIndices.GetSize();
+	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xSphereVertexBuffer);
+	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xSphereIndexBuffer);
 
 	// Unit cube
 	GenerateUnitCube(xVertices, xIndices);
-	g_xEngine.Primitives().m_uCubeIndexCount = xIndices.GetSize();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCubeVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCubeIndexBuffer);
+	m_uCubeIndexCount = xIndices.GetSize();
+	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCubeVertexBuffer);
+	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCubeIndexBuffer);
 
 	// Unit capsule
 	GenerateUnitCapsule(xVertices, xIndices);
-	g_xEngine.Primitives().m_uCapsuleIndexCount = xIndices.GetSize();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCapsuleVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCapsuleIndexBuffer);
+	m_uCapsuleIndexCount = xIndices.GetSize();
+	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCapsuleVertexBuffer);
+	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCapsuleIndexBuffer);
 
 	// Unit cylinder
 	GenerateUnitCylinder(xVertices, xIndices);
-	g_xEngine.Primitives().m_uCylinderIndexCount = xIndices.GetSize();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xCylinderVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xCylinderIndexBuffer);
+	m_uCylinderIndexCount = xIndices.GetSize();
+	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCylinderVertexBuffer);
+	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCylinderIndexBuffer);
 
 	// Unit line
 	GenerateUnitLine(xVertices, xIndices);
-	g_xEngine.Primitives().m_uLineIndexCount = xIndices.GetSize();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), g_xEngine.Primitives().m_xLineVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), g_xEngine.Primitives().m_xLineIndexBuffer);
+	m_uLineIndexCount = xIndices.GetSize();
+	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xLineVertexBuffer);
+	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xLineIndexBuffer);
 
 	BuildPipelines();
 
@@ -472,9 +475,9 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 		const size_t uVertexBufferSize = s_uMaxTriangles * 3 * sizeof(PrimitiveVertex);
 		const size_t uIndexBufferSize = s_uMaxTriangles * 3 * sizeof(u_int);
 
-		g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer, false);
-		g_xEngine.VulkanMemory().InitialiseIndexBuffer(nullptr, uIndexBufferSize, g_xEngine.Primitives().m_xTriangleIndexBuffer);
-		g_xEngine.Primitives().m_bTriangleBuffersInitialised = true;
+		m_pxVulkanMemory->InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, m_xTriangleDynamicVertexBuffer, false);
+		m_pxVulkanMemory->InitialiseIndexBuffer(nullptr, uIndexBufferSize, m_xTriangleIndexBuffer);
+		m_bTriangleBuffersInitialised = true;
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -494,31 +497,32 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
 void Flux_PrimitivesImpl::Shutdown()
 {
 	// Destroy all vertex and index buffers
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xSphereVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xSphereIndexBuffer);
+	m_pxVulkanMemory->DestroyVertexBuffer(m_xSphereVertexBuffer);
+	m_pxVulkanMemory->DestroyIndexBuffer(m_xSphereIndexBuffer);
 
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xCubeVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xCubeIndexBuffer);
+	m_pxVulkanMemory->DestroyVertexBuffer(m_xCubeVertexBuffer);
+	m_pxVulkanMemory->DestroyIndexBuffer(m_xCubeIndexBuffer);
 
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xCapsuleVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xCapsuleIndexBuffer);
+	m_pxVulkanMemory->DestroyVertexBuffer(m_xCapsuleVertexBuffer);
+	m_pxVulkanMemory->DestroyIndexBuffer(m_xCapsuleIndexBuffer);
 
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xCylinderVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xCylinderIndexBuffer);
+	m_pxVulkanMemory->DestroyVertexBuffer(m_xCylinderVertexBuffer);
+	m_pxVulkanMemory->DestroyIndexBuffer(m_xCylinderIndexBuffer);
 
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(g_xEngine.Primitives().m_xLineVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xLineIndexBuffer);
+	m_pxVulkanMemory->DestroyVertexBuffer(m_xLineVertexBuffer);
+	m_pxVulkanMemory->DestroyIndexBuffer(m_xLineIndexBuffer);
 
 	// Destroy pre-allocated triangle buffers
-	if (g_xEngine.Primitives().m_bTriangleBuffersInitialised)
+	if (m_bTriangleBuffersInitialised)
 	{
-		g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer);
-		g_xEngine.VulkanMemory().DestroyIndexBuffer(g_xEngine.Primitives().m_xTriangleIndexBuffer);
-		g_xEngine.Primitives().m_bTriangleBuffersInitialised = false;
+		m_pxVulkanMemory->DestroyDynamicVertexBuffer(m_xTriangleDynamicVertexBuffer);
+		m_pxVulkanMemory->DestroyIndexBuffer(m_xTriangleIndexBuffer);
+		m_bTriangleBuffersInitialised = false;
 	}
 
-	// Drop the injected dep so the instance returns to a clean default state.
+	// Drop the injected deps so the instance returns to a clean default state.
 	m_pxGraphics = nullptr;
+	m_pxVulkanMemory = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives shut down");
 }
 
@@ -533,98 +537,98 @@ void Flux_PrimitivesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_PrimitivesImpl::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	SphereInstance xInstance;
 	xInstance.m_xCenter = xCenter;
 	xInstance.m_fRadius = fRadius;
 	xInstance.m_xColor = xColor;
-	g_xEngine.Primitives().m_xSphereInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xSphereInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::AddCube(const Zenith_Maths::Vector3& xCenter, const Zenith_Maths::Vector3& xHalfExtents, const Zenith_Maths::Vector3& xColor)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	CubeInstance xInstance;
 	xInstance.m_xCenter = xCenter;
 	xInstance.m_xHalfExtents = xHalfExtents;
 	xInstance.m_xColor = xColor;
 	xInstance.m_bWireframe = false;
-	g_xEngine.Primitives().m_xCubeInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xCubeInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::AddWireframeCube(const Zenith_Maths::Vector3& xCenter, const Zenith_Maths::Vector3& xHalfExtents, const Zenith_Maths::Vector3& xColor)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	CubeInstance xInstance;
 	xInstance.m_xCenter = xCenter;
 	xInstance.m_xHalfExtents = xHalfExtents;
 	xInstance.m_xColor = xColor;
 	xInstance.m_bWireframe = true;
-	g_xEngine.Primitives().m_xCubeInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xCubeInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::AddLine(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd, const Zenith_Maths::Vector3& xColor, float fThickness)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	LineInstance xInstance;
 	xInstance.m_xStart = xStart;
 	xInstance.m_xEnd = xEnd;
 	xInstance.m_xColor = xColor;
 	xInstance.m_fThickness = fThickness;
-	g_xEngine.Primitives().m_xLineInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xLineInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::AddCapsule(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd, float fRadius, const Zenith_Maths::Vector3& xColor)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	CapsuleInstance xInstance;
 	xInstance.m_xStart = xStart;
 	xInstance.m_xEnd = xEnd;
 	xInstance.m_fRadius = fRadius;
 	xInstance.m_xColor = xColor;
-	g_xEngine.Primitives().m_xCapsuleInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xCapsuleInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::AddCylinder(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd, float fRadius, const Zenith_Maths::Vector3& xColor)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	CylinderInstance xInstance;
 	xInstance.m_xStart = xStart;
 	xInstance.m_xEnd = xEnd;
 	xInstance.m_fRadius = fRadius;
 	xInstance.m_xColor = xColor;
-	g_xEngine.Primitives().m_xCylinderInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xCylinderInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::AddTriangle(const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1,
 	const Zenith_Maths::Vector3& xV2, const Zenith_Maths::Vector3& xColor)
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
+	m_xInstanceMutex.Lock();
 	TriangleInstance xInstance;
 	xInstance.m_xV0 = xV0;
 	xInstance.m_xV1 = xV1;
 	xInstance.m_xV2 = xV2;
 	xInstance.m_xColor = xColor;
-	g_xEngine.Primitives().m_xTriangleInstances.PushBack(xInstance);
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xTriangleInstances.PushBack(xInstance);
+	m_xInstanceMutex.Unlock();
 }
 
 void Flux_PrimitivesImpl::Clear()
 {
-	g_xEngine.Primitives().m_xInstanceMutex.Lock();
-	g_xEngine.Primitives().m_xSphereInstances.Clear();
-	g_xEngine.Primitives().m_xCubeInstances.Clear();
-	g_xEngine.Primitives().m_xLineInstances.Clear();
-	g_xEngine.Primitives().m_xCapsuleInstances.Clear();
-	g_xEngine.Primitives().m_xCylinderInstances.Clear();
-	g_xEngine.Primitives().m_xTriangleInstances.Clear();
-	g_xEngine.Primitives().m_xInstanceMutex.Unlock();
+	m_xInstanceMutex.Lock();
+	m_xSphereInstances.Clear();
+	m_xCubeInstances.Clear();
+	m_xLineInstances.Clear();
+	m_xCapsuleInstances.Clear();
+	m_xCylinderInstances.Clear();
+	m_xTriangleInstances.Clear();
+	m_xInstanceMutex.Unlock();
 }
 
 // ========== RENDERING ==========
@@ -670,7 +674,7 @@ static YAxisAlignment ComputeYAxisAlignment(const Zenith_Maths::Vector3& xStart,
 }
 
 // Push the per-instance constant (model matrix + colour) and emit the indexed draw call.
-static void EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	const Zenith_Maths::Vector3& xColor,
 	u_int uIndexCount)
@@ -681,29 +685,29 @@ static void EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xB
 	xPushConstant.m_fPadding = 0.0f;
 
 	// Slang reflection keys on the variable name, not the GLSL block instance.
-	xBinder.BindDrawConstants(g_xEngine.Primitives().m_xPrimitivesShader, "PrimitivePushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
+	xBinder.BindDrawConstants(m_xPrimitivesShader, "PrimitivePushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
 }
 
-static void RenderSpherePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<SphereInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Primitives().m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Primitives().m_xSphereVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Primitives().m_xSphereIndexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xSphereVertexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xSphereIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
 		const SphereInstance& xInstance = xInstances.Get(i);
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xCenter);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, Zenith_Maths::Vector3(xInstance.m_fRadius));
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, g_xEngine.Primitives().m_uSphereIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uSphereIndexCount);
 	}
 }
 
-static void RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<CubeInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
@@ -715,24 +719,24 @@ static void RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder&
 		// pre-sorting by wireframe — wireframe cubes are rare enough that a per-instance
 		// pipeline switch is cheaper than two separate batches.
 		pxCmdList->AddCommand<Flux_CommandSetPipeline>(
-			xInstance.m_bWireframe ? &g_xEngine.Primitives().m_xPrimitivesWireframePipeline : &g_xEngine.Primitives().m_xPrimitivesPipeline);
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Primitives().m_xCubeVertexBuffer);
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Primitives().m_xCubeIndexBuffer);
+			xInstance.m_bWireframe ? &m_xPrimitivesWireframePipeline : &m_xPrimitivesPipeline);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xCubeVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xCubeIndexBuffer);
 
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xCenter);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, xInstance.m_xHalfExtents);
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, g_xEngine.Primitives().m_uCubeIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uCubeIndexCount);
 	}
 }
 
-static void RenderLinePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderLinePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<LineInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Primitives().m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Primitives().m_xLineVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Primitives().m_xLineIndexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xLineVertexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xLineIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -743,18 +747,18 @@ static void RenderLinePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder&
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xStart);
 		xModelMatrix = xModelMatrix * Zenith_Maths::Mat4Cast(xAlign.m_xRotation);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, Zenith_Maths::Vector3(xInstance.m_fThickness, xAlign.m_fLength * 0.5f, xInstance.m_fThickness));
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, g_xEngine.Primitives().m_uLineIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uLineIndexCount);
 	}
 }
 
-static void RenderCapsulePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<CapsuleInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Primitives().m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Primitives().m_xCapsuleVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Primitives().m_xCapsuleIndexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xCapsuleVertexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xCapsuleIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -766,18 +770,18 @@ static void RenderCapsulePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBind
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xCenter);
 		xModelMatrix = xModelMatrix * Zenith_Maths::Mat4Cast(xAlign.m_xRotation);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, Zenith_Maths::Vector3(xInstance.m_fRadius * 2.0f, xAlign.m_fLength * 0.5f, xInstance.m_fRadius * 2.0f));
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, g_xEngine.Primitives().m_uCapsuleIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uCapsuleIndexCount);
 	}
 }
 
-static void RenderCylinderPrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<CylinderInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Primitives().m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Primitives().m_xCylinderVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Primitives().m_xCylinderIndexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xCylinderVertexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xCylinderIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -789,7 +793,7 @@ static void RenderCylinderPrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBin
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xCenter);
 		xModelMatrix = xModelMatrix * Zenith_Maths::Mat4Cast(xAlign.m_xRotation);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, Zenith_Maths::Vector3(xInstance.m_fRadius * 2.0f, xAlign.m_fLength * 0.5f, xInstance.m_fRadius * 2.0f));
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, g_xEngine.Primitives().m_uCylinderIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uCylinderIndexCount);
 	}
 }
 
@@ -797,10 +801,10 @@ static void RenderCylinderPrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBin
 // uploaded to a dynamic vertex buffer (capped at s_uMaxTriangles per frame). All
 // triangles draw with identity transform — their world-space vertices and per-vertex
 // colour carry the position/colour state.
-static void RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<TriangleInstance>& xInstances)
 {
-	if (xInstances.GetSize() == 0 || !g_xEngine.Primitives().m_bTriangleBuffersInitialised) return;
+	if (xInstances.GetSize() == 0 || !m_bTriangleBuffersInitialised) return;
 
 	u_int uTriangleCount = xInstances.GetSize();
 	if (uTriangleCount > s_uMaxTriangles)
@@ -838,14 +842,14 @@ static void RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBin
 		xIndices.PushBack(uBaseVertex + 2);
 	}
 
-	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
+	m_pxVulkanMemory->UploadBufferData(m_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
 		xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex));
-	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Primitives().m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
+	m_pxVulkanMemory->UploadBufferData(m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
 		xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int));
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Primitives().m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Primitives().m_xTriangleDynamicVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Primitives().m_xTriangleIndexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xTriangleDynamicVertexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xTriangleIndexBuffer);
 
 	EmitPrimitiveDraw(pxCmdList, xBinder, Zenith_Maths::Matrix4(1.0f), Zenith_Maths::Vector3(1.0f), xIndices.GetSize());
 }
@@ -857,9 +861,15 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	// Drain the global instance queues under lock — Add*() runs on game-thread workers
-	// while ExecuteGBuffer runs on the render thread, so we need to copy out & clear
-	// while holding g_xEngine.Primitives().m_xInstanceMutex.
+	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// capture, so it re-enters via g_xEngine.Primitives() to reach the singleton
+	// instance FIRST, then routes ALL further reach-ins (instance queues, FluxGraphics,
+	// VulkanMemory) through xPrimitives' members (mirrors ExecuteSSAOGenerate).
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+
+	// Drain the instance queues under lock — Add*() runs on game-thread workers while
+	// ExecuteGBuffer runs on the render thread, so we copy out & clear while holding
+	// xPrimitives.m_xInstanceMutex.
 	Zenith_Vector<SphereInstance> xLocalSphereInstances;
 	Zenith_Vector<CubeInstance> xLocalCubeInstances;
 	Zenith_Vector<LineInstance> xLocalLineInstances;
@@ -867,42 +877,36 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	Zenith_Vector<CylinderInstance> xLocalCylinderInstances;
 	Zenith_Vector<TriangleInstance> xLocalTriangleInstances;
 	{
-		Zenith_ScopedMutexLock xLock(g_xEngine.Primitives().m_xInstanceMutex);
-		if (g_xEngine.Primitives().m_xSphereInstances.GetSize() == 0 && g_xEngine.Primitives().m_xCubeInstances.GetSize() == 0 &&
-			g_xEngine.Primitives().m_xLineInstances.GetSize() == 0 && g_xEngine.Primitives().m_xCapsuleInstances.GetSize() == 0 &&
-			g_xEngine.Primitives().m_xCylinderInstances.GetSize() == 0 && g_xEngine.Primitives().m_xTriangleInstances.GetSize() == 0)
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		if (xPrimitives.m_xSphereInstances.GetSize() == 0 && xPrimitives.m_xCubeInstances.GetSize() == 0 &&
+			xPrimitives.m_xLineInstances.GetSize() == 0 && xPrimitives.m_xCapsuleInstances.GetSize() == 0 &&
+			xPrimitives.m_xCylinderInstances.GetSize() == 0 && xPrimitives.m_xTriangleInstances.GetSize() == 0)
 		{
 			return;
 		}
-		for (u_int i = 0; i < g_xEngine.Primitives().m_xSphereInstances.GetSize(); ++i) xLocalSphereInstances.PushBack(g_xEngine.Primitives().m_xSphereInstances.Get(i));
-		for (u_int i = 0; i < g_xEngine.Primitives().m_xCubeInstances.GetSize(); ++i) xLocalCubeInstances.PushBack(g_xEngine.Primitives().m_xCubeInstances.Get(i));
-		for (u_int i = 0; i < g_xEngine.Primitives().m_xLineInstances.GetSize(); ++i) xLocalLineInstances.PushBack(g_xEngine.Primitives().m_xLineInstances.Get(i));
-		for (u_int i = 0; i < g_xEngine.Primitives().m_xCapsuleInstances.GetSize(); ++i) xLocalCapsuleInstances.PushBack(g_xEngine.Primitives().m_xCapsuleInstances.Get(i));
-		for (u_int i = 0; i < g_xEngine.Primitives().m_xCylinderInstances.GetSize(); ++i) xLocalCylinderInstances.PushBack(g_xEngine.Primitives().m_xCylinderInstances.Get(i));
-		for (u_int i = 0; i < g_xEngine.Primitives().m_xTriangleInstances.GetSize(); ++i) xLocalTriangleInstances.PushBack(g_xEngine.Primitives().m_xTriangleInstances.Get(i));
-		g_xEngine.Primitives().m_xSphereInstances.Clear();
-		g_xEngine.Primitives().m_xCubeInstances.Clear();
-		g_xEngine.Primitives().m_xLineInstances.Clear();
-		g_xEngine.Primitives().m_xCapsuleInstances.Clear();
-		g_xEngine.Primitives().m_xCylinderInstances.Clear();
-		g_xEngine.Primitives().m_xTriangleInstances.Clear();
+		for (u_int i = 0; i < xPrimitives.m_xSphereInstances.GetSize(); ++i) xLocalSphereInstances.PushBack(xPrimitives.m_xSphereInstances.Get(i));
+		for (u_int i = 0; i < xPrimitives.m_xCubeInstances.GetSize(); ++i) xLocalCubeInstances.PushBack(xPrimitives.m_xCubeInstances.Get(i));
+		for (u_int i = 0; i < xPrimitives.m_xLineInstances.GetSize(); ++i) xLocalLineInstances.PushBack(xPrimitives.m_xLineInstances.Get(i));
+		for (u_int i = 0; i < xPrimitives.m_xCapsuleInstances.GetSize(); ++i) xLocalCapsuleInstances.PushBack(xPrimitives.m_xCapsuleInstances.Get(i));
+		for (u_int i = 0; i < xPrimitives.m_xCylinderInstances.GetSize(); ++i) xLocalCylinderInstances.PushBack(xPrimitives.m_xCylinderInstances.Get(i));
+		for (u_int i = 0; i < xPrimitives.m_xTriangleInstances.GetSize(); ++i) xLocalTriangleInstances.PushBack(xPrimitives.m_xTriangleInstances.Get(i));
+		xPrimitives.m_xSphereInstances.Clear();
+		xPrimitives.m_xCubeInstances.Clear();
+		xPrimitives.m_xLineInstances.Clear();
+		xPrimitives.m_xCapsuleInstances.Clear();
+		xPrimitives.m_xCylinderInstances.Clear();
+		xPrimitives.m_xTriangleInstances.Clear();
 	}
-
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
-	// capture, so it re-enters via g_xEngine.Primitives() to reach the singleton
-	// instance, then routes its FluxGraphics reach-in through the injected member
-	// (mirrors ExecuteSSAOGenerate).
-	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	xBinder.BindCBV(xPrimitives.m_xPrimitivesShader, "FrameConstants", &xPrimitives.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
 
-	RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
-	RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);
-	RenderLinePrimitives(pxCmdList, xBinder, xLocalLineInstances);
-	RenderCapsulePrimitives(pxCmdList, xBinder, xLocalCapsuleInstances);
-	RenderCylinderPrimitives(pxCmdList, xBinder, xLocalCylinderInstances);
-	RenderTrianglePrimitives(pxCmdList, xBinder, xLocalTriangleInstances);
+	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
+	xPrimitives.RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);
+	xPrimitives.RenderLinePrimitives(pxCmdList, xBinder, xLocalLineInstances);
+	xPrimitives.RenderCapsulePrimitives(pxCmdList, xBinder, xLocalCapsuleInstances);
+	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder, xLocalCylinderInstances);
+	xPrimitives.RenderTrianglePrimitives(pxCmdList, xBinder, xLocalTriangleInstances);
 }
 
 // ========== HELPER FUNCTIONS ==========

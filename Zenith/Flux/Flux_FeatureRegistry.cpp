@@ -205,7 +205,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		nullptr,
 		+[](){ g_xEngine.FluxGraphics().Shutdown(); });
 	const u_int uHDR = xReg.Register(szFLUX_FEATURE_HDR,
-		+[](){ g_xEngine.HDR().Initialise(); },
+		+[](){ g_xEngine.HDR().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanMemory(), g_xEngine.VulkanSwapchain(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.HDR().SetupRenderGraph(g); }, // HDR's SECOND setup touch (bloom/tonemap); its FIRST touch (SetupTransients) is an inline irregular.
 		+[](){ g_xEngine.HDR().Shutdown(); });
 #ifdef ZENITH_TOOLS
@@ -249,13 +249,13 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.Terrain().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Terrain().Shutdown(); });
 	const u_int uGrass = xReg.Register(szFLUX_FEATURE_GRASS,
-		+[](){ g_xEngine.Grass().Initialise(); },
+		+[](){ g_xEngine.Grass().Initialise(g_xEngine.VulkanMemory(), g_xEngine.Frame(), g_xEngine.FluxGraphics(), g_xEngine.HDR()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Grass().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Grass().Shutdown(); });
 	const u_int uPrimitives = xReg.Register(szFLUX_FEATURE_PRIMITIVES,
 		// DI seam: Primitives::Initialise takes (Graphics&). FluxGraphics is brought
 		// up before the walk reaches Primitives, so the trampoline forwards it.
-		+[](){ g_xEngine.Primitives().Initialise(g_xEngine.FluxGraphics()); },
+		+[](){ g_xEngine.Primitives().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Primitives().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Primitives().Shutdown(); });
 	const u_int uHiZ = xReg.Register(szFLUX_FEATURE_HIZ,

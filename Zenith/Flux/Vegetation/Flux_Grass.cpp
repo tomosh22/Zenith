@@ -2,7 +2,8 @@
 
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Core/Zenith_Engine.h"
-#include "Flux/Flux_GraphicsImpl.h"
+#include "Core/FrameContext.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
@@ -47,7 +48,7 @@ struct GrassBladeMesh
 };
 static GrassBladeMesh s_xGrassBladeMesh;
 
-void CreateGrassBladeMesh()
+void Flux_GrassImpl::CreateGrassBladeMesh()
 {
 	// Simple grass blade: 4 vertices, 2 triangles
 	// Oriented along Y-axis, centered at base
@@ -73,8 +74,8 @@ void CreateGrassBladeMesh()
 		1, 3, 2
 	};
 
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
+	m_pxVulkanMemory->InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
+	m_pxVulkanMemory->InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
 }
 
 static void ExecuteRender(Flux_CommandList* pxCmdList, void* pUserData);
@@ -82,7 +83,7 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void* pUserData);
 void Flux_GrassImpl::BuildPipelines()
 {
 	// Initialize grass shader
-	g_xEngine.Grass().m_xGrassShader.Initialise(FluxShaderProgram::Grass);
+	m_xGrassShader.Initialise(FluxShaderProgram::Grass);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -94,26 +95,32 @@ void Flux_GrassImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &g_xEngine.Grass().m_xGrassShader;
+	xPipelineSpec.m_pxShader = &m_xGrassShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 	xPipelineSpec.m_bDepthTestEnabled = true;
 	xPipelineSpec.m_bDepthWriteEnabled = true;
 	xPipelineSpec.m_eCullMode = CULL_MODE_NONE;  // Grass is double-sided
 
-	g_xEngine.Grass().m_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	m_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.Grass().m_xGrassPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(m_xGrassPipeline, xPipelineSpec);
 }
 
-void Flux_GrassImpl::Initialise()
+void Flux_GrassImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame,
+	Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
 {
+	m_pxVulkanMemory = &xVulkanMemory;
+	m_pxFrame        = &xFrame;
+	m_pxGraphics     = &xGraphics;
+	m_pxHDR          = &xHDR;
+
 	CreateGrassBladeMesh();
 	CreateBuffers();
 
 	BuildPipelines();
 
 	// Initialize constants buffer
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), g_xEngine.Grass().m_xGrassConstantsBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), m_xGrassConstantsBuffer);
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
@@ -131,18 +138,24 @@ void Flux_GrassImpl::Initialise()
 void Flux_GrassImpl::Shutdown()
 {
 	DestroyBuffers();
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(g_xEngine.Grass().m_xGrassConstantsBuffer);
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
+	m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xGrassConstantsBuffer);
+	m_pxVulkanMemory->DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
+	m_pxVulkanMemory->DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
+
+	m_pxVulkanMemory = nullptr;
+	m_pxFrame        = nullptr;
+	m_pxGraphics     = nullptr;
+	m_pxHDR          = nullptr;
+
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass shut down");
 }
 
 void Flux_GrassImpl::Reset()
 {
 	// Reset is handled by the render graph
-	g_xEngine.Grass().m_axChunks.Clear();
-	g_xEngine.Grass().m_uVisibleBladeCount = 0;
-	g_xEngine.Grass().m_uActiveChunkCount = 0;
+	m_axChunks.Clear();
+	m_uVisibleBladeCount = 0;
+	m_uActiveChunkCount = 0;
 }
 
 void Flux_GrassImpl::CreateBuffers()
@@ -150,15 +163,15 @@ void Flux_GrassImpl::CreateBuffers()
 	// Create instance buffer for grass blade data
 	u_int uBufferSize = GrassConfig::uMAX_TOTAL_INSTANCES * sizeof(GrassBladeInstance);
 
-	g_xEngine.VulkanMemory().InitialiseReadWriteBuffer(nullptr, uBufferSize, g_xEngine.Grass().m_xInstanceBuffer);
-	g_xEngine.Grass().m_uAllocatedInstances = GrassConfig::uMAX_TOTAL_INSTANCES;
+	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, uBufferSize, m_xInstanceBuffer);
+	m_uAllocatedInstances = GrassConfig::uMAX_TOTAL_INSTANCES;
 }
 
 void Flux_GrassImpl::DestroyBuffers()
 {
-	if (g_xEngine.Grass().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+	if (m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		g_xEngine.VulkanMemory().DestroyReadWriteBuffer(g_xEngine.Grass().m_xInstanceBuffer);
+		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xInstanceBuffer);
 	}
 }
 
@@ -171,27 +184,32 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// also shared with DeferredShading's no-depth setup, which DOES clear it,
 	// so the underlying image is already in a valid state when Grass runs.
 	xGraph.AddPass("Grass", ExecuteRender)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
+		.Writes(m_pxHDR->GetHDRSceneTarget(),            RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (m_pxGraphics->GetDepthAttachment(),      RESOURCE_ACCESS_READ_DEPTH);
 }
 
 static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 {
+	// Static graph trampoline: recover the subsystem once, then route every
+	// other engine reach (VulkanMemory / Frame / FluxGraphics) through the
+	// injected members it already holds.
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+
 	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-	if (!xOpts.m_bGrassEnabled || !g_xEngine.Grass().m_bInstancesUploaded)
+	if (!xOpts.m_bGrassEnabled || !xGrass.m_bInstancesUploaded)
 	{
 		return;
 	}
 
 	// Sync debug variables (continuous parameters)
-	g_xEngine.Grass().m_fDensityScale = dbg_fGrassDensityScale;
-	g_xEngine.Grass().m_fMaxDistance = dbg_fGrassMaxDistance;
-	g_xEngine.Grass().m_fWindStrength = dbg_fGrassWindStrength;
+	xGrass.m_fDensityScale = dbg_fGrassDensityScale;
+	xGrass.m_fMaxDistance = dbg_fGrassMaxDistance;
+	xGrass.m_fWindStrength = dbg_fGrassWindStrength;
 
 	// Update visibility and LOD each frame
-	g_xEngine.Grass().UpdateVisibleChunks();
+	xGrass.UpdateVisibleChunks();
 
-	if (g_xEngine.Grass().m_uVisibleBladeCount == 0)
+	if (xGrass.m_uVisibleBladeCount == 0)
 	{
 		return;
 	}
@@ -200,18 +218,18 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 	// Float32 has 24-bit mantissa, giving ~7 decimal digits of precision
 	// Wind frequencies max at 4.1x, so after 10 hours (36000s) we have 147600 which is fine
 	// No need to wrap - doing so causes visible phase jumps in all sine waves
-	double dTime = g_xEngine.Frame().GetTimePassed();
+	double dTime = xGrass.m_pxFrame->GetTimePassed();
 	float fTime = static_cast<float>(dTime);
 
 	s_xGrassConstants.m_xWindParams = Zenith_Maths::Vector4(
-		g_xEngine.Grass().m_xWindDirection.x,
-		g_xEngine.Grass().m_xWindDirection.y,
-		xOpts.m_bGrassWindEnabled ? g_xEngine.Grass().m_fWindStrength : 0.0f,
+		xGrass.m_xWindDirection.x,
+		xGrass.m_xWindDirection.y,
+		xOpts.m_bGrassWindEnabled ? xGrass.m_fWindStrength : 0.0f,
 		fTime);
 
 	s_xGrassConstants.m_xGrassParams = Zenith_Maths::Vector4(
-		g_xEngine.Grass().m_fDensityScale,
-		g_xEngine.Grass().m_fMaxDistance,
+		xGrass.m_fDensityScale,
+		xGrass.m_fMaxDistance,
 		static_cast<float>(dbg_uGrassDebugMode),
 		0.0f);
 
@@ -219,23 +237,23 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 		GrassConfig::fLOD0_DISTANCE,
 		GrassConfig::fLOD1_DISTANCE,
 		GrassConfig::fLOD2_DISTANCE,
-		g_xEngine.Grass().m_fMaxDistance);
+		xGrass.m_fMaxDistance);
 
-	g_xEngine.VulkanMemory().UploadBufferData(g_xEngine.Grass().m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
+	xGrass.m_pxVulkanMemory->UploadBufferData(xGrass.m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Grass().m_xGrassPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xGrass.m_xGrassPipeline);
 	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xGrassBladeMesh.m_xVertexBuffer);
 	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xGrassBladeMesh.m_xIndexBuffer);
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(g_xEngine.Grass().m_xGrassShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(g_xEngine.Grass().m_xGrassShader, "GrassConstants", &g_xEngine.Grass().m_xGrassConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(g_xEngine.Grass().m_xGrassShader, "InstanceBuffer", &g_xEngine.Grass().m_xInstanceBuffer.GetUAV());
+		xBinder.BindCBV(xGrass.m_xGrassShader, "FrameConstants", &xGrass.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(xGrass.m_xGrassShader, "GrassConstants", &xGrass.m_xGrassConstantsBuffer.GetCBV());
+		xBinder.BindUAV_Buffer(xGrass.m_xGrassShader, "InstanceBuffer", &xGrass.m_xInstanceBuffer.GetUAV());
 	}
 
-	// Draw instanced grass (6 indices per blade, g_xEngine.Grass().m_uVisibleBladeCount instances)
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Grass().m_uVisibleBladeCount);
+	// Draw instanced grass (6 indices per blade, xGrass.m_uVisibleBladeCount instances)
+	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(6, xGrass.m_uVisibleBladeCount);
 }
 
 void Flux_GrassImpl::GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::Vector3& xCenter)
@@ -289,24 +307,24 @@ static u_int Flux_Grass_InstanceCountForLOD(u_int uTotal, u_int uLOD)
 
 void Flux_GrassImpl::UpdateVisibleChunks()
 {
-	g_xEngine.Grass().m_uVisibleBladeCount = 0;
-	g_xEngine.Grass().m_uActiveChunkCount = 0;
+	m_uVisibleBladeCount = 0;
+	m_uActiveChunkCount = 0;
 
-	if (g_xEngine.Grass().m_axChunks.GetSize() == 0)
+	if (m_axChunks.GetSize() == 0)
 	{
 		return;
 	}
 
-	const Zenith_Maths::Vector3& xCamPos = g_xEngine.FluxGraphics().GetCameraPosition();
-	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
+	const Zenith_Maths::Vector3& xCamPos = m_pxGraphics->GetCameraPosition();
+	const Zenith_Maths::Matrix4 xViewProj = m_pxGraphics->GetViewProjMatrix();
 	Zenith_Frustum xFrustum;
 	xFrustum.ExtractFromViewProjection(xViewProj);
 
-	const float fMaxDistSq = g_xEngine.Grass().m_fMaxDistance * g_xEngine.Grass().m_fMaxDistance;
+	const float fMaxDistSq = m_fMaxDistance * m_fMaxDistance;
 
-	for (u_int i = 0; i < g_xEngine.Grass().m_axChunks.GetSize(); ++i)
+	for (u_int i = 0; i < m_axChunks.GetSize(); ++i)
 	{
-		GrassChunk& xChunk = g_xEngine.Grass().m_axChunks.Get(i);
+		GrassChunk& xChunk = m_axChunks.Get(i);
 
 		if (xChunk.m_uInstanceCount == 0)
 		{
@@ -330,27 +348,27 @@ void Flux_GrassImpl::UpdateVisibleChunks()
 		xChunk.m_uLOD = dbg_bGrassFreezeLOD ? dbg_uGrassForcedLOD : Flux_Grass_PickChunkLOD(fDistSq);
 		xChunk.m_bVisible = true;
 
-		g_xEngine.Grass().m_uVisibleBladeCount += Flux_Grass_InstanceCountForLOD(xChunk.m_uInstanceCount, xChunk.m_uLOD);
-		g_xEngine.Grass().m_uActiveChunkCount++;
+		m_uVisibleBladeCount += Flux_Grass_InstanceCountForLOD(xChunk.m_uInstanceCount, xChunk.m_uLOD);
+		m_uActiveChunkCount++;
 	}
 }
 
 void Flux_GrassImpl::UploadInstanceData()
 {
-	if (!g_xEngine.Grass().m_bInstancesGenerated || g_xEngine.Grass().m_axAllInstances.GetSize() == 0)
+	if (!m_bInstancesGenerated || m_axAllInstances.GetSize() == 0)
 	{
 		return;
 	}
 
-	if (!g_xEngine.Grass().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+	if (!m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Instance buffer not valid, cannot upload");
 		return;
 	}
 
 	// Calculate upload size
-	u_int uUploadSize = static_cast<u_int>(g_xEngine.Grass().m_axAllInstances.GetSize() * sizeof(GrassBladeInstance));
-	u_int uBufferSize = g_xEngine.Grass().m_uAllocatedInstances * sizeof(GrassBladeInstance);
+	u_int uUploadSize = static_cast<u_int>(m_axAllInstances.GetSize() * sizeof(GrassBladeInstance));
+	u_int uBufferSize = m_uAllocatedInstances * sizeof(GrassBladeInstance);
 
 	if (uUploadSize > uBufferSize)
 	{
@@ -360,16 +378,16 @@ void Flux_GrassImpl::UploadInstanceData()
 	}
 
 	// Upload to GPU
-	g_xEngine.VulkanMemory().UploadBufferData(
-		g_xEngine.Grass().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
-		g_xEngine.Grass().m_axAllInstances.GetDataPointer(),
+	m_pxVulkanMemory->UploadBufferData(
+		m_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
+		m_axAllInstances.GetDataPointer(),
 		static_cast<size_t>(uUploadSize));
 
-	g_xEngine.Grass().m_bInstancesUploaded = true;
-	g_xEngine.Grass().m_uVisibleBladeCount = static_cast<u_int>(g_xEngine.Grass().m_axAllInstances.GetSize());
+	m_bInstancesUploaded = true;
+	m_uVisibleBladeCount = static_cast<u_int>(m_axAllInstances.GetSize());
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Uploaded %u instances (%.2f MB)",
-		g_xEngine.Grass().m_axAllInstances.GetSize(), uUploadSize / (1024.0f * 1024.0f));
+		m_axAllInstances.GetSize(), uUploadSize / (1024.0f * 1024.0f));
 }
 
 namespace
@@ -413,11 +431,12 @@ static bool GenerateBladesForTriangle(
 	const TriangleSamples& xTri,
 	u_int uNumBlades,
 	GrassGenRng& xRng,
+	Zenith_Vector<GrassBladeInstance>& xAllInstances,
 	u_int& uTotalBladesGenerated)
 {
 	for (u_int uBlade = 0; uBlade < uNumBlades; ++uBlade)
 	{
-		if (g_xEngine.Grass().m_axAllInstances.GetSize() >= GrassConfig::uMAX_TOTAL_INSTANCES)
+		if (xAllInstances.GetSize() >= GrassConfig::uMAX_TOTAL_INSTANCES)
 		{
 			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Hit instance limit (%u)", GrassConfig::uMAX_TOTAL_INSTANCES);
 			return false;
@@ -470,7 +489,7 @@ static bool GenerateBladesForTriangle(
 		}
 		xInstance.m_uColorTint = (255 << 24) | (uB << 16) | (uG << 8) | uR;
 
-		g_xEngine.Grass().m_axAllInstances.PushBack(xInstance);
+		xAllInstances.PushBack(xInstance);
 		uTotalBladesGenerated++;
 	}
 	return true;
@@ -496,10 +515,10 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generating grass from terrain mesh (%u triangles)...", uNumTriangles);
 
-	g_xEngine.Grass().m_axAllInstances.Clear();
-	g_xEngine.Grass().m_axChunks.Clear();
-	g_xEngine.Grass().m_bInstancesGenerated = false;
-	g_xEngine.Grass().m_bInstancesUploaded = false;
+	m_axAllInstances.Clear();
+	m_axChunks.Clear();
+	m_bInstancesGenerated = false;
+	m_bInstancesUploaded = false;
 
 	const Zenith_Maths::Vector3* pxPositions = xTerrainMesh.m_pxPositions;
 	const Zenith_Maths::Vector3* pxNormals = xTerrainMesh.m_pxNormals;
@@ -509,7 +528,7 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 	GrassGenRng xRng;
 
 	// Target blades per square meter (adjusted by density scale)
-	const float fBladesPerSqm = static_cast<float>(GrassConfig::uBLADES_PER_SQM) * g_xEngine.Grass().m_fDensityScale;
+	const float fBladesPerSqm = static_cast<float>(GrassConfig::uBLADES_PER_SQM) * m_fDensityScale;
 
 	u_int uTotalTrianglesProcessed = 0;
 	u_int uTotalBladesGenerated = 0;
@@ -547,35 +566,35 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 		u_int uNumBlades = static_cast<u_int>(fArea * fBladesPerSqm * fDensityMultiplier);
 		uNumBlades = std::min(uNumBlades, 100u);
 
-		if (!GenerateBladesForTriangle(xTri, uNumBlades, xRng, uTotalBladesGenerated))
+		if (!GenerateBladesForTriangle(xTri, uNumBlades, xRng, m_axAllInstances, uTotalBladesGenerated))
 			break;
 
 		uTotalTrianglesProcessed++;
 	}
 
-	g_xEngine.Grass().m_bInstancesGenerated = true;
+	m_bInstancesGenerated = true;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generated %u blades from %u triangles",
 		uTotalBladesGenerated, uTotalTrianglesProcessed);
 
 	// Shuffle so LOD reduction (draw first N/4) spreads across the terrain
 	// instead of clustering into a corner.
-	if (g_xEngine.Grass().m_axAllInstances.GetSize() > 1)
+	if (m_axAllInstances.GetSize() > 1)
 	{
-		std::shuffle(g_xEngine.Grass().m_axAllInstances.GetDataPointer(),
-			g_xEngine.Grass().m_axAllInstances.GetDataPointer() + g_xEngine.Grass().m_axAllInstances.GetSize(),
+		std::shuffle(m_axAllInstances.GetDataPointer(),
+			m_axAllInstances.GetDataPointer() + m_axAllInstances.GetSize(),
 			xRng.xRng);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Shuffled instances for even LOD distribution");
 	}
 
 	// Single chunk spanning every instance (future: subdivide for culling).
-	if (g_xEngine.Grass().m_axAllInstances.GetSize() > 0)
+	if (m_axAllInstances.GetSize() > 0)
 	{
 		Zenith_Maths::Vector3 xMinBounds(FLT_MAX);
 		Zenith_Maths::Vector3 xMaxBounds(-FLT_MAX);
-		for (u_int i = 0; i < g_xEngine.Grass().m_axAllInstances.GetSize(); ++i)
+		for (u_int i = 0; i < m_axAllInstances.GetSize(); ++i)
 		{
-			const Zenith_Maths::Vector3& xPos = g_xEngine.Grass().m_axAllInstances.Get(i).m_xPosition;
+			const Zenith_Maths::Vector3& xPos = m_axAllInstances.Get(i).m_xPosition;
 			xMinBounds = glm::min(xMinBounds, xPos);
 			xMaxBounds = glm::max(xMaxBounds, xPos);
 		}
@@ -584,39 +603,39 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 		xChunk.m_xCenter = (xMinBounds + xMaxBounds) * 0.5f;
 		xChunk.m_fRadius = glm::length(xMaxBounds - xMinBounds) * 0.5f;
 		xChunk.m_uInstanceOffset = 0;
-		xChunk.m_uInstanceCount = static_cast<u_int>(g_xEngine.Grass().m_axAllInstances.GetSize());
+		xChunk.m_uInstanceCount = static_cast<u_int>(m_axAllInstances.GetSize());
 		xChunk.m_uLOD = 0;
 		xChunk.m_bVisible = true;
-		g_xEngine.Grass().m_axChunks.PushBack(xChunk);
+		m_axChunks.PushBack(xChunk);
 	}
 
 	UploadInstanceData();
-	g_xEngine.Grass().UpdateVisibleChunks();
+	UpdateVisibleChunks();
 }
 
 // Setters with input validation (continuous parameters; on/off lives in Zenith_GraphicsOptions)
 void Flux_GrassImpl::SetDensityScale(float fScale)
 {
-	g_xEngine.Grass().m_fDensityScale = std::clamp(fScale, 0.0f, 10.0f);
+	m_fDensityScale = std::clamp(fScale, 0.0f, 10.0f);
 }
 void Flux_GrassImpl::SetMaxDistance(float fDistance)
 {
-	g_xEngine.Grass().m_fMaxDistance = std::clamp(fDistance, 10.0f, 1000.0f);
+	m_fMaxDistance = std::clamp(fDistance, 10.0f, 1000.0f);
 }
 void Flux_GrassImpl::SetWindStrength(float fStrength)
 {
-	g_xEngine.Grass().m_fWindStrength = std::clamp(fStrength, 0.0f, 10.0f);
+	m_fWindStrength = std::clamp(fStrength, 0.0f, 10.0f);
 }
 void Flux_GrassImpl::SetWindDirection(const Zenith_Maths::Vector2& xDirection)
 {
 	float fLenSq = glm::dot(xDirection, xDirection);
 	if (fLenSq > 0.0001f)
 	{
-		g_xEngine.Grass().m_xWindDirection = xDirection / sqrtf(fLenSq);
+		m_xWindDirection = xDirection / sqrtf(fLenSq);
 	}
 	else
 	{
-		g_xEngine.Grass().m_xWindDirection = Zenith_Maths::Vector2(1.0f, 0.0f);
+		m_xWindDirection = Zenith_Maths::Vector2(1.0f, 0.0f);
 	}
 }
 
@@ -625,7 +644,7 @@ bool Flux_GrassImpl::IsEnabled() const { return Zenith_GraphicsOptions::Get().m_
 bool Flux_GrassImpl::IsWindEnabled() const { return Zenith_GraphicsOptions::Get().m_bGrassWindEnabled; }
 
 // Stats
-float Flux_GrassImpl::GetBufferUsageMB() const { return (g_xEngine.Grass().m_uVisibleBladeCount * sizeof(GrassBladeInstance)) / (1024.0f * 1024.0f); }
+float Flux_GrassImpl::GetBufferUsageMB() const { return (m_uVisibleBladeCount * sizeof(GrassBladeInstance)) / (1024.0f * 1024.0f); }
 
 #ifdef ZENITH_TOOLS
 void Flux_GrassImpl::RegisterDebugVariables()
