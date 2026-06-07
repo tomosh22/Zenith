@@ -452,6 +452,27 @@ bool Zenith_AutomatedTestRunner::Tick()
 			return true;
 		}
 
+		// Manual-only skip: tests flagged m_bManualOnly are excluded from the
+		// --all-automated-tests batch (long-running balance harnesses with no
+		// per-commit value -- see the field doc on Zenith_AutomatedTest). Marked
+		// SKIPPED so the suite tally stays transparent; a direct
+		// --automated-test <name> (m_bRunAllTests == false) still runs them in
+		// full. Unlike the graphics skip this is NOT gated on headless -- the
+		// exclusion applies to every batch run.
+		if (pxTest != nullptr
+		    && pxTest->m_bManualOnly
+		    && s_xRunner.m_bRunAllTests)
+		{
+			s_xRunner.m_xTestStartTime = std::chrono::high_resolution_clock::now();
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[AutomatedTest] %s: SKIPPED (manual-only; excluded from batch)",
+				pxTest->m_szName ? pxTest->m_szName : "(unknown)");
+			s_xRunner.m_bSkipCurrentTest = true;
+			s_xRunner.m_iStepFrame       = 0;
+			s_xRunner.m_ePhase           = HarnessPhase::VerifyAndExit;
+			return true;
+		}
+
 		Zenith_InputSimulator::ResetAllInputState();
 		if (s_xRunner.m_fFixedDt > 0.0f)
 		{

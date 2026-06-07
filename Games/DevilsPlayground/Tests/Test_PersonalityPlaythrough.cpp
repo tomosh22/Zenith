@@ -4077,7 +4077,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Casual = {
 	&Setup_Personality_Casual,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Casual);
 
@@ -4086,7 +4088,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Stealth = {
 	&Setup_Personality_Stealth,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	8000  // 2x walk budget per phase -> larger overall cap
+	8000, // 2x walk budget per phase -> larger overall cap
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Stealth);
 
@@ -4095,7 +4099,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Speedrunner = {
 	&Setup_Personality_Speedrunner,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Speedrunner);
 
@@ -4104,7 +4110,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Zealot = {
 	&Setup_Personality_Zealot,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Zealot);
 
@@ -4131,7 +4139,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Magpie = {
 	&Setup_Personality_Magpie,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Magpie);
 
@@ -4140,7 +4150,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Relay = {
 	&Setup_Personality_Relay,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Relay);
 
@@ -4149,7 +4161,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Heretic = {
 	&Setup_Personality_Heretic,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Heretic);
 
@@ -4161,7 +4175,9 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Trickster = {
 	&Setup_Personality_Trickster,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000
+	6000,
+	false, // m_bRequiresGraphics (default)
+	true   // m_bManualOnly: skipped by --all-automated-tests; run by name
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Trickster);
 

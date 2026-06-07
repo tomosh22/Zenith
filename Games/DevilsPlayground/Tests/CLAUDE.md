@@ -63,6 +63,16 @@ register with `m_bRequiresGraphics = true`. In headless mode the
 harness counts these as PASSED-skipped — the runner reports `35/35`
 when 24 actually executed and 11 skipped.
 
+**Manual-only tests** (the 8 `PersonalityPlaythrough_*` balance harnesses)
+set `m_bManualOnly = true` and are excluded from the `--all-automated-tests`
+batch (CI + `run_dp_tests.ps1`): the harness marks them SKIPPED (counts as
+passed), regardless of headless, because they are long-running
+(~30–145 s each, ~12 min combined) seed-matrix/balance runs with no
+per-commit signal. A direct `--automated-test <name>` still runs them in
+full — so `Tools/dp_seed_matrix_run.ps1` (which invokes each personality by
+name) is unaffected. The batch therefore reports them SKIPPED while the
+seed-matrix tooling still executes them.
+
 The headless boot in `Zenith_Main` branches on
 `Zenith_CommandLine::IsHeadless()` to:
 

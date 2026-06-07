@@ -59,6 +59,15 @@ struct Zenith_AutomatedTest
 	// on null Flux state. Defaults to false: most tests are gameplay logic
 	// (entity state, possession, events) and run fine headless.
 	bool m_bRequiresGraphics    = false;
+
+	// Manual-only tests are excluded from the --all-automated-tests batch
+	// (what CI and run_dp_tests.ps1 use): the harness marks them SKIPPED
+	// (counts as passed, JSON skipped=true) instead of running them. They are
+	// long-running balance / seed-matrix harnesses (the DP personality
+	// playthroughs, ~30-145s each) with no per-commit signal. A direct
+	// --automated-test <name> still runs them in full -- as does the
+	// seed-matrix tooling, which invokes them by name. Defaults to false.
+	bool m_bManualOnly          = false;
 };
 
 // Linked-list node populated by the registrar macro. Kept writable (no
