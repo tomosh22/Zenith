@@ -47,16 +47,16 @@ DEBUGVAR bool dbg_bIBLRegenerateBRDFLUT = false;
 void Flux_IBLImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		g_xEngine.IBL().m_xBRDFLUTShader, g_xEngine.IBL().m_xBRDFLUTPipeline,
-		FluxShaderProgram::IBL_BRDFIntegration, g_xEngine.IBL().m_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
+		m_xBRDFLUTShader, m_xBRDFLUTPipeline,
+		FluxShaderProgram::IBL_BRDFIntegration, m_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		g_xEngine.IBL().m_xIrradianceConvolveShader, g_xEngine.IBL().m_xIrradianceConvolvePipeline,
-		FluxShaderProgram::IBL_IrradianceConvolution, g_xEngine.IBL().m_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
+		m_xIrradianceConvolveShader, m_xIrradianceConvolvePipeline,
+		FluxShaderProgram::IBL_IrradianceConvolution, m_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		g_xEngine.IBL().m_xPrefilterShader, g_xEngine.IBL().m_xPrefilterPipeline,
-		FluxShaderProgram::IBL_PrefilterEnvMap, g_xEngine.IBL().m_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
+		m_xPrefilterShader, m_xPrefilterPipeline,
+		FluxShaderProgram::IBL_PrefilterEnvMap, m_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
 }
 
 void Flux_IBLImpl::Initialise()
@@ -93,14 +93,14 @@ void Flux_IBLImpl::Shutdown()
 
 void Flux_IBLImpl::Reset()
 {
-	g_xEngine.IBL().m_bSkyIBLDirty = true;
-	g_xEngine.IBL().m_bIBLReady = false;  // Need to regenerate IBL on next frame
-	g_xEngine.IBL().m_bFirstGeneration = true;  // Force non-amortized generation after reset
+	m_bSkyIBLDirty = true;
+	m_bIBLReady = false;  // Need to regenerate IBL on next frame
+	m_bFirstGeneration = true;  // Force non-amortized generation after reset
 
 	// Reset amortized regeneration state
-	g_xEngine.IBL().m_eRegenState = IBL_REGEN_IDLE;
-	g_xEngine.IBL().m_uRegenFace = 0;
-	g_xEngine.IBL().m_uRegenMip = 0;
+	m_eRegenState = IBL_REGEN_IDLE;
+	m_uRegenFace = 0;
+	m_uRegenMip = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,13 +127,13 @@ void Flux_IBLImpl::Reset()
 // the barrier generator a consistent view.
 void Flux_IBLImpl::ResetIBLRegenStateForRecompile()
 {
-	g_xEngine.IBL().m_bBRDFLUTGenerated = false;
-	g_xEngine.IBL().m_bSkyIBLDirty = true;
-	g_xEngine.IBL().m_bFirstGeneration = true;
-	g_xEngine.IBL().m_bIBLReady = false;
-	g_xEngine.IBL().m_eRegenState = IBL_REGEN_IDLE;
-	g_xEngine.IBL().m_uRegenFace = 0;
-	g_xEngine.IBL().m_uRegenMip = 0;
+	m_bBRDFLUTGenerated = false;
+	m_bSkyIBLDirty = true;
+	m_bFirstGeneration = true;
+	m_bIBLReady = false;
+	m_eRegenState = IBL_REGEN_IDLE;
+	m_uRegenFace = 0;
+	m_uRegenMip = 0;
 }
 
 // BRDF LUT runs on the first frame and on manual regenerate. Side-effects:
@@ -141,14 +141,14 @@ void Flux_IBLImpl::ResetIBLRegenStateForRecompile()
 // regenerate flag was set so the LUT runs THIS frame.
 bool Flux_IBLImpl::ResolveBRDFLUTRun()
 {
-	if (!g_xEngine.IBL().m_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
+	if (!m_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
 	{
 		if (dbg_bIBLRegenerateBRDFLUT)
 		{
 #ifdef ZENITH_DEBUG_VARIABLES
 			dbg_bIBLRegenerateBRDFLUT = false;
 #endif
-			g_xEngine.IBL().m_bBRDFLUTGenerated = false;
+			m_bBRDFLUTGenerated = false;
 		}
 		return true;
 	}
@@ -166,9 +166,9 @@ void Flux_IBLImpl::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
 	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
 		for (u_int uFace = 0; uFace < 6; uFace++)
 			abRunPrefilter[uMip][uFace] = true;
-	g_xEngine.IBL().m_bSkyIBLDirty = false;
-	g_xEngine.IBL().m_bFirstGeneration = false;
-	g_xEngine.IBL().m_eRegenState = IBL_REGEN_IDLE;
+	m_bSkyIBLDirty = false;
+	m_bFirstGeneration = false;
+	m_eRegenState = IBL_REGEN_IDLE;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: First generation - processing all passes this frame");
 }
 
@@ -179,45 +179,45 @@ void Flux_IBLImpl::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
 void Flux_IBLImpl::AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
 	bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
 {
-	if (g_xEngine.IBL().m_bSkyIBLDirty && g_xEngine.IBL().m_eRegenState == IBL_REGEN_IDLE)
+	if (m_bSkyIBLDirty && m_eRegenState == IBL_REGEN_IDLE)
 	{
-		g_xEngine.IBL().m_eRegenState = IBL_REGEN_IRRADIANCE;
-		g_xEngine.IBL().m_uRegenFace = 0;
-		g_xEngine.IBL().m_uRegenMip = 0;
+		m_eRegenState = IBL_REGEN_IRRADIANCE;
+		m_uRegenFace = 0;
+		m_uRegenMip = 0;
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Starting amortized IBL regeneration");
 	}
 
 	u_int uPassesThisFrame = 0;
 
-	while (g_xEngine.IBL().m_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+	while (m_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
 	{
-		abRunIrradiance[g_xEngine.IBL().m_uRegenFace] = true;
-		g_xEngine.IBL().m_uRegenFace++;
+		abRunIrradiance[m_uRegenFace] = true;
+		m_uRegenFace++;
 		uPassesThisFrame++;
 
-		if (g_xEngine.IBL().m_uRegenFace >= 6)
+		if (m_uRegenFace >= 6)
 		{
-			g_xEngine.IBL().m_eRegenState = IBL_REGEN_PREFILTER;
-			g_xEngine.IBL().m_uRegenFace = 0;
-			g_xEngine.IBL().m_uRegenMip = 0;
+			m_eRegenState = IBL_REGEN_PREFILTER;
+			m_uRegenFace = 0;
+			m_uRegenMip = 0;
 		}
 	}
 
-	while (g_xEngine.IBL().m_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+	while (m_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
 	{
-		abRunPrefilter[g_xEngine.IBL().m_uRegenMip][g_xEngine.IBL().m_uRegenFace] = true;
+		abRunPrefilter[m_uRegenMip][m_uRegenFace] = true;
 		uPassesThisFrame++;
 
-		g_xEngine.IBL().m_uRegenFace++;
-		if (g_xEngine.IBL().m_uRegenFace >= 6)
+		m_uRegenFace++;
+		if (m_uRegenFace >= 6)
 		{
-			g_xEngine.IBL().m_uRegenFace = 0;
-			g_xEngine.IBL().m_uRegenMip++;
+			m_uRegenFace = 0;
+			m_uRegenMip++;
 
-			if (g_xEngine.IBL().m_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
+			if (m_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
 			{
-				g_xEngine.IBL().m_eRegenState = IBL_REGEN_IDLE;
-				g_xEngine.IBL().m_bSkyIBLDirty = false;
+				m_eRegenState = IBL_REGEN_IDLE;
+				m_bSkyIBLDirty = false;
 				Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
 			}
 		}
@@ -233,12 +233,12 @@ void Flux_IBLImpl::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
 	const bool (&abRunIrradiance)[6],
 	const bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
 {
-	xGraph.SetEnabled(g_xEngine.IBL().m_xBRDFLUTPassHandle, bRunBRDF);
+	xGraph.SetEnabled(m_xBRDFLUTPassHandle, bRunBRDF);
 	for (u_int uFace = 0; uFace < 6; uFace++)
-		xGraph.SetEnabled(g_xEngine.IBL().m_axIrradianceFacePassHandles[uFace], abRunIrradiance[uFace]);
+		xGraph.SetEnabled(m_axIrradianceFacePassHandles[uFace], abRunIrradiance[uFace]);
 	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
 		for (u_int uFace = 0; uFace < 6; uFace++)
-			xGraph.SetEnabled(g_xEngine.IBL().m_axPrefilterMipFacePassHandles[uMip][uFace], abRunPrefilter[uMip][uFace]);
+			xGraph.SetEnabled(m_axPrefilterMipFacePassHandles[uMip][uFace], abRunPrefilter[uMip][uFace]);
 }
 
 void Flux_IBLImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
@@ -260,16 +260,16 @@ void Flux_IBLImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	bool abRunPrefilter[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
 
 	// Sky IBL state machine: idle → first-generation OR amortised regen.
-	if (!g_xEngine.IBL().m_bSkyIBLDirty && g_xEngine.IBL().m_eRegenState == IBL_REGEN_IDLE)
+	if (!m_bSkyIBLDirty && m_eRegenState == IBL_REGEN_IDLE)
 	{
 		// Mark ready once everything has been generated at least once.
-		if (g_xEngine.IBL().m_bBRDFLUTGenerated && !g_xEngine.IBL().m_bIBLReady)
+		if (m_bBRDFLUTGenerated && !m_bIBLReady)
 		{
-			g_xEngine.IBL().m_bIBLReady = true;
+			m_bIBLReady = true;
 			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: All IBL textures ready");
 		}
 	}
-	else if (g_xEngine.IBL().m_bFirstGeneration)
+	else if (m_bFirstGeneration)
 	{
 		RunFirstGenerationFrame(abRunIrradiance, abRunPrefilter);
 	}
@@ -283,20 +283,27 @@ void Flux_IBLImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 
 void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 {
+	// Trampoline (non-capturing graph callback): recover the singleton first,
+	// then route IBL state through it.
+	Flux_IBLImpl& xIBL = g_xEngine.IBL();
+
 	// No per-frame gate — disabled passes are skipped before record runs
 	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
-	pxCmd->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.IBL().m_xBRDFLUTPipeline);
+	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xBRDFLUTPipeline);
 	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	// BRDF integration only reads its UV input; the Slang version exposes no
 	// CBs in reflection so no binder calls are needed before the draw.
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
-	g_xEngine.IBL().m_bBRDFLUTGenerated = true;
+	xIBL.m_bBRDFLUTGenerated = true;
 }
 
 void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData)
 {
+	// Trampoline (non-capturing graph callback): recover the singleton first.
+	Flux_IBLImpl& xIBL = g_xEngine.IBL();
+
 	const u_int uFace = *static_cast<const u_int*>(pUserData);
 
 	struct IrradianceConstants { u_int m_uUseAtmosphere; float m_fSunIntensity; u_int m_uFaceIndex; float m_fPad; };
@@ -306,24 +313,27 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUse
 	xConsts.m_uFaceIndex = uFace;
 	xConsts.m_fPad = 0.0f;
 
-	pxCmd->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.IBL().m_xIrradianceConvolvePipeline);
+	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xIrradianceConvolvePipeline);
 	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(g_xEngine.IBL().m_xIrradianceConvolveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindDrawConstants(g_xEngine.IBL().m_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
+		xBinder.BindCBV(xIBL.m_xIrradianceConvolveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindDrawConstants(xIBL.m_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
 		if (Zenith_TextureAsset* pxCubemap = g_xEngine.FluxGraphics().m_xCubemapTexture.GetDirect())
-			xBinder.BindSRV(g_xEngine.IBL().m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
+			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
 		else if (Zenith_TextureAsset* pxBlack = g_xEngine.FluxGraphics().m_xBlackTexture.GetDirect())
-			xBinder.BindSRV(g_xEngine.IBL().m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
+			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData)
 {
+	// Trampoline (non-capturing graph callback): recover the singleton first.
+	Flux_IBLImpl& xIBL = g_xEngine.IBL();
+
 	const IBLPrefilterPassData* pxData = static_cast<const IBLPrefilterPassData*>(pUserData);
 
 	struct PrefilterConstants { float m_fRoughness; u_int m_uUseAtmosphere; float m_fSunIntensity; u_int m_uFaceIndex; };
@@ -333,18 +343,18 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pU
 	xConsts.m_fSunIntensity = g_xEngine.Skybox().GetSunIntensity();
 	xConsts.m_uFaceIndex = pxData->m_uFace;
 
-	pxCmd->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.IBL().m_xPrefilterPipeline);
+	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xPrefilterPipeline);
 	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(g_xEngine.IBL().m_xPrefilterShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindDrawConstants(g_xEngine.IBL().m_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
+		xBinder.BindCBV(xIBL.m_xPrefilterShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindDrawConstants(xIBL.m_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
 		if (Zenith_TextureAsset* pxCubemap = g_xEngine.FluxGraphics().m_xCubemapTexture.GetDirect())
-			xBinder.BindSRV(g_xEngine.IBL().m_xPrefilterShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
+			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
 		else if (Zenith_TextureAsset* pxBlack = g_xEngine.FluxGraphics().m_xBlackTexture.GetDirect())
-			xBinder.BindSRV(g_xEngine.IBL().m_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
+			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -363,9 +373,9 @@ void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// OnPrepare because Phase 0 only fires OnPrepare for *enabled* passes).
 	// SetPassClearTargets(true) is safe even when the pass is disabled —
 	// ResolveClearFlags filters disabled passes out of clear ownership.
-	g_xEngine.IBL().m_xBRDFLUTPassHandle = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass)
+	m_xBRDFLUTPassHandle = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass)
 		.ClearTargets()
-		.Writes(g_xEngine.IBL().m_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(m_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
 
 	// 6 irradiance face passes — each writes layer N of the irradiance cubemap.
 	static const char* const s_aszIrradianceFaceNames[6] = {
@@ -376,10 +386,10 @@ void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		// Per-(mip 0, face uFace) slice write — the graph picks the per-(mip, face)
 		// RTV and emits a tight subresource barrier.
-		g_xEngine.IBL().m_axIrradianceFacePassHandles[uFace] = xGraph.AddPass(
+		m_axIrradianceFacePassHandles[uFace] = xGraph.AddPass(
 				s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace])
 			.ClearTargets()
-			.Writes(g_xEngine.IBL().m_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1, uFace, 1);
+			.Writes(m_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1, uFace, 1);
 	}
 
 	// 42 prefilter mip-face passes — each writes one (mip, face) slot of the
@@ -399,11 +409,11 @@ void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		{
 			s_axPrefilterPassData[uMip][uFace].m_uMip = uMip;
 			s_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
-			g_xEngine.IBL().m_axPrefilterMipFacePassHandles[uMip][uFace] = xGraph.AddPass(
+			m_axPrefilterMipFacePassHandles[uMip][uFace] = xGraph.AddPass(
 					s_aszPrefilterPassNames[uMip * 6 + uFace],
 					ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace])
 				.ClearTargets()
-				.Writes(g_xEngine.IBL().m_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1, uFace, 1);
+				.Writes(m_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1, uFace, 1);
 		}
 	}
 }
@@ -418,20 +428,20 @@ void Flux_IBLImpl::CreateRenderTargets()
 	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16_SFLOAT;
 
-	xBuilder.BuildColour(g_xEngine.IBL().m_xBRDFLUT, "IBL BRDF LUT");
+	xBuilder.BuildColour(m_xBRDFLUT, "IBL BRDF LUT");
 
 	// Irradiance map - cubemap for diffuse IBL
 	xBuilder.m_uWidth = IBLConfig::uIRRADIANCE_SIZE;
 	xBuilder.m_uHeight = IBLConfig::uIRRADIANCE_SIZE;
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
-	xBuilder.BuildColourCubemap(g_xEngine.IBL().m_xIrradianceMap, "IBL Irradiance Map");
+	xBuilder.BuildColourCubemap(m_xIrradianceMap, "IBL Irradiance Map");
 
 	// Prefiltered environment map - cubemap for specular IBL (with mip chain for roughness levels)
 	xBuilder.m_uWidth = IBLConfig::uPREFILTER_SIZE;
 	xBuilder.m_uHeight = IBLConfig::uPREFILTER_SIZE;
 	xBuilder.m_uNumMips = IBLConfig::uPREFILTER_MIP_COUNT;
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
-	xBuilder.BuildColourCubemap(g_xEngine.IBL().m_xPrefilteredMap, "IBL Prefiltered Map");
+	xBuilder.BuildColourCubemap(m_xPrefilteredMap, "IBL Prefiltered Map");
 }
 
 void Flux_IBLImpl::DestroyRenderTargets()
@@ -440,9 +450,9 @@ void Flux_IBLImpl::DestroyRenderTargets()
 	// attachments (prefiltered cube has 7 mips × 6 faces = 42 RTVs alone) get
 	// released — a hand-rolled loop here previously STUBBED the cube path and
 	// only queued mip 0 for the 2D path, leaking GPU memory every Shutdown.
-	Flux_RenderAttachmentBuilder::Destroy(g_xEngine.IBL().m_xBRDFLUT);
-	Flux_RenderAttachmentBuilder::Destroy(g_xEngine.IBL().m_xIrradianceMap);
-	Flux_RenderAttachmentBuilder::Destroy(g_xEngine.IBL().m_xPrefilteredMap);
+	Flux_RenderAttachmentBuilder::Destroy(m_xBRDFLUT);
+	Flux_RenderAttachmentBuilder::Destroy(m_xIrradianceMap);
+	Flux_RenderAttachmentBuilder::Destroy(m_xPrefilteredMap);
 }
 
 // No-op compatibility shims — all IBL generation work is performed by graph-
@@ -452,16 +462,16 @@ void Flux_IBLImpl::DestroyRenderTargets()
 void Flux_IBLImpl::GenerateBRDFLUT()
 {
 	// No-op: BRDF LUT generation is driven by the render graph + per-frame
-	// IBLPrepareCallback. Setting g_xEngine.IBL().m_bBRDFLUTGenerated=false marks it for
+	// IBLPrepareCallback. Setting m_bBRDFLUTGenerated=false marks it for
 	// regeneration on the next graph pass.
-	g_xEngine.IBL().m_bBRDFLUTGenerated = false;
+	m_bBRDFLUTGenerated = false;
 }
 
 void Flux_IBLImpl::UpdateSkyIBL()
 {
 	// No-op: regeneration is driven by IBLPrepareCallback. Marking the dirty
 	// flag is enough to schedule per-face/per-mip work over the next frames.
-	g_xEngine.IBL().m_bSkyIBLDirty = true;
+	m_bSkyIBLDirty = true;
 }
 
 // GenerateIrradianceMap / GeneratePrefilteredMap / GenerateIrradianceFace /
@@ -474,23 +484,23 @@ void Flux_IBLImpl::GeneratePrefilteredFace(u_int /*uMip*/, u_int /*uFace*/) {}
 
 void Flux_IBLImpl::MarkAllProbesDirty()
 {
-	g_xEngine.IBL().m_bSkyIBLDirty = true;
+	m_bSkyIBLDirty = true;
 }
 
 // Accessors - return const references to prevent modification and signal temporary nature
 const Flux_ShaderResourceView& Flux_IBLImpl::GetBRDFLUTSRV()
 {
-	return g_xEngine.IBL().m_xBRDFLUT.SRV();
+	return m_xBRDFLUT.SRV();
 }
 
 const Flux_ShaderResourceView& Flux_IBLImpl::GetIrradianceMapSRV()
 {
-	return g_xEngine.IBL().m_xIrradianceMap.SRV();
+	return m_xIrradianceMap.SRV();
 }
 
 const Flux_ShaderResourceView& Flux_IBLImpl::GetPrefilteredMapSRV()
 {
-	return g_xEngine.IBL().m_xPrefilteredMap.SRV();
+	return m_xPrefilteredMap.SRV();
 }
 
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
@@ -511,7 +521,7 @@ void Flux_IBLImpl::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddFloat({ "Flux", "IBL", "ForcedRoughness" }, dbg_fIBLForcedRoughness, 0.0f, 1.0f);
 	g_xEngine.DebugVariables().AddBoolean({ "Flux", "IBL", "RegenerateBRDFLUT" }, dbg_bIBLRegenerateBRDFLUT);
 
-	g_xEngine.DebugVariables().AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, g_xEngine.IBL().m_xBRDFLUT.SRV());
+	g_xEngine.DebugVariables().AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, m_xBRDFLUT.SRV());
 	// Irradiance and Prefiltered maps are cubemaps (VK_IMAGE_VIEW_TYPE_CUBE).
 	// ImGui's shader expects 2D textures, so these can't be displayed directly.
 	// TODO: create per-face 2D SRVs for cubemap debug display.

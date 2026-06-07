@@ -265,11 +265,11 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.HiZ().SetupRenderGraph(g); },
 		+[](){ g_xEngine.HiZ().Shutdown(); });
 	const u_int uSSR = xReg.Register(szFLUX_FEATURE_SSR,
-		+[](){ g_xEngine.SSR().Initialise(); },
+		+[](){ g_xEngine.SSR().Initialise(g_xEngine.VulkanMemory(), g_xEngine.VulkanSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.HiZ(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSR().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSR().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
 	const u_int uSSGI = xReg.Register(szFLUX_FEATURE_SSGI,
-		+[](){ g_xEngine.SSGI().Initialise(); },
+		+[](){ g_xEngine.SSGI().Initialise(g_xEngine.VulkanSwapchain(), g_xEngine.HiZ(), g_xEngine.FluxGraphics(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSGI().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSGI().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
 	const u_int uDynamicLights = xReg.Register(szFLUX_FEATURE_DYNAMIC_LIGHTS,
