@@ -12,10 +12,11 @@
 // Zenith_SceneData::GetMainCamera / ::TryGetMainCamera and
 // Zenith_SceneSystem::FindMainCameraAcrossScenes. They name the concrete
 // Zenith_CameraComponent (hence the include above) and so MUST live in the
-// engine lib, never in the ECS leaf. This TU's basename is listed in the
-// ECS-leaf ratchet's ExcludeNames (Tools/layering_gate.ps1) for exactly that
-// reason -- it physically lives under EntityComponent/ but compiles into the
-// aggregate engine lib, like Zenith_ComponentMeta_Registration.cpp.
+// engine lib, never in the ECS leaf. It physically lives under EntityComponent/
+// (NOT the ECS leaf, which is Zenith/ZenithECS/) and compiles into the aggregate
+// engine lib, like Zenith_ComponentMeta_Registration.cpp -- so the leaf-ratchet
+// (analyze_code_complexity.py, engine-ci architecture.leaf_ratchet, glob
+// Zenith/ZenithECS/**) does not scan it.
 // ============================================================================
 
 Zenith_CameraComponent& Zenith_GetMainCamera(Zenith_SceneData* pxSceneData)

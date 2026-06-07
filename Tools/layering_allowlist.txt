@@ -1,8 +1,10 @@
-# layering_allowlist.txt -- Wave-8 enforced-layering ratchet allowlist.
+# layering_allowlist.txt -- Flux<->EntityComponent coupling ratchet allowlist.
 #
 # These are the KNOWN cross-layer #include edges between Zenith/Flux and
-# Zenith/EntityComponent at the time this ratchet was introduced. They are
-# pre-existing leaks, NOT an endorsement of the coupling.
+# Zenith/EntityComponent. They are pre-existing leaks, NOT an endorsement of the
+# coupling. Enforced by analyze_code_complexity.py (engine-ci architecture.ec_flux_ratchet)
+# via the `layering-gate` CI check -- this SUBSUMES the retired Tools/layering_gate.ps1
+# with byte-for-byte raw-string parity.
 #
 # RULES:
 #   * Do NOT add new edges to this file to silence the gate. A new
@@ -12,7 +14,7 @@
 #   * Format (one edge per line): <repo-relative-source> => <included-path>
 #
 # Regenerate (only when deliberately accepting the current set):
-#   powershell -NoProfile -File Tools/layering_gate.ps1 -Update
+#   py -3 Tools/analyze_code_complexity.py . --profile engine-ci --update-architecture-allowlist
 #
 Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/Flux_ModelInstance.h
 Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Flux/MeshAnimation/Flux_AnimationController.h

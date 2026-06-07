@@ -43,7 +43,10 @@ jobs:
       - name: Run complexity gate
         working-directory: ${{ env.GITHUB_WORKSPACE }}
         shell: cmd
-        run: Tools\CheckComplexity.bat --parser tree-sitter
+        # --gate-group complexity: this check fails ONLY on complexity regressions.
+        # Architecture/lint gates are enforced separately by layering-gate.yml so the
+        # two required checks stay independent (both run the same one-pass analysis).
+        run: Tools\CheckComplexity.bat --parser tree-sitter --gate-group complexity
 
       - name: Upload complexity report on failure
         if: failure()

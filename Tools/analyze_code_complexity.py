@@ -240,6 +240,13 @@ class FileMetrics:
     # Populated by `_compute_include_graph`; entry is empty if the include failed
     # all three resolution tiers.
     include_resolved_targets: List[List[int]] = field(default_factory=list)
+    # Per-resolved-target confidence flag, parallel in shape to `include_resolved_targets`:
+    # True = UNAMBIGUOUS resolution (exact relative path, unique suffix, or a basename
+    # shared by exactly one file), False = AMBIGUOUS basename fallback (the basename maps
+    # to 2+ files). Architectural gates exclude only the ambiguous (False) edges by default
+    # so a genuinely ambiguous basename can't red-light CI, while a unique basename still
+    # gates. See `_compute_architecture`.
+    include_resolved_unambiguous: List[List[bool]] = field(default_factory=list)
     fan_in: int = 0
     fan_out: int = 0
     in_cycle: bool = False
@@ -260,7 +267,25 @@ class FileMetrics:
     # field_count, lcom5}. Computed once per file in analyze_file; classes with <2
     # inline methods or no `m_` fields are skipped (nothing to measure).
     classes: List[Dict] = field(default_factory=list)
-    
+    # Architectural module this file maps to (from the profile `architecture` block);
+    # '' if unmapped. Assigned by `_compute_architecture`.
+    module: str = ''
+    # True if the file looks auto-generated (name marker or DO-NOT-EDIT banner). Computed
+    # unconditionally in analyze_file so the convention-lint post-pass can skip generated
+    # code without re-reading it. Independent of the global --exclude-generated flag.
+    is_generated: bool = False
+    # Abstractness proxy inputs (computed unconditionally in analyze_file — no profile
+    # config needed, so they survive the process-pool worker). `has_class_def` = the
+    # file defines at least one class/struct body; `has_abstract_class` = at least one
+    # of those bodies declares a pure-virtual method (`virtual ... = 0;`).
+    has_class_def: bool = False
+    has_abstract_class: bool = False
+    # Convention-lint findings (forbidden tokens, missing PCH/pragma, leaf g_xEngine,
+    # module-scope statics). Raw per-file findings are produced in analyze_file (so they
+    # survive the worker); allowlist filtering + gating happen in `_compute_lints`.
+    # Each entry: {kind, key, line, detail}.
+    lint_findings: List[Dict] = field(default_factory=list)
+
     @property
     def maintainability_index(self) -> float:
         """
@@ -308,6 +333,40 @@ class DirectoryMetrics:
     total_functions: int = 0
     total_classes: int = 0
     files: List[FileMetrics] = field(default_factory=list)
+
+
+@dataclass
+class ModuleMetrics:
+    """
+    Architectural metrics for one module (a named group of directories declared in the
+    profile `architecture` block). Coupling figures roll up the file-level include graph
+    to the module level so we can reason about dependency direction and Robert C. Martin's
+    package metrics.
+    """
+    name: str = ''
+    layer: int = 0
+    file_count: int = 0
+    code_lines: int = 0
+    # Afferent coupling (Ca): distinct modules that depend ON this one.
+    # Efferent coupling (Ce): distinct modules this one depends on.
+    afferent: int = 0
+    efferent: int = 0
+    # Instability I = Ce / (Ca + Ce). 0 = maximally stable (only depended upon),
+    # 1 = maximally unstable (only depends on others). 0 when isolated.
+    instability: float = 0.0
+    # Abstractness A = abstract_headers / headers_with_classes (proxy; see
+    # `_scan_abstract_types`). Distance D = |A + I - 1| from the "main sequence".
+    abstractness: float = 0.0
+    distance: float = 0.0
+    # False when the module has no header that defines a class, so A is undefined and
+    # D is meaningless — report instability only in that case.
+    abstractness_available: bool = False
+    # Zone classification: 'pain' (stable + concrete), 'uselessness' (unstable + abstract),
+    # 'main-sequence' (near D=0), or '' (n/a).
+    zone: str = ''
+    # Distinct modules this one includes (the resolved-graph efferent set), sorted.
+    outgoing_module_deps: List[str] = field(default_factory=list)
+    files: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -465,6 +524,94 @@ def _cluster_duplicates(
     return [sorted(g) for g in groups.values() if len(g) >= 2]
 
 
+def _tarjan_scc(adj: List[List[int]]) -> List[List[int]]:
+    """
+    Iterative Tarjan strongly-connected-components over an adjacency list
+    (node index -> successor indices). Returns the list of SCCs, each a list of node
+    indices. Iterative (explicit work stack) so it survives deep graphs without hitting
+    Python's recursion limit. Shared by the file-level include-cycle detector and the
+    module-level architecture cycle detector.
+
+    Lowlink is propagated to the DFS PARENT — the frame directly below `v` on the work
+    stack once `v` is popped — NOT to the last-completed node. That distinction matters
+    for a cycle that closes back to an ancestor (a -> b -> c -> a): without it, `b`
+    never inherits `c`'s lowlink and the cycle is wrongly split into {b,c} + {a}.
+    """
+    n = len(adj)
+    index_counter = [0]
+    stack: List[int] = []
+    on_stack: List[bool] = [False] * n
+    index: List[int] = [-1] * n
+    lowlink: List[int] = [0] * n
+    sccs: List[List[int]] = []
+
+    def strongconnect(start: int) -> None:
+        work: List[Tuple[int, int]] = [(start, 0)]
+        while work:
+            v, pi = work[-1]
+            if pi == 0:
+                index[v] = index_counter[0]
+                lowlink[v] = index_counter[0]
+                index_counter[0] += 1
+                stack.append(v)
+                on_stack[v] = True
+            neighbours = adj[v]
+            if pi < len(neighbours):
+                work[-1] = (v, pi + 1)
+                w = neighbours[pi]
+                if index[w] == -1:
+                    work.append((w, 0))
+                elif on_stack[w]:
+                    if index[w] < lowlink[v]:
+                        lowlink[v] = index[w]
+                continue
+            # Finished v: if it is an SCC root, pop its component off the stack.
+            if lowlink[v] == index[v]:
+                scc: List[int] = []
+                while True:
+                    w = stack.pop()
+                    on_stack[w] = False
+                    scc.append(w)
+                    if w == v:
+                        break
+                sccs.append(scc)
+            # Pop v's frame, then fold its lowlink into its DFS parent (new stack top).
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                if lowlink[v] < lowlink[parent]:
+                    lowlink[parent] = lowlink[v]
+
+    for v in range(n):
+        if index[v] == -1:
+            strongconnect(v)
+    return sccs
+
+
+def _seg_glob_to_regex(pattern: str) -> 're.Pattern':
+    """
+    Compile a shell-like glob where a single `*` does NOT cross `/` (and `**` does), for
+    public-surface matching: `leaf/*.h` then matches `leaf/api.h` but NOT
+    `leaf/Internal/secret.h`. (fnmatch's `*` crosses `/`, which is wrong here.)
+    """
+    out: List[str] = []
+    i = 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == '*':
+            if i + 1 < len(pattern) and pattern[i + 1] == '*':
+                out.append('.*')
+                i += 2
+                continue
+            out.append('[^/]*')
+        elif c == '?':
+            out.append('[^/]')
+        else:
+            out.append(re.escape(c))
+        i += 1
+    return re.compile('^' + ''.join(out) + '$')
+
+
 def compute_function_priority_score(
     cognitive_complexity: int,
     cyclomatic_complexity: int,
@@ -568,6 +715,8 @@ class CppAnalyzer:
         filter_low_priority_duplicates: bool = False,
         filter_test_only_duplicates: bool = False,
         profile_name: Optional[str] = None,
+        architecture: Optional[Dict] = None,
+        lints: Optional[Dict] = None,
     ):
         self.root_path = Path(root_path)
         self.exclude_dirs = set(exclude_dirs or [])
@@ -600,12 +749,40 @@ class CppAnalyzer:
         self.duplicate_clusters: List[List[Dict]] = []
         # Populated by _compute_include_graph(); list of include cycles as filepaths.
         self.include_cycles: List[List[str]] = []
-        # Counts of include edges resolved by exact relative path vs basename-only fallback.
-        # Reported in the health summary so consumers can judge cycle confidence.
+        # Counts of include edges by resolution method: exact relative/suffix path vs
+        # basename fallback. `ambiguous_basename` is the subset of basename edges whose
+        # basename maps to 2+ files (low confidence, suppressed from architecture gates);
+        # the remaining basename edges are unique (high confidence, gateable). Reported in
+        # the health summary so consumers can judge cycle/edge confidence.
         self.include_edge_relative_count: int = 0
         self.include_edge_basename_count: int = 0
+        self.include_edge_ambiguous_basename_count: int = 0
         # Populated by generate_llm_suggestions() (if --llm-suggestions is used).
         self.llm_suggestions: List[Dict] = []
+
+        # --- Architecture / lints configuration + results ---------------------------
+        # `architecture` / `lints` come from the profile (or None when no config is
+        # active, in which case the corresponding post-pass is a no-op). The worker only
+        # needs `lints` (per-file detection runs in analyze_file); `architecture` is a
+        # whole-graph main-process post-pass, so workers leave it None.
+        self._arch_config: Dict = dict(architecture or {})
+        self._lint_config: Dict = dict(lints or {})
+        # Populated by _compute_architecture().
+        self.module_metrics: Dict[str, ModuleMetrics] = {}
+        self._file_module: Dict[int, str] = {}   # file index -> module name ('' if unmapped)
+        self.architecture_violations: List[Dict] = []   # {kind, key, file, line, detail, allowlisted, basename_resolved}
+        self.module_cycles: List[List[str]] = []
+        self.hub_files: List[Dict] = []
+        self.unmapped_files: List[str] = []
+        # Populated by _compute_lints().
+        self.lint_findings: List[Dict] = []
+        # Lazy caches for allowlist files (path -> set of wire keys).
+        self._allowlist_cache: Dict[str, Set[str]] = {}
+        # Per-gate non-allowlisted counts + a few example keys, populated by the
+        # architecture/lint post-passes and consumed by check_fail_on. Keyed by fail_on
+        # key (e.g. 'max-architecture-violations').
+        self.gate_counts: Dict[str, int] = {}
+        self.gate_examples: Dict[str, List[str]] = {}
 
     @staticmethod
     def _resolve_parser_backend(requested: str) -> str:
@@ -678,17 +855,24 @@ class CppAnalyzer:
         return sorted(files)
 
     @classmethod
-    def _looks_generated(cls, path: Path) -> bool:
-        """Heuristic: filename markers (.pb.cc, .generated.cpp) or `DO NOT EDIT` banners."""
+    def _looks_generated(cls, path: Path, content: Optional[str] = None) -> bool:
+        """Heuristic: filename markers (.pb.cc, .generated.cpp) or `DO NOT EDIT` banners.
+
+        When `content` is provided the first five lines are taken from it (avoids a second
+        file read in analyze_file); otherwise the file is opened and its head read.
+        """
         name_lower = path.name.lower()
         for hint in cls._GENERATED_NAME_HINTS:
             if hint in name_lower:
                 return True
-        try:
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                head = ''.join(f.readline() for _ in range(5)).lower()
-        except OSError:
-            return False
+        if content is not None:
+            head = '\n'.join(content.split('\n', 5)[:5]).lower()
+        else:
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    head = ''.join(f.readline() for _ in range(5)).lower()
+            except OSError:
+                return False
         return any(hint in head for hint in cls._GENERATED_HEADER_HINTS)
 
     def _strip_ignored_macros(self, code: str) -> str:
@@ -1545,6 +1729,140 @@ class CppAnalyzer:
             })
         return results
     
+    # Pure-virtual method signature inside a class body: `virtual ... = 0;`.
+    _PURE_VIRTUAL_PATTERN: re.Pattern = re.compile(r'\bvirtual\b[^;{}]*=\s*0\s*;')
+
+    def _scan_abstract_types(self, cleaned_code: str) -> Tuple[bool, bool]:
+        """
+        Cheap proxy for module abstractness. Returns (has_class_def, has_abstract_class):
+        whether the file defines any class/struct body, and whether at least one declares a
+        pure-virtual method. Feeds `_compute_architecture`'s approximation of Robert C.
+        Martin's Abstractness A = abstract_headers / headers_with_classes. A proxy, not a
+        true count — reported, never gated.
+        """
+        has_class = bool(self._CLASS_BODY_PATTERN.search(cleaned_code))
+        has_abstract = has_class and bool(self._PURE_VIRTUAL_PATTERN.search(cleaned_code))
+        return has_class, has_abstract
+
+    # --- Convention-lint scanning (detection only; scope/enable/allowlist applied in the
+    # main-process post-pass `_compute_lints`). Detection is config-free and hardcoded to
+    # fixed engine conventions, so it runs in analyze_file (incl. the process-pool worker)
+    # and the findings ride back on FileMetrics — no worker-config plumbing needed.
+    _FORBIDDEN_TOKENS: Tuple[str, ...] = (
+        'std::function', 'std::mutex', 'std::vector', 'std::unordered_map',
+    )
+    _FORBIDDEN_TOKEN_PATTERNS = {t: re.compile(re.escape(t)) for t in _FORBIDDEN_TOKENS}
+    _PCH_INCLUDE: str = '#include "Zenith.h"'
+    _PCH_SOURCE_EXTS: Set[str] = frozenset({'.cpp', '.cc', '.cxx', '.c'})
+    _PRAGMA_HEADER_EXTS: Set[str] = frozenset({'.h', '.hpp', '.hxx'})
+    # Documented module-scope static carve-outs (Zenith/Core/CLAUDE.md) — never flagged.
+    _STATIC_CARVEOUT_HINTS: Tuple[str, ...] = (
+        'Zenith_Log', 'Zenith_Error', 'Zenith_Warning', 'Zenith_Assert',
+        'Zenith_MemoryManagement', 'Zenith_Window', 'Zenith_CommandLine',
+        'Zenith_GraphicsOptions', 'Zenith_InputSimulator', 'g_xEngine',
+    )
+
+    def _scan_lint_findings(self, filepath: Path, raw_code: str, cleaned_code: str) -> List[Dict]:
+        """
+        Produce raw per-file convention-lint findings. Each finding: {kind, key, line,
+        detail} (+ `token` for token findings). `key` is the stable repo-relative wire key
+        matched against the lint allowlist in `_compute_lints`.
+        """
+        rel = str(filepath.relative_to(self.root_path)).replace('\\', '/')
+        ext = filepath.suffix.lower()
+        findings: List[Dict] = []
+
+        # Forbidden STL tokens — scan CLEANED code so matches in strings/comments don't count.
+        for tok, pat in self._FORBIDDEN_TOKEN_PATTERNS.items():
+            m = pat.search(cleaned_code)
+            if m:
+                count = len(pat.findall(cleaned_code))
+                findings.append({
+                    'kind': 'token', 'token': tok, 'key': f'token:{rel} => {tok}',
+                    'line': cleaned_code.count('\n', 0, m.start()) + 1,
+                    'detail': f'{count} use(s) of {tok}',
+                })
+
+        # g_xEngine token (PS1 kind-2 parity): per CODE line — skip pure-comment lines and
+        # trailing // comments. Gate key is per-FILE (membership), matching PS1 behaviour.
+        gx_lines: List[int] = []
+        for i, line in enumerate(raw_code.split('\n'), start=1):
+            if 'g_xEngine' not in line:
+                continue
+            if line.lstrip().startswith('//'):
+                continue
+            if 'g_xEngine' in line.split('//', 1)[0]:
+                gx_lines.append(i)
+        if gx_lines:
+            findings.append({
+                'kind': 'engine-singleton', 'key': f'{rel} => g_xEngine',
+                'line': gx_lines[0],
+                'detail': f'{len(gx_lines)} code line(s) reference g_xEngine',
+            })
+
+        # Missing #pragma once (real headers only; .inl fragments are exempt).
+        if ext in self._PRAGMA_HEADER_EXTS and '#pragma once' not in raw_code:
+            findings.append({'kind': 'pragma', 'key': f'pragma:{rel}', 'line': 1,
+                             'detail': 'header missing #pragma once'})
+
+        # Missing PCH first include (.cpp/.c/...): first non-comment line must be the PCH.
+        # Use cleaned lines to locate the first real line (block-comment licence banners are
+        # blanked there) then test the corresponding RAW line for the include string.
+        if ext in self._PCH_SOURCE_EXTS:
+            cleaned_lines = cleaned_code.split('\n')
+            raw_lines = raw_code.split('\n')
+            first_idx = next((i for i, cl in enumerate(cleaned_lines) if cl.strip()), None)
+            ok = (first_idx is not None and first_idx < len(raw_lines)
+                  and raw_lines[first_idx].strip().startswith(self._PCH_INCLUDE))
+            if not ok:
+                findings.append({'kind': 'pch', 'key': f'pch:{rel}', 'line': 1,
+                                 'detail': 'first non-comment line is not #include "Zenith.h"'})
+
+        findings.extend(self._scan_module_statics(rel, cleaned_code))
+        return findings
+
+    def _scan_module_statics(self, rel: str, cleaned_code: str) -> List[Dict]:
+        """
+        Conservative, report-only detection of module-scope mutable statics. Flags only
+        brace-depth-0 declarations (true file scope) so function-local statics (depth>0)
+        don't false-positive; namespace-wrapped statics (also depth>0) are a known miss.
+        Skips const/constexpr/inline, function declarations (contain `(`), and the
+        documented carve-outs.
+        """
+        findings: List[Dict] = []
+        depth = 0
+        pos = 0
+        for line in cleaned_code.split('\n'):
+            line_start = pos
+            pos += len(line) + 1
+            stripped = line.strip()
+            if depth == 0 and stripped.startswith('static ') and ';' in stripped:
+                is_excluded = (
+                    stripped.startswith('static const')
+                    or stripped.startswith('static constexpr')
+                    or stripped.startswith('static inline')
+                    or 'thread_local' in stripped   # TLS is a documented carve-out
+                    or '(' in stripped
+                    or any(h in stripped for h in self._STATIC_CARVEOUT_HINTS)
+                )
+                if not is_excluded:
+                    # Symbol-stable wire key (line numbers churn across edits): the last
+                    # identifier before the first of = { ; [ is the variable name.
+                    decl = stripped[len('static '):]
+                    for ch in ('=', '{', ';', '['):
+                        p = decl.find(ch)
+                        if p != -1:
+                            decl = decl[:p]
+                    ids = re.findall(r'[A-Za-z_]\w*', decl)
+                    lineno = cleaned_code.count('\n', 0, line_start) + 1
+                    name = ids[-1] if ids else f'L{lineno}'
+                    findings.append({'kind': 'static', 'key': f'static:{rel} => {name}',
+                                     'line': lineno, 'detail': stripped[:80]})
+            depth += line.count('{') - line.count('}')
+            if depth < 0:
+                depth = 0
+        return findings
+
     def analyze_file(self, filepath: Path) -> FileMetrics:
         """Analyze a single source file"""
         try:
@@ -1615,6 +1933,12 @@ class CppAnalyzer:
         # inflate method bodies or field references.
         class_metrics = self._compute_class_lcom(cleaned_code)
 
+        # Architecture/lint inputs — computed unconditionally (config-free) so they survive
+        # the process-pool worker and feed the main-process post-passes.
+        has_class_def, has_abstract_class = self._scan_abstract_types(cleaned_code)
+        is_generated = self._looks_generated(filepath, content=code)
+        lint_findings = self._scan_lint_findings(filepath, code, cleaned_code)
+
         relative_path = str(filepath.relative_to(self.root_path))
         for fm in func_metrics:
             fm.filepath = relative_path
@@ -1641,6 +1965,10 @@ class CppAnalyzer:
             include_lines=include_lines,
             include_conditional=include_conditional,
             classes=class_metrics,
+            has_class_def=has_class_def,
+            has_abstract_class=has_abstract_class,
+            is_generated=is_generated,
+            lint_findings=lint_findings,
         )
         return file_m
     
@@ -1688,6 +2016,11 @@ class CppAnalyzer:
         self._compute_include_redundancy()
         self._find_duplicates()
         self._aggregate_by_directory()
+        # Architecture + lint post-passes run on relative paths (before any --absolute-paths
+        # rewrite in main); architecture first so _compute_lints can fold g_xEngine into the
+        # ECS-leaf gate count.
+        self._compute_architecture()
+        self._compute_lints()
 
     def _compute_priority_scores(self) -> None:
         """
@@ -1749,11 +2082,14 @@ class CppAnalyzer:
              matched against an index of file relative paths AND against suffixes of
              those paths. `#include "Flux/Foo.h"` resolves uniquely to the file whose
              relative path ends with `Flux/Foo.h`.
-          2. **Basename fallback (low confidence)**: if step 1 finds no match we fall
-             back to basename matching (`Foo.h` -> any file named `Foo.h`). Edges
-             resolved this way are counted in `include_edge_basename_count` so the
-             health summary can flag low-confidence cycles. System `<...>` includes
-             are skipped at parse time so they don't inflate fan-out.
+          2. **Basename fallback**: if step 1 finds no match we fall back to basename
+             matching (`Foo.h` -> any file named `Foo.h`). A basename owned by exactly one
+             file is UNAMBIGUOUS (high confidence — architecture gates treat it like a
+             relative match); a basename shared by 2+ files is AMBIGUOUS (low confidence —
+             counted in `include_edge_ambiguous_basename_count` and excluded from gates so
+             it can't red-light CI). All basename edges are counted in
+             `include_edge_basename_count`. System `<...>` includes are skipped at parse
+             time so they don't inflate fan-out.
 
         Cycle detection uses Tarjan's SCC; any SCC of size >= 2, plus self-loops,
         marks its members as `in_cycle`. Cycles matter because they're the strongest
@@ -1803,6 +2139,7 @@ class CppAnalyzer:
 
         relative_count = 0
         basename_count = 0
+        ambiguous_basename_count = 0
 
         # Adjacency list: node index -> list of included node indices (deduped).
         adj: List[List[int]] = [[] for _ in self.file_metrics]
@@ -1820,6 +2157,10 @@ class CppAnalyzer:
             # includes still record both occurrences so redundancy reporting can name both
             # line numbers).
             resolved_per_include: List[List[int]] = []
+            # Parallel to resolved_per_include: per-target confidence (True = unambiguous —
+            # exact/suffix or unique basename; False = ambiguous basename, 2+ candidates).
+            # Lets architectural gates drop only genuinely ambiguous edges.
+            resolved_unambiguous_per_include: List[List[bool]] = []
             unresolved_local: List[Dict] = []
             external_local: List[Dict] = []
             for idx, (raw, base) in enumerate(zip(raw_paths, fm.includes)):
@@ -1832,6 +2173,7 @@ class CppAnalyzer:
                 target: Optional[int] = None
                 resolved_via_relative = False
                 this_resolved: List[int] = []
+                this_unambiguous: List[bool] = []
                 # Tier 1: exact relative-path match.
                 if norm in by_rel_path:
                     target = by_rel_path[norm]
@@ -1843,6 +2185,7 @@ class CppAnalyzer:
                     resolved_via_relative = True
                 if target is not None and target != i:
                     this_resolved.append(target)
+                    this_unambiguous.append(resolved_via_relative)   # exact/suffix == unique
                     if target not in seen:
                         seen.add(target)
                         adj[i].append(target)
@@ -1852,23 +2195,31 @@ class CppAnalyzer:
                         seen_uncond.add(target)
                         unconditional_adj[i].append(target)
                     resolved_per_include.append(this_resolved)
+                    resolved_unambiguous_per_include.append(this_unambiguous)
                     continue
-                # Tier 2: basename fallback (low confidence — link to all files
-                # sharing the basename, which is rare in Zenith but possible).
-                tier2_hits = 0
-                for tgt in by_basename.get(base, ()):
-                    if tgt == i:
-                        continue
+                # Tier 2: basename fallback. A basename owned by EXACTLY ONE file resolves
+                # unambiguously (high confidence, gateable); a basename shared by 2+ files is
+                # genuinely ambiguous (low confidence, suppressed from gates). Bare-basename
+                # includes of a unique header already resolve via Tier 1b above; this path is
+                # reached for a non-matching subpath whose basename is still unique, or a
+                # truly ambiguous basename.
+                tier2_candidates = [tgt for tgt in by_basename.get(base, ()) if tgt != i]
+                tier2_unique = len(tier2_candidates) == 1
+                for tgt in tier2_candidates:
                     this_resolved.append(tgt)
-                    tier2_hits += 1
+                    this_unambiguous.append(tier2_unique)
                     if tgt not in seen:
                         seen.add(tgt)
                         adj[i].append(tgt)
                         basename_count += 1
+                        if not tier2_unique:
+                            ambiguous_basename_count += 1
                     if not is_cond and tgt not in seen_uncond:
                         seen_uncond.add(tgt)
                         unconditional_adj[i].append(tgt)
+                tier2_hits = len(tier2_candidates)
                 resolved_per_include.append(this_resolved)
+                resolved_unambiguous_per_include.append(this_unambiguous)
                 # If no in-tree tier matched, try the external (excluded-dir) index.
                 # External hits are informational — they confirm middleware/third-party
                 # deps are wired up. Real misses become genuine unresolved errors.
@@ -1887,6 +2238,7 @@ class CppAnalyzer:
                         unresolved_local.append({'line': line_no, 'include': raw})
             fm.fan_out = len(adj[i])
             fm.include_resolved_targets = resolved_per_include
+            fm.include_resolved_unambiguous = resolved_unambiguous_per_include
             fm.external_includes = external_local
             fm.unresolved_includes = unresolved_local
 
@@ -1919,6 +2271,7 @@ class CppAnalyzer:
 
         self.include_edge_relative_count = relative_count
         self.include_edge_basename_count = basename_count
+        self.include_edge_ambiguous_basename_count = ambiguous_basename_count
         # Stash adjacency on self so `_compute_include_redundancy` can DFS without
         # rebuilding the graph. The unconditional variant is used for transitive
         # coverage to avoid false positives from macro-gated cover paths.
@@ -1932,56 +2285,8 @@ class CppAnalyzer:
         for i, fm in enumerate(self.file_metrics):
             fm.fan_in = fan_in_count[i]
 
-        # Tarjan's SCC (iterative to avoid recursion limits on large graphs).
-        index_counter = [0]
-        stack: List[int] = []
-        on_stack: List[bool] = [False] * len(self.file_metrics)
-        index: List[int] = [-1] * len(self.file_metrics)
-        lowlink: List[int] = [0] * len(self.file_metrics)
-        sccs: List[List[int]] = []
-
-        def strongconnect(start: int) -> None:
-            work: List[Tuple[int, int]] = [(start, 0)]
-            call_stack: List[int] = []
-            while work:
-                v, pi = work[-1]
-                if pi == 0:
-                    index[v] = index_counter[0]
-                    lowlink[v] = index_counter[0]
-                    index_counter[0] += 1
-                    stack.append(v)
-                    on_stack[v] = True
-                neighbours = adj[v]
-                if pi < len(neighbours):
-                    work[-1] = (v, pi + 1)
-                    w = neighbours[pi]
-                    if index[w] == -1:
-                        work.append((w, 0))
-                    elif on_stack[w]:
-                        if index[w] < lowlink[v]:
-                            lowlink[v] = index[w]
-                    continue
-                # Finished v — pop and update parent lowlink.
-                work.pop()
-                if call_stack:
-                    parent = call_stack[-1]
-                    if lowlink[v] < lowlink[parent]:
-                        lowlink[parent] = lowlink[v]
-                if lowlink[v] == index[v]:
-                    scc: List[int] = []
-                    while True:
-                        w = stack.pop()
-                        on_stack[w] = False
-                        scc.append(w)
-                        if w == v:
-                            break
-                    sccs.append(scc)
-                call_stack.append(v)
-            # Drain remaining call_stack parents — already processed via lowlink updates.
-
-        for v in range(len(self.file_metrics)):
-            if index[v] == -1:
-                strongconnect(v)
+        # Tarjan's SCC (shared iterative implementation — see _tarjan_scc).
+        sccs = _tarjan_scc(adj)
 
         self.include_cycles: List[List[str]] = []
         for scc in sccs:
@@ -2233,7 +2538,366 @@ class CppAnalyzer:
                 files=files
             )
             self.directory_metrics[dir_path] = dm
-    
+
+    # ===========================================================================
+    # Architecture + convention-lint analysis (main-process post-passes).
+    # ===========================================================================
+    def _load_allowlist(self, rel_or_abs: Optional[str]) -> Set[str]:
+        """
+        Load a ratchet allowlist file into a set of wire keys. Blank lines and `#`
+        comments are skipped (PS1 parity). Resolved relative to root_path. A missing file
+        yields the empty set (like the PS1 gate). Cached per path.
+        """
+        if not rel_or_abs:
+            return set()
+        if rel_or_abs in self._allowlist_cache:
+            return self._allowlist_cache[rel_or_abs]
+        path = Path(rel_or_abs)
+        if not path.is_absolute():
+            path = self.root_path / rel_or_abs
+        keys: Set[str] = set()
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    s = line.strip()
+                    if s and not s.startswith('#'):
+                        keys.add(s)
+        except OSError:
+            pass
+        self._allowlist_cache[rel_or_abs] = keys
+        return keys
+
+    def _compute_architecture(self) -> None:
+        """
+        Map files to modules and detect architectural-structure violations:
+          * subsumed PS1 ratchets (raw-string parity): EC<->Flux edges (de-duped) and
+            ECS-leaf forbidden includes (not de-duped);
+          * new resolved-graph rules: layer-up direction, forbidden module edges,
+            encapsulation (reaching a module's non-public header);
+          * module coupling (Martin Ce/Ca/Instability/Abstractness/Distance + zones);
+          * hub files, module fan-out, module-level cycles, unmapped files.
+        Every discrete finding carries `allowlisted` (per-finding ratchet membership) and
+        `basename_resolved`; gate counts (threshold-0, non-allowlisted, basename-aware) go
+        into self.gate_counts. No-op when no `architecture` config is present.
+        """
+        cfg = self._arch_config
+        modules = cfg.get('modules', []) if cfg else []
+        if not modules:
+            return
+
+        # --- module glob index (most-specific non-wildcard prefix wins) ---
+        layer_of: Dict[str, int] = {}
+        public_headers_of: Dict[str, List] = {}   # module -> [compiled segment-glob regex]
+        glob_entries: List[Tuple[int, str, str]] = []   # (prefix_len, glob, module)
+        for mod in modules:
+            name = mod['name']
+            layer_of[name] = int(mod.get('layer', 0))
+            if mod.get('public_headers'):
+                public_headers_of[name] = [_seg_glob_to_regex(g) for g in mod['public_headers']]
+            for g in mod.get('globs', []):
+                prefix = re.split(r'[*?\[]', g, maxsplit=1)[0]
+                glob_entries.append((len(prefix), g, name))
+        glob_entries.sort(key=lambda e: -e[0])
+
+        def match_module(posix: str) -> str:
+            for _, g, name in glob_entries:
+                if fnmatch.fnmatch(posix, g):
+                    return name
+            return ''
+
+        # --- map files -> modules ---
+        self.module_metrics = {m['name']: ModuleMetrics(name=m['name'], layer=int(m.get('layer', 0)))
+                               for m in modules}
+        self._file_module = {}
+        self.unmapped_files = []
+        for i, fm in enumerate(self.file_metrics):
+            posix = Path(fm.filepath).as_posix()
+            name = match_module(posix)
+            fm.module = name
+            self._file_module[i] = name
+            if name:
+                mm = self.module_metrics[name]
+                mm.file_count += 1
+                mm.code_lines += fm.code_lines
+                mm.files.append(fm.filepath)
+            else:
+                self.unmapped_files.append(fm.filepath)
+
+        rules = cfg.get('rules', {})
+        forbid_up = bool(rules.get('forbid_up_edges', False))
+        forbidden_edges: Set[Tuple[str, str]] = set()
+        for fe in rules.get('forbidden_edges', []):
+            for to in fe.get('to', []):
+                forbidden_edges.add((fe['from'], to))
+        allowed_edges = {(ae['from'], ae['to']) for ae in rules.get('allowed_edges', [])}
+        ignore_pairs = {frozenset(p) for p in rules.get('ignore_module_cycles', []) if len(p) == 2}
+        fail_basename = bool(cfg.get('fail_on_basename_resolved', False))
+        thresholds = cfg.get('thresholds', {}) or {}
+        arch_allow = self._load_allowlist(cfg.get('allowlist_file') or 'Tools/architecture_allowlist.txt')
+
+        violations: List[Dict] = []
+
+        def line_of(fm: FileMetrics, idx: int) -> int:
+            return fm.include_lines[idx] if idx < len(fm.include_lines) else 0
+
+        # --- subsumed ratchet A: EC<->Flux raw-string edges, de-duped (PS1 parity) ---
+        ecf = cfg.get('ec_flux_ratchet')
+        if ecf:
+            allow = self._load_allowlist(ecf.get('allowlist_file'))
+            ec_glob = ecf.get('ec_glob', '')
+            flux_glob = ecf.get('flux_glob', '')
+            seen: Set[str] = set()
+            for fm in self.file_metrics:
+                posix = Path(fm.filepath).as_posix()
+                in_ec = bool(ec_glob) and fnmatch.fnmatch(posix, ec_glob)
+                in_flux = bool(flux_glob) and fnmatch.fnmatch(posix, flux_glob)
+                if not (in_ec or in_flux):
+                    continue
+                for raw in fm.include_paths:
+                    norm = raw.replace('\\', '/')
+                    if (in_ec and norm.startswith('Flux/')) or (in_flux and norm.startswith('EntityComponent/')):
+                        key = f'{posix} => {norm}'
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        violations.append({'kind': 'ec-flux', 'key': key, 'file': fm.filepath,
+                                           'line': 0, 'detail': norm, 'allowlisted': key in allow,
+                                           'basename_resolved': False})
+
+        # --- subsumed ratchet B kind-1: ECS-leaf forbidden includes (NOT de-duped) ---
+        leaf = cfg.get('leaf_ratchet')
+        if leaf and leaf.get('glob'):
+            leaf_allow = self._load_allowlist(leaf.get('allowlist_file'))
+            leaf_glob = leaf['glob']
+            prefixes = tuple(leaf.get('forbidden_prefixes', []))
+            exacts = set(leaf.get('forbidden_exact', []))
+            for fm in self.file_metrics:
+                posix = Path(fm.filepath).as_posix()
+                if not fnmatch.fnmatch(posix, leaf_glob):
+                    continue
+                for raw in fm.include_paths:
+                    norm = raw.replace('\\', '/')
+                    if (prefixes and norm.startswith(prefixes)) or norm in exacts:
+                        key = f'{posix} => {norm}'
+                        violations.append({'kind': 'leaf-include', 'key': key, 'file': fm.filepath,
+                                           'line': 0, 'detail': norm, 'allowlisted': key in leaf_allow,
+                                           'basename_resolved': False})
+
+        # --- new resolved-graph rules + module edge sets ---
+        module_out: Dict[str, Set[str]] = defaultdict(set)        # all edges (metrics)
+        module_in: Dict[str, Set[str]] = defaultdict(set)
+        module_out_rel: Dict[str, Set[str]] = defaultdict(set)    # relative-resolved only (cycles)
+        for i, fm in enumerate(self.file_metrics):
+            src_mod = self._file_module.get(i, '')
+            if not src_mod:
+                continue
+            src_layer = layer_of.get(src_mod, 0)
+            posix = Path(fm.filepath).as_posix()
+            for idx, targets in enumerate(fm.include_resolved_targets):
+                unambig = (fm.include_resolved_unambiguous[idx]
+                           if idx < len(fm.include_resolved_unambiguous) else [])
+                norm = (fm.include_paths[idx] if idx < len(fm.include_paths) else '').replace('\\', '/')
+                for ti, t in enumerate(targets):
+                    dst_mod = self._file_module.get(t, '')
+                    if not dst_mod or dst_mod == src_mod:
+                        continue
+                    # `basename_resolved` here means "ambiguous" — a unique basename is
+                    # treated as high-confidence and IS gated (see _compute_include_graph).
+                    basename_resolved = not (unambig[ti] if ti < len(unambig) else False)
+                    module_out[src_mod].add(dst_mod)
+                    module_in[dst_mod].add(src_mod)
+                    if not basename_resolved:
+                        module_out_rel[src_mod].add(dst_mod)
+                    pair = frozenset((src_mod, dst_mod))
+                    dst_layer = layer_of.get(dst_mod, 0)
+                    if (forbid_up and dst_layer > src_layer and pair not in ignore_pairs
+                            and (src_mod, dst_mod) not in allowed_edges):
+                        key = f'layer-up: {posix} => {norm}'
+                        violations.append({'kind': 'layer-up', 'key': key, 'file': fm.filepath,
+                                           'line': line_of(fm, idx),
+                                           'detail': f'{src_mod}(L{src_layer}) -> {dst_mod}(L{dst_layer})',
+                                           'allowlisted': key in arch_allow,
+                                           'basename_resolved': basename_resolved})
+                    if (src_mod, dst_mod) in forbidden_edges and pair not in ignore_pairs:
+                        key = f'forbidden-edge: {posix} => {norm}'
+                        violations.append({'kind': 'forbidden-edge', 'key': key, 'file': fm.filepath,
+                                           'line': line_of(fm, idx),
+                                           'detail': f'{src_mod} -> {dst_mod} (forbidden)',
+                                           'allowlisted': key in arch_allow,
+                                           'basename_resolved': basename_resolved})
+                    if dst_mod in public_headers_of:
+                        tgt_posix = Path(self.file_metrics[t].filepath).as_posix()
+                        if not any(rx.match(tgt_posix) for rx in public_headers_of[dst_mod]):
+                            key = f'encapsulation: {posix} => {norm}'
+                            violations.append({'kind': 'encapsulation', 'key': key, 'file': fm.filepath,
+                                               'line': line_of(fm, idx),
+                                               'detail': f'reaches non-public {dst_mod} header {tgt_posix}',
+                                               'allowlisted': key in arch_allow,
+                                               'basename_resolved': basename_resolved})
+
+        # --- coupling metrics (Martin) + zones ---
+        hdr_with_class: Dict[str, int] = defaultdict(int)
+        hdr_abstract: Dict[str, int] = defaultdict(int)
+        for i, fm in enumerate(self.file_metrics):
+            mod = self._file_module.get(i, '')
+            if mod and fm.has_class_def:
+                hdr_with_class[mod] += 1
+                if fm.has_abstract_class:
+                    hdr_abstract[mod] += 1
+        for name, mm in self.module_metrics.items():
+            ce = len(module_out.get(name, ()))
+            ca = len(module_in.get(name, ()))
+            mm.efferent, mm.afferent = ce, ca
+            mm.instability = round(ce / (ca + ce), 3) if (ca + ce) else 0.0
+            mm.outgoing_module_deps = sorted(module_out.get(name, ()))
+            hw = hdr_with_class.get(name, 0)
+            if hw:
+                mm.abstractness = round(hdr_abstract.get(name, 0) / hw, 3)
+                mm.abstractness_available = True
+                mm.distance = round(abs(mm.abstractness + mm.instability - 1.0), 3)
+                if mm.instability <= 0.2 and mm.abstractness <= 0.2:
+                    mm.zone = 'pain'
+                elif mm.instability >= 0.8 and mm.abstractness >= 0.8:
+                    mm.zone = 'uselessness'
+                elif mm.distance <= 0.2:
+                    mm.zone = 'main-sequence'
+                if mm.zone == 'pain':
+                    key = f'zone-of-pain: {name}'
+                    violations.append({'kind': 'zone-of-pain', 'key': key, 'file': '', 'line': 0,
+                                       'detail': f'I={mm.instability} A={mm.abstractness} (stable+concrete)',
+                                       'allowlisted': key in arch_allow, 'basename_resolved': False})
+
+        # --- module fan-out ---
+        max_fanout = int(thresholds.get('max_module_fanout', 0))
+        if max_fanout:
+            for name, mm in self.module_metrics.items():
+                if mm.efferent > max_fanout:
+                    key = f'module-fanout: {name}'
+                    violations.append({'kind': 'module-fanout', 'key': key, 'file': '', 'line': 0,
+                                       'detail': f'{mm.efferent} module deps > {max_fanout}',
+                                       'allowlisted': key in arch_allow, 'basename_resolved': False})
+
+        # --- hub files (high fan_in AND fan_out) ---
+        hub_fan_in = int(thresholds.get('hub_fan_in', 0))
+        hub_fan_out = int(thresholds.get('hub_fan_out', 0))
+        self.hub_files = []
+        if hub_fan_in and hub_fan_out:
+            for fm in self.file_metrics:
+                if fm.fan_in >= hub_fan_in and fm.fan_out >= hub_fan_out:
+                    posix = Path(fm.filepath).as_posix()
+                    key = f'hub: {posix}'
+                    rec = {'kind': 'hub', 'key': key, 'file': fm.filepath, 'line': 0,
+                           'fan_in': fm.fan_in, 'fan_out': fm.fan_out,
+                           'detail': f'fan_in={fm.fan_in} fan_out={fm.fan_out}',
+                           'allowlisted': key in arch_allow, 'basename_resolved': False}
+                    self.hub_files.append(rec)
+                    violations.append(rec)
+
+        # --- module-level cycles (relative-resolved edges only; ignore_pairs removed) ---
+        mod_names = list(self.module_metrics.keys())
+        mod_index = {n: k for k, n in enumerate(mod_names)}
+        mod_adj: List[List[int]] = [[] for _ in mod_names]
+        for src, dsts in module_out_rel.items():
+            for dst in dsts:
+                if frozenset((src, dst)) in ignore_pairs:
+                    continue
+                if src in mod_index and dst in mod_index:
+                    mod_adj[mod_index[src]].append(mod_index[dst])
+        self.module_cycles = []
+        for scc in _tarjan_scc(mod_adj):
+            if len(scc) > 1:
+                cyc = sorted(mod_names[n] for n in scc)
+                self.module_cycles.append(cyc)
+                key = 'module-cycle: ' + '|'.join(cyc)
+                violations.append({'kind': 'module-cycle', 'key': key, 'file': '', 'line': 0,
+                                   'detail': ' <-> '.join(cyc), 'allowlisted': key in arch_allow,
+                                   'basename_resolved': False})
+
+        # --- unmapped files (blind-spot guard) ---
+        for f in self.unmapped_files:
+            posix = Path(f).as_posix()
+            key = f'unmapped: {posix}'
+            violations.append({'kind': 'unmapped', 'key': key, 'file': f, 'line': 0,
+                               'detail': 'file maps to no module', 'allowlisted': key in arch_allow,
+                               'basename_resolved': False})
+
+        self.architecture_violations = violations
+
+        # --- gate-count attribution (threshold-0, non-allowlisted, basename-aware) ---
+        def gated(v: Dict) -> bool:
+            if v.get('allowlisted'):
+                return False
+            if v.get('basename_resolved') and not fail_basename:
+                return False
+            return True
+
+        groups = {
+            'max-ec-flux-edges': {'ec-flux'},
+            'max-leaf-violations': {'leaf-include'},   # engine-singleton added in _compute_lints
+            'max-architecture-violations': {'layer-up', 'forbidden-edge'},
+            'max-encapsulation-violations': {'encapsulation'},
+            'max-hub-files': {'hub'},
+            'max-module-cycles': {'module-cycle'},
+            'max-module-fanout-violations': {'module-fanout'},
+            'max-zone-of-pain-modules': {'zone-of-pain'},
+            'max-unmapped-files': {'unmapped'},
+        }
+        for gkey, kinds in groups.items():
+            matched = [v for v in violations if v['kind'] in kinds and gated(v)]
+            self.gate_counts[gkey] = len(matched)
+            self.gate_examples[gkey] = [v['key'] for v in matched[:5]]
+
+    def _compute_lints(self) -> None:
+        """
+        Aggregate per-file convention-lint findings (produced config-free in analyze_file)
+        and apply scope + per-finding allowlist membership. g_xEngine (engine-singleton)
+        folds into the ECS-leaf gate using the architecture leaf config; all other lints use
+        the lints allowlist. Populates self.lint_findings + the lint gate counts.
+        """
+        cfg = self._lint_config
+        scope_globs = cfg.get('scope_globs') if cfg else None
+        exclude_generated = bool(cfg.get('exclude_generated', True)) if cfg else True
+        lint_allow = self._load_allowlist(cfg.get('allowlist_file') or 'Tools/lints_allowlist.txt')
+        leaf_cfg = (self._arch_config or {}).get('leaf_ratchet', {}) or {}
+        leaf_glob = leaf_cfg.get('glob', '')
+        leaf_allow = self._load_allowlist(leaf_cfg.get('allowlist_file')) if leaf_glob else set()
+
+        def in_scope(posix: str) -> bool:
+            return True if not scope_globs else any(fnmatch.fnmatch(posix, g) for g in scope_globs)
+
+        all_findings: List[Dict] = []
+        for fm in self.file_metrics:
+            posix = Path(fm.filepath).as_posix()
+            scoped = in_scope(posix) and not (fm.is_generated and exclude_generated)
+            for f in fm.lint_findings:
+                rec = dict(f)
+                rec['file'] = fm.filepath
+                if rec['kind'] == 'engine-singleton':
+                    # Leaf token: a violation only inside the leaf glob; uses leaf allowlist.
+                    rec['in_scope'] = bool(leaf_glob) and fnmatch.fnmatch(posix, leaf_glob)
+                    rec['allowlisted'] = rec['key'] in leaf_allow
+                else:
+                    rec['in_scope'] = scoped
+                    rec['allowlisted'] = rec['key'] in lint_allow
+                all_findings.append(rec)
+        self.lint_findings = all_findings
+
+        def gated(v: Dict) -> bool:
+            return bool(v.get('in_scope')) and not v.get('allowlisted')
+
+        for gkey, kind in (('max-forbidden-tokens', 'token'), ('max-missing-pch', 'pch'),
+                           ('max-missing-pragma-once', 'pragma'), ('max-static-violations', 'static')):
+            matched = [v for v in all_findings if v['kind'] == kind and gated(v)]
+            self.gate_counts[gkey] = len(matched)
+            self.gate_examples[gkey] = [v['key'] for v in matched[:5]]
+
+        # engine-singleton (g_xEngine) folds into the ECS-leaf gate alongside leaf-include.
+        gx = [v for v in all_findings if v['kind'] == 'engine-singleton' and gated(v)]
+        self.gate_counts['max-leaf-violations'] = self.gate_counts.get('max-leaf-violations', 0) + len(gx)
+        if gx:
+            self.gate_examples.setdefault('max-leaf-violations', [])
+            self.gate_examples['max-leaf-violations'] += [v['key'] for v in gx[:5]]
+
     def get_summary(self) -> Dict:
         """
         Get overall summary statistics.
@@ -3151,14 +3815,19 @@ def export_csv(analyzer: CppAnalyzer, output_dir: Path) -> None:
         print(f"  Function metrics exported to: {func_csv}")
 
 
-JSON_SCHEMA_VERSION = '1.0'
+JSON_SCHEMA_VERSION = '1.1'   # 1.1 adds the `architecture` + `lints` report blocks.
 
 JSON_CAVEATS = (
     "Function-level metrics come from regex-based C++ parsing, which is approximate: "
     "function-try-blocks, C++20 `requires` clauses, macro-generated signatures, nested "
     "templates (e.g. std::vector<std::pair<int,int>>), and `throw(...)` exception specs "
     "may cause functions to be missed. File-level metrics are unaffected. Missing "
-    "functions means they are absent from per-function lists, not that the file is simple."
+    "functions means they are absent from per-function lists, not that the file is simple. "
+    "Architecture: module Abstractness (A) and Distance (D) are a regex proxy "
+    "(pure-virtual presence per header) and are reported, never gated; a "
+    "std::function/pimpl-free engine tends to show uniformly low A. Direction/encapsulation "
+    "gates exclude only AMBIGUOUS basename-resolved edges (a basename shared by 2+ files); "
+    "a unique basename is high-confidence and IS gated, like a relative-path match."
 )
 
 
@@ -3301,12 +3970,51 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
     _marker_priority = {'FIXME': 0, 'HACK': 1, 'XXX': 1, 'TODO': 2}
     tech_debt.sort(key=lambda m: (_marker_priority.get(m['marker'], 3), m['file'], m['line']))
 
+    # Architecture + lint blocks (empty when no `architecture`/`lints` profile config).
+    def _by_kind(records: List[Dict]) -> Dict[str, Dict[str, int]]:
+        out: Dict[str, Dict[str, int]] = {}
+        for r in records:
+            d = out.setdefault(r['kind'], {'total': 0, 'gating': 0})
+            d['total'] += 1
+            gating = not r.get('allowlisted') and not r.get('basename_resolved')
+            if r.get('kind') in ('token', 'pch', 'pragma', 'static', 'engine-singleton'):
+                gating = bool(r.get('in_scope')) and not r.get('allowlisted')
+            if gating:
+                d['gating'] += 1
+        return out
+
+    architecture_block = {
+        'modules': [
+            {
+                'name': mm.name, 'layer': mm.layer, 'file_count': mm.file_count,
+                'code_lines': mm.code_lines, 'afferent': mm.afferent, 'efferent': mm.efferent,
+                'instability': mm.instability, 'abstractness': mm.abstractness,
+                'abstractness_available': mm.abstractness_available, 'distance': mm.distance,
+                'zone': mm.zone, 'outgoing_module_deps': mm.outgoing_module_deps,
+            }
+            for mm in sorted(analyzer.module_metrics.values(), key=lambda m: (m.layer, m.name))
+        ],
+        'violation_summary': _by_kind(analyzer.architecture_violations),
+        'violations': analyzer.architecture_violations,
+        'module_cycles': analyzer.module_cycles,
+        'hub_files': analyzer.hub_files,
+        'unmapped_files': analyzer.unmapped_files,
+        'gate_counts': {k: analyzer.gate_counts.get(k, 0) for k in _ARCHITECTURE_FAIL_ON_KEYS},
+    }
+    lints_block = {
+        'finding_summary': _by_kind(analyzer.lint_findings),
+        'findings': [v for v in analyzer.lint_findings if v.get('in_scope')],
+        'gate_counts': {k: analyzer.gate_counts.get(k, 0) for k in _LINT_FAIL_ON_KEYS},
+    }
+
     report = {
         'schema_version': JSON_SCHEMA_VERSION,
         'caveats': JSON_CAVEATS,
         'thresholds': analyzer.thresholds,
         'health_summary': get_health_summary(analyzer),
         'summary': summary,
+        'architecture': architecture_block,
+        'lints': lints_block,
         'directories': dir_list,
         'function_hotspots': [function_to_dict(f) for f in function_hotspots],
         'low_cohesion_classes': low_cohesion,
@@ -3374,11 +4082,16 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
         out.append(f'- Duplicate clusters: **{health["duplicate_cluster_count"]}**')
         rel = health["include_edges_relative"]
         base = health["include_edges_basename"]
+        ambig = health.get("include_edges_ambiguous_basename", 0)
+        unique_base = base - ambig
         total = rel + base
         if total > 0:
             base_pct = 100.0 * base / total
-            out.append(f'- Include edges resolved: {rel} relative-path (high confidence), '
-                       f'{base} basename-only (low confidence, {base_pct:.0f}%)')
+            out.append(
+                f'- Include edges resolved: {rel} relative-path + {unique_base} unique-basename '
+                f'(high confidence, gated); {ambig} ambiguous-basename '
+                f'(low confidence, suppressed from gates); {base} basename total ({base_pct:.0f}%)'
+            )
         unres_total = health.get('total_unresolved_includes', 0)
         if unres_total > 0:
             out.append(f'- **Unresolved includes (errors): {unres_total}** — see section below')
@@ -3402,6 +4115,50 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
             wf = health['worst_file']
             out.append(f'- Worst file: `{wf["file"]}` (score {wf["priority_score"]:.1f})')
     out.append('')
+
+    # Architecture section (only when an `architecture` profile block is active).
+    if analyzer.module_metrics:
+        out.append('## Architecture\n')
+        gc = analyzer.gate_counts
+        enforced = [k for k in _ARCHITECTURE_FAIL_ON_KEYS + _LINT_FAIL_ON_KEYS
+                    if gc.get(k, 0) > 0 and k not in _REPORT_ONLY_GATE_KEYS]
+        report_only = [k for k in _ARCHITECTURE_FAIL_ON_KEYS + _LINT_FAIL_ON_KEYS
+                       if gc.get(k, 0) > 0 and k in _REPORT_ONLY_GATE_KEYS]
+        if enforced:
+            out.append('**Non-allowlisted findings that FAIL the gate** (add to the matching '
+                       'allowlist only when deliberately accepted):')
+            for k in enforced:
+                ex = analyzer.gate_examples.get(k, [])
+                ex_s = f' — e.g. `{ex[0]}`' if ex else ''
+                out.append(f'- **{k}: {gc[k]}**{ex_s}')
+        else:
+            out.append('All gated architecture/lint findings are allow-listed (ratchet green).')
+        if report_only:
+            out.append('')
+            out.append('Report-only signals (not gated by default):')
+            for k in report_only:
+                ex = analyzer.gate_examples.get(k, [])
+                ex_s = f' — e.g. `{ex[0]}`' if ex else ''
+                out.append(f'- {k}: {gc[k]}{ex_s}')
+        out.append('')
+        out.append(f'- Modules: **{len(analyzer.module_metrics)}**, '
+                   f'unmapped files: **{len(analyzer.unmapped_files)}**, '
+                   f'module-level cycles (report-only): **{len(analyzer.module_cycles)}**, '
+                   f'hub files: **{len(analyzer.hub_files)}**')
+        out.append('')
+        out.append('| Module | Layer | Files | Ca | Ce | Instability | Abstractness | Distance | Zone |')
+        out.append('|---|---:|---:|---:|---:|---:|---:|---:|---|')
+        for mm in sorted(analyzer.module_metrics.values(), key=lambda m: (m.layer, m.name)):
+            a = f'{mm.abstractness:.2f}' if mm.abstractness_available else 'n/a'
+            out.append(f'| {mm.name} | {mm.layer} | {mm.file_count} | {mm.afferent} | '
+                       f'{mm.efferent} | {mm.instability:.2f} | {a} | {mm.distance:.2f} | '
+                       f'{mm.zone or "-"} |')
+        out.append('')
+        out.append('_A/D are a regex proxy and report-only. module-cycles and zone-of-pain '
+                   'are reported but not gated by default; module-scope statics, forbidden '
+                   'tokens, missing PCH/`#pragma once`, leaf `g_xEngine`, layering, leaf and '
+                   'encapsulation findings ARE gated (threshold 0, ratcheted via allowlists)._')
+        out.append('')
 
     out.append('## Summary\n')
     if summary:
@@ -4577,11 +5334,44 @@ def generate_llm_suggestions(
     return results
 
 
-_FAIL_ON_KEYS: Tuple[str, ...] = (
+# Complexity gates (per-function / per-file / aggregate counts).
+_COMPLEXITY_FAIL_ON_KEYS: Tuple[str, ...] = (
     'max-cc', 'max-cognitive', 'max-nesting', 'max-loc',
     'max-function-priority', 'max-file-priority',
     'max-include-cycles', 'max-duplicate-clusters',
 )
+# Architecture gates. Each is a threshold-0, non-allowlisted COUNT (the ratchet is the
+# per-finding allowlist, NOT the number): a new finding has no allowlist entry and trips
+# the gate; a removed finding leaves a stale allowlist line (INFO only).
+_ARCHITECTURE_FAIL_ON_KEYS: Tuple[str, ...] = (
+    'max-ec-flux-edges', 'max-leaf-violations', 'max-architecture-violations',
+    'max-encapsulation-violations', 'max-hub-files', 'max-module-cycles',
+    'max-module-fanout-violations', 'max-zone-of-pain-modules', 'max-unmapped-files',
+)
+# Convention-lint gates (same per-finding-allowlist semantics).
+_LINT_FAIL_ON_KEYS: Tuple[str, ...] = (
+    'max-forbidden-tokens', 'max-missing-pch', 'max-missing-pragma-once',
+    'max-static-violations',
+)
+# Keys whose counts are precomputed in analyzer.gate_counts by the post-passes.
+_GATE_COUNT_KEYS: Tuple[str, ...] = _ARCHITECTURE_FAIL_ON_KEYS + _LINT_FAIL_ON_KEYS
+_FAIL_ON_KEYS: Tuple[str, ...] = (
+    _COMPLEXITY_FAIL_ON_KEYS + _ARCHITECTURE_FAIL_ON_KEYS + _LINT_FAIL_ON_KEYS
+)
+# --gate-group selector: each CI check runs the full analysis but applies only its group's
+# fail_on keys, so a complexity regression fails only complexity-gate and an architecture
+# regression fails only layering-gate.
+_GATE_GROUPS: Dict[str, Tuple[str, ...]] = {
+    'complexity': _COMPLEXITY_FAIL_ON_KEYS,
+    'architecture': _ARCHITECTURE_FAIL_ON_KEYS,
+    'lints': _LINT_FAIL_ON_KEYS,
+}
+# Gate keys deliberately left OUT of the shipped engine-ci fail_on (report-only): a single
+# engine-wide module SCC, and intrinsically stable+concrete foundational libs. Computed +
+# reported, never failed, until promoted.
+_REPORT_ONLY_GATE_KEYS: Set[str] = {
+    'max-module-cycles', 'max-zone-of-pain-modules',
+}
 
 
 def check_fail_on(analyzer: CppAnalyzer, thresholds: Dict[str, float]) -> List[str]:
@@ -4641,7 +5431,107 @@ def check_fail_on(analyzer: CppAnalyzer, thresholds: Dict[str, float]) -> List[s
             f'max-duplicate-clusters={int(max_dupes)}'
         )
 
+    # Architecture + lint gates: counts of non-allowlisted findings are precomputed by the
+    # post-passes into analyzer.gate_counts (threshold is normally 0 — the per-finding
+    # allowlist is the ratchet, not the number).
+    for key in _GATE_COUNT_KEYS:
+        thr = thresholds.get(key)
+        if thr is None:
+            continue
+        count = analyzer.gate_counts.get(key, 0)
+        if count > thr:
+            examples = analyzer.gate_examples.get(key, [])
+            ex = ''
+            if examples:
+                shown = '; '.join(examples[:3])
+                ex = f' [{shown}{" ..." if len(examples) > 3 else ""}]'
+            violations.append(
+                f'{key}: {count} non-allowlisted finding(s) exceed {key}={int(thr)}{ex}'
+            )
+
     return violations
+
+
+def _existing_allowlist_header(path: Path) -> Optional[str]:
+    """Return the leading comment/blank block of an allowlist file (so a regen preserves the
+    human-written rationale on the two subsumed PS1 files). None if the file is absent."""
+    if not path.exists():
+        return None
+    out: List[str] = []
+    try:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as fh:
+            for line in fh:
+                if line.strip() == '' or line.lstrip().startswith('#'):
+                    out.append(line.rstrip('\n'))
+                else:
+                    break
+    except OSError:
+        return None
+    return '\n'.join(out) + '\n' if out else None
+
+
+def update_architecture_allowlists(analyzer: 'CppAnalyzer') -> None:
+    """
+    Regenerate the four ratchet allowlist files from the analyzer's CURRENT findings — the
+    Python analogue of `layering_gate.ps1 -Update`. Writes every gating-candidate finding's
+    wire key (i.e. non-basename, unless fail_on_basename_resolved) so the freshly-written
+    baseline is green against Python's own resolver. Existing leading comment blocks are
+    preserved (keeps the documentation on layering_allowlist.txt / ecs_leaf_allowlist.txt).
+    """
+    arch_cfg = analyzer._arch_config or {}
+    lint_cfg = analyzer._lint_config or {}
+    ecf_file = (arch_cfg.get('ec_flux_ratchet', {}) or {}).get('allowlist_file', 'Tools/layering_allowlist.txt')
+    leaf_file = (arch_cfg.get('leaf_ratchet', {}) or {}).get('allowlist_file', 'Tools/ecs_leaf_allowlist.txt')
+    arch_file = arch_cfg.get('allowlist_file', 'Tools/architecture_allowlist.txt')
+    lint_file = lint_cfg.get('allowlist_file', 'Tools/lints_allowlist.txt')
+    fail_basename = bool(arch_cfg.get('fail_on_basename_resolved', False))
+
+    def keep(v: Dict) -> bool:
+        return (not v.get('basename_resolved')) or fail_basename
+
+    # Only ratcheted (gate-eligible) kinds are written. zone-of-pain / module-cycle are
+    # report-only (noisy / one giant SCC on a tightly-coupled engine).
+    kind_file = {
+        'ec-flux': ecf_file, 'leaf-include': leaf_file,
+        'layer-up': arch_file, 'forbidden-edge': arch_file, 'encapsulation': arch_file,
+        'hub': arch_file, 'module-fanout': arch_file, 'unmapped': arch_file,
+    }
+    buckets: Dict[str, Set[str]] = defaultdict(set)
+    for v in analyzer.architecture_violations:
+        dest = kind_file.get(v['kind'])
+        if dest and keep(v):
+            buckets[dest].add(v['key'])
+    for v in analyzer.lint_findings:
+        if not v.get('in_scope'):
+            continue
+        if v['kind'] == 'engine-singleton':
+            buckets[leaf_file].add(v['key'])
+        elif v['kind'] in ('token', 'pch', 'pragma', 'static'):
+            buckets[lint_file].add(v['key'])
+
+    # Always (re)write the four canonical files, even when empty, so a cleared ratchet
+    # round-trips to an empty list rather than leaving a stale file.
+    for dest in (ecf_file, leaf_file, arch_file, lint_file):
+        buckets.setdefault(dest, set())
+
+    default_header = (
+        "# Auto-generated ratchet baseline (analyze_code_complexity.py).\n"
+        "# Regenerate: py -3 Tools/analyze_code_complexity.py . --profile engine-ci "
+        "--update-architecture-allowlist\n"
+        "# One wire key per line; '#'/blank lines ignored. A NEW key not listed here fails\n"
+        "# the gate; a removed finding leaves a stale line (INFO only). Shrink, don't grow.\n"
+    )
+    for dest, keys in buckets.items():
+        path = Path(dest) if Path(dest).is_absolute() else (analyzer.root_path / dest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        header = _existing_allowlist_header(path) or default_header
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(header)
+            if not header.endswith('\n'):
+                fh.write('\n')
+            for k in sorted(keys):
+                fh.write(k + '\n')
+        print(f"  wrote {len(keys)} key(s) -> {dest}")
 
 
 def _parse_fail_on(raw: str) -> Dict[str, float]:
@@ -4728,6 +5618,7 @@ def get_health_summary(analyzer: CppAnalyzer) -> Dict:
         'duplicate_cluster_count': len(analyzer.duplicate_clusters),
         'include_edges_relative': analyzer.include_edge_relative_count,
         'include_edges_basename': analyzer.include_edge_basename_count,
+        'include_edges_ambiguous_basename': analyzer.include_edge_ambiguous_basename_count,
         'total_duplicate_includes': total_dup_inc,
         'total_transitive_includes': total_trans_inc,
         'total_external_includes': total_ext_inc,
@@ -4752,6 +5643,17 @@ def get_health_summary(analyzer: CppAnalyzer) -> Dict:
             if worst_file
             else None
         ),
+        # Architecture / lint gate digest (counts are non-allowlisted gating findings).
+        'architecture_gate_counts': {
+            k: analyzer.gate_counts.get(k, 0) for k in _ARCHITECTURE_FAIL_ON_KEYS
+        },
+        'lint_gate_counts': {
+            k: analyzer.gate_counts.get(k, 0) for k in _LINT_FAIL_ON_KEYS
+        },
+        'module_count': len(analyzer.module_metrics),
+        'module_cycle_count': len(analyzer.module_cycles),
+        'unmapped_file_count': len(analyzer.unmapped_files),
+        'hub_file_count': len(analyzer.hub_files),
     }
 
 
@@ -4869,6 +5771,24 @@ def main():
              'Replaces (does not merge with) any profile fail_on.'
     )
     parser.add_argument(
+        '--gate-group',
+        default='all',
+        metavar='GROUPS',
+        help='Comma-separated subset of fail_on gate groups to ENFORCE this run (the full '
+             'analysis still runs; only gating is filtered). Groups: complexity, '
+             'architecture, lints, all. Lets complexity-gate and layering-gate run the same '
+             'tool yet fail independently. Example: --gate-group architecture,lints.'
+    )
+    parser.add_argument(
+        '--update-architecture-allowlist',
+        action='store_true',
+        help='Regenerate the ratchet allowlist files (layering_allowlist.txt, '
+             'ecs_leaf_allowlist.txt, architecture_allowlist.txt, lints_allowlist.txt) from '
+             'the CURRENT findings, then exit 0 without gating. Use only when deliberately '
+             'accepting the present set as the new baseline (Python analogue of '
+             'layering_gate.ps1 -Update).'
+    )
+    parser.add_argument(
         '--exclude-generated',
         action='store_true',
         help='Skip files that look auto-generated (.pb.cc, .generated.*, banner markers).'
@@ -4942,6 +5862,8 @@ def main():
     profile_fail_on = dict(profile_data.get('fail_on', {}))
     profile_filter_low = bool(profile_data.get('filter_low_priority_duplicates', False))
     profile_filter_test = bool(profile_data.get('filter_test_only_duplicates', False))
+    profile_architecture = dict(profile_data.get('architecture', {}))
+    profile_lints = dict(profile_data.get('lints', {}))
 
     if args.exclude is None:
         exclude_dirs = profile_excludes if profile_excludes else list(_DEFAULT_EXCLUDES)
@@ -4980,6 +5902,21 @@ def main():
                 )
             fail_on_rules[k] = float(v)
 
+    # --gate-group: keep only the selected groups' keys so complexity-gate and layering-gate
+    # can run the same tool but fail independently. 'all' (default) enforces everything.
+    selected_groups = [g.strip() for g in (args.gate_group or 'all').split(',') if g.strip()]
+    if selected_groups and 'all' not in selected_groups:
+        unknown = [g for g in selected_groups if g not in _GATE_GROUPS]
+        if unknown:
+            raise ValueError(
+                f"Unknown --gate-group value(s): {', '.join(unknown)}. "
+                f"Valid: {', '.join(_GATE_GROUPS)}, all"
+            )
+        allowed_keys: Set[str] = set()
+        for g in selected_groups:
+            allowed_keys.update(_GATE_GROUPS[g])
+        fail_on_rules = {k: v for k, v in fail_on_rules.items() if k in allowed_keys}
+
     print(f"Analyzing codebase at: {root_path}")
     print(f"Excluding directories: {', '.join(exclude_dirs)}")
     if exclude_globs:
@@ -5000,17 +5937,38 @@ def main():
         filter_low_priority_duplicates=profile_filter_low,
         filter_test_only_duplicates=profile_filter_test,
         profile_name=args.profile,
+        architecture=profile_architecture,
+        lints=profile_lints,
     )
     print(f"Parser backend: {analyzer.parser_backend} "
           f"(requested: {analyzer.parser_backend_requested})")
     analyzer.analyze(workers=args.workers)
 
+    if args.update_architecture_allowlist:
+        print("\nRegenerating architecture/lint ratchet allowlists from current findings...")
+        update_architecture_allowlists(analyzer)
+        print("\n--- Allowlists updated (no gating performed). ---")
+        return analyzer
+
     if args.absolute_paths:
         # Rewrite relative paths to absolute; downstream JSON / markdown will pick this up.
+        # NOTE (P4): only DISPLAY paths (`filepath` / `file`) are rewritten — architectural
+        # allowlist `key` fields stay repo-relative so they keep matching the checked-in
+        # ratchet files regardless of this flag.
+        def _abs(rel: str) -> str:
+            return str((root_path / rel).resolve()) if rel else rel
         for fm in analyzer.file_metrics:
-            fm.filepath = str((root_path / fm.filepath).resolve())
+            fm.filepath = _abs(fm.filepath)
         for fm in analyzer.function_metrics:
-            fm.filepath = str((root_path / fm.filepath).resolve())
+            fm.filepath = _abs(fm.filepath)
+        for v in analyzer.architecture_violations:
+            if v.get('file'):
+                v['file'] = _abs(v['file'])
+        for v in analyzer.lint_findings:
+            if v.get('file'):
+                v['file'] = _abs(v['file'])
+        for mm in analyzer.module_metrics.values():
+            mm.files = [_abs(f) for f in mm.files]
 
     if args.llm_suggestions:
         output_dir.mkdir(parents=True, exist_ok=True)

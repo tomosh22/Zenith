@@ -32,9 +32,81 @@
             "max-loc": 1100,
             "max-function-priority": 85,
             "max-include-cycles": 0,
-            "max-duplicate-clusters": 5
+            "max-duplicate-clusters": 5,
+            "max-ec-flux-edges": 0,
+            "max-leaf-violations": 0,
+            "max-architecture-violations": 0,
+            "max-encapsulation-violations": 0,
+            "max-hub-files": 0,
+            "max-module-fanout-violations": 0,
+            "max-unmapped-files": 0,
+            "max-forbidden-tokens": 0,
+            "max-missing-pch": 0,
+            "max-missing-pragma-once": 0,
+            "max-static-violations": 0
         },
+        "_gate_note": "Architecture/lint gates are threshold-0: the per-finding allowlist files are the ratchet, not the number. Current findings are grandfathered in Tools/{layering,ecs_leaf,architecture,lints}_allowlist.txt; a NEW non-allowlisted finding fails. Report-only (intentionally NOT gated): max-module-cycles (one giant engine-wide SCC), max-zone-of-pain-modules (foundational libs are intrinsically stable+concrete). max-static-violations IS gated (new module-scope mutable statics are a documented red flag; thread_local + named carve-outs are exempt). complexity.yml runs --gate-group complexity; layering-gate.yml runs --gate-group architecture,lints.",
         "_threshold_rationale": "Bumped 2026-05-12 to clear the CI gate that had been red since 2026-05-07. New ceilings cover the current worst-case engine functions (Zenith_NavMesh::GetRandomReachablePointInRadius @ priority 82.5; Zenith_EditorAutomation::ExecuteAction @ CC 101 + LOC 1078; 5 duplicate clusters across Flux/AI). Per the engine-ci philosophy these are CEILINGS not targets; the next refactor that lowers a worst-case should lower the matching ceiling to keep the gate biting.",
+        "_architecture_doc": "Declarative module/layer DAG + ratchets. Subsumes Tools/layering_gate.ps1: the ec_flux_ratchet + leaf_ratchet reproduce its two checks (raw-string parity, same allowlist files). The resolved include graph drives the new full-DAG direction, encapsulation, coupling, hub and module-cycle checks. Layer ranks are a calibrated hypothesis — all current up-edges are grandfathered in the allowlists. fail_on_basename_resolved=false keeps low-confidence basename edges out of the gate.",
+        "architecture": {
+            "fail_on_basename_resolved": false,
+            "allowlist_file": "Tools/architecture_allowlist.txt",
+            "thresholds": { "hub_fan_in": 20, "hub_fan_out": 20, "max_module_fanout": 8 },
+            "modules": [
+                { "name": "Maths", "layer": 0, "globs": ["Zenith/Maths/**"] },
+                { "name": "Collections", "layer": 0, "globs": ["Zenith/Collections/**"] },
+                { "name": "DataStream", "layer": 0, "globs": ["Zenith/DataStream/**"] },
+                { "name": "FileAccess", "layer": 0, "globs": ["Zenith/FileAccess/**"] },
+                { "name": "Windows", "layer": 0, "globs": ["Zenith/Windows/**"] },
+                { "name": "Android", "layer": 0, "globs": ["Zenith/Android/**"] },
+                { "name": "Core", "layer": 0, "globs": ["Zenith/Core/**", "Zenith/*.h", "Zenith/*.cpp"] },
+                { "name": "EngineComposition", "layer": 5, "globs": [
+                    "Zenith/Core/Zenith_Engine.cpp", "Zenith/Core/Zenith_Core.cpp",
+                    "Zenith/Core/Zenith_Main.cpp", "Zenith/Core/Zenith_BenchECS.cpp",
+                    "Zenith/Core/Zenith_AutomatedTest.cpp"
+                ] },
+                { "name": "Profiling", "layer": 0, "globs": ["Zenith/Profiling/**"] },
+                { "name": "DebugVariables", "layer": 0, "globs": ["Zenith/DebugVariables/**"] },
+                { "name": "ZenithECS", "layer": 1, "globs": ["Zenith/ZenithECS/**"], "public_headers": ["Zenith/ZenithECS/*.h"], "leaf": true },
+                { "name": "TaskSystem", "layer": 1, "globs": ["Zenith/TaskSystem/**"] },
+                { "name": "Input", "layer": 1, "globs": ["Zenith/Input/**"] },
+                { "name": "SaveData", "layer": 1, "globs": ["Zenith/SaveData/**"] },
+                { "name": "Telemetry", "layer": 1, "globs": ["Zenith/Telemetry/**"] },
+                { "name": "Vulkan", "layer": 2, "globs": ["Zenith/Vulkan/**"] },
+                { "name": "Flux", "layer": 2, "globs": ["Zenith/Flux/**"] },
+                { "name": "EntityComponent", "layer": 2, "globs": ["Zenith/EntityComponent/**"] },
+                { "name": "Physics", "layer": 2, "globs": ["Zenith/Physics/**"] },
+                { "name": "AssetHandling", "layer": 2, "globs": ["Zenith/AssetHandling/**"] },
+                { "name": "AI", "layer": 2, "globs": ["Zenith/AI/**"] },
+                { "name": "Prefab", "layer": 2, "globs": ["Zenith/Prefab/**"] },
+                { "name": "UI", "layer": 3, "globs": ["Zenith/UI/**"] },
+                { "name": "Editor", "layer": 4, "globs": ["Zenith/Editor/**"] }
+            ],
+            "rules": {
+                "forbid_up_edges": true,
+                "forbidden_edges": [
+                    { "from": "ZenithECS", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab"] }
+                ],
+                "allowed_edges": [],
+                "ignore_module_cycles": [ ["EntityComponent", "Flux"] ]
+            },
+            "ec_flux_ratchet": {
+                "ec_glob": "Zenith/EntityComponent/**",
+                "flux_glob": "Zenith/Flux/**",
+                "allowlist_file": "Tools/layering_allowlist.txt"
+            },
+            "leaf_ratchet": {
+                "glob": "Zenith/ZenithECS/**",
+                "forbidden_prefixes": ["Flux/", "Physics/", "UI/", "Editor/", "AssetHandling/", "AI/", "Components/", "EntityComponent/Components/"],
+                "forbidden_exact": ["Core/Zenith_Engine.h"],
+                "allowlist_file": "Tools/ecs_leaf_allowlist.txt"
+            }
+        },
+        "lints": {
+            "scope_globs": ["Zenith/**"],
+            "exclude_generated": true,
+            "allowlist_file": "Tools/lints_allowlist.txt"
+        },
         "filter_low_priority_duplicates": true,
         "filter_test_only_duplicates": true
     },

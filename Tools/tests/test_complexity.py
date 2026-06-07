@@ -271,6 +271,44 @@ class TestIncludeGraph(unittest.TestCase):
         self.assertEqual(len(analyzer.include_cycles), 1)
         self.assertTrue(all(f.in_cycle for f in analyzer.file_metrics))
 
+    def test_detects_three_node_cycle(self):
+        # a -> b -> c -> a: the back-edge closes onto an ANCESTOR (not the immediate
+        # parent). All three must land in ONE cycle. Regression guard for the Tarjan
+        # parent-lowlink fix (the old call_stack logic split this into {b,c} + {a}).
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_cycle3_')
+        (Path(tmpdir) / 'a.h').write_text('#include "b.h"\n', encoding='utf-8')
+        (Path(tmpdir) / 'b.h').write_text('#include "c.h"\n', encoding='utf-8')
+        (Path(tmpdir) / 'c.h').write_text('#include "a.h"\n', encoding='utf-8')
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        self.assertEqual(len(analyzer.include_cycles), 1)
+        self.assertEqual(len(analyzer.include_cycles[0]), 3)
+        self.assertTrue(all(f.in_cycle for f in analyzer.file_metrics))
+
+
+class TestTarjanSCC(unittest.TestCase):
+    """Direct tests of the shared SCC helper (file- and module-cycle backbone)."""
+
+    def test_three_node_cycle_is_one_scc(self):
+        sccs = ac._tarjan_scc([[1], [2], [0]])          # 0 -> 1 -> 2 -> 0
+        self.assertEqual(len(sccs), 1)
+        self.assertEqual(sorted(sccs[0]), [0, 1, 2])
+
+    def test_dag_is_all_singletons(self):
+        sccs = ac._tarjan_scc([[1], [2], []])           # 0 -> 1 -> 2 (acyclic)
+        self.assertEqual(sorted(len(s) for s in sccs), [1, 1, 1])
+
+    def test_two_disjoint_cycles(self):
+        sccs = ac._tarjan_scc([[1], [0], [3], [4], [2]])  # {0,1} and {2,3,4}
+        self.assertEqual(sorted(len(s) for s in sccs), [2, 3])
+
+    def test_cycle_back_to_ancestor_with_tail(self):
+        # 0 -> 1 -> 2 -> 3 -> 1: SCC {1,2,3}; 0 stands alone outside it.
+        sccs = ac._tarjan_scc([[1], [2], [3], [1]])
+        comps = sorted((sorted(s) for s in sccs), key=len)
+        self.assertEqual(comps[-1], [1, 2, 3])
+        self.assertIn([0], comps)
+
 
 class TestDirectoryAggregates(unittest.TestCase):
     def test_percentiles_populated(self):
@@ -562,7 +600,9 @@ class TestProfileLoading(unittest.TestCase):
         full_snap = ac._resolve_profile('full-snapshot', shipped)
         self.assertIn('Games', engine_ci['exclude_dirs'])
         self.assertIn('Tools', engine_ci['exclude_dirs'])
-        self.assertEqual(engine_ci['fail_on']['max-cc'], 100)
+        # Ceiling, not a target: bumped to 105 (2026-05-12) to cover the current worst-case
+        # engine function; keep this in sync with complexity_profiles.json.
+        self.assertEqual(engine_ci['fail_on']['max-cc'], 105)
         self.assertEqual(full_snap['fail_on'], {})
 
 
@@ -993,6 +1033,355 @@ class TestLCOMCaveat(unittest.TestCase):
         self.assertIsNotNone(target, 'no class records found — fixture broken')
         for cls in target.classes:
             self.assertEqual(cls.get('caveat'), 'header-inline only')
+
+
+def _analyze_tree(files: dict, architecture=None, lints=None, workers=1, exclude_dirs=None):
+    """Write a {relpath: content} tree to a temp dir and run full analysis on it."""
+    tmpdir = tempfile.mkdtemp(prefix='arch_test_')
+    for rel, content in files.items():
+        p = Path(tmpdir) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(textwrap.dedent(content), encoding='utf-8')
+    an = ac.CppAnalyzer(tmpdir, exclude_dirs=exclude_dirs or [],
+                        architecture=architecture or {}, lints=lints or {})
+    an.analyze(workers=workers)
+    return an
+
+
+# A reusable two-layer architecture: low=L0, high=L1, leaf=L1 (leaf+public surface).
+_ARCH = {
+    'modules': [
+        {'name': 'low', 'layer': 0, 'globs': ['low/**']},
+        {'name': 'high', 'layer': 1, 'globs': ['high/**']},
+        {'name': 'leaf', 'layer': 1, 'globs': ['leaf/**'], 'leaf': True,
+         'public_headers': ['leaf/*.h']},
+    ],
+    'rules': {
+        'forbid_up_edges': True,
+        'forbidden_edges': [{'from': 'leaf', 'to': ['high']}],
+        'allowed_edges': [],
+        'ignore_module_cycles': [],
+    },
+    'fail_on_basename_resolved': False,
+}
+
+
+def _kinds(an):
+    out = {}
+    for v in an.architecture_violations:
+        out.setdefault(v['kind'], []).append(v)
+    return out
+
+
+class TestArchitectureMapping(unittest.TestCase):
+    def test_files_map_to_modules_and_unmapped(self):
+        an = _analyze_tree({
+            'low/a.h': '#pragma once\nint a;\n',
+            'high/b.h': '#pragma once\nint b;\n',
+            'orphan/c.h': '#pragma once\nint c;\n',
+        }, architecture=_ARCH)
+        by = {Path(f.filepath).as_posix(): f for f in an.file_metrics}
+        self.assertEqual(by['low/a.h'].module, 'low')
+        self.assertEqual(by['high/b.h'].module, 'high')
+        self.assertEqual(by['orphan/c.h'].module, '')
+        self.assertIn('orphan/c.h', [Path(p).as_posix() for p in an.unmapped_files])
+        self.assertEqual(an.gate_counts.get('max-unmapped-files'), 1)
+
+
+class TestArchitectureDirection(unittest.TestCase):
+    def test_up_edge_flagged_down_edge_clean(self):
+        an = _analyze_tree({
+            'low/a.cpp': '#include "high/b.h"\nint a;\n',   # low(L0) -> high(L1): UP
+            'high/b.h': '#pragma once\nint b;\n',
+            'high/c.cpp': '#include "low/d.h"\nint c;\n',    # high(L1) -> low(L0): down, ok
+            'low/d.h': '#pragma once\nint d;\n',
+        }, architecture=_ARCH)
+        ups = _kinds(an).get('layer-up', [])
+        self.assertEqual(len(ups), 1)
+        self.assertIn('low/a.cpp => high/b.h', ups[0]['key'])
+        self.assertFalse(ups[0]['basename_resolved'])
+        self.assertEqual(an.gate_counts['max-architecture-violations'], 1)
+
+    def test_forbidden_same_layer_edge(self):
+        an = _analyze_tree({
+            'leaf/e.cpp': '#include "high/f.h"\nint e;\n',   # leaf -> high: forbidden
+            'high/f.h': '#pragma once\nint f;\n',
+        }, architecture=_ARCH)
+        fe = _kinds(an).get('forbidden-edge', [])
+        self.assertEqual(len(fe), 1)
+        self.assertEqual(an.gate_counts['max-architecture-violations'], 1)
+
+    def test_basename_resolved_edge_excluded_from_gate(self):
+        # Two files named dup.h -> a bare "dup.h" include resolves by basename (low confidence).
+        an = _analyze_tree({
+            'low/a.cpp': '#include "dup.h"\nint a;\n',
+            'high/dup.h': '#pragma once\nint d1;\n',
+            'other/dup.h': '#pragma once\nint d2;\n',
+            'other/x.h': '#pragma once\n',
+            'high/x.h': '#pragma once\n',
+        }, architecture={**_ARCH, 'modules': _ARCH['modules'] + [
+            {'name': 'other', 'layer': 1, 'globs': ['other/**']}]})
+        ups = _kinds(an).get('layer-up', [])
+        # The low->high edge exists but is AMBIGUOUS basename (2 dup.h) -> recorded, not gated.
+        self.assertTrue(any(u['basename_resolved'] for u in ups))
+        self.assertEqual(an.gate_counts['max-architecture-violations'], 0)
+
+    def test_unique_basename_edge_is_gated(self):
+        # A non-matching subpath whose BASENAME is unique resolves unambiguously, so it is
+        # high-confidence and DOES gate (only genuinely ambiguous basenames are suppressed).
+        an = _analyze_tree({
+            'low/a.cpp': '#include "bogus/realname.h"\nint a;\n',
+            'high/realname.h': '#pragma once\nint r;\n',
+        }, architecture=_ARCH)
+        ups = _kinds(an).get('layer-up', [])
+        self.assertEqual(len(ups), 1)
+        self.assertFalse(ups[0]['basename_resolved'])
+        self.assertEqual(an.gate_counts['max-architecture-violations'], 1)
+
+    def test_ignore_module_cycles_pair_suppresses(self):
+        arch = {**_ARCH, 'rules': {**_ARCH['rules'],
+                                   'ignore_module_cycles': [['low', 'high']]}}
+        an = _analyze_tree({
+            'low/a.cpp': '#include "high/b.h"\nint a;\n',
+            'high/b.h': '#pragma once\nint b;\n',
+        }, architecture=arch)
+        self.assertEqual(an.gate_counts['max-architecture-violations'], 0)
+
+
+class TestArchitectureSubsumedRatchets(unittest.TestCase):
+    """EC<->Flux + ECS-leaf raw-string ratchets, byte-parity with the retired PS1."""
+
+    def _arch(self, allow_path=None):
+        a = {
+            'modules': [
+                {'name': 'EntityComponent', 'layer': 2, 'globs': ['Zenith/EntityComponent/**']},
+                {'name': 'Flux', 'layer': 2, 'globs': ['Zenith/Flux/**']},
+            ],
+            'rules': {'forbid_up_edges': True},
+            'ec_flux_ratchet': {'ec_glob': 'Zenith/EntityComponent/**',
+                                'flux_glob': 'Zenith/Flux/**',
+                                'allowlist_file': allow_path or 'nope.txt'},
+            'leaf_ratchet': {'glob': 'Zenith/ZenithECS/**',
+                             'forbidden_prefixes': ['Flux/', 'Physics/'],
+                             'forbidden_exact': ['Core/Zenith_Engine.h'],
+                             'allowlist_file': 'nope_leaf.txt'},
+        }
+        return a
+
+    def test_ec_flux_edge_detected_and_deduped(self):
+        an = _analyze_tree({
+            'Zenith/EntityComponent/X.cpp': '#include "Flux/R.h"\n#include "Flux/R.h"\nint x;\n',
+            'Zenith/Flux/R.h': '#pragma once\n',
+        }, architecture=self._arch())
+        ec = _kinds(an).get('ec-flux', [])
+        self.assertEqual(len(ec), 1)   # de-duped despite two identical includes
+        self.assertEqual(an.gate_counts['max-ec-flux-edges'], 1)
+
+    def test_ec_flux_allowlist_suppresses(self):
+        tmp = Path(tempfile.mkdtemp(prefix='allow_')) / 'a.txt'
+        tmp.write_text('Zenith/EntityComponent/X.cpp => Flux/R.h\n', encoding='utf-8')
+        an = _analyze_tree({
+            'Zenith/EntityComponent/X.cpp': '#include "Flux/R.h"\nint x;\n',
+            'Zenith/Flux/R.h': '#pragma once\n',
+        }, architecture=self._arch(allow_path=str(tmp)))
+        self.assertEqual(an.gate_counts['max-ec-flux-edges'], 0)
+
+    def test_leaf_forbidden_include(self):
+        an = _analyze_tree({
+            'Zenith/ZenithECS/S.cpp': '#include "Flux/R.h"\nint s;\n',
+            'Zenith/Flux/R.h': '#pragma once\n',
+        }, architecture=self._arch())
+        leaf = _kinds(an).get('leaf-include', [])
+        self.assertEqual(len(leaf), 1)
+        self.assertEqual(an.gate_counts['max-leaf-violations'], 1)
+
+    def test_commented_include_ignored(self):
+        an = _analyze_tree({
+            'Zenith/EntityComponent/X.cpp': '// #include "Flux/R.h"\nint x;\n',
+            'Zenith/Flux/R.h': '#pragma once\n',
+        }, architecture=self._arch())
+        self.assertEqual(an.gate_counts['max-ec-flux-edges'], 0)
+
+
+class TestArchitectureChurn(unittest.TestCase):
+    """P1: per-finding allowlist + threshold 0 — a NEW finding fails even when an old one
+    is removed (a count-ratchet set to 'current count' would wrongly pass)."""
+
+    def test_remove_old_add_new_still_fails(self):
+        allow = Path(tempfile.mkdtemp(prefix='churn_')) / 'arch.txt'
+        allow.write_text('layer-up: low/a.cpp => high/b.h\n', encoding='utf-8')
+        arch = {**_ARCH, 'allowlist_file': str(allow)}
+        # State 1: only the allow-listed edge A -> gate green (count 0).
+        an1 = _analyze_tree({
+            'low/a.cpp': '#include "high/b.h"\nint a;\n',
+            'high/b.h': '#pragma once\n',
+        }, architecture=arch)
+        self.assertEqual(an1.gate_counts['max-architecture-violations'], 0)
+        # State 2: edge A removed, NEW edge B added (not allow-listed) -> count 1, fails.
+        an2 = _analyze_tree({
+            'low/c.cpp': '#include "high/b.h"\nint c;\n',
+            'high/b.h': '#pragma once\n',
+        }, architecture=arch)
+        self.assertEqual(an2.gate_counts['max-architecture-violations'], 1)
+        viol = ac.check_fail_on(an2, {'max-architecture-violations': 0})
+        self.assertTrue(any('max-architecture-violations' in v for v in viol))
+
+
+class TestEncapsulation(unittest.TestCase):
+    def test_internal_header_flagged_public_clean(self):
+        an = _analyze_tree({
+            'high/u.cpp': '#include "leaf/api.h"\n#include "leaf/Internal/secret.h"\nint u;\n',
+            'leaf/api.h': '#pragma once\n',
+            'leaf/Internal/secret.h': '#pragma once\n',
+        }, architecture=_ARCH)
+        enc = _kinds(an).get('encapsulation', [])
+        self.assertEqual(len(enc), 1)
+        self.assertIn('Internal/secret.h', enc[0]['key'])
+        self.assertEqual(an.gate_counts['max-encapsulation-violations'], 1)
+
+
+class TestHubFiles(unittest.TestCase):
+    def test_hub_needs_high_in_and_out(self):
+        arch = {**_ARCH, 'thresholds': {'hub_fan_in': 2, 'hub_fan_out': 2}}
+        # hub.h is included by 2 files AND includes 2 files -> hub.
+        an = _analyze_tree({
+            'low/hub.h': '#include "low/x.h"\n#include "low/y.h"\n',
+            'low/x.h': '#pragma once\n',
+            'low/y.h': '#pragma once\n',
+            'low/p.cpp': '#include "low/hub.h"\n',
+            'low/q.cpp': '#include "low/hub.h"\n',
+        }, architecture=arch)
+        hubs = [h['file'] for h in an.hub_files]
+        self.assertTrue(any(Path(h).as_posix() == 'low/hub.h' for h in hubs))
+        # x.h has fan_in 1 (only hub) and fan_out 0 -> not a hub.
+        self.assertFalse(any(Path(h).as_posix() == 'low/x.h' for h in hubs))
+
+
+class TestModuleCoupling(unittest.TestCase):
+    def test_instability_chain(self):
+        # a(L2) -> b(L1) -> c(L0): all down edges. Ce/Ca/I at the ends.
+        arch = {'modules': [
+            {'name': 'a', 'layer': 2, 'globs': ['a/**']},
+            {'name': 'b', 'layer': 1, 'globs': ['b/**']},
+            {'name': 'c', 'layer': 0, 'globs': ['c/**']},
+        ], 'rules': {'forbid_up_edges': True}}
+        an = _analyze_tree({
+            'a/f.cpp': '#include "b/g.h"\n',
+            'b/g.h': '#pragma once\n#include "c/h.h"\n',
+            'c/h.h': '#pragma once\n',
+        }, architecture=arch)
+        m = an.module_metrics
+        self.assertEqual(m['a'].efferent, 1)
+        self.assertEqual(m['a'].afferent, 0)
+        self.assertEqual(m['a'].instability, 1.0)
+        self.assertEqual(m['c'].efferent, 0)
+        self.assertEqual(m['c'].afferent, 1)
+        self.assertEqual(m['c'].instability, 0.0)
+        self.assertEqual(m['b'].instability, 0.5)
+
+    def test_abstractness_scanner(self):
+        an = ac.CppAnalyzer('.', exclude_dirs=[])
+        c1, _ = an.remove_comments_and_strings('class I { virtual void f() = 0; };')
+        self.assertEqual(an._scan_abstract_types(c1), (True, True))
+        c2, _ = an.remove_comments_and_strings('class C { void f() {} };')
+        self.assertEqual(an._scan_abstract_types(c2), (True, False))
+        c3, _ = an.remove_comments_and_strings('int x = 0;')
+        self.assertEqual(an._scan_abstract_types(c3), (False, False))
+
+
+class TestLints(unittest.TestCase):
+    def test_forbidden_token_in_code_not_comment(self):
+        an = _analyze_tree({
+            'low/a.cpp': '#include "Zenith.h"\nstd::function<void()> g;\n',
+            'low/b.cpp': '#include "Zenith.h"\n// std::function in a comment\nint b;\n',
+        }, architecture=_ARCH, lints={})
+        toks = [v for v in an.lint_findings if v['kind'] == 'token']
+        files = {Path(v['file']).as_posix() for v in toks}
+        self.assertIn('low/a.cpp', files)
+        self.assertNotIn('low/b.cpp', files)
+        self.assertEqual(an.gate_counts['max-forbidden-tokens'], 1)
+
+    def test_missing_pragma_once(self):
+        an = _analyze_tree({
+            'low/good.h': '#pragma once\nint g;\n',
+            'low/bad.h': 'int b;\n',
+        }, architecture=_ARCH, lints={})
+        prag = {Path(v['file']).as_posix() for v in an.lint_findings if v['kind'] == 'pragma'}
+        self.assertEqual(prag, {'low/bad.h'})
+
+    def test_missing_pch_first_line(self):
+        an = _analyze_tree({
+            'low/good.cpp': '#include "Zenith.h"\nint g;\n',
+            'low/lic.cpp': '/* licence\n banner */\n#include "Zenith.h"\nint l;\n',  # block comment ok
+            'low/bad.cpp': '#include "other.h"\nint b;\n',
+        }, architecture=_ARCH, lints={})
+        pch = {Path(v['file']).as_posix() for v in an.lint_findings if v['kind'] == 'pch'}
+        self.assertEqual(pch, {'low/bad.cpp'})
+
+    def test_gxengine_only_flagged_in_leaf(self):
+        arch = {**_ARCH, 'leaf_ratchet': {'glob': 'leaf/**', 'forbidden_prefixes': [],
+                                          'allowlist_file': 'nope.txt'}}
+        an = _analyze_tree({
+            'leaf/s.cpp': '#include "Zenith.h"\nvoid f(){ g_xEngine.X(); }\n',   # in leaf -> gated
+            'high/h.cpp': '#include "Zenith.h"\nvoid f(){ g_xEngine.X(); }\n',   # outside leaf -> ok
+            'leaf/c.cpp': '#include "Zenith.h"\n// g_xEngine in comment only\nint c;\n',
+        }, architecture=arch, lints={})
+        gx = [v for v in an.lint_findings
+              if v['kind'] == 'engine-singleton' and v.get('in_scope')]
+        files = {Path(v['file']).as_posix() for v in gx}
+        self.assertEqual(files, {'leaf/s.cpp'})
+        self.assertEqual(an.gate_counts['max-leaf-violations'], 1)
+
+    def test_statics_carveout_skipped(self):
+        an = _analyze_tree({
+            'low/a.cpp': ('#include "Zenith.h"\n'
+                          'static int g_counter = 0;\n'                 # flagged
+                          'static std::vector<int> s_xBuf;\n'           # flagged
+                          'static Zenith_Window s_win;\n'               # carve-out -> skipped
+                          'static thread_local int tl_x = 0;\n'         # TLS carve-out -> skipped
+                          'void f(){ static int local = 0; }\n'         # function-local -> skipped
+                          'static const int kC = 3;\n'),                # const -> skipped
+        }, architecture=_ARCH, lints={})
+        st = [v for v in an.lint_findings if v['kind'] == 'static']
+        keys = {v['key'] for v in st}
+        # Symbol-stable keys (not line-based).
+        self.assertIn('static:low/a.cpp => g_counter', keys)
+        self.assertIn('static:low/a.cpp => s_xBuf', keys)
+        joined = ' '.join(v['detail'] for v in st)
+        self.assertNotIn('s_win', joined)
+        self.assertNotIn('tl_x', joined)
+        self.assertNotIn('local', joined)
+        self.assertNotIn('kC', joined)
+        # Now gated by default (threshold 0) once they're in scope and not allow-listed.
+        self.assertEqual(an.gate_counts['max-static-violations'], 2)
+
+
+class TestParallelLints(unittest.TestCase):
+    """P5 guard: lints (computed in analyze_file) must survive the process-pool worker."""
+
+    def test_lints_present_under_workers_2(self):
+        an = _analyze_tree({
+            'low/a.cpp': '#include "Zenith.h"\nstd::function<void()> g;\n',
+            'low/b.h': 'int b;\n',
+        }, architecture=_ARCH, lints={}, workers=2)
+        kinds = {v['kind'] for v in an.lint_findings}
+        self.assertIn('token', kinds)
+        self.assertIn('pragma', kinds)
+
+
+class TestExpandedFailOnKeys(unittest.TestCase):
+    def test_new_arch_lint_keys_parse(self):
+        out = ac._parse_fail_on(
+            'max-architecture-violations=0,max-leaf-violations=0,max-forbidden-tokens=0')
+        self.assertEqual(out['max-architecture-violations'], 0.0)
+        self.assertEqual(out['max-leaf-violations'], 0.0)
+        self.assertEqual(out['max-forbidden-tokens'], 0.0)
+
+    def test_gate_groups_cover_all_keys(self):
+        grouped = set()
+        for keys in ac._GATE_GROUPS.values():
+            grouped.update(keys)
+        self.assertEqual(grouped, set(ac._FAIL_ON_KEYS))
 
 
 if __name__ == '__main__':

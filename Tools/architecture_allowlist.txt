@@ -1,0 +1,43 @@
+# Auto-generated ratchet baseline (analyze_code_complexity.py).
+# Regenerate: py -3 Tools/analyze_code_complexity.py . --profile engine-ci --update-architecture-allowlist
+# One wire key per line; '#'/blank lines ignored. A NEW key not listed here fails
+# the gate; a removed finding leaves a stale line (INFO only). Shrink, don't grow.
+encapsulation: Zenith/Core/Zenith_Engine.cpp => ZenithECS/Internal/Zenith_EntityStore.h
+layer-up: Zenith/Android/Vulkan/Zenith_Android_Vulkan.cpp => Vulkan/Zenith_Vulkan_Platform.h
+layer-up: Zenith/Android/Zenith_Android_Window.cpp => Input/Zenith_Input.h
+layer-up: Zenith/Android/Zenith_Android_Window.h => Input/Zenith_KeyCodes.h
+layer-up: Zenith/Core/Zenith_TestFramework.cpp => ZenithECS/Zenith_SceneSystem.h
+layer-up: Zenith/DebugVariables/Zenith_DebugVariables.cpp => Flux/Flux.h
+layer-up: Zenith/DebugVariables/Zenith_DebugVariables.cpp => Flux/Flux_GraphicsImpl.h
+layer-up: Zenith/DebugVariables/Zenith_DebugVariables.h => Flux/Flux.h
+layer-up: Zenith/EntityComponent/Components/Zenith_AnimatorComponent.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/EntityComponent/Components/Zenith_CameraComponent.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/EntityComponent/Components/Zenith_ModelComponent.h => Editor/Zenith_Editor.h
+layer-up: Zenith/EntityComponent/Components/Zenith_ModelComponent.h => Editor/Zenith_Editor_MaterialUI.h
+layer-up: Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Editor/Zenith_Editor_MaterialUI.h
+layer-up: Zenith/EntityComponent/Components/Zenith_ScriptComponent.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Editor/Zenith_Editor_MaterialUI.h
+layer-up: Zenith/EntityComponent/Components/Zenith_UIComponent.h => UI/Zenith_UI.h
+layer-up: Zenith/Flux/Flux_Graphics.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/Flux/HDR/Flux_HDR.cpp => UI/Zenith_UICanvas.h
+layer-up: Zenith/Flux/Text/Flux_Text.cpp => UI/Zenith_UICanvas.h
+layer-up: Zenith/Input/Zenith_InputSimulator.cpp => UI/Zenith_UICanvas.h
+layer-up: Zenith/Profiling/Zenith_Profiling.cpp => Flux/Flux.h
+layer-up: Zenith/UI/Zenith_UIButton.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/UI/Zenith_UIElement.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/UI/Zenith_UIScrollView.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/UI/Zenith_UIToggle.cpp => Editor/Zenith_Editor.h
+layer-up: Zenith/Windows/Vulkan/Zenith_Windows_Vulkan.cpp => Vulkan/Zenith_Vulkan_Platform.h
+layer-up: Zenith/Windows/Zenith_Windows_Window.cpp => Input/Zenith_Input.h
+layer-up: Zenith/Windows/Zenith_Windows_Window.h => Input/Zenith_KeyCodes.h
+module-fanout: AI
+module-fanout: Editor
+module-fanout: EngineComposition
+module-fanout: EntityComponent
+module-fanout: Flux
+unmapped: Docs/design/constinit_prototype.cpp
+unmapped: FluxCompiler/FluxCompiler.cpp
+unmapped: Tests/SentinelECS/main.cpp
+unmapped: Tests/SentinelECS/sentinel_platform.cpp

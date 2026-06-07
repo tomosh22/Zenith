@@ -1,9 +1,10 @@
 # ecs_leaf_allowlist.txt -- ECS-leaf ratchet allowlist (independent of
-# the EC<->Flux ratchet in layering_allowlist.txt).
+# the EC<->Flux ratchet in layering_allowlist.txt). Enforced by
+# analyze_code_complexity.py (engine-ci architecture.leaf_ratchet + the engine-singleton
+# lint) via the `layering-gate` CI check -- subsumes the retired layering_gate.ps1.
 #
-# The ECS CORE (Zenith/EntityComponent minus the Components/ subtree) must
-# stay a low-level leaf. These are the KNOWN leaf violations at the time
-# the ratchet was introduced -- pre-existing coupling, NOT an endorsement.
+# The ECS CORE (the ZenithECS leaf lib at Zenith/ZenithECS) must stay a low-level
+# leaf. These are the KNOWN leaf violations -- pre-existing coupling, NOT an endorsement.
 #
 # Two violation kinds are tracked here:
 #   * forbidden #include : path starts with Flux/ Physics/ UI/ Editor/
@@ -20,7 +21,7 @@
 #     where <target> is the included path, or the literal g_xEngine.
 #
 # Regenerate (only when deliberately accepting the current set):
-#   powershell -NoProfile -File Tools/layering_gate.ps1 -Update
+#   py -3 Tools/analyze_code_complexity.py . --profile engine-ci --update-architecture-allowlist
 #
 # (empty — the ECS leaf now has zero concrete-component coupling; the former
 #  Zenith_SceneData.cpp -> Zenith_TransformComponent.h edge was removed when

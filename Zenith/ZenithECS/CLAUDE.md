@@ -6,8 +6,11 @@ registry). It depends **only on `ZenithBase` (L0)** and has **no** link/symbol
 dependency on `g_xEngine`, Flux, Physics/Jolt, UI, Editor, AssetHandling, AI, or
 any concrete component. That boundary is enforced three ways: the Sharpmake
 source partition (`Build/Sharpmake_ZenithECS.cs`), the `SentinelECS` link-proof
-exe (links only `zenithecs.lib + zenithbase.lib`), and the ECS-leaf ratchet (B)
-in `Tools/layering_gate.ps1` (one allowlisted edge — see below).
+exe (links only `zenithecs.lib + zenithbase.lib`), and the ECS-leaf ratchet
+enforced by `Tools/analyze_code_complexity.py` (the `engine-ci`
+`architecture.leaf_ratchet` + the `g_xEngine` lint, via the `layering-gate` CI
+check — this subsumes the retired `Tools/layering_gate.ps1`). The leaf allowlist
+(`Tools/ecs_leaf_allowlist.txt`) is currently empty: zero coupling.
 
 > **Library vs directory:** this directory IS the leaf — the files were physically
 > relocated here out of `Zenith/EntityComponent/`. The concrete built-in components

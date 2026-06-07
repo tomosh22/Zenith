@@ -16,10 +16,16 @@ REM
 REM Profile thresholds are checked-in CEILINGS, not aspirational targets. The
 REM gate keeps things from getting worse, not the definition of clean code.
 REM
+REM The engine-ci profile also carries the architecture + convention-lint gates
+REM (subsuming the retired Tools/layering_gate.ps1). Use --gate-group to enforce a
+REM subset: complexity-gate.yml passes `--gate-group complexity`; layering-gate.yml
+REM passes `--gate-group architecture,lints`. With no --gate-group, ALL gates apply.
+REM
 REM Usage:
 REM   CheckComplexity.bat
-REM   CheckComplexity.bat --parser tree-sitter   (force tree-sitter parser)
-REM   CheckComplexity.bat --no-md --no-json      (gate-only, skip reports)
+REM   CheckComplexity.bat --parser tree-sitter                    (force tree-sitter)
+REM   CheckComplexity.bat --gate-group architecture,lints         (arch/lint only)
+REM   CheckComplexity.bat --no-md --no-json                       (gate-only, skip reports)
 REM ==========================================================================
 
 setlocal
@@ -55,10 +61,11 @@ popd
 if %EXITCODE% NEQ 0 (
     echo.
     echo ============================================================
-    echo COMPLEXITY GATE FAILED
-    echo One or more engine functions exceeds the complexity budget.
-    echo See complexity_report_ci\analysis_report.md for the refactor
-    echo queue sorted by priority score.
+    echo GATE FAILED
+    echo A complexity, architecture, or convention-lint threshold was
+    echo exceeded. See complexity_report_ci\analysis_report.md -- the
+    echo refactor queue and the Architecture section list every finding.
+    echo A NEW architecture/lint finding must be fixed, not allow-listed.
     echo ============================================================
 )
 

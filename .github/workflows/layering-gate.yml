@@ -1,10 +1,19 @@
-# layering-gate (wave8.7-layering-gate): Flux<->EntityComponent coupling ratchet.
+# layering-gate: architectural-structure + convention-lint ratchet.
 #
-# Runs Tools/layering_gate.ps1 on every PR + push-to-master. The gate scans
-# Zenith/EntityComponent and Zenith/Flux for cross-layer #include edges and
-# compares them against Tools/layering_allowlist.txt. It FAILS (exit 1) if any
-# NEW (non-allow-listed) Flux<->EntityComponent include edge appears, enforcing
-# that the coupling can only shrink. Removing a leak is always allowed.
+# As of the architecture-analysis change this gate is enforced by
+# Tools/analyze_code_complexity.py (via CheckComplexity.bat --gate-group
+# architecture,lints), which SUBSUMES the retired Tools/layering_gate.ps1. It still
+# enforces the original Flux<->EntityComponent + ECS-leaf ratchets (raw-string parity,
+# same Tools/layering_allowlist.txt + Tools/ecs_leaf_allowlist.txt files) and ADDS the
+# full-DAG layer-direction, encapsulation, hub and convention-lint ratchets
+# (Tools/architecture_allowlist.txt + Tools/lints_allowlist.txt).
+#
+# Each ratchet is per-finding allow-list membership: a NEW non-allow-listed finding
+# FAILS (exit 1); removing one leaves a stale allow-list line (INFO only). The gate runs
+# the SAME one-pass analysis as complexity-gate but --gate-group keeps the two required
+# checks independent (a complexity regression does NOT fail this check, and vice-versa).
+#
+# Required check name: `layering-gate`.
 
 name: layering-gate
 
@@ -21,17 +30,31 @@ jobs:
   layering-gate:
     name: layering-gate
     runs-on: windows-latest
-    # Bumped 5 -> 15 (2026-06-07): this job is checkout/runner-setup bound on
-    # windows-latest (~4-5 min); the 5-min ceiling flaked when a slow runner
-    # pushed total time to ~5m8s (the layering scan itself takes seconds).
+    # 15 min: checkout + python/tree-sitter setup are runner-bound (~4-5 min); the
+    # analysis itself takes well under a minute on the engine source.
     timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run layering_gate.ps1
-        shell: pwsh
-        run: |
-          pwsh -NoProfile -File ./Tools/layering_gate.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tree-sitter parser
+        run: python -m pip install tree-sitter tree-sitter-cpp
+
+      - name: Run architecture + lint gate
+        working-directory: ${{ env.GITHUB_WORKSPACE }}
+        shell: cmd
+        run: Tools\CheckComplexity.bat --parser tree-sitter --gate-group architecture,lints
+
+      - name: Upload architecture report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layering-report
+          path: complexity_report_ci/
+          if-no-files-found: warn
