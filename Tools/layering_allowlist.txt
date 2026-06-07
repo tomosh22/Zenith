@@ -39,7 +39,6 @@ Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Flux/Flux_
 Zenith/EntityComponent/Components/Zenith_ModelComponent_Editor.cpp => Flux/Flux_ModelInstance.h
 Zenith/EntityComponent/Components/Zenith_ParticleEmitterComponent.cpp => Flux/Particles/Flux_ParticleEmitterConfig.h
 Zenith/EntityComponent/Components/Zenith_ParticleEmitterComponent.cpp => Flux/Particles/Flux_ParticleGPUImpl.h
-Zenith/EntityComponent/Components/Zenith_ParticleEmitterComponent.h => Flux/Particles/Flux_ParticleData.h
 Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/Flux_GraphicsImpl.h
 Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/Flux_RendererImpl.h
 Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/RenderGraph/Flux_RenderGraph.h

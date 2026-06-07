@@ -167,7 +167,7 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 				}
 
 				// Copy alive particles to the appropriate instance buffer based on blend mode
-				const Zenith_Vector<Flux_Particle>& axParticles = xEmitter.GetParticles();
+				const Zenith_Vector<Zenith_ParticleData>& axParticles = xEmitter.GetParticles();
 				uint32_t uAliveCount = xEmitter.GetAliveCount();
 
 				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
@@ -178,7 +178,12 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 
 				for (uint32_t i = 0; i < uAliveCount && uTargetCount < s_uMaxParticles; ++i)
 				{
-					pxTargetBuffer[uTargetCount] = Flux_ParticleInstance::FromParticle(axParticles.Get(i));
+					// Build the render instance from the EC-side mirror's accessors
+					// (Zenith_ParticleData has the same position/size/colour accessors as
+					// Flux_Particle, so the renderer no longer needs the component to hand
+					// it a Flux type).
+					const Zenith_ParticleData& xP = axParticles.Get(i);
+					pxTargetBuffer[uTargetCount] = Flux_ParticleInstance(xP.GetPosition(), xP.GetCurrentSize(), xP.GetCurrentColor());
 					uTargetCount++;
 				}
 			});

@@ -2,7 +2,7 @@
 
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID + entity/component templates (no longer transitive via the now-opaque Scene.h)
-#include "Flux/Particles/Flux_ParticleData.h"
+#include "EntityComponent/Components/Zenith_ParticleData.h"  // EC-side mirror of Flux_Particle (keeps this header Flux-free)
 #include <random>
 
 #ifdef ZENITH_TOOLS
@@ -66,7 +66,7 @@ public:
 
 	//--- Particle Access (for rendering) ---//
 
-	const Zenith_Vector<Flux_Particle>& GetParticles() const { return m_axParticles; }
+	const Zenith_Vector<Zenith_ParticleData>& GetParticles() const { return m_axParticles; }
 	uint32_t GetAliveCount() const { return m_uAliveCount; }
 
 	// Check if this emitter uses GPU compute
@@ -110,7 +110,7 @@ private:
 	Flux_ParticleEmitterConfig* m_pxConfig = nullptr;
 
 	// Particle storage (CPU simulation)
-	Zenith_Vector<Flux_Particle> m_axParticles;
+	Zenith_Vector<Zenith_ParticleData> m_axParticles;
 	uint32_t m_uAliveCount = 0;
 
 	// GPU emitter ID (UINT32_MAX if not using GPU compute)

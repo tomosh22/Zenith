@@ -42,7 +42,7 @@ void Zenith_ParticleEmitterComponent::SetConfig(Flux_ParticleEmitterConfig* pxCo
 		m_axParticles.Reserve(pxConfig->m_uMaxParticles);
 		for (uint32_t i = 0; i < pxConfig->m_uMaxParticles; ++i)
 		{
-			m_axParticles.PushBack(Flux_Particle());
+			m_axParticles.PushBack(Zenith_ParticleData());
 		}
 		m_uAliveCount = 0;
 	}
@@ -126,7 +126,7 @@ void Zenith_ParticleEmitterComponent::SimulateCPU(float fDt)
 	// Update existing particles using swap-and-pop for dead particles
 	for (uint32_t i = 0; i < m_uAliveCount; )
 	{
-		Flux_Particle& xP = m_axParticles.Get(i);
+		Zenith_ParticleData& xP = m_axParticles.Get(i);
 
 		// Update age
 		float fAge = xP.GetAge() + fDt;
@@ -191,7 +191,7 @@ void Zenith_ParticleEmitterComponent::SpawnParticle(const Zenith_Maths::Vector3&
 		return;
 	}
 
-	Flux_Particle& xP = m_axParticles.Get(m_uAliveCount);
+	Zenith_ParticleData& xP = m_axParticles.Get(m_uAliveCount);
 
 	// Position and age (offset by spawn radius)
 	Zenith_Maths::Vector3 xSpawnPos = xPos;
