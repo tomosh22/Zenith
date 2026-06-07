@@ -35,7 +35,7 @@
   ```powershell
   cd C:\dev\Zenith\Build
   cmd /c '.\Sharpmake_Build.bat < nul'
-  & 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
+  & 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
   cd ..
   .\Tools\run_dp_tests.ps1 -Headless
   ```

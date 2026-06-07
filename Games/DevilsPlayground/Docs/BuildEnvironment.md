@@ -55,7 +55,7 @@ cmd /c '.\Sharpmake_Build.bat < nul'
 
 # Build DevilsPlayground (tools, debug, x64)
 $msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
-& $msbuild zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
+& $msbuild zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 ```
 
 If the build fails on **"cannot access file"** errors, see `CLAUDE.md` (root) section "Hanging Compiler Processes" or run `Build\CleanBuild.bat`.
@@ -113,7 +113,7 @@ The `.github/workflows/dp-pr.yml` and `dp-tests.yml` workflows run on each PR. T
 |---|---|---|
 | `MSBUILD : error MSB1009: Project file does not exist.` | Solution not regenerated after adding `.cpp` | Run `Sharpmake_Build.bat` |
 | `error MSB3027: Could not copy <pdb>` | Hanging compiler process | Run `Build\CleanBuild.bat` |
-| `LNK1318: Unexpected PDB error` | Parallel MSBuild thrash | Add `-maxCpuCount:1` |
+| `LNK1318: Unexpected PDB error` | Hanging mspdbsrv / locked PDB | Run `Build\CleanBuild.bat` |
 | `unresolved external symbol Zenith_AIAgentComponent::` | Dead-strip ate the registration | Add runtime `AddComponent` from a referenced script |
 | Runtime `DLL_NOT_FOUND` | Slang DLLs missing | See §4 above |
 | Test runner can't find tests | `--list-automated-tests` returns empty | Build was non-tools; rebuild `*_True` config |

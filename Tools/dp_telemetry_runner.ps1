@@ -76,7 +76,7 @@ if ($Build) {
         '-target:DevilsPlayground' `
         '-property:Configuration=vs2022_Debug_Win64_True' `
         '-property:Platform=x64' `
-        '-maxCpuCount:1' `
+        '-maxCpuCount' `
         '-nologo' `
         '-verbosity:minimal'
     if ($LASTEXITCODE -ne 0) {

@@ -250,7 +250,7 @@ jobs:
               /p:Configuration=vs2022_Debug_Win64_True `
               /p:Platform=x64 `
               /p:WindowsTargetPlatformVersion=10.0 `
-              -maxCpuCount:1 `
+              -maxCpuCount `
               -nologo `
               -clp:Summary `
               -clp:ErrorsOnly

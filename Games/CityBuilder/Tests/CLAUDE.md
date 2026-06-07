@@ -14,7 +14,7 @@ guide, not a contract (several files register many tests each, e.g. `CB_CityServ
 ```
 # headless logic gate — MUST run in _True (the _True automation path guards the terrain GPU-culling
 # init; in _False the City scene's terrain deserialization asserts "Invalid buffer VRAM handle" at boot)
-msbuild Build/zenith_win64.sln /t:CityBuilder /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
+msbuild Build/zenith_win64.sln /t:CityBuilder /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 citybuilder.exe --all-automated-tests --headless --exit-after-frames 6000 --fixed-dt 0.01666 --test-results-dir <dir>
 
 # a single windowed test (build _False for clean screenshots — no ImGui)

@@ -186,7 +186,7 @@ deferred as it adds ~1 hour per balance experiment.
 
 ```
 # Build
-pwsh -Command '& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_False /p:Platform=x64 -maxCpuCount:1'
+pwsh -Command '& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_False /p:Platform=x64 -maxCpuCount'
 
 # Run 8p x 10s matrix at P=16 (~20-25 min wall)
 pwsh -Command "& 'Tools/dp_seed_matrix_run.ps1' -Seeds @(1,5,7,42,100,12345,55555,99999,250000,4276994270) -Parallelism 16"

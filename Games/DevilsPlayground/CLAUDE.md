@@ -114,7 +114,7 @@ lacks `pwsh.exe` — copy DLLs from `Games/Combat/.../*.dll` to the
 DP output dir if you see DLL_NOT_FOUND).
 
 ```
-msbuild Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
+msbuild Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless
 ```
 

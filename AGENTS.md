@@ -240,7 +240,7 @@ taskkill /F /IM mspdbsrv.exe /T
 ```
 
 **Prevention:**
-- Use single-threaded builds if parallel builds cause issues: `-maxCpuCount:1`
+- Builds use parallel compilation (`-maxCpuCount`, all cores). If a parallel build leaves hanging processes, run `CleanBuild.bat` (above) before retrying — don't fall back to single-threaded
 - Always let builds complete or use Ctrl+C to properly terminate
 - Close Visual Studio when building from command line to avoid file conflicts
 

@@ -1157,7 +1157,7 @@ The remaining tests run **nightly** in a larger ~45-minute batch and on every re
 ```yaml
 # .github/workflows/dp-pr.yml (sketch)
 - name: Build (tools, debug)
-  run: cmd.exe /c "Build\\CleanBuild.bat Build\\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1"
+  run: cmd.exe /c "Build\\CleanBuild.bat Build\\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount"
 - name: Sanity batch
   run: pwsh.exe -File Tools/run_dp_tests.ps1 -Tier 0,1 -Headless -FailFast
 - name: Golden playthrough

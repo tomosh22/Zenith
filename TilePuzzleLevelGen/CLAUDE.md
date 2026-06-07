@@ -153,7 +153,7 @@ TilePuzzleLevelGen/LevelRegistry/
 Sharpmake_Build.bat
 
 # Build (Release recommended for generation speed)
-msbuild Build/zenith_win64.sln /p:Configuration=vs2022_Release_Win64_True /p:Platform=x64 -maxCpuCount:1
+msbuild Build/zenith_win64.sln /p:Configuration=vs2022_Release_Win64_True /p:Platform=x64 -maxCpuCount
 
 # Run with required arguments
 tilepuzzlelevelgen.exe --count 10 --min-moves 12
@@ -162,7 +162,7 @@ tilepuzzlelevelgen.exe --count 10 --min-moves 12
 tilepuzzlelevelgen.exe --count 50 --min-moves 15 --output path/to/output --seed 100 --timeout 900
 ```
 
-**Important**: Always build with `-maxCpuCount:1` to avoid hanging compiler processes. Use Release builds for generation — Debug is significantly slower due to the heavy BFS solver.
+**Important**: Build with `-maxCpuCount` for parallel compilation (all cores). Use Release builds for generation — Debug is significantly slower due to the heavy BFS solver.
 
 ### CLI Arguments
 

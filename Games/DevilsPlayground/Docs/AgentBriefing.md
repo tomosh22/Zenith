@@ -276,8 +276,8 @@ If you find yourself opening a file unrelated to the current task, stop. Open a 
 Always run from `C:\dev\Zenith` in PowerShell:
 
 ```powershell
-# Build (use -maxCpuCount:1 per memory: parallel builds thrash MSBuild)
-& 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' Build\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
+# Build (parallel compilation, all cores)
+& 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' Build\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 
 # Test (headless, fixed-dt)
 pwsh.exe -File Tools/run_dp_tests.ps1 -Headless
@@ -353,7 +353,7 @@ Read these before you touch code; they're permanent footguns:
 - **Non-tools builds were fixed 2026-05-10** (Claude user-memory `project_nontools_build_broken`). Easy to regress. *Verify* `*_False` configurations build green before declaring a foundation feature done.
 - **Sharpmake regen required after adding `.cpp` files** — `cd Build && cmd /c '.\Sharpmake_Build.bat < nul'`. Forgetting this means your new file isn't in the solution and tests fail with "not found."
 - **`ZENITH_REGISTER_COMPONENT` doesn't fire if the `.obj` is dead-stripped** (Claude user-memory `feedback_msvc_static_init_dead_strip`). Fix by `AddComponent` at runtime from a script that *is* referenced.
-- **Parallel MSBuild thrashes** (Claude user-memory `feedback_parallel_agents_msbuild_thrash`). Use `-maxCpuCount:1`.
+- **Don't run multiple MSBuild *processes* concurrently** (Claude user-memory `feedback_parallel_agents_msbuild_thrash`): mspdbsrv + output-dir locks force sequential dispatch. This is about parallel *agents*, not the per-build `-maxCpuCount` flag — a single build using all cores is fine and expected.
 - **Hanging compiler processes** lock build files. If a build fails on "cannot access file," run `Build/CleanBuild.bat` (kills cl.exe/mspdbsrv.exe).
 - **`SimulateClickOnUIElement` asserts on missing element.** Only call after the element is known to exist in the active scene's canvas.
 - **Tests must be wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`** or they won't compile in non-tools builds.

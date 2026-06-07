@@ -37,7 +37,7 @@ function Find-MSBuild {
 
 if (-not $NoBuild) {
 	$msbuild = Find-MSBuild
-	& $msbuild $Project /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
+	& $msbuild $Project /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 	if ($LASTEXITCODE -ne 0) {
 		throw "RenderTest build failed with exit code $LASTEXITCODE"
 	}

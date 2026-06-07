@@ -263,7 +263,7 @@ The atomic + PID-liveness pattern fixes both. The only remaining failure mode is
     Build\zenith_win64.sln `
     /p:Configuration=vs2022_Debug_Win64_True `
     /p:Platform=x64 `
-    -maxCpuCount:1
+    -maxCpuCount
 ```
 
 If a new `.cpp` file was added by a subagent, run Sharpmake first:

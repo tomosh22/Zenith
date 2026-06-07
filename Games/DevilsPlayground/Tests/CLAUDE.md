@@ -10,7 +10,7 @@ full headless batch stays green."
 ```
 # Build first (Debug_True for full instrumentation; Debug_False for
 # matrix runs that need to mimic CI; Release_False for perf checks).
-cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Build\zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1'
+cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Build\zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount'
 
 # Run the suite headless (default mode -- batch all tests in one process).
 powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless

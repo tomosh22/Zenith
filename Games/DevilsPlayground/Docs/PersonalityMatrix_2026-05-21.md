@@ -152,7 +152,7 @@ Magpie + Relay**. None of the seven implemented today combine all three.
 
 ```
 # Build (or rebuild) DP in Debug_False.
-pwsh -Command '& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_False /p:Platform=x64 -maxCpuCount:1'
+pwsh -Command '& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_False /p:Platform=x64 -maxCpuCount'
 
 # Run 7p x 10s matrix (~35 min at P=4).
 pwsh -Command "& 'Tools/dp_seed_matrix_run.ps1' -Seeds @(0,1,7,42,100,12345,55555,99999,250000,4276994270)"
