@@ -19,7 +19,6 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "ZenithECS/Zenith_Scene.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include <vector>
 
 #ifdef ZENITH_TOOLS

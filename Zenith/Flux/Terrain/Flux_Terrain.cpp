@@ -16,7 +16,6 @@
 // Zenith_Query.h arrives transitively via Zenith_SceneSystem.h (QueryAllScenes needs it);
 // including it explicitly here would add a new EC<->Flux cross-layer edge.
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
