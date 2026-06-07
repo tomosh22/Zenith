@@ -44,8 +44,9 @@ struct SwapChainSupportDetails
 
 static SwapChainSupportDetails QuerySwapChainSupport()
 {
-	const vk::PhysicalDevice& xPhysicalDevice = g_xEngine.Vulkan().GetPhysicalDevice();
-	const vk::SurfaceKHR& xSurface = g_xEngine.Vulkan().GetSurface();
+	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
+	const vk::PhysicalDevice& xPhysicalDevice = xSwapchain.m_pxVulkan->GetPhysicalDevice();
+	const vk::SurfaceKHR& xSurface = xSwapchain.m_pxVulkan->GetSurface();
 
 	SwapChainSupportDetails xDetails;
 	xDetails.m_xCapabilities = VkUnwrap(xPhysicalDevice.getSurfaceCapabilitiesKHR(xSurface));
@@ -128,7 +129,7 @@ Zenith_Vulkan_Swapchain::~Zenith_Vulkan_Swapchain()
 
 void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 {
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
+	Zenith_Vulkan_Swapchain& xSwapchain = *this;
 
 	xSwapchain.m_xCopyToFramebufferCmd.Initialise();
 
@@ -155,7 +156,17 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 
 void Zenith_Vulkan_Swapchain::Initialise()
 {
-	const vk::SurfaceKHR& xSurface = g_xEngine.Vulkan().GetSurface();
+	// Self-wire cross-subsystem deps once (FluxBackendPresentation forbids
+	// params on this Initialise()). Every other reach routes through these.
+	// Initialise() also runs on swapchain recreation (resize) — re-caching the
+	// same pointers each time is harmless.
+	m_pxVulkan       = &g_xEngine.Vulkan();
+	m_pxVulkanMemory = &g_xEngine.VulkanMemory();
+	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
+	m_pxFluxGraphics = &g_xEngine.FluxGraphics();
+	m_pxProfiling    = &g_xEngine.Profiling();
+
+	const vk::SurfaceKHR& xSurface = m_pxVulkan->GetSurface();
 
 	SwapChainSupportDetails xSwapChainSupport = QuerySwapChainSupport();
 	vk::SurfaceFormatKHR xSurfaceFormat = ChooseSwapSurfaceFormat(xSwapChainSupport.m_xFormats);
@@ -177,8 +188,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	xCreateInfo.imageArrayLayers = 1;
 	xCreateInfo.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
 
-	uint32_t uGraphicsQueueIdx = g_xEngine.Vulkan().GetQueueIndex(COMMANDTYPE_GRAPHICS);
-	uint32_t uPresentQueueIdx = g_xEngine.Vulkan().GetQueueIndex(COMMANDTYPE_GRAPHICS);
+	uint32_t uGraphicsQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_GRAPHICS);
+	uint32_t uPresentQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_GRAPHICS);
 	uint32_t indicesPtr[] = { uGraphicsQueueIdx,uPresentQueueIdx };
 	if (uGraphicsQueueIdx != uPresentQueueIdx)
 	{
@@ -206,19 +217,19 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	xCreateInfo.clipped = VK_TRUE;
 	xCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	g_xEngine.VulkanSwapchain().m_xSwapChain = VkUnwrap(xDevice.createSwapchainKHR(xCreateInfo));
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	m_xSwapChain = VkUnwrap(xDevice.createSwapchainKHR(xCreateInfo));
 
-	g_xEngine.VulkanSwapchain().m_xImages = VkUnwrap(xDevice.getSwapchainImagesKHR(g_xEngine.VulkanSwapchain().m_xSwapChain));
-	uImageCount = static_cast<uint32_t>(g_xEngine.VulkanSwapchain().m_xImages.size());
-	g_xEngine.VulkanSwapchain().m_xImageViews.resize(uImageCount);
+	m_xImages = VkUnwrap(xDevice.getSwapchainImagesKHR(m_xSwapChain));
+	uImageCount = static_cast<uint32_t>(m_xImages.size());
+	m_xImageViews.resize(uImageCount);
 
 	Zenith_Assert(uImageCount <= MAX_FRAMES_IN_FLIGHT, "Swapchain image count %u exceeds MAX_FRAMES_IN_FLIGHT %u", uImageCount, MAX_FRAMES_IN_FLIGHT);
 
-	for (uint32_t u = 0; u < g_xEngine.VulkanSwapchain().m_xImages.size(); u++)
+	for (uint32_t u = 0; u < m_xImages.size(); u++)
 	{
-		vk::Image& xImage = g_xEngine.VulkanSwapchain().m_xImages[u];
-		g_xEngine.VulkanMemory().ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
+		vk::Image& xImage = m_xImages[u];
+		m_pxVulkanMemory->ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
 		vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 			.setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -233,27 +244,27 @@ void Zenith_Vulkan_Swapchain::Initialise()
 			.setFormat(xSurfaceFormat.format)
 			.setSubresourceRange(xSubresourceRange);
 
-		g_xEngine.VulkanSwapchain().m_xImageViews[u] = VkUnwrap(xDevice.createImageView(xViewCreate));
+		m_xImageViews[u] = VkUnwrap(xDevice.createImageView(xViewCreate));
 
 		// Swapchain images don't use VRAM handles since they're managed by the swapchain
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].m_xVRAMHandle.SetValue(UINT32_MAX);
+		m_axColourAttachments[u].m_xVRAMHandle.SetValue(UINT32_MAX);
 
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].m_xSurfaceInfo.m_uWidth = xExtent.width;
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].m_xSurfaceInfo.m_uHeight = xExtent.height;
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].m_xSurfaceInfo.m_eFormat =
+		m_axColourAttachments[u].m_xSurfaceInfo.m_uWidth = xExtent.width;
+		m_axColourAttachments[u].m_xSurfaceInfo.m_uHeight = xExtent.height;
+		m_axColourAttachments[u].m_xSurfaceInfo.m_eFormat =
 			xSurfaceFormat.format == vk::Format::eR8G8B8A8Srgb ? TEXTURE_FORMAT_RGBA8_SRGB : TEXTURE_FORMAT_BGRA8_SRGB;
-		
+
 		// Create views for swapchain images - register with handle system for consistency
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].SRV().m_xImageViewHandle = g_xEngine.VulkanMemory().RegisterImageView(g_xEngine.VulkanSwapchain().m_xImageViews[u]);
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].SRV().m_xVRAMHandle.SetValue(UINT32_MAX);
+		m_axColourAttachments[u].SRV().m_xImageViewHandle = m_pxVulkanMemory->RegisterImageView(m_xImageViews[u]);
+		m_axColourAttachments[u].SRV().m_xVRAMHandle.SetValue(UINT32_MAX);
 
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].RTV().m_xImageViewHandle = g_xEngine.VulkanMemory().RegisterImageView(g_xEngine.VulkanSwapchain().m_xImageViews[u]);
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[u].RTV().m_xVRAMHandle.SetValue(UINT32_MAX);
+		m_axColourAttachments[u].RTV().m_xImageViewHandle = m_pxVulkanMemory->RegisterImageView(m_xImageViews[u]);
+		m_axColourAttachments[u].RTV().m_xVRAMHandle.SetValue(UINT32_MAX);
 	}
-	
 
-	g_xEngine.VulkanSwapchain().m_xImageFormat = xSurfaceFormat.format;
-	g_xEngine.VulkanSwapchain().m_xExtent = xExtent;
+
+	m_xImageFormat = xSurfaceFormat.format;
+	m_xExtent = xExtent;
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Swapchain: %ux%u, format=%d, images=%u, present=%d",
 		xExtent.width, xExtent.height,
@@ -272,8 +283,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		g_xEngine.VulkanSwapchain().m_axImageAvailableSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
-		g_xEngine.VulkanSwapchain().m_axRenderFinishedSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
+		m_axImageAvailableSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
+		m_axRenderFinishedSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
 	}
 
 	InitialiseCopyToFramebufferCommands();
@@ -294,8 +305,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 
 void Zenith_Vulkan_Swapchain::Shutdown()
 {
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	Zenith_Vulkan_Swapchain& xSwapchain = *this;
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	// Tear down the copy-to-framebuffer shader/pipeline/cmd buffer while the
 	// Vulkan device is still alive. The members' destructors run later when
@@ -311,11 +322,11 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 		Flux_RenderAttachment& xAttachment = xSwapchain.m_axColourAttachments[u];
 		if (xAttachment.SRV().m_xImageViewHandle.IsValid())
 		{
-			g_xEngine.VulkanMemory().ReleaseImageViewHandle(xAttachment.SRV().m_xImageViewHandle);
+			m_pxVulkanMemory->ReleaseImageViewHandle(xAttachment.SRV().m_xImageViewHandle);
 		}
 		if (xAttachment.RTV().m_xImageViewHandle.IsValid())
 		{
-			g_xEngine.VulkanMemory().ReleaseImageViewHandle(xAttachment.RTV().m_xImageViewHandle);
+			m_pxVulkanMemory->ReleaseImageViewHandle(xAttachment.RTV().m_xImageViewHandle);
 		}
 		xAttachment = Flux_RenderAttachment();
 
@@ -353,18 +364,28 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 	xSwapchain.m_uCurrentImageIndex = 0;
 	xSwapchain.m_bShouldWaitOnImageAvailableSem = false;
 
+	m_pxVulkan       = nullptr;
+	m_pxVulkanMemory = nullptr;
+	m_pxFluxRenderer = nullptr;
+	m_pxFluxGraphics = nullptr;
+	m_pxProfiling    = nullptr;
+
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan swapchain shut down");
 }
 
 bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	// Static entry — no 'this'. Recover the singleton once (legitimate re-entry,
+	// like a render-graph trampoline) and route all reaches through it.
+	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
+
+	xSwapchain.m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
+	const vk::Device& xDevice = xSwapchain.m_pxVulkan->GetDevice();
 
 	//#TO_TODO: -1 here to shut up validation layer
-	vk::Result eResult = xDevice.acquireNextImageKHR(g_xEngine.VulkanSwapchain().m_xSwapChain, UINT64_MAX - 1, g_xEngine.VulkanSwapchain().m_axImageAvailableSemaphores[g_xEngine.VulkanSwapchain().GetCurrentFrameIndex()], nullptr, &g_xEngine.VulkanSwapchain().m_uCurrentImageIndex);
+	vk::Result eResult = xDevice.acquireNextImageKHR(xSwapchain.m_xSwapChain, UINT64_MAX - 1, xSwapchain.m_axImageAvailableSemaphores[xSwapchain.GetCurrentFrameIndex()], nullptr, &xSwapchain.m_uCurrentImageIndex);
 
-	g_xEngine.VulkanSwapchain().m_bShouldWaitOnImageAvailableSem = eResult == vk::Result::eSuccess;
+	xSwapchain.m_bShouldWaitOnImageAvailableSem = eResult == vk::Result::eSuccess;
 
 	Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR, "Failed to acquire swapchain image");
 
@@ -372,43 +393,43 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 	{
 		// Wait for GPU to finish using all resources before destroying them
 		// This prevents "semaphore in use" errors during window resize/maximize
-		g_xEngine.Vulkan().WaitForGPUIdle();
+		xSwapchain.m_pxVulkan->WaitForGPUIdle();
 
 		// Cleanup swapchain resources before recreation
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
 			// Destroy image views directly - GPU is already idle so no deferred deletion needed
-			xDevice.destroyImageView(g_xEngine.VulkanSwapchain().m_xImageViews[u]);
-			xDevice.destroySemaphore(g_xEngine.VulkanSwapchain().m_axImageAvailableSemaphores[u]);
-			xDevice.destroySemaphore(g_xEngine.VulkanSwapchain().m_axRenderFinishedSemaphores[u]);
+			xDevice.destroyImageView(xSwapchain.m_xImageViews[u]);
+			xDevice.destroySemaphore(xSwapchain.m_axImageAvailableSemaphores[u]);
+			xDevice.destroySemaphore(xSwapchain.m_axRenderFinishedSemaphores[u]);
 		}
-		g_xEngine.VulkanSwapchain().m_xImages.clear();
-		g_xEngine.VulkanSwapchain().m_xImageViews.clear();
-		xDevice.destroySwapchainKHR(g_xEngine.VulkanSwapchain().m_xSwapChain);
-		g_xEngine.VulkanSwapchain().Initialise();
-		g_xEngine.FluxRenderer().OnResChange();
+		xSwapchain.m_xImages.clear();
+		xSwapchain.m_xImageViews.clear();
+		xDevice.destroySwapchainKHR(xSwapchain.m_xSwapChain);
+		xSwapchain.Initialise();
+		xSwapchain.m_pxFluxRenderer->OnResChange();
 	}
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
+	xSwapchain.m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
 	return true;
 }
 
 void Zenith_Vulkan_Swapchain::BindAsTarget()
 {
-	Flux_RenderAttachment* pxSwapchainAttachment = &g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex];
+	Flux_RenderAttachment* pxSwapchainAttachment = &m_axColourAttachments[m_uCurrentImageIndex];
 	const TextureFormat aeColourFormats[] = { pxSwapchainAttachment->m_xSurfaceInfo.m_eFormat };
 #if 1//def ZENITH_DEBUG
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(aeColourFormats, 1, TEXTURE_FORMAT_NONE, LOAD_ACTION_CLEAR, STORE_ACTION_STORE, LOAD_ACTION_CLEAR, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #else
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(aeColourFormats, 1, TEXTURE_FORMAT_NONE, LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #endif
-	g_xEngine.Vulkan().m_pxCurrentFrame->DeferDestroyRenderPass(xRenderPass);
+	m_pxVulkan->m_pxCurrentFrame->DeferDestroyRenderPass(xRenderPass);
 
 	// Wrap the raw swapchain attachment in a carrier so it flows through the same framebuffer-creation path as render graph attachments.
 	Flux_RenderGraph_AttachmentRef axColourRefs[1];
 	axColourRefs[0] = Flux_RenderGraph_AttachmentRef(Flux_GraphResource(*pxSwapchainAttachment), 0, 0);
 	Flux_RenderGraph_AttachmentRef xDepthRef; // default-constructed -> IsValid() == false
-	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(axColourRefs, 1, xDepthRef, g_xEngine.VulkanSwapchain().GetWidth(), g_xEngine.VulkanSwapchain().GetHeight(), xRenderPass);
-	g_xEngine.Vulkan().m_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
+	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(axColourRefs, 1, xDepthRef, GetWidth(), GetHeight(), xRenderPass);
+	m_pxVulkan->m_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
 
 	vk::ClearValue xClear;
 	vk::ClearColorValue xClearColourValue(0.f, 0.f, 0.f, 1.f);
@@ -417,11 +438,11 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(xRenderPass)
 		.setFramebuffer(xFramebuffer)
-		.setRenderArea({ {0,0}, g_xEngine.VulkanSwapchain().m_xExtent })
+		.setRenderArea({ {0,0}, m_xExtent })
 		.setPClearValues(&xClear)
 		.setClearValueCount(1);
 
-	Zenith_Vulkan_CommandBuffer& xCmd = g_xEngine.VulkanSwapchain().m_xCopyToFramebufferCmd;
+	Zenith_Vulkan_CommandBuffer& xCmd = m_xCopyToFramebufferCmd;
 	xCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
 
 	// Set the render pass in the command buffer object so RenderImGui() can verify it's active
@@ -431,16 +452,16 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	vk::Viewport xViewport{};
 	xViewport.x = 0.0f;
 	xViewport.y = 0.0f;
-	xViewport.width = static_cast<float>(g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth);
-	xViewport.height = static_cast<float>(g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
+	xViewport.width = static_cast<float>(m_axColourAttachments[m_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth);
+	xViewport.height = static_cast<float>(m_axColourAttachments[m_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
 	xViewport.minDepth = 0.0f;
 	xViewport.maxDepth = 1.0f;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);
 	xScissor.extent = vk::Extent2D(
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth,
-		g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
+		m_axColourAttachments[m_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth,
+		m_axColourAttachments[m_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
 
 	xCmd.GetCurrentCmdBuffer().setViewport(0, 1, &xViewport);
 	xCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
@@ -448,7 +469,7 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 
 bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
 {
-	return g_xEngine.VulkanSwapchain().m_bShouldWaitOnImageAvailableSem;
+	return m_bShouldWaitOnImageAvailableSem;
 }
 
 void Zenith_Vulkan_Swapchain::EndFrame()
@@ -462,15 +483,15 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 	xCmd.SetPipeline(&xSwapchain.m_xCopyToFramebufferPipeline);
 
-	xCmd.SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	xCmd.SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	xCmd.SetVertexBuffer(xSwapchain.m_pxFluxGraphics->m_xQuadMesh.GetVertexBuffer());
+	xCmd.SetIndexBuffer(xSwapchain.m_pxFluxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	xCmd.BeginBind(0);
 #ifdef ZENITH_DEBUG_VARIABLES
 	if (dbg_bOutputMRT)
 	{
 		// When debugging, bind the MRT SRV
-		Flux_ShaderResourceView* pxMRTSRV = g_xEngine.FluxGraphics().GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
+		Flux_ShaderResourceView* pxMRTSRV = xSwapchain.m_pxFluxGraphics->GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
 		if (pxMRTSRV)
 		{
 			xCmd.BindSRV(pxMRTSRV, 0);
@@ -480,7 +501,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #endif
 	{
 		// Bind final render target using SRV
-		Flux_ShaderResourceView& xSRV = g_xEngine.FluxGraphics().GetFinalRenderTarget().SRV();
+		Flux_ShaderResourceView& xSRV = xSwapchain.m_pxFluxGraphics->GetFinalRenderTarget().SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
 			xCmd.BindSRV(&xSRV, 0);
@@ -512,21 +533,21 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		.setPSignalSemaphores(xSwapchain.m_bShouldWaitOnImageAvailableSem ? &xSwapchain.m_axRenderFinishedSemaphores[xSwapchain.m_uCurrentImageIndex] : nullptr)
 		.setSignalSemaphoreCount(xSwapchain.m_bShouldWaitOnImageAvailableSem ? 1 : 0);
 
-	VkCheck(g_xEngine.Vulkan().GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, g_xEngine.Vulkan().GetCurrentInFlightFence()));
+	VkCheck(xSwapchain.m_pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, xSwapchain.m_pxVulkan->GetCurrentInFlightFence()));
 
-	if (g_xEngine.VulkanSwapchain().m_bShouldWaitOnImageAvailableSem)
+	if (xSwapchain.m_bShouldWaitOnImageAvailableSem)
 	{
 		vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
 			.setSwapchainCount(1)
-			.setPSwapchains(&g_xEngine.VulkanSwapchain().m_xSwapChain)
-			.setPImageIndices(&g_xEngine.VulkanSwapchain().m_uCurrentImageIndex)
+			.setPSwapchains(&xSwapchain.m_xSwapChain)
+			.setPImageIndices(&xSwapchain.m_uCurrentImageIndex)
 			.setWaitSemaphoreCount(1)
-			.setPWaitSemaphores(&g_xEngine.VulkanSwapchain().m_axRenderFinishedSemaphores[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex]);
+			.setPWaitSemaphores(&xSwapchain.m_axRenderFinishedSemaphores[xSwapchain.m_uCurrentImageIndex]);
 
 #ifdef ZENITH_ASSERT
 		vk::Result eResult =
 #endif
-			g_xEngine.Vulkan().GetQueue(COMMANDTYPE_PRESENT).presentKHR(&presentInfo);
+			xSwapchain.m_pxVulkan->GetQueue(COMMANDTYPE_PRESENT).presentKHR(&presentInfo);
 
 		Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR || eResult == vk::Result::eSuboptimalKHR, "Failed to present");
 
@@ -538,7 +559,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore()
 {
-	return g_xEngine.VulkanSwapchain().m_axImageAvailableSemaphores[GetCurrentFrameIndex()];
+	return m_axImageAvailableSemaphores[GetCurrentFrameIndex()];
 }
 
 uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
@@ -547,12 +568,12 @@ uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
 	// and the ring index. The swapchain's previous s_uFrameIndex member has
 	// been removed; backends and engine code that need the current ring slot
 	// all derive it from here.
-	return g_xEngine.FluxRenderer().GetRingIndex();
+	return m_pxFluxRenderer->GetRingIndex();
 }
 
 Flux_RenderAttachment* Zenith_Vulkan_Swapchain::GetCurrentSwapchainTarget(uint32_t& uNumColourAttachments, Flux_RenderAttachment*& pxDepthStencil)
 {
 	uNumColourAttachments = 1;
 	pxDepthStencil = nullptr;
-	return &g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex];
+	return &m_axColourAttachments[m_uCurrentImageIndex];
 }

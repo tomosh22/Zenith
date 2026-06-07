@@ -17,6 +17,7 @@ using namespace Flux_TerrainConfig;
 // Forward declarations
 class Flux_MeshGeometry;
 class Zenith_TerrainComponent;
+class Flux_RendererImpl;
 
 // ========== Residency State ==========
 enum class Flux_TerrainLODResidencyState : uint8_t
@@ -231,6 +232,14 @@ public:
 	bool                                       m_bInitialized = false;
 	Zenith_Vector<Flux_TerrainStreamingState*> m_xRegistry;
 	Zenith_Mutex                               m_xRegistryMutex;
+
+	// ========== Injected cross-subsystem deps (self-wired in Initialize) ==========
+	// Self-wired (set once at the top of Initialize from g_xEngine) rather than
+	// injected via the Initialize signature: Initialize() is no-arg and called
+	// lazily from Zenith_TerrainComponent (not the engine composition root), so
+	// the signature can't take params without breaking those out-of-scope call
+	// sites. One boundary reach per dep, zero call-site change.
+	Flux_RendererImpl*                         m_pxFluxRenderer = nullptr;
 
 	// ========== Internal pure helpers (still static -- operate on State, not the manager) ==========
 	struct StreamingAllocation

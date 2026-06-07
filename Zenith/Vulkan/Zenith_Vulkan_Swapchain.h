@@ -13,6 +13,16 @@
 
 #include <vector>
 
+// Cross-subsystem deps injected via self-wiring in Initialise() (this class is
+// a Flux backend constrained by FluxBackendPresentation to a no-arg
+// Initialise(), so the singleton reaches are cached as member pointers rather
+// than passed as ctor/Initialise args). See the top of Initialise() in the .cpp.
+class Zenith_Vulkan;
+class Zenith_Vulkan_MemoryManager;
+class Flux_RendererImpl;
+class Flux_GraphicsImpl;
+class Zenith_Profiling;
+
 // Per-Engine state + behaviour for the Vulkan swapchain. Replaces both the
 // static-facade `class Zenith_Vulkan_Swapchain` and the data-only
 // `Zenith_Vulkan_Swapchain`. Accessed via g_xEngine.VulkanSwapchain().
@@ -76,6 +86,16 @@ public:
 	Zenith_Vulkan_Shader         m_xCopyToFramebufferShader;
 	Zenith_Vulkan_Pipeline       m_xCopyToFramebufferPipeline;
 	Zenith_Vulkan_CommandBuffer  m_xCopyToFramebufferCmd;
+
+	// Self-wired cross-subsystem deps (set once at the top of Initialise()).
+	// Public so the static BeginFrame()/EndFrame() entries can route through the
+	// recovered g_xEngine.VulkanSwapchain() reference, mirroring the existing
+	// design where the static entries reach the data members.
+	Zenith_Vulkan*               m_pxVulkan        = nullptr;
+	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory  = nullptr;
+	Flux_RendererImpl*           m_pxFluxRenderer  = nullptr;
+	Flux_GraphicsImpl*           m_pxFluxGraphics  = nullptr;
+	Zenith_Profiling*            m_pxProfiling     = nullptr;
 
 private:
 	void BindAsTarget();
