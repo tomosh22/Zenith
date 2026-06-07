@@ -1796,7 +1796,7 @@ class CppAnalyzer:
         if gx_lines:
             findings.append({
                 'kind': 'engine-singleton', 'key': f'{rel} => g_xEngine',
-                'line': gx_lines[0],
+                'line': gx_lines[0], 'count': len(gx_lines),
                 'detail': f'{len(gx_lines)} code line(s) reference g_xEngine',
             })
 
@@ -2567,6 +2567,38 @@ class CppAnalyzer:
         self._allowlist_cache[rel_or_abs] = keys
         return keys
 
+    def _load_count_baseline(self, rel_or_abs: Optional[str]) -> Dict[str, int]:
+        """
+        Load a per-file COUNT-baseline ratchet file into {wire_key: baseline_count}. Lines
+        are `<wire key> | <int>`; blank/`#` lines skipped. A bare key (no ` | N`) means
+        baseline 0 (tracked, must be zero). A missing file yields {} — every in-scope file
+        then has an implicit baseline of 0, so any reference trips the gate. Used by the
+        engine-wide g_xEngine count ratchet (shrink-only: current count may not exceed it).
+        """
+        if not rel_or_abs:
+            return {}
+        path = Path(rel_or_abs)
+        if not path.is_absolute():
+            path = self.root_path / rel_or_abs
+        out: Dict[str, int] = {}
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    s = line.strip()
+                    if not s or s.startswith('#'):
+                        continue
+                    key, sep, cnt = s.rpartition(' | ')
+                    if sep:
+                        try:
+                            out[key.strip()] = int(cnt.strip())
+                        except ValueError:
+                            out[s] = 0
+                    else:
+                        out[s] = 0
+        except OSError:
+            pass
+        return out
+
     def _compute_architecture(self) -> None:
         """
         Map files to modules and detect architectural-structure violations:
@@ -2897,6 +2929,36 @@ class CppAnalyzer:
         if gx:
             self.gate_examples.setdefault('max-leaf-violations', [])
             self.gate_examples['max-leaf-violations'] += [v['key'] for v in gx[:5]]
+
+        # Engine-wide g_xEngine count ratchet (Wave-0 freeze, separate from the leaf gate):
+        # a per-file COUNT baseline that is shrink-only. A file's g_xEngine code-line count
+        # may never exceed its checked-in baseline; an in-scope file with no baseline entry
+        # (=> 0) fails on any reference (a NEW file reaching for the global). Reducing is
+        # always allowed. Scope excludes the composition root (it legitimately wires the
+        # global). This is how the de-globalisation effort (Wave 4) ratchets partial progress
+        # — whole-file elimination won't happen in one wave, so per-file counts gate the trend.
+        singleton_cfg = (self._arch_config or {}).get('singleton_ratchet', {}) or {}
+        s_glob = singleton_cfg.get('glob', '')
+        if s_glob:
+            s_excl = singleton_cfg.get('exclude_globs', []) or []
+            baseline = self._load_count_baseline(singleton_cfg.get('allowlist_file'))
+
+            def s_in_scope(posix: str) -> bool:
+                return (fnmatch.fnmatch(posix, s_glob)
+                        and not any(fnmatch.fnmatch(posix, g) for g in s_excl))
+
+            over: List[Dict] = []
+            for v in all_findings:
+                if v['kind'] != 'engine-singleton':
+                    continue
+                if not s_in_scope(Path(v['file']).as_posix()):
+                    continue
+                if int(v.get('count', 0)) > baseline.get(v['key'], 0):
+                    over.append(v)
+            self.gate_counts['max-engine-singleton-count'] = len(over)
+            self.gate_examples['max-engine-singleton-count'] = [
+                f"{v['key']} ({v.get('count', 0)}>{baseline.get(v['key'], 0)})" for v in over[:5]
+            ]
 
     def get_summary(self) -> Dict:
         """
@@ -5347,6 +5409,7 @@ _ARCHITECTURE_FAIL_ON_KEYS: Tuple[str, ...] = (
     'max-ec-flux-edges', 'max-leaf-violations', 'max-architecture-violations',
     'max-encapsulation-violations', 'max-hub-files', 'max-module-cycles',
     'max-module-fanout-violations', 'max-zone-of-pain-modules', 'max-unmapped-files',
+    'max-engine-singleton-count',
 )
 # Convention-lint gates (same per-finding-allowlist semantics).
 _LINT_FAIL_ON_KEYS: Tuple[str, ...] = (
@@ -5470,6 +5533,17 @@ def _existing_allowlist_header(path: Path) -> Optional[str]:
     return '\n'.join(out) + '\n' if out else None
 
 
+_SINGLETON_BASELINE_HEADER = (
+    "# Auto-generated engine-wide g_xEngine count baseline (analyze_code_complexity.py).\n"
+    "# Regenerate: py -3 Tools/analyze_code_complexity.py . --profile engine-ci "
+    "--update-architecture-allowlist\n"
+    "# Format: `<file> => g_xEngine | <count>`. A file's g_xEngine code-line count may NOT\n"
+    "# exceed its listed count (shrink-only); a NEW in-scope file (no entry => 0) fails the\n"
+    "# gate. When a file reaches 0, DELETE its line to lock the win (re-adding then fails).\n"
+    "# The composition root (EngineComposition TUs) is out of scope by design.\n"
+)
+
+
 def update_architecture_allowlists(analyzer: 'CppAnalyzer') -> None:
     """
     Regenerate the four ratchet allowlist files from the analyzer's CURRENT findings — the
@@ -5532,6 +5606,35 @@ def update_architecture_allowlists(analyzer: 'CppAnalyzer') -> None:
             for k in sorted(keys):
                 fh.write(k + '\n')
         print(f"  wrote {len(keys)} key(s) -> {dest}")
+
+    # Engine-wide g_xEngine count baseline (distinct `key | count` format, separate file).
+    singleton_cfg = arch_cfg.get('singleton_ratchet', {}) or {}
+    s_file = singleton_cfg.get('allowlist_file')
+    s_glob = singleton_cfg.get('glob', '')
+    if s_file and s_glob:
+        s_excl = singleton_cfg.get('exclude_globs', []) or []
+
+        def s_scope(posix: str) -> bool:
+            return (fnmatch.fnmatch(posix, s_glob)
+                    and not any(fnmatch.fnmatch(posix, g) for g in s_excl))
+
+        rows: List[Tuple[str, int]] = []
+        for v in analyzer.lint_findings:
+            if v['kind'] != 'engine-singleton':
+                continue
+            if s_scope(Path(v['file']).as_posix()):
+                rows.append((v['key'], int(v.get('count', 0))))
+        rows.sort()
+        path = Path(s_file) if Path(s_file).is_absolute() else (analyzer.root_path / s_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        header = _existing_allowlist_header(path) or _SINGLETON_BASELINE_HEADER
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(header)
+            if not header.endswith('\n'):
+                fh.write('\n')
+            for k, c in rows:
+                fh.write(f'{k} | {c}\n')
+        print(f"  wrote {len(rows)} g_xEngine count baseline(s) -> {s_file}")
 
 
 def _parse_fail_on(raw: str) -> Dict[str, float]:

@@ -3,6 +3,8 @@
 # One wire key per line; '#'/blank lines ignored. A NEW key not listed here fails
 # the gate; a removed finding leaves a stale line (INFO only). Shrink, don't grow.
 encapsulation: Zenith/Core/Zenith_Engine.cpp => ZenithECS/Internal/Zenith_EntityStore.h
+forbidden-edge: Zenith/Physics/Zenith_PhysicsMeshGenerator.cpp => Flux/Primitives/Flux_PrimitivesImpl.h
+forbidden-edge: Zenith/Physics/Zenith_PhysicsMeshGenerator.h => Flux/MeshGeometry/Flux_MeshGeometry.h
 layer-up: Zenith/Android/Vulkan/Zenith_Android_Vulkan.cpp => Vulkan/Zenith_Vulkan_Platform.h
 layer-up: Zenith/Android/Zenith_Android_Window.cpp => Input/Zenith_Input.h
 layer-up: Zenith/Android/Zenith_Android_Window.h => Input/Zenith_KeyCodes.h

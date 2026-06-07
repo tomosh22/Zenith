@@ -40,12 +40,13 @@
             "max-hub-files": 0,
             "max-module-fanout-violations": 0,
             "max-unmapped-files": 0,
+            "max-engine-singleton-count": 0,
             "max-forbidden-tokens": 0,
             "max-missing-pch": 0,
             "max-missing-pragma-once": 0,
             "max-static-violations": 0
         },
-        "_gate_note": "Architecture/lint gates are threshold-0: the per-finding allowlist files are the ratchet, not the number. Current findings are grandfathered in Tools/{layering,ecs_leaf,architecture,lints}_allowlist.txt; a NEW non-allowlisted finding fails. Report-only (intentionally NOT gated): max-module-cycles (one giant engine-wide SCC), max-zone-of-pain-modules (foundational libs are intrinsically stable+concrete). max-static-violations IS gated (new module-scope mutable statics are a documented red flag; thread_local + named carve-outs are exempt). complexity.yml runs --gate-group complexity; layering-gate.yml runs --gate-group architecture,lints.",
+        "_gate_note": "Architecture/lint gates are threshold-0: the per-finding allowlist files are the ratchet, not the number. Current findings are grandfathered in Tools/{layering,ecs_leaf,architecture,lints}_allowlist.txt; a NEW non-allowlisted finding fails. EXCEPTION: max-engine-singleton-count is a per-file COUNT ratchet (engine-wide g_xEngine reach, baseline Tools/engine_singleton_allowlist.txt, shrink-only) — see architecture.singleton_ratchet. Physics->Flux is now a tracked forbidden-edge (snapshotted in architecture_allowlist.txt; severed in Wave 1). Report-only (intentionally NOT gated): max-module-cycles (one giant engine-wide SCC), max-zone-of-pain-modules (foundational libs are intrinsically stable+concrete). max-static-violations IS gated (new module-scope mutable statics are a documented red flag; thread_local + named carve-outs are exempt). complexity.yml runs --gate-group complexity; layering-gate.yml runs --gate-group architecture,lints.",
         "_threshold_rationale": "Bumped 2026-05-12 to clear the CI gate that had been red since 2026-05-07. New ceilings cover the current worst-case engine functions (Zenith_NavMesh::GetRandomReachablePointInRadius @ priority 82.5; Zenith_EditorAutomation::ExecuteAction @ CC 101 + LOC 1078; 5 duplicate clusters across Flux/AI). Per the engine-ci philosophy these are CEILINGS not targets; the next refactor that lowers a worst-case should lower the matching ceiling to keep the gate biting.",
         "_architecture_doc": "Declarative module/layer DAG + ratchets. Subsumes Tools/layering_gate.ps1: the ec_flux_ratchet + leaf_ratchet reproduce its two checks (raw-string parity, same allowlist files). The resolved include graph drives the new full-DAG direction, encapsulation, coupling, hub and module-cycle checks. Layer ranks are a calibrated hypothesis — all current up-edges are grandfathered in the allowlists. fail_on_basename_resolved=false keeps low-confidence basename edges out of the gate.",
         "architecture": {
@@ -85,7 +86,8 @@
             "rules": {
                 "forbid_up_edges": true,
                 "forbidden_edges": [
-                    { "from": "ZenithECS", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab"] }
+                    { "from": "ZenithECS", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab"] },
+                    { "from": "Physics", "to": ["Flux"] }
                 ],
                 "allowed_edges": [],
                 "ignore_module_cycles": [ ["EntityComponent", "Flux"] ]
@@ -100,6 +102,19 @@
                 "forbidden_prefixes": ["Flux/", "Physics/", "UI/", "Editor/", "AssetHandling/", "AI/", "Components/", "EntityComponent/Components/"],
                 "forbidden_exact": ["Core/Zenith_Engine.h"],
                 "allowlist_file": "Tools/ecs_leaf_allowlist.txt"
+            },
+            "singleton_ratchet": {
+                "_doc": "Engine-wide g_xEngine reach as a per-file COUNT ratchet (shrink-only). Distinct from the leaf_ratchet (which gates g_xEngine to ZERO inside the ECS leaf only). Baseline counts in Tools/engine_singleton_allowlist.txt; a file's count may never exceed its baseline, and a new in-scope file (no entry => 0) fails. The composition root that legitimately wires the global (EngineComposition TUs + the engine header) is excluded. This is the measurement spine for the Wave-4 de-globalisation effort.",
+                "glob": "Zenith/**",
+                "exclude_globs": [
+                    "Zenith/Core/Zenith_Engine.cpp",
+                    "Zenith/Core/Zenith_Engine.h",
+                    "Zenith/Core/Zenith_Core.cpp",
+                    "Zenith/Core/Zenith_Main.cpp",
+                    "Zenith/Core/Zenith_BenchECS.cpp",
+                    "Zenith/Core/Zenith_AutomatedTest.cpp"
+                ],
+                "allowlist_file": "Tools/engine_singleton_allowlist.txt"
             }
         },
         "lints": {
