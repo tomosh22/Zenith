@@ -1,15 +1,14 @@
 #include "Zenith.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "ZenithECS/Zenith_Query.h"
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
 
 // Global physics mesh configuration - CRITICAL: Explicitly initialize to ensure defaults are set
 PhysicsMeshConfig g_xPhysicsMeshConfig = {
@@ -24,6 +23,18 @@ PhysicsMeshConfig g_xPhysicsMeshConfig = {
 
 namespace
 {
+	// Renderer-neutral generated collision geometry. The generation helpers below
+	// produce this; the asset side (Zenith_MeshGeometryAsset::CreateFromGeometryData)
+	// turns it into the engine's Flux_MeshGeometry, so this TU names no renderer type.
+	struct GeneratedMeshData
+	{
+		Zenith_Vector<Zenith_Maths::Vector3> m_xPositions;
+		Zenith_Vector<Zenith_Maths::Vector3> m_xNormals;
+		Zenith_Vector<uint32_t> m_xIndices;
+
+		bool IsValid() const { return m_xPositions.GetSize() >= 3 && m_xIndices.GetSize() >= 3; }
+	};
+
 	struct DecimationCellKey
 	{
 		int32_t x, y, z;
@@ -152,6 +163,376 @@ namespace
 			}
 		}
 	}
+
+	void ComputeAABB(
+		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
+		Zenith_Maths::Vector3& xMinOut,
+		Zenith_Maths::Vector3& xMaxOut)
+	{
+		xMinOut = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
+		xMaxOut = Zenith_Maths::Vector3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+		for (uint32_t m = 0; m < xMeshViews.GetSize(); m++)
+		{
+			const Zenith_PhysicsMeshView& xView = xMeshViews.Get(m);
+			if (!xView.m_pxPositions)
+			{
+				continue;
+			}
+
+			for (uint32_t v = 0; v < xView.m_uNumVerts; v++)
+			{
+				const Zenith_Maths::Vector3& xPos = xView.m_pxPositions[v];
+				xMinOut.x = std::min(xMinOut.x, xPos.x);
+				xMinOut.y = std::min(xMinOut.y, xPos.y);
+				xMinOut.z = std::min(xMinOut.z, xPos.z);
+				xMaxOut.x = std::max(xMaxOut.x, xPos.x);
+				xMaxOut.y = std::max(xMaxOut.y, xPos.y);
+				xMaxOut.z = std::max(xMaxOut.z, xPos.z);
+			}
+		}
+	}
+
+	void CollectAllPositions(
+		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
+		Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut)
+	{
+		xPositionsOut.Clear();
+
+		for (uint32_t m = 0; m < xMeshViews.GetSize(); m++)
+		{
+			const Zenith_PhysicsMeshView& xView = xMeshViews.Get(m);
+			if (!xView.m_pxPositions)
+			{
+				continue;
+			}
+
+			for (uint32_t v = 0; v < xView.m_uNumVerts; v++)
+			{
+				xPositionsOut.PushBack(xView.m_pxPositions[v]);
+			}
+		}
+	}
+
+	void DecimateVertices(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const Zenith_Vector<uint32_t>& xIndices,
+		Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut,
+		Zenith_Vector<uint32_t>& xIndicesOut,
+		float fCellSize)
+	{
+		xPositionsOut.Clear();
+		xIndicesOut.Clear();
+
+		if (xPositions.GetSize() == 0 || xIndices.GetSize() < 3 || fCellSize <= 0.0f)
+		{
+			return;
+		}
+
+		uint32_t uExtremeIndices[6];
+		Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(xPositions, uExtremeIndices);
+
+		std::unordered_set<uint32_t> xExtremeVertexSet;
+		for (int i = 0; i < 6; i++)
+		{
+			xExtremeVertexSet.insert(uExtremeIndices[i]);
+		}
+
+		CellToVertexMap xCellToVertex;
+		OldToNewIndexMap xOldToNewIndex;
+		const float fInvCellSize = 1.0f / fCellSize;
+
+		PreserveExtremeVertices(xPositions, xExtremeVertexSet, fInvCellSize, xCellToVertex, xOldToNewIndex, xPositionsOut);
+		MergeNonExtremeVertices(xPositions, xExtremeVertexSet, fInvCellSize, xCellToVertex, xOldToNewIndex, xPositionsOut);
+		RemapAndFilterIndices(xIndices, xOldToNewIndex, xIndicesOut);
+	}
+
+	void CreateBoxMesh(
+		const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax,
+		GeneratedMeshData& xOut)
+	{
+		xOut.m_xPositions.Clear();
+		xOut.m_xNormals.Clear();
+		xOut.m_xIndices.Clear();
+
+		// 8 corners of the box (back-bottom-left to front-top-right)
+		const Zenith_Maths::Vector3 axCorners[8] = {
+			Zenith_Maths::Vector3(xMin.x, xMin.y, xMin.z), // 0: BBL
+			Zenith_Maths::Vector3(xMax.x, xMin.y, xMin.z), // 1: BBR
+			Zenith_Maths::Vector3(xMax.x, xMax.y, xMin.z), // 2: BTR
+			Zenith_Maths::Vector3(xMin.x, xMax.y, xMin.z), // 3: BTL
+			Zenith_Maths::Vector3(xMin.x, xMin.y, xMax.z), // 4: FBL
+			Zenith_Maths::Vector3(xMax.x, xMin.y, xMax.z), // 5: FBR
+			Zenith_Maths::Vector3(xMax.x, xMax.y, xMax.z), // 6: FTR
+			Zenith_Maths::Vector3(xMin.x, xMax.y, xMax.z), // 7: FTL
+		};
+
+		const Zenith_Maths::Vector3 xCenter = (xMin + xMax) * 0.5f;
+		for (int i = 0; i < 8; i++)
+		{
+			xOut.m_xPositions.PushBack(axCorners[i]);
+			xOut.m_xNormals.PushBack(Zenith_Maths::Normalize(axCorners[i] - xCenter));
+		}
+
+		// 12 triangles (2 per face, 6 faces) — identical winding to the previous Flux build
+		static const uint32_t auBoxIndices[36] = {
+			0, 2, 1,  0, 3, 2,   // Back face (-Z)
+			4, 5, 6,  4, 6, 7,   // Front face (+Z)
+			0, 4, 7,  0, 7, 3,   // Left face (-X)
+			1, 2, 6,  1, 6, 5,   // Right face (+X)
+			0, 1, 5,  0, 5, 4,   // Bottom face (-Y)
+			3, 7, 6,  3, 6, 2,   // Top face (+Y)
+		};
+		for (int i = 0; i < 36; i++)
+		{
+			xOut.m_xIndices.PushBack(auBoxIndices[i]);
+		}
+	}
+
+	void CreateMeshFromData(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const Zenith_Vector<uint32_t>& xIndices,
+		GeneratedMeshData& xOut)
+	{
+		xOut.m_xPositions.Clear();
+		xOut.m_xNormals.Clear();
+		xOut.m_xIndices.Clear();
+
+		const uint32_t uNumVerts = xPositions.GetSize();
+		const uint32_t uNumIndices = xIndices.GetSize();
+		if (uNumVerts == 0 || uNumIndices < 3)
+		{
+			return;
+		}
+
+		xOut.m_xPositions = xPositions;
+		xOut.m_xIndices = xIndices;
+		for (uint32_t i = 0; i < uNumVerts; i++)
+		{
+			xOut.m_xNormals.PushBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		}
+
+		// Generate smooth vertex normals over the (now contiguous) buffers.
+		Zenith_PhysicsMeshGenerator::ComputeVertexNormals(
+			xOut.m_xNormals.GetDataPointer(), xOut.m_xPositions.GetDataPointer(),
+			uNumVerts, xOut.m_xIndices.GetDataPointer(), uNumIndices);
+	}
+
+	void GenerateConvexHullMesh(
+		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
+		GeneratedMeshData& xOut);
+
+	void GenerateAABBMesh(
+		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
+		GeneratedMeshData& xOut)
+	{
+		Zenith_Maths::Vector3 xMin, xMax;
+		ComputeAABB(xMeshViews, xMin, xMax);
+
+		// Validate AABB
+		if (xMin.x > xMax.x || xMin.y > xMax.y || xMin.z > xMax.z)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid AABB computed, using unit box");
+			xMin = Zenith_Maths::Vector3(-0.5f, -0.5f, -0.5f);
+			xMax = Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);
+		}
+
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " AABB bounds: (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)",
+			xMin.x, xMin.y, xMin.z,
+			xMax.x, xMax.y, xMax.z);
+
+		CreateBoxMesh(xMin, xMax, xOut);
+	}
+
+	void GenerateSimplifiedMesh(
+		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
+		const PhysicsMeshConfig& xConfig,
+		GeneratedMeshData& xOut)
+	{
+		// Collect all positions and indices from all views
+		Zenith_Vector<Zenith_Maths::Vector3> xAllPositions;
+		Zenith_Vector<uint32_t> xAllIndices;
+
+		uint32_t uVertexOffset = 0;
+		for (uint32_t m = 0; m < xMeshViews.GetSize(); m++)
+		{
+			const Zenith_PhysicsMeshView& xView = xMeshViews.Get(m);
+			if (!xView.m_pxPositions || !xView.m_puIndices)
+			{
+				Zenith_Log(LOG_CATEGORY_PHYSICS, " Skipping invalid mesh view %u", m);
+				continue;
+			}
+
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Collecting mesh %u: %u verts, %u indices",
+				m, xView.m_uNumVerts, xView.m_uNumIndices);
+
+			for (uint32_t v = 0; v < xView.m_uNumVerts; v++)
+			{
+				xAllPositions.PushBack(xView.m_pxPositions[v]);
+			}
+
+			for (uint32_t i = 0; i < xView.m_uNumIndices; i++)
+			{
+				xAllIndices.PushBack(xView.m_puIndices[i] + uVertexOffset);
+			}
+
+			uVertexOffset += xView.m_uNumVerts;
+		}
+
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Total collected: %u vertices, %u indices from %u meshes",
+			xAllPositions.GetSize(), xAllIndices.GetSize(), xMeshViews.GetSize());
+
+		if (xAllPositions.GetSize() == 0 || xAllIndices.GetSize() < 3)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " No valid geometry for simplified mesh, using AABB fallback");
+			GenerateAABBMesh(xMeshViews, xOut);
+			return;
+		}
+
+		// Compute AABB for cell size calculation
+		Zenith_Maths::Vector3 xMin, xMax;
+		Zenith_PhysicsMeshGenerator::ComputeAABBFromPositions(xAllPositions, xMin, xMax);
+
+		Zenith_Maths::Vector3 xExtent = xMax - xMin;
+		float fMaxExtent = std::max(std::max(xExtent.x, xExtent.y), xExtent.z);
+
+		// Calculate target vertex count based on simplification ratio
+		uint32_t uSourceTriCount = xAllIndices.GetSize() / 3;
+		uint32_t uTargetTriCount = static_cast<uint32_t>(uSourceTriCount * xConfig.m_fSimplificationRatio);
+		uTargetTriCount = std::max(uTargetTriCount, xConfig.m_uMinTriangles);
+		uTargetTriCount = std::min(uTargetTriCount, xConfig.m_uMaxTriangles);
+
+		// Skip decimation if ratio is 1.0 (no simplification desired)
+		if (xConfig.m_fSimplificationRatio >= 1.0f)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Skipping decimation (ratio=1.0): using full mesh with %u vertices, %u triangles",
+				xAllPositions.GetSize(), uSourceTriCount);
+			CreateMeshFromData(xAllPositions, xAllIndices, xOut);
+			return;
+		}
+
+		// Iteratively decimate until we reach target triangle count
+		Zenith_Vector<Zenith_Maths::Vector3> xCurrentPositions = xAllPositions;
+		Zenith_Vector<uint32_t> xCurrentIndices = xAllIndices;
+
+		float fCellSize = fMaxExtent * 0.01f; // Start with small cell size
+		const float fCellSizeMultiplier = 1.5f;
+		const int iMaxIterations = 10;
+
+		for (int iter = 0; iter < iMaxIterations; iter++)
+		{
+			uint32_t uCurrentTriCount = xCurrentIndices.GetSize() / 3;
+			if (uCurrentTriCount <= uTargetTriCount)
+			{
+				Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation complete: reached target tri count %u", uCurrentTriCount);
+				break;
+			}
+
+			Zenith_Vector<Zenith_Maths::Vector3> xDecimatedPositions;
+			Zenith_Vector<uint32_t> xDecimatedIndices;
+
+			DecimateVertices(xCurrentPositions, xCurrentIndices, xDecimatedPositions, xDecimatedIndices, fCellSize);
+
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation iter %d (cell size %.4f): %u -> %u verts, %u -> %u tris",
+				iter, fCellSize,
+				xCurrentPositions.GetSize(), xDecimatedPositions.GetSize(),
+				xCurrentIndices.GetSize() / 3, xDecimatedIndices.GetSize() / 3);
+
+			if (xDecimatedIndices.GetSize() >= 3)
+			{
+				xCurrentPositions = xDecimatedPositions;
+				xCurrentIndices = xDecimatedIndices;
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation produced invalid geometry, stopping");
+				break;
+			}
+
+			fCellSize *= fCellSizeMultiplier;
+		}
+
+		// Ensure we have valid geometry
+		if (xCurrentPositions.GetSize() < 3 || xCurrentIndices.GetSize() < 3)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation produced invalid geometry, using convex hull fallback");
+			GenerateConvexHullMesh(xMeshViews, xOut);
+			return;
+		}
+
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Simplified mesh: %u -> %u vertices, %u -> %u triangles",
+			xAllPositions.GetSize(), xCurrentPositions.GetSize(),
+			xAllIndices.GetSize() / 3, xCurrentIndices.GetSize() / 3);
+
+		CreateMeshFromData(xCurrentPositions, xCurrentIndices, xOut);
+	}
+
+	// Simple quickhull-style convex hull approximation (delegates to the decimator)
+	void GenerateConvexHullMesh(
+		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
+		GeneratedMeshData& xOut)
+	{
+		Zenith_Vector<Zenith_Maths::Vector3> xAllPositions;
+		CollectAllPositions(xMeshViews, xAllPositions);
+
+		if (xAllPositions.GetSize() < 4)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Not enough vertices for convex hull (%u), using AABB fallback",
+				xAllPositions.GetSize());
+			GenerateAABBMesh(xMeshViews, xOut);
+			return;
+		}
+
+		// Find extreme points using shared helper
+		uint32_t auExtremeIndices[6];
+		Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(xAllPositions, auExtremeIndices);
+
+		Zenith_Maths::Vector3 xMinPt[3], xMaxPt[3];
+		for (int axis = 0; axis < 3; axis++)
+		{
+			xMinPt[axis] = xAllPositions.Get(auExtremeIndices[axis * 2]);
+			xMaxPt[axis] = xAllPositions.Get(auExtremeIndices[axis * 2 + 1]);
+		}
+
+		// Collect unique extreme points
+		Zenith_Vector<Zenith_Maths::Vector3> xHullPoints;
+		auto AddUniquePoint = [&xHullPoints](const Zenith_Maths::Vector3& xPt) {
+			for (uint32_t i = 0; i < xHullPoints.GetSize(); i++)
+			{
+				if (Zenith_Maths::Length(xHullPoints.Get(i) - xPt) < 0.001f)
+					return;
+			}
+			xHullPoints.PushBack(xPt);
+		};
+
+		for (int axis = 0; axis < 3; axis++)
+		{
+			AddUniquePoint(xMinPt[axis]);
+			AddUniquePoint(xMaxPt[axis]);
+		}
+
+		// If we have fewer than 4 unique points, add some intermediate points
+		if (xHullPoints.GetSize() < 4)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Only %u unique extreme points, using AABB fallback",
+				xHullPoints.GetSize());
+			GenerateAABBMesh(xMeshViews, xOut);
+			return;
+		}
+
+		// Use decimation on all vertices to create a better approximation that
+		// follows the mesh shape.
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Using simplified mesh approach for better hull approximation");
+
+		PhysicsMeshConfig xHullConfig;
+		xHullConfig.m_eQuality = PHYSICS_MESH_QUALITY_HIGH;
+		xHullConfig.m_fSimplificationRatio = 0.6f; // Moderate simplification for convex hulls
+		xHullConfig.m_uMinTriangles = 24;
+		xHullConfig.m_uMaxTriangles = 512; // Lower cap for convex hull
+
+		GenerateSimplifiedMesh(xMeshViews, xHullConfig, xOut);
+	}
 }
 
 const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQuality)
@@ -166,20 +547,20 @@ const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQual
 }
 
 Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
 	PhysicsMeshQuality eQuality)
 {
 	PhysicsMeshConfig xConfig = g_xPhysicsMeshConfig;
 	xConfig.m_eQuality = eQuality;
-	return GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
+	return GeneratePhysicsMeshWithConfig(xMeshViews, xConfig);
 }
 
 Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
 	const PhysicsMeshConfig& xConfig)
 {
 	// Validate input
-	if (xMeshGeometries.GetSize() == 0)
+	if (xMeshViews.GetSize() == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " No meshes provided for physics mesh generation");
 		return nullptr;
@@ -188,368 +569,63 @@ Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithCo
 	// Count total triangles and vertices for logging
 	uint32_t uTotalSourceVerts = 0;
 	uint32_t uTotalSourceTris = 0;
-	for (uint32_t i = 0; i < xMeshGeometries.GetSize(); i++)
+	for (uint32_t i = 0; i < xMeshViews.GetSize(); i++)
 	{
-		const Flux_MeshGeometry* pxMesh = xMeshGeometries.Get(i);
-		if (pxMesh && pxMesh->m_pxPositions)
+		const Zenith_PhysicsMeshView& xView = xMeshViews.Get(i);
+		if (xView.m_pxPositions)
 		{
-			uTotalSourceVerts += pxMesh->GetNumVerts();
-			uTotalSourceTris += pxMesh->GetNumIndices() / 3;
+			uTotalSourceVerts += xView.m_uNumVerts;
+			uTotalSourceTris += xView.m_uNumIndices / 3;
 		}
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Generating physics mesh from %u submeshes (%u verts, %u tris), quality=%s",
-		xMeshGeometries.GetSize(),
+		xMeshViews.GetSize(),
 		uTotalSourceVerts,
 		uTotalSourceTris,
 		GetQualityName(xConfig.m_eQuality));
 
-	Flux_MeshGeometry* pxResult = nullptr;
+	GeneratedMeshData xData;
 
 	switch (xConfig.m_eQuality)
 	{
 	case PHYSICS_MESH_QUALITY_LOW:
-		pxResult = GenerateAABBMesh(xMeshGeometries);
+		GenerateAABBMesh(xMeshViews, xData);
 		break;
 
 	case PHYSICS_MESH_QUALITY_MEDIUM:
-		pxResult = GenerateConvexHullMesh(xMeshGeometries);
+		GenerateConvexHullMesh(xMeshViews, xData);
 		break;
 
 	case PHYSICS_MESH_QUALITY_HIGH:
-		pxResult = GenerateSimplifiedMesh(xMeshGeometries, xConfig);
+		GenerateSimplifiedMesh(xMeshViews, xConfig, xData);
 		break;
 
 	default:
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " Unknown quality level %d, falling back to AABB", xConfig.m_eQuality);
-		pxResult = GenerateAABBMesh(xMeshGeometries);
+		GenerateAABBMesh(xMeshViews, xData);
 		break;
 	}
 
-	if (pxResult)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Generated physics mesh: %u verts, %u tris",
-				pxResult->GetNumVerts(),
-			pxResult->GetNumIndices() / 3);
-	}
-	else
+	if (!xData.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " Failed to generate physics mesh, attempting AABB fallback");
-		pxResult = GenerateAABBMesh(xMeshGeometries);
-		if (pxResult)
-		{
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " AABB fallback succeeded: %u verts, %u tris",
-						pxResult->GetNumVerts(),
-				pxResult->GetNumIndices() / 3);
-		}
+		GenerateAABBMesh(xMeshViews, xData);
 	}
 
-	// Wrap in asset for registry tracking
-	if (pxResult)
+	if (xData.IsValid())
 	{
-		Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
-		pxAsset->SetGeometry(pxResult);
-		return pxAsset;
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Generated physics mesh: %u verts, %u tris",
+			xData.m_xPositions.GetSize(),
+			xData.m_xIndices.GetSize() / 3);
+
+		// The asset side owns the renderer-mesh (Flux_MeshGeometry) construction, so
+		// this TU stays renderer-neutral.
+		return Zenith_MeshGeometryAsset::CreateFromGeometryData(
+			xData.m_xPositions, xData.m_xNormals, xData.m_xIndices);
 	}
 
 	return nullptr;
-}
-
-void Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(
-	const Flux_MeshGeometry* pxPhysicsMesh,
-	const Zenith_Maths::Matrix4& xTransform,
-	const Zenith_Maths::Vector3& xColor)
-{
-	if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumIndices() < 3)
-	{
-		return;
-	}
-
-	// Draw wireframe triangles using lines
-	const uint32_t uNumTris = pxPhysicsMesh->GetNumIndices() / 3;
-	
-	for (uint32_t t = 0; t < uNumTris; t++)
-	{
-		uint32_t uIdx0 = pxPhysicsMesh->m_puIndices[t * 3 + 0];
-		uint32_t uIdx1 = pxPhysicsMesh->m_puIndices[t * 3 + 1];
-		uint32_t uIdx2 = pxPhysicsMesh->m_puIndices[t * 3 + 2];
-
-		// Get positions and transform to world space
-		Zenith_Maths::Vector4 xPos0 = xTransform * Zenith_Maths::Vector4(pxPhysicsMesh->m_pxPositions[uIdx0], 1.0f);
-		Zenith_Maths::Vector4 xPos1 = xTransform * Zenith_Maths::Vector4(pxPhysicsMesh->m_pxPositions[uIdx1], 1.0f);
-		Zenith_Maths::Vector4 xPos2 = xTransform * Zenith_Maths::Vector4(pxPhysicsMesh->m_pxPositions[uIdx2], 1.0f);
-
-		Zenith_Maths::Vector3 xV0(xPos0.x, xPos0.y, xPos0.z);
-		Zenith_Maths::Vector3 xV1(xPos1.x, xPos1.y, xPos1.z);
-		Zenith_Maths::Vector3 xV2(xPos2.x, xPos2.y, xPos2.z);
-
-		// Draw the three edges of the triangle
-		g_xEngine.Primitives().AddLine(xV0, xV1, xColor, 0.05f);
-		g_xEngine.Primitives().AddLine(xV1, xV2, xColor, 0.05f);
-		g_xEngine.Primitives().AddLine(xV2, xV0, xColor, 0.05f);
-	}
-}
-
-void Zenith_PhysicsMeshGenerator::ComputeAABB(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
-	Zenith_Maths::Vector3& xMinOut,
-	Zenith_Maths::Vector3& xMaxOut)
-{
-	xMinOut = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
-	xMaxOut = Zenith_Maths::Vector3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-
-	for (uint32_t m = 0; m < xMeshGeometries.GetSize(); m++)
-	{
-		const Flux_MeshGeometry* pxMesh = xMeshGeometries.Get(m);
-		if (!pxMesh || !pxMesh->m_pxPositions)
-		{
-			continue;
-		}
-
-		for (uint32_t v = 0; v < pxMesh->GetNumVerts(); v++)
-		{
-			const Zenith_Maths::Vector3& xPos = pxMesh->m_pxPositions[v];
-			xMinOut.x = std::min(xMinOut.x, xPos.x);
-			xMinOut.y = std::min(xMinOut.y, xPos.y);
-			xMinOut.z = std::min(xMinOut.z, xPos.z);
-			xMaxOut.x = std::max(xMaxOut.x, xPos.x);
-			xMaxOut.y = std::max(xMaxOut.y, xPos.y);
-			xMaxOut.z = std::max(xMaxOut.z, xPos.z);
-		}
-	}
-}
-
-void Zenith_PhysicsMeshGenerator::CollectAllPositions(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
-	Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut)
-{
-	xPositionsOut.Clear();
-
-	for (uint32_t m = 0; m < xMeshGeometries.GetSize(); m++)
-	{
-		const Flux_MeshGeometry* pxMesh = xMeshGeometries.Get(m);
-		if (!pxMesh || !pxMesh->m_pxPositions)
-		{
-			continue;
-		}
-
-		for (uint32_t v = 0; v < pxMesh->GetNumVerts(); v++)
-		{
-			xPositionsOut.PushBack(pxMesh->m_pxPositions[v]);
-		}
-	}
-}
-
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateBoxMesh(
-	const Zenith_Maths::Vector3& xMin,
-	const Zenith_Maths::Vector3& xMax)
-{
-	Flux_MeshGeometry* pxMesh = new Flux_MeshGeometry();
-
-	// 8 corners of the box
-	pxMesh->m_uNumVerts = 8;
-	pxMesh->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(8 * sizeof(Zenith_Maths::Vector3)));
-	pxMesh->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(8 * sizeof(Zenith_Maths::Vector3)));
-
-	// Define 8 corners (back-bottom-left to front-top-right)
-	pxMesh->m_pxPositions[0] = Zenith_Maths::Vector3(xMin.x, xMin.y, xMin.z); // 0: BBL
-	pxMesh->m_pxPositions[1] = Zenith_Maths::Vector3(xMax.x, xMin.y, xMin.z); // 1: BBR
-	pxMesh->m_pxPositions[2] = Zenith_Maths::Vector3(xMax.x, xMax.y, xMin.z); // 2: BTR
-	pxMesh->m_pxPositions[3] = Zenith_Maths::Vector3(xMin.x, xMax.y, xMin.z); // 3: BTL
-	pxMesh->m_pxPositions[4] = Zenith_Maths::Vector3(xMin.x, xMin.y, xMax.z); // 4: FBL
-	pxMesh->m_pxPositions[5] = Zenith_Maths::Vector3(xMax.x, xMin.y, xMax.z); // 5: FBR
-	pxMesh->m_pxPositions[6] = Zenith_Maths::Vector3(xMax.x, xMax.y, xMax.z); // 6: FTR
-	pxMesh->m_pxPositions[7] = Zenith_Maths::Vector3(xMin.x, xMax.y, xMax.z); // 7: FTL
-
-	// Normals (pointing outward from center)
-	Zenith_Maths::Vector3 xCenter = (xMin + xMax) * 0.5f;
-	for (int i = 0; i < 8; i++)
-	{
-		pxMesh->m_pxNormals[i] = Zenith_Maths::Normalize(pxMesh->m_pxPositions[i] - xCenter);
-	}
-
-	// 12 triangles (2 per face, 6 faces)
-	pxMesh->m_uNumIndices = 36;
-	pxMesh->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(36 * sizeof(Flux_MeshGeometry::IndexType)));
-
-	// Back face (-Z)
-	pxMesh->m_puIndices[0] = 0; pxMesh->m_puIndices[1] = 2; pxMesh->m_puIndices[2] = 1;
-	pxMesh->m_puIndices[3] = 0; pxMesh->m_puIndices[4] = 3; pxMesh->m_puIndices[5] = 2;
-
-	// Front face (+Z)
-	pxMesh->m_puIndices[6] = 4; pxMesh->m_puIndices[7] = 5; pxMesh->m_puIndices[8] = 6;
-	pxMesh->m_puIndices[9] = 4; pxMesh->m_puIndices[10] = 6; pxMesh->m_puIndices[11] = 7;
-
-	// Left face (-X)
-	pxMesh->m_puIndices[12] = 0; pxMesh->m_puIndices[13] = 4; pxMesh->m_puIndices[14] = 7;
-	pxMesh->m_puIndices[15] = 0; pxMesh->m_puIndices[16] = 7; pxMesh->m_puIndices[17] = 3;
-
-	// Right face (+X)
-	pxMesh->m_puIndices[18] = 1; pxMesh->m_puIndices[19] = 2; pxMesh->m_puIndices[20] = 6;
-	pxMesh->m_puIndices[21] = 1; pxMesh->m_puIndices[22] = 6; pxMesh->m_puIndices[23] = 5;
-
-	// Bottom face (-Y)
-	pxMesh->m_puIndices[24] = 0; pxMesh->m_puIndices[25] = 1; pxMesh->m_puIndices[26] = 5;
-	pxMesh->m_puIndices[27] = 0; pxMesh->m_puIndices[28] = 5; pxMesh->m_puIndices[29] = 4;
-
-	// Top face (+Y)
-	pxMesh->m_puIndices[30] = 3; pxMesh->m_puIndices[31] = 7; pxMesh->m_puIndices[32] = 6;
-	pxMesh->m_puIndices[33] = 3; pxMesh->m_puIndices[34] = 6; pxMesh->m_puIndices[35] = 2;
-
-	return pxMesh;
-}
-
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateMeshFromData(
-	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
-	const Zenith_Vector<uint32_t>& xIndices)
-{
-	if (xPositions.GetSize() == 0 || xIndices.GetSize() < 3)
-	{
-		return nullptr;
-	}
-
-	Flux_MeshGeometry* pxMesh = new Flux_MeshGeometry();
-
-	pxMesh->m_uNumVerts = xPositions.GetSize();
-	pxMesh->m_uNumIndices = xIndices.GetSize();
-
-	pxMesh->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	pxMesh->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	pxMesh->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
-
-	// Copy positions and indices
-	for (uint32_t i = 0; i < pxMesh->m_uNumVerts; i++)
-		pxMesh->m_pxPositions[i] = xPositions.Get(i);
-	for (uint32_t i = 0; i < pxMesh->m_uNumIndices; i++)
-		pxMesh->m_puIndices[i] = xIndices.Get(i);
-
-	// Generate smooth vertex normals
-	ComputeVertexNormals(pxMesh->m_pxNormals, pxMesh->m_pxPositions,
-		pxMesh->m_uNumVerts, pxMesh->m_puIndices, pxMesh->m_uNumIndices);
-
-	return pxMesh;
-}
-
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateAABBMesh(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries)
-{
-	Zenith_Maths::Vector3 xMin, xMax;
-	ComputeAABB(xMeshGeometries, xMin, xMax);
-
-	// Validate AABB
-	if (xMin.x > xMax.x || xMin.y > xMax.y || xMin.z > xMax.z)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid AABB computed, using unit box");
-		xMin = Zenith_Maths::Vector3(-0.5f, -0.5f, -0.5f);
-		xMax = Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);
-	}
-
-	Zenith_Log(LOG_CATEGORY_PHYSICS, " AABB bounds: (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)",
-		xMin.x, xMin.y, xMin.z,
-		xMax.x, xMax.y, xMax.z);
-
-	return CreateBoxMesh(xMin, xMax);
-}
-
-// Simple quickhull-style convex hull implementation
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateConvexHullMesh(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries)
-{
-	Zenith_Vector<Zenith_Maths::Vector3> xAllPositions;
-	CollectAllPositions(xMeshGeometries, xAllPositions);
-
-	if (xAllPositions.GetSize() < 4)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Not enough vertices for convex hull (%u), using AABB fallback",
-xAllPositions.GetSize());
-		return GenerateAABBMesh(xMeshGeometries);
-	}
-
-	// For simplicity and robustness, we'll use a simplified approach:
-	// 1. Find extreme points in 6 directions (±X, ±Y, ±Z)
-	// 2. Build a simple convex polyhedron from these points
-	
-	// Find extreme points using shared helper
-	uint32_t auExtremeIndices[6];
-	FindExtremeVertexIndices(xAllPositions, auExtremeIndices);
-
-	Zenith_Maths::Vector3 xMinPt[3], xMaxPt[3];
-	for (int axis = 0; axis < 3; axis++)
-	{
-		xMinPt[axis] = xAllPositions.Get(auExtremeIndices[axis * 2]);
-		xMaxPt[axis] = xAllPositions.Get(auExtremeIndices[axis * 2 + 1]);
-	}
-
-	// Collect unique extreme points
-	Zenith_Vector<Zenith_Maths::Vector3> xHullPoints;
-	auto AddUniquePoint = [&xHullPoints](const Zenith_Maths::Vector3& xPt) {
-		for (uint32_t i = 0; i < xHullPoints.GetSize(); i++)
-		{
-			if (Zenith_Maths::Length(xHullPoints.Get(i) - xPt) < 0.001f)
-				return;
-		}
-		xHullPoints.PushBack(xPt);
-	};
-
-	for (int axis = 0; axis < 3; axis++)
-	{
-		AddUniquePoint(xMinPt[axis]);
-		AddUniquePoint(xMaxPt[axis]);
-	}
-
-	// If we have fewer than 4 unique points, add some intermediate points
-	if (xHullPoints.GetSize() < 4)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Only %u unique extreme points, using AABB fallback",
-xHullPoints.GetSize());
-		return GenerateAABBMesh(xMeshGeometries);
-	}
-
-	// Instead of using a simplified box approach, use decimation on all vertices
-	// to create a better approximation that follows the mesh shape
-	Zenith_Log(LOG_CATEGORY_PHYSICS, " Using simplified mesh approach for better hull approximation");
-	
-	// Use a moderate simplification ratio for convex hull quality
-	PhysicsMeshConfig xHullConfig;
-	xHullConfig.m_eQuality = PHYSICS_MESH_QUALITY_HIGH;
-	xHullConfig.m_fSimplificationRatio = 0.6f; // Moderate simplification for convex hulls
-	xHullConfig.m_uMinTriangles = 24;
-	xHullConfig.m_uMaxTriangles = 512; // Lower cap for convex hull
-	
-	return GenerateSimplifiedMesh(xMeshGeometries, xHullConfig);
-}
-
-void Zenith_PhysicsMeshGenerator::DecimateVertices(
-	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
-	const Zenith_Vector<uint32_t>& xIndices,
-	Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut,
-	Zenith_Vector<uint32_t>& xIndicesOut,
-	float fCellSize)
-{
-	xPositionsOut.Clear();
-	xIndicesOut.Clear();
-
-	if (xPositions.GetSize() == 0 || xIndices.GetSize() < 3 || fCellSize <= 0.0f)
-	{
-		return;
-	}
-
-	uint32_t uExtremeIndices[6];
-	FindExtremeVertexIndices(xPositions, uExtremeIndices);
-
-	std::unordered_set<uint32_t> xExtremeVertexSet;
-	for (int i = 0; i < 6; i++)
-	{
-		xExtremeVertexSet.insert(uExtremeIndices[i]);
-	}
-
-	CellToVertexMap xCellToVertex;
-	OldToNewIndexMap xOldToNewIndex;
-	const float fInvCellSize = 1.0f / fCellSize;
-
-	PreserveExtremeVertices(xPositions, xExtremeVertexSet, fInvCellSize, xCellToVertex, xOldToNewIndex, xPositionsOut);
-	MergeNonExtremeVertices(xPositions, xExtremeVertexSet, fInvCellSize, xCellToVertex, xOldToNewIndex, xPositionsOut);
-	RemapAndFilterIndices(xIndices, xOldToNewIndex, xIndicesOut);
 }
 
 void Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(
@@ -595,7 +671,7 @@ void Zenith_PhysicsMeshGenerator::ComputeVertexNormals(
 	Zenith_Maths::Vector3* pxNormals,
 	const Zenith_Maths::Vector3* pxPositions,
 	uint32_t uNumVerts,
-	const Flux_MeshGeometry::IndexType* puIndices,
+	const uint32_t* puIndices,
 	uint32_t uNumIndices)
 {
 	for (uint32_t i = 0; i < uNumVerts; i++)
@@ -624,125 +700,6 @@ void Zenith_PhysicsMeshGenerator::ComputeVertexNormals(
 		else
 			pxNormals[i] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 	}
-}
-
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
-	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
-	const PhysicsMeshConfig& xConfig)
-{
-	// Collect all positions and indices from all meshes
-	Zenith_Vector<Zenith_Maths::Vector3> xAllPositions;
-	Zenith_Vector<uint32_t> xAllIndices;
-
-	uint32_t uVertexOffset = 0;
-	for (uint32_t m = 0; m < xMeshGeometries.GetSize(); m++)
-	{
-		const Flux_MeshGeometry* pxMesh = xMeshGeometries.Get(m);
-		if (!pxMesh || !pxMesh->m_pxPositions || !pxMesh->m_puIndices)
-		{
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Skipping invalid mesh geometry %u", m);
-			continue;
-		}
-
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Collecting mesh %u: %u verts, %u indices", 
-m, pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
-
-		for (uint32_t v = 0; v < pxMesh->GetNumVerts(); v++)
-		{
-			xAllPositions.PushBack(pxMesh->m_pxPositions[v]);
-		}
-
-		for (uint32_t i = 0; i < pxMesh->GetNumIndices(); i++)
-		{
-			xAllIndices.PushBack(pxMesh->m_puIndices[i] + uVertexOffset);
-		}
-
-		uVertexOffset += pxMesh->GetNumVerts();
-	}
-
-	Zenith_Log(LOG_CATEGORY_PHYSICS, " Total collected: %u vertices, %u indices from %u meshes",
-xAllPositions.GetSize(), xAllIndices.GetSize(), xMeshGeometries.GetSize());
-
-	if (xAllPositions.GetSize() == 0 || xAllIndices.GetSize() < 3)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " No valid geometry for simplified mesh, using AABB fallback");
-		return GenerateAABBMesh(xMeshGeometries);
-	}
-
-	// Compute AABB for cell size calculation
-	Zenith_Maths::Vector3 xMin, xMax;
-	ComputeAABBFromPositions(xAllPositions, xMin, xMax);
-
-	Zenith_Maths::Vector3 xExtent = xMax - xMin;
-	float fMaxExtent = std::max(std::max(xExtent.x, xExtent.y), xExtent.z);
-
-	// Calculate target vertex count based on simplification ratio
-	uint32_t uSourceTriCount = xAllIndices.GetSize() / 3;
-	uint32_t uTargetTriCount = static_cast<uint32_t>(uSourceTriCount * xConfig.m_fSimplificationRatio);
-	uTargetTriCount = std::max(uTargetTriCount, xConfig.m_uMinTriangles);
-	uTargetTriCount = std::min(uTargetTriCount, xConfig.m_uMaxTriangles);
-
-	// Skip decimation if ratio is 1.0 (no simplification desired)
-	if (xConfig.m_fSimplificationRatio >= 1.0f)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Skipping decimation (ratio=1.0): using full mesh with %u vertices, %u triangles",
-xAllPositions.GetSize(), uSourceTriCount);
-		return CreateMeshFromData(xAllPositions, xAllIndices);
-	}
-
-	// Iteratively decimate until we reach target triangle count
-	Zenith_Vector<Zenith_Maths::Vector3> xCurrentPositions = xAllPositions;
-	Zenith_Vector<uint32_t> xCurrentIndices = xAllIndices;
-
-	float fCellSize = fMaxExtent * 0.01f; // Start with small cell size
-	const float fCellSizeMultiplier = 1.5f;
-	const int iMaxIterations = 10;
-
-	for (int iter = 0; iter < iMaxIterations; iter++)
-	{
-		uint32_t uCurrentTriCount = xCurrentIndices.GetSize() / 3;
-		if (uCurrentTriCount <= uTargetTriCount)
-		{
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation complete: reached target tri count %u", uCurrentTriCount);
-			break;
-		}
-
-		Zenith_Vector<Zenith_Maths::Vector3> xDecimatedPositions;
-		Zenith_Vector<uint32_t> xDecimatedIndices;
-
-		DecimateVertices(xCurrentPositions, xCurrentIndices, xDecimatedPositions, xDecimatedIndices, fCellSize);
-
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation iter %d (cell size %.4f): %u -> %u verts, %u -> %u tris",
-iter, fCellSize,
-			xCurrentPositions.GetSize(), xDecimatedPositions.GetSize(),
-			xCurrentIndices.GetSize() / 3, xDecimatedIndices.GetSize() / 3);
-
-		if (xDecimatedIndices.GetSize() >= 3)
-		{
-			xCurrentPositions = xDecimatedPositions;
-			xCurrentIndices = xDecimatedIndices;
-		}
-		else
-		{
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation produced invalid geometry, stopping");
-			break;
-		}
-
-		fCellSize *= fCellSizeMultiplier;
-	}
-
-	// Ensure we have valid geometry
-	if (xCurrentPositions.GetSize() < 3 || xCurrentIndices.GetSize() < 3)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation produced invalid geometry, using convex hull fallback");
-		return GenerateConvexHullMesh(xMeshGeometries);
-	}
-
-	Zenith_Log(LOG_CATEGORY_PHYSICS, " Simplified mesh: %u -> %u vertices, %u -> %u triangles",
-		xAllPositions.GetSize(), xCurrentPositions.GetSize(),
-		xAllIndices.GetSize() / 3, xCurrentIndices.GetSize() / 3);
-
-	return CreateMeshFromData(xCurrentPositions, xCurrentIndices);
 }
 
 void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()

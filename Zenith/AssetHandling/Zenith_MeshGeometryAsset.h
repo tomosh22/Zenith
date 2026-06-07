@@ -1,6 +1,8 @@
 #pragma once
 
 #include "AssetHandling/Zenith_Asset.h"
+#include "Collections/Zenith_Vector.h"
+#include "Maths/Zenith_Maths.h"
 #include <string>
 
 // Forward declarations
@@ -108,6 +110,18 @@ public:
 	 * @return Registry-managed asset containing unit cone
 	 */
 	static Zenith_MeshGeometryAsset* CreateUnitCone(uint32_t uSegments = 16);
+
+	/**
+	 * Create a registry-managed asset from renderer-neutral CPU geometry
+	 * (positions + normals + indices). Builds the underlying Flux_MeshGeometry
+	 * on the asset side so callers (e.g. the physics mesh generator) never name a
+	 * renderer type. CPU-only — no GPU upload (collision/debug-draw read the CPU
+	 * arrays). Returns nullptr if the geometry is empty/degenerate.
+	 */
+	static Zenith_MeshGeometryAsset* CreateFromGeometryData(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const Zenith_Vector<Zenith_Maths::Vector3>& xNormals,
+		const Zenith_Vector<uint32_t>& xIndices);
 
 private:
 	friend class Zenith_AssetRegistry;

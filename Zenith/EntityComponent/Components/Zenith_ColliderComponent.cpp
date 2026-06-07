@@ -5,6 +5,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Zenith_PhysicsDebugDraw.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Physics/Zenith_Physics.h"
@@ -717,7 +718,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 		// debug draw if the physics geometry never loaded.
 		if (xTerrain.HasPhysicsGeometry())
 		{
-			Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(&xTerrain.GetPhysicsMeshGeometry(), xModelMatrix, xColor);
+			Zenith_PhysicsDebugDraw::DrawMesh(&xTerrain.GetPhysicsMeshGeometry(), xModelMatrix, xColor);
 		}
 		break;
 	}
@@ -738,7 +739,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 
 		Zenith_Maths::Matrix4 xModelMatrix;
 		xTransform.BuildModelMatrix(xModelMatrix);
-		Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, xColor);
+		Zenith_PhysicsDebugDraw::DrawMesh(pxPhysicsMesh, xModelMatrix, xColor);
 		break;
 	}
 	}

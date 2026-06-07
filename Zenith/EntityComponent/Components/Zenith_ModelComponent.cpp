@@ -3,12 +3,14 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Flux/Flux_ModelInstance.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
+#include "EntityComponent/Zenith_PhysicsDebugDraw.h"
 #include <filesystem>
 
 void Zenith_ModelComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
@@ -426,7 +428,11 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 	// Collect geometries from the model instance. Procedural meshes expose their
 	// source geometry directly; asset-backed meshes require a throwaway geometry
 	// populated from the mesh asset's positions/indices.
-	Zenith_Vector<const Flux_MeshGeometry*> xMeshGeometries;
+	// The physics generator takes renderer-neutral views (positions + indices spans).
+	// Procedural meshes expose their geometry directly; asset-backed meshes get a
+	// throwaway Flux_MeshGeometry (owned here, in EntityComponent, where naming Flux
+	// is allowed). Each view points into one of those geometries for the call.
+	Zenith_Vector<Zenith_PhysicsMeshView> xViews;
 	Zenith_Vector<Flux_MeshGeometry*> xTempGeometries;
 
 	const uint32_t uNumMeshes = m_pxModelInstance->GetNumMeshes();
@@ -438,20 +444,28 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			continue;
 		}
 
-		if (const Flux_MeshGeometry* pxProcedural = pxMeshInstance->GetProceduralGeometry())
+		const Flux_MeshGeometry* pxGeometry = pxMeshInstance->GetProceduralGeometry();
+		if (!pxGeometry)
 		{
-			xMeshGeometries.PushBack(pxProcedural);
-			continue;
+			if (Flux_MeshGeometry* pxTemp = BuildTempGeometryFromAsset(pxMeshInstance->GetSourceAsset()))
+			{
+				xTempGeometries.PushBack(pxTemp);
+				pxGeometry = pxTemp;
+			}
 		}
 
-		if (Flux_MeshGeometry* pxTemp = BuildTempGeometryFromAsset(pxMeshInstance->GetSourceAsset()))
+		if (pxGeometry)
 		{
-			xMeshGeometries.PushBack(pxTemp);
-			xTempGeometries.PushBack(pxTemp);
+			Zenith_PhysicsMeshView xView;
+			xView.m_pxPositions = pxGeometry->m_pxPositions;
+			xView.m_uNumVerts = pxGeometry->GetNumVerts();
+			xView.m_puIndices = pxGeometry->m_puIndices;
+			xView.m_uNumIndices = pxGeometry->GetNumIndices();
+			xViews.PushBack(xView);
 		}
 	}
 
-	if (xMeshGeometries.GetSize() == 0)
+	if (xViews.GetSize() == 0)
 	{
 		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no valid geometries");
 		// Nothing to clean up - xTempGeometries is empty in this branch.
@@ -467,7 +481,7 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			xScale.x, xScale.y, xScale.z);
 	}
 
-	if (Zenith_MeshGeometryAsset* pxPhysicsAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig))
+	if (Zenith_MeshGeometryAsset* pxPhysicsAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xViews, xConfig))
 	{
 		m_xPhysicsMeshAsset.Set(pxPhysicsAsset);
 		Flux_MeshGeometry* pxGeometry = pxPhysicsAsset->GetGeometry();
@@ -517,7 +531,7 @@ void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector
 	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Matrix4 xModelMatrix;
 	xTransform.BuildModelMatrix(xModelMatrix);
-	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, xColor);
+	Zenith_PhysicsDebugDraw::DrawMesh(pxPhysicsMesh, xModelMatrix, xColor);
 }
 
 // Editor code for RenderPropertiesPanel and AssignTextureToSlot

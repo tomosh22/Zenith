@@ -11,6 +11,7 @@
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 

@@ -540,3 +540,45 @@ Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateUnitCone(uint32_t uSeg
 	GenerateCone(*pxAsset->m_pxGeometry, 0.5f, 1.0f, uSegments);
 	return pxAsset;
 }
+
+Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateFromGeometryData(
+	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	const Zenith_Vector<Zenith_Maths::Vector3>& xNormals,
+	const Zenith_Vector<uint32_t>& xIndices)
+{
+	const uint32_t uNumVerts = xPositions.GetSize();
+	const uint32_t uNumIndices = xIndices.GetSize();
+	if (uNumVerts == 0 || uNumIndices < 3)
+	{
+		return nullptr;
+	}
+
+	// Build the CPU-side Flux_MeshGeometry. Buffers use Zenith_MemoryManagement so
+	// they match the allocation strategy the rest of Flux_MeshGeometry expects.
+	// No GPU upload: physics collision + debug-draw read the CPU arrays only.
+	Flux_MeshGeometry* pxGeom = new Flux_MeshGeometry();
+	pxGeom->m_uNumVerts = uNumVerts;
+	pxGeom->m_uNumIndices = uNumIndices;
+
+	pxGeom->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	pxGeom->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	pxGeom->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
+		Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
+
+	const bool bHasNormals = (xNormals.GetSize() == uNumVerts);
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		pxGeom->m_pxPositions[i] = xPositions.Get(i);
+		pxGeom->m_pxNormals[i] = bHasNormals ? xNormals.Get(i) : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	}
+	for (uint32_t i = 0; i < uNumIndices; i++)
+	{
+		pxGeom->m_puIndices[i] = xIndices.Get(i);
+	}
+
+	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+	pxAsset->SetGeometry(pxGeom);
+	return pxAsset;
+}
