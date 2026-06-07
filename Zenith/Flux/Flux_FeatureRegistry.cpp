@@ -295,7 +295,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.SSAO().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSAO().Shutdown(); });
 	const u_int uFog = xReg.Register(szFLUX_FEATURE_FOG,
-		+[](){ g_xEngine.Fog().Initialise(g_xEngine.VolumeFog(), g_xEngine.GodRaysFog(), g_xEngine.RaymarchFog(), g_xEngine.FroxelFog(), g_xEngine.HDR(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer()); },
+		+[](){ g_xEngine.Fog().Initialise(g_xEngine.VolumeFog(), g_xEngine.GodRaysFog(), g_xEngine.RaymarchFog(), g_xEngine.FroxelFog(), g_xEngine.HDR(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer(), g_xEngine.Shadows(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Fog().SetupRenderGraph(g); },
 		nullptr); // Fog has no Shutdown() — RAII / stateless.
 	const u_int uSDFs = xReg.Register(szFLUX_FEATURE_SDFS,

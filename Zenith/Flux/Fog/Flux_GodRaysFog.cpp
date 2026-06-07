@@ -46,7 +46,7 @@ static Flux_GodRaysConstants s_xConstants;
 
 void Flux_GodRaysFogImpl::BuildPipelines()
 {
-	g_xEngine.GodRaysFog().m_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
+	m_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -55,10 +55,10 @@ void Flux_GodRaysFogImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &g_xEngine.GodRaysFog().m_xShader;
+	xPipelineSpec.m_pxShader = &m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	g_xEngine.GodRaysFog().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
@@ -68,11 +68,13 @@ void Flux_GodRaysFogImpl::BuildPipelines()
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
-	Flux_PipelineBuilder::FromSpecification(g_xEngine.GodRaysFog().m_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_GodRaysFogImpl::Initialise()
+void Flux_GodRaysFogImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics)
 {
+	m_pxFluxGraphics = &xFluxGraphics;
+
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -102,9 +104,9 @@ void Flux_GodRaysFogImpl::Reset()
 void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 {
 	// Get sun direction from frame constants and project to screen space
-	const Zenith_Maths::Vector3& xSunDir = g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad;
-	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
-	const Zenith_Maths::Vector3& xCamPos = g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad;
+	const Zenith_Maths::Vector3& xSunDir = m_pxFluxGraphics->m_xFrameConstants.m_xSunDir_Pad;
+	const Zenith_Maths::Matrix4& xViewProj = m_pxFluxGraphics->m_xFrameConstants.m_xViewProjMat;
+	const Zenith_Maths::Vector3& xCamPos = m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad;
 
 	// Calculate sun position far along sun direction from camera
 	// Distance to place virtual sun position for screen-space projection
@@ -140,16 +142,16 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 	extern u_int dbg_uVolFogDebugMode;
 	s_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.GodRaysFog().m_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&m_pxFluxGraphics->m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&m_pxFluxGraphics->m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(g_xEngine.GodRaysFog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(g_xEngine.GodRaysFog().m_xShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindCBV(m_xShader, "FrameConstants", &m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(m_xShader, "g_xDepthTex", m_pxFluxGraphics->GetDepthStencilSRV());
 
-	xBinder.BindDrawConstants(g_xEngine.GodRaysFog().m_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.BindDrawConstants(m_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

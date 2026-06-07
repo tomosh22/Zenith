@@ -13,6 +13,8 @@ class Flux_FroxelFogImpl;
 class Flux_HDRImpl;
 class Flux_GraphicsImpl;
 class Flux_RendererImpl;
+class Flux_ShadowsImpl;
+class FrameContext;
 
 // Phase 9: state + behaviour for top-level Fog orchestrator subsystem.
 class Flux_FogImpl
@@ -26,7 +28,8 @@ public:
 
 	void Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImpl& xGodRaysFog,
 		Flux_RaymarchFogImpl& xRaymarchFog, Flux_FroxelFogImpl& xFroxelFog,
-		Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics, Flux_RendererImpl& xFluxRenderer);
+		Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics, Flux_RendererImpl& xFluxRenderer,
+		Flux_ShadowsImpl& xShadows, FrameContext& xFrame);
 	void BuildPipelines();
 	void Reset();
 
@@ -63,4 +66,6 @@ public:
 	Flux_HDRImpl*         m_pxHDR          = nullptr;
 	Flux_GraphicsImpl*    m_pxFluxGraphics = nullptr;
 	Flux_RendererImpl*    m_pxFluxRenderer = nullptr;
+	Flux_ShadowsImpl*     m_pxShadows      = nullptr;
+	FrameContext*         m_pxFrame        = nullptr;
 };

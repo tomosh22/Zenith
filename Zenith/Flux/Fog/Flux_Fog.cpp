@@ -9,6 +9,8 @@
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
+#include "Core/FrameContext.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -80,7 +82,8 @@ void Flux_FogImpl::BuildPipelines()
 
 void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImpl& xGodRaysFog,
 	Flux_RaymarchFogImpl& xRaymarchFog, Flux_FroxelFogImpl& xFroxelFog,
-	Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics, Flux_RendererImpl& xFluxRenderer)
+	Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics, Flux_RendererImpl& xFluxRenderer,
+	Flux_ShadowsImpl& xShadows, FrameContext& xFrame)
 {
 	m_pxVolumeFog    = &xVolumeFog;
 	m_pxGodRaysFog   = &xGodRaysFog;
@@ -89,16 +92,20 @@ void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImp
 	m_pxHDR          = &xHDR;
 	m_pxFluxGraphics = &xFluxGraphics;
 	m_pxFluxRenderer = &xFluxRenderer;
+	m_pxShadows      = &xShadows;
+	m_pxFrame        = &xFrame;
 
 	BuildPipelines();
 
 	// Initialize shared volumetric fog infrastructure
 	m_pxVolumeFog->Initialise();
 
-	// Initialize all volumetric fog techniques (spatial-only, no temporal)
-	m_pxGodRaysFog->Initialise();
-	m_pxRaymarchFog->Initialise();
-	m_pxFroxelFog->Initialise();
+	// Initialize all volumetric fog techniques (spatial-only, no temporal). Each
+	// technique's cross-subsystem deps are threaded through from Fog's own injected
+	// members (Wave-4 de-globalization) so the techniques carry no g_xEngine reach.
+	m_pxGodRaysFog->Initialise(*m_pxFluxGraphics);
+	m_pxRaymarchFog->Initialise(*m_pxVolumeFog, *m_pxFrame, *m_pxFluxRenderer, *m_pxFluxGraphics, *m_pxShadows);
+	m_pxFroxelFog->Initialise(*m_pxVolumeFog, *m_pxFluxRenderer, *m_pxFluxGraphics, *m_pxShadows);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
