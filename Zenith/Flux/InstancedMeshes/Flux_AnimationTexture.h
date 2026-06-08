@@ -2,7 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Maths/Zenith_Maths.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 
 class Flux_MeshGeometry;
@@ -76,7 +76,7 @@ public:
 	bool BakeFromAnimations(
 		const Flux_MeshGeometry* pxMesh,
 		const Zenith_SkeletonAsset* pxSkeleton,
-		const std::vector<Flux_AnimationClip*>& axAnimations,
+		const Zenith_Vector<Flux_AnimationClip*>& axAnimations,
 		uint32_t uFramesPerSecond = 30
 	);
 
@@ -133,15 +133,15 @@ private:
 		const Zenith_SkeletonAsset* pxSkeleton,
 		const Flux_AnimationClip* pxAnimation,
 		float fTime,
-		std::vector<Zenith_Maths::Vector4>& axOutPositions
+		Zenith_Vector<Zenith_Maths::Vector4>& axOutPositions
 	) const;
 
 	//-------------------------------------------------------------------------
 	// Data
 	//-------------------------------------------------------------------------
 	Header m_xHeader = {};
-	std::vector<AnimationInfo> m_axAnimations;
-	std::vector<uint16_t> m_axTextureData;  // RGBA16F data (4 × uint16 per pixel)
+	Zenith_Vector<AnimationInfo> m_axAnimations;
+	Zenith_Vector<uint16_t> m_axTextureData;  // RGBA16F data (4 × uint16 per pixel)
 
 	Flux_Texture m_xPositionTexture;
 	bool m_bGPUResourcesCreated = false;

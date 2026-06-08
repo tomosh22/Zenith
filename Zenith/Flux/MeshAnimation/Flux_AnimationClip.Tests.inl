@@ -43,7 +43,7 @@ void Zenith_UnitTests::TestRootMotionPositionDisabled()
 {
 	Flux_RootMotion xRM;
 	xRM.m_bEnabled = false; // disabled — even with data, returns identity
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f), 0.0f });
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f), 0.0f);
 	Zenith_Maths::Vector3 xResult = xRM.SamplePositionDelta(0.5f);
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xResult, Zenith_Maths::Vector3(0.0f)),
 		"Disabled root motion must return zero vector regardless of data");
@@ -54,7 +54,7 @@ void Zenith_UnitTests::TestRootMotionPositionSingleKeyframe()
 {
 	Flux_RootMotion xRM;
 	xRM.m_bEnabled = true;
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f), 0.0f });
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f), 0.0f);
 	// Single keyframe — fTime irrelevant, returns that keyframe's value.
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xRM.SamplePositionDelta(0.0f), Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f)),
 		"Single keyframe must return that keyframe's value at t=0");
@@ -67,8 +67,8 @@ void Zenith_UnitTests::TestRootMotionPositionInterpolatesBetween()
 {
 	Flux_RootMotion xRM;
 	xRM.m_bEnabled = true;
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f });
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f), 1.0f });
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f), 1.0f);
 	// fTime=0.5 → midpoint between (0,0,0) at t=0 and (10,20,30) at t=1.
 	Zenith_Maths::Vector3 xResult = xRM.SamplePositionDelta(0.5f);
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xResult, Zenith_Maths::Vector3(5.0f, 10.0f, 15.0f)),
@@ -80,8 +80,8 @@ void Zenith_UnitTests::TestRootMotionPositionPastEnd()
 {
 	Flux_RootMotion xRM;
 	xRM.m_bEnabled = true;
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), 0.0f });
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f), 1.0f });
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f), 1.0f);
 	// fTime past last keyframe — clamps to back value.
 	Zenith_Maths::Vector3 xResult = xRM.SamplePositionDelta(2.0f);
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xResult, Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f)),
@@ -96,9 +96,9 @@ void Zenith_UnitTests::TestRootMotionPositionIdenticalTimestamps()
 	// Two keyframes at the same timestamp would normally trigger div-by-zero
 	// in the lerp parameter; the helper must guard against this and return
 	// the lower keyframe's value.
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 0.0f });
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(99.0f, 99.0f, 99.0f), 0.0f });
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 1.0f });
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(99.0f, 99.0f, 99.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 1.0f);
 	// At fTime < second keyframe timestamp (which is 0.0, same as first),
 	// the bracket-finder uses i=0 with i+1 having same time — guard kicks
 	// in and returns xKeys[0].first.
@@ -112,8 +112,8 @@ void Zenith_UnitTests::TestRootMotionPositionExactKeyframeMatch()
 {
 	Flux_RootMotion xRM;
 	xRM.m_bEnabled = true;
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(0.0f), 0.0f });
-	xRM.m_xPositionDeltas.push_back({ Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f });
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f);
 	// fTime exactly at the first keyframe — bracket [0,1] with t=0,
 	// expect (0,0,0) (or extremely close).
 	Zenith_Maths::Vector3 xResult = xRM.SamplePositionDelta(0.0f);
@@ -140,7 +140,7 @@ void Zenith_UnitTests::TestRootMotionRotationSingleKeyframe()
 	xRM.m_bEnabled = true;
 	// 90 degrees rotation around Y axis as a quaternion.
 	Zenith_Maths::Quat xQuat = glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-	xRM.m_xRotationDeltas.push_back({ xQuat, 0.0f });
+	xRM.m_xRotationDeltas.EmplaceBack(xQuat, 0.0f);
 	Zenith_Maths::Quat xResult = xRM.SampleRotationDelta(0.0f);
 	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xResult, xQuat),
 		"Single rotation keyframe must return that quaternion");
@@ -153,8 +153,8 @@ void Zenith_UnitTests::TestRootMotionRotationInterpolatesBetween()
 	xRM.m_bEnabled = true;
 	Zenith_Maths::Quat xQ0 = glm::angleAxis(glm::radians(0.0f),  Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 	Zenith_Maths::Quat xQ1 = glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-	xRM.m_xRotationDeltas.push_back({ xQ0, 0.0f });
-	xRM.m_xRotationDeltas.push_back({ xQ1, 1.0f });
+	xRM.m_xRotationDeltas.EmplaceBack(xQ0, 0.0f);
+	xRM.m_xRotationDeltas.EmplaceBack(xQ1, 1.0f);
 	// fTime=0.5 → slerp midpoint = 45 degrees Y-rotation.
 	Zenith_Maths::Quat xExpected = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 	Zenith_Maths::Quat xResult = xRM.SampleRotationDelta(0.5f);
@@ -169,8 +169,8 @@ void Zenith_UnitTests::TestRootMotionRotationPastEnd()
 	xRM.m_bEnabled = true;
 	Zenith_Maths::Quat xQ0 = glm::angleAxis(glm::radians(0.0f),  Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 	Zenith_Maths::Quat xQ1 = glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-	xRM.m_xRotationDeltas.push_back({ xQ0, 0.0f });
-	xRM.m_xRotationDeltas.push_back({ xQ1, 1.0f });
+	xRM.m_xRotationDeltas.EmplaceBack(xQ0, 0.0f);
+	xRM.m_xRotationDeltas.EmplaceBack(xQ1, 1.0f);
 	Zenith_Maths::Quat xResult = xRM.SampleRotationDelta(99.0f);
 	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xResult, xQ1),
 		"fTime past last rotation keyframe must clamp to back value");

@@ -12,24 +12,24 @@
 template<>
 void Zenith_DebugVariableTree::LeafNode<bool>::ImGuiDisplay()
 {
-	ImGui::Checkbox(m_xName.back().c_str(), m_pData);
+	ImGui::Checkbox(m_xName.GetBack().c_str(), m_pData);
 }
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector2, float>::ImGuiDisplay()
 {
-	ImGui::SliderFloat2(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
+	ImGui::SliderFloat2(m_xName.GetBack().c_str(), &m_pData->x, m_xMin, m_xMax);
 }
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>::ImGuiDisplay()
 {
-	ImGui::SliderFloat3(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
+	ImGui::SliderFloat3(m_xName.GetBack().c_str(), &m_pData->x, m_xMin, m_xMax);
 }
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>::ImGuiDisplay()
 {
-	ImGui::SliderFloat4(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
+	ImGui::SliderFloat4(m_xName.GetBack().c_str(), &m_pData->x, m_xMin, m_xMax);
 }
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>::ImGuiDisplay()
@@ -39,7 +39,7 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>:
 	int iTempZ = static_cast<int>(m_pData->z);
 	int iTempW = static_cast<int>(m_pData->w);
 	int aiTemp[4] = { iTempX, iTempY, iTempZ, iTempW };
-	ImGui::InputInt4(m_xName.back().c_str(), aiTemp);
+	ImGui::InputInt4(m_xName.GetBack().c_str(), aiTemp);
 	m_pData->x = aiTemp[0];
 	m_pData->y = aiTemp[1];
 	m_pData->z = aiTemp[2];
@@ -49,7 +49,7 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>:
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
 {
-	ImGui::SliderFloat(m_xName.back().c_str(), m_pData, m_xMin, m_xMax, "%.7f");
+	ImGui::SliderFloat(m_xName.GetBack().c_str(), m_pData, m_xMin, m_xMax, "%.7f");
 }
 
 template<>
@@ -78,30 +78,30 @@ void Zenith_DebugVariableTree::TextureCallbackLeafNode::ImGuiDisplay()
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>::ImGuiDisplay()
 {
-	ImGui::SliderInt(m_xName.back().c_str(), (int*)(m_pData), m_xMin, m_xMax);
+	ImGui::SliderInt(m_xName.GetBack().c_str(), (int*)(m_pData), m_xMin, m_xMax);
 }
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>::ImGuiDisplay()
 {
-	ImGui::Text("%s: %u", m_xName.back().c_str(), *m_pData);
+	ImGui::Text("%s: %u", m_xName.GetBack().c_str(), *m_pData);
 }
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeReadOnly<uint64_t>::ImGuiDisplay()
 {
-	ImGui::Text("%s: %llu", m_xName.back().c_str(), *m_pData);
+	ImGui::Text("%s: %llu", m_xName.GetBack().c_str(), *m_pData);
 }
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeReadOnly<float>::ImGuiDisplay()
 {
-	ImGui::Text("%s: %.3f", m_xName.back().c_str(), *m_pData);
+	ImGui::Text("%s: %.3f", m_xName.GetBack().c_str(), *m_pData);
 }
 
 void Zenith_DebugVariableTree::PfnLeafNode::ImGuiDisplay()
 {
-	if (ImGui::Button(m_xName.back().c_str()))
+	if (ImGui::Button(m_xName.GetBack().c_str()))
 	{
 		(*m_pData)();
 	}
@@ -119,7 +119,7 @@ void Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::
 	{
 		for (Node* pxChildNode : pxNode->m_xChildren)
 		{
-			if (pxChildNode->m_xName[uMaxDepth + 1] == xSplits[uMaxDepth])
+			if (pxChildNode->m_xName.Get(uMaxDepth + 1) == xSplits[uMaxDepth])
 			{
 				delete pxNodeToAdd;
 				pxResult = pxChildNode;
@@ -127,14 +127,14 @@ void Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::
 				return;
 			}
 		}
-		pxNode->m_xChildren.push_back(pxNodeToAdd);
+		pxNode->m_xChildren.PushBack(pxNodeToAdd);
 		pxResult = pxNodeToAdd;
 		bSuccess = true;
 		return;
 	}
 	for (Node* pxChildNode : pxNode->m_xChildren)
 	{
-		if (pxChildNode->m_xName[uCurrentDepth + 1] == xSplits[uCurrentDepth])
+		if (pxChildNode->m_xName.Get(uCurrentDepth + 1) == xSplits[uCurrentDepth])
 		{
 			TryAddNode(pxNodeToAdd, pxChildNode, xSplits, uCurrentDepth + 1, uMaxDepth, bSuccess, pxResult);
 		}
@@ -147,21 +147,21 @@ void Zenith_DebugVariableTree::AddLeafNode(LeafNodeBase* pxLeafNode, std::vector
 	// Guard against underflow when xSplits.size() is 0 or 1
 	if (xSplits.size() < 2)
 	{
-		pxParent->m_xLeaves.push_back(pxLeafNode);
+		pxParent->m_xLeaves.PushBack(pxLeafNode);
 		return;
 	}
 	for (uint32_t u = 0; u < xSplits.size() - 1; u++)
 	{
 		Node* pxNodeToAdd = new Node;
-		pxNodeToAdd->m_xName.push_back(ROOT_NAME);
+		pxNodeToAdd->m_xName.PushBack(ROOT_NAME);
 		for (uint32_t uSub = 0; uSub < u + 1; uSub++)
 		{
-			pxNodeToAdd->m_xName.push_back(xSplits[uSub]);
+			pxNodeToAdd->m_xName.PushBack(xSplits[uSub]);
 		}
 		bool bSuccess = false;
 		TryAddNode(pxNodeToAdd, m_pxRoot, xSplits, 0, u, bSuccess, pxParent);
 	}
-	pxParent->m_xLeaves.push_back(pxLeafNode);
+	pxParent->m_xLeaves.PushBack(pxLeafNode);
 }
 
 #endif

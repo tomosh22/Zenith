@@ -195,17 +195,17 @@ static bool RaycastPhysicsMesh(
 
 void Zenith_SelectionSystem::Initialise()
 {
-	g_xEngine.Selection().m_xEntityBoundingBoxes.clear();
+	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
 }
 
 void Zenith_SelectionSystem::Shutdown()
 {
-	g_xEngine.Selection().m_xEntityBoundingBoxes.clear();
+	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
 }
 
 void Zenith_SelectionSystem::UpdateBoundingBoxes()
 {
-	g_xEngine.Selection().m_xEntityBoundingBoxes.clear();
+	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
 
 	// Iterate every entity in every loaded scene via TransformComponent (every
 	// entity is guaranteed to have one — see EntityComponent/CLAUDE.md). This
@@ -246,10 +246,10 @@ BoundingBox Zenith_SelectionSystem::GetEntityBoundingBox(Zenith_Entity* pxEntity
 	}
 	
 	Zenith_EntityID uEntityID = pxEntity->GetEntityID();
-	auto it = g_xEngine.Selection().m_xEntityBoundingBoxes.find(uEntityID);
-	if (it != g_xEngine.Selection().m_xEntityBoundingBoxes.end())
+	const BoundingBox* pxCached = g_xEngine.Selection().m_xEntityBoundingBoxes.TryGet(uEntityID);
+	if (pxCached)
 	{
-		return it->second;
+		return *pxCached;
 	}
 	
 	// Calculate on-demand if not cached
@@ -266,11 +266,11 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 	const Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// AABB cull: reject before touching mesh data.
-	const auto it = g_xEngine.Selection().m_xEntityBoundingBoxes.find(uEntityID);
-	if (it != g_xEngine.Selection().m_xEntityBoundingBoxes.end())
+	const BoundingBox* pxBox = g_xEngine.Selection().m_xEntityBoundingBoxes.TryGet(uEntityID);
+	if (pxBox)
 	{
 		float fBBoxDistance;
-		if (!it->second.Intersects(xRayOrigin, xRayDir, fBBoxDistance))
+		if (!pxBox->Intersects(xRayOrigin, xRayDir, fBBoxDistance))
 			return false;
 		if (fBBoxDistance > fMaxDistance)
 			return false;
@@ -291,11 +291,11 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 		return RaycastPhysicsMesh(xRayOrigin, xRayDir, pxPhysicsMesh, xTransformMatrix, fOutDistance);
 	}
 
-	if (it == g_xEngine.Selection().m_xEntityBoundingBoxes.end())
+	if (!pxBox)
 		return false;
 
 	float fBBoxDistance;
-	if (!it->second.Intersects(xRayOrigin, xRayDir, fBBoxDistance))
+	if (!pxBox->Intersects(xRayOrigin, xRayDir, fBBoxDistance))
 		return false;
 
 	fOutDistance = fBBoxDistance;

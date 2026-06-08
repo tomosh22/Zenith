@@ -603,9 +603,9 @@ void Zenith_AnimatorComponent::RenderAnimationClipsSection()
 
 	// Loaded clips list
 	const auto& xClips = xController.GetClipCollection().GetClips();
-	for (size_t i = 0; i < xClips.size(); ++i)
+	for (u_int i = 0; i < xClips.GetSize(); ++i)
 	{
-		Flux_AnimationClip* pxClip = xClips[i];
+		Flux_AnimationClip* pxClip = xClips.Get(i);
 		if (!pxClip)
 			continue;
 

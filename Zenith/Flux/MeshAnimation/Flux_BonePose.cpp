@@ -313,7 +313,7 @@ void Flux_SkeletonPose::ComputeModelSpaceMatricesRecursive(const Flux_MeshAnimat
 	// Recurse to children
 	for (uint32_t i = 0; i < pxNode->m_uChildCount; ++i)
 	{
-		ComputeModelSpaceMatricesRecursive(&pxNode->m_xChildren[i], xGlobalTransform, xGeometry);
+		ComputeModelSpaceMatricesRecursive(&pxNode->m_xChildren.Get(i), xGlobalTransform, xGeometry);
 	}
 }
 

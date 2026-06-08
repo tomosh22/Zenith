@@ -4,7 +4,7 @@
 
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorState.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 
 //=============================================================================
@@ -17,15 +17,15 @@
 struct ContentBrowserState
 {
 	std::string& m_strCurrentDirectory;
-	std::vector<ContentBrowserEntry>& m_xDirectoryContents;
-	std::vector<ContentBrowserEntry>& m_xFilteredContents;
+	Zenith_Vector<ContentBrowserEntry>& m_xDirectoryContents;
+	Zenith_Vector<ContentBrowserEntry>& m_xFilteredContents;
 	bool& m_bDirectoryNeedsRefresh;
 	char* m_szSearchBuffer;
 	size_t m_uSearchBufferSize;
 	int& m_iAssetTypeFilter;
 	int& m_iSelectedContentIndex;
 	float& m_fThumbnailSize;
-	std::vector<std::string>& m_axNavigationHistory;
+	Zenith_Vector<std::string>& m_axNavigationHistory;
 	int& m_iHistoryIndex;
 	ContentBrowserViewMode& m_eViewMode;
 };

@@ -65,25 +65,25 @@ void Flux_AnimationClipMetadata::ReadFromDataStream(Zenith_DataStream& xStream)
 // (a, b, t) and return the interpolated value (mix for vectors, slerp for
 // quaternions).
 template<typename T, typename InterpFn>
-static T SampleRootMotionDeltas(const std::vector<std::pair<T, float>>& xKeys,
+static T SampleRootMotionDeltas(const Zenith_Vector<std::pair<T, float>>& xKeys,
 								float fTime, bool bEnabled, const T& xIdentity,
 								InterpFn fnInterp)
 {
-	if (!bEnabled || xKeys.empty()) return xIdentity;
-	if (xKeys.size() == 1)           return xKeys[0].first;
+	if (!bEnabled || xKeys.GetSize() == 0) return xIdentity;
+	if (xKeys.GetSize() == 1)              return xKeys.Get(0).first;
 
-	for (size_t i = 0; i < xKeys.size() - 1; ++i)
+	for (u_int i = 0; i < xKeys.GetSize() - 1; ++i)
 	{
-		if (fTime < xKeys[i + 1].second)
+		if (fTime < xKeys.Get(i + 1).second)
 		{
-			float fTimeDelta = xKeys[i + 1].second - xKeys[i].second;
+			float fTimeDelta = xKeys.Get(i + 1).second - xKeys.Get(i).second;
 			// Guard against division by zero (identical keyframe timestamps)
-			if (fTimeDelta <= 0.0f) return xKeys[i].first;
-			float t = (fTime - xKeys[i].second) / fTimeDelta;
-			return fnInterp(xKeys[i].first, xKeys[i + 1].first, t);
+			if (fTimeDelta <= 0.0f) return xKeys.Get(i).first;
+			float t = (fTime - xKeys.Get(i).second) / fTimeDelta;
+			return fnInterp(xKeys.Get(i).first, xKeys.Get(i + 1).first, t);
 		}
 	}
-	return xKeys.back().first;
+	return xKeys.GetBack().first;
 }
 
 Zenith_Maths::Vector3 Flux_RootMotion::SamplePositionDelta(float fTime) const
@@ -106,7 +106,7 @@ void Flux_RootMotion::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_bEnabled;
 
-	uint32_t uNumPosDelta = static_cast<uint32_t>(m_xPositionDeltas.size());
+	uint32_t uNumPosDelta = static_cast<uint32_t>(m_xPositionDeltas.GetSize());
 	xStream << uNumPosDelta;
 	for (const auto& xDelta : m_xPositionDeltas)
 	{
@@ -116,7 +116,7 @@ void Flux_RootMotion::WriteToDataStream(Zenith_DataStream& xStream) const
 		xStream << xDelta.second;
 	}
 
-	uint32_t uNumRotDelta = static_cast<uint32_t>(m_xRotationDeltas.size());
+	uint32_t uNumRotDelta = static_cast<uint32_t>(m_xRotationDeltas.GetSize());
 	xStream << uNumRotDelta;
 	for (const auto& xDelta : m_xRotationDeltas)
 	{
@@ -134,25 +134,31 @@ void Flux_RootMotion::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	uint32_t uNumPosDelta = 0;
 	xStream >> uNumPosDelta;
-	m_xPositionDeltas.resize(uNumPosDelta);
-	for (uint32_t i = 0; i < uNumPosDelta; ++i)
+	m_xPositionDeltas.Clear();
+	m_xPositionDeltas.Reserve(uNumPosDelta);
+	for (u_int i = 0; i < uNumPosDelta; ++i)
 	{
-		xStream >> m_xPositionDeltas[i].first.x;
-		xStream >> m_xPositionDeltas[i].first.y;
-		xStream >> m_xPositionDeltas[i].first.z;
-		xStream >> m_xPositionDeltas[i].second;
+		std::pair<Zenith_Maths::Vector3, float> xDelta;
+		xStream >> xDelta.first.x;
+		xStream >> xDelta.first.y;
+		xStream >> xDelta.first.z;
+		xStream >> xDelta.second;
+		m_xPositionDeltas.PushBack(xDelta);
 	}
 
 	uint32_t uNumRotDelta = 0;
 	xStream >> uNumRotDelta;
-	m_xRotationDeltas.resize(uNumRotDelta);
-	for (uint32_t i = 0; i < uNumRotDelta; ++i)
+	m_xRotationDeltas.Clear();
+	m_xRotationDeltas.Reserve(uNumRotDelta);
+	for (u_int i = 0; i < uNumRotDelta; ++i)
 	{
-		xStream >> m_xRotationDeltas[i].first.w;
-		xStream >> m_xRotationDeltas[i].first.x;
-		xStream >> m_xRotationDeltas[i].first.y;
-		xStream >> m_xRotationDeltas[i].first.z;
-		xStream >> m_xRotationDeltas[i].second;
+		std::pair<Zenith_Maths::Quat, float> xDelta;
+		xStream >> xDelta.first.w;
+		xStream >> xDelta.first.x;
+		xStream >> xDelta.first.y;
+		xStream >> xDelta.first.z;
+		xStream >> xDelta.second;
+		m_xRotationDeltas.PushBack(xDelta);
 	}
 }
 
@@ -165,34 +171,34 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 	m_strBoneName = pxChannel->mNodeName.data;
 
 	// Load position keyframes
-	m_xPositions.reserve(pxChannel->mNumPositionKeys);
+	m_xPositions.Reserve(pxChannel->mNumPositionKeys);
 	for (uint32_t i = 0; i < pxChannel->mNumPositionKeys; ++i)
 	{
 		const aiVectorKey& xKey = pxChannel->mPositionKeys[i];
-		m_xPositions.emplace_back(
+		m_xPositions.EmplaceBack(
 			Zenith_Maths::Vector3(xKey.mValue.x, xKey.mValue.y, xKey.mValue.z),
 			static_cast<float>(xKey.mTime)
 		);
 	}
 
 	// Load rotation keyframes
-	m_xRotations.reserve(pxChannel->mNumRotationKeys);
+	m_xRotations.Reserve(pxChannel->mNumRotationKeys);
 	for (uint32_t i = 0; i < pxChannel->mNumRotationKeys; ++i)
 	{
 		const aiQuatKey& xKey = pxChannel->mRotationKeys[i];
 		// Assimp uses WXYZ order for quaternions
-		m_xRotations.emplace_back(
+		m_xRotations.EmplaceBack(
 			Zenith_Maths::Quat(xKey.mValue.w, xKey.mValue.x, xKey.mValue.y, xKey.mValue.z),
 			static_cast<float>(xKey.mTime)
 		);
 	}
 
 	// Load scale keyframes
-	m_xScales.reserve(pxChannel->mNumScalingKeys);
+	m_xScales.Reserve(pxChannel->mNumScalingKeys);
 	for (uint32_t i = 0; i < pxChannel->mNumScalingKeys; ++i)
 	{
 		const aiVectorKey& xKey = pxChannel->mScalingKeys[i];
-		m_xScales.emplace_back(
+		m_xScales.EmplaceBack(
 			Zenith_Maths::Vector3(xKey.mValue.x, xKey.mValue.y, xKey.mValue.z),
 			static_cast<float>(xKey.mTime)
 		);
@@ -202,9 +208,9 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 
 uint32_t Flux_BoneChannel::GetPositionIndex(float fTime) const
 {
-	for (uint32_t i = 0; i < static_cast<uint32_t>(m_xPositions.size()) - 1; ++i)
+	for (u_int i = 0; i < m_xPositions.GetSize() - 1; ++i)
 	{
-		if (fTime < m_xPositions[i + 1].second)
+		if (fTime < m_xPositions.Get(i + 1).second)
 			return i;
 	}
 	return 0;
@@ -212,9 +218,9 @@ uint32_t Flux_BoneChannel::GetPositionIndex(float fTime) const
 
 uint32_t Flux_BoneChannel::GetRotationIndex(float fTime) const
 {
-	for (uint32_t i = 0; i < static_cast<uint32_t>(m_xRotations.size()) - 1; ++i)
+	for (u_int i = 0; i < m_xRotations.GetSize() - 1; ++i)
 	{
-		if (fTime < m_xRotations[i + 1].second)
+		if (fTime < m_xRotations.Get(i + 1).second)
 			return i;
 	}
 	return 0;
@@ -222,9 +228,9 @@ uint32_t Flux_BoneChannel::GetRotationIndex(float fTime) const
 
 uint32_t Flux_BoneChannel::GetScaleIndex(float fTime) const
 {
-	for (uint32_t i = 0; i < static_cast<uint32_t>(m_xScales.size()) - 1; ++i)
+	for (u_int i = 0; i < m_xScales.GetSize() - 1; ++i)
 	{
-		if (fTime < m_xScales[i + 1].second)
+		if (fTime < m_xScales.Get(i + 1).second)
 			return i;
 	}
 	return 0;
@@ -241,50 +247,50 @@ float Flux_BoneChannel::GetScaleFactor(float fLastTime, float fNextTime, float f
 
 Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTime) const
 {
-	if (m_xPositions.empty())
+	if (m_xPositions.GetSize() == 0)
 		return Zenith_Maths::Vector3(0.0f);
 
-	if (m_xPositions.size() == 1)
-		return m_xPositions[0].first;
+	if (m_xPositions.GetSize() == 1)
+		return m_xPositions.Get(0).first;
 
 	uint32_t p0Index = GetPositionIndex(fTime);
 	uint32_t p1Index = p0Index + 1;
 
-	if (p1Index >= m_xPositions.size())
-		return m_xPositions[p0Index].first;
+	if (p1Index >= m_xPositions.GetSize())
+		return m_xPositions.Get(p0Index).first;
 
 	float fScaleFactor = GetScaleFactor(
-		m_xPositions[p0Index].second,
-		m_xPositions[p1Index].second,
+		m_xPositions.Get(p0Index).second,
+		m_xPositions.Get(p1Index).second,
 		fTime
 	);
 
-	return glm::mix(m_xPositions[p0Index].first, m_xPositions[p1Index].first, fScaleFactor);
+	return glm::mix(m_xPositions.Get(p0Index).first, m_xPositions.Get(p1Index).first, fScaleFactor);
 }
 
 Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTime) const
 {
-	if (m_xRotations.empty())
+	if (m_xRotations.GetSize() == 0)
 		return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
 
-	if (m_xRotations.size() == 1)
-		return glm::normalize(m_xRotations[0].first);
+	if (m_xRotations.GetSize() == 1)
+		return glm::normalize(m_xRotations.Get(0).first);
 
 	uint32_t p0Index = GetRotationIndex(fTime);
 	uint32_t p1Index = p0Index + 1;
 
-	if (p1Index >= m_xRotations.size())
-		return glm::normalize(m_xRotations[p0Index].first);
+	if (p1Index >= m_xRotations.GetSize())
+		return glm::normalize(m_xRotations.Get(p0Index).first);
 
 	float fScaleFactor = GetScaleFactor(
-		m_xRotations[p0Index].second,
-		m_xRotations[p1Index].second,
+		m_xRotations.Get(p0Index).second,
+		m_xRotations.Get(p1Index).second,
 		fTime
 	);
 
 	Zenith_Maths::Quat xResult = glm::slerp(
-		m_xRotations[p0Index].first,
-		m_xRotations[p1Index].first,
+		m_xRotations.Get(p0Index).first,
+		m_xRotations.Get(p1Index).first,
 		fScaleFactor
 	);
 
@@ -293,25 +299,25 @@ Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTime) const
 
 Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTime) const
 {
-	if (m_xScales.empty())
+	if (m_xScales.GetSize() == 0)
 		return Zenith_Maths::Vector3(1.0f);
 
-	if (m_xScales.size() == 1)
-		return m_xScales[0].first;
+	if (m_xScales.GetSize() == 1)
+		return m_xScales.Get(0).first;
 
 	uint32_t p0Index = GetScaleIndex(fTime);
 	uint32_t p1Index = p0Index + 1;
 
-	if (p1Index >= m_xScales.size())
-		return m_xScales[p0Index].first;
+	if (p1Index >= m_xScales.GetSize())
+		return m_xScales.Get(p0Index).first;
 
 	float fScaleFactor = GetScaleFactor(
-		m_xScales[p0Index].second,
-		m_xScales[p1Index].second,
+		m_xScales.Get(p0Index).second,
+		m_xScales.Get(p1Index).second,
 		fTime
 	);
 
-	return glm::mix(m_xScales[p0Index].first, m_xScales[p1Index].first, fScaleFactor);
+	return glm::mix(m_xScales.Get(p0Index).first, m_xScales.Get(p1Index).first, fScaleFactor);
 }
 
 Zenith_Maths::Matrix4 Flux_BoneChannel::Sample(float fTime) const
@@ -332,7 +338,7 @@ void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_strBoneName;
 
 	// Positions
-	uint32_t uNumPositions = static_cast<uint32_t>(m_xPositions.size());
+	uint32_t uNumPositions = static_cast<uint32_t>(m_xPositions.GetSize());
 	xStream << uNumPositions;
 	for (const auto& xKey : m_xPositions)
 	{
@@ -343,7 +349,7 @@ void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 
 	// Rotations
-	uint32_t uNumRotations = static_cast<uint32_t>(m_xRotations.size());
+	uint32_t uNumRotations = static_cast<uint32_t>(m_xRotations.GetSize());
 	xStream << uNumRotations;
 	for (const auto& xKey : m_xRotations)
 	{
@@ -355,7 +361,7 @@ void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 
 	// Scales
-	uint32_t uNumScales = static_cast<uint32_t>(m_xScales.size());
+	uint32_t uNumScales = static_cast<uint32_t>(m_xScales.GetSize());
 	xStream << uNumScales;
 	for (const auto& xKey : m_xScales)
 	{
@@ -373,54 +379,63 @@ void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Positions
 	uint32_t uNumPositions = 0;
 	xStream >> uNumPositions;
-	m_xPositions.resize(uNumPositions);
-	for (uint32_t i = 0; i < uNumPositions; ++i)
+	m_xPositions.Clear();
+	m_xPositions.Reserve(uNumPositions);
+	for (u_int i = 0; i < uNumPositions; ++i)
 	{
-		xStream >> m_xPositions[i].first.x;
-		xStream >> m_xPositions[i].first.y;
-		xStream >> m_xPositions[i].first.z;
-		xStream >> m_xPositions[i].second;
+		std::pair<Zenith_Maths::Vector3, float> xKey;
+		xStream >> xKey.first.x;
+		xStream >> xKey.first.y;
+		xStream >> xKey.first.z;
+		xStream >> xKey.second;
+		m_xPositions.PushBack(xKey);
 	}
 
 	// Rotations
 	uint32_t uNumRotations = 0;
 	xStream >> uNumRotations;
-	m_xRotations.resize(uNumRotations);
-	for (uint32_t i = 0; i < uNumRotations; ++i)
+	m_xRotations.Clear();
+	m_xRotations.Reserve(uNumRotations);
+	for (u_int i = 0; i < uNumRotations; ++i)
 	{
-		xStream >> m_xRotations[i].first.w;
-		xStream >> m_xRotations[i].first.x;
-		xStream >> m_xRotations[i].first.y;
-		xStream >> m_xRotations[i].first.z;
-		xStream >> m_xRotations[i].second;
+		std::pair<Zenith_Maths::Quat, float> xKey;
+		xStream >> xKey.first.w;
+		xStream >> xKey.first.x;
+		xStream >> xKey.first.y;
+		xStream >> xKey.first.z;
+		xStream >> xKey.second;
+		m_xRotations.PushBack(xKey);
 	}
 
 	// Scales
 	uint32_t uNumScales = 0;
 	xStream >> uNumScales;
-	m_xScales.resize(uNumScales);
-	for (uint32_t i = 0; i < uNumScales; ++i)
+	m_xScales.Clear();
+	m_xScales.Reserve(uNumScales);
+	for (u_int i = 0; i < uNumScales; ++i)
 	{
-		xStream >> m_xScales[i].first.x;
-		xStream >> m_xScales[i].first.y;
-		xStream >> m_xScales[i].first.z;
-		xStream >> m_xScales[i].second;
+		std::pair<Zenith_Maths::Vector3, float> xKey;
+		xStream >> xKey.first.x;
+		xStream >> xKey.first.y;
+		xStream >> xKey.first.z;
+		xStream >> xKey.second;
+		m_xScales.PushBack(xKey);
 	}
 }
 
 void Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition)
 {
-	m_xPositions.emplace_back(xPosition, fTimeTicks);
+	m_xPositions.EmplaceBack(xPosition, fTimeTicks);
 }
 
 void Flux_BoneChannel::AddRotationKeyframe(float fTimeTicks, const Zenith_Maths::Quat& xRotation)
 {
-	m_xRotations.emplace_back(xRotation, fTimeTicks);
+	m_xRotations.EmplaceBack(xRotation, fTimeTicks);
 }
 
 void Flux_BoneChannel::AddScaleKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xScale)
 {
-	m_xScales.emplace_back(xScale, fTimeTicks);
+	m_xScales.EmplaceBack(xScale, fTimeTicks);
 }
 
 void Flux_BoneChannel::SortKeyframes()
@@ -478,7 +493,7 @@ bool Flux_AnimationClip::HasBoneChannel(const std::string& strBoneName) const
 
 void Flux_AnimationClip::AddEvent(const Flux_AnimationEvent& xEvent)
 {
-	m_xEvents.push_back(xEvent);
+	m_xEvents.PushBack(xEvent);
 	// Keep events sorted by time
 	std::sort(m_xEvents.begin(), m_xEvents.end(),
 		[](const Flux_AnimationEvent& a, const Flux_AnimationEvent& b) {
@@ -486,10 +501,10 @@ void Flux_AnimationClip::AddEvent(const Flux_AnimationEvent& xEvent)
 		});
 }
 
-void Flux_AnimationClip::RemoveEvent(size_t uIndex)
+void Flux_AnimationClip::RemoveEvent(u_int uIndex)
 {
-	if (uIndex < m_xEvents.size())
-		m_xEvents.erase(m_xEvents.begin() + uIndex);
+	if (uIndex < m_xEvents.GetSize())
+		m_xEvents.Remove(uIndex);
 }
 
 void Flux_AnimationClip::AddBoneChannel(const std::string& strBoneName, Flux_BoneChannel&& xChannel)
@@ -515,7 +530,7 @@ void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 
 	// Events
-	uint32_t uNumEvents = static_cast<uint32_t>(m_xEvents.size());
+	uint32_t uNumEvents = static_cast<uint32_t>(m_xEvents.GetSize());
 	xStream << uNumEvents;
 	for (const auto& xEvent : m_xEvents)
 	{
@@ -549,10 +564,13 @@ void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Events
 	uint32_t uNumEvents = 0;
 	xStream >> uNumEvents;
-	m_xEvents.resize(uNumEvents);
-	for (uint32_t i = 0; i < uNumEvents; ++i)
+	m_xEvents.Clear();
+	m_xEvents.Reserve(uNumEvents);
+	for (u_int i = 0; i < uNumEvents; ++i)
 	{
-		m_xEvents[i].ReadFromDataStream(xStream);
+		Flux_AnimationEvent xEvent;
+		xEvent.ReadFromDataStream(xStream);
+		m_xEvents.PushBack(xEvent);
 	}
 
 	// Root motion
@@ -574,7 +592,7 @@ Flux_AnimationClipCollection::Flux_AnimationClipCollection(Flux_AnimationClipCol
 {
 	// Clear the moved-from object's containers to prevent double-delete
 	xOther.m_xClipsByName.Clear();
-	xOther.m_xClips.clear();
+	xOther.m_xClips.Clear();
 	xOther.m_xBorrowedClips.Clear();
 }
 
@@ -592,7 +610,7 @@ Flux_AnimationClipCollection& Flux_AnimationClipCollection::operator=(Flux_Anima
 
 		// Clear the moved-from object's containers to prevent double-delete
 		xOther.m_xClipsByName.Clear();
-		xOther.m_xClips.clear();
+		xOther.m_xClips.Clear();
 		xOther.m_xBorrowedClips.Clear();
 	}
 	return *this;
@@ -610,7 +628,7 @@ void Flux_AnimationClipCollection::AddClip(Flux_AnimationClip* pxClip)
 		RemoveClip(strName);
 
 	m_xClipsByName[strName] = pxClip;
-	m_xClips.push_back(pxClip);
+	m_xClips.PushBack(pxClip);
 }
 
 void Flux_AnimationClipCollection::AddClipReference(Flux_AnimationClip* pxClip)
@@ -625,7 +643,7 @@ void Flux_AnimationClipCollection::AddClipReference(Flux_AnimationClip* pxClip)
 		RemoveClip(strName);
 
 	m_xClipsByName[strName] = pxClip;
-	m_xClips.push_back(pxClip);
+	m_xClips.PushBack(pxClip);
 	m_xBorrowedClips.Insert(pxClip);  // Mark as borrowed (not owned)
 }
 
@@ -636,10 +654,8 @@ void Flux_AnimationClipCollection::RemoveClip(const std::string& strName)
 	{
 		Flux_AnimationClip* pxClip = *ppxClip;
 
-		// Remove from ordered list
-		auto vecIt = std::find(m_xClips.begin(), m_xClips.end(), pxClip);
-		if (vecIt != m_xClips.end())
-			m_xClips.erase(vecIt);
+		// Remove from ordered list (order-preserving)
+		m_xClips.EraseValue(pxClip);
 
 		// Remove from map
 		m_xClipsByName.Remove(strName);
@@ -667,7 +683,7 @@ void Flux_AnimationClipCollection::Clear()
 		}
 	}
 
-	m_xClips.clear();
+	m_xClips.Clear();
 	m_xClipsByName.Clear();
 	m_xBorrowedClips.Clear();
 }
@@ -732,7 +748,7 @@ void Flux_AnimationClipCollection::LoadFromFile(const std::string& strPath)
 
 void Flux_AnimationClipCollection::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	uint32_t uNumClips = static_cast<uint32_t>(m_xClips.size());
+	uint32_t uNumClips = static_cast<uint32_t>(m_xClips.GetSize());
 	xStream << uNumClips;
 
 	for (const Flux_AnimationClip* pxClip : m_xClips)

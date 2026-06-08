@@ -35,7 +35,7 @@ void Zenith_EditorPanelViewport::Render(ViewportState& xState)
 				// Wait 3 frames before deletion to ensure GPU has finished
 				// This accounts for frames in flight (typically 2-3 frames buffered)
 				constexpr u_int FRAMES_TO_WAIT = 3;
-				xState.m_xPendingDeletions.push_back({
+				xState.m_xPendingDeletions.PushBack(PendingImGuiTextureDeletion{
 					xState.m_xCachedGameTextureHandle,
 					FRAMES_TO_WAIT
 				});

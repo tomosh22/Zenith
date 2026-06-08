@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux.h"
+#include "Collections/Zenith_Vector.h"
 
 #define ROOT_NAME "Debug Variables"
 
@@ -16,15 +17,19 @@ public:
 	Zenith_DebugVariableTree()
 	{
 		m_pxRoot = new Node;
-		m_pxRoot->m_xName = { ROOT_NAME };
+		m_pxRoot->m_xName.PushBack(ROOT_NAME);
 	}
 
 	struct LeafNodeBase
 	{
+		LeafNodeBase()
+		{
+			m_xName.PushBack(ROOT_NAME);
+		}
 		virtual ~LeafNodeBase() = default;
 		virtual void ImGuiDisplay() = 0;
 
-		std::vector<std::string> m_xName = { ROOT_NAME };
+		Zenith_Vector<std::string> m_xName;
 	};
 
 	template<typename T>
@@ -36,7 +41,7 @@ public:
 		{
 			for (const std::string& strSection : xName)
 			{
-				m_xName.push_back(strSection);
+				m_xName.PushBack(strSection);
 			}
 			m_pData = data;
 		}
@@ -52,7 +57,7 @@ public:
 		{
 			for (const std::string& strSection : xName)
 			{
-				m_xName.push_back(strSection);
+				m_xName.PushBack(strSection);
 			}
 			m_pData = pfnData;
 		}
@@ -72,7 +77,7 @@ public:
 		{
 			for (const std::string& strSection : xName)
 			{
-				m_xName.push_back(strSection);
+				m_xName.PushBack(strSection);
 			}
 			m_pfnGetSRV = pfnGetSRV;
 		}
@@ -92,7 +97,7 @@ public:
 		{
 			for (const std::string& strSection : xName)
 			{
-				m_xName.push_back(strSection);
+				m_xName.PushBack(strSection);
 			}
 			m_pData = data;
 		}
@@ -109,7 +114,7 @@ public:
 		{
 			for (const std::string& strSection : xName)
 			{
-				m_xName.push_back(strSection);
+				m_xName.PushBack(strSection);
 			}
 			m_pData = data;
 		}
@@ -125,7 +130,7 @@ public:
 		{
 			for (const std::string& strSection : xName)
 			{
-				m_xName.push_back(strSection);
+				m_xName.PushBack(strSection);
 			}
 		}
 
@@ -134,9 +139,9 @@ public:
 
 	struct Node
 	{
-		std::vector<std::string> m_xName;
-		std::vector<Node*> m_xChildren;
-		std::vector<LeafNodeBase*> m_xLeaves;
+		Zenith_Vector<std::string> m_xName;
+		Zenith_Vector<Node*> m_xChildren;
+		Zenith_Vector<LeafNodeBase*> m_xLeaves;
 	};
 
 	void TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::vector<std::string>& xSplits, uint32_t uCurrentDepth, uint32_t uMaxDepth, bool& bSuccess, Node*& pxResult);

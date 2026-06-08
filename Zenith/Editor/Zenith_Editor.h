@@ -17,7 +17,6 @@
 #include "Flux/Flux_Types.h"                              // Flux_ImGuiTextureHandle, Flux_ImageViewHandle
 #include "AssetHandling/Zenith_AssetHandle.h"             // MaterialHandle
 #include "Collections/Zenith_Vector.h"
-#include <vector>
 #include <string>
 #include <unordered_set>
 #include <bitset>
@@ -264,14 +263,14 @@ public:
 
 	// Content Browser state.
 	std::string                       m_strCurrentDirectory;
-	std::vector<ContentBrowserEntry>  m_xDirectoryContents;
-	std::vector<ContentBrowserEntry>  m_xFilteredContents;
+	Zenith_Vector<ContentBrowserEntry> m_xDirectoryContents;
+	Zenith_Vector<ContentBrowserEntry> m_xFilteredContents;
 	bool                              m_bDirectoryNeedsRefresh = true;
 	char                              m_szSearchBuffer[256]    = "";
 	int                               m_iAssetTypeFilter       = 0;
 	int                               m_iSelectedContentIndex  = -1;
 	float                             m_fThumbnailSize         = 80.0f;
-	std::vector<std::string>          m_axNavigationHistory;
+	Zenith_Vector<std::string>        m_axNavigationHistory;
 	int                               m_iHistoryIndex          = -1;
 	ContentBrowserViewMode            m_eViewMode              = ContentBrowserViewMode::Grid;
 
@@ -309,7 +308,7 @@ public:
 	Flux_ImageViewHandle              m_xCachedImageViewHandle;
 
 	// Deferred-deletion queue for ImGui textures (GPU must finish before freeing).
-	std::vector<PendingImGuiTextureDeletion> m_xPendingDeletions;
+	Zenith_Vector<PendingImGuiTextureDeletion> m_xPendingDeletions;
 };
 
 #endif // ZENITH_TOOLS

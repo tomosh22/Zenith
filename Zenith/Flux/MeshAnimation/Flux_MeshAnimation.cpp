@@ -14,30 +14,30 @@ Flux_MeshAnimation::AnimBone::AnimBone(const aiNodeAnim* pxChannel)
 	: m_strName(pxChannel->mNodeName.data)
 {
 	m_uNumPositions = pxChannel->mNumPositionKeys;
-	m_xPositions.resize(m_uNumPositions);
+	m_xPositions.Reserve(m_uNumPositions);
 	for (uint32_t u = 0; u < m_uNumPositions; u++)
 	{
 		const aiVector3D& xPosition = pxChannel->mPositionKeys[u].mValue;
 		const float fTimestamp = static_cast<float>(pxChannel->mPositionKeys[u].mTime);
-		m_xPositions.at(u) = { {xPosition.x, xPosition.y, xPosition.z}, fTimestamp };
+		m_xPositions.PushBack({ {xPosition.x, xPosition.y, xPosition.z}, fTimestamp });
 	}
 
 	m_uNumRotations = pxChannel->mNumRotationKeys;
-	m_xRotations.resize(m_uNumRotations);
+	m_xRotations.Reserve(m_uNumRotations);
 	for (uint32_t u = 0; u < m_uNumRotations; u++)
 	{
 		const aiQuaternion& xRotation = pxChannel->mRotationKeys[u].mValue;
 		const float fTimestamp = static_cast<float>(pxChannel->mRotationKeys[u].mTime);
-		m_xRotations.at(u) = { {xRotation.w, xRotation.x, xRotation.y, xRotation.z}, fTimestamp };
+		m_xRotations.PushBack({ {xRotation.w, xRotation.x, xRotation.y, xRotation.z}, fTimestamp });
 	}
 
 	m_uNumScales = pxChannel->mNumScalingKeys;
-	m_xScales.resize(m_uNumScales);
+	m_xScales.Reserve(m_uNumScales);
 	for (uint32_t u = 0; u < m_uNumScales; u++)
 	{
 		const aiVector3D& xScale = pxChannel->mScalingKeys[u].mValue;
 		const float fTimestamp = static_cast<float>(pxChannel->mScalingKeys[u].mTime);
-		m_xScales.at(u) = { {xScale.x, xScale.y, xScale.z}, fTimestamp };
+		m_xScales.PushBack({ {xScale.x, xScale.y, xScale.z}, fTimestamp });
 	}
 }
 
@@ -68,7 +68,7 @@ static void ReadHierarchy(Flux_MeshAnimation::Node& xDst, const aiNode& xSrc)
 	{
 		Flux_MeshAnimation::Node xNewNode;
 		ReadHierarchy(xNewNode, *xSrc.mChildren[u]);
-		xDst.m_xChildren.push_back(xNewNode);
+		xDst.m_xChildren.PushBack(std::move(xNewNode));
 	}
 }
 #endif // ZENITH_TOOLS
@@ -78,11 +78,11 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 	const std::string& strNodeName = pxNode->m_strName;
 	Zenith_Maths::Matrix4 xNodeTransform = pxNode->m_xTrans;
 
-	if (m_xBones.find(strNodeName) != m_xBones.end())
+	AnimBone* pxBone = m_xBones.TryGet(strNodeName);
+	if (pxBone != nullptr)
 	{
-		AnimBone& xBone = m_xBones.at(strNodeName);
-		xBone.Update(m_fCurrentTimestamp);
-		xNodeTransform = xBone.m_xLocalTransform;
+		pxBone->Update(m_fCurrentTimestamp);
+		xNodeTransform = pxBone->m_xLocalTransform;
 	}
 
 	if (bDebug)
@@ -112,7 +112,7 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 
 	for (u_int u = 0; u < pxNode->m_uChildCount; u++)
 	{
-		CalculateBoneTransform(&pxNode->m_xChildren[u], xGlobalTransformation, bDebug);
+		CalculateBoneTransform(&pxNode->m_xChildren.Get(u), xGlobalTransformation, bDebug);
 	}
 }
 
@@ -149,14 +149,14 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 			continue;
 		}
 
-		m_xBones.insert({ strBoneName, AnimBone(pxChannel) });
+		m_xBones.Emplace(strBoneName, pxChannel);
 	}
 
 	// Initialize bone transforms at t=0 and calculate initial bone matrices
 	m_fCurrentTimestamp = 0.0f;
-	for (auto& xPair : m_xBones)
+	for (Zenith_HashMap<std::string, AnimBone>::Iterator xIt(m_xBones); !xIt.Done(); xIt.Next())
 	{
-		xPair.second.Update(m_fCurrentTimestamp);
+		xIt.GetValueMutable().Update(m_fCurrentTimestamp);
 	}
 	CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f));
 

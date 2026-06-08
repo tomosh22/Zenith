@@ -160,7 +160,7 @@ uint32_t Flux_AnimationController::GetNumBones() const
 
 bool Flux_AnimationController::HasAnimationContent() const
 {
-	return !m_xClipCollection.GetClips().empty() ||
+	return m_xClipCollection.GetClips().GetSize() != 0 ||
 		m_pxStateMachine != nullptr ||
 		m_xLayers.GetSize() > 0;
 }

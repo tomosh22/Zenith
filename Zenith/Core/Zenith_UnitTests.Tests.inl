@@ -2067,10 +2067,10 @@ void Zenith_UnitTests::TestIKChainSetup(){
 		Flux_IKChain xLegChain = Flux_IKSolver::CreateLegChain("LeftLeg", "Hip_L", "Knee_L", "Ankle_L");
 
 		ZENITH_ASSERT_EQ(xLegChain.m_strName, "LeftLeg", "Chain name should be LeftLeg");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.size(), 3, "Leg chain should have 3 bones");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[0], "Hip_L", "First bone should be Hip_L");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[1], "Knee_L", "Second bone should be Knee_L");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[2], "Ankle_L", "Third bone should be Ankle_L");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.GetSize(), 3, "Leg chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.Get(0), "Hip_L", "First bone should be Hip_L");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.Get(1), "Knee_L", "Second bone should be Knee_L");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.Get(2), "Ankle_L", "Third bone should be Ankle_L");
 
 	}
 
@@ -2079,17 +2079,21 @@ void Zenith_UnitTests::TestIKChainSetup(){
 		Flux_IKChain xArmChain = Flux_IKSolver::CreateArmChain("RightArm", "Shoulder_R", "Elbow_R", "Wrist_R");
 
 		ZENITH_ASSERT_EQ(xArmChain.m_strName, "RightArm", "Chain name should be RightArm");
-		ZENITH_ASSERT_EQ(xArmChain.m_xBoneNames.size(), 3, "Arm chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xArmChain.m_xBoneNames.GetSize(), 3, "Arm chain should have 3 bones");
 
 	}
 
 	// Test spine chain creation
 	{
-		std::vector<std::string> xSpineBones = { "Spine1", "Spine2", "Spine3", "Neck" };
+		Zenith_Vector<std::string> xSpineBones;
+		xSpineBones.PushBack("Spine1");
+		xSpineBones.PushBack("Spine2");
+		xSpineBones.PushBack("Spine3");
+		xSpineBones.PushBack("Neck");
 		Flux_IKChain xSpineChain = Flux_IKSolver::CreateSpineChain("Spine", xSpineBones);
 
 		ZENITH_ASSERT_EQ(xSpineChain.m_strName, "Spine", "Chain name should be Spine");
-		ZENITH_ASSERT_EQ(xSpineChain.m_xBoneNames.size(), 4, "Spine chain should have 4 bones");
+		ZENITH_ASSERT_EQ(xSpineChain.m_xBoneNames.GetSize(), 4, "Spine chain should have 4 bones");
 
 	}
 
@@ -2222,8 +2226,8 @@ void Zenith_UnitTests::TestAnimationSerialization(){
 		xLoaded.ReadFromDataStream(xStream);
 
 		ZENITH_ASSERT_EQ(xLoaded.m_strName, "TestLeg", "Chain name should match");
-		ZENITH_ASSERT_EQ(xLoaded.m_xBoneNames.size(), 3, "Should have 3 bones");
-		ZENITH_ASSERT_EQ(xLoaded.m_xBoneNames[0], "Hip", "First bone should be Hip");
+		ZENITH_ASSERT_EQ(xLoaded.m_xBoneNames.GetSize(), 3, "Should have 3 bones");
+		ZENITH_ASSERT_EQ(xLoaded.m_xBoneNames.Get(0), "Hip", "First bone should be Hip");
 		ZENITH_ASSERT_EQ(xLoaded.m_uMaxIterations, 15, "Max iterations should match");
 		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fTolerance, 0.005f), "Tolerance should match");
 		ZENITH_ASSERT_EQ(xLoaded.m_bUsePoleVector, true, "Use pole vector should match");
@@ -2568,12 +2572,12 @@ void Zenith_UnitTests::TestAnimationClipChannels(){
 		xClip.AddEvent(xEvent1);
 		xClip.AddEvent(xEvent2);
 
-		const std::vector<Flux_AnimationEvent>& xEvents = xClip.GetEvents();
-		ZENITH_ASSERT_EQ(xEvents.size(), 2, "Should have 2 events");
-		ZENITH_ASSERT_EQ(xEvents[0].m_strEventName, "LeftFootDown", "First event should be LeftFootDown");
-		ZENITH_ASSERT_EQ(xEvents[1].m_strEventName, "RightFootDown", "Second event should be RightFootDown");
-		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[0].m_fNormalizedTime, 0.25f), "First event time should be 0.25");
-		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[1].m_fNormalizedTime, 0.75f), "Second event time should be 0.75");
+		const Zenith_Vector<Flux_AnimationEvent>& xEvents = xClip.GetEvents();
+		ZENITH_ASSERT_EQ(xEvents.GetSize(), 2, "Should have 2 events");
+		ZENITH_ASSERT_EQ(xEvents.Get(0).m_strEventName, "LeftFootDown", "First event should be LeftFootDown");
+		ZENITH_ASSERT_EQ(xEvents.Get(1).m_strEventName, "RightFootDown", "Second event should be RightFootDown");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents.Get(0).m_fNormalizedTime, 0.25f), "First event time should be 0.25");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents.Get(1).m_fNormalizedTime, 0.75f), "Second event time should be 0.75");
 
 	}
 
@@ -3168,9 +3172,9 @@ void Zenith_UnitTests::TestFABRIKSolver(){
 
 		Flux_IKChain xChain;
 		xChain.m_strName = "RightArm";
-		xChain.m_xBoneNames.push_back("Shoulder");
-		xChain.m_xBoneNames.push_back("Elbow");
-		xChain.m_xBoneNames.push_back("Wrist");
+		xChain.m_xBoneNames.PushBack("Shoulder");
+		xChain.m_xBoneNames.PushBack("Elbow");
+		xChain.m_xBoneNames.PushBack("Wrist");
 
 		xSolver.AddChain(xChain);
 		ZENITH_ASSERT_TRUE(xSolver.HasChain("RightArm"), "Solver should have RightArm chain");
@@ -3179,7 +3183,7 @@ void Zenith_UnitTests::TestFABRIKSolver(){
 		const Flux_IKChain* pxRetrieved = xSolver.GetChain("RightArm");
 		ZENITH_ASSERT_NOT_NULL(pxRetrieved, "Should retrieve chain");
 		ZENITH_ASSERT_EQ(pxRetrieved->m_strName, "RightArm", "Chain name should match");
-		ZENITH_ASSERT_EQ(pxRetrieved->m_xBoneNames.size(), 3, "Should have 3 bones");
+		ZENITH_ASSERT_EQ(pxRetrieved->m_xBoneNames.GetSize(), 3, "Should have 3 bones");
 
 	}
 
@@ -3248,14 +3252,14 @@ void Zenith_UnitTests::TestFABRIKSolver(){
 	{
 		Flux_IKChain xLegChain = Flux_IKSolver::CreateLegChain("RightLeg", "Hip", "Knee", "Ankle");
 		ZENITH_ASSERT_EQ(xLegChain.m_strName, "RightLeg", "Leg chain name should be RightLeg");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.size(), 3, "Leg chain should have 3 bones");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[0], "Hip", "First bone should be Hip");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[1], "Knee", "Second bone should be Knee");
-		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[2], "Ankle", "Third bone should be Ankle");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.GetSize(), 3, "Leg chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.Get(0), "Hip", "First bone should be Hip");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.Get(1), "Knee", "Second bone should be Knee");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.Get(2), "Ankle", "Third bone should be Ankle");
 
 		Flux_IKChain xArmChain = Flux_IKSolver::CreateArmChain("LeftArm", "Shoulder", "Elbow", "Wrist");
 		ZENITH_ASSERT_EQ(xArmChain.m_strName, "LeftArm", "Arm chain name should be LeftArm");
-		ZENITH_ASSERT_EQ(xArmChain.m_xBoneNames.size(), 3, "Arm chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xArmChain.m_xBoneNames.GetSize(), 3, "Arm chain should have 3 bones");
 
 	}
 
@@ -3436,10 +3440,10 @@ void Zenith_UnitTests::TestAnimationEvents(){
 		xClip.AddEvent(xEvent1);
 		xClip.AddEvent(xEvent2);
 
-		const std::vector<Flux_AnimationEvent>& xEvents = xClip.GetEvents();
-		ZENITH_ASSERT_EQ(xEvents.size(), 2, "Should have 2 events");
-		ZENITH_ASSERT_EQ(xEvents[0].m_strEventName, "LeftFoot", "First event should be LeftFoot");
-		ZENITH_ASSERT_EQ(xEvents[1].m_strEventName, "RightFoot", "Second event should be RightFoot");
+		const Zenith_Vector<Flux_AnimationEvent>& xEvents = xClip.GetEvents();
+		ZENITH_ASSERT_EQ(xEvents.GetSize(), 2, "Should have 2 events");
+		ZENITH_ASSERT_EQ(xEvents.Get(0).m_strEventName, "LeftFoot", "First event should be LeftFoot");
+		ZENITH_ASSERT_EQ(xEvents.Get(1).m_strEventName, "RightFoot", "Second event should be RightFoot");
 
 	}
 
@@ -4213,6 +4217,19 @@ static Flux_AnimationClip* CreateRunAnimation()
 
 namespace
 {
+	// Helper: build a Zenith_Vector<std::string> from a brace list of bone names.
+	// Zenith_Vector has no initializer_list constructor, so this replaces the old
+	// std::vector brace-init at the IK test sites.
+	static Zenith_Vector<std::string> MakeBoneNameVec(std::initializer_list<const char*> xNames)
+	{
+		Zenith_Vector<std::string> xResult(static_cast<u_int>(xNames.size()));
+		for (const char* szName : xNames)
+		{
+			xResult.PushBack(std::string(szName));
+		}
+		return xResult;
+	}
+
 	// Helper: build a 3-bone leg chain on the stick figure with no constraints
 	// and no pole vector. Used by tests that need to isolate the FABRIK solver
 	// from CreateLegChain's constraint defaults.
@@ -4220,7 +4237,7 @@ namespace
 	{
 		Flux_IKChain xChain;
 		xChain.m_strName = "LeftLeg";
-		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" });
 		xChain.m_bUsePoleVector = false;
 		return xChain;
 	}
@@ -4243,31 +4260,31 @@ void Zenith_UnitTests::TestIKResolveBoneIndices()
 	// All bones present
 	{
 		Flux_IKChain xChain;
-		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" });
 		xChain.ResolveBoneIndices(*pxSkel);
-		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), 3, "Should resolve 3 indices");
-		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices[0]), pxSkel->GetBoneIndex("LeftUpperLeg"), "Index 0 mismatch");
-		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices[1]), pxSkel->GetBoneIndex("LeftLowerLeg"), "Index 1 mismatch");
-		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices[2]), pxSkel->GetBoneIndex("LeftFoot"), "Index 2 mismatch");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.GetSize(), 3, "Should resolve 3 indices");
+		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices.Get(0)), pxSkel->GetBoneIndex("LeftUpperLeg"), "Index 0 mismatch");
+		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices.Get(1)), pxSkel->GetBoneIndex("LeftLowerLeg"), "Index 1 mismatch");
+		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices.Get(2)), pxSkel->GetBoneIndex("LeftFoot"), "Index 2 mismatch");
 	}
 
 	// Some bones missing
 	{
 		Flux_IKChain xChain;
-		xChain.m_xBoneNames = { "LeftUpperLeg", "NoSuchBone", "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "NoSuchBone", "LeftFoot" });
 		xChain.ResolveBoneIndices(*pxSkel);
-		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), 3, "Should still produce 3 entries");
-		ZENITH_ASSERT_NE(xChain.m_xBoneIndices[0], ~0u, "First should be valid");
-		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices[1], ~0u, "Middle should be invalid sentinel");
-		ZENITH_ASSERT_NE(xChain.m_xBoneIndices[2], ~0u, "Third should be valid");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.GetSize(), 3, "Should still produce 3 entries");
+		ZENITH_ASSERT_NE(xChain.m_xBoneIndices.Get(0), ~0u, "First should be valid");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.Get(1), ~0u, "Middle should be invalid sentinel");
+		ZENITH_ASSERT_NE(xChain.m_xBoneIndices.Get(2), ~0u, "Third should be valid");
 	}
 
 	// All bones missing
 	{
 		Flux_IKChain xChain;
-		xChain.m_xBoneNames = { "X", "Y", "Z" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "X", "Y", "Z" });
 		xChain.ResolveBoneIndices(*pxSkel);
-		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), 3, "Should produce 3 sentinels");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.GetSize(), 3, "Should produce 3 sentinels");
 		for (uint32_t u : xChain.m_xBoneIndices) ZENITH_ASSERT_EQ(u, ~0u, "All should be invalid sentinel");
 	}
 
@@ -4275,19 +4292,19 @@ void Zenith_UnitTests::TestIKResolveBoneIndices()
 	{
 		Flux_IKChain xChain;
 		xChain.ResolveBoneIndices(*pxSkel);
-		ZENITH_ASSERT_TRUE(xChain.m_xBoneIndices.empty(), "Empty chain should produce empty result");
+		ZENITH_ASSERT_TRUE(xChain.m_xBoneIndices.GetSize() == 0, "Empty chain should produce empty result");
 	}
 
 	// Idempotence: second resolve produces same result
 	{
 		Flux_IKChain xChain;
-		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" });
 		xChain.ResolveBoneIndices(*pxSkel);
-		const std::vector<uint32_t> xFirst = xChain.m_xBoneIndices;
+		const Zenith_Vector<uint32_t> xFirst = xChain.m_xBoneIndices;
 		xChain.ResolveBoneIndices(*pxSkel);
-		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), xFirst.size(), "Sizes match across calls");
-		for (size_t i = 0; i < xFirst.size(); ++i)
-			ZENITH_ASSERT_EQ(xChain.m_xBoneIndices[i], xFirst[i], "Indices match across calls");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.GetSize(), xFirst.GetSize(), "Sizes match across calls");
+		for (u_int i = 0; i < xFirst.GetSize(); ++i)
+			ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.Get(i), xFirst.Get(i), "Indices match across calls");
 	}
 
 	delete pxSkel;
@@ -4306,30 +4323,30 @@ void Zenith_UnitTests::TestIKComputeBoneLengths()
 		Flux_IKChain xChain = MakeUnconstrainedLeftLegChain();
 		xChain.ResolveBoneIndices(*pxSkel);
 		xChain.ComputeBoneLengths(xPose);
-		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.size(), 2, "3-bone chain should produce 2 lengths");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[0], 0.5f, 0.001f), "Upper-to-lower should be 0.5m");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[1], 0.5f, 0.001f), "Lower-to-foot should be 0.5m");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.GetSize(), 2, "3-bone chain should produce 2 lengths");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(0), 0.5f, 0.001f), "Upper-to-lower should be 0.5m");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(1), 0.5f, 0.001f), "Lower-to-foot should be 0.5m");
 		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTotalLength, 1.0f, 0.001f), "Total length should be 1.0m");
 	}
 
 	// Chain with one invalid index — that segment's length is 0
 	{
 		Flux_IKChain xChain;
-		xChain.m_xBoneNames = { "LeftUpperLeg", "NoSuchBone", "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "NoSuchBone", "LeftFoot" });
 		xChain.ResolveBoneIndices(*pxSkel);
 		xChain.ComputeBoneLengths(xPose);
-		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.size(), 2, "Should produce 2 lengths");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[0], 0.0f, 0.001f), "First segment with invalid neighbour should be 0");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[1], 0.0f, 0.001f), "Second segment with invalid neighbour should be 0");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.GetSize(), 2, "Should produce 2 lengths");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(0), 0.0f, 0.001f), "First segment with invalid neighbour should be 0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(1), 0.0f, 0.001f), "Second segment with invalid neighbour should be 0");
 	}
 
 	// 1-bone chain — early-out path
 	{
 		Flux_IKChain xChain;
-		xChain.m_xBoneNames = { "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftFoot" });
 		xChain.ResolveBoneIndices(*pxSkel);
 		xChain.ComputeBoneLengths(xPose);
-		ZENITH_ASSERT_TRUE(xChain.m_xBoneLengths.empty(), "1-bone chain should produce 0 lengths");
+		ZENITH_ASSERT_TRUE(xChain.m_xBoneLengths.GetSize() == 0, "1-bone chain should produce 0 lengths");
 		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTotalLength, 0.0f, 0.001f), "1-bone total should be 0");
 	}
 
@@ -4523,7 +4540,7 @@ void Zenith_UnitTests::TestIKLazyResolveOnFirstSolve()
 	Flux_IKSolver xSolver;
 	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
 	// We never call ResolveBoneIndices manually.
-	ZENITH_ASSERT_TRUE(xSolver.GetChain("LeftLeg")->m_xBoneIndices.empty(), "Indices should start empty");
+	ZENITH_ASSERT_TRUE(xSolver.GetChain("LeftLeg")->m_xBoneIndices.GetSize() == 0, "Indices should start empty");
 
 	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
 	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
@@ -4534,7 +4551,7 @@ void Zenith_UnitTests::TestIKLazyResolveOnFirstSolve()
 	xSolver.SetTarget("LeftLeg", xT);
 	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
 
-	ZENITH_ASSERT_EQ(xSolver.GetChain("LeftLeg")->m_xBoneIndices.size(), 3, "Lazy resolve should have populated 3 indices");
+	ZENITH_ASSERT_EQ(xSolver.GetChain("LeftLeg")->m_xBoneIndices.GetSize(), 3, "Lazy resolve should have populated 3 indices");
 
 	delete pxSkel;
 }
@@ -4613,11 +4630,13 @@ void Zenith_UnitTests::TestIKHingeConstraintProjectsSegmentDirection()
 	// knee→foot segment has near-zero X component (projection onto YZ plane).
 	Flux_IKChain xChain;
 	xChain.m_strName = "LeftLeg";
-	xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+	xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" });
 	xChain.m_bUsePoleVector = false;
-	xChain.m_xJointConstraints.resize(3);
-	xChain.m_xJointConstraints[1].m_eType = Flux_JointConstraint::ConstraintType::Hinge;
-	xChain.m_xJointConstraints[1].m_xHingeAxis = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());
+	xChain.m_xJointConstraints.Get(1).m_eType = Flux_JointConstraint::ConstraintType::Hinge;
+	xChain.m_xJointConstraints.Get(1).m_xHingeAxis = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
 
 	Flux_IKSolver xSolver;
 	xSolver.AddChain(xChain);
@@ -4663,7 +4682,7 @@ void Zenith_UnitTests::TestIKPoleVectorBiasesKnee()
 
 		Flux_IKChain xChain;
 		xChain.m_strName = "LeftLeg";
-		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" });
 		xChain.m_bUsePoleVector = true;
 		xChain.m_xPoleVector = xPoleVec;
 
@@ -4734,7 +4753,7 @@ void Zenith_UnitTests::TestIKMultiChainBoneDisjoint()
 	{
 		Flux_IKChain xRight;
 		xRight.m_strName = "RightLeg";
-		xRight.m_xBoneNames = { "RightUpperLeg", "RightLowerLeg", "RightFoot" };
+		xRight.m_xBoneNames = MakeBoneNameVec({ "RightUpperLeg", "RightLowerLeg", "RightFoot" });
 		xRight.m_bUsePoleVector = false;
 		xSolverBoth.AddChain(xRight);
 	}
@@ -4863,7 +4882,7 @@ void Zenith_UnitTests::TestIKDegenerateChainSizes()
 	{
 		Flux_IKChain xChain;
 		xChain.m_strName = "OneBone";
-		xChain.m_xBoneNames = { "LeftFoot" };
+		xChain.m_xBoneNames = MakeBoneNameVec({ "LeftFoot" });
 		xChain.m_bUsePoleVector = false;
 		Flux_IKSolver xSolver;
 		xSolver.AddChain(xChain);
@@ -4943,7 +4962,7 @@ void Zenith_UnitTests::TestIKSolveOnReloadedAsset()
 	Flux_IKSolver xSolver;
 	Flux_IKChain xChain;
 	xChain.m_strName = "LeftLeg";   // <-- registers under this name; SetTarget("LeftLeg") finds it
-	xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+	xChain.m_xBoneNames = MakeBoneNameVec({ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" });
 	xChain.m_bUsePoleVector = false;
 	// Bump iterations + tighten internal tolerance — the leg starts fully extended,
 	// which gives FABRIK a worst-case starting condition. 50 iterations + 0.0005f
@@ -6161,7 +6180,7 @@ void Zenith_UnitTests::TestStickFigureLegIK(){
 	// Verify chain bone count
 	const Flux_IKChain* pxLeftLegChain = xSolver.GetChain("LeftLeg");
 	ZENITH_ASSERT_NOT_NULL(pxLeftLegChain, "Should be able to retrieve LeftLeg chain");
-	ZENITH_ASSERT_EQ(pxLeftLegChain->m_xBoneNames.size(), 3, "Leg chain should have 3 bones");
+	ZENITH_ASSERT_EQ(pxLeftLegChain->m_xBoneNames.GetSize(), 3, "Leg chain should have 3 bones");
 
 
 	// Test setting targets for both legs

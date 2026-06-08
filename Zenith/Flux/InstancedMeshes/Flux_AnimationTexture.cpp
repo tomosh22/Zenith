@@ -81,7 +81,7 @@ void Flux_AnimationTexture::EvaluateAnimationFrame(
 	const Zenith_SkeletonAsset* pxSkeleton,
 	const Flux_AnimationClip* pxAnimation,
 	float fTime,
-	std::vector<Zenith_Maths::Vector4>& axOutPositions) const
+	Zenith_Vector<Zenith_Maths::Vector4>& axOutPositions) const
 {
 	const uint32_t uNumVerts = pxMesh->GetNumVerts();
 	const uint32_t uNumBones = pxSkeleton->GetNumBones();
@@ -120,7 +120,9 @@ void Flux_AnimationTexture::EvaluateAnimationFrame(
 	}
 
 	// Transform each vertex using bone weights
-	axOutPositions.resize(uNumVerts);
+	// Zenith_Vector has no resize-to-N-default; clear + reserve + PushBack each computed value.
+	axOutPositions.Clear();
+	axOutPositions.Reserve(uNumVerts);
 
 	for (uint32_t uVert = 0; uVert < uNumVerts; ++uVert)
 	{
@@ -143,17 +145,17 @@ void Flux_AnimationTexture::EvaluateAnimationFrame(
 			}
 		}
 
-		axOutPositions[uVert] = xSkinnedPos;
+		axOutPositions.PushBack(xSkinnedPos);
 	}
 }
 
 bool Flux_AnimationTexture::BakeFromAnimations(
 	const Flux_MeshGeometry* pxMesh,
 	const Zenith_SkeletonAsset* pxSkeleton,
-	const std::vector<Flux_AnimationClip*>& axAnimations,
+	const Zenith_Vector<Flux_AnimationClip*>& axAnimations,
 	uint32_t uFramesPerSecond)
 {
-	if (!pxMesh || !pxSkeleton || axAnimations.empty())
+	if (!pxMesh || !pxSkeleton || axAnimations.GetSize() == 0)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Flux_AnimationTexture::BakeFromAnimations - Invalid input");
 		return false;
@@ -166,26 +168,29 @@ bool Flux_AnimationTexture::BakeFromAnimations(
 	}
 
 	const uint32_t uNumVerts = pxMesh->GetNumVerts();
-	const uint32_t uNumAnimations = static_cast<uint32_t>(axAnimations.size());
+	const uint32_t uNumAnimations = axAnimations.GetSize();
 
 	// Calculate total frames needed
 	uint32_t uTotalFrames = 0;
 	uint32_t uMaxFramesPerAnimation = 0;
 
-	m_axAnimations.resize(uNumAnimations);
+	// Zenith_Vector has no resize-to-N-default; clear + reserve + PushBack each entry.
+	m_axAnimations.Clear();
+	m_axAnimations.Reserve(uNumAnimations);
 
 	for (uint32_t uAnim = 0; uAnim < uNumAnimations; ++uAnim)
 	{
-		const Flux_AnimationClip* pxClip = axAnimations[uAnim];
+		const Flux_AnimationClip* pxClip = axAnimations.Get(uAnim);
 		float fDuration = pxClip->GetDuration();
 		uint32_t uFrameCount = static_cast<uint32_t>(fDuration * uFramesPerSecond) + 1;
 
-		AnimationInfo& xInfo = m_axAnimations[uAnim];
+		AnimationInfo xInfo;
 		xInfo.m_strName = pxClip->GetName();
 		xInfo.m_uFirstFrame = uTotalFrames;
 		xInfo.m_uFrameCount = uFrameCount;
 		xInfo.m_fDuration = fDuration;
 		xInfo.m_bLooping = pxClip->IsLooping();
+		m_axAnimations.PushBack(xInfo);
 
 		uTotalFrames += uFrameCount;
 		uMaxFramesPerAnimation = std::max(uMaxFramesPerAnimation, uFrameCount);
@@ -202,13 +207,14 @@ bool Flux_AnimationTexture::BakeFromAnimations(
 	m_xHeader.m_fFrameDuration = 1.0f / static_cast<float>(uFramesPerSecond);
 
 	// Allocate texture data (RGBA16F = 4 × uint16 per pixel)
+	// Zenith_Vector has no resize-to-N-default; reserve + PushBack(0) to grow with zero-fill.
 	const uint32_t uPixelsTotal = m_xHeader.m_uTextureWidth * m_xHeader.m_uTextureHeight;
-	m_axTextureData.resize(uPixelsTotal * 4);
-
-	// Clear to zero
-	for (uint32_t i = 0; i < m_axTextureData.size(); ++i)
+	const uint32_t uTexelCount = uPixelsTotal * 4;
+	m_axTextureData.Clear();
+	m_axTextureData.Reserve(uTexelCount);
+	for (uint32_t i = 0; i < uTexelCount; ++i)
 	{
-		m_axTextureData[i] = 0;
+		m_axTextureData.PushBack(0);
 	}
 
 	Zenith_Log(LOG_CATEGORY_MESH, "[AnimationTexture] Baking %u animations, %u total frames, texture %u x %u",
@@ -216,12 +222,12 @@ bool Flux_AnimationTexture::BakeFromAnimations(
 
 	// Bake each animation frame
 	uint32_t uCurrentFrame = 0;
-	std::vector<Zenith_Maths::Vector4> axFramePositions;
+	Zenith_Vector<Zenith_Maths::Vector4> axFramePositions;
 
 	for (uint32_t uAnim = 0; uAnim < uNumAnimations; ++uAnim)
 	{
-		const Flux_AnimationClip* pxClip = axAnimations[uAnim];
-		const AnimationInfo& xInfo = m_axAnimations[uAnim];
+		const Flux_AnimationClip* pxClip = axAnimations.Get(uAnim);
+		const AnimationInfo& xInfo = m_axAnimations.Get(uAnim);
 
 		for (uint32_t uFrame = 0; uFrame < xInfo.m_uFrameCount; ++uFrame)
 		{
@@ -235,13 +241,13 @@ bool Flux_AnimationTexture::BakeFromAnimations(
 
 			for (uint32_t uVert = 0; uVert < uNumVerts; ++uVert)
 			{
-				const Zenith_Maths::Vector4& xPos = axFramePositions[uVert];
+				const Zenith_Maths::Vector4& xPos = axFramePositions.Get(uVert);
 				uint32_t uPixelOffset = uRowOffset + uVert * 4;
 
-				m_axTextureData[uPixelOffset + 0] = FloatToHalf(xPos.x);
-				m_axTextureData[uPixelOffset + 1] = FloatToHalf(xPos.y);
-				m_axTextureData[uPixelOffset + 2] = FloatToHalf(xPos.z);
-				m_axTextureData[uPixelOffset + 3] = FloatToHalf(1.0f);  // W = 1 (or could store normal.x)
+				m_axTextureData.Get(uPixelOffset + 0) = FloatToHalf(xPos.x);
+				m_axTextureData.Get(uPixelOffset + 1) = FloatToHalf(xPos.y);
+				m_axTextureData.Get(uPixelOffset + 2) = FloatToHalf(xPos.z);
+				m_axTextureData.Get(uPixelOffset + 3) = FloatToHalf(1.0f);  // W = 1 (or could store normal.x)
 			}
 
 			++uCurrentFrame;
@@ -252,7 +258,7 @@ bool Flux_AnimationTexture::BakeFromAnimations(
 	}
 
 	Zenith_Log(LOG_CATEGORY_MESH, "[AnimationTexture] Baking complete. Texture size: %u KB",
-		static_cast<uint32_t>((m_axTextureData.size() * sizeof(uint16_t)) / 1024));
+		static_cast<uint32_t>((m_axTextureData.GetSize() * sizeof(uint16_t)) / 1024));
 
 	return true;
 }
@@ -278,7 +284,7 @@ bool Flux_AnimationTexture::Export(const std::string& strPath) const
 	// Write animation info
 	for (uint32_t i = 0; i < m_xHeader.m_uNumAnimations; ++i)
 	{
-		const AnimationInfo& xInfo = m_axAnimations[i];
+		const AnimationInfo& xInfo = m_axAnimations.Get(i);
 		xStream << xInfo.m_strName;
 		xStream << xInfo.m_uFirstFrame;
 		xStream << xInfo.m_uFrameCount;
@@ -287,9 +293,9 @@ bool Flux_AnimationTexture::Export(const std::string& strPath) const
 	}
 
 	// Write texture data size and raw data
-	uint32_t uDataSize = static_cast<uint32_t>(m_axTextureData.size());
+	uint32_t uDataSize = m_axTextureData.GetSize();
 	xStream << uDataSize;
-	xStream.WriteData(m_axTextureData.data(), uDataSize * sizeof(uint16_t));
+	xStream.WriteData(m_axTextureData.GetDataPointer(), uDataSize * sizeof(uint16_t));
 
 	// Save to file
 	xStream.WriteToFile(strPath.c_str());
@@ -329,22 +335,31 @@ Flux_AnimationTexture* Flux_AnimationTexture::LoadFromFile(const std::string& st
 	xStream >> pxTexture->m_xHeader.m_fFrameDuration;
 
 	// Read animation info
-	pxTexture->m_axAnimations.resize(pxTexture->m_xHeader.m_uNumAnimations);
+	// Zenith_Vector has no resize-to-N-default; reserve + PushBack each parsed entry.
+	pxTexture->m_axAnimations.Clear();
+	pxTexture->m_axAnimations.Reserve(pxTexture->m_xHeader.m_uNumAnimations);
 	for (uint32_t i = 0; i < pxTexture->m_xHeader.m_uNumAnimations; ++i)
 	{
-		AnimationInfo& xInfo = pxTexture->m_axAnimations[i];
+		AnimationInfo xInfo;
 		xStream >> xInfo.m_strName;
 		xStream >> xInfo.m_uFirstFrame;
 		xStream >> xInfo.m_uFrameCount;
 		xStream >> xInfo.m_fDuration;
 		xStream >> xInfo.m_bLooping;
+		pxTexture->m_axAnimations.PushBack(xInfo);
 	}
 
 	// Read texture data
+	// Grow the blob to uDataSize (no resize-to-N-default), then read the raw bytes into it.
 	uint32_t uDataSize;
 	xStream >> uDataSize;
-	pxTexture->m_axTextureData.resize(uDataSize);
-	xStream.ReadData(pxTexture->m_axTextureData.data(), uDataSize * sizeof(uint16_t));
+	pxTexture->m_axTextureData.Clear();
+	pxTexture->m_axTextureData.Reserve(uDataSize);
+	for (uint32_t i = 0; i < uDataSize; ++i)
+	{
+		pxTexture->m_axTextureData.PushBack(0);
+	}
+	xStream.ReadData(pxTexture->m_axTextureData.GetDataPointer(), uDataSize * sizeof(uint16_t));
 
 	Zenith_Log(LOG_CATEGORY_MESH, "[AnimationTexture] Loaded from %s (%u animations, %u x %u texture)",
 		strPath.c_str(), pxTexture->m_xHeader.m_uNumAnimations,
@@ -359,20 +374,20 @@ Flux_AnimationTexture* Flux_AnimationTexture::LoadFromFile(const std::string& st
 
 const Flux_AnimationTexture::AnimationInfo* Flux_AnimationTexture::GetAnimationInfo(uint32_t uIndex) const
 {
-	if (uIndex >= m_axAnimations.size())
+	if (uIndex >= m_axAnimations.GetSize())
 	{
 		return nullptr;
 	}
-	return &m_axAnimations[uIndex];
+	return &m_axAnimations.Get(uIndex);
 }
 
 const Flux_AnimationTexture::AnimationInfo* Flux_AnimationTexture::FindAnimation(const std::string& strName) const
 {
-	for (uint32_t i = 0; i < m_axAnimations.size(); ++i)
+	for (uint32_t i = 0; i < m_axAnimations.GetSize(); ++i)
 	{
-		if (m_axAnimations[i].m_strName == strName)
+		if (m_axAnimations.Get(i).m_strName == strName)
 		{
-			return &m_axAnimations[i];
+			return &m_axAnimations.Get(i);
 		}
 	}
 	return nullptr;
@@ -380,12 +395,12 @@ const Flux_AnimationTexture::AnimationInfo* Flux_AnimationTexture::FindAnimation
 
 uint32_t Flux_AnimationTexture::GetFrameIndex(uint32_t uAnimIndex, float fNormalizedTime) const
 {
-	if (uAnimIndex >= m_axAnimations.size())
+	if (uAnimIndex >= m_axAnimations.GetSize())
 	{
 		return 0;
 	}
 
-	const AnimationInfo& xInfo = m_axAnimations[uAnimIndex];
+	const AnimationInfo& xInfo = m_axAnimations.Get(uAnimIndex);
 
 	// Clamp normalized time to [0, 1]
 	fNormalizedTime = glm::clamp(fNormalizedTime, 0.0f, 1.0f);
@@ -403,7 +418,7 @@ uint32_t Flux_AnimationTexture::GetFrameIndex(uint32_t uAnimIndex, float fNormal
 
 void Flux_AnimationTexture::CreateGPUResources()
 {
-	if (m_bGPUResourcesCreated || m_axTextureData.empty())
+	if (m_bGPUResourcesCreated || m_axTextureData.GetSize() == 0)
 	{
 		return;
 	}
@@ -421,7 +436,7 @@ void Flux_AnimationTexture::CreateGPUResources()
 
 	// Create VRAM and upload texture data
 	m_xPositionTexture.m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(
-		m_axTextureData.data(),
+		m_axTextureData.GetDataPointer(),
 		xSurfaceInfo,
 		false  // No mipmaps
 	);

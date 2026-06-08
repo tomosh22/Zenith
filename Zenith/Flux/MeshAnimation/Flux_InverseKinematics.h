@@ -1,7 +1,7 @@
 #pragma once
 #include "Flux_BonePose.h"
 #include "Collections/Zenith_HashMap.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 
 // Forward declarations
@@ -67,8 +67,8 @@ struct Flux_JointConstraint
 struct Flux_IKChain
 {
 	std::string m_strName;                    // "LeftLeg", "RightArm", etc.
-	std::vector<std::string> m_xBoneNames;   // Bone names from root to tip
-	std::vector<uint32_t> m_xBoneIndices;    // Resolved bone indices (runtime)
+	Zenith_Vector<std::string> m_xBoneNames;  // Bone names from root to tip
+	Zenith_Vector<uint32_t> m_xBoneIndices;   // Resolved bone indices (runtime)
 
 	// FABRIK parameters
 	uint32_t m_uMaxIterations = 10;
@@ -83,11 +83,11 @@ struct Flux_IKChain
 	std::string m_strPoleTargetBone;          // Optional: bone to use as pole target
 
 	// Per-joint constraints
-	std::vector<Flux_JointConstraint> m_xJointConstraints;
+	Zenith_Vector<Flux_JointConstraint> m_xJointConstraints;
 
 	// Chain properties (computed at runtime)
 	float m_fTotalLength = 0.0f;
-	std::vector<float> m_xBoneLengths;
+	Zenith_Vector<float> m_xBoneLengths;
 
 	// Resolve bone names to indices
 	void ResolveBoneIndices(const Zenith_SkeletonAsset& xSkeleton);
@@ -200,7 +200,7 @@ public:
 		const std::string& strWristBone);
 
 	static Flux_IKChain CreateSpineChain(const std::string& strName,
-		const std::vector<std::string>& xSpineBones);
+		const Zenith_Vector<std::string>& xSpineBones);
 
 	//=========================================================================
 	// Serialization
@@ -215,42 +215,42 @@ private:
 	//=========================================================================
 
 	// Forward reaching: from end effector to root
-	void ForwardReaching(std::vector<Zenith_Maths::Vector3>& xPositions,
-		const std::vector<float>& xBoneLengths,
+	void ForwardReaching(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const Zenith_Vector<float>& xBoneLengths,
 		const Zenith_Maths::Vector3& xTargetPos);
 
 	// Backward reaching: from root to end effector
-	void BackwardReaching(std::vector<Zenith_Maths::Vector3>& xPositions,
-		const std::vector<float>& xBoneLengths,
+	void BackwardReaching(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const Zenith_Vector<float>& xBoneLengths,
 		const Zenith_Maths::Vector3& xRootPos);
 
 	// Apply joint constraints
-	void ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositions,
+	void ApplyConstraints(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 		const Flux_IKChain& xChain,
 		const Flux_SkeletonPose& xOriginalPose);
 
 	// Apply a hinge constraint to a single joint
-	void ApplyHingeConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
-		size_t uJointIndex,
+	void ApplyHingeConstraint(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		u_int uJointIndex,
 		const Flux_JointConstraint& xConstraint,
 		float fBoneLength);
 
 	// Apply a ball-socket (cone) constraint to a single joint
-	void ApplyBallSocketConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
-		size_t uJointIndex,
+	void ApplyBallSocketConstraint(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		u_int uJointIndex,
 		const Flux_JointConstraint& xConstraint,
 		const Flux_IKChain& xChain,
 		const Flux_SkeletonPose& xOriginalPose);
 
 	// Apply pole vector constraint (for elbow/knee direction)
-	void ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
+	void ApplyPoleVectorConstraint(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 		const Flux_IKChain& xChain,
 		const Zenith_Maths::Vector3& xPolePosition);
 
 	// Convert final positions back to bone rotations
 	void ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		const Flux_IKChain& xChain,
-		const std::vector<Zenith_Maths::Vector3>& xPositions,
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 		const Zenith_SkeletonAsset& xSkeleton,
 		float fWeight);
 

@@ -62,7 +62,7 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 {
 	ImGui::PushID(pxNode);
 	
-	if (!ImGui::CollapsingHeader(pxNode->m_xName[uCurrentDepth].c_str()))
+	if (!ImGui::CollapsingHeader(pxNode->m_xName.Get(uCurrentDepth).c_str()))
 	{
 		ImGui::PopID();
 		return;

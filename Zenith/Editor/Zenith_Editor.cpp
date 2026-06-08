@@ -309,7 +309,7 @@ void Zenith_Editor::Shutdown()
 	{
 		Flux_ImGuiIntegration::UnregisterTexture(pending.xHandle, 0); // Immediate deletion at shutdown
 	}
-	g_xEngine.Editor().m_xPendingDeletions.clear();
+	g_xEngine.Editor().m_xPendingDeletions.Clear();
 
 	// Free the cached ImGui texture handle
 	if (g_xEngine.Editor().m_xCachedGameTextureHandle.IsValid())
@@ -348,20 +348,26 @@ bool Zenith_Editor::Update()
 	}
 
 	// Process deferred ImGui texture deletions
-	// We wait N frames before freeing to ensure GPU has finished using them
-	for (auto it = g_xEngine.Editor().m_xPendingDeletions.begin(); it != g_xEngine.Editor().m_xPendingDeletions.end(); )
+	// We wait N frames before freeing to ensure GPU has finished using them.
+	// Zenith_Vector has no iterator-erase, so walk by index and Remove() in place
+	// (order-preserving); don't advance the index when an element is removed.
 	{
-		if (it->uFramesUntilDeletion == 0)
+		Zenith_Vector<PendingImGuiTextureDeletion>& xPendingDeletions = g_xEngine.Editor().m_xPendingDeletions;
+		for (u_int i = 0; i < xPendingDeletions.GetSize(); )
 		{
-			// Safe to delete now - GPU has finished with this texture
-			Flux_ImGuiIntegration::UnregisterTexture(it->xHandle, 0);
-			it = g_xEngine.Editor().m_xPendingDeletions.erase(it);
-		}
-		else
-		{
-			// Decrement frame counter
-			it->uFramesUntilDeletion--;
-			++it;
+			PendingImGuiTextureDeletion& xPending = xPendingDeletions.Get(i);
+			if (xPending.uFramesUntilDeletion == 0)
+			{
+				// Safe to delete now - GPU has finished with this texture
+				Flux_ImGuiIntegration::UnregisterTexture(xPending.xHandle, 0);
+				xPendingDeletions.Remove(i);
+			}
+			else
+			{
+				// Decrement frame counter
+				xPending.uFramesUntilDeletion--;
+				++i;
+			}
 		}
 	}
 

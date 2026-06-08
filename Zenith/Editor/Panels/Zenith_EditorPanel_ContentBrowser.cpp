@@ -86,10 +86,10 @@ static void RenderBreadcrumbs(ContentBrowserState& xState)
 	std::filesystem::path xRootPath(strAssetsRoot);
 
 	// Build path segments
-	std::vector<std::pair<std::string, std::string>> axSegments;
+	Zenith_Vector<std::pair<std::string, std::string>> axSegments;
 
 	// Add root as "Assets"
-	axSegments.push_back({ "Assets", strAssetsRoot });
+	axSegments.PushBack({ "Assets", strAssetsRoot });
 
 	// Build relative path components
 	try
@@ -105,13 +105,13 @@ static void RenderBreadcrumbs(ContentBrowserState& xState)
 				continue;
 			}
 			xBuildPath /= xPart;
-			axSegments.push_back({ strPart, xBuildPath.string() });
+			axSegments.PushBack({ strPart, xBuildPath.string() });
 		}
 	}
 	catch (...) {}
 
 	// Render breadcrumbs
-	for (size_t i = 0; i < axSegments.size(); ++i)
+	for (u_int i = 0; i < axSegments.GetSize(); ++i)
 	{
 		if (i > 0)
 		{
@@ -121,15 +121,15 @@ static void RenderBreadcrumbs(ContentBrowserState& xState)
 		}
 
 		// Last segment is non-clickable (current folder)
-		if (i == axSegments.size() - 1)
+		if (i == axSegments.GetSize() - 1)
 		{
-			ImGui::Text("%s", axSegments[i].first.c_str());
+			ImGui::Text("%s", axSegments.Get(i).first.c_str());
 		}
 		else
 		{
-			if (ImGui::SmallButton(axSegments[i].first.c_str()))
+			if (ImGui::SmallButton(axSegments.Get(i).first.c_str()))
 			{
-				Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, axSegments[i].second);
+				Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, axSegments.Get(i).second);
 			}
 		}
 	}
@@ -383,13 +383,13 @@ static void RenderNavButtons(ContentBrowserState& xState)
 {
 	const bool bCanGoBack = xState.m_iHistoryIndex > 0;
 	const bool bCanGoForward = xState.m_iHistoryIndex >= 0 &&
-		xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.size()) - 1;
+		xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.GetSize()) - 1;
 
 	ImGui::BeginDisabled(!bCanGoBack);
 	if (ImGui::Button("<"))
 	{
 		xState.m_iHistoryIndex--;
-		Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
+		Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xState.m_axNavigationHistory.Get(static_cast<u_int>(xState.m_iHistoryIndex)), false);
 	}
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Back");
@@ -399,7 +399,7 @@ static void RenderNavButtons(ContentBrowserState& xState)
 	if (ImGui::Button(">"))
 	{
 		xState.m_iHistoryIndex++;
-		Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
+		Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xState.m_axNavigationHistory.Get(static_cast<u_int>(xState.m_iHistoryIndex)), false);
 	}
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Forward");
@@ -474,7 +474,7 @@ static void RenderViewModeToggle(ContentBrowserState& xState)
 // (initial population).
 static void ApplyContentFilter(ContentBrowserState& xState)
 {
-	xState.m_xFilteredContents.clear();
+	xState.m_xFilteredContents.Clear();
 	std::string strSearch(xState.m_szSearchBuffer);
 	std::transform(strSearch.begin(), strSearch.end(), strSearch.begin(), ::tolower);
 
@@ -493,7 +493,7 @@ static void ApplyContentFilter(ContentBrowserState& xState)
 			if (!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(xState.m_iAssetTypeFilter, xEntry.m_strExtension)) continue;
 		}
 
-		xState.m_xFilteredContents.push_back(xEntry);
+		xState.m_xFilteredContents.PushBack(xEntry);
 	}
 }
 
@@ -515,7 +515,7 @@ void Zenith_EditorPanelContentBrowser::RenderTopBar(ContentBrowserState& xState)
 
 	RenderViewModeToggle(xState);
 
-	if (bFilterInputsChanged || xState.m_xFilteredContents.empty())
+	if (bFilterInputsChanged || xState.m_xFilteredContents.GetSize() == 0)
 	{
 		ApplyContentFilter(xState);
 	}
@@ -637,10 +637,10 @@ void Zenith_EditorPanelContentBrowser::RenderFileList(ContentBrowserState& xStat
 	ImGui::TableSetupScrollFreeze(0, 1);
 	ImGui::TableHeadersRow();
 
-	for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
+	for (u_int i = 0; i < xState.m_xFilteredContents.GetSize(); ++i)
 	{
 		ImGui::PushID(static_cast<int>(i));
-		RenderFileListEntry(xState.m_xFilteredContents[i], xState);
+		RenderFileListEntry(xState.m_xFilteredContents.Get(i), xState);
 		ImGui::PopID();
 	}
 
@@ -746,9 +746,9 @@ void Zenith_EditorPanelContentBrowser::RenderFileGrid(ContentBrowserState& xStat
 	const int iColumnCount = std::max(1, (int)(fPanelWidth / fCellSize));
 	if (!ImGui::BeginTable("ContentBrowserTable", iColumnCount)) return;
 
-	for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
+	for (u_int i = 0; i < xState.m_xFilteredContents.GetSize(); ++i)
 	{
-		const ContentBrowserEntry& xEntry = xState.m_xFilteredContents[i];
+		const ContentBrowserEntry& xEntry = xState.m_xFilteredContents.Get(i);
 
 		ImGui::TableNextColumn();
 		ImGui::PushID((int)i);
@@ -818,8 +818,8 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 
 void Zenith_EditorPanelContentBrowser::RefreshDirectoryContents(ContentBrowserState& xState)
 {
-	xState.m_xDirectoryContents.clear();
-	xState.m_xFilteredContents.clear();
+	xState.m_xDirectoryContents.Clear();
+	xState.m_xFilteredContents.Clear();
 
 	try
 	{
@@ -841,7 +841,7 @@ void Zenith_EditorPanelContentBrowser::RefreshDirectoryContents(ContentBrowserSt
 				catch (...) {}
 			}
 
-			xState.m_xDirectoryContents.push_back(xBrowserEntry);
+			xState.m_xDirectoryContents.PushBack(xBrowserEntry);
 		}
 
 		// Sort: directories first, then files, alphabetically within each group
@@ -852,8 +852,8 @@ void Zenith_EditorPanelContentBrowser::RefreshDirectoryContents(ContentBrowserSt
 				return a.m_strName < b.m_strName;
 			});
 
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Refreshed directory: %s (%zu items)",
-			xState.m_strCurrentDirectory.c_str(), xState.m_xDirectoryContents.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Refreshed directory: %s (%u items)",
+			xState.m_strCurrentDirectory.c_str(), xState.m_xDirectoryContents.GetSize());
 	}
 	catch (const std::filesystem::filesystem_error& e)
 	{
@@ -878,23 +878,29 @@ void Zenith_EditorPanelContentBrowser::NavigateToDirectory(ContentBrowserState& 
 	// Add to navigation history if requested
 	if (bAddToHistory)
 	{
-		// Trim forward history when navigating to new location
+		// Trim forward history when navigating to new location.
+		// Zenith_Vector has no resize(); shrink by popping the tail until only
+		// the first (m_iHistoryIndex + 1) entries remain.
 		if (xState.m_iHistoryIndex >= 0 &&
-			xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.size()) - 1)
+			xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.GetSize()) - 1)
 		{
-			xState.m_axNavigationHistory.resize(xState.m_iHistoryIndex + 1);
+			const u_int uKeepCount = static_cast<u_int>(xState.m_iHistoryIndex + 1);
+			while (xState.m_axNavigationHistory.GetSize() > uKeepCount)
+			{
+				xState.m_axNavigationHistory.PopBack();
+			}
 		}
 
-		xState.m_axNavigationHistory.push_back(strPath);
+		xState.m_axNavigationHistory.PushBack(strPath);
 
-		// Limit history size
-		constexpr int MAX_HISTORY_SIZE = 50;
-		while (xState.m_axNavigationHistory.size() > static_cast<size_t>(MAX_HISTORY_SIZE))
+		// Limit history size (pop-front: remove the oldest entry preserving order)
+		constexpr u_int MAX_HISTORY_SIZE = 50;
+		while (xState.m_axNavigationHistory.GetSize() > MAX_HISTORY_SIZE)
 		{
-			xState.m_axNavigationHistory.erase(xState.m_axNavigationHistory.begin());
+			xState.m_axNavigationHistory.Remove(0);
 		}
 
-		xState.m_iHistoryIndex = static_cast<int>(xState.m_axNavigationHistory.size()) - 1;
+		xState.m_iHistoryIndex = static_cast<int>(xState.m_axNavigationHistory.GetSize()) - 1;
 	}
 
 	xState.m_strCurrentDirectory = strPath;

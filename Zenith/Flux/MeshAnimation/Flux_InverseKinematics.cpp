@@ -38,42 +38,42 @@ void Flux_JointConstraint::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 void Flux_IKChain::ResolveBoneIndices(const Zenith_SkeletonAsset& xSkeleton)
 {
-	m_xBoneIndices.clear();
-	m_xBoneIndices.reserve(m_xBoneNames.size());
+	m_xBoneIndices.Clear();
+	m_xBoneIndices.Reserve(m_xBoneNames.GetSize());
 
 	for (const std::string& strName : m_xBoneNames)
 	{
 		const int32_t iIdx = xSkeleton.GetBoneIndex(strName);
 		if (iIdx != Zenith_SkeletonAsset::INVALID_BONE_INDEX)
 		{
-			m_xBoneIndices.push_back(static_cast<uint32_t>(iIdx));
+			m_xBoneIndices.PushBack(static_cast<uint32_t>(iIdx));
 		}
 		else
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "[IK] Warning: Bone '%s' not found in skeleton", strName.c_str());
-			m_xBoneIndices.push_back(~0u);  // Invalid index
+			m_xBoneIndices.PushBack(~0u);  // Invalid index
 		}
 	}
 }
 
 void Flux_IKChain::ComputeBoneLengths(const Flux_SkeletonPose& xPose)
 {
-	m_xBoneLengths.clear();
+	m_xBoneLengths.Clear();
 	m_fTotalLength = 0.0f;
 
-	if (m_xBoneIndices.size() < 2)
+	if (m_xBoneIndices.GetSize() < 2)
 		return;
 
-	m_xBoneLengths.reserve(m_xBoneIndices.size() - 1);
+	m_xBoneLengths.Reserve(m_xBoneIndices.GetSize() - 1);
 
-	for (size_t i = 0; i < m_xBoneIndices.size() - 1; ++i)
+	for (u_int i = 0; i < m_xBoneIndices.GetSize() - 1; ++i)
 	{
-		uint32_t uCurrent = m_xBoneIndices[i];
-		uint32_t uNext = m_xBoneIndices[i + 1];
+		uint32_t uCurrent = m_xBoneIndices.Get(i);
+		uint32_t uNext = m_xBoneIndices.Get(i + 1);
 
 		if (uCurrent == ~0u || uNext == ~0u)
 		{
-			m_xBoneLengths.push_back(0.0f);
+			m_xBoneLengths.PushBack(0.0f);
 			continue;
 		}
 
@@ -81,7 +81,7 @@ void Flux_IKChain::ComputeBoneLengths(const Flux_SkeletonPose& xPose)
 		Zenith_Maths::Vector3 xNextPos = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uNext)[3]);
 
 		float fLength = glm::length(xNextPos - xCurrentPos);
-		m_xBoneLengths.push_back(fLength);
+		m_xBoneLengths.PushBack(fLength);
 		m_fTotalLength += fLength;
 	}
 }
@@ -97,14 +97,14 @@ void Flux_IKChain::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_xPoleVector.z;
 	xStream << m_strPoleTargetBone;
 
-	uint32_t uNumBones = static_cast<uint32_t>(m_xBoneNames.size());
+	uint32_t uNumBones = static_cast<uint32_t>(m_xBoneNames.GetSize());
 	xStream << uNumBones;
 	for (const auto& strName : m_xBoneNames)
 	{
 		xStream << strName;
 	}
 
-	uint32_t uNumConstraints = static_cast<uint32_t>(m_xJointConstraints.size());
+	uint32_t uNumConstraints = static_cast<uint32_t>(m_xJointConstraints.GetSize());
 	xStream << uNumConstraints;
 	for (const auto& xConstraint : m_xJointConstraints)
 	{
@@ -137,22 +137,28 @@ void Flux_IKChain::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	uint32_t uNumBones = 0;
 	xStream >> uNumBones;
-	m_xBoneNames.resize(uNumBones);
+	m_xBoneNames.Clear();
+	m_xBoneNames.Reserve(uNumBones);
 	for (uint32_t i = 0; i < uNumBones; ++i)
 	{
-		xStream >> m_xBoneNames[i];
+		std::string strName;
+		xStream >> strName;
+		m_xBoneNames.PushBack(std::move(strName));
 	}
 
 	uint32_t uNumConstraints = 0;
 	xStream >> uNumConstraints;
-	m_xJointConstraints.resize(uNumConstraints);
+	m_xJointConstraints.Clear();
+	m_xJointConstraints.Reserve(uNumConstraints);
 	for (uint32_t i = 0; i < uNumConstraints; ++i)
 	{
-		m_xJointConstraints[i].ReadFromDataStream(xStream);
+		Flux_JointConstraint xConstraint;
+		xConstraint.ReadFromDataStream(xStream);
+		m_xJointConstraints.PushBack(xConstraint);
 	}
 
-	m_xBoneIndices.clear();
-	m_xBoneLengths.clear();
+	m_xBoneIndices.Clear();
+	m_xBoneLengths.Clear();
 	m_fTotalLength = 0.0f;
 }
 
@@ -260,11 +266,11 @@ void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
 			continue;
 
 		// Resolve bone indices if needed
-		if (xChain.m_xBoneIndices.empty())
+		if (xChain.m_xBoneIndices.GetSize() == 0)
 			xChain.ResolveBoneIndices(xSkeleton);
 
 		// Compute bone lengths if needed
-		if (xChain.m_xBoneLengths.empty())
+		if (xChain.m_xBoneLengths.GetSize() == 0)
 			xChain.ComputeBoneLengths(xPose);
 
 		// Transform target to model space (unless caller already did the conversion)
@@ -286,23 +292,27 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 	const Flux_IKTarget& xTarget,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	if (xChain.m_xBoneIndices.size() < 2 || xChain.m_xBoneLengths.empty())
+	if (xChain.m_xBoneIndices.GetSize() < 2 || xChain.m_xBoneLengths.GetSize() == 0)
 		return;
 
-	const uint32_t uNumBones = static_cast<uint32_t>(xChain.m_xBoneIndices.size());
+	const uint32_t uNumBones = static_cast<uint32_t>(xChain.m_xBoneIndices.GetSize());
 
 	// Extract bone positions from current pose (model space)
-	std::vector<Zenith_Maths::Vector3> xBonePositions(uNumBones);
+	Zenith_Vector<Zenith_Maths::Vector3> xBonePositions(uNumBones);
 	for (uint32_t i = 0; i < uNumBones; ++i)
 	{
-		uint32_t uBoneIndex = xChain.m_xBoneIndices[i];
+		xBonePositions.PushBack(Zenith_Maths::Vector3(0.0f));
+	}
+	for (uint32_t i = 0; i < uNumBones; ++i)
+	{
+		uint32_t uBoneIndex = xChain.m_xBoneIndices.Get(i);
 		if (uBoneIndex != ~0u)
 		{
-			xBonePositions[i] = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uBoneIndex)[3]);
+			xBonePositions.Get(i) = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uBoneIndex)[3]);
 		}
 	}
 
-	const Zenith_Maths::Vector3 xRootPos = xBonePositions[0];
+	const Zenith_Maths::Vector3 xRootPos = xBonePositions.Get(0);
 	const Zenith_Maths::Vector3 xTargetPos = xTarget.m_xPosition;
 	const float fDistToTarget = glm::length(xTargetPos - xRootPos);
 
@@ -315,8 +325,8 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 
 		for (uint32_t i = 1; i < uNumBones; ++i)
 		{
-			fAccumLength += xChain.m_xBoneLengths[i - 1];
-			xBonePositions[i] = xRootPos + xDirection * fAccumLength;
+			fAccumLength += xChain.m_xBoneLengths.Get(i - 1);
+			xBonePositions.Get(i) = xRootPos + xDirection * fAccumLength;
 		}
 	}
 	else
@@ -331,7 +341,7 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 		// starts so FABRIK has a non-degenerate frame to converge from.
 		if (uNumBones >= 3)
 		{
-			const Zenith_Maths::Vector3 xChainAxis = SafeNormalize(xBonePositions[uNumBones - 1] - xRootPos);
+			const Zenith_Maths::Vector3 xChainAxis = SafeNormalize(xBonePositions.Get(uNumBones - 1) - xRootPos);
 			const Zenith_Maths::Vector3 xTargetAxis = SafeNormalize(xTargetPos - xRootPos);
 			// Detect collinearity of initial chain with target axis. dot ~ ±1 means parallel.
 			const float fCollinearity = std::abs(glm::dot(xChainAxis, xTargetAxis));
@@ -357,10 +367,10 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 				// FABRIK's length-constraint passes will repair bone lengths but
 				// the non-collinear configuration will persist as a hint to FABRIK
 				// (and the pole-vector constraint) about which side to bend toward.
-				for (size_t i = 1; i < uNumBones - 1; ++i)
+				for (uint32_t i = 1; i < uNumBones - 1; ++i)
 				{
-					const float fPerturb = 0.05f * xChain.m_xBoneLengths[i - 1];
-					xBonePositions[i] += xBiasDir * fPerturb;
+					const float fPerturb = 0.05f * xChain.m_xBoneLengths.Get(i - 1);
+					xBonePositions.Get(i) += xBiasDir * fPerturb;
 				}
 			}
 		}
@@ -375,7 +385,7 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 			BackwardReaching(xBonePositions, xChain.m_xBoneLengths, xRootPos);
 
 			// Apply joint constraints if any
-			if (!xChain.m_xJointConstraints.empty())
+			if (xChain.m_xJointConstraints.GetSize() != 0)
 			{
 				ApplyConstraints(xBonePositions, xChain, xPose);
 			}
@@ -387,7 +397,7 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 			}
 
 			// Check convergence
-			float fError = glm::length(xBonePositions[uNumBones - 1] - xTargetPos);
+			float fError = glm::length(xBonePositions.Get(uNumBones - 1) - xTargetPos);
 			if (fError < xChain.m_fTolerance)
 				break;
 		}
@@ -397,52 +407,53 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 	ConvertPositionsToRotations(xPose, xChain, xBonePositions, xSkeleton, xTarget.m_fWeight);
 }
 
-void Flux_IKSolver::ForwardReaching(std::vector<Zenith_Maths::Vector3>& xPositions,
-	const std::vector<float>& xBoneLengths,
+void Flux_IKSolver::ForwardReaching(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	const Zenith_Vector<float>& xBoneLengths,
 	const Zenith_Maths::Vector3& xTargetPos)
 {
-	const size_t uNumBones = xPositions.size();
+	const u_int uNumBones = xPositions.GetSize();
 	if (uNumBones < 2)
 		return;
 
 	// Set end effector to target
-	xPositions[uNumBones - 1] = xTargetPos;
+	xPositions.Get(uNumBones - 1) = xTargetPos;
 
 	// Work backward to root
 	for (int32_t i = static_cast<int32_t>(uNumBones) - 2; i >= 0; --i)
 	{
-		xPositions[i] = ConstrainBoneLength(xPositions[i], xPositions[i + 1], xBoneLengths[i]);
+		const u_int uI = static_cast<u_int>(i);
+		xPositions.Get(uI) = ConstrainBoneLength(xPositions.Get(uI), xPositions.Get(uI + 1), xBoneLengths.Get(uI));
 	}
 }
 
-void Flux_IKSolver::BackwardReaching(std::vector<Zenith_Maths::Vector3>& xPositions,
-	const std::vector<float>& xBoneLengths,
+void Flux_IKSolver::BackwardReaching(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	const Zenith_Vector<float>& xBoneLengths,
 	const Zenith_Maths::Vector3& xRootPos)
 {
-	const size_t uNumBones = xPositions.size();
+	const u_int uNumBones = xPositions.GetSize();
 	if (uNumBones < 2)
 		return;
 
 	// Fix root position
-	xPositions[0] = xRootPos;
+	xPositions.Get(0) = xRootPos;
 
 	// Work forward to end effector
-	for (size_t i = 0; i < uNumBones - 1; ++i)
+	for (u_int i = 0; i < uNumBones - 1; ++i)
 	{
-		xPositions[i + 1] = ConstrainBoneLength(xPositions[i + 1], xPositions[i], xBoneLengths[i]);
+		xPositions.Get(i + 1) = ConstrainBoneLength(xPositions.Get(i + 1), xPositions.Get(i), xBoneLengths.Get(i));
 	}
 }
 
-void Flux_IKSolver::ApplyHingeConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
-	size_t uJointIndex,
+void Flux_IKSolver::ApplyHingeConstraint(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	u_int uJointIndex,
 	const Flux_JointConstraint& xConstraint,
 	float fBoneLength)
 {
-	if (uJointIndex == 0 || uJointIndex + 1 >= xPositions.size())
+	if (uJointIndex == 0 || uJointIndex + 1 >= xPositions.GetSize())
 		return;
 
 	// Project movement onto plane perpendicular to hinge axis
-	Zenith_Maths::Vector3 xBoneDir = xPositions[uJointIndex + 1] - xPositions[uJointIndex];
+	Zenith_Maths::Vector3 xBoneDir = xPositions.Get(uJointIndex + 1) - xPositions.Get(uJointIndex);
 	const Zenith_Maths::Vector3& xAxis = xConstraint.m_xHingeAxis;
 
 	// Remove component along hinge axis
@@ -452,20 +463,20 @@ void Flux_IKSolver::ApplyHingeConstraint(std::vector<Zenith_Maths::Vector3>& xPo
 	Zenith_Maths::Vector3 xNormDir = SafeNormalize(xBoneDir);
 	if (glm::length(xNormDir) > 0.0001f)
 	{
-		xPositions[uJointIndex + 1] = xPositions[uJointIndex] + xNormDir * fBoneLength;
+		xPositions.Get(uJointIndex + 1) = xPositions.Get(uJointIndex) + xNormDir * fBoneLength;
 	}
 }
 
-void Flux_IKSolver::ApplyBallSocketConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
-	size_t uJointIndex,
+void Flux_IKSolver::ApplyBallSocketConstraint(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	u_int uJointIndex,
 	const Flux_JointConstraint& xConstraint,
 	const Flux_IKChain& xChain,
 	const Flux_SkeletonPose& xOriginalPose)
 {
-	if (uJointIndex == 0 || uJointIndex + 1 >= xPositions.size() || uJointIndex >= xChain.m_xBoneIndices.size())
+	if (uJointIndex == 0 || uJointIndex + 1 >= xPositions.GetSize() || uJointIndex >= xChain.m_xBoneIndices.GetSize())
 		return;
 
-	uint32_t uBoneIdx = xChain.m_xBoneIndices[uJointIndex];
+	uint32_t uBoneIdx = xChain.m_xBoneIndices.Get(uJointIndex);
 	if (uBoneIdx == ~0u)
 		return;
 
@@ -475,7 +486,7 @@ void Flux_IKSolver::ApplyBallSocketConstraint(std::vector<Zenith_Maths::Vector3>
 		Zenith_Maths::Vector4(0, 1, 0, 0)
 	);
 
-	Zenith_Maths::Vector3 xNewDir = glm::normalize(xPositions[uJointIndex + 1] - xPositions[uJointIndex]);
+	Zenith_Maths::Vector3 xNewDir = glm::normalize(xPositions.Get(uJointIndex + 1) - xPositions.Get(uJointIndex));
 	float fAngle = std::acos(glm::clamp(glm::dot(xOrigDir, xNewDir), -1.0f, 1.0f));
 
 	if (fAngle > xConstraint.m_fConeAngle)
@@ -487,25 +498,25 @@ void Flux_IKSolver::ApplyBallSocketConstraint(std::vector<Zenith_Maths::Vector3>
 		{
 			Zenith_Maths::Quat xRotation = glm::angleAxis(xConstraint.m_fConeAngle, xNormAxis);
 			Zenith_Maths::Vector3 xClampedDir = xRotation * xOrigDir;
-			xPositions[uJointIndex + 1] = xPositions[uJointIndex] + xClampedDir * xChain.m_xBoneLengths[uJointIndex];
+			xPositions.Get(uJointIndex + 1) = xPositions.Get(uJointIndex) + xClampedDir * xChain.m_xBoneLengths.Get(uJointIndex);
 		}
 	}
 }
 
-void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositions,
+void Flux_IKSolver::ApplyConstraints(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 	const Flux_IKChain& xChain,
 	const Flux_SkeletonPose& xOriginalPose)
 {
-	// Loop must also check bone lengths bounds (m_xBoneLengths.size() == m_xBoneIndices.size() - 1)
-	const size_t uMaxIndex = std::min({xChain.m_xJointConstraints.size(), xPositions.size(), xChain.m_xBoneLengths.size()});
-	for (size_t i = 0; i < uMaxIndex; ++i)
+	// Loop must also check bone lengths bounds (m_xBoneLengths.GetSize() == m_xBoneIndices.GetSize() - 1)
+	const u_int uMaxIndex = std::min({xChain.m_xJointConstraints.GetSize(), xPositions.GetSize(), xChain.m_xBoneLengths.GetSize()});
+	for (u_int i = 0; i < uMaxIndex; ++i)
 	{
-		const Flux_JointConstraint& xConstraint = xChain.m_xJointConstraints[i];
+		const Flux_JointConstraint& xConstraint = xChain.m_xJointConstraints.Get(i);
 
 		switch (xConstraint.m_eType)
 		{
 		case Flux_JointConstraint::ConstraintType::Hinge:
-			ApplyHingeConstraint(xPositions, i, xConstraint, xChain.m_xBoneLengths[i]);
+			ApplyHingeConstraint(xPositions, i, xConstraint, xChain.m_xBoneLengths.Get(i));
 			break;
 
 		case Flux_JointConstraint::ConstraintType::BallSocket:
@@ -518,11 +529,11 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 	}
 }
 
-void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
+void Flux_IKSolver::ApplyPoleVectorConstraint(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 	const Flux_IKChain& xChain,
 	const Zenith_Maths::Vector3& xPoleVector)
 {
-	if (xPositions.size() < 3)
+	if (xPositions.GetSize() < 3)
 		return;
 
 	// For a 3-bone chain (like arm or leg), rotate the middle joint to point
@@ -533,8 +544,8 @@ void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>
 	// constraint would pull the knee toward +X by 0.15m, which conflicts with a
 	// hinge constraint on the same axis). CreateLegChain comments confirm this:
 	// the pole is documented as "Forward" — a direction, not a coordinate.
-	const Zenith_Maths::Vector3& xRoot = xPositions[0];
-	const Zenith_Maths::Vector3& xEnd = xPositions[xPositions.size() - 1];
+	const Zenith_Maths::Vector3& xRoot = xPositions.Get(0);
+	const Zenith_Maths::Vector3& xEnd = xPositions.Get(xPositions.GetSize() - 1);
 
 	// Main axis from root to end
 	Zenith_Maths::Vector3 xMainAxis = SafeNormalize(xEnd - xRoot);
@@ -550,9 +561,9 @@ void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>
 		return;
 
 	// For each middle joint, ensure it's on the pole side
-	for (size_t i = 1; i < xPositions.size() - 1; ++i)
+	for (u_int i = 1; i < xPositions.GetSize() - 1; ++i)
 	{
-		Zenith_Maths::Vector3 xToJoint = xPositions[i] - xRoot;
+		Zenith_Maths::Vector3 xToJoint = xPositions.Get(i) - xRoot;
 		xToJoint = xToJoint - xMainAxis * glm::dot(xToJoint, xMainAxis);
 
 		if (glm::length(xToJoint) < 0.0001f)
@@ -562,14 +573,14 @@ void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>
 		Zenith_Maths::Vector3 xNewJointOffset = xToPole * fCurrentDist;
 
 		// Project root position along main axis
-		float fAlongMain = glm::dot(xPositions[i] - xRoot, xMainAxis);
-		xPositions[i] = xRoot + xMainAxis * fAlongMain + xNewJointOffset;
+		float fAlongMain = glm::dot(xPositions.Get(i) - xRoot, xMainAxis);
+		xPositions.Get(i) = xRoot + xMainAxis * fAlongMain + xNewJointOffset;
 	}
 
 	// Re-apply bone length constraints after pole adjustment
-	for (size_t i = 0; i < xPositions.size() - 1; ++i)
+	for (u_int i = 0; i < xPositions.GetSize() - 1; ++i)
 	{
-		xPositions[i + 1] = ConstrainBoneLength(xPositions[i + 1], xPositions[i], xChain.m_xBoneLengths[i]);
+		xPositions.Get(i + 1) = ConstrainBoneLength(xPositions.Get(i + 1), xPositions.Get(i), xChain.m_xBoneLengths.Get(i));
 	}
 }
 
@@ -613,11 +624,11 @@ Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 
 void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 	const Flux_IKChain& xChain,
-	const std::vector<Zenith_Maths::Vector3>& xPositions,
+	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 	const Zenith_SkeletonAsset& xSkeleton,
 	float fWeight)
 {
-	if (xChain.m_xBoneIndices.size() < 2)
+	if (xChain.m_xBoneIndices.GetSize() < 2)
 		return;
 
 	const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
@@ -631,10 +642,10 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 	//      bone i and its descendants are stale. Recompute the whole pose
 	//      between iterations so the next bone's "current" direction reads
 	//      from the just-updated hierarchy.
-	for (size_t i = 0; i < xChain.m_xBoneIndices.size() - 1; ++i)
+	for (u_int i = 0; i < xChain.m_xBoneIndices.GetSize() - 1; ++i)
 	{
-		uint32_t uBoneIndex = xChain.m_xBoneIndices[i];
-		uint32_t uChildIndex = xChain.m_xBoneIndices[i + 1];
+		uint32_t uBoneIndex = xChain.m_xBoneIndices.Get(i);
+		uint32_t uChildIndex = xChain.m_xBoneIndices.Get(i + 1);
 
 		if (uBoneIndex == ~0u || uChildIndex == ~0u)
 			continue;
@@ -650,7 +661,7 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 			continue;
 
 		// Target direction from FABRIK position buffer
-		Zenith_Maths::Vector3 xTargetDir = SafeNormalize(xPositions[i + 1] - xPositions[i]);
+		Zenith_Maths::Vector3 xTargetDir = SafeNormalize(xPositions.Get(i + 1) - xPositions.Get(i));
 		if (glm::length(xTargetDir) < 0.0001f)
 			continue;
 
@@ -695,7 +706,9 @@ Flux_IKChain Flux_IKSolver::CreateLegChain(const std::string& strName,
 {
 	Flux_IKChain xChain;
 	xChain.m_strName = strName;
-	xChain.m_xBoneNames = { strHipBone, strKneeBone, strAnkleBone };
+	xChain.m_xBoneNames.PushBack(strHipBone);
+	xChain.m_xBoneNames.PushBack(strKneeBone);
+	xChain.m_xBoneNames.PushBack(strAnkleBone);
 	xChain.m_bUsePoleVector = true;
 	xChain.m_xPoleVector = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);  // Forward
 
@@ -706,9 +719,9 @@ Flux_IKChain Flux_IKSolver::CreateLegChain(const std::string& strName,
 	xKneeConstraint.m_fMinAngle = 0.0f;
 	xKneeConstraint.m_fMaxAngle = 2.5f;  // ~143 degrees
 
-	xChain.m_xJointConstraints.push_back(Flux_JointConstraint());  // Hip - no constraint for now
-	xChain.m_xJointConstraints.push_back(xKneeConstraint);
-	xChain.m_xJointConstraints.push_back(Flux_JointConstraint());  // Ankle
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());  // Hip - no constraint for now
+	xChain.m_xJointConstraints.PushBack(xKneeConstraint);
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());  // Ankle
 
 	return xChain;
 }
@@ -720,7 +733,9 @@ Flux_IKChain Flux_IKSolver::CreateArmChain(const std::string& strName,
 {
 	Flux_IKChain xChain;
 	xChain.m_strName = strName;
-	xChain.m_xBoneNames = { strShoulderBone, strElbowBone, strWristBone };
+	xChain.m_xBoneNames.PushBack(strShoulderBone);
+	xChain.m_xBoneNames.PushBack(strElbowBone);
+	xChain.m_xBoneNames.PushBack(strWristBone);
 	xChain.m_bUsePoleVector = true;
 	xChain.m_xPoleVector = Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f);  // Behind
 
@@ -731,15 +746,15 @@ Flux_IKChain Flux_IKSolver::CreateArmChain(const std::string& strName,
 	xElbowConstraint.m_fMinAngle = 0.0f;
 	xElbowConstraint.m_fMaxAngle = 2.7f;  // ~155 degrees
 
-	xChain.m_xJointConstraints.push_back(Flux_JointConstraint());  // Shoulder
-	xChain.m_xJointConstraints.push_back(xElbowConstraint);
-	xChain.m_xJointConstraints.push_back(Flux_JointConstraint());  // Wrist
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());  // Shoulder
+	xChain.m_xJointConstraints.PushBack(xElbowConstraint);
+	xChain.m_xJointConstraints.PushBack(Flux_JointConstraint());  // Wrist
 
 	return xChain;
 }
 
 Flux_IKChain Flux_IKSolver::CreateSpineChain(const std::string& strName,
-	const std::vector<std::string>& xSpineBones)
+	const Zenith_Vector<std::string>& xSpineBones)
 {
 	Flux_IKChain xChain;
 	xChain.m_strName = strName;
@@ -747,12 +762,12 @@ Flux_IKChain Flux_IKSolver::CreateSpineChain(const std::string& strName,
 	xChain.m_bUsePoleVector = false;
 
 	// Ball-socket constraints for each spine bone
-	for (size_t i = 0; i < xSpineBones.size(); ++i)
+	for (u_int i = 0; i < xSpineBones.GetSize(); ++i)
 	{
 		Flux_JointConstraint xConstraint;
 		xConstraint.m_eType = Flux_JointConstraint::ConstraintType::BallSocket;
 		xConstraint.m_fConeAngle = 0.35f;  // ~20 degrees per vertebra
-		xChain.m_xJointConstraints.push_back(xConstraint);
+		xChain.m_xJointConstraints.PushBack(xConstraint);
 	}
 
 	return xChain;

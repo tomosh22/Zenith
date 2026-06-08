@@ -5,7 +5,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_ImGuiIntegration.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 //=============================================================================
 // Viewport Panel
@@ -29,7 +29,7 @@ struct ViewportState
 	bool& m_bViewportFocused;
 	Flux_ImGuiTextureHandle& m_xCachedGameTextureHandle;
 	Flux_ImageViewHandle& m_xCachedImageViewHandle;
-	std::vector<PendingImGuiTextureDeletion>& m_xPendingDeletions;
+	Zenith_Vector<PendingImGuiTextureDeletion>& m_xPendingDeletions;
 };
 
 namespace Zenith_EditorPanelViewport

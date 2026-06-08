@@ -11,7 +11,7 @@
 // relying on a transitive hash spec caused "specialization after instantiation".
 #include "ZenithECS/Zenith_Entity.h"
 
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
 
 class Zenith_Entity;
 
@@ -74,7 +74,7 @@ bool TestEntityHit(class Zenith_ModelComponent* pxModel,
 
 public:
 	// ===== Data members (was Zenith_SelectionSystem) =====
-	std::unordered_map<Zenith_EntityID, BoundingBox> m_xEntityBoundingBoxes;
+	Zenith_HashMap<Zenith_EntityID, BoundingBox> m_xEntityBoundingBoxes;
 };
 
 #endif // ZENITH_TOOLS

@@ -4,9 +4,10 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_HashSet.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 #include <functional>
+#include <utility>
 
 // Forward declarations
 #ifdef ZENITH_TOOLS
@@ -53,14 +54,14 @@ public:
 	const std::string& GetBoneName() const { return m_strBoneName; }
 
 	// Check if channel has keyframes for each component
-	bool HasPositionKeyframes() const { return !m_xPositions.empty(); }
-	bool HasRotationKeyframes() const { return !m_xRotations.empty(); }
-	bool HasScaleKeyframes() const { return !m_xScales.empty(); }
+	bool HasPositionKeyframes() const { return m_xPositions.GetSize() != 0; }
+	bool HasRotationKeyframes() const { return m_xRotations.GetSize() != 0; }
+	bool HasScaleKeyframes() const { return m_xScales.GetSize() != 0; }
 
 	// Get keyframe data for export
-	const std::vector<std::pair<Zenith_Maths::Vector3, float>>& GetPositionKeyframes() const { return m_xPositions; }
-	const std::vector<std::pair<Zenith_Maths::Quat, float>>& GetRotationKeyframes() const { return m_xRotations; }
-	const std::vector<std::pair<Zenith_Maths::Vector3, float>>& GetScaleKeyframes() const { return m_xScales; }
+	const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& GetPositionKeyframes() const { return m_xPositions; }
+	const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& GetRotationKeyframes() const { return m_xRotations; }
+	const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& GetScaleKeyframes() const { return m_xScales; }
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -89,9 +90,9 @@ private:
 	std::string m_strBoneName;
 
 	// Keyframes stored as (value, timestamp) pairs
-	std::vector<std::pair<Zenith_Maths::Vector3, float>> m_xPositions;
-	std::vector<std::pair<Zenith_Maths::Quat, float>> m_xRotations;
-	std::vector<std::pair<Zenith_Maths::Vector3, float>> m_xScales;
+	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> m_xPositions;
+	Zenith_Vector<std::pair<Zenith_Maths::Quat, float>> m_xRotations;
+	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> m_xScales;
 };
 
 //=============================================================================
@@ -117,8 +118,8 @@ struct Flux_AnimationClipMetadata
 struct Flux_RootMotion
 {
 	bool m_bEnabled = false;
-	std::vector<std::pair<Zenith_Maths::Vector3, float>> m_xPositionDeltas;
-	std::vector<std::pair<Zenith_Maths::Quat, float>> m_xRotationDeltas;
+	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> m_xPositionDeltas;
+	Zenith_Vector<std::pair<Zenith_Maths::Quat, float>> m_xRotationDeltas;
 
 	// Sample root motion delta at time
 	Zenith_Maths::Vector3 SamplePositionDelta(float fTime) const;
@@ -173,9 +174,9 @@ public:
 	void SetTicksPerSecond(uint32_t uTicksPerSecond) { m_xMetadata.m_uTicksPerSecond = uTicksPerSecond; }
 
 	// Events
-	const std::vector<Flux_AnimationEvent>& GetEvents() const { return m_xEvents; }
+	const Zenith_Vector<Flux_AnimationEvent>& GetEvents() const { return m_xEvents; }
 	void AddEvent(const Flux_AnimationEvent& xEvent);
-	void RemoveEvent(size_t uIndex);
+	void RemoveEvent(u_int uIndex);
 
 	// Root motion
 	const Flux_RootMotion& GetRootMotion() const { return m_xRootMotion; }
@@ -192,7 +193,7 @@ public:
 private:
 	Flux_AnimationClipMetadata m_xMetadata;
 	Zenith_HashMap<std::string, Flux_BoneChannel> m_xBoneChannels;
-	std::vector<Flux_AnimationEvent> m_xEvents;
+	Zenith_Vector<Flux_AnimationEvent> m_xEvents;
 	Flux_RootMotion m_xRootMotion;
 	std::string m_strSourcePath;
 };
@@ -227,8 +228,8 @@ public:
 	bool HasClip(const std::string& strName) const;
 
 	// Iteration
-	const std::vector<Flux_AnimationClip*>& GetClips() const { return m_xClips; }
-	uint32_t GetClipCount() const { return static_cast<uint32_t>(m_xClips.size()); }
+	const Zenith_Vector<Flux_AnimationClip*>& GetClips() const { return m_xClips; }
+	uint32_t GetClipCount() const { return m_xClips.GetSize(); }
 
 #ifdef ZENITH_TOOLS
 	// Load all animations from a file (may contain multiple clips)
@@ -241,6 +242,6 @@ public:
 
 private:
 	Zenith_HashMap<std::string, Flux_AnimationClip*> m_xClipsByName;
-	std::vector<Flux_AnimationClip*> m_xClips;  // Ordered list for iteration
+	Zenith_Vector<Flux_AnimationClip*> m_xClips;  // Ordered list for iteration
 	Zenith_HashSet<Flux_AnimationClip*> m_xBorrowedClips;  // Non-owned references
 };

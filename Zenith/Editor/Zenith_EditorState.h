@@ -4,7 +4,7 @@
 
 #include "AssetHandling/Zenith_AssetHandle.h"  // MaterialHandle
 #include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID (by value) + entity/component access (no longer transitive via the now-opaque Scene.h)
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 #include <unordered_set>
 #include <bitset>
@@ -116,14 +116,14 @@ struct Zenith_EditorPlayBackupState
 struct Zenith_EditorContentBrowserState
 {
 	std::string m_strCurrentDirectory;
-	std::vector<ContentBrowserEntry> m_xDirectoryContents;
-	std::vector<ContentBrowserEntry> m_xFilteredContents;
+	Zenith_Vector<ContentBrowserEntry> m_xDirectoryContents;
+	Zenith_Vector<ContentBrowserEntry> m_xFilteredContents;
 	bool m_bDirectoryNeedsRefresh = true;
 	char m_szSearchBuffer[256] = "";
 	int m_iAssetTypeFilter = 0;      // 0 = All, then asset types
 	int m_iSelectedContentIndex = -1;
 	float m_fThumbnailSize = 80.0f;  // Range: 40-200 pixels
-	std::vector<std::string> m_axNavigationHistory;
+	Zenith_Vector<std::string> m_axNavigationHistory;
 	int m_iHistoryIndex = -1;
 	ContentBrowserViewMode m_eViewMode = ContentBrowserViewMode::Grid;
 	static constexpr int MAX_HISTORY_SIZE = 50;
@@ -134,7 +134,7 @@ struct Zenith_EditorContentBrowserState
 //-----------------------------------------------------------------------------
 struct Zenith_EditorConsoleState
 {
-	std::vector<ConsoleLogEntry> m_xLogs;
+	Zenith_Vector<ConsoleLogEntry> m_xLogs;
 	bool m_bAutoScroll = true;
 	bool m_bShowInfo = true;
 	bool m_bShowWarnings = true;
