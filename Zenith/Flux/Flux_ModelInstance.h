@@ -1,6 +1,7 @@
 #pragma once
 #include "Collections/Zenith_Vector.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "Maths/Zenith_Maths.h"
 
 class Zenith_ModelAsset;
 class Zenith_MeshAsset;
@@ -195,3 +196,15 @@ private:
 	// and (if applicable) skinned GPU instances, and resolves its material bindings.
 	void BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAsset* pxAsset);
 };
+
+// Wave 3: model render-gather. The EC side queries Zenith_ModelComponent + the entity
+// transform and produces a flat list of (model instance, world matrix) pairs so the
+// renderers (Flux_StaticMeshes / Flux_AnimatedMeshes) no longer #include the components.
+// The fn-ptr type lives here (not in Core/Zenith_RenderGather.h) because it names
+// Flux_ModelInstance, a Flux type; Zenith_ModelComponent.cpp already includes this header
+// (an existing forward EC->Flux edge), so hosting it here adds no new Flux<->EC edge.
+// Both renderers consume the full list and filter (static keeps non-skinned; animated
+// keeps skinned) exactly as before.
+using Zenith_ModelGatherFn = void (*)(Zenith_Vector<Flux_ModelInstance*>& xOutInstances,
+	Zenith_Vector<Zenith_Maths::Matrix4>& xOutMatrices);
+extern Zenith_ModelGatherFn g_pfnZenithModelGather;

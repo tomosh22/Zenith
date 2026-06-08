@@ -11,6 +11,12 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "EntityComponent/Zenith_PhysicsDebugDraw.h"
+// Wave 3: EC-side model render-gather (so Flux_StaticMeshes / Flux_AnimatedMeshes drop
+// their Zenith_ModelComponent.h / Zenith_TransformComponent.h includes).
+#include "Core/Zenith_Engine.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Query.h"
 #include <filesystem>
 
 void Zenith_ModelComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
@@ -536,3 +542,29 @@ void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector
 
 // Editor code for RenderPropertiesPanel and AssignTextureToSlot
 // is in Zenith_ModelComponent_Editor.cpp
+
+// ---------------------------------------------------------------------------
+// Wave 3: model render-gather. Queries every Zenith_ModelComponent with a built
+// model instance and produces parallel (instance, world-matrix) lists for the
+// mesh renderers. Both Flux_StaticMeshes and Flux_AnimatedMeshes consume the full
+// list and filter it themselves (static skips skinned-animated models, animated
+// keeps them) -- identical to the per-renderer queries this replaces.
+// ---------------------------------------------------------------------------
+static void Zenith_GatherModelInstancesImpl(Zenith_Vector<Flux_ModelInstance*>& xOutInstances,
+	Zenith_Vector<Zenith_Maths::Matrix4>& xOutMatrices)
+{
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>()
+		.ForEach([&xOutInstances, &xOutMatrices](Zenith_EntityID, Zenith_ModelComponent& xModel)
+	{
+		Flux_ModelInstance* pxModelInstance = xModel.GetModelInstance();
+		if (!pxModelInstance) return;
+
+		Zenith_Maths::Matrix4 xMatrix;
+		xModel.GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xMatrix);
+
+		xOutInstances.PushBack(pxModelInstance);
+		xOutMatrices.PushBack(xMatrix);
+	});
+}
+
+Zenith_ModelGatherFn g_pfnZenithModelGather = &Zenith_GatherModelInstancesImpl;

@@ -11,12 +11,9 @@
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "ZenithECS/Zenith_Scene.h"
-#include "ZenithECS/Zenith_SceneSystem.h"
-// Zenith_Query.h arrives transitively via Zenith_SceneSystem.h (QueryAllScenes needs it);
-// including it explicitly here would add a new EC<->Flux cross-layer edge.
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
+// Wave 3: models arrive from the EC-side gatherer (g_pfnZenithModelGather, declared in
+// Flux_ModelInstance.h) as (instance, matrix) pairs -- no Zenith_ModelComponent.h /
+// Zenith_TransformComponent.h / scene-query includes here any more.
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -150,23 +147,21 @@ void Flux_StaticMeshesImpl::GatherDrawPacket(void*)
 	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = m_xDrawPacket;
 	xPacket.Clear();
 
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	xModels.Clear();
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach([&xModels](Zenith_EntityID, Zenith_ModelComponent& xModel){ xModels.PushBack(&xModel); });
+	// Wave 3: models are gathered EC-side into parallel (instance, matrix) lists.
+	Zenith_Vector<Flux_ModelInstance*> xInstances;
+	Zenith_Vector<Zenith_Maths::Matrix4> xMatrices;
+	if (g_pfnZenithModelGather) g_pfnZenithModelGather(xInstances, xMatrices);
 
-	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	for (u_int u = 0; u < xInstances.GetSize(); ++u)
 	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
-		if (!pxModelInstance) continue;
+		Flux_ModelInstance* pxModelInstance = xInstances.Get(u);
 
 		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
 		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
 
 		Flux_StaticMeshDrawItem xItem;
-		xItem.m_pxModel = pxModel;
 		xItem.m_pxModelInstance = pxModelInstance;
-		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xItem.m_xModelMatrix);
+		xItem.m_xModelMatrix    = xMatrices.Get(u);
 		xPacket.PushBack(xItem);
 	}
 }

@@ -7,26 +7,22 @@
 
 class Flux_DynamicConstantBuffer;
 class Flux_ModelInstance;
-class Zenith_ModelComponent;
 class Flux_CommandList;
 class Flux_ShaderBinder;
 class Zenith_MaterialAsset;
 
 // Cross-subsystem dependency injected into Initialise (Wave-15 DI seam, built on
 // the Wave-14 Flux_QuadsImpl / Flux_SDFsImpl template). Forward-declared here; the
-// full header is pulled in by Flux_StaticMeshes.cpp. Flux_GraphicsImpl is the ONLY
-// injectable cross-subsystem dep — the ECS reach (g_xEngine.Scenes() inside
-// GatherDrawPacket) stays SELF-ROUTED because Scenes is ECS, not a Flux render dep,
-// and injecting it would re-open the Flux<->ECS layering gate (WS13.A CI gate).
+// full header is pulled in by Flux_StaticMeshes.cpp. Wave 3: the model+transform read
+// that GatherDrawPacket used to do is now performed by the EC-side gatherer
+// (g_pfnZenithModelGather), so this TU names no EntityComponent type.
 class Flux_GraphicsImpl;
 
-// Per-frame draw item resolved on the main thread during Prepare. The model
-// matrix is resolved here (not in the record path) so the live
-// Zenith_TransformComponent read happens on the main thread too — the record
-// callbacks run on worker threads and must not touch the ECS.
+// Per-frame draw item resolved on the main thread during Prepare. The (instance,
+// matrix) pairs come from the EC-side model gather; the record callbacks run on
+// worker threads and only touch these resolved Flux pointers / matrices.
 struct Flux_StaticMeshDrawItem
 {
-	Zenith_ModelComponent* m_pxModel = nullptr;
 	Flux_ModelInstance*    m_pxModelInstance = nullptr;
 	Zenith_Maths::Matrix4  m_xModelMatrix;
 };

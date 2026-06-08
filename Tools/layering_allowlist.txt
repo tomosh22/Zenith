@@ -50,7 +50,5 @@ Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => EntityComponent/Components
 Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => EntityComponent/Components/Zenith_TransformComponent.h
 Zenith/Flux/Gizmos/Flux_Gizmos.cpp => EntityComponent/Components/Zenith_TransformComponent.h
 Zenith/Flux/Particles/Flux_Particles.cpp => EntityComponent/Components/Zenith_ParticleEmitterComponent.h
-Zenith/Flux/StaticMeshes/Flux_StaticMeshes.cpp => EntityComponent/Components/Zenith_ModelComponent.h
-Zenith/Flux/StaticMeshes/Flux_StaticMeshes.cpp => EntityComponent/Components/Zenith_TransformComponent.h
 Zenith/Flux/Terrain/Flux_Terrain.cpp => EntityComponent/Components/Zenith_TerrainComponent.h
 Zenith/Flux/Terrain/Flux_TerrainStreamingManager.cpp => EntityComponent/Components/Zenith_TerrainComponent.h
