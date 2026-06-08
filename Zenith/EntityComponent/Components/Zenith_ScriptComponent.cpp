@@ -621,7 +621,7 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-#include "Editor/Zenith_Editor.h"  // For DRAGDROP_PAYLOAD_SCRIPT_ASSET
+#include "Core/Zenith_DragDropPayloads.h"  // For DRAGDROP_PAYLOAD_SCRIPT_ASSET + DragDropFilePayload
 #include <algorithm>
 #include <cstdio>
 

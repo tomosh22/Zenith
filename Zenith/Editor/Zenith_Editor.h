@@ -17,6 +17,7 @@
 #include "Flux/Flux_Types.h"                              // Flux_ImGuiTextureHandle, Flux_ImageViewHandle
 #include "AssetHandling/Zenith_AssetHandle.h"             // MaterialHandle
 #include "Collections/Zenith_Vector.h"
+#include "Core/Zenith_DragDropPayloads.h"   // DRAGDROP_PAYLOAD_* + DragDropFilePayload (L0, no deps)
 #include <string>
 #include <unordered_set>
 #include <bitset>
@@ -31,15 +32,8 @@ enum class ContentBrowserViewMode
 	List
 };
 
-// Drag-drop payload type identifiers (max 32 chars per ImGui)
-#define DRAGDROP_PAYLOAD_TEXTURE  "ZENITH_TEXTURE"
-#define DRAGDROP_PAYLOAD_MESH    "ZENITH_MESH"
-#define DRAGDROP_PAYLOAD_MATERIAL "ZENITH_MATERIAL"
-#define DRAGDROP_PAYLOAD_PREFAB   "ZENITH_PREFAB"
-#define DRAGDROP_PAYLOAD_MODEL    "ZENITH_MODEL"
-#define DRAGDROP_PAYLOAD_ANIMATION "ZENITH_ANIMATION"
-#define DRAGDROP_PAYLOAD_SCRIPT_ASSET "ZSCRIPT_ASSET"
-#define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
+// DRAGDROP_PAYLOAD_* identifiers now live in Core/Zenith_DragDropPayloads.h
+// (included above); they remain available here transitively.
 
 // Content browser file entry
 struct ContentBrowserEntry
@@ -51,11 +45,7 @@ struct ContentBrowserEntry
 	uint64_t m_ulFileSize = 0;       // File size in bytes
 };
 
-// Drag-drop payload data structure
-struct DragDropFilePayload
-{
-	char m_szFilePath[512];          // Absolute path to file
-};
+// DragDropFilePayload now lives in Core/Zenith_DragDropPayloads.h (included above).
 
 // File type metadata for content browser display
 struct EditorFileTypeInfo

@@ -20,7 +20,6 @@ struct Zenith_PropertyDescriptor;
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
-#include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include <filesystem>
 // W5.2: the old #ifdef _WIN32 <windows.h>/<shlobj.h>/Shell32.lib block here was

@@ -30,6 +30,14 @@ public:
 	void RegisterTest(Zenith_TestCase* pxCase);
 	void RunAllTests();
 
+	// Per-test global-state reset seam. The runner lives in Core (L0) and must
+	// not name the ECS (L1) directly; a higher layer installs the concrete reset
+	// (Zenith_SceneSystem::ResetForNextTest) via a captureless function pointer
+	// (NO std::function), mirroring the Zenith_ECSRuntimeHooks / registrar
+	// inversion. Null => no reset is run.
+	static void SetResetHook(void (*pfnReset)()) { m_pfnResetHook = pfnReset; }
+	static void (*GetResetHook())()              { return m_pfnResetHook; }
+
 	// Non-template assertions - each takes printf-style (const char* strFormat, ...) at the end.
 	void AssertTrue    (bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* strFormat, ...);
 	void AssertFalse   (bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* strFormat, ...);
@@ -67,6 +75,9 @@ private:
 	u_int               m_uSkippedCount    = 0;
 	bool                m_bCurrentTestFailed  = false;
 	bool                m_bCurrentTestSkipped = false;
+
+	// Installed by a higher layer (EngineComposition TU) via SetResetHook.
+	static inline void (*m_pfnResetHook)() = nullptr;
 };
 
 struct Zenith_TestRegistrar

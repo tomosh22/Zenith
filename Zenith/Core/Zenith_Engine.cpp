@@ -662,6 +662,10 @@ void Zenith_Engine::Initialise()
 	}
 	else
 	{
+		// Install the ECS per-test reset seam here, where the engine TU
+		// legitimately owns the L1 reference (Zenith_SceneSystem). Keeps the
+		// L0 Core test runner free of any ECS include/symbol dependency.
+		Zenith_TestRunner::SetResetHook(&Zenith_SceneSystem::ResetForNextTest);
 		Zenith_TestRunner::Instance().RunAllTests();
 	}
 #endif

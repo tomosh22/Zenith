@@ -35,7 +35,7 @@ struct Flux_PipelineLayout;
 struct Flux_BindingGroupLayout;
 struct Flux_BindingGroupEntry;
 struct Flux_VertexInputDescription;
-struct Flux_BufferLayout;
+class Flux_BufferLayout;
 struct Flux_BufferElement;
 
 // Command types
@@ -68,7 +68,7 @@ class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan_Swapchain;
 class Zenith_Vulkan_MemoryManager;
 class Zenith_Vulkan;
-struct Zenith_Vulkan_VRAM;
+class Zenith_Vulkan_VRAM;
 
 // Handle type (lightweight, doesn't need Vulkan)
 class Flux_VRAMHandle;

@@ -4,8 +4,13 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-#include "Flux/Flux.h"
 #include "Collections/Zenith_Vector.h"
+
+// Flux_ShaderResourceView is used here ONLY by pointer/reference (AddTexture stores &,
+// the LeafNode holds a T*, the callback returns a T*); every dereference lives in the
+// .cpp. A LOCAL forward-decl keeps this L0 debug header off the Flux (L2) layer entirely
+// — including Flux_Fwd.h would still be a layer-up edge (it's a Flux-layer header).
+struct Flux_ShaderResourceView;
 
 #define ROOT_NAME "Debug Variables"
 

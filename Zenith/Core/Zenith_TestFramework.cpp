@@ -3,8 +3,6 @@
 
 #ifdef ZENITH_TESTING
 
-#include "ZenithECS/Zenith_SceneSystem.h"
-
 #include <cstring>
 #include <cmath>
 
@@ -23,11 +21,20 @@ void Zenith_TestRunner::RegisterTest(Zenith_TestCase* pxCase)
 
 static void Zenith_TestResetGlobalState()
 {
+	// The concrete reset (ECS scene-system) is installed from a higher layer via
+	// Zenith_TestRunner::SetResetHook; the runner itself names no ECS type. Null
+	// hook => nothing to reset (safe no-op).
+	void (*pfnReset)() = Zenith_TestRunner::GetResetHook();
+	if (pfnReset == nullptr)
+	{
+		return;
+	}
+
 #ifdef ZENITH_WINDOWS
-	__try { Zenith_SceneSystem::ResetForNextTest(); }
+	__try { pfnReset(); }
 	__except (EXCEPTION_EXECUTE_HANDLER) {}
 #else
-	Zenith_SceneSystem::ResetForNextTest();
+	pfnReset();
 #endif
 }
 
