@@ -2,8 +2,8 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Entity.h"
+#include "Collections/Zenith_HashMap.h"
 #include <string>
-#include <unordered_map>
 
 class Zenith_DataStream;
 
@@ -50,7 +50,7 @@ public:
 	void Clear();
 
 	// Get number of entries
-	uint32_t GetSize() const { return static_cast<uint32_t>(m_xData.size()); }
+	uint32_t GetSize() const { return static_cast<uint32_t>(m_xData.GetSize()); }
 
 	// Iterate over every entry, formatted for display. Caller provides a
 	// function pointer (no captures so it converts from a lambda) and a
@@ -89,5 +89,5 @@ private:
 		BlackboardValue() : m_eType(ValueType::FLOAT), m_fValue(0.0f) {}
 	};
 
-	std::unordered_map<std::string, BlackboardValue> m_xData;
+	Zenith_HashMap<std::string, BlackboardValue> m_xData;
 };

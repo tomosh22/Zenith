@@ -2,8 +2,8 @@
 
 #include <string>
 #include <functional>
-#include <unordered_map>
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
 /**
@@ -149,12 +149,12 @@ private:
 	static Zenith_Mutex s_xEventMutex;
 
 	// Callbacks
-	static std::unordered_map<uint32_t, ChangeCallback> s_xCallbacks;
+	static Zenith_HashMap<uint32_t, ChangeCallback> s_xCallbacks;
 	static uint32_t s_uNextCallbackHandle;
 	static Zenith_Mutex s_xCallbackMutex;
 
 	// File modification times for polling fallback
-	static std::unordered_map<std::string, uint64_t> s_xFileModTimes;
+	static Zenith_HashMap<std::string, uint64_t> s_xFileModTimes;
 
 #ifdef _WIN32
 	// Windows-specific handles

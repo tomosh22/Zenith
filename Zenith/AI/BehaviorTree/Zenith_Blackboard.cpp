@@ -49,43 +49,43 @@ void Zenith_Blackboard::SetEntityID(const std::string& strKey, Zenith_EntityID x
 
 float Zenith_Blackboard::GetFloat(const std::string& strKey, float fDefault) const
 {
-	auto it = m_xData.find(strKey);
-	if (it != m_xData.end() && it->second.m_eType == ValueType::FLOAT)
+	const BlackboardValue* pxValue = m_xData.TryGet(strKey);
+	if (pxValue != nullptr && pxValue->m_eType == ValueType::FLOAT)
 	{
-		return it->second.m_fValue;
+		return pxValue->m_fValue;
 	}
 	return fDefault;
 }
 
 int32_t Zenith_Blackboard::GetInt(const std::string& strKey, int32_t iDefault) const
 {
-	auto it = m_xData.find(strKey);
-	if (it != m_xData.end() && it->second.m_eType == ValueType::INT)
+	const BlackboardValue* pxValue = m_xData.TryGet(strKey);
+	if (pxValue != nullptr && pxValue->m_eType == ValueType::INT)
 	{
-		return it->second.m_iValue;
+		return pxValue->m_iValue;
 	}
 	return iDefault;
 }
 
 bool Zenith_Blackboard::GetBool(const std::string& strKey, bool bDefault) const
 {
-	auto it = m_xData.find(strKey);
-	if (it != m_xData.end() && it->second.m_eType == ValueType::BOOL)
+	const BlackboardValue* pxValue = m_xData.TryGet(strKey);
+	if (pxValue != nullptr && pxValue->m_eType == ValueType::BOOL)
 	{
-		return it->second.m_bValue;
+		return pxValue->m_bValue;
 	}
 	return bDefault;
 }
 
 Zenith_Maths::Vector3 Zenith_Blackboard::GetVector3(const std::string& strKey, const Zenith_Maths::Vector3& xDefault) const
 {
-	auto it = m_xData.find(strKey);
-	if (it != m_xData.end() && it->second.m_eType == ValueType::VECTOR3)
+	const BlackboardValue* pxValue = m_xData.TryGet(strKey);
+	if (pxValue != nullptr && pxValue->m_eType == ValueType::VECTOR3)
 	{
 		return Zenith_Maths::Vector3(
-			it->second.m_xVector3.x,
-			it->second.m_xVector3.y,
-			it->second.m_xVector3.z
+			pxValue->m_xVector3.x,
+			pxValue->m_xVector3.y,
+			pxValue->m_xVector3.z
 		);
 	}
 	return xDefault;
@@ -93,14 +93,14 @@ Zenith_Maths::Vector3 Zenith_Blackboard::GetVector3(const std::string& strKey, c
 
 Zenith_EntityID Zenith_Blackboard::GetEntityID(const std::string& strKey) const
 {
-	auto it = m_xData.find(strKey);
-	if (it != m_xData.end() && it->second.m_eType == ValueType::ENTITY_ID)
+	const BlackboardValue* pxValue = m_xData.TryGet(strKey);
+	if (pxValue != nullptr && pxValue->m_eType == ValueType::ENTITY_ID)
 	{
-		if (it->second.m_ulEntityIDPacked == UINT64_MAX)
+		if (pxValue->m_ulEntityIDPacked == UINT64_MAX)
 		{
 			return INVALID_ENTITY_ID;
 		}
-		return Zenith_EntityID::FromPacked(it->second.m_ulEntityIDPacked);
+		return Zenith_EntityID::FromPacked(pxValue->m_ulEntityIDPacked);
 	}
 	return INVALID_ENTITY_ID;
 }
@@ -109,25 +109,27 @@ Zenith_EntityID Zenith_Blackboard::GetEntityID(const std::string& strKey) const
 
 bool Zenith_Blackboard::HasKey(const std::string& strKey) const
 {
-	return m_xData.find(strKey) != m_xData.end();
+	return m_xData.Contains(strKey);
 }
 
 void Zenith_Blackboard::RemoveKey(const std::string& strKey)
 {
-	m_xData.erase(strKey);
+	m_xData.Remove(strKey);
 }
 
 void Zenith_Blackboard::Clear()
 {
-	m_xData.clear();
+	m_xData.Clear();
 }
 
 void Zenith_Blackboard::IterateEntries(EntryDisplayFunc pfnCallback, void* pUserData) const
 {
 	if (!pfnCallback) return;
 	char acBuf[64];
-	for (const auto& [strKey, xValue] : m_xData)
+	for (Zenith_HashMap<std::string, BlackboardValue>::Iterator xIt(m_xData); !xIt.Done(); xIt.Next())
 	{
+		const std::string& strKey = xIt.GetKey();
+		const BlackboardValue& xValue = xIt.GetValue();
 		const char* szType = "?";
 		switch (xValue.m_eType)
 		{
@@ -166,33 +168,35 @@ void Zenith_Blackboard::IterateEntries(EntryDisplayFunc pfnCallback, void* pUser
 void Zenith_Blackboard::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Write number of entries
-	uint32_t uCount = static_cast<uint32_t>(m_xData.size());
+	uint32_t uCount = static_cast<uint32_t>(m_xData.GetSize());
 	xStream << uCount;
 
-	for (const auto& xPair : m_xData)
+	for (Zenith_HashMap<std::string, BlackboardValue>::Iterator xIt(m_xData); !xIt.Done(); xIt.Next())
 	{
-		xStream << xPair.first;
-		xStream << static_cast<uint8_t>(xPair.second.m_eType);
+		const std::string& strKey = xIt.GetKey();
+		const BlackboardValue& xValue = xIt.GetValue();
+		xStream << strKey;
+		xStream << static_cast<uint8_t>(xValue.m_eType);
 
 		// Write value based on type
-		switch (xPair.second.m_eType)
+		switch (xValue.m_eType)
 		{
 		case ValueType::FLOAT:
-			xStream << xPair.second.m_fValue;
+			xStream << xValue.m_fValue;
 			break;
 		case ValueType::INT:
-			xStream << xPair.second.m_iValue;
+			xStream << xValue.m_iValue;
 			break;
 		case ValueType::BOOL:
-			xStream << xPair.second.m_bValue;
+			xStream << xValue.m_bValue;
 			break;
 		case ValueType::VECTOR3:
-			xStream << xPair.second.m_xVector3.x;
-			xStream << xPair.second.m_xVector3.y;
-			xStream << xPair.second.m_xVector3.z;
+			xStream << xValue.m_xVector3.x;
+			xStream << xValue.m_xVector3.y;
+			xStream << xValue.m_xVector3.z;
 			break;
 		case ValueType::ENTITY_ID:
-			xStream << xPair.second.m_ulEntityIDPacked;
+			xStream << xValue.m_ulEntityIDPacked;
 			break;
 		}
 	}

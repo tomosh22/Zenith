@@ -91,71 +91,71 @@ void Flux_AnimationParameters::AddTrigger(const std::string& strName)
 
 void Flux_AnimationParameters::SetFloat(const std::string& strName, float fValue)
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Float)
-		it->second.m_fValue = fValue;
+	Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Float)
+		pxParam->m_fValue = fValue;
 }
 
 void Flux_AnimationParameters::SetInt(const std::string& strName, int32_t iValue)
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Int)
-		it->second.m_iValue = iValue;
+	Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Int)
+		pxParam->m_iValue = iValue;
 }
 
 void Flux_AnimationParameters::SetBool(const std::string& strName, bool bValue)
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Bool)
-		it->second.m_bValue = bValue;
+	Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Bool)
+		pxParam->m_bValue = bValue;
 }
 
 void Flux_AnimationParameters::SetTrigger(const std::string& strName)
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Trigger)
-		it->second.m_bValue = true;
+	Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Trigger)
+		pxParam->m_bValue = true;
 }
 
 float Flux_AnimationParameters::GetFloat(const std::string& strName) const
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Float)
-		return it->second.m_fValue;
+	const Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Float)
+		return pxParam->m_fValue;
 	return 0.0f;
 }
 
 int32_t Flux_AnimationParameters::GetInt(const std::string& strName) const
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Int)
-		return it->second.m_iValue;
+	const Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Int)
+		return pxParam->m_iValue;
 	return 0;
 }
 
 bool Flux_AnimationParameters::GetBool(const std::string& strName) const
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Bool)
-		return it->second.m_bValue;
+	const Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Bool)
+		return pxParam->m_bValue;
 	return false;
 }
 
 bool Flux_AnimationParameters::PeekTrigger(const std::string& strName) const
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Trigger)
-		return it->second.m_bValue;
+	const Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Trigger)
+		return pxParam->m_bValue;
 	return false;
 }
 
 bool Flux_AnimationParameters::ConsumeTrigger(const std::string& strName)
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Trigger)
+	Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam && pxParam->m_eType == ParamType::Trigger)
 	{
-		bool bWasSet = it->second.m_bValue;
-		it->second.m_bValue = false;
+		bool bWasSet = pxParam->m_bValue;
+		pxParam->m_bValue = false;
 		return bWasSet;
 	}
 	return false;
@@ -163,28 +163,29 @@ bool Flux_AnimationParameters::ConsumeTrigger(const std::string& strName)
 
 bool Flux_AnimationParameters::HasParameter(const std::string& strName) const
 {
-	return m_xParameters.find(strName) != m_xParameters.end();
+	return m_xParameters.Contains(strName);
 }
 
 Flux_AnimationParameters::ParamType Flux_AnimationParameters::GetParameterType(const std::string& strName) const
 {
-	auto it = m_xParameters.find(strName);
-	if (it != m_xParameters.end())
-		return it->second.m_eType;
+	const Parameter* pxParam = m_xParameters.TryGet(strName);
+	if (pxParam)
+		return pxParam->m_eType;
 	return ParamType::Float;
 }
 
 void Flux_AnimationParameters::RemoveParameter(const std::string& strName)
 {
-	m_xParameters.erase(strName);
+	m_xParameters.Remove(strName);
 }
 
 void Flux_AnimationParameters::ResetTriggers()
 {
-	for (auto& xPair : m_xParameters)
+	for (Zenith_HashMap<std::string, Parameter>::Iterator xIt(m_xParameters); !xIt.Done(); xIt.Next())
 	{
-		if (xPair.second.m_eType == ParamType::Trigger)
-			xPair.second.m_bValue = false;
+		Parameter& xParam = xIt.GetValueMutable();
+		if (xParam.m_eType == ParamType::Trigger)
+			xParam.m_bValue = false;
 	}
 }
 
@@ -224,12 +225,12 @@ void Flux_AnimationParameters::ReadParamValueFromStream(Zenith_DataStream& xStre
 
 void Flux_AnimationParameters::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	uint32_t uNumParams = static_cast<uint32_t>(m_xParameters.size());
+	uint32_t uNumParams = static_cast<uint32_t>(m_xParameters.GetSize());
 	xStream << uNumParams;
 
-	for (const auto& xPair : m_xParameters)
+	for (Zenith_HashMap<std::string, Parameter>::Iterator xIt(m_xParameters); !xIt.Done(); xIt.Next())
 	{
-		const Parameter& xParam = xPair.second;
+		const Parameter& xParam = xIt.GetValue();
 		xStream << xParam.m_strName;
 		xStream << static_cast<uint8_t>(xParam.m_eType);
 		WriteParamValueToStream(xStream, xParam.m_eType, xParam.m_fValue, xParam.m_iValue, xParam.m_bValue);
@@ -238,7 +239,7 @@ void Flux_AnimationParameters::WriteToDataStream(Zenith_DataStream& xStream) con
 
 void Flux_AnimationParameters::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	m_xParameters.clear();
+	m_xParameters.Clear();
 
 	uint32_t uNumParams = 0;
 	xStream >> uNumParams;
@@ -538,8 +539,8 @@ Flux_AnimationStateMachine::Flux_AnimationStateMachine(const std::string& strNam
 
 Flux_AnimationStateMachine::~Flux_AnimationStateMachine()
 {
-	for (auto& xPair : m_xStates)
-		delete xPair.second;
+	for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(m_xStates); !xIt.Done(); xIt.Next())
+		delete xIt.GetValue();
 
 	delete m_pxActiveTransition;
 }
@@ -561,15 +562,17 @@ Flux_AnimationState* Flux_AnimationStateMachine::AddState(const std::string& str
 
 void Flux_AnimationStateMachine::RemoveState(const std::string& strName)
 {
-	auto it = m_xStates.find(strName);
-	if (it != m_xStates.end())
+	Flux_AnimationState** ppxState = m_xStates.TryGet(strName);
+	if (ppxState)
 	{
+		Flux_AnimationState* pxState = *ppxState;
+
 		// Clear current state if removing it
-		if (m_pxCurrentState == it->second)
+		if (m_pxCurrentState == pxState)
 			m_pxCurrentState = nullptr;
 
-		delete it->second;
-		m_xStates.erase(it);
+		delete pxState;
+		m_xStates.Remove(strName);
 
 		// Clear default if removing it
 		if (m_strDefaultStateName == strName)
@@ -579,19 +582,19 @@ void Flux_AnimationStateMachine::RemoveState(const std::string& strName)
 
 Flux_AnimationState* Flux_AnimationStateMachine::GetState(const std::string& strName)
 {
-	auto it = m_xStates.find(strName);
-	return (it != m_xStates.end()) ? it->second : nullptr;
+	Flux_AnimationState** ppxState = m_xStates.TryGet(strName);
+	return ppxState ? *ppxState : nullptr;
 }
 
 const Flux_AnimationState* Flux_AnimationStateMachine::GetState(const std::string& strName) const
 {
-	auto it = m_xStates.find(strName);
-	return (it != m_xStates.end()) ? it->second : nullptr;
+	const Flux_AnimationState* const* ppxState = m_xStates.TryGet(strName);
+	return ppxState ? *ppxState : nullptr;
 }
 
 bool Flux_AnimationStateMachine::HasState(const std::string& strName) const
 {
-	return m_xStates.find(strName) != m_xStates.end();
+	return m_xStates.Contains(strName);
 }
 
 void Flux_AnimationStateMachine::SetDefaultState(const std::string& strName)
@@ -936,9 +939,9 @@ static void ResolveClipReferencesRecursive(Flux_BlendTreeNode* pxNode, Flux_Anim
 
 void Flux_AnimationStateMachine::ResolveClipReferences(Flux_AnimationClipCollection* pxCollection)
 {
-	for (auto& xPair : m_xStates)
+	for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(m_xStates); !xIt.Done(); xIt.Next())
 	{
-		Flux_BlendTreeNode* pxBlendTree = xPair.second->GetBlendTree();
+		Flux_BlendTreeNode* pxBlendTree = xIt.GetValue()->GetBlendTree();
 		if (pxBlendTree)
 		{
 			ResolveClipReferencesRecursive(pxBlendTree, pxCollection);
@@ -982,11 +985,11 @@ void Flux_AnimationStateMachine::WriteToDataStream(Zenith_DataStream& xStream) c
 	m_xParameters.WriteToDataStream(xStream);
 
 	// States
-	uint32_t uNumStates = static_cast<uint32_t>(m_xStates.size());
+	uint32_t uNumStates = static_cast<uint32_t>(m_xStates.GetSize());
 	xStream << uNumStates;
-	for (const auto& xPair : m_xStates)
+	for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(m_xStates); !xIt.Done(); xIt.Next())
 	{
-		xPair.second->WriteToDataStream(xStream);
+		xIt.GetValue()->WriteToDataStream(xStream);
 	}
 
 	// Any-state transitions
@@ -1001,9 +1004,9 @@ void Flux_AnimationStateMachine::WriteToDataStream(Zenith_DataStream& xStream) c
 void Flux_AnimationStateMachine::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	// Clear existing data
-	for (auto& xPair : m_xStates)
-		delete xPair.second;
-	m_xStates.clear();
+	for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(m_xStates); !xIt.Done(); xIt.Next())
+		delete xIt.GetValue();
+	m_xStates.Clear();
 
 	xStream >> m_strName;
 	xStream >> m_strDefaultStateName;

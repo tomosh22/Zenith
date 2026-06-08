@@ -1,7 +1,7 @@
 #pragma once
 #include "Flux_BonePose.h"
 #include "Flux_BlendTree.h"
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
 #include <variant>
 
 // Callback typedefs for state lifecycle hooks (replaces std::function)
@@ -73,7 +73,7 @@ public:
 	void RemoveParameter(const std::string& strName);
 
 	// Get all parameters
-	const std::unordered_map<std::string, Parameter>& GetParameters() const { return m_xParameters; }
+	const Zenith_HashMap<std::string, Parameter>& GetParameters() const { return m_xParameters; }
 
 	// Reset all triggers (called at end of frame)
 	void ResetTriggers();
@@ -87,7 +87,7 @@ public:
 	static void ReadParamValueFromStream(Zenith_DataStream& xStream, ParamType eType, float& fVal, int32_t& iVal, bool& bVal);
 
 private:
-	std::unordered_map<std::string, Parameter> m_xParameters; // #TODO: Replace with engine hash map
+	Zenith_HashMap<std::string, Parameter> m_xParameters;
 };
 
 //=============================================================================
@@ -272,7 +272,7 @@ public:
 	void CrossFade(const std::string& strStateName, float fDuration = 0.15f);
 
 	// Get all states for iteration
-	const std::unordered_map<std::string, Flux_AnimationState*>& GetStates() const { return m_xStates; }
+	const Zenith_HashMap<std::string, Flux_AnimationState*>& GetStates() const { return m_xStates; }
 
 	// Name
 	const std::string& GetName() const { return m_strName; }
@@ -304,7 +304,7 @@ private:
 	const Flux_StateTransition* CheckAnyStateTransitions(int32_t iMinPriority = INT32_MIN);
 
 	std::string m_strName;
-	std::unordered_map<std::string, Flux_AnimationState*> m_xStates; // #TODO: Replace with engine hash map
+	Zenith_HashMap<std::string, Flux_AnimationState*> m_xStates;
 	std::string m_strDefaultStateName;
 	Zenith_Vector<Flux_StateTransition> m_xAnyStateTransitions;
 

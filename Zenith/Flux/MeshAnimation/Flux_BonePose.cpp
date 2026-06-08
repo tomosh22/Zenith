@@ -168,16 +168,16 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 	float fTimeInTicks = fTime * xClip.GetTicksPerSecond();
 
 	// Sample each bone channel
-	for (const auto& xPair : xClip.GetBoneChannels())
+	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
 	{
-		const std::string& strBoneName = xPair.first;
-		const Flux_BoneChannel& xChannel = xPair.second;
+		const std::string& strBoneName = xIt.GetKey();
+		const Flux_BoneChannel& xChannel = xIt.GetValue();
 
 		// Find bone index in geometry
-		std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>::const_iterator it = xGeometry.m_xBoneNameToIdAndOffset.find(strBoneName);
-		if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
+		const std::pair<uint32_t, Zenith_Maths::Matrix4>* pxIdAndOffset = xGeometry.m_xBoneNameToIdAndOffset.TryGet(strBoneName);
+		if (pxIdAndOffset != nullptr)
 		{
-			uint32_t uBoneIndex = it->second.first;
+			uint32_t uBoneIndex = pxIdAndOffset->first;
 			if (uBoneIndex < FLUX_MAX_BONES)
 			{
 				// Only update components that have keyframes in the animation
@@ -204,27 +204,27 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 	static bool s_bLoggedBoneNames = false;
 	if (!s_bLoggedBoneNames)
 	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Animation '%s' has %zu bone channels, skeleton has %u bones",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Animation '%s' has %u bone channels, skeleton has %u bones",
 			xClip.GetName().c_str(),
-			xClip.GetBoneChannels().size(),
+			xClip.GetBoneChannels().GetSize(),
 			xSkeleton.GetNumBones());
 
 		uint32_t uMatchCount = 0;
-		for (const std::pair<const std::string, Flux_BoneChannel>& xPair : xClip.GetBoneChannels())
+		for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
 		{
-			const std::string& strBoneName = xPair.first;
-			std::unordered_map<std::string, uint32_t>::const_iterator it = xSkeleton.m_xBoneNameToIndex.find(strBoneName);
-			if (it != xSkeleton.m_xBoneNameToIndex.end())
+			const std::string& strBoneName = xIt.GetKey();
+			const uint32_t* puBoneIndex = xSkeleton.m_xBoneNameToIndex.TryGet(strBoneName);
+			if (puBoneIndex != nullptr)
 			{
 				uMatchCount++;
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip]   MATCH: '%s' -> bone %u", strBoneName.c_str(), it->second);
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip]   MATCH: '%s' -> bone %u", strBoneName.c_str(), *puBoneIndex);
 			}
 			else
 			{
 				Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip]   NO MATCH: '%s'", strBoneName.c_str());
 			}
 		}
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Total matches: %u/%zu", uMatchCount, xClip.GetBoneChannels().size());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Total matches: %u/%u", uMatchCount, xClip.GetBoneChannels().GetSize());
 
 		// Also log skeleton bone names for comparison
 		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Skeleton bone names:");
@@ -237,16 +237,16 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 	}
 
 	// Sample each bone channel
-	for (const std::pair<const std::string, Flux_BoneChannel>& xPair : xClip.GetBoneChannels())
+	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
 	{
-		const std::string& strBoneName = xPair.first;
-		const Flux_BoneChannel& xChannel = xPair.second;
+		const std::string& strBoneName = xIt.GetKey();
+		const Flux_BoneChannel& xChannel = xIt.GetValue();
 
 		// Find bone index in skeleton asset
-		std::unordered_map<std::string, uint32_t>::const_iterator it = xSkeleton.m_xBoneNameToIndex.find(strBoneName);
-		if (it != xSkeleton.m_xBoneNameToIndex.end())
+		const uint32_t* puBoneIndex = xSkeleton.m_xBoneNameToIndex.TryGet(strBoneName);
+		if (puBoneIndex != nullptr)
 		{
-			uint32_t uBoneIndex = it->second;
+			uint32_t uBoneIndex = *puBoneIndex;
 			if (uBoneIndex < FLUX_MAX_BONES)
 			{
 				// Only update components that have keyframes in the animation
@@ -287,10 +287,10 @@ void Flux_SkeletonPose::ComputeModelSpaceMatricesRecursive(const Flux_MeshAnimat
 	Zenith_Maths::Matrix4 xNodeTransform = pxNode->m_xTrans;
 
 	// If this node corresponds to a bone, use the sampled local pose
-	auto it = xGeometry.m_xBoneNameToIdAndOffset.find(strNodeName);
-	if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
+	const std::pair<uint32_t, Zenith_Maths::Matrix4>* pxIdAndOffset = xGeometry.m_xBoneNameToIdAndOffset.TryGet(strNodeName);
+	if (pxIdAndOffset != nullptr)
 	{
-		uint32_t uBoneIndex = it->second.first;
+		uint32_t uBoneIndex = pxIdAndOffset->first;
 		if (uBoneIndex < FLUX_MAX_BONES)
 		{
 			xNodeTransform = m_axLocalPoses[uBoneIndex].ToMatrix();
@@ -301,9 +301,9 @@ void Flux_SkeletonPose::ComputeModelSpaceMatricesRecursive(const Flux_MeshAnimat
 	Zenith_Maths::Matrix4 xGlobalTransform = xParentTransform * xNodeTransform;
 
 	// Store model-space matrix for this bone
-	if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
+	if (pxIdAndOffset != nullptr)
 	{
-		uint32_t uBoneIndex = it->second.first;
+		uint32_t uBoneIndex = pxIdAndOffset->first;
 		if (uBoneIndex < FLUX_MAX_BONES)
 		{
 			m_axModelSpaceMatrices[uBoneIndex] = xGlobalTransform;
@@ -362,10 +362,10 @@ void Flux_SkeletonPose::ComputeModelSpaceMatricesFromSkeleton(const Zenith_Skele
 void Flux_SkeletonPose::ComputeSkinningMatrices(const Flux_MeshGeometry& xGeometry)
 {
 	// skinning = modelSpace * inverseBindPose
-	for (const auto& xPair : xGeometry.m_xBoneNameToIdAndOffset)
+	for (Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>::Iterator xIt(xGeometry.m_xBoneNameToIdAndOffset); !xIt.Done(); xIt.Next())
 	{
-		uint32_t uBoneIndex = xPair.second.first;
-		const Zenith_Maths::Matrix4& xOffsetMatrix = xPair.second.second;
+		uint32_t uBoneIndex = xIt.GetValue().first;
+		const Zenith_Maths::Matrix4& xOffsetMatrix = xIt.GetValue().second;
 
 		if (uBoneIndex < FLUX_MAX_BONES)
 		{
@@ -462,10 +462,10 @@ void Flux_BoneMask::SetFromBoneNames(const Zenith_Vector<std::string>& xBoneName
 	// Set weight 1.0 for specified bones
 	for (const std::string& strName : xBoneNames)
 	{
-		auto it = xGeometry.m_xBoneNameToIdAndOffset.find(strName);
-		if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
+		const std::pair<uint32_t, Zenith_Maths::Matrix4>* pxIdAndOffset = xGeometry.m_xBoneNameToIdAndOffset.TryGet(strName);
+		if (pxIdAndOffset != nullptr)
 		{
-			uint32_t uBoneIndex = it->second.first;
+			uint32_t uBoneIndex = pxIdAndOffset->first;
 			if (uBoneIndex < m_xWeights.GetSize())
 			{
 				m_xWeights.Get(uBoneIndex) = 1.0f;
@@ -499,15 +499,14 @@ Flux_BoneMask Flux_BoneMask::CreateUpperBodyMask(const Flux_MeshGeometry& xGeome
 	// Find spine bone and set all bones from spine upward to 1.0
 	// This requires traversing the skeleton hierarchy
 	// For now, simple implementation: set spine and all bones with higher indices to 1.0
-	auto it = xGeometry.m_xBoneNameToIdAndOffset.find(strSpineBoneName);
-	if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
+	if (xGeometry.m_xBoneNameToIdAndOffset.Contains(strSpineBoneName))
 	{
 		// Mark spine and all bones above it
 		// Note: This is a simplistic approach; proper implementation would use hierarchy
-		for (const auto& xPair : xGeometry.m_xBoneNameToIdAndOffset)
+		for (Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>::Iterator xIt(xGeometry.m_xBoneNameToIdAndOffset); !xIt.Done(); xIt.Next())
 		{
-			const std::string& strBoneName = xPair.first;
-			uint32_t uBoneIndex = xPair.second.first;
+			const std::string& strBoneName = xIt.GetKey();
+			uint32_t uBoneIndex = xIt.GetValue().first;
 
 			// Check if bone name suggests upper body
 			// (spine, chest, neck, head, arm, hand, shoulder, clavicle)
@@ -542,10 +541,10 @@ Flux_BoneMask Flux_BoneMask::CreateLowerBodyMask(const Flux_MeshGeometry& xGeome
 	Flux_BoneMask xMask;
 
 	// Set lower body bones to 1.0
-	for (const auto& xPair : xGeometry.m_xBoneNameToIdAndOffset)
+	for (Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>::Iterator xIt(xGeometry.m_xBoneNameToIdAndOffset); !xIt.Done(); xIt.Next())
 	{
-		const std::string& strBoneName = xPair.first;
-		uint32_t uBoneIndex = xPair.second.first;
+		const std::string& strBoneName = xIt.GetKey();
+		uint32_t uBoneIndex = xIt.GetValue().first;
 
 		// Check if bone name suggests lower body
 		// (hip, pelvis, leg, thigh, knee, foot, toe)

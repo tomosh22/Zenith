@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Flux/Flux_Enums.h"
 #include <string>
-#include <unordered_map>
 
 class Zenith_DataStream;
 
@@ -108,9 +108,9 @@ public:
 
 private:
 	Zenith_Vector<Flux_ReflectedBinding> m_axBindings;
-	// #TODO: Replace with engine hash map. Map stores indices into
-	// m_axBindings so GetBinding returns a stable pointer into the vector.
-	std::unordered_map<std::string, u_int> m_xBindingMap;
+	// Map stores indices into m_axBindings so GetBinding returns a stable
+	// pointer into the vector.
+	Zenith_HashMap<std::string, u_int> m_xBindingMap;
 };
 
 // Description for a Slang program compile. One module file (mega-file per

@@ -248,7 +248,7 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	xStream >> xGeometryOut.m_uNumVerts;
 	xStream >> xGeometryOut.m_uNumIndices;
 	xStream >> xGeometryOut.m_uNumBones;
-	xStream >> xGeometryOut.m_xBoneNameToIdAndOffset;
+	xGeometryOut.m_xBoneNameToIdAndOffset.ReadFromDataStream(xStream);
 	xStream >> xGeometryOut.m_xMaterialColor;
 
 	ReadAttribute(xGeometryOut.m_pVertexData, xStream, xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride());
@@ -369,10 +369,10 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 	xDst.m_uNumVerts += xSrc.m_uNumVerts;
 	xDst.m_uNumIndices += xSrc.m_uNumIndices;
 	xDst.m_uNumBones += xSrc.m_uNumBones;
-	for (auto& xIt : xSrc.m_xBoneNameToIdAndOffset)
+	for (Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>::Iterator xIt(xSrc.m_xBoneNameToIdAndOffset); !xIt.Done(); xIt.Next())
 	{
-		Zenith_Assert(xDst.m_xBoneNameToIdAndOffset.find(xIt.first) == xDst.m_xBoneNameToIdAndOffset.end(), "Bone name collision when combining meshes");
-		xDst.m_xBoneNameToIdAndOffset[xIt.first] = xIt.second;
+		Zenith_Assert(!xDst.m_xBoneNameToIdAndOffset.Contains(xIt.GetKey()), "Bone name collision when combining meshes");
+		xDst.m_xBoneNameToIdAndOffset.Insert(xIt.GetKey(), xIt.GetValue());
 	}
 	//#TO just ignore material color
 }
@@ -398,7 +398,7 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	xStream << m_uNumVerts;
 	xStream << m_uNumIndices;
 	xStream << m_uNumBones;
-	xStream << m_xBoneNameToIdAndOffset;
+	m_xBoneNameToIdAndOffset.WriteToDataStream(xStream);
 	xStream << m_xMaterialColor;
 	ExportAttribute(m_pVertexData, xStream, m_uNumVerts * m_xBufferLayout.GetStride());
 	ExportAttribute(m_puIndices, xStream, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType));

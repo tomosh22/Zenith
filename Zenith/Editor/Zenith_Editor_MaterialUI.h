@@ -4,8 +4,8 @@
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Flux_ImGuiIntegration.h"
+#include "Collections/Zenith_HashMap.h"
 #include <functional>
-#include <unordered_map>
 
 //=============================================================================
 // Shared Material UI Utilities
@@ -88,7 +88,7 @@ public:
 		u_int64 m_ulImageViewHandle = 0;  // Cached to detect changes
 	};
 
-	std::unordered_map<u_int64, TexturePreviewCacheEntry> m_xTexturePreviewCache;
+	Zenith_HashMap<u_int64, TexturePreviewCacheEntry> m_xTexturePreviewCache;
 };
 
 #endif // ZENITH_TOOLS

@@ -101,12 +101,12 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 
 	glm::mat4 xGlobalTransformation = xParentTransform * xNodeTransform;
 
-	const std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>& xBoneInfoMap = m_xParentGeometry.m_xBoneNameToIdAndOffset;
-	if (xBoneInfoMap.find(strNodeName) != xBoneInfoMap.end())
+	const Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>& xBoneInfoMap = m_xParentGeometry.m_xBoneNameToIdAndOffset;
+	const std::pair<uint32_t, Zenith_Maths::Matrix4>* pxIdAndOffset = xBoneInfoMap.TryGet(strNodeName);
+	if (pxIdAndOffset != nullptr)
 	{
-		const std::pair<uint32_t, Zenith_Maths::Matrix4>& xIdAndOffset = xBoneInfoMap.at(strNodeName);
-		const u_int uIndex = xIdAndOffset.first;
-		const glm::mat4& xOffset = xIdAndOffset.second;
+		const u_int uIndex = pxIdAndOffset->first;
+		const glm::mat4& xOffset = pxIdAndOffset->second;
 		m_axAnimMatrices[uIndex] = xGlobalTransformation * xOffset;
 	}
 
@@ -136,7 +136,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 
 	ReadHierarchy(m_xRootNode, *pxScene->mRootNode);
 
-	const std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>& xBoneInfoMap = xParentGeometry.m_xBoneNameToIdAndOffset;
+	const Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>& xBoneInfoMap = xParentGeometry.m_xBoneNameToIdAndOffset;
 
 	//#TO convert each channel into an AnimBone and register against its name
 	for (u_int u = 0; u < pxAnimation->mNumChannels; u++)
@@ -144,7 +144,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 		const aiNodeAnim* pxChannel = pxAnimation->mChannels[u];
 		const std::string& strBoneName = pxChannel->mNodeName.data;
 
-		if (xBoneInfoMap.find(strBoneName) == xBoneInfoMap.end())
+		if (!xBoneInfoMap.Contains(strBoneName))
 		{
 			continue;
 		}

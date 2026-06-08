@@ -14,7 +14,6 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include <filesystem>
-#include <unordered_map>
 
 //=============================================================================
 // Texture Preview Cache
@@ -42,16 +41,16 @@ Flux_ImGuiTextureHandle Zenith_EditorMaterialUI::GetOrCreateTexturePreviewHandle
 	u_int64 ulKey = pxTexture->m_xVRAMHandle.AsUInt();
 	u_int64 ulImageViewHandle = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
 
-	auto it = g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.find(ulKey);
-	if (it != g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.end())
+	TexturePreviewCacheEntry* pxEntry = g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.TryGet(ulKey);
+	if (pxEntry != nullptr)
 	{
 		// Check if image view changed (e.g., texture was reloaded)
-		if (it->second.m_ulImageViewHandle == ulImageViewHandle)
+		if (pxEntry->m_ulImageViewHandle == ulImageViewHandle)
 		{
-			return it->second.m_xHandle;
+			return pxEntry->m_xHandle;
 		}
 		// Image view changed - unregister old and create new
-		Flux_ImGuiIntegration::UnregisterTexture(it->second.m_xHandle);
+		Flux_ImGuiIntegration::UnregisterTexture(pxEntry->m_xHandle);
 	}
 
 	// Register new texture with ImGui
@@ -66,11 +65,12 @@ Flux_ImGuiTextureHandle Zenith_EditorMaterialUI::GetOrCreateTexturePreviewHandle
 
 void Zenith_EditorMaterialUI::ClearTexturePreviewCache()
 {
-	for (auto& xEntry : g_xEngine.EditorMaterialUI().m_xTexturePreviewCache)
+	Zenith_HashMap<u_int64, TexturePreviewCacheEntry>& xCache = g_xEngine.EditorMaterialUI().m_xTexturePreviewCache;
+	for (Zenith_HashMap<u_int64, TexturePreviewCacheEntry>::Iterator xIt(xCache); !xIt.Done(); xIt.Next())
 	{
-		Flux_ImGuiIntegration::UnregisterTexture(xEntry.second.m_xHandle);
+		Flux_ImGuiIntegration::UnregisterTexture(xIt.GetValue().m_xHandle);
 	}
-	g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.clear();
+	xCache.Clear();
 }
 
 std::string Zenith_EditorMaterialUI::GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)

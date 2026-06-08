@@ -2,7 +2,7 @@
 #include "AssetHandling/Zenith_Asset.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
 
 #define ZENITH_SKELETON_ASSET_VERSION 2
 
@@ -150,7 +150,7 @@ public:
 	//--------------------------------------------------------------------------
 
 	Zenith_Vector<Bone> m_xBones;
-	std::unordered_map<std::string, uint32_t> m_xBoneNameToIndex;
+	Zenith_HashMap<std::string, uint32_t> m_xBoneNameToIndex;
 	std::string m_strSourcePath;
 
 private:

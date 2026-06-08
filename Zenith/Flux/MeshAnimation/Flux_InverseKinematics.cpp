@@ -166,25 +166,23 @@ void Flux_IKSolver::AddChain(const Flux_IKChain& xChain)
 
 void Flux_IKSolver::RemoveChain(const std::string& strName)
 {
-	m_xChains.erase(strName);
-	m_xTargets.erase(strName);
+	m_xChains.Remove(strName);
+	m_xTargets.Remove(strName);
 }
 
 Flux_IKChain* Flux_IKSolver::GetChain(const std::string& strName)
 {
-	auto it = m_xChains.find(strName);
-	return (it != m_xChains.end()) ? &it->second : nullptr;
+	return m_xChains.TryGet(strName);
 }
 
 const Flux_IKChain* Flux_IKSolver::GetChain(const std::string& strName) const
 {
-	auto it = m_xChains.find(strName);
-	return (it != m_xChains.end()) ? &it->second : nullptr;
+	return m_xChains.TryGet(strName);
 }
 
 bool Flux_IKSolver::HasChain(const std::string& strName) const
 {
-	return m_xChains.find(strName) != m_xChains.end();
+	return m_xChains.Contains(strName);
 }
 
 void Flux_IKSolver::SetTarget(const std::string& strChainName, const Flux_IKTarget& xTarget)
@@ -194,18 +192,17 @@ void Flux_IKSolver::SetTarget(const std::string& strChainName, const Flux_IKTarg
 
 void Flux_IKSolver::ClearTarget(const std::string& strChainName)
 {
-	m_xTargets.erase(strChainName);
+	m_xTargets.Remove(strChainName);
 }
 
 const Flux_IKTarget* Flux_IKSolver::GetTarget(const std::string& strChainName) const
 {
-	auto it = m_xTargets.find(strChainName);
-	return (it != m_xTargets.end()) ? &it->second : nullptr;
+	return m_xTargets.TryGet(strChainName);
 }
 
 bool Flux_IKSolver::HasTarget(const std::string& strChainName) const
 {
-	return m_xTargets.find(strChainName) != m_xTargets.end();
+	return m_xTargets.Contains(strChainName);
 }
 
 //=============================================================================
@@ -246,20 +243,20 @@ void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
 	const Zenith_SkeletonAsset& xSkeleton,
 	const Zenith_Maths::Matrix4& xWorldMatrix)
 {
-	for (auto& xPair : m_xChains)
+	for (Zenith_HashMap<std::string, Flux_IKChain>::Iterator xIt(m_xChains); !xIt.Done(); xIt.Next())
 	{
-		Flux_IKChain& xChain = xPair.second;
-		const std::string& strChainName = xPair.first;
+		Flux_IKChain& xChain = xIt.GetValueMutable();
+		const std::string& strChainName = xIt.GetKey();
 
 		// Check if chain has active target
-		auto itTarget = m_xTargets.find(strChainName);
-		if (itTarget == m_xTargets.end() || !itTarget->second.m_bEnabled)
+		const Flux_IKTarget* pxTarget = m_xTargets.TryGet(strChainName);
+		if (pxTarget == nullptr || !pxTarget->m_bEnabled)
 			continue;
 
 		// E3d: skip solver work entirely when target weight is non-positive — the
 		// weighted slerp inside ConvertPositionsToRotations would produce identity
 		// anyway, so the FABRIK iterations are pure waste.
-		if (itTarget->second.m_fWeight <= 0.0f)
+		if (pxTarget->m_fWeight <= 0.0f)
 			continue;
 
 		// Resolve bone indices if needed
@@ -271,7 +268,7 @@ void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
 			xChain.ComputeBoneLengths(xPose);
 
 		// Transform target to model space (unless caller already did the conversion)
-		Flux_IKTarget xModelSpaceTarget = itTarget->second;
+		Flux_IKTarget xModelSpaceTarget = *pxTarget;
 		if (!xModelSpaceTarget.m_bIsModelSpace)
 		{
 			Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorldMatrix);
@@ -763,19 +760,19 @@ Flux_IKChain Flux_IKSolver::CreateSpineChain(const std::string& strName,
 
 void Flux_IKSolver::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	uint32_t uNumChains = static_cast<uint32_t>(m_xChains.size());
+	uint32_t uNumChains = static_cast<uint32_t>(m_xChains.GetSize());
 	xStream << uNumChains;
 
-	for (const auto& xPair : m_xChains)
+	for (Zenith_HashMap<std::string, Flux_IKChain>::Iterator xIt(m_xChains); !xIt.Done(); xIt.Next())
 	{
-		xPair.second.WriteToDataStream(xStream);
+		xIt.GetValue().WriteToDataStream(xStream);
 	}
 }
 
 void Flux_IKSolver::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	m_xChains.clear();
-	m_xTargets.clear();
+	m_xChains.Clear();
+	m_xTargets.Clear();
 
 	uint32_t uNumChains = 0;
 	xStream >> uNumChains;

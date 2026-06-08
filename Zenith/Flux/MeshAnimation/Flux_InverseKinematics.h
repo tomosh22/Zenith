@@ -1,7 +1,7 @@
 #pragma once
 #include "Flux_BonePose.h"
+#include "Collections/Zenith_HashMap.h"
 #include <vector>
-#include <unordered_map>
 #include <string>
 
 // Forward declarations
@@ -145,7 +145,7 @@ public:
 	bool HasChain(const std::string& strName) const;
 
 	// Get all chains
-	const std::unordered_map<std::string, Flux_IKChain>& GetChains() const { return m_xChains; }
+	const Zenith_HashMap<std::string, Flux_IKChain>& GetChains() const { return m_xChains; }
 
 	//=========================================================================
 	// Target Management
@@ -258,8 +258,8 @@ private:
 	// Data
 	//=========================================================================
 
-	std::unordered_map<std::string, Flux_IKChain> m_xChains;
-	std::unordered_map<std::string, Flux_IKTarget> m_xTargets;
+	Zenith_HashMap<std::string, Flux_IKChain> m_xChains;
+	Zenith_HashMap<std::string, Flux_IKTarget> m_xTargets;
 };
 
 //=============================================================================

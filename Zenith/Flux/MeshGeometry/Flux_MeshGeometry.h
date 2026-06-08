@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_Buffers.h"
+#include "Collections/Zenith_HashMap.h"
 
 // Forward declarations
 class Flux_AnimationController;
@@ -76,7 +77,7 @@ public:
 		m_xIndexBuffer.Reset();
 
 		m_uNumBones = 0;
-		m_xBoneNameToIdAndOffset.clear();
+		m_xBoneNameToIdAndOffset.Clear();
 		m_strSourcePath.clear();
 	}
 
@@ -126,7 +127,7 @@ private:
 
 	//#TO_TODO: move to private
 public:
-	std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> m_xBoneNameToIdAndOffset;
+	Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> m_xBoneNameToIdAndOffset;
 
 	IndexType* m_puIndices = nullptr;
 

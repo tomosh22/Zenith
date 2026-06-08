@@ -447,12 +447,12 @@ void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const ai
 		m_xMetadata.m_uTicksPerSecond = 24;
 
 	// Load bone channels
-	m_xBoneChannels.clear();
+	m_xBoneChannels.Clear();
 	for (uint32_t i = 0; i < pxAnimation->mNumChannels; ++i)
 	{
 		const aiNodeAnim* pxChannel = pxAnimation->mChannels[i];
 		std::string strBoneName = pxChannel->mNodeName.data;
-		m_xBoneChannels.emplace(strBoneName, Flux_BoneChannel(pxChannel));
+		m_xBoneChannels.Emplace(strBoneName, Flux_BoneChannel(pxChannel));
 	}
 }
 #endif // ZENITH_TOOLS
@@ -468,15 +468,12 @@ void Flux_AnimationClip::Export(const std::string& strPath) const
 
 const Flux_BoneChannel* Flux_AnimationClip::GetBoneChannel(const std::string& strBoneName) const
 {
-	auto it = m_xBoneChannels.find(strBoneName);
-	if (it != m_xBoneChannels.end())
-		return &it->second;
-	return nullptr;
+	return m_xBoneChannels.TryGet(strBoneName);
 }
 
 bool Flux_AnimationClip::HasBoneChannel(const std::string& strBoneName) const
 {
-	return m_xBoneChannels.find(strBoneName) != m_xBoneChannels.end();
+	return m_xBoneChannels.Contains(strBoneName);
 }
 
 void Flux_AnimationClip::AddEvent(const Flux_AnimationEvent& xEvent)
@@ -498,7 +495,7 @@ void Flux_AnimationClip::RemoveEvent(size_t uIndex)
 void Flux_AnimationClip::AddBoneChannel(const std::string& strBoneName, Flux_BoneChannel&& xChannel)
 {
 	xChannel.SetBoneName(strBoneName);
-	m_xBoneChannels.emplace(strBoneName, std::move(xChannel));
+	m_xBoneChannels.Emplace(strBoneName, std::move(xChannel));
 }
 
 void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -510,11 +507,11 @@ void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strSourcePath);
 
 	// Bone channels
-	uint32_t uNumChannels = static_cast<uint32_t>(m_xBoneChannels.size());
+	uint32_t uNumChannels = static_cast<uint32_t>(m_xBoneChannels.GetSize());
 	xStream << uNumChannels;
-	for (const auto& xPair : m_xBoneChannels)
+	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(m_xBoneChannels); !xIt.Done(); xIt.Next())
 	{
-		xPair.second.WriteToDataStream(xStream);
+		xIt.GetValue().WriteToDataStream(xStream);
 	}
 
 	// Events
@@ -541,12 +538,12 @@ void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Bone channels
 	uint32_t uNumChannels = 0;
 	xStream >> uNumChannels;
-	m_xBoneChannels.clear();
+	m_xBoneChannels.Clear();
 	for (uint32_t i = 0; i < uNumChannels; ++i)
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.ReadFromDataStream(xStream);
-		m_xBoneChannels.emplace(xChannel.GetBoneName(), std::move(xChannel));
+		m_xBoneChannels.Emplace(xChannel.GetBoneName(), std::move(xChannel));
 	}
 
 	// Events
@@ -576,9 +573,9 @@ Flux_AnimationClipCollection::Flux_AnimationClipCollection(Flux_AnimationClipCol
 	, m_xBorrowedClips(std::move(xOther.m_xBorrowedClips))
 {
 	// Clear the moved-from object's containers to prevent double-delete
-	xOther.m_xClipsByName.clear();
+	xOther.m_xClipsByName.Clear();
 	xOther.m_xClips.clear();
-	xOther.m_xBorrowedClips.clear();
+	xOther.m_xBorrowedClips.Clear();
 }
 
 Flux_AnimationClipCollection& Flux_AnimationClipCollection::operator=(Flux_AnimationClipCollection&& xOther) noexcept
@@ -594,9 +591,9 @@ Flux_AnimationClipCollection& Flux_AnimationClipCollection::operator=(Flux_Anima
 		m_xBorrowedClips = std::move(xOther.m_xBorrowedClips);
 
 		// Clear the moved-from object's containers to prevent double-delete
-		xOther.m_xClipsByName.clear();
+		xOther.m_xClipsByName.Clear();
 		xOther.m_xClips.clear();
-		xOther.m_xBorrowedClips.clear();
+		xOther.m_xBorrowedClips.Clear();
 	}
 	return *this;
 }
@@ -629,15 +626,15 @@ void Flux_AnimationClipCollection::AddClipReference(Flux_AnimationClip* pxClip)
 
 	m_xClipsByName[strName] = pxClip;
 	m_xClips.push_back(pxClip);
-	m_xBorrowedClips.insert(pxClip);  // Mark as borrowed (not owned)
+	m_xBorrowedClips.Insert(pxClip);  // Mark as borrowed (not owned)
 }
 
 void Flux_AnimationClipCollection::RemoveClip(const std::string& strName)
 {
-	auto it = m_xClipsByName.find(strName);
-	if (it != m_xClipsByName.end())
+	Flux_AnimationClip** ppxClip = m_xClipsByName.TryGet(strName);
+	if (ppxClip != nullptr)
 	{
-		Flux_AnimationClip* pxClip = it->second;
+		Flux_AnimationClip* pxClip = *ppxClip;
 
 		// Remove from ordered list
 		auto vecIt = std::find(m_xClips.begin(), m_xClips.end(), pxClip);
@@ -645,16 +642,16 @@ void Flux_AnimationClipCollection::RemoveClip(const std::string& strName)
 			m_xClips.erase(vecIt);
 
 		// Remove from map
-		m_xClipsByName.erase(it);
+		m_xClipsByName.Remove(strName);
 
 		// Only delete if we own it (not borrowed)
-		if (m_xBorrowedClips.find(pxClip) == m_xBorrowedClips.end())
+		if (!m_xBorrowedClips.Contains(pxClip))
 		{
 			delete pxClip;
 		}
 		else
 		{
-			m_xBorrowedClips.erase(pxClip);
+			m_xBorrowedClips.Remove(pxClip);
 		}
 	}
 }
@@ -664,36 +661,36 @@ void Flux_AnimationClipCollection::Clear()
 	// Only delete clips we own (not borrowed)
 	for (Flux_AnimationClip* pxClip : m_xClips)
 	{
-		if (m_xBorrowedClips.find(pxClip) == m_xBorrowedClips.end())
+		if (!m_xBorrowedClips.Contains(pxClip))
 		{
 			delete pxClip;
 		}
 	}
 
 	m_xClips.clear();
-	m_xClipsByName.clear();
-	m_xBorrowedClips.clear();
+	m_xClipsByName.Clear();
+	m_xBorrowedClips.Clear();
 }
 
 Flux_AnimationClip* Flux_AnimationClipCollection::GetClip(const std::string& strName)
 {
-	auto it = m_xClipsByName.find(strName);
-	if (it != m_xClipsByName.end())
-		return it->second;
+	Flux_AnimationClip** ppxClip = m_xClipsByName.TryGet(strName);
+	if (ppxClip != nullptr)
+		return *ppxClip;
 	return nullptr;
 }
 
 const Flux_AnimationClip* Flux_AnimationClipCollection::GetClip(const std::string& strName) const
 {
-	auto it = m_xClipsByName.find(strName);
-	if (it != m_xClipsByName.end())
-		return it->second;
+	Flux_AnimationClip* const* ppxClip = m_xClipsByName.TryGet(strName);
+	if (ppxClip != nullptr)
+		return *ppxClip;
 	return nullptr;
 }
 
 bool Flux_AnimationClipCollection::HasClip(const std::string& strName) const
 {
-	return m_xClipsByName.find(strName) != m_xClipsByName.end();
+	return m_xClipsByName.Contains(strName);
 }
 
 #ifdef ZENITH_TOOLS

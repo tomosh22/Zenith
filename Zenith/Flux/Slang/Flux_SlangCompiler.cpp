@@ -18,21 +18,21 @@ static std::vector<std::string> s_axSearchPaths;
 
 const Flux_ReflectedBinding* Flux_ShaderReflection::GetBinding(const char* szName) const
 {
-	auto it = m_xBindingMap.find(szName);
-	if (it == m_xBindingMap.end())
+	const u_int* puIndex = m_xBindingMap.TryGet(szName);
+	if (puIndex == nullptr)
 	{
 		// Log all available bindings to help debug
 		Zenith_Log(LOG_CATEGORY_RENDERER, "GetBinding('%s') failed. Available bindings (%u):",
-			szName, static_cast<u_int>(m_xBindingMap.size()));
-		for (const auto& pair : m_xBindingMap)
+			szName, m_xBindingMap.GetSize());
+		for (Zenith_HashMap<std::string, u_int>::Iterator xIt(m_xBindingMap); !xIt.Done(); xIt.Next())
 		{
-			const Flux_ReflectedBinding& xBinding = m_axBindings.Get(pair.second);
+			const Flux_ReflectedBinding& xBinding = m_axBindings.Get(xIt.GetValue());
 			Zenith_Log(LOG_CATEGORY_RENDERER, "  '%s' -> set=%u, binding=%u",
-				pair.first.c_str(), xBinding.m_uSet, xBinding.m_uBinding);
+				xIt.GetKey().c_str(), xBinding.m_uSet, xBinding.m_uBinding);
 		}
 		return nullptr;
 	}
-	return &m_axBindings.Get(it->second);
+	return &m_axBindings.Get(*puIndex);
 }
 
 u_int Flux_ShaderReflection::GetBindingPoint(const char* szName) const
@@ -106,7 +106,7 @@ void Flux_ShaderReflection::AddBinding(const Flux_ReflectedBinding& xBinding)
 
 void Flux_ShaderReflection::BuildLookupMap()
 {
-	m_xBindingMap.clear();
+	m_xBindingMap.Clear();
 	for (u_int u = 0; u < m_axBindings.GetSize(); u++)
 	{
 		const Flux_ReflectedBinding& xBinding = m_axBindings.Get(u);

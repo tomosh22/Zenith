@@ -659,13 +659,13 @@ void Zenith_AnimatorComponent::RenderPlaybackControlsSection()
 		ImGui::Separator();
 		ImGui::Text("CrossFade:");
 
-		const auto& xStates = xController.GetStateMachine().GetStates();
-		for (auto it = xStates.begin(); it != xStates.end(); ++it)
+		const Zenith_HashMap<std::string, Flux_AnimationState*>& xStates = xController.GetStateMachine().GetStates();
+		for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(xStates); !xIt.Done(); xIt.Next())
 		{
 			ImGui::SameLine();
-			if (ImGui::SmallButton(it->first.c_str()))
+			if (ImGui::SmallButton(xIt.GetKey().c_str()))
 			{
-				xController.CrossFade(it->first, 0.15f);
+				xController.CrossFade(xIt.GetKey(), 0.15f);
 			}
 		}
 	}
@@ -688,49 +688,50 @@ void Zenith_AnimatorComponent::RenderParametersSection()
 		return;
 
 	Flux_AnimationParameters& xParams = xController.GetStateMachine().GetParameters();
-	const auto& xParamMap = xParams.GetParameters();
+	const Zenith_HashMap<std::string, Flux_AnimationParameters::Parameter>& xParamMap = xParams.GetParameters();
 
-	for (auto it = xParamMap.begin(); it != xParamMap.end(); ++it)
+	for (Zenith_HashMap<std::string, Flux_AnimationParameters::Parameter>::Iterator xIt(xParamMap); !xIt.Done(); xIt.Next())
 	{
-		const Flux_AnimationParameters::Parameter& xParam = it->second;
-		ImGui::PushID(it->first.c_str());
+		const std::string& strParamName = xIt.GetKey();
+		const Flux_AnimationParameters::Parameter& xParam = xIt.GetValue();
+		ImGui::PushID(strParamName.c_str());
 
 		switch (xParam.m_eType)
 		{
 		case Flux_AnimationParameters::ParamType::Float:
 		{
-			float fVal = xParams.GetFloat(it->first);
-			if (ImGui::DragFloat(it->first.c_str(), &fVal, 0.01f))
+			float fVal = xParams.GetFloat(strParamName);
+			if (ImGui::DragFloat(strParamName.c_str(), &fVal, 0.01f))
 			{
-				xParams.SetFloat(it->first, fVal);
+				xParams.SetFloat(strParamName, fVal);
 			}
 			break;
 		}
 		case Flux_AnimationParameters::ParamType::Int:
 		{
-			int32_t iVal = xParams.GetInt(it->first);
-			if (ImGui::DragInt(it->first.c_str(), &iVal))
+			int32_t iVal = xParams.GetInt(strParamName);
+			if (ImGui::DragInt(strParamName.c_str(), &iVal))
 			{
-				xParams.SetInt(it->first, iVal);
+				xParams.SetInt(strParamName, iVal);
 			}
 			break;
 		}
 		case Flux_AnimationParameters::ParamType::Bool:
 		{
-			bool bVal = xParams.GetBool(it->first);
-			if (ImGui::Checkbox(it->first.c_str(), &bVal))
+			bool bVal = xParams.GetBool(strParamName);
+			if (ImGui::Checkbox(strParamName.c_str(), &bVal))
 			{
-				xParams.SetBool(it->first, bVal);
+				xParams.SetBool(strParamName, bVal);
 			}
 			break;
 		}
 		case Flux_AnimationParameters::ParamType::Trigger:
 		{
-			ImGui::Text("%s", it->first.c_str());
+			ImGui::Text("%s", strParamName.c_str());
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Fire"))
 			{
-				xParams.SetTrigger(it->first);
+				xParams.SetTrigger(strParamName);
 			}
 			break;
 		}
@@ -760,21 +761,23 @@ void Zenith_AnimatorComponent::RenderStateMachineSection()
 
 	// States list
 	ImGui::Text("States:");
-	const auto& xStates = xSM.GetStates();
-	for (auto it = xStates.begin(); it != xStates.end(); ++it)
+	const Zenith_HashMap<std::string, Flux_AnimationState*>& xStates = xSM.GetStates();
+	for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(xStates); !xIt.Done(); xIt.Next())
 	{
-		bool bIsCurrent = (xSM.GetCurrentStateName() == it->first);
-		bool bIsDefault = (xSM.GetDefaultStateName() == it->first);
+		const std::string& strStateName = xIt.GetKey();
+		const Flux_AnimationState* pxState = xIt.GetValue();
+		bool bIsCurrent = (xSM.GetCurrentStateName() == strStateName);
+		bool bIsDefault = (xSM.GetDefaultStateName() == strStateName);
 
 		if (bIsCurrent)
 			ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  > %s%s",
-				it->first.c_str(), bIsDefault ? " [Default]" : "");
+				strStateName.c_str(), bIsDefault ? " [Default]" : "");
 		else
 			ImGui::Text("    %s%s",
-				it->first.c_str(), bIsDefault ? " [Default]" : "");
+				strStateName.c_str(), bIsDefault ? " [Default]" : "");
 
 		// Show transitions for this state
-		const Zenith_Vector<Flux_StateTransition>& xTransitions = it->second->GetTransitions();
+		const Zenith_Vector<Flux_StateTransition>& xTransitions = pxState->GetTransitions();
 		for (uint32_t t = 0; t < xTransitions.GetSize(); ++t)
 		{
 			const Flux_StateTransition& xTrans = xTransitions.Get(t);
@@ -783,7 +786,7 @@ void Zenith_AnimatorComponent::RenderStateMachineSection()
 		}
 
 		// Show sub-state machine
-		if (it->second->IsSubStateMachine())
+		if (pxState->IsSubStateMachine())
 		{
 			ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "      [Sub-State Machine]");
 		}

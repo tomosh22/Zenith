@@ -333,7 +333,7 @@ void Flux_AnimationController::ApplyOutputPoseToSkeleton()
 	// gives the FABRIK chain a fresh model-space frame to read from; post-solve
 	// recompute keeps m_xOutputPose's model matrices consistent for downstream
 	// CPU readers (debug draw, gizmos, animation tools).
-	if (m_pxIKSolver && !m_pxIKSolver->GetChains().empty() && m_xSkeletonAsset.GetDirect())
+	if (m_pxIKSolver && !m_pxIKSolver->GetChains().IsEmpty() && m_xSkeletonAsset.GetDirect())
 	{
 		const Zenith_SkeletonAsset& xSkel = *m_xSkeletonAsset.GetDirect();
 		m_xOutputPose.ComputeModelSpaceMatricesFromSkeleton(xSkel);
@@ -640,9 +640,10 @@ void Flux_AnimationController::DebugDraw(bool bShowBones, bool bShowIKTargets)
 	// Draw IK targets
 	if (bShowIKTargets && m_pxIKSolver)
 	{
-		for (const auto& xPair : m_pxIKSolver->GetChains())
+		const Zenith_HashMap<std::string, Flux_IKChain>& xChains = m_pxIKSolver->GetChains();
+		for (Zenith_HashMap<std::string, Flux_IKChain>::Iterator xIt(xChains); !xIt.Done(); xIt.Next())
 		{
-			const Flux_IKTarget* pxTarget = m_pxIKSolver->GetTarget(xPair.first);
+			const Flux_IKTarget* pxTarget = m_pxIKSolver->GetTarget(xIt.GetKey());
 			if (pxTarget && pxTarget->m_bEnabled)
 			{
 				// Draw target as red sphere

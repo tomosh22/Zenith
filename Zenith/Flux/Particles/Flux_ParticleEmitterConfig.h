@@ -4,8 +4,8 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Maths/Zenith_Maths.h"
+#include "Collections/Zenith_HashMap.h"
 #include <string>
-#include <unordered_map>
 
 /**
  * Flux_ParticleEmitterConfig - Serializable asset for configuring particle emitters
@@ -44,20 +44,20 @@ public:
 	// Find a registered config by name (returns nullptr if not found)
 	static Flux_ParticleEmitterConfig* Find(const std::string& strName)
 	{
-		auto it = s_xConfigRegistry.find(strName);
-		return (it != s_xConfigRegistry.end()) ? it->second : nullptr;
+		Flux_ParticleEmitterConfig** ppxConfig = s_xConfigRegistry.TryGet(strName);
+		return (ppxConfig != nullptr) ? *ppxConfig : nullptr;
 	}
 
 	// Unregister a config (call from Project_Shutdown)
 	static void Unregister(const std::string& strName)
 	{
-		s_xConfigRegistry.erase(strName);
+		s_xConfigRegistry.Remove(strName);
 	}
 
 	// Clear all registered configs
 	static void ClearRegistry()
 	{
-		s_xConfigRegistry.clear();
+		s_xConfigRegistry.Clear();
 	}
 
 	// Get the registered name of this config (empty if not registered)
@@ -282,6 +282,6 @@ public:
 #endif
 
 private:
-	static inline std::unordered_map<std::string, Flux_ParticleEmitterConfig*> s_xConfigRegistry;
+	static inline Zenith_HashMap<std::string, Flux_ParticleEmitterConfig*> s_xConfigRegistry;
 	std::string m_strRegisteredName;
 };

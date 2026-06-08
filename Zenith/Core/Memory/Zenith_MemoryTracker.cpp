@@ -8,7 +8,7 @@
 
 #include <cstring>
 
-std::unordered_map<void*, Zenith_AllocationRecord> Zenith_MemoryTracker::s_xAllocations;
+Zenith_HashMap<void*, Zenith_AllocationRecord> Zenith_MemoryTracker::s_xAllocations;
 void* Zenith_MemoryTracker::s_apFreedAddresses[uFREED_HISTORY_SIZE] = { nullptr };
 u_int Zenith_MemoryTracker::s_uFreedIndex = 0;
 Zenith_MemoryStats Zenith_MemoryTracker::s_xStats = {};
@@ -25,7 +25,7 @@ void Zenith_MemoryTracker::Initialise()
 	}
 
 	// Reserve space for allocations to reduce rehashing
-	s_xAllocations.reserve(10000);
+	s_xAllocations.Reserve(10000);
 
 	// Initialize stats
 	memset(&s_xStats, 0, sizeof(s_xStats));
@@ -44,7 +44,7 @@ void Zenith_MemoryTracker::Shutdown()
 	// Report any leaks before shutdown
 	ReportLeaks();
 
-	s_xAllocations.clear();
+	s_xAllocations.Clear();
 	s_bInitialised = false;
 }
 
@@ -147,8 +147,8 @@ bool Zenith_MemoryTracker::TrackDeallocation(void* pUserAddress)
 
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
 
-	auto it = s_xAllocations.find(pUserAddress);
-	if (it == s_xAllocations.end())
+	const Zenith_AllocationRecord* pxRecord = s_xAllocations.TryGet(pUserAddress);
+	if (pxRecord == nullptr)
 	{
 		// Check if this was recently freed (double-free detection)
 		for (u_int i = 0; i < uFREED_HISTORY_SIZE; ++i)
@@ -164,7 +164,7 @@ bool Zenith_MemoryTracker::TrackDeallocation(void* pUserAddress)
 		return false;
 	}
 
-	const Zenith_AllocationRecord& xRecord = it->second;
+	const Zenith_AllocationRecord& xRecord = *pxRecord;
 	size_t ulSize = xRecord.m_ulSize;
 	Zenith_MemoryCategory eCategory = xRecord.m_eCategory;
 
@@ -187,7 +187,7 @@ bool Zenith_MemoryTracker::TrackDeallocation(void* pUserAddress)
 	s_uFreedIndex = (s_uFreedIndex + 1) % uFREED_HISTORY_SIZE;
 
 	// Remove from map
-	s_xAllocations.erase(it);
+	s_xAllocations.Remove(pUserAddress);
 
 	return true;
 }
@@ -201,47 +201,42 @@ const Zenith_AllocationRecord* Zenith_MemoryTracker::FindAllocation(void* pAddre
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
 
-	auto it = s_xAllocations.find(pAddress);
-	if (it != s_xAllocations.end())
-	{
-		return &it->second;
-	}
-	return nullptr;
+	return s_xAllocations.TryGet(pAddress);
 }
 
 bool Zenith_MemoryTracker::IsValidAllocation(void* pAddress)
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
-	return s_xAllocations.find(pAddress) != s_xAllocations.end();
+	return s_xAllocations.Contains(pAddress);
 }
 
 void Zenith_MemoryTracker::ReportLeaks()
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
 
-	if (s_xAllocations.empty())
+	if (s_xAllocations.GetSize() == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_CORE, "No memory leaks detected");
 		return;
 	}
 
 	Zenith_Error(LOG_CATEGORY_CORE, "=== MEMORY LEAK REPORT ===");
-	Zenith_Error(LOG_CATEGORY_CORE, "%zu allocations still active, %llu bytes total",
-		s_xAllocations.size(), s_xStats.m_ulTotalAllocated);
+	Zenith_Error(LOG_CATEGORY_CORE, "%u allocations still active, %llu bytes total",
+		s_xAllocations.GetSize(), s_xStats.m_ulTotalAllocated);
 
 	u_int uLeakCount = 0;
 	constexpr u_int uMAX_LEAKS_TO_REPORT = 100;
 
-	for (const auto& pair : s_xAllocations)
+	for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(s_xAllocations); !xIt.Done(); xIt.Next())
 	{
 		if (uLeakCount >= uMAX_LEAKS_TO_REPORT)
 		{
-			Zenith_Error(LOG_CATEGORY_CORE, "... and %zu more leaks",
-				s_xAllocations.size() - uMAX_LEAKS_TO_REPORT);
+			Zenith_Error(LOG_CATEGORY_CORE, "... and %u more leaks",
+				s_xAllocations.GetSize() - uMAX_LEAKS_TO_REPORT);
 			break;
 		}
 
-		const Zenith_AllocationRecord& xRecord = pair.second;
+		const Zenith_AllocationRecord& xRecord = xIt.GetValue();
 
 		Zenith_Error(LOG_CATEGORY_CORE, "Leak #%u: %zu bytes at 0x%p [%s]",
 			uLeakCount + 1,
@@ -276,20 +271,20 @@ void Zenith_MemoryTracker::ReportLeaks()
 u_int Zenith_MemoryTracker::GetLeakCount()
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
-	return static_cast<u_int>(s_xAllocations.size());
+	return s_xAllocations.GetSize();
 }
 
 bool Zenith_MemoryTracker::CheckGuards(void* pUserAddress)
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
 
-	auto it = s_xAllocations.find(pUserAddress);
-	if (it == s_xAllocations.end())
+	const Zenith_AllocationRecord* pxRecord = s_xAllocations.TryGet(pUserAddress);
+	if (pxRecord == nullptr)
 	{
 		return false;
 	}
 
-	const Zenith_AllocationRecord& xRecord = it->second;
+	const Zenith_AllocationRecord& xRecord = *pxRecord;
 
 	// Check front guard
 	u_int32* pFrontGuard = reinterpret_cast<u_int32*>(
@@ -322,9 +317,9 @@ void Zenith_MemoryTracker::CheckAllGuards()
 
 	u_int uCorruptionCount = 0;
 
-	for (const auto& pair : s_xAllocations)
+	for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(s_xAllocations); !xIt.Done(); xIt.Next())
 	{
-		const Zenith_AllocationRecord& xRecord = pair.second;
+		const Zenith_AllocationRecord& xRecord = xIt.GetValue();
 
 		// Check front guard
 		u_int32* pFrontGuard = reinterpret_cast<u_int32*>(xRecord.m_pRealAddress);
@@ -354,7 +349,7 @@ void Zenith_MemoryTracker::CheckAllGuards()
 	}
 	else
 	{
-		Zenith_Log(LOG_CATEGORY_CORE, "Guard check passed for %zu allocations", s_xAllocations.size());
+		Zenith_Log(LOG_CATEGORY_CORE, "Guard check passed for %u allocations", s_xAllocations.GetSize());
 	}
 }
 
@@ -391,13 +386,13 @@ void Zenith_MemoryTracker::ForEachAllocation(AllocationCallback pfnCallback, voi
 	{
 		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
 
-		for (const auto& pair : s_xAllocations)
+		for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(s_xAllocations); !xIt.Done(); xIt.Next())
 		{
 			if (uRecordCount >= uMAX_RECORDS)
 			{
 				break;
 			}
-			s_axRecordsCopy[uRecordCount++] = pair.second;
+			s_axRecordsCopy[uRecordCount++] = xIt.GetValue();
 		}
 	}
 
@@ -411,7 +406,7 @@ void Zenith_MemoryTracker::ForEachAllocation(AllocationCallback pfnCallback, voi
 u_int Zenith_MemoryTracker::GetAllocationCount()
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
-	return static_cast<u_int>(s_xAllocations.size());
+	return s_xAllocations.GetSize();
 }
 
 #endif // ZENITH_MEMORY_MANAGEMENT_ENABLED

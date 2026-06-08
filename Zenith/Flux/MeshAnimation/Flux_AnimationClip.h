@@ -2,9 +2,9 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_HashSet.h"
 #include <vector>
-#include <unordered_map>
-#include <unordered_set>
 #include <string>
 #include <functional>
 
@@ -162,7 +162,7 @@ public:
 	// Bone channel access
 	const Flux_BoneChannel* GetBoneChannel(const std::string& strBoneName) const;
 	bool HasBoneChannel(const std::string& strBoneName) const;
-	const std::unordered_map<std::string, Flux_BoneChannel>& GetBoneChannels() const { return m_xBoneChannels; }
+	const Zenith_HashMap<std::string, Flux_BoneChannel>& GetBoneChannels() const { return m_xBoneChannels; }
 
 	//-------------------------------------------------------------------------
 	// Programmatic clip construction (for procedural animations/tests)
@@ -191,7 +191,7 @@ public:
 
 private:
 	Flux_AnimationClipMetadata m_xMetadata;
-	std::unordered_map<std::string, Flux_BoneChannel> m_xBoneChannels;
+	Zenith_HashMap<std::string, Flux_BoneChannel> m_xBoneChannels;
 	std::vector<Flux_AnimationEvent> m_xEvents;
 	Flux_RootMotion m_xRootMotion;
 	std::string m_strSourcePath;
@@ -240,7 +240,7 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	std::unordered_map<std::string, Flux_AnimationClip*> m_xClipsByName;
+	Zenith_HashMap<std::string, Flux_AnimationClip*> m_xClipsByName;
 	std::vector<Flux_AnimationClip*> m_xClips;  // Ordered list for iteration
-	std::unordered_set<Flux_AnimationClip*> m_xBorrowedClips;  // Non-owned references
+	Zenith_HashSet<Flux_AnimationClip*> m_xBorrowedClips;  // Non-owned references
 };

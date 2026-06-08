@@ -15,10 +15,10 @@ bool Zenith_FileWatcher::s_bPaused = false;
 std::string Zenith_FileWatcher::s_strWatchPath;
 Zenith_Vector<FileChangeEvent> Zenith_FileWatcher::s_xPendingEvents;
 Zenith_Mutex Zenith_FileWatcher::s_xEventMutex;
-std::unordered_map<uint32_t, Zenith_FileWatcher::ChangeCallback> Zenith_FileWatcher::s_xCallbacks;
+Zenith_HashMap<uint32_t, Zenith_FileWatcher::ChangeCallback> Zenith_FileWatcher::s_xCallbacks;
 uint32_t Zenith_FileWatcher::s_uNextCallbackHandle = 1;
 Zenith_Mutex Zenith_FileWatcher::s_xCallbackMutex;
-std::unordered_map<std::string, uint64_t> Zenith_FileWatcher::s_xFileModTimes;
+Zenith_HashMap<std::string, uint64_t> Zenith_FileWatcher::s_xFileModTimes;
 
 #ifdef _WIN32
 void* Zenith_FileWatcher::s_hDirectory = INVALID_HANDLE_VALUE;
@@ -43,7 +43,7 @@ void Zenith_FileWatcher::Initialize(const std::string& strWatchPath)
 	s_strWatchPath = strWatchPath;
 	s_bPaused = false;
 	s_xPendingEvents.Clear();
-	s_xFileModTimes.clear();
+	s_xFileModTimes.Clear();
 
 	// Build initial file modification time cache
 	ForceRescan();
@@ -71,10 +71,10 @@ void Zenith_FileWatcher::Shutdown()
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xCallbackMutex);
-		s_xCallbacks.clear();
+		s_xCallbacks.Clear();
 	}
 
-	s_xFileModTimes.clear();
+	s_xFileModTimes.Clear();
 	s_strWatchPath.clear();
 	s_bInitialized = false;
 
@@ -114,7 +114,7 @@ uint32_t Zenith_FileWatcher::RegisterCallback(ChangeCallback pfnCallback)
 void Zenith_FileWatcher::UnregisterCallback(uint32_t uHandle)
 {
 	Zenith_ScopedMutexLock xLock(s_xCallbackMutex);
-	s_xCallbacks.erase(uHandle);
+	s_xCallbacks.Remove(uHandle);
 }
 
 //=============================================================================
@@ -123,7 +123,7 @@ void Zenith_FileWatcher::UnregisterCallback(uint32_t uHandle)
 
 void Zenith_FileWatcher::ForceRescan()
 {
-	s_xFileModTimes.clear();
+	s_xFileModTimes.Clear();
 
 	if (s_strWatchPath.empty() || !std::filesystem::exists(s_strWatchPath))
 	{
@@ -143,7 +143,7 @@ void Zenith_FileWatcher::ForceRescan()
 		}
 	}
 
-	Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher scanned %zu files", s_xFileModTimes.size());
+	Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher scanned %u files", s_xFileModTimes.GetSize());
 }
 
 void Zenith_FileWatcher::SetPaused(bool bPaused)
@@ -196,9 +196,9 @@ void Zenith_FileWatcher::NotifyCallbacks(const FileChangeEvent& xEvent)
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xCallbackMutex);
-		for (const auto& xPair : s_xCallbacks)
+		for (Zenith_HashMap<uint32_t, ChangeCallback>::Iterator xIt(s_xCallbacks); !xIt.Done(); xIt.Next())
 		{
-			xCallbacksCopy.PushBack(xPair.second);
+			xCallbacksCopy.PushBack(xIt.GetValue());
 		}
 	}
 
@@ -424,7 +424,7 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 		return;
 	}
 
-	std::unordered_map<std::string, uint64_t> xCurrentFiles;
+	Zenith_HashMap<std::string, uint64_t> xCurrentFiles;
 
 	// Scan for current files
 	for (const auto& xEntry : std::filesystem::recursive_directory_iterator(s_strWatchPath, std::filesystem::directory_options::skip_permission_denied, xEC))
@@ -447,13 +447,13 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 	}
 
 	// Check for new and modified files
-	for (const auto& xPair : xCurrentFiles)
+	for (Zenith_HashMap<std::string, uint64_t>::Iterator xIt(xCurrentFiles); !xIt.Done(); xIt.Next())
 	{
-		const std::string& strPath = xPair.first;
-		uint64_t ulCurrentTime = xPair.second;
+		const std::string& strPath = xIt.GetKey();
+		uint64_t ulCurrentTime = xIt.GetValue();
 
-		auto xIt = s_xFileModTimes.find(strPath);
-		if (xIt == s_xFileModTimes.end())
+		const uint64_t* pulCached = s_xFileModTimes.TryGet(strPath);
+		if (pulCached == nullptr)
 		{
 			// New file
 			FileChangeEvent xEvent;
@@ -462,7 +462,7 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 			xEvent.m_ulTimestamp = ulCurrentTime;
 			EnqueueEvent(xEvent);
 		}
-		else if (xIt->second != ulCurrentTime)
+		else if (*pulCached != ulCurrentTime)
 		{
 			// Modified file
 			FileChangeEvent xEvent;
@@ -474,13 +474,13 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 	}
 
 	// Check for deleted files
-	for (const auto& xPair : s_xFileModTimes)
+	for (Zenith_HashMap<std::string, uint64_t>::Iterator xIt(s_xFileModTimes); !xIt.Done(); xIt.Next())
 	{
-		if (xCurrentFiles.find(xPair.first) == xCurrentFiles.end())
+		if (!xCurrentFiles.Contains(xIt.GetKey()))
 		{
 			FileChangeEvent xEvent;
 			xEvent.m_eType = FileChangeType::DELETED;
-			xEvent.m_strPath = xPair.first;
+			xEvent.m_strPath = xIt.GetKey();
 			xEvent.m_ulTimestamp = 0;
 			EnqueueEvent(xEvent);
 		}

@@ -3,8 +3,8 @@
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 
 #include "Zenith_MemoryCategories.h"
+#include "Collections/Zenith_HashMap.h"
 
-#include <unordered_map>
 #include <atomic>
 #include <chrono>
 
@@ -98,7 +98,7 @@ public:
 	static u_int GetAllocationCount();
 
 private:
-	static std::unordered_map<void*, Zenith_AllocationRecord> s_xAllocations;
+	static Zenith_HashMap<void*, Zenith_AllocationRecord> s_xAllocations;
 
 	// Recently freed addresses for double-free detection
 	static constexpr u_int uFREED_HISTORY_SIZE = 1024;

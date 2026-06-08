@@ -171,17 +171,17 @@ void Zenith_SkeletonAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 int32_t Zenith_SkeletonAsset::GetBoneIndex(const std::string& strName) const
 {
-	auto it = m_xBoneNameToIndex.find(strName);
-	if (it != m_xBoneNameToIndex.end())
+	const uint32_t* puIndex = m_xBoneNameToIndex.TryGet(strName);
+	if (puIndex != nullptr)
 	{
-		return static_cast<int32_t>(it->second);
+		return static_cast<int32_t>(*puIndex);
 	}
 	return INVALID_BONE_INDEX;
 }
 
 bool Zenith_SkeletonAsset::HasBone(const std::string& strName) const
 {
-	return m_xBoneNameToIndex.find(strName) != m_xBoneNameToIndex.end();
+	return m_xBoneNameToIndex.Contains(strName);
 }
 
 Zenith_Vector<uint32_t> Zenith_SkeletonAsset::GetRootBones() const
@@ -222,7 +222,7 @@ uint32_t Zenith_SkeletonAsset::AddBone(
 	const Zenith_Maths::Vector3& xScale)
 {
 	Zenith_Assert(m_xBones.GetSize() < MAX_BONES, "Exceeded maximum bone count");
-	Zenith_Assert(m_xBoneNameToIndex.find(strName) == m_xBoneNameToIndex.end(), "Duplicate bone name");
+	Zenith_Assert(!m_xBoneNameToIndex.Contains(strName), "Duplicate bone name");
 
 	Bone xBone;
 	xBone.m_strName = strName;
@@ -313,6 +313,6 @@ void Zenith_SkeletonAsset::ComputeBindPoseRecursive(uint32_t uBoneIndex, const Z
 void Zenith_SkeletonAsset::Reset()
 {
 	m_xBones.Clear();
-	m_xBoneNameToIndex.clear();
+	m_xBoneNameToIndex.Clear();
 	m_strSourcePath.clear();
 }
