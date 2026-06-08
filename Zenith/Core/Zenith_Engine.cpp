@@ -542,6 +542,28 @@ void Zenith_Engine::Initialise()
 	Zenith_ComponentMetaRegistry::Get().SetComponentRegistrar(&Zenith_RegisterEngineComponents);
 	Zenith_ComponentMetaRegistry::Get().EnsureInitialized();
 
+	// W6.3: registration-verification diagnostic (lifecycle hardening). The registrar
+	// above explicitly names every engine built-in, so they cannot be dead-stripped
+	// individually — but if the registrar TU were stripped, EnsureInitialized() never
+	// ran, or a built-in were dropped from Zenith_ComponentMeta_Registration.cpp (e.g. a
+	// botched merge), the registry would be missing types and component (de)serialization
+	// would silently fail downstream. Surface that loudly at boot, release-survivable via
+	// the Zenith_Check tier. (A per-game expected-component manifest can extend this.)
+	{
+		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+		const auto& xRegisteredMetas = xRegistry.GetAllMetasSorted();
+		Zenith_Check(!xRegisteredMetas.empty(),
+			"Component registry is EMPTY after EnsureInitialized() — the registrar was dead-stripped or never ran; component (de)serialization will fail");
+		Zenith_Log(LOG_CATEGORY_CORE, "W6.3: %u component types registered at boot", (u_int)xRegisteredMetas.size());
+
+		static const char* const s_aszCoreEngineComponents[] = { "Transform", "Model", "Camera", "Light", "Collider", "Terrain" };
+		for (const char* szExpected : s_aszCoreEngineComponents)
+		{
+			Zenith_Check(xRegistry.GetMetaByName(szExpected) != nullptr,
+				"Core engine component '%s' is NOT registered after boot — registrar regression", szExpected);
+		}
+	}
+
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: scene system bootstrap...");
 	Zenith_SceneSystem::InitialiseSubsystems();
 
