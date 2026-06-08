@@ -12,10 +12,9 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "ZenithECS/Zenith_Scene.h"
-#include "ZenithECS/Zenith_SceneSystem.h"
-#include "ZenithECS/Zenith_Query.h"
-#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
+// Wave 3: emitters are ticked + gathered EC-side; the renderer consumes neutral
+// Zenith_ParticleEmitterRenderData (+ Zenith_ParticleData) via g_pfnZenithParticleGather.
+#include "Core/Zenith_RenderGather.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -141,56 +140,32 @@ void Flux_ParticlesImpl::Shutdown()
 
 void Flux_ParticlesImpl::UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
-	// Promoted from a file-static free function to an instance member so the
-	// per-emitter self-references resolve through 'this' instead of re-entering
-	// via g_xEngine.Particles(). g_xEngine.Scenes() (the ECS Prepare-gather) STAYS
-	// self-routed — injecting it would reopen the Flux<->ECS layering gate.
 	m_uAlphaInstanceCount = 0;
 	m_uAdditiveInstanceCount = 0;
 
-	// Query all particle emitter components from ALL loaded scenes
-	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+	// Wave 3: emitters are ticked + queried EC-side (g_pfnZenithParticleGather drives
+	// xEmitter.Update(fDt) for every emitter and returns one neutral entry per CPU
+	// emitter). This body just builds the GPU instance buffers from that data, so it
+	// names no EntityComponent type and reaches no g_xEngine.Scenes().
+	Zenith_Vector<Zenith_ParticleEmitterRenderData> xEmitters;
+	if (g_pfnZenithParticleGather) g_pfnZenithParticleGather(fDt, xEmitters);
+
+	for (u_int e = 0; e < xEmitters.GetSize(); ++e)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
-		if (!pxSceneData || !pxSceneData->IsLoaded())
+		const Zenith_ParticleEmitterRenderData& xEmitterData = xEmitters.Get(e);
+
+		// Route to the alpha or additive instance buffer based on the emitter's blend mode.
+		Flux_ParticleInstance* pxTargetBuffer = xEmitterData.m_bAdditive ? m_axAdditiveInstances : m_axAlphaInstances;
+		uint32_t& uTargetCount = xEmitterData.m_bAdditive ? m_uAdditiveInstanceCount : m_uAlphaInstanceCount;
+
+		for (uint32_t i = 0; i < xEmitterData.m_uAliveCount && uTargetCount < s_uMaxParticles; ++i)
 		{
-			continue;
+			// Zenith_ParticleData (neutral mirror) exposes the same position/size/colour
+			// accessors as Flux_Particle, so the renderer builds the instance directly.
+			const Zenith_ParticleData& xP = xEmitterData.m_pxParticles[i];
+			pxTargetBuffer[uTargetCount] = Flux_ParticleInstance(xP.GetPosition(), xP.GetCurrentSize(), xP.GetCurrentColor());
+			uTargetCount++;
 		}
-
-		pxSceneData->Query<Zenith_ParticleEmitterComponent>()
-			.ForEach([this, fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
-			{
-				// Update ALL emitters (handles spawning for both CPU and GPU)
-				xEmitter.Update(fDt);
-
-				// Only build instance buffer for CPU emitters
-				// GPU emitters have their instances built by the compute shader
-				if (xEmitter.UsesGPUCompute())
-				{
-					return;
-				}
-
-				// Copy alive particles to the appropriate instance buffer based on blend mode
-				const Zenith_Vector<Zenith_ParticleData>& axParticles = xEmitter.GetParticles();
-				uint32_t uAliveCount = xEmitter.GetAliveCount();
-
-				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
-				bool bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
-
-				Flux_ParticleInstance* pxTargetBuffer = bAdditive ? m_axAdditiveInstances : m_axAlphaInstances;
-				uint32_t& uTargetCount = bAdditive ? m_uAdditiveInstanceCount : m_uAlphaInstanceCount;
-
-				for (uint32_t i = 0; i < uAliveCount && uTargetCount < s_uMaxParticles; ++i)
-				{
-					// Build the render instance from the EC-side mirror's accessors
-					// (Zenith_ParticleData has the same position/size/colour accessors as
-					// Flux_Particle, so the renderer no longer needs the component to hand
-					// it a Flux type).
-					const Zenith_ParticleData& xP = axParticles.Get(i);
-					pxTargetBuffer[uTargetCount] = Flux_ParticleInstance(xP.GetPosition(), xP.GetCurrentSize(), xP.GetCurrentColor());
-					uTargetCount++;
-				}
-			});
 	}
 }
 

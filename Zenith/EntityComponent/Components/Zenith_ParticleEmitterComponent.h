@@ -2,7 +2,7 @@
 
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID + entity/component templates (no longer transitive via the now-opaque Scene.h)
-#include "EntityComponent/Components/Zenith_ParticleData.h"  // EC-side mirror of Flux_Particle (keeps this header Flux-free)
+#include "Core/Zenith_ParticleData.h"  // EC-side mirror of Flux_Particle (keeps this header Flux-free)
 #include <random>
 
 #ifdef ZENITH_TOOLS

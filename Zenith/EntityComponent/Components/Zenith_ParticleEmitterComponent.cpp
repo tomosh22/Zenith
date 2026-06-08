@@ -6,6 +6,12 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Particles/Flux_ParticleGPUImpl.h"
+// Wave 3: EC-side particle render-gather (so Flux_Particles drops its
+// Zenith_ParticleEmitterComponent.h include).
+#include "Core/Zenith_RenderGather.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Query.h"
 
 // Forward declaration of helper function
 static Zenith_Maths::Vector3 GetRandomDirectionInCone(const Zenith_Maths::Vector3& xDir, float fSpreadAngleDegrees);
@@ -422,3 +428,39 @@ void Zenith_ParticleEmitterComponent::RenderPropertiesPanel()
 	}
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// Wave 3: particle render-gather. Ticks every emitter (CPU + GPU — Update handles
+// spawning for both) and returns one neutral entry per CPU emitter (GPU emitters
+// have their instances built by the compute shader, so they are ticked but not
+// returned). Identical to the loop Flux_Particles used to run itself.
+// ---------------------------------------------------------------------------
+static void Zenith_GatherParticleEmittersImpl(float fDt, Zenith_Vector<Zenith_ParticleEmitterRenderData>& xOut)
+{
+	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+	{
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
+		if (!pxSceneData || !pxSceneData->IsLoaded()) continue;
+
+		pxSceneData->Query<Zenith_ParticleEmitterComponent>()
+			.ForEach([&xOut, fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
+		{
+			// Update ALL emitters (handles spawning for both CPU and GPU).
+			xEmitter.Update(fDt);
+
+			// Only CPU emitters contribute instance data here.
+			if (xEmitter.UsesGPUCompute()) return;
+
+			Zenith_ParticleEmitterRenderData xData;
+			xData.m_pxParticles = xEmitter.GetParticles().GetDataPointer();
+			xData.m_uAliveCount = xEmitter.GetAliveCount();
+
+			Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
+			xData.m_bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
+
+			xOut.PushBack(xData);
+		});
+	}
+}
+
+Zenith_ParticleGatherFn g_pfnZenithParticleGather = &Zenith_GatherParticleEmittersImpl;

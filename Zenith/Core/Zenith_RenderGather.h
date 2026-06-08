@@ -2,6 +2,7 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
+#include "Core/Zenith_ParticleData.h" // neutral per-particle render data (used by the particle gather)
 
 // ---------------------------------------------------------------------------
 // Render-gather boundary (Wave 3: Flux<-EC reverse-edge decoupling).
@@ -63,3 +64,20 @@ struct Zenith_CameraRenderData
 
 using Zenith_CameraGatherFn = void (*)(Zenith_CameraRenderData& xOut);
 extern Zenith_CameraGatherFn g_pfnZenithCameraGather;
+
+// One CPU particle emitter's render inputs. The gatherer TICKS every emitter (CPU + GPU)
+// and returns one entry per CPU emitter (GPU emitters have their instances built by the
+// compute shader, so they are ticked but not returned). m_pxParticles points into the
+// emitter's own alive-particle array (valid for the frame); m_bAdditive selects the blend
+// bucket. The renderer builds Flux_ParticleInstance from these — no EC type involved.
+struct Zenith_ParticleEmitterRenderData
+{
+	const Zenith_ParticleData* m_pxParticles = nullptr;
+	u_int                      m_uAliveCount = 0;
+	bool                       m_bAdditive   = false;
+};
+
+// fDt is forwarded so the EC-side gatherer can drive the per-emitter particle tick (the
+// renderer used to call xEmitter.Update(fDt) itself).
+using Zenith_ParticleGatherFn = void (*)(float fDt, Zenith_Vector<Zenith_ParticleEmitterRenderData>& xOut);
+extern Zenith_ParticleGatherFn g_pfnZenithParticleGather;
