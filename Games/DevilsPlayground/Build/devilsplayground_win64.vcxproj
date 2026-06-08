@@ -504,6 +504,7 @@
     <ClInclude Include="..\Source\DP_Tuning.h" />
     <ClInclude Include="..\Source\DP_Win.h" />
     <ClInclude Include="..\Source\PublicInterfaces.h" />
+    <ClInclude Include="..\Tests\DPTestSupport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Components\DPProcLevelBootstrap_Behaviour.cpp" />

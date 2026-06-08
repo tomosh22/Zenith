@@ -7,7 +7,8 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-#include "Editor/Zenith_Editor.h"
+#include "Core/Zenith_EditorQuery.h"
+#include "Core/Zenith_DragDropPayloads.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -258,7 +259,7 @@ void Zenith_ModelComponent::RenderModelInstanceMaterialsSection()
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Edit"))
 			{
-				g_xEngine.Editor().SelectMaterial(pxMaterial);
+				g_xEditorQuery.m_pfnSelectMaterial(pxMaterial);
 			}
 
 			if (bExpanded)

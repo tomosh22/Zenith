@@ -154,10 +154,15 @@
     <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_DragDropPayloads.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_EditorQuery.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Engine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_GizmoTransformAccess.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_ParticleData.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_RenderGather.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Result.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />

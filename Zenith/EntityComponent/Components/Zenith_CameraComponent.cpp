@@ -6,7 +6,7 @@
 #include "Input/Zenith_Input.h"
 
 #ifdef ZENITH_TOOLS
-#include "Editor/Zenith_Editor.h"
+#include "Core/Zenith_EditorQuery.h"
 #endif
 
 Zenith_CameraComponent::Zenith_CameraComponent(Zenith_Entity& xParentEntity)
@@ -224,7 +224,7 @@ void Zenith_CameraComponent::RenderPropertiesPanel()
 		{
 			if (ImGui::Button("Set as Main Camera"))
 			{
-				g_xEngine.Editor().SetSelectedAsMainCamera();
+				g_xEditorQuery.m_pfnSetSelectedAsMainCamera();
 			}
 		}
 

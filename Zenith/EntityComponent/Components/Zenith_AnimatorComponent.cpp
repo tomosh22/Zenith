@@ -486,7 +486,8 @@ void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-#include "Editor/Zenith_Editor.h"
+#include "Core/Zenith_EditorQuery.h"
+#include "Core/Zenith_DragDropPayloads.h"
 // Flux_AnimationClip is already complete here via Flux_AnimationController.h
 // (included above) -> Flux_AnimationClip.h, so no direct Flux clip include is
 // needed for the editor clip list below.
@@ -510,7 +511,7 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 	}
 
 	// Tick animation from editor when game logic isn't running (Stopped/Paused mode)
-	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing && xController.IsInitialized())
+	if (!g_xEditorQuery.m_pfnIsEditorPlaying() && xController.IsInitialized())
 	{
 		UpdateWorldMatrix();
 		xController.Update(g_xEngine.Frame().GetDt());

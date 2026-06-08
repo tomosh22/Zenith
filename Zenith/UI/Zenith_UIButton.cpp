@@ -12,7 +12,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 
 #ifdef ZENITH_TOOLS
-#include "Editor/Zenith_Editor.h"
+#include "Core/Zenith_EditorQuery.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
@@ -136,7 +136,7 @@ void Zenith_UIButton::HandleFirstVisibleFrame()
 #ifdef ZENITH_TOOLS
 void Zenith_UIButton::HandleEditorStoppedState()
 {
-	if (g_xEngine.Editor().GetEditorMode() == EditorMode::Stopped
+	if (g_xEditorQuery.m_pfnIsEditorStopped()
 #ifdef ZENITH_INPUT_SIMULATOR
 		&& !Zenith_InputSimulator::IsEnabled()
 #endif

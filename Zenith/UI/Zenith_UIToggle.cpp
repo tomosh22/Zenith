@@ -11,7 +11,7 @@
 #endif
 
 #ifdef ZENITH_TOOLS
-#include "Editor/Zenith_Editor.h"
+#include "Core/Zenith_EditorQuery.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
@@ -81,7 +81,7 @@ void Zenith_UIToggle::SetIsOn(bool bOn)
 void Zenith_UIToggle::ResetInteractionStateForEditor()
 {
 #ifdef ZENITH_TOOLS
-	if (g_xEngine.Editor().GetEditorMode() == EditorMode::Stopped
+	if (g_xEditorQuery.m_pfnIsEditorStopped()
 #ifdef ZENITH_INPUT_SIMULATOR
 		&& !Zenith_InputSimulator::IsEnabled()
 #endif

@@ -664,6 +664,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorCamera.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_EditorQuery.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -3357,6 +3360,12 @@
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_DragDropPayloads.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_EditorQuery.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Engine.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -3366,7 +3375,16 @@
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_GizmoTransformAccess.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_ParticleData.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_RenderGather.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Result.h">
