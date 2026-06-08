@@ -160,11 +160,11 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 	}
 	CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f));
 
-	g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(m_axAnimMatrices, sizeof(m_axAnimMatrices), m_xBoneBuffer);
+	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(m_axAnimMatrices, sizeof(m_axAnimMatrices), m_xBoneBuffer);
 }
 #endif // ZENITH_TOOLS
 
 Flux_MeshAnimation::~Flux_MeshAnimation()
 {
-	g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(m_xBoneBuffer);
+	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xBoneBuffer);
 }

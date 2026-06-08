@@ -146,11 +146,11 @@ namespace Zenith_EditorPanelMemory
 		ImGui::Text("GPU Memory (VMA)");
 		ImGui::Separator();
 
-		Zenith_Vulkan_MemoryManager::VMAStats xVmaStats = g_xEngine.VulkanMemory().GetVMAStats();
+		Zenith_Vulkan_MemoryManager::VMAStats xVmaStats = g_xEngine.FluxMemory().GetVMAStats();
 
 		// Manual tracking (for comparison)
-		u_int64 ulImageMem = *g_xEngine.VulkanMemory().GetImageMemoryUsagePtr();
-		u_int64 ulBufferMem = *g_xEngine.VulkanMemory().GetBufferMemoryUsagePtr();
+		u_int64 ulImageMem = *g_xEngine.FluxMemory().GetImageMemoryUsagePtr();
+		u_int64 ulBufferMem = *g_xEngine.FluxMemory().GetBufferMemoryUsagePtr();
 
 		FormatBytes(ulImageMem, acBuffer, sizeof(acBuffer));
 		ImGui::Text("Image Memory (tracked): %s", acBuffer);
@@ -183,8 +183,8 @@ namespace Zenith_EditorPanelMemory
 		ImGui::Text("UI Memory (ImGui)");
 		ImGui::Separator();
 
-		u_int64 ulImGuiMem = g_xEngine.Vulkan().GetImGuiMemoryAllocated();
-		u_int64 ulImGuiAllocs = g_xEngine.Vulkan().GetImGuiAllocationCount();
+		u_int64 ulImGuiMem = g_xEngine.FluxBackend().GetImGuiMemoryAllocated();
+		u_int64 ulImGuiAllocs = g_xEngine.FluxBackend().GetImGuiAllocationCount();
 
 		FormatBytes(ulImGuiMem, acBuffer, sizeof(acBuffer));
 		ImGui::Text("ImGui Allocated: %s (%llu allocs)", acBuffer, ulImGuiAllocs);

@@ -6,7 +6,7 @@
 //
 // What the engine layer calls on the backend "device" type (aliased as
 // Flux_PlatformAPI). Methods are now INSTANCE methods because the backend
-// type lives on g_xEngine (e.g. g_xEngine.Vulkan()) rather than a process-
+// type lives on g_xEngine (e.g. g_xEngine.FluxBackend()) rather than a process-
 // wide static facade. The requires-clause uses t.Method(args) — t is a
 // synthetic instance whose only purpose is concept satisfaction; the
 // actual call sites use g_xEngine.X().Method(args).

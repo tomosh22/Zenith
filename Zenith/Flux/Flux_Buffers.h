@@ -28,7 +28,7 @@ namespace Zenith_FluxBuffers_Detail
 {
 	inline u_int CurrentFrameIndex()
 	{
-		const u_int uIndex = g_xEngine.VulkanSwapchain().GetCurrentFrameIndex();
+		const u_int uIndex = g_xEngine.FluxSwapchain().GetCurrentFrameIndex();
 		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
 		return uIndex;
 	}

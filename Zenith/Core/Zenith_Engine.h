@@ -114,9 +114,9 @@ public:
 	Zenith_TouchInput& Touch();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
-	Zenith_Vulkan& Vulkan();
-	Zenith_Vulkan_MemoryManager& VulkanMemory();
-	Zenith_Vulkan_Swapchain& VulkanSwapchain();
+	Zenith_Vulkan& FluxBackend();
+	Zenith_Vulkan_MemoryManager& FluxMemory();
+	Zenith_Vulkan_Swapchain& FluxSwapchain();
 	Flux_HiZImpl& HiZ();
 	Flux_StaticMeshesImpl& StaticMeshes();
 	Flux_AnimatedMeshesImpl& AnimatedMeshes();

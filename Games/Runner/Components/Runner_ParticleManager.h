@@ -205,7 +205,7 @@ public:
 		}
 
 		// Upload to GPU
-		g_xEngine.VulkanMemory().UploadBufferData(
+		g_xEngine.FluxMemory().UploadBufferData(
 			s_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
 			axGPUParticles.data(),
 			axGPUParticles.size() * sizeof(ParticleGPU));

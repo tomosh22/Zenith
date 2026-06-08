@@ -117,8 +117,8 @@ static void GenerateUVSphere(Flux_MeshGeometry& xGeometryOut, float fRadius, uin
 	xGeometryOut.GenerateLayoutAndVertexData();
 
 	// Upload to GPU
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 // ============================================================================

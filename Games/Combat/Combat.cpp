@@ -310,8 +310,8 @@ static void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, floa
 	xGeometryOut.GenerateLayoutAndVertexData();
 
 	// Upload to GPU
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 // ============================================================================
@@ -404,8 +404,8 @@ static void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float f
 	xGeometryOut.GenerateLayoutAndVertexData();
 
 	// Upload to GPU
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 // ============================================================================

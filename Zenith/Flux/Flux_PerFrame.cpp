@@ -14,7 +14,7 @@
 // Current subscribers:
 //   Begin: 1 — Zenith_Vulkan::OnFluxPerFrameBegin (fence wait, descriptor
 //              pool reset, typed deletion queue drain, scratch-offset reset)
-//   End:   1 — g_xEngine.VulkanMemory().OnFluxPerFrameEnd (deferred-VRAM
+//   End:   1 — g_xEngine.FluxMemory().OnFluxPerFrameEnd (deferred-VRAM
 //              deletion clock advance)
 // Total: 2 per side. Cap is 4 either side (shared constant) — two slots of
 // headroom for hot-reload / profiler hooks before this static_assert needs

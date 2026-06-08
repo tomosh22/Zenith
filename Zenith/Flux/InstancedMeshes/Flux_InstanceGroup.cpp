@@ -57,7 +57,7 @@ Flux_InstanceGroup::Flux_InstanceGroup()
 	// per dep; every other reach in this TU routes through the member pointer.
 	// The *Impl objects are allocated up-front in Zenith_Engine::Initialise() and
 	// groups are only constructed at runtime, so both are non-null here.
-	m_pxVulkanMemory = &g_xEngine.VulkanMemory();
+	m_pxVulkanMemory = &g_xEngine.FluxMemory();
 	m_pxThreading = &g_xEngine.Threading();
 }
 

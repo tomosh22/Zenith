@@ -182,9 +182,9 @@ void Flux_RendererImpl::EarlyInitialise()
 	// first call.
 	PerFrameInitialise();
 
-	g_xEngine.Vulkan().Initialise();
-	g_xEngine.VulkanMemory().Initialise();
-	g_xEngine.Vulkan().InitialiseScratchBuffers(); // Must be after memory manager init
+	g_xEngine.FluxBackend().Initialise();
+	g_xEngine.FluxMemory().Initialise();
+	g_xEngine.FluxBackend().InitialiseScratchBuffers(); // Must be after memory manager init
 	g_xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
 }
 
@@ -204,7 +204,7 @@ void Flux_RendererImpl::LateInitialise()
 	//
 	// Independent (no ordering constraint): SSAO, Fog, SDFs, Particles, Quads, Text
 
-	g_xEngine.VulkanMemory().BeginFrame();
+	g_xEngine.FluxMemory().BeginFrame();
 
 #ifdef ZENITH_WINDOWS
 	// Initialize Slang compiler before any shader loading
@@ -215,7 +215,7 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_SlangCompiler::AddSearchPath(SHADER_SOURCE_ROOT);
 #endif
 
-	g_xEngine.VulkanSwapchain().Initialise();
+	g_xEngine.FluxSwapchain().Initialise();
 
 #ifdef ZENITH_TOOLS
 	// Bring up the hot-reload watcher BEFORE any subsystem Initialise() so
@@ -227,7 +227,7 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_ShaderHotReload::Initialise();
 #endif
 
-	g_xEngine.FluxGraphics().Initialise(g_xEngine.VulkanMemory(), g_xEngine.VulkanSwapchain(), g_xEngine.Shadows());
+	g_xEngine.FluxGraphics().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxSwapchain(), g_xEngine.Shadows());
 
 #ifdef ZENITH_TOOLS
 	// ImGui is the tail of the inline prologue. It depends only on the Vulkan
@@ -235,7 +235,7 @@ void Flux_RendererImpl::LateInitialise()
 	// not on any registry feature, so bringing it up here — before the
 	// FluxGraphics-onward feature walk — is dependency-safe. Gizmos (which DOES
 	// depend on ImGui) is registered as a feature and initialised by the walk.
-	g_xEngine.Vulkan().InitialiseImGui();
+	g_xEngine.FluxBackend().InitialiseImGui();
 #endif
 
 	// Wave-13.B: the per-subsystem Initialise() ladder that used to live inline
@@ -256,7 +256,7 @@ void Flux_RendererImpl::LateInitialise()
 			xDesc.m_pfnInitialise();
 	}
 
-	g_xEngine.VulkanMemory().EndFrame(false);
+	g_xEngine.FluxMemory().EndFrame(false);
 
 	// Create and compile the render graph
 	g_xEngine.FluxRenderer().m_pxRenderGraph = new Flux_RenderGraph();
@@ -473,7 +473,7 @@ void Flux_RendererImpl::Shutdown()
 #ifdef ZENITH_TOOLS
 	Flux_ShaderHotReload::Shutdown();
 	g_xEngine.Gizmos().Shutdown();
-	g_xEngine.Vulkan().ShutdownImGui();
+	g_xEngine.FluxBackend().ShutdownImGui();
 #endif
 
 	// HDR must shutdown after other render systems that target HDR buffer
@@ -484,10 +484,10 @@ void Flux_RendererImpl::Shutdown()
 
 	// Shutdown swapchain-owned file-static shader/pipeline state before the
 	// Vulkan device and memory-manager registries go away.
-	g_xEngine.VulkanSwapchain().Shutdown();
+	g_xEngine.FluxSwapchain().Shutdown();
 
 	// Shutdown memory manager (VMA allocator, handle registries)
-	g_xEngine.VulkanMemory().Shutdown();
+	g_xEngine.FluxMemory().Shutdown();
 
 	// Clear PerFrame callback arrays so a subsequent Flux_RendererImpl::Initialise starts
 	// from a known empty state (matters for unit tests that re-init Flux

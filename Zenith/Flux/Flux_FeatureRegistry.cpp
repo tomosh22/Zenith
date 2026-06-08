@@ -218,21 +218,21 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		nullptr,
 		+[](){ g_xEngine.FluxGraphics().Shutdown(); });
 	const u_int uHDR = xReg.Register(szFLUX_FEATURE_HDR,
-		+[](){ g_xEngine.HDR().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanMemory(), g_xEngine.VulkanSwapchain(), g_xEngine.Frame()); },
+		+[](){ g_xEngine.HDR().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory(), g_xEngine.FluxSwapchain(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.HDR().SetupRenderGraph(g); }, // HDR's SECOND setup touch (bloom/tonemap); its FIRST touch (SetupTransients) is an inline irregular.
 		+[](){ g_xEngine.HDR().Shutdown(); });
 #ifdef ZENITH_TOOLS
 	const u_int uGizmos = xReg.Register(szFLUX_FEATURE_GIZMOS,
-		+[](){ g_xEngine.Gizmos().Initialise(g_xEngine.FluxGraphics(), g_xEngine.Primitives(), g_xEngine.VulkanMemory()); },
+		+[](){ g_xEngine.Gizmos().Initialise(g_xEngine.FluxGraphics(), g_xEngine.Primitives(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Gizmos().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Gizmos().Shutdown(); });
 #endif
 	const u_int uShadows = xReg.Register(szFLUX_FEATURE_SHADOWS,
-		+[](){ g_xEngine.Shadows().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling()); },
+		+[](){ g_xEngine.Shadows().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Shadows().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Shadows().Shutdown(); });
 	const u_int uSkybox = xReg.Register(szFLUX_FEATURE_SKYBOX,
-		+[](){ g_xEngine.Skybox().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.VulkanMemory(), g_xEngine.Vulkan()); },
+		+[](){ g_xEngine.Skybox().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.FluxMemory(), g_xEngine.FluxBackend()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Skybox().SetupRenderGraph(g); }, // Skybox's aerial-perspective pass is a separate method invoked inline as an irregular.
 		+[](){ g_xEngine.Skybox().Shutdown(); });
 	const u_int uIBL = xReg.Register(szFLUX_FEATURE_IBL,
@@ -254,43 +254,43 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.AnimatedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.AnimatedMeshes().Shutdown(); });
 	const u_int uInstancedMeshes = xReg.Register(szFLUX_FEATURE_INSTANCED_MESHES,
-		+[](){ g_xEngine.InstancedMeshes().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics()); },
+		+[](){ g_xEngine.InstancedMeshes().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.InstancedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.InstancedMeshes().Shutdown(); });
 	const u_int uTerrain = xReg.Register(szFLUX_FEATURE_TERRAIN,
-		+[](){ g_xEngine.Terrain().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling(), g_xEngine.TerrainStreaming()); },
+		+[](){ g_xEngine.Terrain().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling(), g_xEngine.TerrainStreaming()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Terrain().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Terrain().Shutdown(); });
 	const u_int uGrass = xReg.Register(szFLUX_FEATURE_GRASS,
-		+[](){ g_xEngine.Grass().Initialise(g_xEngine.VulkanMemory(), g_xEngine.Frame(), g_xEngine.FluxGraphics(), g_xEngine.HDR()); },
+		+[](){ g_xEngine.Grass().Initialise(g_xEngine.FluxMemory(), g_xEngine.Frame(), g_xEngine.FluxGraphics(), g_xEngine.HDR()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Grass().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Grass().Shutdown(); });
 	const u_int uPrimitives = xReg.Register(szFLUX_FEATURE_PRIMITIVES,
 		// DI seam: Primitives::Initialise takes (Graphics&). FluxGraphics is brought
 		// up before the walk reaches Primitives, so the trampoline forwards it.
-		+[](){ g_xEngine.Primitives().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanMemory()); },
+		+[](){ g_xEngine.Primitives().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Primitives().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Primitives().Shutdown(); });
 	const u_int uHiZ = xReg.Register(szFLUX_FEATURE_HIZ,
 		// DI seam: HiZ::Initialise takes (Swapchain&, Graphics&, Renderer&) — the
 		// trampoline gathers them from g_xEngine, mirroring the inline call site.
-		+[](){ g_xEngine.HiZ().Initialise(g_xEngine.VulkanSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer()); },
+		+[](){ g_xEngine.HiZ().Initialise(g_xEngine.FluxSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.HiZ().SetupRenderGraph(g); },
 		+[](){ g_xEngine.HiZ().Shutdown(); });
 	const u_int uSSR = xReg.Register(szFLUX_FEATURE_SSR,
-		+[](){ g_xEngine.SSR().Initialise(g_xEngine.VulkanMemory(), g_xEngine.VulkanSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.HiZ(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
+		+[](){ g_xEngine.SSR().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.HiZ(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSR().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSR().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
 	const u_int uSSGI = xReg.Register(szFLUX_FEATURE_SSGI,
-		+[](){ g_xEngine.SSGI().Initialise(g_xEngine.VulkanSwapchain(), g_xEngine.HiZ(), g_xEngine.FluxGraphics(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
+		+[](){ g_xEngine.SSGI().Initialise(g_xEngine.FluxSwapchain(), g_xEngine.HiZ(), g_xEngine.FluxGraphics(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSGI().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSGI().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
 	const u_int uDynamicLights = xReg.Register(szFLUX_FEATURE_DYNAMIC_LIGHTS,
-		+[](){ g_xEngine.DynamicLights().Initialise(g_xEngine.VulkanMemory(), g_xEngine.FluxGraphics()); },
+		+[](){ g_xEngine.DynamicLights().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics()); },
 		nullptr, // DynamicLights has no SetupRenderGraph (gather/upload front-end only).
 		+[](){ g_xEngine.DynamicLights().Shutdown(); });
 	const u_int uLightClustering = xReg.Register(szFLUX_FEATURE_LIGHT_CLUSTERING,
-		+[](){ g_xEngine.LightClustering().Initialise(g_xEngine.VulkanMemory()); },
+		+[](){ g_xEngine.LightClustering().Initialise(g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.LightClustering().SetupRenderGraph(g); },
 		+[](){ g_xEngine.LightClustering().Shutdown(); });
 	const u_int uDeferredShading = xReg.Register(szFLUX_FEATURE_DEFERRED_SHADING,
@@ -299,12 +299,12 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](){ g_xEngine.DeferredShading().Shutdown(); });
 	const u_int uDecals = xReg.Register(szFLUX_FEATURE_DECALS,
 		// DI seam: Decals::Initialise takes (Graphics&, Swapchain&).
-		+[](){ g_xEngine.Decals().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanSwapchain(), g_xEngine.VulkanMemory(), g_xEngine.Frame()); },
+		+[](){ g_xEngine.Decals().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxSwapchain(), g_xEngine.FluxMemory(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Decals().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Decals().Shutdown(); });
 	const u_int uSSAO = xReg.Register(szFLUX_FEATURE_SSAO,
 		// DI seam: SSAO::Initialise takes (Graphics&, Swapchain&, HDR&).
-		+[](){ g_xEngine.SSAO().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanSwapchain(), g_xEngine.HDR()); },
+		+[](){ g_xEngine.SSAO().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxSwapchain(), g_xEngine.HDR()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSAO().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSAO().Shutdown(); });
 	const u_int uFog = xReg.Register(szFLUX_FEATURE_FOG,
@@ -315,7 +315,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		// DI seam: SDFs::Initialise takes (Graphics&, HDR&) — the trampoline
 		// gathers them from g_xEngine. HDR is registered first (above) so it
 		// inits before the walk reaches SDFs.
-		+[](){ g_xEngine.SDFs().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.VulkanMemory(), g_xEngine.Frame()); },
+		+[](){ g_xEngine.SDFs().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.FluxMemory(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SDFs().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SDFs().Shutdown(); });
 	const u_int uParticles = xReg.Register(szFLUX_FEATURE_PARTICLES,
@@ -332,13 +332,13 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	const u_int uQuads = xReg.Register(szFLUX_FEATURE_QUADS,
 		// DI seam: Quads::Initialise takes (Graphics&). FluxGraphics is brought up
 		// inline at the top of LateInitialise before this walk, so the dep is ready.
-		+[](){ g_xEngine.Quads().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanMemory()); },
+		+[](){ g_xEngine.Quads().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Quads().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Quads().Shutdown(); });
 	const u_int uText = xReg.Register(szFLUX_FEATURE_TEXT,
 		// DI seam: Text::Initialise takes (Graphics&). FluxGraphics is brought up
 		// inline at the top of LateInitialise before this walk, so the dep is ready.
-		+[](){ g_xEngine.Text().Initialise(g_xEngine.FluxGraphics(), g_xEngine.VulkanMemory()); },
+		+[](){ g_xEngine.Text().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Text().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Text().Shutdown(); });
 

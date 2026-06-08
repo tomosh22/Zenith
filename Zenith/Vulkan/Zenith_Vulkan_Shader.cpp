@@ -219,7 +219,7 @@ Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
 
 void Zenith_Vulkan_Shader::Reset()
 {
-	const vk::Device xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device xDevice = g_xEngine.FluxBackend().GetDevice();
 
 	vk::ShaderModule* apxModules[] = { &m_xVertShaderModule, &m_xFragShaderModule, &m_xTescShaderModule, &m_xTeseShaderModule, &m_xCompShaderModule };
 	for (vk::ShaderModule* pxModule : apxModules)
@@ -260,7 +260,7 @@ vk::ShaderModule Zenith_Vulkan_Shader::CreateShaderModule(const char* szCode, ui
 	vk::ShaderModuleCreateInfo xCreateInfo = vk::ShaderModuleCreateInfo()
 		.setCodeSize(ulCodeLength)
 		.setPCode(reinterpret_cast<const uint32_t*>(szCode));
-	return VkUnwrap(g_xEngine.Vulkan().GetDevice().createShaderModule(xCreateInfo));
+	return VkUnwrap(g_xEngine.FluxBackend().GetDevice().createShaderModule(xCreateInfo));
 }
 
 void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageReflection)

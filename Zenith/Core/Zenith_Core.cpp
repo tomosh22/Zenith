@@ -85,7 +85,7 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 
 void RenderImGui()
 {
-	g_xEngine.Vulkan().ImGuiBeginFrame();
+	g_xEngine.FluxBackend().ImGuiBeginFrame();
 	
 	// Render the editor UI (includes docking, viewport, hierarchy, etc.)
 	g_xEngine.Editor().Render();
@@ -167,10 +167,10 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.VulkanMemory().BeginFrame();
+		g_xEngine.FluxMemory().BeginFrame();
 		if (!Flux_Swapchain::BeginFrame())
 		{
-			g_xEngine.VulkanMemory().EndFrame(false);
+			g_xEngine.FluxMemory().EndFrame(false);
 			// Skipped frame still fires end-frame callbacks so the deferred VRAM
 			// deletion clock ticks, but we deliberately DON'T advance the ring
 			// counter — a rapid-resize sequence of consecutive skips would
@@ -299,7 +299,7 @@ void Zenith_Core::Zenith_MainLoop()
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		Zenith_Profiling::Scope xMemMgrProfile(ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
-		g_xEngine.VulkanMemory().EndFrame();
+		g_xEngine.FluxMemory().EndFrame();
 	}
 
 	Zenith_MemoryManagement::EndFrame();
@@ -311,7 +311,7 @@ void Zenith_Core::Zenith_MainLoop()
 	{
 		{
 			Zenith_Profiling::Scope xEndFrameProfile(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
-			g_xEngine.Vulkan().EndFrame(bSubmitRenderWork);
+			g_xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
 		}
 
 		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);

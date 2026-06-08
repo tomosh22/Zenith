@@ -111,7 +111,7 @@ Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAss
 	// Create GPU buffer for bone matrices (skip for CPU-only use, e.g. unit tests)
 	if (bUploadToGPU)
 	{
-		g_xEngine.VulkanMemory().InitialiseDynamicConstantBuffer(
+		g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(
 			nullptr,
 			MAX_BONES * sizeof(Zenith_Maths::Matrix4),
 			pxInstance->m_xBoneBuffer
@@ -151,7 +151,7 @@ void Flux_SkeletonInstance::Destroy()
 {
 	if (m_bGPUResourcesInitialized)
 	{
-		g_xEngine.VulkanMemory().DestroyDynamicConstantBuffer(m_xBoneBuffer);
+		g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xBoneBuffer);
 		m_bGPUResourcesInitialized = false;
 	}
 
@@ -403,7 +403,7 @@ void Flux_SkeletonInstance::UploadToGPU()
 		return;
 	}
 
-	g_xEngine.VulkanMemory().UploadBufferData(
+	g_xEngine.FluxMemory().UploadBufferData(
 		m_xBoneBuffer.GetBuffer().m_xVRAMHandle,
 		m_axSkinningMatrices,
 		MAX_BONES * sizeof(Zenith_Maths::Matrix4)
@@ -425,7 +425,7 @@ void Flux_SkeletonInstance::UploadToAllFrameBuffers()
 	// This ensures all frame buffers have valid bone data from initialization
 	for (uint32_t uFrame = 0; uFrame < MAX_FRAMES_IN_FLIGHT; uFrame++)
 	{
-		g_xEngine.VulkanMemory().UploadBufferData(
+		g_xEngine.FluxMemory().UploadBufferData(
 			m_xBoneBuffer.GetBufferForFrameInFlight(uFrame).m_xVRAMHandle,
 			m_axSkinningMatrices,
 			MAX_BONES * sizeof(Zenith_Maths::Matrix4)

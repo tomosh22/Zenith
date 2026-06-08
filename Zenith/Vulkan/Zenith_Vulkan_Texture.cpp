@@ -28,7 +28,7 @@ void Zenith_Vulkan_Texture::Reset()
 
 static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddressMode eAddressMode)
 {
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = g_xEngine.FluxBackend().GetDevice();
 	vk::SamplerCreateInfo xInfo = vk::SamplerCreateInfo()
 		.setMagFilter(vk::Filter::eLinear)
 		.setMinFilter(vk::Filter::eLinear)

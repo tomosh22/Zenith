@@ -22,9 +22,9 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
+	Flux_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	// The 2D builder creates up to one RTV per mip and up to one per-mip SRV
 	// per mip. QueueVRAMDeletion accepts at most four individual view handles,
@@ -60,9 +60,9 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Flux_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
+	Flux_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	// Per-mip slice SRVs (one per mip, all populated by BuildColourCubemap).
 	for (u_int uMip = 0; uMip < uNumMips; uMip++)
@@ -225,7 +225,7 @@ void Flux_RenderAttachmentBuilder::BuildColourImpl(Flux_RenderAttachment& xAttac
 	(void)strName;
 #endif
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	// Per-mip RTV creation — each RTV is a single-layer, single-mip view of the
 	// attachment at mip `uMip`. Before this fix, the mip argument was omitted
@@ -258,7 +258,7 @@ void Flux_RenderAttachmentBuilder::BuildColourImpl(Flux_RenderAttachment& xAttac
 	}
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: %sColour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
 			szDiagPrefix,
 			strName.c_str(),
@@ -285,7 +285,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	xInfo.m_uNumLayers   = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	BuildColourImpl(xAttachment, strName, g_xEngine.VulkanMemory().CreateRenderTargetVRAM(xInfo), "");
+	BuildColourImpl(xAttachment, strName, g_xEngine.FluxMemory().CreateRenderTargetVRAM(xInfo), "");
 }
 
 void Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM(Flux_RenderAttachment& xAttachment, const std::string& strName, Flux_VRAMHandle xAliasedVRAM)
@@ -322,7 +322,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	xInfo.m_uNumLayers = 6;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	xAttachment.m_xVRAMHandle = xVulkanMemory.CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
@@ -372,7 +372,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	}
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Cubemap Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u layers=6",
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
@@ -395,7 +395,7 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xInfo.m_uNumLayers = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	xAttachment.m_xVRAMHandle = xVulkanMemory.CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
@@ -409,7 +409,7 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xAttachment.m_xSRV = xVulkanMemory.CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
@@ -443,13 +443,13 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM(Flux_RenderA
 	(void)strName;
 #endif
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	xAttachment.m_xDSV = xVulkanMemory.CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	xAttachment.m_xSRV = xVulkanMemory.CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.Vulkan().GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Aliased DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,

@@ -635,7 +635,7 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	// the legitimate single re-entry points for a method that can't hold the
 	// injected member pointers, exactly like a render-graph trampoline.
 	auto& xSelf        = g_xEngine.TerrainStreaming();
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	if (!xSelf.m_bInitialized || !xState.m_bRegistered)
 		return Flux_TerrainStreamInResult::AllocationFailure;
@@ -1182,7 +1182,7 @@ void Flux_TerrainStreamingManagerImpl::UpdateChunkLODAllocations(Flux_TerrainStr
 
 	BuildChunkDataForGPU(&xState, pxChunkData);
 
-	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
+	g_xEngine.FluxMemory().UploadBufferDataAtOffset(
 		xState.m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
@@ -1217,7 +1217,7 @@ void Flux_TerrainStreamingManagerImpl::UploadFrustumPlanesForFrame(Flux_TerrainS
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(xState.m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
+	g_xEngine.FluxMemory().UploadBufferDataAtOffset(xState.m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
 }
 
 void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandList& xCmdList)

@@ -23,9 +23,9 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 {
 	// Self-wire injected deps once. The call-site is not Zenith_Engine.cpp, so
 	// the signature can't grow params — recover the singletons here instead.
-	m_pxVulkan          = &g_xEngine.Vulkan();
-	m_pxVulkanMemory    = &g_xEngine.VulkanMemory();
-	m_pxVulkanSwapchain = &g_xEngine.VulkanSwapchain();
+	m_pxVulkan          = &g_xEngine.FluxBackend();
+	m_pxVulkanMemory    = &g_xEngine.FluxMemory();
+	m_pxVulkanSwapchain = &g_xEngine.FluxSwapchain();
 	m_pxFluxGraphics    = &g_xEngine.FluxGraphics();
 	m_pxProfiling       = &g_xEngine.Profiling();
 
@@ -42,9 +42,9 @@ void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool
 {
 	// Self-wire injected deps once (worker / copy command buffers come through
 	// this path, not Initialise) — see the note in the header.
-	m_pxVulkan          = &g_xEngine.Vulkan();
-	m_pxVulkanMemory    = &g_xEngine.VulkanMemory();
-	m_pxVulkanSwapchain = &g_xEngine.VulkanSwapchain();
+	m_pxVulkan          = &g_xEngine.FluxBackend();
+	m_pxVulkanMemory    = &g_xEngine.FluxMemory();
+	m_pxVulkanSwapchain = &g_xEngine.FluxSwapchain();
 	m_pxFluxGraphics    = &g_xEngine.FluxGraphics();
 	m_pxProfiling       = &g_xEngine.Profiling();
 

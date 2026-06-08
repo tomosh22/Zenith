@@ -150,7 +150,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	// BEFORE freeing the state — preserves the documented destroy order:
 	// DestroyCullingResources -> unregister -> destroy unified buffers ->
 	// delete state.
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
 	xVulkanMemory.DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
 
@@ -205,7 +205,7 @@ Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainCompon
 	{
 		DestroyCullingResources();
 		g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(m_pxStreamingState);
-		auto& xVulkanMemory = g_xEngine.VulkanMemory();
+		auto& xVulkanMemory = g_xEngine.FluxMemory();
 		xVulkanMemory.DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
 		xVulkanMemory.DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
 		m_pxStreamingState->Shutdown();
@@ -664,7 +664,7 @@ void Zenith_TerrainComponent::InitializeUnifiedBuffers(const Flux_MeshGeometry& 
 	memset(pUnifiedVertexData + ulLowLODVertexSize, 0, STREAMING_VERTEX_BUFFER_SIZE);
 	memset(pUnifiedIndexData + (ulLowLODIndexSize / sizeof(uint32_t)), 0, STREAMING_INDEX_BUFFER_SIZE);
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_pxStreamingState->m_xUnifiedVertexBuffer);
 	xVulkanMemory.InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_pxStreamingState->m_xUnifiedIndexBuffer);
 
@@ -785,7 +785,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 
 	// ========== CREATE GPU BUFFERS ==========
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	// Frustum planes buffer (6 planes, updated per frame)
 	xVulkanMemory.InitialiseDynamicConstantBuffer(
@@ -877,7 +877,7 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 	// Cleanup GPU resources - queue for deferred deletion to avoid destroying in-use resources.
 	// Chunk data buffer is frame-indexed; DestroyDynamicReadWriteBuffer queues
 	// every frame slot for deferred deletion.
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.DestroyDynamicReadWriteBuffer(m_pxStreamingState->m_xChunkDataBuffer);
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_pxStreamingState->m_xFrustumPlanesBuffer);
 	xVulkanMemory.DestroyIndirectBuffer(m_pxStreamingState->m_xIndirectDrawBuffer);
@@ -906,7 +906,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 	// valid chunk metadata in slot 0 by the time the first frame's compute
 	// runs (the orphan-read validator in the render graph would otherwise
 	// trip on a Read declaration with no preceding writer).
-	g_xEngine.VulkanMemory().InitialiseDynamicReadWriteBuffer(
+	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		m_pxStreamingState->m_xChunkDataBuffer

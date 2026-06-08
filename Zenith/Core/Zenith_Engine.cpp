@@ -238,7 +238,7 @@ Flux_GraphicsImpl& Zenith_Engine::FluxGraphics()
 	return *m_pxFluxGraphics;
 }
 
-Zenith_Vulkan& Zenith_Engine::Vulkan()
+Zenith_Vulkan& Zenith_Engine::FluxBackend()
 {
 	// No assert: Vulkan instance / device / queues / per-frame state are
 	// read from every frame and from Vulkan worker threads. Allocated
@@ -247,12 +247,12 @@ Zenith_Vulkan& Zenith_Engine::Vulkan()
 	return *m_pxVulkan;
 }
 
-Zenith_Vulkan_MemoryManager& Zenith_Engine::VulkanMemory()
+Zenith_Vulkan_MemoryManager& Zenith_Engine::FluxMemory()
 {
 	return *m_pxVulkanMemory;
 }
 
-Zenith_Vulkan_Swapchain& Zenith_Engine::VulkanSwapchain()
+Zenith_Vulkan_Swapchain& Zenith_Engine::FluxSwapchain()
 {
 	return *m_pxVulkanSwapchain;
 }
@@ -599,7 +599,7 @@ void Zenith_Engine::Initialise()
 	//#TO_TODO: move somewhere sensible
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.VulkanMemory().BeginFrame();
+		g_xEngine.FluxMemory().BeginFrame();
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
 		// Load cubemap texture (pinned)
@@ -622,7 +622,7 @@ void Zenith_Engine::Initialise()
 			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
 		}
 
-		g_xEngine.VulkanMemory().EndFrame(false);
+		g_xEngine.FluxMemory().EndFrame(false);
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	if (!Zenith_CommandLine::IsHeadless())
@@ -675,12 +675,12 @@ void Zenith_Engine::Initialise()
 	// Must be inside BeginFrame/EndFrame for GPU resource allocation
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.VulkanMemory().BeginFrame();
+		g_xEngine.FluxMemory().BeginFrame();
 	}
 	Project_InitializeResources();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.VulkanMemory().EndFrame(false);
+		g_xEngine.FluxMemory().EndFrame(false);
 	}
 
 	// Register automation steps and begin execution (one step per frame in main loop)
@@ -691,7 +691,7 @@ void Zenith_Engine::Initialise()
 	// Run a tools build first to generate .zscen files
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.VulkanMemory().BeginFrame();
+		g_xEngine.FluxMemory().BeginFrame();
 	}
 	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
@@ -709,7 +709,7 @@ void Zenith_Engine::Initialise()
 	g_xEngine.Scenes().DrainPendingLoadIfAny();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.VulkanMemory().EndFrame(false);
+		g_xEngine.FluxMemory().EndFrame(false);
 	}
 	Zenith_Assert(g_xEngine.Scenes().GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
@@ -729,7 +729,7 @@ void Zenith_Engine::Shutdown()
 	// 1. Wait for GPU to finish all pending work
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.Vulkan().WaitForGPUIdle();
+		g_xEngine.FluxBackend().WaitForGPUIdle();
 	}
 
 #ifdef ZENITH_TOOLS
@@ -882,7 +882,7 @@ void Zenith_Engine::Shutdown()
 	m_pxFluxGraphics = nullptr;
 
 	// Free Vulkan backend state last among graphics holders so device-backed
-	// member destructors above can still call g_xEngine.Vulkan().GetDevice().
+	// member destructors above can still call g_xEngine.FluxBackend().GetDevice().
 	delete m_pxVulkanSwapchain;
 	m_pxVulkanSwapchain = nullptr;
 	delete m_pxVulkanMemory;

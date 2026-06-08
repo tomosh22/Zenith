@@ -57,8 +57,8 @@ public:
 	Zenith_Vulkan_PerFrame() = default;
 
 	void Initialise();
-	void InitialiseScratchBuffers(); // Must be called after g_xEngine.VulkanMemory().Initialise()
-	void ShutdownScratchBuffer();    // Must be called before g_xEngine.VulkanMemory().Shutdown() destroys the VMA allocator
+	void InitialiseScratchBuffers(); // Must be called after g_xEngine.FluxMemory().Initialise()
+	void ShutdownScratchBuffer();    // Must be called before g_xEngine.FluxMemory().Shutdown() destroys the VMA allocator
 	void BeginFrame();
 	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
 	const vk::CommandPool& GetCommandPoolForWorkerIndex(u_int uWorkerIndex);
@@ -112,7 +112,7 @@ public:
 // the static-facade `class Zenith_Vulkan` and the data-only
 // `Zenith_VulkanImpl` that used to live in Zenith_VulkanImpl.h. Methods
 // moved off the facade; data members moved off the Impl. Accessed via
-// g_xEngine.Vulkan().
+// g_xEngine.FluxBackend().
 class Zenith_Vulkan
 {
 public:
@@ -123,7 +123,7 @@ public:
 
 	// ===== Format / descriptor helpers (called without a Vulkan instance) =====
 	// These are pure functions but kept as members so call sites consistently
-	// use g_xEngine.Vulkan().X() rather than mixing static + instance forms.
+	// use g_xEngine.FluxBackend().X() rather than mixing static + instance forms.
 	vk::Format ShaderDataTypeToVulkanFormat(ShaderDataType t);
 	vk::DescriptorSet CreateDescriptorSet(const vk::DescriptorSetLayout& xLayout, const vk::DescriptorPool& xPool);
 
@@ -135,7 +135,7 @@ public:
 	// allocated up-front, so storing a not-yet-Initialised sibling pointer here
 	// is safe — each reach still fires at exactly the same moment it did before.)
 	void Initialise(); // no-arg per FluxBackendDevice concept; self-wires deps from g_xEngine
-	void InitialiseScratchBuffers(); // Must be called after g_xEngine.VulkanMemory().Initialise()
+	void InitialiseScratchBuffers(); // Must be called after g_xEngine.FluxMemory().Initialise()
 	void CreateInstance();
 #ifdef ZENITH_DEBUG
 	void CreateDebugMessenger();

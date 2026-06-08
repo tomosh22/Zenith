@@ -66,13 +66,13 @@ public:
 		// Destroy GPU buffers if they were allocated
 		if (m_xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 		{
-			g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xVertexBuffer);
+			g_xEngine.FluxMemory().DestroyVertexBuffer(m_xVertexBuffer);
 		}
 		m_xVertexBuffer.Reset();
 
 		if (m_xIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 		{
-			g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xIndexBuffer);
+			g_xEngine.FluxMemory().DestroyIndexBuffer(m_xIndexBuffer);
 		}
 		m_xIndexBuffer.Reset();
 

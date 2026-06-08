@@ -72,7 +72,7 @@ struct Flux_PrimitivesTriangleInstance
 // Aggressive de-globalization: BOTH cross-subsystem deps (Flux_GraphicsImpl and
 // Zenith_Vulkan_MemoryManager) are INJECTED through Initialise as explicit references
 // and stored as member pointers, rather than reached for via g_xEngine.FluxGraphics()
-// / g_xEngine.VulkanMemory() inside the instance/helper methods. The former file-static
+// / g_xEngine.FluxMemory() inside the instance/helper methods. The former file-static
 // render helpers (RenderSpherePrimitives/...) are now private members so their reaches
 // resolve through `this`/the injected members. The only places g_xEngine self-lookup
 // survives are the non-capturing fn-pointer trampolines (the ExecuteGBuffer graph

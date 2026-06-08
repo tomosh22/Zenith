@@ -40,7 +40,7 @@ Flux_ImGuiTextureHandle Flux_ImGuiIntegration::RegisterTexture(
 	}
 
 	// Get the Vulkan image view from the handle registry
-	vk::ImageView xImageView = g_xEngine.VulkanMemory().GetImageView(xSRV.m_xImageViewHandle);
+	vk::ImageView xImageView = g_xEngine.FluxMemory().GetImageView(xSRV.m_xImageViewHandle);
 
 	// Allocate ImGui descriptor set for this texture
 	VkDescriptorSet xDescriptorSet = ImGui_ImplVulkan_AddTexture(

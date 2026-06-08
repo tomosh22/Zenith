@@ -13763,7 +13763,7 @@ void Zenith_UnitTests::TestImageViewType3D(){
 	xInfo.m_uDepth = 64;
 	xInfo.m_uNumLayers = 1;
 
-	vk::ImageViewType eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfo);
+	vk::ImageViewType eResult = g_xEngine.FluxMemory().DetermineImageViewType(xInfo);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e3D, "Expected VK_IMAGE_VIEW_TYPE_3D for 3D texture");
 
 }
@@ -13778,7 +13778,7 @@ void Zenith_UnitTests::TestImageViewTypeCube(){
 	xInfoCube.m_uHeight = 256;
 	xInfoCube.m_uNumLayers = 6;
 
-	vk::ImageViewType eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfoCube);
+	vk::ImageViewType eResult = g_xEngine.FluxMemory().DetermineImageViewType(xInfoCube);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for cubemap texture");
 
 	Flux_SurfaceInfo xInfoSixLayers;
@@ -13787,7 +13787,7 @@ void Zenith_UnitTests::TestImageViewTypeCube(){
 	xInfoSixLayers.m_uHeight = 256;
 	xInfoSixLayers.m_uNumLayers = 6;
 
-	eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfoSixLayers);
+	eResult = g_xEngine.FluxMemory().DetermineImageViewType(xInfoSixLayers);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for 6-layer 2D texture");
 
 }
@@ -13802,7 +13802,7 @@ void Zenith_UnitTests::TestImageViewTypeDefault2D(){
 	xInfo.m_uHeight = 512;
 	xInfo.m_uNumLayers = 1;
 
-	vk::ImageViewType eResult = g_xEngine.VulkanMemory().DetermineImageViewType(xInfo);
+	vk::ImageViewType eResult = g_xEngine.FluxMemory().DetermineImageViewType(xInfo);
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e2D, "Expected VK_IMAGE_VIEW_TYPE_2D for standard 2D texture");
 
 }
@@ -13815,12 +13815,12 @@ void Zenith_UnitTests::TestDestroySkipsInvalidHandle(){
 	ZENITH_ASSERT_FALSE(xInvalidHandle.IsValid(), "Default-constructed handle should be invalid");
 
 	Flux_VertexBuffer xBuffer;
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(xBuffer);
+	g_xEngine.FluxMemory().DestroyVertexBuffer(xBuffer);
 
 	Flux_ImageViewHandle xInvalidViewHandle;
 	ZENITH_ASSERT_FALSE(xInvalidViewHandle.IsValid(), "Default-constructed image view handle should be invalid");
 
-	g_xEngine.VulkanMemory().QueueImageViewDeletion(xInvalidViewHandle);
+	g_xEngine.FluxMemory().QueueImageViewDeletion(xInvalidViewHandle);
 
 }
 
@@ -15097,7 +15097,7 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 // wiring happens in Flux.cpp's Flux_RendererImpl::LateInitialise, which only
 // runs in the non-headless boot path. Because the test runner may execute
 // headless (LateInitialise skipped, so the live g_xEngine.HiZ() pointers stay
-// nullptr), a post-init "==&g_xEngine.VulkanSwapchain()" assertion would be
+// nullptr), a post-init "==&g_xEngine.FluxSwapchain()" assertion would be
 // flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
 // (default-constructed Flux_HiZImpl is headless-safe, like Flux_RenderGraph):
 //   1. the three injected-dep member pointers default to nullptr, and

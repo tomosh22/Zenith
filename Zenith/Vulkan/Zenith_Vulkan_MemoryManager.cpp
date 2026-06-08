@@ -27,7 +27,7 @@
 static Zenith_HashMap<u_int64, ProbeCacheEntry> s_xProbeCache;
 
 // Phase 6b: memory-manager state moved to Zenith_Vulkan_MemoryManager
-// held by Zenith_Engine. Access via g_xEngine.VulkanMemory().m_xXxx.
+// held by Zenith_Engine. Access via g_xEngine.FluxMemory().m_xXxx.
 
 Zenith_Vulkan_MemoryManager::PerFrameStaging& Zenith_Vulkan_MemoryManager::CurrentStaging()
 {
@@ -116,8 +116,8 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	// Initialised by this point (Flux.cpp orders Vulkan().Initialise() first);
 	// the others are only USED later at runtime, so caching their up-front
 	// pointers here is safe.
-	m_pxVulkan          = &g_xEngine.Vulkan();
-	m_pxVulkanSwapchain = &g_xEngine.VulkanSwapchain();
+	m_pxVulkan          = &g_xEngine.FluxBackend();
+	m_pxVulkanSwapchain = &g_xEngine.FluxSwapchain();
 	m_pxFluxRenderer    = &g_xEngine.FluxRenderer();
 	m_pxFluxGraphics    = &g_xEngine.FluxGraphics();
 
@@ -258,7 +258,7 @@ static vk::ImageCreateInfo BuildAliasedImageCreateInfo(const Flux_SurfaceInfo& x
 
 	// File-static free function — no 'this' to inject through. Recover the
 	// Vulkan singleton once and route both format conversions through it.
-	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
 
 	vk::Format xFormat;
 	vk::ImageUsageFlags eUsageFlags;
@@ -451,7 +451,7 @@ void Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd(u_int /*uRingIndex*/, void* 
 	// because the per-frame ring is the natural owner of "advance the
 	// deferred-deletion clock by one tick." Resolves the engine singleton
 	// because this is a static callback (no implicit this).
-	g_xEngine.VulkanMemory().ProcessDeferredDeletions();
+	g_xEngine.FluxMemory().ProcessDeferredDeletions();
 }
 
 Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
@@ -749,8 +749,8 @@ static Flux_BufferDescriptorHandle InitialiseDynamicBufferFrame(
 	// File-static free function — no 'this' to inject through. Recover the
 	// memory-manager + Vulkan singletons once and route all member reaches
 	// through these refs (the legitimate single re-entry per accessor).
-	Zenith_Vulkan_MemoryManager& xSelf = g_xEngine.VulkanMemory();
-	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+	Zenith_Vulkan_MemoryManager& xSelf = g_xEngine.FluxMemory();
+	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
 
 	Flux_VRAMHandle xHandle = xSelf.CreateBufferVRAM(
 		static_cast<u_int>(uSize), eFlags, MEMORY_RESIDENCY_CPU);
@@ -873,7 +873,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* p
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency)
 {
 	// Headless guard: when Flux::EarlyInitialise was skipped (Zenith_CommandLine::IsHeadless()),
-	// g_xEngine.VulkanMemory().m_xAllocator stays VK_NULL_HANDLE. Upstream asset-load paths still
+	// g_xEngine.FluxMemory().m_xAllocator stays VK_NULL_HANDLE. Upstream asset-load paths still
 	// invoke buffer creation; return an empty handle so they get a benign
 	// invalid VRAM handle to store rather than asserting in vmaCreateBuffer.
 	if (m_xAllocator == VK_NULL_HANDLE)
@@ -1187,7 +1187,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 	else
 	{
 		// Upload via the current frame's staging slot. CurrentStaging() resolves
-		// to g_xEngine.VulkanMemory().m_axStaging[CurrentFrameIndex], so the bump-allocate + memcpy +
+		// to g_xEngine.FluxMemory().m_axStaging[CurrentFrameIndex], so the bump-allocate + memcpy +
 		// queue-copy sequence below only ever touches memory the GPU is allowed
 		// to consume in this frame.
 		PerFrameStaging& xStaging = CurrentStaging();
@@ -1961,7 +1961,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 	xStaging.m_uNextFreeOffset = 0;
 }
 
-// Callers MUST hold g_xEngine.VulkanMemory().m_xMutex and this function MUST NOT take it — EndFrame()
+// Callers MUST hold g_xEngine.FluxMemory().m_xMutex and this function MUST NOT take it — EndFrame()
 // and BeginFrame() below are the only callees and neither reacquires the
 // mutex (FlushStagingBuffer and BeginRecording do GPU work lock-free). Adding
 // a lock here, or to any function reached from here, will deadlock every
@@ -1969,7 +1969,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 //
 // EndFrame(false) flushes the *current slot's* pending allocations and ends
 // the wrapper's command buffer; BeginFrame restarts recording. The slot
-// identity (the chosen index in g_xEngine.VulkanMemory().m_axStaging) does not change across this —
+// identity (the chosen index in g_xEngine.FluxMemory().m_axStaging) does not change across this —
 // the swapchain's current frame index only advances on a real frame
 // boundary, not when we mid-frame-flush. So callers that re-resolve
 // CurrentStaging() after this returns get the same slot back, just with
@@ -2278,7 +2278,7 @@ Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(PoolTag, const VmaAllocation xAllocation,
 		if (xInfo.size > 0)
 			m_ulPoolSize = xInfo.size;
 	}
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.IncreaseImageMemoryUsage(m_ulPoolSize);
 	xVulkanMemory.IncreaseMemoryUsage(m_ulPoolSize);
 }
@@ -2299,7 +2299,7 @@ static VkDeviceSize GetVmaAllocationSizeBytes(VmaAllocator xAllocator, VmaAlloca
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
 	: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
 {
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.IncreaseImageMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 	xVulkanMemory.IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 }
@@ -2307,7 +2307,7 @@ Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocati
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
 	: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize)
 {
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.IncreaseBufferMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 	xVulkanMemory.IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 }
@@ -2317,7 +2317,7 @@ Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 	// Three destruction paths: aliased-image (image only), pool (allocation
 	// only), or regular owned resource (image+allocation or buffer+allocation).
 
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	if (m_bAliased)
 	{
@@ -2325,7 +2325,7 @@ Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 		// Destroy the image alone — the allocation is owned by the pool
 		// VRAM and will be freed when the pool is destroyed. No memory-usage
 		// accounting bump here either; the pool counted for everyone.
-		g_xEngine.Vulkan().GetDevice().destroyImage(m_xImage);
+		g_xEngine.FluxBackend().GetDevice().destroyImage(m_xImage);
 		return;
 	}
 

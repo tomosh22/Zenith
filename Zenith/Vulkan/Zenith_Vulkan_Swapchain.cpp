@@ -29,7 +29,7 @@ void RenderImGui();
 #endif
 
 // Phase 6b: swapchain state moved to Zenith_Vulkan_Swapchain held by
-// Zenith_Engine. Access via g_xEngine.VulkanSwapchain().m_xXxx.
+// Zenith_Engine. Access via g_xEngine.FluxSwapchain().m_xXxx.
 
 uint32_t       Zenith_Vulkan_Swapchain::GetWidth()  { return Zenith_Vulkan_Swapchain::m_xExtent.width; }
 uint32_t       Zenith_Vulkan_Swapchain::GetHeight() { return Zenith_Vulkan_Swapchain::m_xExtent.height; }
@@ -48,7 +48,7 @@ struct SwapChainSupportDetails
 
 static SwapChainSupportDetails QuerySwapChainSupport()
 {
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
+	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
 	const vk::PhysicalDevice& xPhysicalDevice = xSwapchain.m_pxVulkan->GetPhysicalDevice();
 	const vk::SurfaceKHR& xSurface = xSwapchain.m_pxVulkan->GetSurface();
 
@@ -164,8 +164,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	// params on this Initialise()). Every other reach routes through these.
 	// Initialise() also runs on swapchain recreation (resize) — re-caching the
 	// same pointers each time is harmless.
-	m_pxVulkan       = &g_xEngine.Vulkan();
-	m_pxVulkanMemory = &g_xEngine.VulkanMemory();
+	m_pxVulkan       = &g_xEngine.FluxBackend();
+	m_pxVulkanMemory = &g_xEngine.FluxMemory();
 	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
 	m_pxFluxGraphics = &g_xEngine.FluxGraphics();
 	m_pxProfiling    = &g_xEngine.Profiling();
@@ -391,7 +391,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
 	// Static entry — no 'this'. Recover the singleton once (legitimate re-entry,
 	// like a render-graph trampoline) and route all reaches through it.
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
+	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
 
 	xSwapchain.m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
 	const vk::Device& xDevice = xSwapchain.m_pxVulkan->GetDevice();
@@ -642,7 +642,7 @@ namespace
 
 void Zenith_Vulkan_Swapchain::EndFrame()
 {
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
+	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
 	Zenith_Vulkan_CommandBuffer& xCmd = xSwapchain.m_xCopyToFramebufferCmd;
 
 	xCmd.BeginRecording();

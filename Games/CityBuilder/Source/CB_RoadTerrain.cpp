@@ -53,7 +53,7 @@ namespace
 		const uint64_t ulOffsetBytes = static_cast<uint64_t>(uAbsVertex) * static_cast<uint64_t>(uStride);
 		const uint64_t ulSizeBytes   = static_cast<uint64_t>(uNum) * static_cast<uint64_t>(uStride);
 
-		g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
+		g_xEngine.FluxMemory().UploadBufferDataAtOffset(
 			xState.m_xUnifiedVertexBuffer.GetBuffer().m_xVRAMHandle,
 			xMesh.m_pVertexData, ulSizeBytes, ulOffsetBytes);
 
@@ -96,7 +96,7 @@ namespace
 		const uint64_t ulOffsetBytes = static_cast<uint64_t>(uAbsVertex) * static_cast<uint64_t>(uStride);
 		const uint64_t ulSizeBytes   = static_cast<uint64_t>(uNum) * static_cast<uint64_t>(uStride);
 
-		g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
+		g_xEngine.FluxMemory().UploadBufferDataAtOffset(
 			xState.m_xUnifiedVertexBuffer.GetBuffer().m_xVRAMHandle,
 			xMesh.m_pVertexData, ulSizeBytes, ulOffsetBytes);
 
@@ -135,7 +135,7 @@ void CB_RoadTerrain::CarveTerrainMesh(const CB_RoadGraph& xGraph, Zenith_Terrain
 	// (including the frames still in flight). We're about to overwrite resident chunk verts
 	// in place via memcpy — that races the in-flight GPU read and corrupts terrain. Wait for
 	// the GPU to finish before touching the buffer. (Infrequent — only on a road change.)
-	g_xEngine.Vulkan().GetDevice().waitIdle();
+	g_xEngine.FluxBackend().GetDevice().waitIdle();
 
 	for (int cx = iCXMin; cx <= iCXMax; ++cx)
 	{
@@ -241,7 +241,7 @@ void CB_RoadTerrain::RefreshTerrainRegionFromField(const CB_TerrainHeightfield& 
 
 	// Same GPU sync as CarveTerrainMesh: these are resident, actively-rendered chunks, so an
 	// in-place host-visible re-upload races the in-flight GPU read without this wait.
-	g_xEngine.Vulkan().GetDevice().waitIdle();
+	g_xEngine.FluxBackend().GetDevice().waitIdle();
 
 	for (int cx = iCXMin; cx <= iCXMax; ++cx)
 	{

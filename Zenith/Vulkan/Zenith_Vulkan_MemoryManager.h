@@ -41,7 +41,7 @@ constexpr uint64_t g_uStagingPoolSize = 512u * 1024u * 1024u;
 // Per-Engine state + behaviour for the Vulkan memory manager. Replaces the
 // static-facade `class Zenith_Vulkan_MemoryManager` (deleted) and the
 // data-only `Zenith_Vulkan_MemoryManager`. Accessed via
-// g_xEngine.VulkanMemory().
+// g_xEngine.FluxMemory().
 class Zenith_Vulkan_MemoryManager
 {
 public:
@@ -122,7 +122,7 @@ public:
 	// EndFrame. Registered AFTER the Vulkan begin-frame callback so it runs
 	// at end-of-frame after any in-flight render submission has been queued.
 	// Kept static so it can be passed as a Flux_RendererImpl::OnFrameEndFunc
-	// callback pointer; the body resolves g_xEngine.VulkanMemory().
+	// callback pointer; the body resolves g_xEngine.FluxMemory().
 	static void OnFluxPerFrameEnd(u_int uRingIndex, void* pUserData);
 
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
@@ -329,7 +329,7 @@ private:
 	};
 	// PerFrameStaging slots (m_axStaging) live on
 	// Zenith_Vulkan_MemoryManager held by Zenith_Engine. Access via
-	// g_xEngine.VulkanMemory().m_axStaging or through CurrentStaging() below.
+	// g_xEngine.FluxMemory().m_axStaging or through CurrentStaging() below.
 
 	// Resolves to the staging slot for the current in-flight frame. Both the
 	// CPU memcpy path and the GPU vkCmdCopyBuffer recording path target the
@@ -358,7 +358,7 @@ private:
 	};
 
 	// Injected cross-subsystem dependencies (stored in Initialise). Replace the
-	// former g_xEngine.Vulkan() / VulkanSwapchain() / FluxRenderer() /
+	// former g_xEngine.FluxBackend() / VulkanSwapchain() / FluxRenderer() /
 	// FluxGraphics() reaches in instance methods, removing the hard global
 	// coupling. Static callbacks and the Zenith_Vulkan_VRAM ctor/dtor (a
 	// different class with no Initialise seam) still route through g_xEngine.

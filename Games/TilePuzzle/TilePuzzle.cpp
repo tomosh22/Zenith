@@ -548,9 +548,9 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 
 	xBuilder.CopyToGeometry(xGeometryOut);
 	xGeometryOut.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(
 		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
@@ -681,9 +681,9 @@ static void GenerateCatMesh(Flux_MeshGeometry& xGeometryOut)
 	// Finalize
 	xBuilder.CopyToGeometry(xGeometryOut);
 	xGeometryOut.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(
 		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
@@ -695,9 +695,9 @@ static void FinalizeMesh(MeshBuilder& xBuilder, Flux_MeshGeometry& xGeometry)
 {
 	xBuilder.CopyToGeometry(xGeometry);
 	xGeometry.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(
 		xGeometry.GetIndexData(), xGeometry.GetIndexDataSize(), xGeometry.m_xIndexBuffer);
 }
 
@@ -1059,9 +1059,9 @@ static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometr
 
 	// Generate interleaved vertex data and upload to GPU
 	xGeometry.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(
 		xGeometry.GetIndexData(), xGeometry.GetIndexDataSize(), xGeometry.m_xIndexBuffer);
 
 	return true;

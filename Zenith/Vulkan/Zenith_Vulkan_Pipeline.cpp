@@ -153,7 +153,7 @@ static void AddVertexAttributes(const Flux_BufferLayout& xLayout, uint32_t uBind
 			.setBinding(uBinding)
 			.setLocation(uBindPoint++)
 			.setOffset(xElement.m_uOffset)
-			.setFormat(g_xEngine.Vulkan().ShaderDataTypeToVulkanFormat(xElement.m_eType)));
+			.setFormat(g_xEngine.FluxBackend().ShaderDataTypeToVulkanFormat(xElement.m_eType)));
 	}
 
 	xBindDescs.push_back(vk::VertexInputBindingDescription()
@@ -214,7 +214,7 @@ Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 
 void Zenith_Vulkan_Pipeline::Reset()
 {
-	const vk::Device xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device xDevice = g_xEngine.FluxBackend().GetDevice();
 
 	if (m_xPipeline)
 	{
@@ -321,7 +321,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithLayout(vk::Pip
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithPushConstant(vk::ShaderStageFlags flags, uint32_t offset)
 {
-	const vk::PhysicalDevice& xPhysicalDevice = g_xEngine.Vulkan().GetPhysicalDevice();
+	const vk::PhysicalDevice& xPhysicalDevice = g_xEngine.FluxBackend().GetPhysicalDevice();
 	m_xAllPushConstants.emplace_back(vk::PushConstantRange(flags, offset, xPhysicalDevice.getProperties().limits.maxPushConstantsSize));
 	return *this;
 }
@@ -416,7 +416,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 		break;
 	}
 
-	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
 
 	std::vector<vk::AttachmentDescription> xAttachmentDescs(uNumColourAttachments);
 	std::vector<vk::AttachmentReference> xAttachmentRefs(uNumColourAttachments);
@@ -491,8 +491,8 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 
 vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& xDepthStencil, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	const vk::Device& xDevice = g_xEngine.FluxBackend().GetDevice();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	const bool bHasDepth = xDepthStencil.IsValid();
 	const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
 
@@ -715,7 +715,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(xPipelineOut.m_xRootSig, xSpec.m_xPipelineLayout);
 	xPipelineInfo.setLayout(xPipelineOut.m_xRootSig.m_xLayout);
 
-	xPipelineOut.m_xPipeline = VkUnwrap(g_xEngine.Vulkan().GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
+	xPipelineOut.m_xPipeline = VkUnwrap(g_xEngine.FluxBackend().GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
 
 	// Hot-reload registration lives at the subsystem level — each subsystem's
 	// Initialise() calls Flux_ShaderHotReload::RegisterSubsystem with its
@@ -728,7 +728,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
 {
-	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
 
 	// Clear stale binding metadata — hot-reload reuses static Flux_RootSig
 	// objects, so the previous build's m_axBindingTypes survives unless we

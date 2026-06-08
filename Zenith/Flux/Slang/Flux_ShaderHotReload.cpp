@@ -218,7 +218,7 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	// Pipelines tear-down through QueueVRAMDeletion etc, but the actual
 	// vk::Pipeline destruction must wait for the GPU to release in-flight
 	// references. Subsystems' rebuild callbacks expect the GPU to be idle.
-	g_xEngine.Vulkan().WaitForGPUIdle();
+	g_xEngine.FluxBackend().WaitForGPUIdle();
 
 	for (u_int u = 0; u < axCallbacks.GetSize(); u++)
 	{

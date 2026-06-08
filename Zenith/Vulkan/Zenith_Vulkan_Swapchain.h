@@ -25,7 +25,7 @@ class Zenith_Profiling;
 
 // Per-Engine state + behaviour for the Vulkan swapchain. Replaces both the
 // static-facade `class Zenith_Vulkan_Swapchain` and the data-only
-// `Zenith_Vulkan_Swapchain`. Accessed via g_xEngine.VulkanSwapchain().
+// `Zenith_Vulkan_Swapchain`. Accessed via g_xEngine.FluxSwapchain().
 class Zenith_Vulkan_Swapchain
 {
 public:
@@ -89,7 +89,7 @@ public:
 
 	// Self-wired cross-subsystem deps (set once at the top of Initialise()).
 	// Public so the static BeginFrame()/EndFrame() entries can route through the
-	// recovered g_xEngine.VulkanSwapchain() reference, mirroring the existing
+	// recovered g_xEngine.FluxSwapchain() reference, mirroring the existing
 	// design where the static entries reach the data members.
 	Zenith_Vulkan*               m_pxVulkan        = nullptr;
 	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory  = nullptr;

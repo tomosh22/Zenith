@@ -429,7 +429,7 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan
 	// Store the injected cross-subsystem deps. The FluxGraphics reach-ins (in
 	// ExecuteGBuffer / SetupRenderGraph) route through m_pxGraphics; the buffer
 	// (de)allocation + dynamic upload route through m_pxVulkanMemory instead of
-	// g_xEngine.FluxGraphics() / g_xEngine.VulkanMemory().
+	// g_xEngine.FluxGraphics() / g_xEngine.FluxMemory().
 	m_pxGraphics = &xGraphics;
 	m_pxVulkanMemory = &xVulkanMemory;
 

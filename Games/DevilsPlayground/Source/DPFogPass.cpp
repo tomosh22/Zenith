@@ -43,10 +43,10 @@ namespace
 	// objects) so Shutdown() can delete them DURING the engine shutdown sequence,
 	// while the Vulkan device is still alive. As static value objects, their
 	// device-touching dtors ran at C++ static-exit -- after
-	// Zenith_Engine::Shutdown() freed g_xEngine.Vulkan() -- which is the
+	// Zenith_Engine::Shutdown() freed g_xEngine.FluxBackend() -- which is the
 	// 0xC0000005 (hit even by --list-automated-tests: the pipeline is never
 	// built, but the static dtor still ran Reset(), which dereferences
-	// g_xEngine.Vulkan() before its null-handle guard). Built lazily on the
+	// g_xEngine.FluxBackend() before its null-handle guard). Built lazily on the
 	// first ExecuteDPFog call once the engine's Flux subsystems have inited.
 	Flux_Shader*   s_pxShader = nullptr;
 	Flux_Pipeline* s_pxPipeline = nullptr;
@@ -170,7 +170,7 @@ void DPFogPass::Shutdown()
 	}
 	// delete (not Reset) so the device-touching destructors run HERE, in the
 	// shutdown sequence with the Vulkan device still alive -- not at C++
-	// static-exit, by which time g_xEngine.Vulkan() has been freed (the
+	// static-exit, by which time g_xEngine.FluxBackend() has been freed (the
 	// 0xC0000005). delete on nullptr (pipeline never built, e.g.
 	// --list-automated-tests) is a safe no-op.
 	delete s_pxPipeline;

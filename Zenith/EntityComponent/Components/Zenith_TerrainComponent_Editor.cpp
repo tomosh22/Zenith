@@ -409,8 +409,8 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(m_pxStreamingState);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
-	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
-	g_xEngine.VulkanMemory().DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
+	g_xEngine.FluxMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
+	g_xEngine.FluxMemory().DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
 	m_pxStreamingState->m_ulUnifiedVertexBufferSize = 0;
 	m_pxStreamingState->m_ulUnifiedIndexBufferSize = 0;
 

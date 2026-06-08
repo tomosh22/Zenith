@@ -60,7 +60,7 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDis
 	// dragging Vulkan descriptor / image-view types into the debug-variable
 	// system; portable to backends with different ImGui texture-ID conventions
 	// once each backend implements CreateImGuiTextureID.
-	const uint64_t ulTextureID = g_xEngine.Vulkan().CreateImGuiTextureID(*m_pData, g_xEngine.FluxGraphics().m_xRepeatSampler);
+	const uint64_t ulTextureID = g_xEngine.FluxBackend().CreateImGuiTextureID(*m_pData, g_xEngine.FluxGraphics().m_xRepeatSampler);
 	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 }
 
@@ -71,7 +71,7 @@ void Zenith_DebugVariableTree::TextureCallbackLeafNode::ImGuiDisplay()
 	// graph's transients are allocated — in that case render nothing.
 	const Flux_ShaderResourceView* pxSRV = m_pfnGetSRV ? m_pfnGetSRV() : nullptr;
 	if (pxSRV == nullptr) return;
-	const uint64_t ulTextureID = g_xEngine.Vulkan().CreateImGuiTextureID(*pxSRV, g_xEngine.FluxGraphics().m_xRepeatSampler);
+	const uint64_t ulTextureID = g_xEngine.FluxBackend().CreateImGuiTextureID(*pxSRV, g_xEngine.FluxGraphics().m_xRepeatSampler);
 	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 }
 

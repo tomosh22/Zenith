@@ -465,13 +465,13 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		// W14: Render graph now synchronously completes recording during Execute(),
 		// so no CPU-side wait is needed — go straight to GPU idle.
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
-		g_xEngine.Vulkan().WaitForGPUIdle();
+		g_xEngine.FluxBackend().WaitForGPUIdle();
 
 		// Force process any pending deferred deletions
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			g_xEngine.VulkanMemory().ProcessDeferredDeletions();
+			g_xEngine.FluxMemory().ProcessDeferredDeletions();
 		}
 
 		// CRITICAL: Clear any pending command lists before resetting scene
@@ -538,12 +538,12 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = false;
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
-		g_xEngine.Vulkan().WaitForGPUIdle();
+		g_xEngine.FluxBackend().WaitForGPUIdle();
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			g_xEngine.VulkanMemory().ProcessDeferredDeletions();
+			g_xEngine.FluxMemory().ProcessDeferredDeletions();
 		}
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
@@ -564,10 +564,10 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	{
 		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = false;
 
-		g_xEngine.Vulkan().WaitForGPUIdle();
+		g_xEngine.FluxBackend().WaitForGPUIdle();
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			g_xEngine.VulkanMemory().ProcessDeferredDeletions();
+			g_xEngine.FluxMemory().ProcessDeferredDeletions();
 		}
 		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
@@ -591,14 +591,14 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 
 	// W14: Render graph Execute() is now synchronous on the main thread, so only GPU idle is needed.
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
-	g_xEngine.Vulkan().WaitForGPUIdle();  // GPU synchronization
+	g_xEngine.FluxBackend().WaitForGPUIdle();  // GPU synchronization
 
 	// Force process any pending deferred deletions to ensure old descriptors are destroyed
 	// Without this, descriptor handles might collide between old/new scenes
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		g_xEngine.VulkanMemory().ProcessDeferredDeletions();
+		g_xEngine.FluxMemory().ProcessDeferredDeletions();
 	}
 
 	// CRITICAL: Clear any pending command lists before loading scene
@@ -1179,15 +1179,15 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 	}
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
-	g_xEngine.VulkanMemory().BeginFrame();
-	g_xEngine.VulkanMemory().EndFrame(false);  // synchronous, do not defer
+	g_xEngine.FluxMemory().BeginFrame();
+	g_xEngine.FluxMemory().EndFrame(false);  // synchronous, do not defer
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for GPU idle before %s...", szReason);
-	g_xEngine.Vulkan().WaitForGPUIdle();
+	g_xEngine.FluxBackend().WaitForGPUIdle();
 
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		g_xEngine.VulkanMemory().ProcessDeferredDeletions();
+		g_xEngine.FluxMemory().ProcessDeferredDeletions();
 	}
 	g_xEngine.FluxRenderer().ClearPendingCommandLists();
 }

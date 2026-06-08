@@ -39,7 +39,7 @@ static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_valida
 #include "Vulkan/Zenith_Vulkan.h"
 
 // Phase 6b: Vulkan backend state lives on Zenith_Vulkan held by
-// Zenith_Engine. Methods below dereference g_xEngine.Vulkan().m_xXxx.
+// Zenith_Engine. Methods below dereference g_xEngine.FluxBackend().m_xXxx.
 
 #ifdef ZENITH_TOOLS
 const vk::DescriptorPool& Zenith_Vulkan::GetImGuiDescriptorPool() { return Zenith_Vulkan::m_xImGuiDescriptorPool; }
@@ -189,8 +189,8 @@ void Zenith_Vulkan::Initialise()
 	// objects are only USED later at runtime, exactly as before.
 	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
 	m_pxTasks = &g_xEngine.Tasks();
-	m_pxVulkanSwapchain = &g_xEngine.VulkanSwapchain();
-	m_pxVulkanMemory = &g_xEngine.VulkanMemory();
+	m_pxVulkanSwapchain = &g_xEngine.FluxSwapchain();
+	m_pxVulkanMemory = &g_xEngine.FluxMemory();
 
 	CreateInstance();
 #ifdef ZENITH_DEBUG
@@ -251,7 +251,7 @@ void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
 	// which is now a thin wrapper over g_xEngine.FluxRenderer().GetRingIndex().
 	// Static callback (no 'this'): recover the Vulkan singleton once and route
 	// all member reaches through xSelf.
-	Zenith_Vulkan& xSelf = g_xEngine.Vulkan();
+	Zenith_Vulkan& xSelf = g_xEngine.FluxBackend();
 	xSelf.m_pxCurrentFrame = &xSelf.m_axPerFrame[uRingIndex];
 	xSelf.m_pxCurrentFrame->BeginFrame();
 
@@ -446,7 +446,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	const Flux_WorkDistribution* pWorkDistribution = static_cast<const Flux_WorkDistribution*>(pData);
 
 	// Static task entry point (no 'this'): recover the Vulkan singleton once.
-	Zenith_Vulkan& xSelf = g_xEngine.Vulkan();
+	Zenith_Vulkan& xSelf = g_xEngine.FluxBackend();
 	Zenith_Vulkan_CommandBuffer& xCommandBuffer = xSelf.m_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
 	xCommandBuffer.BeginRecording();
 
@@ -1238,7 +1238,7 @@ void Zenith_Vulkan_PerFrame::Initialise()
 		.setMaxSets(100000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
-	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
 
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
@@ -1267,7 +1267,7 @@ void Zenith_Vulkan_PerFrame::Initialise()
 void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 {
 	// Create scratch buffer for push constant replacement
-	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = g_xEngine.VulkanMemory().CreatePersistentlyMappedBuffer(
+	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = g_xEngine.FluxMemory().CreatePersistentlyMappedBuffer(
 		uSCRATCH_BUFFER_SIZE,
 		vk::BufferUsageFlagBits::eUniformBuffer);
 	m_xScratchBuffer = xScratch.m_xBuffer;
@@ -1275,7 +1275,7 @@ void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 	m_pScratchBufferMapped = xScratch.m_pMappedPtr;
 
 	// Query alignment requirement
-	m_uMinAlignment = static_cast<u_int>(g_xEngine.Vulkan().GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
+	m_uMinAlignment = static_cast<u_int>(g_xEngine.FluxBackend().GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
 
 	// Initialize worker offsets
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
@@ -1291,7 +1291,7 @@ void Zenith_Vulkan_PerFrame::ShutdownScratchBuffer()
 	// allocator goes away in Zenith_Vulkan_MemoryManager::Shutdown.
 	if (m_xScratchAllocation != VK_NULL_HANDLE)
 	{
-		vmaDestroyBuffer(g_xEngine.VulkanMemory().GetVMAAllocator(), m_xScratchBuffer, m_xScratchAllocation);
+		vmaDestroyBuffer(g_xEngine.FluxMemory().GetVMAAllocator(), m_xScratchBuffer, m_xScratchAllocation);
 		m_xScratchBuffer = VK_NULL_HANDLE;
 		m_xScratchAllocation = VK_NULL_HANDLE;
 		m_pScratchBufferMapped = nullptr;
@@ -1300,7 +1300,7 @@ void Zenith_Vulkan_PerFrame::ShutdownScratchBuffer()
 
 void Zenith_Vulkan_PerFrame::BeginFrame()
 {
-	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	const vk::Device& xDevice = g_xEngine.FluxBackend().GetDevice();
 
 	// Pre-flight fence status check — under healthy operation the fence is
 	// either signalled (previous use of this slot completed) or initial-signalled

@@ -57,7 +57,7 @@ void Zenith_TextureAsset::MarkAsBindless()
 	if (m_xSRV.m_xImageViewHandle.IsValid())
 	{
 		// Engine-typed wrapper — backend extracts vk::ImageView / vk::Sampler internally.
-		g_xEngine.Vulkan().WriteBindlessTextureSlot(
+		g_xEngine.FluxBackend().WriteBindlessTextureSlot(
 			m_xSRV.m_xImageViewHandle.AsUInt(),
 			m_xSRV,
 			g_xEngine.FluxGraphics().m_xClampSampler);
@@ -157,7 +157,7 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	// boot, where FontAtlas uploads before the device is ready), so hard-failing
 	// would be a behaviour change. Hard-failing on genuine GPU-OOM is Wave-9
 	// error-handling scope, where the tolerant-caller contract is revisited.
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
 	Zenith_Check(m_xVRAMHandle.IsValid(), "Zenith_TextureAsset: GPU upload returned an invalid handle for '%s'", strPath.c_str());
 	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
@@ -186,7 +186,7 @@ bool Zenith_TextureAsset::CreateFromData(const void* pData, const Flux_SurfaceIn
 	}
 
 	// Create GPU resources
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
 	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
@@ -229,7 +229,7 @@ bool Zenith_TextureAsset::CreateCubemap(const void* apFaceData[6], const Flux_Su
 	}
 
 	// Create GPU resources
-	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pAllData, m_xSurfaceInfo, false);
 	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
@@ -308,8 +308,8 @@ void Zenith_TextureAsset::ReleaseGPU()
 {
 	if (m_bGPUResourcesAllocated && m_xVRAMHandle.IsValid())
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.Vulkan().GetVRAM(m_xVRAMHandle);
-		g_xEngine.VulkanMemory().QueueVRAMDeletion(pxVRAM, m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
+		Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(m_xVRAMHandle);
+		g_xEngine.FluxMemory().QueueVRAMDeletion(pxVRAM, m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
 		m_xSRV = Flux_ShaderResourceView();
 		m_bGPUResourcesAllocated = false;
 	}
