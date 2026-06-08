@@ -200,7 +200,7 @@ public:
 	// all aliased images in it are destroyed before the pool's VkDeviceMemory is freed — otherwise
 	// ProcessDeferredDeletions's RemoveSwap iteration can destroy pool and aliased image in any
 	// order within the same frame, which Vulkan (correctly) rejects.
-	void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
+	void QueueVRAMDeletion(Flux_VRAMHandle& xHandle,
 		Flux_ImageViewHandle xRTV = Flux_ImageViewHandle(), Flux_ImageViewHandle xDSV = Flux_ImageViewHandle(),
 		Flux_ImageViewHandle xSRV = Flux_ImageViewHandle(), Flux_ImageViewHandle xUAV = Flux_ImageViewHandle(),
 		u_int uExtraFrameDelay = 0);

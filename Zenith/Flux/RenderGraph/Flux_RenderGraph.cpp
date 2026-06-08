@@ -953,9 +953,8 @@ void Flux_RenderGraph::ReleaseTransientAllocations()
     {
         AliasPool& xPool = m_axAliasPools.Get(p);
         if (!xPool.m_xPoolVRAM.IsValid()) continue;
-        Flux_VRAM* pxPoolVRAM = g_xEngine.FluxBackend().GetVRAM(xPool.m_xPoolVRAM);
         g_xEngine.FluxMemory().QueueVRAMDeletion(
-            pxPoolVRAM, xPool.m_xPoolVRAM,
+            xPool.m_xPoolVRAM,
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
             /*uExtraFrameDelay*/ 1);
@@ -990,9 +989,8 @@ void Flux_RenderGraph::DestroyTransients()
     {
         AliasPool& xPool = m_axAliasPools.Get(p);
         if (!xPool.m_xPoolVRAM.IsValid()) continue;
-        Flux_VRAM* pxPoolVRAM = g_xEngine.FluxBackend().GetVRAM(xPool.m_xPoolVRAM);
         g_xEngine.FluxMemory().QueueVRAMDeletion(
-            pxPoolVRAM, xPool.m_xPoolVRAM,
+            xPool.m_xPoolVRAM,
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
             Flux_ImageViewHandle(), Flux_ImageViewHandle(),
             /*uExtraFrameDelay*/ 1);

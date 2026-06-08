@@ -185,28 +185,27 @@ The wrapper functions:
 **Never queue VRAM directly and then call a cleanup function that also queues:**
 
 ```cpp
-// WRONG: Double-queue bug!
-QueueVRAMDeletion(pxVRAM, xHandle);  // Queues deletion, handle stays valid
-pxObject->Reset();                    // Reset() sees valid handle, queues AGAIN
+// WRONG: don't hand-roll deletion when a wrapper exists.
+QueueVRAMDeletion(xHandle);  // Queues deletion AND auto-invalidates xHandle
+pxObject->Reset();           // Reset() now sees an invalid handle -- OK here,
+                             // but bypassing the wrapper is still error-prone
 ```
 
-This causes double-free crashes because:
-1. First queue adds handle to pending deletions
-2. Handle is NOT invalidated
-3. Reset()/destructor checks `IsValid()` → returns true
-4. Same VRAM queued again → deleted twice → crash
+`QueueVRAMDeletion` takes the handle by **non-const reference** and clears it
+before returning (auto-invalidation), so a later `Reset()`/destructor pass sees
+an invalid handle and does not double-free. The backend resolves the VRAM record
+from the handle internally — callers never pass a `Flux_VRAM*`.
 
 ### When Directly Calling QueueVRAMDeletion
 
-If you must call `QueueVRAMDeletion()` directly (e.g., for textures or render attachments), **immediately invalidate the handle**:
+If you must call `QueueVRAMDeletion()` directly (e.g., for textures or render attachments), just pass the handle — it is auto-invalidated:
 
 ```cpp
-// CORRECT direct usage
+// CORRECT direct usage -- pass only the handle; the backend resolves the VRAM
+// record and auto-invalidates the handle (passed by reference).
 if (xAttachment.m_xVRAMHandle.IsValid())
 {
-    Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
-    Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle, ...);
-    xAttachment.m_xVRAMHandle = Flux_VRAMHandle();  // Invalidate immediately!
+    g_xEngine.FluxMemory().QueueVRAMDeletion(xAttachment.m_xVRAMHandle, ...);
 }
 ```
 

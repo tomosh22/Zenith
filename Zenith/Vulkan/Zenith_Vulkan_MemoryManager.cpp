@@ -1646,11 +1646,9 @@ void Zenith_Vulkan_MemoryManager::DestroySimpleBuffer(Flux_VRAMHandle& xHandle)
 		return;
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
-	if (pxVRAM)
-	{
-		QueueVRAMDeletion(pxVRAM, xHandle);
-	}
+	// QueueVRAMDeletion now resolves the record from the handle internally and
+	// no-ops if it (and all views) are invalid, so call it unconditionally.
+	QueueVRAMDeletion(xHandle);
 }
 
 void Zenith_Vulkan_MemoryManager::DestroyVertexBuffer(Flux_VertexBuffer& xBuffer)
@@ -2150,10 +2148,15 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked texture upload complete");
 }
 
-void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
+void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Flux_VRAMHandle& xHandle,
 	Flux_ImageViewHandle xRTV, Flux_ImageViewHandle xDSV, Flux_ImageViewHandle xSRV, Flux_ImageViewHandle xUAV,
 	u_int uExtraFrameDelay)
 {
+	// Resolve the VRAM record from the handle internally (nullptr for an
+	// invalid handle, e.g. the QueueImageViewDeletion path that frees only a
+	// view). Engine callers pass just the handle -- they never see Flux_VRAM*.
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
+
 	if (pxVRAM == nullptr && !xRTV.IsValid() && !xDSV.IsValid() &&
 		!xSRV.IsValid() && !xUAV.IsValid())
 	{
@@ -2198,7 +2201,7 @@ void Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(Flux_ImageViewHandle xI
 
 	// Queue for deletion without VRAM - just destroy the image view
 	Flux_VRAMHandle xInvalidHandle;  // Default constructed handle is invalid
-	QueueVRAMDeletion(nullptr, xInvalidHandle, xImageViewHandle);
+	QueueVRAMDeletion(xInvalidHandle, xImageViewHandle);
 }
 
 void Zenith_Vulkan_MemoryManager::DestroyImageViewIfValid(const vk::Device& xDevice, Flux_ImageViewHandle& xHandle)

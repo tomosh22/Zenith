@@ -15,7 +15,7 @@
 // CONCEPT LIMITATION — pass-by-reference handle invalidation is NOT enforced
 // by this concept. A C++20 requires-clause verifies callability of an
 // expression, not the argument-binding mode of the parameters. A backend that
-// declares `static void QueueVRAMDeletion(Flux_VRAM*, Flux_VRAMHandle xHandle, …)`
+// declares `static void QueueVRAMDeletion(Flux_VRAMHandle xHandle, …)`
 // (taking the handle by VALUE) still satisfies this concept — the conformance
 // check below cannot distinguish that variant from the by-reference one. The
 // "QueueVRAMDeletion auto-invalidates the supplied handle" contract is
@@ -35,7 +35,6 @@ concept FluxBackendMemoryDelete = requires(
 	Flux_IndirectBuffer& xIndB,
 	Flux_ReadWriteBuffer& xRWB,
 	Flux_DynamicReadWriteBuffer& xDRWB,
-	Flux_VRAM* pxVRAM,
 	Flux_VRAMHandle& xVRAMHandle,
 	Flux_ImageViewHandle xImageViewHandle,
 	u_int uExtraFrameDelay)
@@ -51,12 +50,13 @@ concept FluxBackendMemoryDelete = requires(
 	{ t.DestroyReadWriteBuffer(xRWB)                                          } -> std::same_as<void>;
 	{ t.DestroyDynamicReadWriteBuffer(xDRWB)                                  } -> std::same_as<void>;
 
-	// Direct VRAM / view handle deletion. QueueVRAMDeletion auto-invalidates
-	// the supplied handle (passed by reference) to prevent double-free on a
+	// Direct VRAM / view handle deletion. The backend resolves the VRAM record
+	// from the handle internally. QueueVRAMDeletion auto-invalidates the
+	// supplied handle (passed by reference) to prevent double-free on a
 	// subsequent destructor pass. Takes four optional image-view handles so
 	// render-attachment destruction can free the VRAM plus its RTV/DSV/SRV/UAV
 	// in one call, and uExtraFrameDelay for alias-pool-vs-image ordering.
-	{ t.QueueVRAMDeletion(pxVRAM, xVRAMHandle,
+	{ t.QueueVRAMDeletion(xVRAMHandle,
 	                       xImageViewHandle, xImageViewHandle,
 	                       xImageViewHandle, xImageViewHandle,
 	                       uExtraFrameDelay)                                   } -> std::same_as<void>;

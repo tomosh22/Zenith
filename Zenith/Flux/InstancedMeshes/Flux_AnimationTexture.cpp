@@ -463,8 +463,7 @@ void Flux_AnimationTexture::DestroyGPUResources()
 
 	if (m_xPositionTexture.m_xVRAMHandle.IsValid())
 	{
-		Flux_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(m_xPositionTexture.m_xVRAMHandle);
-		g_xEngine.FluxMemory().QueueVRAMDeletion(pxVRAM, m_xPositionTexture.m_xVRAMHandle, m_xPositionTexture.m_xSRV.m_xImageViewHandle);
+		g_xEngine.FluxMemory().QueueVRAMDeletion(m_xPositionTexture.m_xVRAMHandle, m_xPositionTexture.m_xSRV.m_xImageViewHandle);
 	}
 
 	m_xPositionTexture = Flux_Texture();

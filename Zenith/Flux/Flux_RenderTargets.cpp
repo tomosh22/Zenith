@@ -22,7 +22,6 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Flux_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
@@ -45,7 +44,7 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 
 	// VRAM + the "primary" views (first of each type) go in one bundle.
 	// QueueVRAMDeletion auto-invalidates xAttachment.m_xVRAMHandle.
-	xVulkanMemory.QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
+	xVulkanMemory.QueueVRAMDeletion(xAttachment.m_xVRAMHandle,
 		xAttachment.m_axRTVs[0].m_xImageViewHandle,
 		xAttachment.m_xDSV.m_xImageViewHandle,
 		xAttachment.m_xSRV.m_xImageViewHandle,
@@ -60,7 +59,6 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Flux_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
@@ -94,7 +92,7 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 
 	// VRAM + the "primary" views (first of each type) in one bundle. Cubes never
 	// have a DSV, so the DSV slot is passed as an invalid default.
-	xVulkanMemory.QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
+	xVulkanMemory.QueueVRAMDeletion(xAttachment.m_xVRAMHandle,
 		xAttachment.m_axRTVs[0].m_xImageViewHandle,
 		Flux_ImageViewHandle(),
 		xAttachment.m_xSRV.m_xImageViewHandle,
@@ -258,11 +256,9 @@ void Flux_RenderAttachmentBuilder::BuildColourImpl(Flux_RenderAttachment& xAttac
 	}
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: %sColour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: %sColour Attachment '%s' VRAM=%u %ux%u mips=%u",
 			szDiagPrefix,
 			strName.c_str(),
-			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
 			xAttachment.m_xVRAMHandle.AsUInt(),
 			xInfo.m_uWidth, xInfo.m_uHeight, m_uNumMips);
 	}
@@ -372,10 +368,8 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	}
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Cubemap Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u layers=6",
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Cubemap Attachment '%s' VRAM=%u %ux%u mips=%u layers=6",
 			strName.c_str(),
-			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
 			xAttachment.m_xVRAMHandle.AsUInt(),
 			xInfo.m_uWidth, xInfo.m_uHeight, m_uNumMips);
 	}
@@ -409,10 +403,8 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xAttachment.m_xSRV = xVulkanMemory.CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VRAM=%u %ux%u",
 			strName.c_str(),
-			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
 			xAttachment.m_xVRAMHandle.AsUInt(),
 			xInfo.m_uWidth, xInfo.m_uHeight);
 	}
@@ -449,10 +441,8 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM(Flux_RenderA
 	xAttachment.m_xSRV = xVulkanMemory.CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Flux_VRAM* pxVRAMForLog = g_xEngine.FluxBackend().GetVRAM(xAttachment.m_xVRAMHandle);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Aliased DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Aliased DepthStencil Attachment '%s' VRAM=%u %ux%u",
 			strName.c_str(),
-			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
 			xAttachment.m_xVRAMHandle.AsUInt(),
 			xInfo.m_uWidth, xInfo.m_uHeight);
 	}

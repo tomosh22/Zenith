@@ -194,8 +194,7 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 {
 	if (this->m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
-		Flux_VRAM* pxVRAM = m_pxVulkan->GetVRAM(this->m_xTransmittanceLUT.m_xVRAMHandle);
-		m_pxVulkanMemory->QueueVRAMDeletion(pxVRAM, this->m_xTransmittanceLUT.m_xVRAMHandle,
+		m_pxVulkanMemory->QueueVRAMDeletion(this->m_xTransmittanceLUT.m_xVRAMHandle,
 			this->m_xTransmittanceLUT.RTV().m_xImageViewHandle, this->m_xTransmittanceLUT.DSV().m_xImageViewHandle,
 			this->m_xTransmittanceLUT.SRV().m_xImageViewHandle, this->m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
 	}
