@@ -19,6 +19,10 @@
 // Methods explicitly NOT in this concept (and reasons):
 //   - GetDevice() / GetQueue() / GetCommandPool() / GetDescriptorPool*()
 //     — return raw vk::* types. Backend-internal; engine code must not call.
+//   - GetVRAM() — resolves a Flux_VRAMHandle to the backend-internal VRAM
+//     record (Flux_VRAM*). Engine code holds handles and frees them through
+//     the FluxBackendMemoryDelete concept (QueueVRAMDeletion), never the raw
+//     record, so GetVRAM stays backend-private.
 //   - BeginFrame() — no longer called from engine code; the Vulkan begin
 //     sequence runs via FluxRenderer's RegisterBeginFrameCallback registered
 //     during Initialise. The contract is therefore "Initialise registers a
@@ -31,15 +35,13 @@ concept FluxBackendDevice = requires(
 	T t,
 	bool b,
 	uint32_t u,
-	Flux_VRAMHandle xVRAMHandle,
 	const Flux_ShaderResourceView& xView,
 	const Flux_Sampler& xSampler)
 {
 	{ t.Initialise()                                                 } -> std::same_as<void>;
-	{ t.InitialiseScratchBuffers()                                   } -> std::same_as<void>;
+	{ t.InitialisePerFrameResources()                                } -> std::same_as<void>;
 	{ t.WaitForGPUIdle()                                             } -> std::same_as<void>;
 	{ t.EndFrame(b)                                                  } -> std::same_as<void>;
-	{ t.GetVRAM(xVRAMHandle)                                         } -> std::same_as<Flux_VRAM*>;
 	{ t.WriteBindlessTextureSlot(u, xView, xSampler)                 } -> std::same_as<void>;
 };
 

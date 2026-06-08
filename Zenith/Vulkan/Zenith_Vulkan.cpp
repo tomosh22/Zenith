@@ -235,11 +235,11 @@ void Zenith_Vulkan::Initialise()
 	m_pxFluxRenderer->RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
 }
 
-void Zenith_Vulkan::InitialiseScratchBuffers()
+void Zenith_Vulkan::InitialisePerFrameResources()
 {
 	for (Zenith_Vulkan_PerFrame& xFrame : m_axPerFrame)
 	{
-		xFrame.InitialiseScratchBuffers();
+		xFrame.InitialisePerFrameResources();
 	}
 }
 
@@ -1264,7 +1264,7 @@ void Zenith_Vulkan_PerFrame::Initialise()
 	m_xMemorySemaphore = VkUnwrap(xVulkan.GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
 }
 
-void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
+void Zenith_Vulkan_PerFrame::InitialisePerFrameResources()
 {
 	// Create scratch buffer for push constant replacement
 	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = g_xEngine.FluxMemory().CreatePersistentlyMappedBuffer(

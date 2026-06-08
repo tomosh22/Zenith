@@ -184,7 +184,7 @@ void Flux_RendererImpl::EarlyInitialise()
 
 	g_xEngine.FluxBackend().Initialise();
 	g_xEngine.FluxMemory().Initialise();
-	g_xEngine.FluxBackend().InitialiseScratchBuffers(); // Must be after memory manager init
+	g_xEngine.FluxBackend().InitialisePerFrameResources(); // Must be after memory manager init
 	g_xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
 }
 

@@ -57,7 +57,7 @@ public:
 	Zenith_Vulkan_PerFrame() = default;
 
 	void Initialise();
-	void InitialiseScratchBuffers(); // Must be called after g_xEngine.FluxMemory().Initialise()
+	void InitialisePerFrameResources(); // Must be called after g_xEngine.FluxMemory().Initialise()
 	void ShutdownScratchBuffer();    // Must be called before g_xEngine.FluxMemory().Shutdown() destroys the VMA allocator
 	void BeginFrame();
 	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
@@ -135,7 +135,7 @@ public:
 	// allocated up-front, so storing a not-yet-Initialised sibling pointer here
 	// is safe — each reach still fires at exactly the same moment it did before.)
 	void Initialise(); // no-arg per FluxBackendDevice concept; self-wires deps from g_xEngine
-	void InitialiseScratchBuffers(); // Must be called after g_xEngine.FluxMemory().Initialise()
+	void InitialisePerFrameResources(); // Must be called after g_xEngine.FluxMemory().Initialise()
 	void CreateInstance();
 #ifdef ZENITH_DEBUG
 	void CreateDebugMessenger();
