@@ -16,7 +16,6 @@ using namespace Flux_TerrainConfig;
 
 // Forward declarations
 class Flux_MeshGeometry;
-class Zenith_TerrainComponent;
 class Flux_RendererImpl;
 
 // ========== Residency State ==========
@@ -128,7 +127,12 @@ struct Flux_TerrainStreamingState
 	Flux_TerrainStreamingStats  m_xStats;
 	uint32_t                    m_uCurrentFrame      = 0;
 
-	Zenith_TerrainComponent*    m_pxOwner = nullptr;
+	// Wave 3: replaces the old Zenith_TerrainComponent* m_pxOwner. That pointer was
+	// never dereferenced — it was used purely as a live/registered flag (set on
+	// Initialize/Register, cleared on Shutdown/Unregister) plus a now-removed
+	// owner==component consistency check. A plain bool keeps the flag semantics while
+	// letting this Flux state name no EntityComponent type.
+	bool                        m_bRegistered = false;
 
 	// ========== Game-supplied per-chunk vertex deformation hook (e.g. CityBuilder road carve) ==========
 	// Called in StreamInLOD after the baked chunk mesh loads and BEFORE the GPU upload, so a
@@ -179,7 +183,7 @@ struct Flux_TerrainStreamingState
 	Flux_IndirectBuffer         m_xVisibleCountBuffer;   // Atomic counter for visible chunks
 	Flux_ReadWriteBuffer        m_xLODLevelBuffer;       // LOD level for each chunk (visualization)
 
-	void Initialize(Zenith_TerrainComponent* pxOwner);
+	void Initialize();
 	void Shutdown();
 };
 
@@ -208,23 +212,28 @@ public:
 	bool IsInitialized() const { return m_bInitialized; }
 
 	// ========== Buffer Registration ==========
-	void RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent, const Flux_TerrainChunkInitData* pxChunkInitData);
-	void UnregisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent);
+	// Wave 3: these take the Flux_TerrainStreamingState directly. The manager touched the
+	// component ONLY to reach ->m_pxStreamingState (and m_pxOwner was write-only/vestigial),
+	// so passing the state in lets this TU name no EntityComponent type. Callers that hold a
+	// Zenith_TerrainComponent pass its (public) m_pxStreamingState.
+	void RegisterTerrainBuffers(Flux_TerrainStreamingState* pxState, const Flux_TerrainChunkInitData* pxChunkInitData);
+	void UnregisterTerrainBuffers(Flux_TerrainStreamingState* pxState);
 
 	// ========== Main Update ==========
-	void UpdateStreamingForTerrain(Zenith_TerrainComponent* pxTerrainComponent, const Zenith_Maths::Vector3& xCameraPos);
+	void UpdateStreamingForTerrain(Flux_TerrainStreamingState* pxState, const Zenith_Maths::Vector3& xCameraPos);
 
 	// ========== GPU Data Building ==========
-	void BuildChunkDataForGPU(const Zenith_TerrainComponent* pxTerrainComponent, Zenith_TerrainChunkData* pxChunkDataOut);
-	bool IsChunkDataDirty(const Zenith_TerrainComponent* pxTerrainComponent);
-	void ClearChunkDataDirty(const Zenith_TerrainComponent* pxTerrainComponent);
-	Zenith_TerrainChunkData* GetCachedChunkDataBuffer(const Zenith_TerrainComponent* pxTerrainComponent);
+	void BuildChunkDataForGPU(const Flux_TerrainStreamingState* pxState, Zenith_TerrainChunkData* pxChunkDataOut);
+	bool IsChunkDataDirty(const Flux_TerrainStreamingState* pxState);
+	void ClearChunkDataDirty(Flux_TerrainStreamingState* pxState); // mutates (.store) -> non-const
+	Zenith_TerrainChunkData* GetCachedChunkDataBuffer(const Flux_TerrainStreamingState* pxState);
 
 	// ========== Stats type alias ==========
 	using StreamingStats = Flux_TerrainStreamingStats;
 
 	// Resolve a component to its streaming state.
-	Flux_TerrainStreamingState* GetStateFor(const Zenith_TerrainComponent* pxComp);
+	// Wave 3: GetStateFor(component) removed — it was a dead component->state accessor with
+	// no callers (callers hold the component and use its public m_pxStreamingState directly).
 
 	friend class Zenith_UnitTests;
 

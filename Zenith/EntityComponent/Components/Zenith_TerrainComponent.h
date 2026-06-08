@@ -50,11 +50,10 @@ public:
 	// shallow pointer copy, so a pool relocation (swap-and-pop / Grow) would
 	// double-free both the streaming state and the physics geometry when the
 	// moved-from temporary destructs. Define an explicit move that STEALS the
-	// owned state, nulls the source, and REPOINTS the streaming state's owner
-	// back-pointer at the moved-to component (the manager registry / per-frame
-	// resolver dereference m_pxOwner, so it must always point at the live
-	// component). Copy is deleted outright — a terrain component must never be
-	// duplicated (two owners of the same GPU buffers).
+	// owned state and nulls the source. (Wave 3: the Flux streaming state no longer
+	// carries a Zenith_TerrainComponent back-pointer — it was never dereferenced, so
+	// there is nothing to repoint on move.) Copy is deleted outright — a terrain
+	// component must never be duplicated (two owners of the same GPU buffers).
 	Zenith_TerrainComponent(Zenith_TerrainComponent&& xOther) noexcept;
 	Zenith_TerrainComponent& operator=(Zenith_TerrainComponent&& xOther) noexcept;
 	Zenith_TerrainComponent(const Zenith_TerrainComponent&) = delete;

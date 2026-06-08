@@ -405,7 +405,7 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 	// s_pxPrimary, which on a non-primary terrain would unregister the
 	// wrong state and leave THIS component still in the registry pointing
 	// at buffers we're about to destroy.
-	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
+	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(m_pxStreamingState);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
 	g_xEngine.VulkanMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);

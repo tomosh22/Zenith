@@ -66,7 +66,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_Entity& xEntity)
 	// state (buffers + scalars + m_bCullingResourcesInitialized) default-inits
 	// inside Flux_TerrainStreamingState.
 	m_pxStreamingState = new Flux_TerrainStreamingState();
-	m_pxStreamingState->Initialize(this);
+	m_pxStreamingState->Initialize();
 }
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity)
@@ -78,7 +78,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	// default (deserialization) constructor. The unified-buffer scalars and
 	// the culling-init flag now live on (and default-init inside) the state.
 	m_pxStreamingState = new Flux_TerrainStreamingState();
-	m_pxStreamingState->Initialize(this);
+	m_pxStreamingState->Initialize();
 
 	// Store material handles (auto ref-counting)
 	m_axMaterials[0].Set(&xMaterial0);
@@ -138,7 +138,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 	// Take this terrain out of the manager's registry FIRST so no concurrent
 	// PreRenderUpdate iteration can pick up a state that's about to be freed.
-	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
+	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(m_pxStreamingState);
 
 	// Destroy the owned unified buffers (they now live ON the streaming state)
 	// BEFORE freeing the state — preserves the documented destroy order:
@@ -177,9 +177,10 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_TerrainComponent&& xOthe
 		m_axMaterials[u] = std::move(xOther.m_axMaterials[u]);
 	m_xSplatmap = std::move(xOther.m_xSplatmap);
 
-	// Repoint the state's back-pointer at the new owner.
-	if (m_pxStreamingState)
-		m_pxStreamingState->m_pxOwner = this;
+	// Wave 3: the old "repoint m_pxStreamingState->m_pxOwner = this" is gone — the
+	// Flux state no longer stores a Zenith_TerrainComponent back-pointer (it was never
+	// dereferenced; only an identity/validation the streaming manager no longer needs).
+	// The double-free fix is purely the state-steal + null-source below.
 
 	// Null the source so its destructor frees nothing (no double-free).
 	xOther.m_pxStreamingState = nullptr;
@@ -196,7 +197,7 @@ Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainCompon
 	if (m_pxStreamingState)
 	{
 		DestroyCullingResources();
-		g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
+		g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(m_pxStreamingState);
 		g_xEngine.VulkanMemory().DestroyVertexBuffer(m_pxStreamingState->m_xUnifiedVertexBuffer);
 		g_xEngine.VulkanMemory().DestroyIndexBuffer(m_pxStreamingState->m_xUnifiedIndexBuffer);
 		m_pxStreamingState->Shutdown();
@@ -219,8 +220,7 @@ Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainCompon
 		m_axMaterials[u] = std::move(xOther.m_axMaterials[u]);
 	m_xSplatmap = std::move(xOther.m_xSplatmap);
 
-	if (m_pxStreamingState)
-		m_pxStreamingState->m_pxOwner = this;
+	// Wave 3: no m_pxOwner back-pointer to repoint (see the move-ctor note).
 
 	xOther.m_pxStreamingState  = nullptr;
 	xOther.m_pxPhysicsGeometry = nullptr;
@@ -467,7 +467,7 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 	delete pxLowLODGeometry;
 	pxLowLODGeometry = nullptr;
 
-	g_xEngine.TerrainStreaming().RegisterTerrainBuffers(this, pxChunkInitData);
+	g_xEngine.TerrainStreaming().RegisterTerrainBuffers(m_pxStreamingState, pxChunkInitData);
 	delete[] pxChunkInitData;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain render geometry facade setup complete (references component-owned buffers)");
@@ -883,7 +883,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 	// allocations) — component-aware overload routes through this terrain's
 	// own state, no cross-terrain pollution.
 	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
-	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(this, pxChunkData);
+	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(m_pxStreamingState, pxChunkData);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TOTAL_CHUNKS);
 
@@ -914,7 +914,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 
 	// The per-component dirty-flag short-circuit used to live here:
 	//
-	//   if (!g_xEngine.TerrainStreaming().IsChunkDataDirty(this)) return;
+	//   if (!g_xEngine.TerrainStreaming().IsChunkDataDirty(m_pxStreamingState)) return;
 	//
 	// It produced a steady-state "stretched-triangle to a previously-resident
 	// chunk's slot" spike. Disabling the short-circuit and re-uploading every
@@ -940,7 +940,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 
 	// OPTIMIZATION: Use this terrain's pre-allocated cached buffer to avoid
 	// per-frame heap allocation.
-	Zenith_TerrainChunkData* pxChunkData = g_xEngine.TerrainStreaming().GetCachedChunkDataBuffer(this);
+	Zenith_TerrainChunkData* pxChunkData = g_xEngine.TerrainStreaming().GetCachedChunkDataBuffer(m_pxStreamingState);
 	bool bUsedCachedBuffer = (pxChunkData != nullptr);
 
 	if (pxChunkData == nullptr)
@@ -949,7 +949,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 		pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 	}
 
-	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(this, pxChunkData);
+	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(m_pxStreamingState, pxChunkData);
 
 	// Upload to the CURRENT FRAME's chunk-data buffer slot. m_xChunkDataBuffer
 	// is frame-indexed, so GetBuffer() resolves to the current ring-slot's
@@ -971,7 +971,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	}
 
 	// Clear THIS terrain's dirty flag after successful upload.
-	g_xEngine.TerrainStreaming().ClearChunkDataDirty(this);
+	g_xEngine.TerrainStreaming().ClearChunkDataDirty(m_pxStreamingState);
 }
 
 void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes)

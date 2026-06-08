@@ -13206,16 +13206,14 @@ void Zenith_UnitTests::TestTerrainComponentMoveStealsState(){
 	Zenith_TerrainComponent xSource(xEntity);
 	Flux_TerrainStreamingState* pxCapturedState = xSource.m_pxStreamingState;
 	ZENITH_ASSERT_TRUE(pxCapturedState != nullptr, "Source terrain must own a streaming state after construction");
-	ZENITH_ASSERT_EQ(pxCapturedState->m_pxOwner, &xSource, "Freshly-constructed state must point back at its component");
 
 	// Force the move.
 	Zenith_TerrainComponent xMoved(std::move(xSource));
 
 	// The moved-to component owns the SAME state instance...
 	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState, pxCapturedState, "Move must transfer the exact streaming-state instance");
-	// ...the back-pointer is repointed at the new owner...
-	ZENITH_ASSERT_EQ(pxCapturedState->m_pxOwner, &xMoved, "Move must repoint state->m_pxOwner at the moved-to component");
 	// ...and the moved-from component owns nothing (no double-free on its dtor).
+	// (Wave 3: the state no longer carries an m_pxOwner back-pointer to repoint.)
 	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Moved-from component's state pointer must be nulled");
 
 	// Both xMoved and xSource destruct here at scope exit; xSource frees
@@ -13245,7 +13243,6 @@ void Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(){
 	xDest = std::move(xSource);
 
 	ZENITH_ASSERT_EQ(xDest.m_pxStreamingState, pxSourceState, "Move-assign must transfer the source's state instance");
-	ZENITH_ASSERT_EQ(pxSourceState->m_pxOwner, &xDest, "Move-assign must repoint state->m_pxOwner at the destination");
 	ZENITH_ASSERT_TRUE(xSource.m_pxStreamingState == nullptr, "Move-assigned-from component's state pointer must be nulled");
 }
 

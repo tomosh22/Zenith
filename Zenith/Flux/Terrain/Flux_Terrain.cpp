@@ -428,7 +428,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	for (u_int u = 0; u < m_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = m_xTerrainComponentsToRender.Get(u);
-		m_pxTerrainStreaming->UpdateStreamingForTerrain(pxTerrain, xCameraPos);
+		m_pxTerrainStreaming->UpdateStreamingForTerrain(pxTerrain->m_pxStreamingState, xCameraPos);
 		pxTerrain->UpdateChunkLODAllocations();
 		pxTerrain->UploadFrustumPlanesForFrame(xViewProj);
 
