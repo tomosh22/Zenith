@@ -9,7 +9,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Entity.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "Core/Zenith_GizmoTransformAccess.h" // Wave 3: drives the EC-side transform write-accessor instead of including Zenith_TransformComponent.h
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -147,32 +147,22 @@ void Flux_GizmosImpl::Reset()
 
 // ==================== EXTRACTED HELPERS ====================
 
-Zenith_TransformComponent* Flux_GizmosImpl::GetEditableTransform()
+Zenith_Entity* Flux_GizmosImpl::GetGizmoTargetWithTransform()
 {
+	// Wave 3: the gizmo no longer names Zenith_TransformComponent. It returns the
+	// target entity iff it currently has a transform, resolved EC-side through
+	// g_xGizmoTransformAccess (whose HasTransform preserves the original entity-OWN-
+	// scene resolution — multi-scene editing still works). Callers drive get/set TRS
+	// through the same accessor, so the renderer-side gizmo includes no EC component.
 	if (!m_pxTargetEntity)
 	{
 		return nullptr;
 	}
-
-	// Unity-parity fix (audit §3.17): resolve the gizmo target's transform through the
-	// target entity's OWN scene, not GetActiveScene(). EntityIDs are globally unique,
-	// so an entity may live in the persistent (DontDestroyOnLoad) scene or any
-	// additively-loaded scene. Unity's SceneManager.GetActiveScene docs are explicit:
-	// "the active Scene has no impact on what Scenes are rendered" — and multi-scene
-	// editing is first-class (https://docs.unity3d.com/Manual/MultiSceneEditing.html).
-	// Zenith_Entity::GetSceneData() walks the global slot table and survives cross-scene
-	// moves. As a bonus, this removes the sole render-task caller of GetActiveScene().
-	Zenith_SceneData* pxSceneData = m_pxTargetEntity->GetSceneData();
-	if (!pxSceneData)
+	if (!g_xGizmoTransformAccess.m_pfnHasTransform(m_pxTargetEntity))
 	{
 		return nullptr;
 	}
-	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(m_pxTargetEntity->GetEntityID()))
-	{
-		return nullptr;
-	}
-
-	return &m_pxTargetEntity->GetComponent<Zenith_TransformComponent>();
+	return m_pxTargetEntity;
 }
 
 void Flux_GizmosImpl::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)
@@ -263,15 +253,15 @@ void Flux_GizmosImpl::GatherGizmoPacket(void*)
 		return;
 	}
 
-	Zenith_TransformComponent* pxTransform = GetEditableTransform();
-	if (!pxTransform)
+	Zenith_Entity* pxEntity = GetGizmoTargetWithTransform();
+	if (!pxEntity)
 	{
 		return;
 	}
 
 	// Calculate gizmo scale based on camera distance for consistent screen size
 	Zenith_Maths::Vector3 xEntityPos;
-	pxTransform->GetPosition(xEntityPos);
+	g_xGizmoTransformAccess.m_pfnGetPosition(pxEntity, xEntityPos);
 	Zenith_Maths::Vector3 xCameraPos = m_pxFluxGraphics->GetCameraPosition();
 	float fDistance = glm::length(xEntityPos - xCameraPos);
 	// Keep the live member in sync — the interaction raycast path (RaycastGizmo /
@@ -430,12 +420,12 @@ void Flux_GizmosImpl::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, c
 		m_xInteractionStartPos = rayOrigin + rayDir * fDistance;
 
 		// Store initial entity transform
-		Zenith_TransformComponent* pxTransform = GetEditableTransform();
-		if (pxTransform)
+		Zenith_Entity* pxEntity = GetGizmoTargetWithTransform();
+		if (pxEntity)
 		{
-			pxTransform->GetPosition(m_xInitialEntityPosition);
-			pxTransform->GetRotation(m_xInitialEntityRotation);
-			pxTransform->GetScale(m_xInitialEntityScale);
+			g_xGizmoTransformAccess.m_pfnGetPosition(pxEntity, m_xInitialEntityPosition);
+			g_xGizmoTransformAccess.m_pfnGetRotation(pxEntity, m_xInitialEntityRotation);
+			g_xGizmoTransformAccess.m_pfnGetScale(pxEntity, m_xInitialEntityScale);
 		}
 	}
 }
@@ -728,12 +718,12 @@ static void IntersectRotateRings(const Zenith_Maths::Vector3& xRelOrigin, const 
 
 GizmoComponent Flux_GizmosImpl::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, float& outDistance)
 {
-	Zenith_TransformComponent* pxTransform = GetEditableTransform();
-	if (!pxTransform)
+	Zenith_Entity* pxEntity = GetGizmoTargetWithTransform();
+	if (!pxEntity)
 		return GizmoComponent::None;
 
 	Zenith_Maths::Vector3 xGizmoPos;
-	pxTransform->GetPosition(xGizmoPos);
+	g_xGizmoTransformAccess.m_pfnGetPosition(pxEntity, xGizmoPos);
 
 	// FIXED: Do all calculations in WORLD space
 	// Translate ray origin relative to gizmo center, but keep same units
@@ -769,8 +759,8 @@ GizmoComponent Flux_GizmosImpl::RaycastGizmo(const Zenith_Maths::Vector3& rayOri
 
 void Flux_GizmosImpl::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_TransformComponent* pxTransform = GetEditableTransform();
-	if (!pxTransform)
+	Zenith_Entity* pxEntity = GetGizmoTargetWithTransform();
+	if (!pxEntity)
 		return;
 
 	// Get constraint axis
@@ -802,16 +792,15 @@ void Flux_GizmosImpl::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, c
 	float fDeltaT = fCurrentT - fInitialT;
 	Zenith_Maths::Vector3 xNewPosition = m_xInitialEntityPosition + axis * fDeltaT;
 
-	pxTransform->SetPosition(xNewPosition);
+	g_xGizmoTransformAccess.m_pfnSetPosition(pxEntity, xNewPosition);
 }
 
 void Flux_GizmosImpl::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_TransformComponent* pxTransform = GetEditableTransform();
-	if (!pxTransform)
+	Zenith_Entity* pxEntity = GetGizmoTargetWithTransform();
+	if (!pxEntity)
 		return;
 
-	Zenith_TransformComponent& xTransform = *pxTransform;
 
 	// Get rotation axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);
@@ -848,13 +837,13 @@ void Flux_GizmosImpl::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, cons
 	// Apply rotation
 	Zenith_Maths::Quaternion deltaRotation = glm::angleAxis(angle, axis);
 	Zenith_Maths::Quaternion newRotation = deltaRotation * m_xInitialEntityRotation;
-	xTransform.SetRotation(newRotation);
+	g_xGizmoTransformAccess.m_pfnSetRotation(pxEntity, newRotation);
 }
 
 void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_TransformComponent* pxTransform = GetEditableTransform();
-	if (!pxTransform)
+	Zenith_Entity* pxEntity = GetGizmoTargetWithTransform();
+	if (!pxEntity)
 		return;
 
 	// Get constraint axis
@@ -917,7 +906,7 @@ void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Z
 		}
 	}
 
-	pxTransform->SetScale(xNewScale);
+	g_xGizmoTransformAccess.m_pfnSetScale(pxEntity, xNewScale);
 }
 
 #endif // ZENITH_TOOLS

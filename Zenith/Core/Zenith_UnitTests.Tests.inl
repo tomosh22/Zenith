@@ -14084,16 +14084,13 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 	ZENITH_ASSERT_NE(xActive, xPersistent, "Test setup requires active scene to differ from persistent scene");
 
-	// Fixed behaviour: GetEditableTransform() walks the entity's own scene and
-	// returns its transform. Under the buggy pre-fix code this returns nullptr
-	// because the persistent entity isn't in the active scene's component pool.
-	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
-	ZENITH_ASSERT_NOT_NULL(pxTransform, "GetEditableTransform must resolve persistent entity via entity.GetSceneData() (Unity parity)");
-
-	// Verify the transform we got back is actually the persistent entity's.
-	Zenith_TransformComponent& xExpected =
-		xPersistentEntity.GetComponent<Zenith_TransformComponent>();
-	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to the persistent entity, not the active scene");
+	// Fixed behaviour (Wave 3): GetGizmoTargetWithTransform walks the entity's OWN
+	// scene (via g_xGizmoTransformAccess.m_pfnHasTransform) and returns the target iff
+	// it has a transform. Under the buggy pre-fix code this returned nullptr because
+	// the persistent entity isn't in the active scene's component pool.
+	Zenith_Entity* pxResolved = g_xEngine.Gizmos().GetGizmoTargetWithTransform();
+	ZENITH_ASSERT_NOT_NULL(pxResolved, "GetGizmoTargetWithTransform must resolve the persistent entity via entity.GetSceneData() (Unity parity)");
+	ZENITH_ASSERT_EQ(pxResolved, &xTargetCopy, "Resolved target must be the gizmo's target entity (persistent-scene entity)");
 
 	// Cleanup: clear target, destroy persistent entity, unload temp scene.
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
@@ -14123,12 +14120,9 @@ void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(){
 
 	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
-	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
-	ZENITH_ASSERT_NOT_NULL(pxTransform, "Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
-
-	Zenith_TransformComponent& xExpected =
-		xTarget.GetComponent<Zenith_TransformComponent>();
-	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to Scene B's entity, not Scene A");
+	Zenith_Entity* pxResolved = g_xEngine.Gizmos().GetGizmoTargetWithTransform();
+	ZENITH_ASSERT_NOT_NULL(pxResolved, "Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
+	ZENITH_ASSERT_EQ(pxResolved, &xTarget, "Resolved target must be Scene B's entity, not Scene A");
 
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	g_xEngine.Scenes().UnloadScene(xSceneB);
@@ -14154,7 +14148,7 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
 	// Begin the "drag" while target's scene is active.
-	Zenith_TransformComponent* pxBefore = g_xEngine.Gizmos().GetEditableTransform();
+	Zenith_Entity* pxBefore = g_xEngine.Gizmos().GetGizmoTargetWithTransform();
 	ZENITH_ASSERT_NOT_NULL(pxBefore, "Pre-switch gizmo resolve must succeed");
 
 	// Simulate the active-scene change mid-drag.
@@ -14163,9 +14157,9 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 
 	// Post-switch: gizmo must still resolve to Scene A's entity (Unity parity —
 	// active scene doesn't gate editability).
-	Zenith_TransformComponent* pxAfter = g_xEngine.Gizmos().GetEditableTransform();
+	Zenith_Entity* pxAfter = g_xEngine.Gizmos().GetGizmoTargetWithTransform();
 	ZENITH_ASSERT_NOT_NULL(pxAfter, "Gizmo must keep resolving target after active-scene change (Unity parity)");
-	ZENITH_ASSERT_EQ(pxAfter, pxBefore, "Gizmo transform must be identical across the active-scene switch (same underlying entity)");
+	ZENITH_ASSERT_EQ(pxAfter, pxBefore, "Gizmo target must be identical across the active-scene switch (same underlying entity)");
 
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	g_xEngine.Scenes().UnloadScene(xSceneB);
@@ -14180,7 +14174,7 @@ void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget
 
 	// No target set — must return nullptr.
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
-	ZENITH_ASSERT_NULL(g_xEngine.Gizmos().GetEditableTransform(), "GetEditableTransform must return nullptr when no target is set");
+	ZENITH_ASSERT_NULL(g_xEngine.Gizmos().GetGizmoTargetWithTransform(), "GetGizmoTargetWithTransform must return nullptr when no target is set");
 
 }
 

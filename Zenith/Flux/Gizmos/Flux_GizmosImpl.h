@@ -9,7 +9,6 @@
 
 class Flux_RenderGraph;
 class Zenith_Entity;
-class Zenith_TransformComponent;
 class Flux_GraphicsImpl;
 class Flux_PrimitivesImpl;
 class Zenith_Vulkan_MemoryManager;
@@ -101,7 +100,10 @@ public:
 		GizmoComponent m_eComponent;
 	};
 
-	Zenith_TransformComponent* GetEditableTransform();
+	// Wave 3: returns the target entity iff it currently has a transform (resolved
+	// EC-side via g_xGizmoTransformAccess). The gizmo drives TRS get/set through that
+	// accessor, so this header names no EntityComponent type.
+	Zenith_Entity* GetGizmoTargetWithTransform();
 
 	void InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors);
 	void UploadGizmoGeometry(Zenith_Vector<GizmoGeometry>& xGeometryList, const Zenith_Vector<float>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent);
