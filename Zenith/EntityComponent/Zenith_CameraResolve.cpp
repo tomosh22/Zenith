@@ -4,6 +4,7 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "Core/Zenith_RenderGather.h" // Wave 3: EC-side camera render-gather
 
 // ============================================================================
 // ENGINE-side main-camera resolver (ECS leaf-extraction Phase 6).
@@ -70,3 +71,28 @@ Zenith_CameraComponent* Zenith_GetMainCameraAcrossScenes()
 	}
 	return Zenith_TryGetMainCamera(pxOwningScene);
 }
+
+// ---------------------------------------------------------------------------
+// Wave 3: main-camera render-gather. Resolves the main camera (EC-side) and
+// extracts its renderer-neutral data so Flux_Graphics no longer names
+// Zenith_CameraComponent / Zenith_CameraResolve. Forward (EC->renderer) direction.
+// ---------------------------------------------------------------------------
+static void Zenith_GatherMainCameraImpl(Zenith_CameraRenderData& xOut)
+{
+	Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
+	if (!pxCamera)
+	{
+		xOut.m_bValid = false;
+		return;
+	}
+	xOut.m_bValid = true;
+	pxCamera->BuildViewMatrix(xOut.m_xViewMatrix);
+	pxCamera->BuildProjectionMatrix(xOut.m_xProjMatrix);
+	pxCamera->GetPosition(xOut.m_xPositionPad);
+	xOut.m_fNearPlane   = pxCamera->GetNearPlane();
+	xOut.m_fFarPlane    = pxCamera->GetFarPlane();
+	xOut.m_fFOV         = pxCamera->GetFOV();
+	xOut.m_fAspectRatio = pxCamera->GetAspectRatio();
+}
+
+Zenith_CameraGatherFn g_pfnZenithCameraGather = &Zenith_GatherMainCameraImpl;

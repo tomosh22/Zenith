@@ -10,8 +10,7 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Vulkan/Zenith_Vulkan_Swapchain.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_CameraResolve.h"
+#include "Core/Zenith_RenderGather.h" // Wave 3: main camera comes through the neutral gather
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -171,12 +170,13 @@ bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 		return true;
 	}
 #endif
-	Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
-	if (pxCamera)
+	Zenith_CameraRenderData xCam;
+	if (g_pfnZenithCameraGather) g_pfnZenithCameraGather(xCam);
+	if (xCam.m_bValid)
 	{
-		pxCamera->BuildViewMatrix(xConstants.m_xViewMat);
-		pxCamera->BuildProjectionMatrix(xConstants.m_xProjMat);
-		pxCamera->GetPosition(xConstants.m_xCamPos_Pad);
+		xConstants.m_xViewMat = xCam.m_xViewMatrix;
+		xConstants.m_xProjMat = xCam.m_xProjMatrix;
+		xConstants.m_xCamPos_Pad = xCam.m_xPositionPad;
 		return true;
 	}
 	return false;
@@ -257,8 +257,9 @@ float Flux_GraphicsImpl::GetNearPlane()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraNearPlane();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
-	return pxCamera ? pxCamera->GetNearPlane() : 0.1f;
+	Zenith_CameraRenderData xCam;
+	if (g_pfnZenithCameraGather) g_pfnZenithCameraGather(xCam);
+	return xCam.m_bValid ? xCam.m_fNearPlane : 0.1f;
 #endif
 }
 float Flux_GraphicsImpl::GetFarPlane()
@@ -266,8 +267,9 @@ float Flux_GraphicsImpl::GetFarPlane()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraFarPlane();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
-	return pxCamera ? pxCamera->GetFarPlane() : 1000.0f;
+	Zenith_CameraRenderData xCam;
+	if (g_pfnZenithCameraGather) g_pfnZenithCameraGather(xCam);
+	return xCam.m_bValid ? xCam.m_fFarPlane : 1000.0f;
 #endif
 }
 
@@ -276,8 +278,9 @@ float Flux_GraphicsImpl::GetFOV()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraFOV();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
-	return pxCamera ? pxCamera->GetFOV() : 1.0472f;
+	Zenith_CameraRenderData xCam;
+	if (g_pfnZenithCameraGather) g_pfnZenithCameraGather(xCam);
+	return xCam.m_bValid ? xCam.m_fFOV : 1.0472f;
 #endif
 }
 
@@ -286,8 +289,9 @@ float Flux_GraphicsImpl::GetAspectRatio()
 #ifdef ZENITH_TOOLS
 	return g_xEngine.Editor().GetCameraAspectRatio();
 #else
-	Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
-	return pxCamera ? pxCamera->GetAspectRatio() : 1.7778f;
+	Zenith_CameraRenderData xCam;
+	if (g_pfnZenithCameraGather) g_pfnZenithCameraGather(xCam);
+	return xCam.m_bValid ? xCam.m_fAspectRatio : 1.7778f;
 #endif
 }
 

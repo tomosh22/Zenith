@@ -45,3 +45,21 @@ struct Zenith_LightRenderData
 // so the linker pulls that TU in to resolve this symbol.
 using Zenith_LightGatherFn = void (*)(Zenith_Vector<Zenith_LightRenderData>& xOut);
 extern Zenith_LightGatherFn g_pfnZenithLightGather;
+
+// The main camera's render inputs, resolved + extracted EC-side so Flux_Graphics
+// never names Zenith_CameraComponent / Zenith_CameraResolve. m_bValid is false when
+// there is no main camera (the renderer then keeps its previous-frame / default state).
+struct Zenith_CameraRenderData
+{
+	bool                  m_bValid       = false;
+	Zenith_Maths::Matrix4 m_xViewMatrix  = Zenith_Maths::Matrix4(1.0f);
+	Zenith_Maths::Matrix4 m_xProjMatrix  = Zenith_Maths::Matrix4(1.0f);
+	Zenith_Maths::Vector4 m_xPositionPad  = Zenith_Maths::Vector4(0.0f); // matches Flux frame-constants Vector4
+	float                 m_fNearPlane   = 0.1f;
+	float                 m_fFarPlane    = 1000.0f;
+	float                 m_fFOV         = 1.0472f;
+	float                 m_fAspectRatio = 1.7778f;
+};
+
+using Zenith_CameraGatherFn = void (*)(Zenith_CameraRenderData& xOut);
+extern Zenith_CameraGatherFn g_pfnZenithCameraGather;
