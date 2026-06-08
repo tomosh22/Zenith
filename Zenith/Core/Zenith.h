@@ -44,14 +44,12 @@ static_assert(sizeof(u_int64) == 8);
 #include "Zenith_OS_Include.h"
 #include "Zenith_DebugBreak.h"
 
-// GLFW defines APIENTRY; undef before Windows.h to avoid C4005 redefinition warning
-#ifdef APIENTRY
-#undef APIENTRY
-#endif
-
-#ifdef ZENITH_WINDOWS
-#include <Windows.h>
-#endif
+// W5.2 (PCH slimming): <Windows.h> is no longer dragged into the precompiled header
+// (it was here purely for caller convenience — Zenith.h itself names no Win32 type).
+// The handful of TUs that genuinely use Win32 directly now #include <Windows.h>
+// themselves; the platform mutex/semaphore wrappers keep it confined to their .cpp
+// via the W5.1 opaque-storage change. This removes a large, volatile system header
+// from every translation unit's PCH.
 
 // Log categories for categorized logging output
 enum Zenith_LogCategory : u_int8

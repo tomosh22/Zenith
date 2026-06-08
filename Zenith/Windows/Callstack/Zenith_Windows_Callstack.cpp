@@ -4,12 +4,19 @@
 #include "Callstack/Zenith_Callstack.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
+// W5.1/W5.2: <Windows.h>/<DbgHelp.h> are confined to this .cpp now (the header
+// stores the process HANDLE opaquely). APIENTRY guard mirrors Zenith.h's.
+#ifdef APIENTRY
+#undef APIENTRY
+#endif
+#include <Windows.h>
+#include <DbgHelp.h>
 #include <cstring>
 
 #pragma comment(lib, "dbghelp.lib")
 
 bool Zenith_Windows_Callstack::s_bInitialised = false;
-HANDLE Zenith_Windows_Callstack::s_hProcess = NULL;
+void* Zenith_Windows_Callstack::s_hProcess = nullptr; // Win32 HANDLE (void*)
 Zenith_Windows_Mutex_T<false> Zenith_Windows_Callstack::s_xSymMutex;
 
 void Zenith_Windows_Callstack::Initialise()

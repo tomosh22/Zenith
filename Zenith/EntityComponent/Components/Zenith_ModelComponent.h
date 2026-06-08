@@ -23,11 +23,10 @@ struct Zenith_PropertyDescriptor;
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include <filesystem>
-#ifdef _WIN32
-#include <windows.h>
-#include <shlobj.h>
-#pragma comment(lib, "Shell32.lib")
-#endif
+// W5.2: the old #ifdef _WIN32 <windows.h>/<shlobj.h>/Shell32.lib block here was
+// vestigial (neither this header nor Zenith_ModelComponent.cpp references any
+// Win32/shell symbol) and dragged <windows.h> into every tools-build TU that
+// includes this widely-used component header. Removed.
 #endif
 
 class Zenith_ModelComponent

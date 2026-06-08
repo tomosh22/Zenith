@@ -6,6 +6,12 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
+// W5.1: <Windows.h> now lives in the .cpp (not the PCH-reachable header). The
+// APIENTRY guard mirrors Zenith.h's (GLFW, pulled via the PCH, also defines it).
+#ifdef APIENTRY
+#undef APIENTRY
+#endif
+#include <Windows.h>
 #include <process.h>
 #include <processthreadsapi.h>
 
@@ -16,45 +22,82 @@
 thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
 thread_local static u_int tl_g_uThreadID = ~0u;
 
+// W5.1: the CRITICAL_SECTION lives in the header's opaque byte storage; recover it
+// here (where <Windows.h> is visible). sizeof/alignof are validated below.
+static_assert(sizeof(CRITICAL_SECTION) <= 64, "m_axCriticalSectionStorage is too small for CRITICAL_SECTION");
+static_assert(alignof(CRITICAL_SECTION) <= 8, "m_axCriticalSectionStorage alignment is too weak for CRITICAL_SECTION");
+
+#define ZENITH_MUTEX_CS(self) (reinterpret_cast<CRITICAL_SECTION*>((self).m_axCriticalSectionStorage))
+
+template<bool bEnableProfiling>
+Zenith_Windows_Mutex_T<bEnableProfiling>::Zenith_Windows_Mutex_T()
+{
+	InitializeCriticalSection(ZENITH_MUTEX_CS(*this));
+}
+
+template<bool bEnableProfiling>
+Zenith_Windows_Mutex_T<bEnableProfiling>::~Zenith_Windows_Mutex_T()
+{
+	DeleteCriticalSection(ZENITH_MUTEX_CS(*this));
+}
+
+template<bool bEnableProfiling>
+bool Zenith_Windows_Mutex_T<bEnableProfiling>::TryLock()
+{
+	return TryEnterCriticalSection(ZENITH_MUTEX_CS(*this)) != 0;
+}
+
+template<bool bEnableProfiling>
+void Zenith_Windows_Mutex_T<bEnableProfiling>::Unlock()
+{
+	LeaveCriticalSection(ZENITH_MUTEX_CS(*this));
+}
+
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
 {
 	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
-	EnterCriticalSection(&m_xCriticalSection);
+	EnterCriticalSection(ZENITH_MUTEX_CS(*this));
 	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 }
 
 template<>
 void Zenith_Windows_Mutex_T<false>::Lock()
 {
-	EnterCriticalSection(&m_xCriticalSection);
+	EnterCriticalSection(ZENITH_MUTEX_CS(*this));
 }
+
+// Explicit instantiation: this TU emits both mutex variants used engine-wide
+// (Zenith_Windows_Mutex = <true>, Zenith_Mutex_NoProfiling = <false>). The two
+// Lock() specializations above are picked up by these instantiations.
+template class Zenith_Windows_Mutex_T<true>;
+template class Zenith_Windows_Mutex_T<false>;
 
 Zenith_Windows_Semaphore::Zenith_Windows_Semaphore(u_int uInitialValue, u_int uMaxValue)
 {
-	m_xHandle = CreateSemaphore(NULL, uInitialValue, uMaxValue, NULL);
-	Zenith_Assert(m_xHandle != NULL, "CreateSemaphore failed with error %lu", GetLastError());
+	m_pHandle = CreateSemaphore(NULL, uInitialValue, uMaxValue, NULL);
+	Zenith_Assert(m_pHandle != NULL, "CreateSemaphore failed with error %lu", GetLastError());
 }
 
 Zenith_Windows_Semaphore::~Zenith_Windows_Semaphore()
 {
-	CloseHandle(m_xHandle);
+	CloseHandle(m_pHandle);
 }
 
 void Zenith_Windows_Semaphore::Wait()
 {
-	DWORD ulResult = WaitForSingleObject(m_xHandle, INFINITE);
+	DWORD ulResult = WaitForSingleObject(m_pHandle, INFINITE);
 	Zenith_Assert(ulResult == WAIT_OBJECT_0, "Failed to wait for semaphore");
 }
 
 bool Zenith_Windows_Semaphore::TryWait()
 {
-	return WaitForSingleObject(m_xHandle, 0) == WAIT_OBJECT_0;
+	return WaitForSingleObject(m_pHandle, 0) == WAIT_OBJECT_0;
 }
 
 bool Zenith_Windows_Semaphore::Signal()
 {
-	const bool bRet = ReleaseSemaphore(m_xHandle, 1, 0) != 0;
+	const bool bRet = ReleaseSemaphore(m_pHandle, 1, 0) != 0;
 	#ifdef ZENITH_ASSERT
 	if (!bRet)
 	{
