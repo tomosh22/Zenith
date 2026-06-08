@@ -100,8 +100,9 @@ namespace
 	}
 
 	// Drain the queued changes and fire the callback for each. Pops one entry
-	// per lock acquisition so the user callback runs unlocked.
-	void DispatchPendingChanges(FileWatcherPlatformData* pData, const FileChangeCallback& pfnCallback)
+	// per lock acquisition so the user callback runs unlocked. pContext is the
+	// opaque pointer handed to Start — passed back as the callback's first arg.
+	void DispatchPendingChanges(FileWatcherPlatformData* pData, FileChangeCallback pfnCallback, void* pContext)
 	{
 		while (true)
 		{
@@ -115,7 +116,7 @@ namespace
 			}
 			if (pfnCallback)
 			{
-				pfnCallback(xChange.first, xChange.second);
+				pfnCallback(pContext, xChange.first, xChange.second);
 			}
 		}
 	}
@@ -132,7 +133,7 @@ Zenith_FileWatcher::~Zenith_FileWatcher()
 	delete static_cast<FileWatcherPlatformData*>(m_pPlatformData);
 }
 
-bool Zenith_FileWatcher::Start(const std::string& strDirectory, bool bRecursive, FileChangeCallback pfnCallback)
+bool Zenith_FileWatcher::Start(const std::string& strDirectory, bool bRecursive, FileChangeCallback pfnCallback, void* pContext)
 {
 	if (m_bRunning)
 	{
@@ -142,6 +143,7 @@ bool Zenith_FileWatcher::Start(const std::string& strDirectory, bool bRecursive,
 	m_strDirectory = strDirectory;
 	m_bRecursive = bRecursive;
 	m_pfnCallback = pfnCallback;
+	m_pCallbackContext = pContext;
 
 	if (!StartPlatform())
 	{
@@ -304,7 +306,7 @@ void Zenith_FileWatcher::UpdatePlatform()
 		nullptr);
 	pData->bPendingRead = (bResult != FALSE);
 
-	DispatchPendingChanges(pData, m_pfnCallback);
+	DispatchPendingChanges(pData, m_pfnCallback, m_pCallbackContext);
 }
 
 #endif // ZENITH_WINDOWS

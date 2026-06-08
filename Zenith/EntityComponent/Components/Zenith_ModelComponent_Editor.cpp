@@ -287,6 +287,30 @@ void Zenith_ModelComponent::RenderModelInstanceMaterialsSection()
 // single mesh index, wiring each slot's assignment callback back through
 // AssignTextureToSlot so drops create a new material instance correctly.
 //-----------------------------------------------------------------------------
+
+// Context for the texture-assign callback (engine convention: NO std::function).
+// Replaces the capturing lambda that closed over `this`, `uMeshIdx` and `eSlot`.
+// The callback fires synchronously inside RenderTextureSlot, so a stack-local
+// context per slot is sufficient.
+namespace
+{
+	struct ModelTextureAssignContext
+	{
+		Zenith_ModelComponent* m_pxComponent;
+		uint32_t m_uMeshIdx;
+		Zenith_EditorMaterialUI::TextureSlotType m_eSlot;
+	};
+}
+
+// Static member (declared in the header) so it can reach the private AssignTextureToSlot —
+// an anonymous-namespace free function here cannot (the free-function-friend gotcha).
+void Zenith_ModelComponent::ModelTextureAssign_OnAssign(void* pContext, const char* szFilePath)
+{
+	const ModelTextureAssignContext* pxCtx =
+		static_cast<const ModelTextureAssignContext*>(pContext);
+	pxCtx->m_pxComponent->AssignTextureToSlot(szFilePath, pxCtx->m_uMeshIdx, pxCtx->m_eSlot);
+}
+
 void Zenith_ModelComponent::RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_MaterialAsset& xMaterial)
 {
 	// Short alias since the enum lives on Zenith_EditorMaterialUI now (was a
@@ -294,16 +318,20 @@ void Zenith_ModelComponent::RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_Ma
 	// brought into local scope via `using namespace`). `using enum` doesn't
 	// apply to unscoped enums, so we just alias the class.
 	using MUI = Zenith_EditorMaterialUI;
-	auto fnAssign = [this, uMeshIdx](MUI::TextureSlotType eSlot) {
-		return [this, uMeshIdx, eSlot](const char* szPath) {
-			AssignTextureToSlot(szPath, uMeshIdx, eSlot);
-		};
-	};
-	g_xEngine.EditorMaterialUI().RenderTextureSlot("Diffuse",            xMaterial, MUI::TEXTURE_SLOT_DIFFUSE,             48.0f, fnAssign(MUI::TEXTURE_SLOT_DIFFUSE));
-	g_xEngine.EditorMaterialUI().RenderTextureSlot("Normal",             xMaterial, MUI::TEXTURE_SLOT_NORMAL,              48.0f, fnAssign(MUI::TEXTURE_SLOT_NORMAL));
-	g_xEngine.EditorMaterialUI().RenderTextureSlot("Roughness/Metallic", xMaterial, MUI::TEXTURE_SLOT_ROUGHNESS_METALLIC,  48.0f, fnAssign(MUI::TEXTURE_SLOT_ROUGHNESS_METALLIC));
-	g_xEngine.EditorMaterialUI().RenderTextureSlot("Occlusion",          xMaterial, MUI::TEXTURE_SLOT_OCCLUSION,           48.0f, fnAssign(MUI::TEXTURE_SLOT_OCCLUSION));
-	g_xEngine.EditorMaterialUI().RenderTextureSlot("Emissive",           xMaterial, MUI::TEXTURE_SLOT_EMISSIVE,            48.0f, fnAssign(MUI::TEXTURE_SLOT_EMISSIVE));
+
+	// One context per slot; the callback fires synchronously inside
+	// RenderTextureSlot, so these stack locals outlive every invocation.
+	ModelTextureAssignContext xDiffuseCtx   = { this, uMeshIdx, MUI::TEXTURE_SLOT_DIFFUSE };
+	ModelTextureAssignContext xNormalCtx    = { this, uMeshIdx, MUI::TEXTURE_SLOT_NORMAL };
+	ModelTextureAssignContext xRMCtx        = { this, uMeshIdx, MUI::TEXTURE_SLOT_ROUGHNESS_METALLIC };
+	ModelTextureAssignContext xOcclusionCtx = { this, uMeshIdx, MUI::TEXTURE_SLOT_OCCLUSION };
+	ModelTextureAssignContext xEmissiveCtx  = { this, uMeshIdx, MUI::TEXTURE_SLOT_EMISSIVE };
+
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Diffuse",            xMaterial, MUI::TEXTURE_SLOT_DIFFUSE,             48.0f, &Zenith_ModelComponent::ModelTextureAssign_OnAssign, &xDiffuseCtx);
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Normal",             xMaterial, MUI::TEXTURE_SLOT_NORMAL,              48.0f, &Zenith_ModelComponent::ModelTextureAssign_OnAssign, &xNormalCtx);
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Roughness/Metallic", xMaterial, MUI::TEXTURE_SLOT_ROUGHNESS_METALLIC,  48.0f, &Zenith_ModelComponent::ModelTextureAssign_OnAssign, &xRMCtx);
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Occlusion",          xMaterial, MUI::TEXTURE_SLOT_OCCLUSION,           48.0f, &Zenith_ModelComponent::ModelTextureAssign_OnAssign, &xOcclusionCtx);
+	g_xEngine.EditorMaterialUI().RenderTextureSlot("Emissive",           xMaterial, MUI::TEXTURE_SLOT_EMISSIVE,            48.0f, &Zenith_ModelComponent::ModelTextureAssign_OnAssign, &xEmissiveCtx);
 }
 
 #endif // ZENITH_TOOLS

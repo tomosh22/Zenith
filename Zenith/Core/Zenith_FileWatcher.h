@@ -3,7 +3,6 @@
 #ifdef ZENITH_TOOLS
 
 #include <string>
-#include <functional>
 
 // File change notification types
 enum class FileChangeType
@@ -15,19 +14,23 @@ enum class FileChangeType
 };
 
 // Callback signature for file change notifications
-// Parameters: file path (relative to watched directory), change type
-using FileChangeCallback = std::function<void(const std::string&, FileChangeType)>;
+// Parameters: opaque caller context (passed through Start), file path
+// (relative to watched directory), change type. std::function is forbidden
+// engine-wide; capturing state must be routed through pContext.
+typedef void (*FileChangeCallback)(void* pContext, const std::string&, FileChangeType);
 
 // Platform-agnostic file watcher interface
 // Watches a directory (and optionally subdirectories) for file changes
 //
 // Usage:
 //   Zenith_FileWatcher watcher;
-//   watcher.Start("C:/dev/shaders", true, [](const std::string& path, FileChangeType type) {
-//       if (type == FileChangeType::Modified) {
-//           // Handle shader modification
-//       }
-//   });
+//   watcher.Start("C:/dev/shaders", true,
+//       [](void* pContext, const std::string& path, FileChangeType type) {
+//           if (type == FileChangeType::Modified) {
+//               // Handle shader modification — recover state from pContext
+//           }
+//       },
+//       pMyContext);
 //
 //   // In main loop:
 //   watcher.Update();
@@ -45,8 +48,9 @@ public:
 	// strDirectory: Directory to watch
 	// bRecursive: Watch subdirectories
 	// pfnCallback: Callback for file changes
+	// pContext: Opaque pointer passed back as the callback's first argument
 	// Returns true if watcher started successfully
-	bool Start(const std::string& strDirectory, bool bRecursive, FileChangeCallback pfnCallback);
+	bool Start(const std::string& strDirectory, bool bRecursive, FileChangeCallback pfnCallback, void* pContext = nullptr);
 
 	// Stop watching
 	void Stop();
@@ -63,7 +67,8 @@ public:
 
 private:
 	std::string m_strDirectory;
-	FileChangeCallback m_pfnCallback;
+	FileChangeCallback m_pfnCallback = nullptr;
+	void* m_pCallbackContext = nullptr;
 	bool m_bRunning = false;
 	bool m_bRecursive = false;
 

@@ -69,11 +69,16 @@ void Flux_ShaderHotReload::Initialise()
 	if (s_bInitialised) return;
 
 	std::string strRoot(SHADER_SOURCE_ROOT);
+	// Non-capturing callback — all state it needs (the static registration
+	// list) lives in file-scope statics reached via the static OnFileChanged,
+	// so no context pointer is required. The captureless lambda decays to a
+	// plain function pointer matching FileChangeCallback.
 	const bool bStarted = s_xFileWatcher.Start(strRoot, true,
-		[](const std::string& strPath, FileChangeType eType)
+		+[](void* /*pContext*/, const std::string& strPath, FileChangeType eType)
 		{
 			OnFileChanged(strPath.c_str(), static_cast<int>(eType));
-		});
+		},
+		nullptr);
 
 	if (!bStarted)
 	{

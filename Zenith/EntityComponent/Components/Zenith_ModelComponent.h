@@ -165,6 +165,12 @@ private:
 	// Helper to load texture and assign to material slot (creates new material instance)
 	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_EditorMaterialUI::TextureSlotType eSlot);
 
+	// Static thunk for Zenith_EditorMaterialUI::TextureAssignCallback (fn-ptr + void* context).
+	// Must be a STATIC MEMBER (not an anon-namespace free function) so it can reach the private
+	// AssignTextureToSlot above; &Zenith_ModelComponent::ModelTextureAssign_OnAssign is a plain
+	// function pointer compatible with the callback type. pContext is a ModelTextureAssignContext*.
+	static void ModelTextureAssign_OnAssign(void* pContext, const char* szFilePath);
+
 	// Per-section helpers that RenderPropertiesPanel dispatches to. Each owns
 	// one logical block of the properties panel (status, drop targets, material
 	// lists, etc.) so the top-level function stays a thin dispatcher.

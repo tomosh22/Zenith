@@ -288,7 +288,8 @@ static void HandleTextureSlotDragDrop(
 	const char* szLabel,
 	Zenith_MaterialAsset& xMaterial,
 	Zenith_EditorMaterialUI::TextureSlotType eSlot,
-	const Zenith_EditorMaterialUI::TextureAssignCallback& pfnOnAssign)
+	Zenith_EditorMaterialUI::TextureAssignCallback pfnOnAssign,
+	void* pOnAssignContext)
 {
 	if (!ImGui::BeginDragDropTarget())
 		return;
@@ -300,7 +301,7 @@ static void HandleTextureSlotDragDrop(
 
 		if (pfnOnAssign)
 		{
-			pfnOnAssign(pFilePayload->m_szFilePath);
+			pfnOnAssign(pOnAssignContext, pFilePayload->m_szFilePath);
 		}
 		else
 		{
@@ -316,7 +317,8 @@ void Zenith_EditorMaterialUI::RenderTextureSlot(
 	Zenith_MaterialAsset& xMaterial,
 	TextureSlotType eSlot,
 	float fPreviewSize,
-	TextureAssignCallback pfnOnAssign)
+	TextureAssignCallback pfnOnAssign,
+	void* pOnAssignContext)
 {
 	ImGui::PushID(szLabel);
 
@@ -349,7 +351,7 @@ void Zenith_EditorMaterialUI::RenderTextureSlot(
 		ImGui::Button("...", ImVec2(fPreviewSize, fPreviewSize));
 	}
 
-	HandleTextureSlotDragDrop(szLabel, xMaterial, eSlot, pfnOnAssign);
+	HandleTextureSlotDragDrop(szLabel, xMaterial, eSlot, pfnOnAssign, pOnAssignContext);
 
 	if (ImGui::IsItemHovered())
 	{

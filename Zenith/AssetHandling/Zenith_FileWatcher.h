@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <functional>
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
@@ -46,7 +45,16 @@ struct FileChangeEvent
 class Zenith_FileWatcher
 {
 public:
-	using ChangeCallback = std::function<void(const FileChangeEvent&)>;
+	// Engine convention: no std::function. A registered callback is a plain
+	// function pointer plus an opaque context pointer passed back to it first.
+	typedef void (*ChangeCallback)(void* pContext, const FileChangeEvent& xEvent);
+
+	// One registered callback: the function pointer and the context to hand it.
+	struct RegisteredCallback
+	{
+		ChangeCallback m_pfn = nullptr;
+		void* m_pContext = nullptr;
+	};
 
 	//--------------------------------------------------------------------------
 	// Lifecycle
@@ -85,9 +93,10 @@ public:
 	/**
 	 * Register a callback for file change events
 	 * @param pfnCallback Function to call when files change
+	 * @param pContext Opaque context pointer passed back to the callback first
 	 * @return Handle for unregistering the callback
 	 */
-	static uint32_t RegisterCallback(ChangeCallback pfnCallback);
+	static uint32_t RegisterCallback(ChangeCallback pfnCallback, void* pContext = nullptr);
 
 	/**
 	 * Unregister a previously registered callback
@@ -149,7 +158,7 @@ private:
 	static Zenith_Mutex s_xEventMutex;
 
 	// Callbacks
-	static Zenith_HashMap<uint32_t, ChangeCallback> s_xCallbacks;
+	static Zenith_HashMap<uint32_t, RegisteredCallback> s_xCallbacks;
 	static uint32_t s_uNextCallbackHandle;
 	static Zenith_Mutex s_xCallbackMutex;
 

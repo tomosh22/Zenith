@@ -15,7 +15,7 @@ bool Zenith_FileWatcher::s_bPaused = false;
 std::string Zenith_FileWatcher::s_strWatchPath;
 Zenith_Vector<FileChangeEvent> Zenith_FileWatcher::s_xPendingEvents;
 Zenith_Mutex Zenith_FileWatcher::s_xEventMutex;
-Zenith_HashMap<uint32_t, Zenith_FileWatcher::ChangeCallback> Zenith_FileWatcher::s_xCallbacks;
+Zenith_HashMap<uint32_t, Zenith_FileWatcher::RegisteredCallback> Zenith_FileWatcher::s_xCallbacks;
 uint32_t Zenith_FileWatcher::s_uNextCallbackHandle = 1;
 Zenith_Mutex Zenith_FileWatcher::s_xCallbackMutex;
 Zenith_HashMap<std::string, uint64_t> Zenith_FileWatcher::s_xFileModTimes;
@@ -103,11 +103,14 @@ void Zenith_FileWatcher::Update()
 // Callbacks
 //=============================================================================
 
-uint32_t Zenith_FileWatcher::RegisterCallback(ChangeCallback pfnCallback)
+uint32_t Zenith_FileWatcher::RegisterCallback(ChangeCallback pfnCallback, void* pContext)
 {
 	Zenith_ScopedMutexLock xLock(s_xCallbackMutex);
 	uint32_t uHandle = s_uNextCallbackHandle++;
-	s_xCallbacks[uHandle] = pfnCallback;
+	RegisteredCallback xRegistered;
+	xRegistered.m_pfn = pfnCallback;
+	xRegistered.m_pContext = pContext;
+	s_xCallbacks[uHandle] = xRegistered;
 	return uHandle;
 }
 
@@ -192,19 +195,23 @@ void Zenith_FileWatcher::ProcessEvents()
 
 void Zenith_FileWatcher::NotifyCallbacks(const FileChangeEvent& xEvent)
 {
-	Zenith_Vector<ChangeCallback> xCallbacksCopy;
+	Zenith_Vector<RegisteredCallback> xCallbacksCopy;
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xCallbackMutex);
-		for (Zenith_HashMap<uint32_t, ChangeCallback>::Iterator xIt(s_xCallbacks); !xIt.Done(); xIt.Next())
+		for (Zenith_HashMap<uint32_t, RegisteredCallback>::Iterator xIt(s_xCallbacks); !xIt.Done(); xIt.Next())
 		{
 			xCallbacksCopy.PushBack(xIt.GetValue());
 		}
 	}
 
-	for (Zenith_Vector<ChangeCallback>::Iterator xIt(xCallbacksCopy); !xIt.Done(); xIt.Next())
+	for (Zenith_Vector<RegisteredCallback>::Iterator xIt(xCallbacksCopy); !xIt.Done(); xIt.Next())
 	{
-		xIt.GetData()(xEvent);
+		const RegisteredCallback& xRegistered = xIt.GetData();
+		if (xRegistered.m_pfn != nullptr)
+		{
+			xRegistered.m_pfn(xRegistered.m_pContext, xEvent);
+		}
 	}
 }
 
