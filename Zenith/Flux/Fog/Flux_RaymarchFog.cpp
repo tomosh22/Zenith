@@ -20,23 +20,6 @@
 #endif
 
 
-// Ray march specific parameters
-struct Flux_RaymarchConstants
-{
-	Zenith_Maths::Vector4 m_xFogColour;        // RGB = fog color, A = unused
-	Zenith_Maths::Vector4 m_xFogParams;        // x = density, y = scattering, z = absorption, w = max distance
-	Zenith_Maths::Vector4 m_xNoiseParams;      // x = scale, y = speed, z = detail, w = time
-	Zenith_Maths::Vector4 m_xHeightParams;     // x = base height, y = falloff, z = unused, w = unused
-	u_int m_uNumSteps;
-	u_int m_uDebugMode;
-	u_int m_uFrameIndex;
-	float m_fPhaseG;                           // Henyey-Greenstein asymmetry: -1=back, 0=isotropic, 0.6=forward
-	float m_fVolShadowBias;                    // Shadow bias for volumetric samples (matches Froxel fog)
-	float m_fVolShadowConeRadius;              // Cone spread radius in shadow space (matches Froxel fog)
-	float m_fAmbientIrradianceRatio;           // Sky/sun light ratio for ambient fog contribution
-	float m_fNoiseWorldScale;                  // World-to-texture coordinate scale for noise sampling
-};
-
 // Debug variables
 DEBUGVAR u_int dbg_uRaymarchSteps = 64;
 DEBUGVAR float dbg_fRaymarchNoiseScale = 0.02f;
@@ -49,9 +32,6 @@ DEBUGVAR float dbg_fRaymarchPhaseG = 0.6f;
 // Volumetric shadow parameters (unified with Froxel fog for consistent shadow softness)
 DEBUGVAR float dbg_fRaymarchShadowBias = 0.001f;       // Shadow bias - prevents self-shadowing artifacts
 DEBUGVAR float dbg_fRaymarchShadowConeRadius = 0.002f; // Cone spread - controls soft shadow edge
-
-// Cached constants for push constant (per-frame transient -- kept file-static).
-static Flux_RaymarchConstants s_xConstants;
 
 void Flux_RaymarchFogImpl::BuildPipelines()
 {
@@ -124,8 +104,8 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 	Flux_VolumeFogConstants& xShared = m_pxVolumeFog->GetSharedConstants();
 
 	// Update constants
-	s_xConstants.m_xFogColour = xShared.m_xFogColour;
-	s_xConstants.m_xFogParams = Zenith_Maths::Vector4(
+	m_xConstants.m_xFogColour = xShared.m_xFogColour;
+	m_xConstants.m_xFogParams = Zenith_Maths::Vector4(
 		xShared.m_fDensity,
 		xShared.m_fScatteringCoeff,
 		xShared.m_fAbsorptionCoeff,
@@ -139,33 +119,33 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 	s_fTime += fDeltaTime * dbg_fRaymarchNoiseSpeed;
 	s_fTime = std::fmod(s_fTime, 1000.0f);  // Wrap every 1000 seconds to maintain precision
 
-	s_xConstants.m_xNoiseParams = Zenith_Maths::Vector4(
+	m_xConstants.m_xNoiseParams = Zenith_Maths::Vector4(
 		dbg_fRaymarchNoiseScale,
 		dbg_fRaymarchNoiseSpeed,
 		1.0f,  // detail
 		s_fTime
 	);
 
-	s_xConstants.m_xHeightParams = Zenith_Maths::Vector4(
+	m_xConstants.m_xHeightParams = Zenith_Maths::Vector4(
 		0.0f,  // base height
 		dbg_fRaymarchHeightFalloff,
 		0.0f,
 		0.0f
 	);
 
-	s_xConstants.m_uNumSteps = dbg_uRaymarchSteps;
+	m_xConstants.m_uNumSteps = dbg_uRaymarchSteps;
 
 	// Check current debug mode
 	extern u_int dbg_uVolFogDebugMode;
-	s_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
-	s_xConstants.m_uFrameIndex = m_pxFluxRenderer->GetFrameCounter();
-	s_xConstants.m_fPhaseG = dbg_fRaymarchPhaseG;
+	m_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
+	m_xConstants.m_uFrameIndex = m_pxFluxRenderer->GetFrameCounter();
+	m_xConstants.m_fPhaseG = dbg_fRaymarchPhaseG;
 
 	// Volumetric shadow parameters (unified with Froxel fog for consistent shadow softness)
-	s_xConstants.m_fVolShadowBias = dbg_fRaymarchShadowBias;
-	s_xConstants.m_fVolShadowConeRadius = dbg_fRaymarchShadowConeRadius;
-	s_xConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
-	s_xConstants.m_fNoiseWorldScale = xShared.m_fNoiseWorldScale;
+	m_xConstants.m_fVolShadowBias = dbg_fRaymarchShadowBias;
+	m_xConstants.m_fVolShadowConeRadius = dbg_fRaymarchShadowConeRadius;
+	m_xConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
+	m_xConstants.m_fNoiseWorldScale = xShared.m_fNoiseWorldScale;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xPipeline);
 
@@ -188,7 +168,7 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 		xBinder.BindCBV(m_xShader, s_aszShadowMatrixNames[u], &m_pxShadows->GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xBinder.BindDrawConstants(m_xShader, "RaymarchConstants", &s_xConstants, sizeof(Flux_RaymarchConstants));
+	xBinder.BindDrawConstants(m_xShader, "RaymarchConstants", &m_xConstants, sizeof(Flux_RaymarchConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

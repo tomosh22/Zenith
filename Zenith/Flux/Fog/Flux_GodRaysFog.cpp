@@ -16,17 +16,6 @@
 #endif
 
 
-// God rays specific parameters
-struct Flux_GodRaysConstants
-{
-	Zenith_Maths::Vector4 m_xLightScreenPos_Pad;  // xy = light screen pos (0-1), zw = unused
-	Zenith_Maths::Vector4 m_xParams;              // x = decay, y = exposure, z = density, w = weight
-	u_int m_uNumSamples;
-	u_int m_uDebugMode;
-	float m_fPad0;
-	float m_fPad1;
-};
-
 // Debug variables
 DEBUGVAR u_int dbg_uGodRaysSamples = 64;
 // God rays decay factor per sample along radial blur
@@ -39,9 +28,6 @@ DEBUGVAR float dbg_fGodRaysDecay = 0.97f;
 DEBUGVAR float dbg_fGodRaysExposure = 0.3f;
 DEBUGVAR float dbg_fGodRaysDensity = 1.0f;
 DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
-
-// Cached constants for push constant (per-frame transient -- kept file-static).
-static Flux_GodRaysConstants s_xConstants;
 
 
 void Flux_GodRaysFogImpl::BuildPipelines()
@@ -134,13 +120,13 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 	}
 
 	// Update constants
-	s_xConstants.m_xLightScreenPos_Pad = Zenith_Maths::Vector4(xSunScreenPos.x, xSunScreenPos.y, 0.0f, 0.0f);
-	s_xConstants.m_xParams = Zenith_Maths::Vector4(dbg_fGodRaysDecay, dbg_fGodRaysExposure, dbg_fGodRaysDensity, dbg_fGodRaysWeight);
-	s_xConstants.m_uNumSamples = dbg_uGodRaysSamples;
+	m_xConstants.m_xLightScreenPos_Pad = Zenith_Maths::Vector4(xSunScreenPos.x, xSunScreenPos.y, 0.0f, 0.0f);
+	m_xConstants.m_xParams = Zenith_Maths::Vector4(dbg_fGodRaysDecay, dbg_fGodRaysExposure, dbg_fGodRaysDensity, dbg_fGodRaysWeight);
+	m_xConstants.m_uNumSamples = dbg_uGodRaysSamples;
 
 	// Check current debug mode
 	extern u_int dbg_uVolFogDebugMode;
-	s_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
+	m_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xPipeline);
 
@@ -151,7 +137,7 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 	xBinder.BindCBV(m_xShader, "FrameConstants", &m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(m_xShader, "g_xDepthTex", m_pxFluxGraphics->GetDepthStencilSRV());
 
-	xBinder.BindDrawConstants(m_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.BindDrawConstants(m_xShader, "GodRaysConstants", &m_xConstants, sizeof(Flux_GodRaysConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

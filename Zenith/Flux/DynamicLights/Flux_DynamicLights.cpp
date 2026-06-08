@@ -32,17 +32,9 @@
 // =====================================================================
 
 // ========== INSTANCE STRUCT (mirrors Common.Lighting.slang) ==========
-
-// 64 bytes — sized to spot's worst-case footprint so all light types
-// share one struct. Padding fields stay zero on CPU staging.
-struct LightInstance
-{
-	Zenith_Maths::Vector4 m_xPositionRange;   // xyz=pos, w=range
-	Zenith_Maths::Vector4 m_xColorIntensity;  // xyz=color, w=intensity
-	Zenith_Maths::Vector4 m_xDirectionInner;  // xyz=dir, w=cos(inner)
-	Zenith_Maths::Vector4 m_xTypeOuter;       // x=cos(outer), y=type tag, zw=pad
-};
-static_assert(sizeof(LightInstance) == 64, "LightInstance must be 64 bytes — must match Common.Lighting.slang LightInstance");
+//
+// LightInstance now lives on Flux_DynamicLightsImpl (in the header) so the
+// CPU staging array (m_axLightStaging) can be an Impl member.
 
 // Light type tags must match Common.Lighting.slang LIGHT_TYPE_*.
 static constexpr float fLIGHT_TYPE_TAG_POINT       = 0.0f;
@@ -54,8 +46,8 @@ static constexpr float fLIGHT_TYPE_TAG_DIRECTIONAL = 2.0f;
 
 // Cached frustum for culling (updated each frame).
 
-// CPU staging — flat array of all light types, packed by GatherLightsFromScene.
-static LightInstance s_axLightStaging[Flux_DynamicLightsImpl::uMAX_LIGHTS];
+// CPU staging now lives on Flux_DynamicLightsImpl::m_axLightStaging — a flat
+// array of all light types, packed by GatherLightsFromScene.
 
 // GPU-side: host-visible, frame-indexed. Host-visible is correct here
 // because this buffer is CPU-uploaded each frame (unlike the cluster
@@ -149,21 +141,9 @@ static bool IsConeFrustumVisible(
 }
 
 // ========== PRIORITY SORT ==========
-
-// Used when total lights exceed uMAX_LIGHTS — pick the highest-priority
-// uMAX_LIGHTS to keep, drop the rest.
-struct LightSortKey
-{
-	float m_fPriority;
-	u_int m_uIndex;
-
-	bool operator<(const LightSortKey& other) const
-	{
-		// Sort descending by priority — highest first.
-		return m_fPriority > other.m_fPriority;
-	}
-};
-static Zenith_Vector<LightSortKey> s_xSortBuffer;
+//
+// LightSortKey now lives on Flux_DynamicLightsImpl (in the header) so the
+// priority sort scratch buffer (m_xSortBuffer) can be an Impl member.
 
 static float CalculateLightPriority(const Flux_GraphicsImpl& xFluxGraphics,
 	const Zenith_Maths::Vector3& xLightPos, float fIntensity, float fRange)
@@ -189,7 +169,7 @@ void Flux_DynamicLightsImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemo
 	m_pxVulkanMemory->InitialiseDynamicReadWriteBuffer(xZeroed.GetDataPointer(), ulLightBufferSize, m_xLightBuffer);
 
 	// Pre-allocate priority sort buffer to avoid per-frame allocs.
-	s_xSortBuffer.Reserve(uMAX_LIGHTS * 2);
+	m_xSortBuffer.Reserve(uMAX_LIGHTS * 2);
 
 	m_uLightCount = 0;
 
@@ -223,34 +203,34 @@ void Flux_DynamicLightsImpl::Reset()
 
 // Stage helpers — pack each accepted light into the unified buffer.
 
-static void StagePointLight(u_int& uLightCount, const Zenith_Maths::Vector3& xPosition, float fRange,
+static void StagePointLight(Flux_DynamicLightsImpl& xImpl, u_int& uLightCount, const Zenith_Maths::Vector3& xPosition, float fRange,
 	const Zenith_Maths::Vector3& xColor, float fIntensity)
 {
 	if (uLightCount >= Flux_DynamicLightsImpl::uMAX_LIGHTS) return;
-	LightInstance& xOut = s_axLightStaging[uLightCount++];
+	LightInstance& xOut = xImpl.m_axLightStaging[uLightCount++];
 	xOut.m_xPositionRange  = { xPosition.x, xPosition.y, xPosition.z, fRange };
 	xOut.m_xColorIntensity = { xColor.x, xColor.y, xColor.z, fIntensity };
 	xOut.m_xDirectionInner = { 0.0f, 0.0f, 0.0f, 0.0f };
 	xOut.m_xTypeOuter      = { 0.0f, fLIGHT_TYPE_TAG_POINT, 0.0f, 0.0f };
 }
 
-static void StageSpotLight(u_int& uLightCount, const Zenith_Maths::Vector3& xPosition, float fRange,
+static void StageSpotLight(Flux_DynamicLightsImpl& xImpl, u_int& uLightCount, const Zenith_Maths::Vector3& xPosition, float fRange,
 	const Zenith_Maths::Vector3& xColor, float fIntensity,
 	const Zenith_Maths::Vector3& xDirection, float fCosInner, float fCosOuter)
 {
 	if (uLightCount >= Flux_DynamicLightsImpl::uMAX_LIGHTS) return;
-	LightInstance& xOut = s_axLightStaging[uLightCount++];
+	LightInstance& xOut = xImpl.m_axLightStaging[uLightCount++];
 	xOut.m_xPositionRange  = { xPosition.x, xPosition.y, xPosition.z, fRange };
 	xOut.m_xColorIntensity = { xColor.x, xColor.y, xColor.z, fIntensity };
 	xOut.m_xDirectionInner = { xDirection.x, xDirection.y, xDirection.z, fCosInner };
 	xOut.m_xTypeOuter      = { fCosOuter, fLIGHT_TYPE_TAG_SPOT, 0.0f, 0.0f };
 }
 
-static void StageDirectionalLight(u_int& uLightCount, const Zenith_Maths::Vector3& xDirection,
+static void StageDirectionalLight(Flux_DynamicLightsImpl& xImpl, u_int& uLightCount, const Zenith_Maths::Vector3& xDirection,
 	const Zenith_Maths::Vector3& xColor, float fIntensity)
 {
 	if (uLightCount >= Flux_DynamicLightsImpl::uMAX_LIGHTS) return;
-	LightInstance& xOut = s_axLightStaging[uLightCount++];
+	LightInstance& xOut = xImpl.m_axLightStaging[uLightCount++];
 	xOut.m_xPositionRange  = { 0.0f, 0.0f, 0.0f, 0.0f };
 	xOut.m_xColorIntensity = { xColor.x, xColor.y, xColor.z, fIntensity };
 	xOut.m_xDirectionInner = { xDirection.x, xDirection.y, xDirection.z, 0.0f };
@@ -289,19 +269,19 @@ struct PendingLight
 	}
 };
 
-static void StagePending(u_int& uLightCount, const PendingLight& xL)
+static void StagePending(Flux_DynamicLightsImpl& xImpl, u_int& uLightCount, const PendingLight& xL)
 {
 	switch (xL.m_eType)
 	{
 	case PendingLight::POINT:
-		StagePointLight(uLightCount, xL.m_xPosition, xL.m_fRange, xL.m_xColor, xL.m_fIntensity);
+		StagePointLight(xImpl, uLightCount, xL.m_xPosition, xL.m_fRange, xL.m_xColor, xL.m_fIntensity);
 		break;
 	case PendingLight::SPOT:
-		StageSpotLight(uLightCount, xL.m_xPosition, xL.m_fRange, xL.m_xColor, xL.m_fIntensity,
+		StageSpotLight(xImpl, uLightCount, xL.m_xPosition, xL.m_fRange, xL.m_xColor, xL.m_fIntensity,
 			xL.m_xDirection, xL.m_fCosInner, xL.m_fCosOuter);
 		break;
 	case PendingLight::DIRECTIONAL:
-		StageDirectionalLight(uLightCount, xL.m_xDirection, xL.m_xColor, xL.m_fIntensity);
+		StageDirectionalLight(xImpl, uLightCount, xL.m_xDirection, xL.m_xColor, xL.m_fIntensity);
 		break;
 	}
 }
@@ -386,7 +366,7 @@ static std::optional<PendingLight> ProcessDirectionalLightCandidate(const Zenith
 	return xL;
 }
 
-// Stage all pending lights into s_axLightStaging directional-first.
+// Stage all pending lights into xImpl.m_axLightStaging directional-first.
 //
 // CRITICAL INVARIANT: directional-first ordering must hold both before AND
 // after priority trimming. The clustering compute shader iterates the
@@ -400,7 +380,7 @@ static std::optional<PendingLight> ProcessDirectionalLightCandidate(const Zenith
 // Under the cap: stage in arrival order, directional-first.
 // Over the cap: priority-sort descending, keep the top uMAX_LIGHTS, then
 // stage that subset directional-first.
-static void StageLightsWithPriority(const Flux_GraphicsImpl& xFluxGraphics, u_int& uLightCount,
+static void StageLightsWithPriority(Flux_DynamicLightsImpl& xImpl, const Flux_GraphicsImpl& xFluxGraphics, u_int& uLightCount,
 	const Zenith_Vector<PendingLight>& xPending, u_int uTotal)
 {
 	const u_int uMAX_LIGHTS = Flux_DynamicLightsImpl::uMAX_LIGHTS;
@@ -408,29 +388,29 @@ static void StageLightsWithPriority(const Flux_GraphicsImpl& xFluxGraphics, u_in
 	if (uTotal <= uMAX_LIGHTS)
 	{
 		for (u_int i = 0; i < uTotal; ++i)
-			if (xPending.Get(i).m_eType == PendingLight::DIRECTIONAL) StagePending(uLightCount, xPending.Get(i));
+			if (xPending.Get(i).m_eType == PendingLight::DIRECTIONAL) StagePending(xImpl, uLightCount, xPending.Get(i));
 		for (u_int i = 0; i < uTotal; ++i)
-			if (xPending.Get(i).m_eType != PendingLight::DIRECTIONAL) StagePending(uLightCount, xPending.Get(i));
+			if (xPending.Get(i).m_eType != PendingLight::DIRECTIONAL) StagePending(xImpl, uLightCount, xPending.Get(i));
 		return;
 	}
 
-	s_xSortBuffer.Clear();
+	xImpl.m_xSortBuffer.Clear();
 	for (u_int i = 0; i < uTotal; ++i)
 	{
-		s_xSortBuffer.PushBack({ xPending.Get(i).GetSortPriority(xFluxGraphics), i });
+		xImpl.m_xSortBuffer.PushBack({ xPending.Get(i).GetSortPriority(xFluxGraphics), i });
 	}
-	std::sort(s_xSortBuffer.GetDataPointer(),
-			  s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
+	std::sort(xImpl.m_xSortBuffer.GetDataPointer(),
+			  xImpl.m_xSortBuffer.GetDataPointer() + xImpl.m_xSortBuffer.GetSize());
 
 	for (u_int i = 0; i < uMAX_LIGHTS; ++i)
 	{
-		const PendingLight& xL = xPending.Get(s_xSortBuffer.Get(i).m_uIndex);
-		if (xL.m_eType == PendingLight::DIRECTIONAL) StagePending(uLightCount, xL);
+		const PendingLight& xL = xPending.Get(xImpl.m_xSortBuffer.Get(i).m_uIndex);
+		if (xL.m_eType == PendingLight::DIRECTIONAL) StagePending(xImpl, uLightCount, xL);
 	}
 	for (u_int i = 0; i < uMAX_LIGHTS; ++i)
 	{
-		const PendingLight& xL = xPending.Get(s_xSortBuffer.Get(i).m_uIndex);
-		if (xL.m_eType != PendingLight::DIRECTIONAL) StagePending(uLightCount, xL);
+		const PendingLight& xL = xPending.Get(xImpl.m_xSortBuffer.Get(i).m_uIndex);
+		if (xL.m_eType != PendingLight::DIRECTIONAL) StagePending(xImpl, uLightCount, xL);
 	}
 
 	const u_int uDropped = uTotal - uMAX_LIGHTS;
@@ -447,12 +427,12 @@ static void StageLightsWithPriority(const Flux_GraphicsImpl& xFluxGraphics, u_in
 #ifdef ZENITH_ASSERT
 namespace
 {
-	void AssertDirectionalFirstInvariant(u_int uLightCount)
+	void AssertDirectionalFirstInvariant(const Flux_DynamicLightsImpl& xImpl, u_int uLightCount)
 	{
 		bool bSeenNonDirectional = false;
 		for (u_int i = 0; i < uLightCount; ++i)
 		{
-			const bool bIsDirectional = s_axLightStaging[i].m_xTypeOuter.y == fLIGHT_TYPE_TAG_DIRECTIONAL;
+			const bool bIsDirectional = xImpl.m_axLightStaging[i].m_xTypeOuter.y == fLIGHT_TYPE_TAG_DIRECTIONAL;
 			if (!bIsDirectional)
 			{
 				bSeenNonDirectional = true;
@@ -515,10 +495,10 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 		if (xCandidate.has_value()) xPending.PushBack(*xCandidate);
 	}
 
-	StageLightsWithPriority(*m_pxFluxGraphics, m_uLightCount, xPending, xPending.GetSize());
+	StageLightsWithPriority(*this, *m_pxFluxGraphics, m_uLightCount, xPending, xPending.GetSize());
 
 #ifdef ZENITH_ASSERT
-	AssertDirectionalFirstInvariant(m_uLightCount);
+	AssertDirectionalFirstInvariant(*this, m_uLightCount);
 #endif
 
 	// Upload to GPU. Flux_MemoryManager::UploadBufferData handles the
@@ -528,7 +508,7 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 	{
 		m_pxVulkanMemory->UploadBufferData(
 			m_xLightBuffer.GetBuffer().m_xVRAMHandle,
-			s_axLightStaging,
+			m_axLightStaging,
 			m_uLightCount * sizeof(LightInstance));
 	}
 }

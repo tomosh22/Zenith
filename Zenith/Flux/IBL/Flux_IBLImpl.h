@@ -86,6 +86,16 @@ public:
 	static void ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData);
 	static void ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData);
 
+	// Per-pass user data struct -- small POD holding the (mip, face) the pass
+	// targets. Pointer-stable per-pass storage (m_axPrefilterPassData below)
+	// lets the graph hold a &element as void* without lifetime concerns; the
+	// owning Impl outlives the graph.
+	struct IBLPrefilterPassData
+	{
+		u_int m_uMip;
+		u_int m_uFace;
+	};
+
 private:
 	void CreateRenderTargets();
 	void DestroyRenderTargets();
@@ -138,4 +148,11 @@ public:
 	Flux_PassHandle            m_xBRDFLUTPassHandle = {};
 	Flux_PassHandle            m_axIrradianceFacePassHandles[6] = {};
 	Flux_PassHandle            m_axPrefilterMipFacePassHandles[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
+
+	// Pointer-stable per-pass user data. Populated + registered with the graph
+	// in SetupRenderGraph; the graph hands these back to the Execute*Pass
+	// trampolines as void*. Members (not file-static) so they carry no
+	// module-scope static; the Impl outlives any graph that points at them.
+	u_int                      m_auIrradianceFaceData[6] = { 0, 1, 2, 3, 4, 5 };
+	IBLPrefilterPassData       m_axPrefilterPassData[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
 };

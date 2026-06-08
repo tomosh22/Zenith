@@ -2,8 +2,6 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Decals/Flux_DecalsImpl.h"
-#include "Flux/Decals/Flux_DecalsImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -36,42 +34,12 @@
 // color write masks.
 // =====================================================================
 
-// ===== INSTANCE STRUCT (mirrors Flux_Decals_Apply.slang) =====
-
-// 160 bytes. xyz/w packing keeps std430 alignment clean. Reserved slots
-// are intentional — adding fields without breaking the size assert is a
-// readability win when iterating.
-struct DecalInstance
-{
-	Zenith_Maths::Matrix4 m_xWorld;          // 64 — unit-cube-local -> world (T * R * S)
-	Zenith_Maths::Matrix4 m_xWorldInverse;   // 64 — world -> unit-cube-local
-	// xyz = unit-length projection axis (surface normal at hit); w = fade opacity.
-	// Packed into one float4 for std430 alignment, not because the two are one concept.
-	Zenith_Maths::Vector4 m_xAxisOpacity;    // 16
-	Zenith_Maths::Vector4 m_xParams;         // 16 — x = normal-alignment threshold; yzw reserved
-};
-static_assert(sizeof(DecalInstance) == 160, "DecalInstance must match Flux_Decals_Apply.slang");
-
 // ===== STATIC STATE =====
-
-
-// CPU-side pool. Ring buffer for slot recycling — m_uNextSlot tracks the
-// next slot to overwrite when SpawnDecal is called.
-struct CpuDecalSlot
-{
-	bool                  m_bActive            = false;
-	Zenith_Maths::Vector3 m_xPosition;
-	Zenith_Maths::Vector3 m_xNormal;           // unit-length projection axis
-	float                 m_fSize              = 0.0f;
-	float                 m_fInitialLifetime   = 0.0f;
-	float                 m_fRemainingLifetime = 0.0f;
-	DecalInstance         m_xInstance{};
-};
-static CpuDecalSlot s_axDecalSlots[Flux_DecalsImpl::uMAX_DECALS];
-
-// Dense GPU staging — packed at upload time so SV_InstanceID indexes
-// 0..uActiveDecalCount-1 contiguously regardless of CPU ring layout.
-static DecalInstance s_axDecalStaging[Flux_DecalsImpl::uMAX_DECALS];
+//
+// DecalInstance + CpuDecalSlot (and the dense-staging / CPU-ring arrays that
+// were s_axDecalStaging / s_axDecalSlots) now live on Flux_DecalsImpl — see
+// Flux_DecalsImpl.h. The module-scope statics were relocated to instance
+// members (m_axDecalStaging / m_axDecalSlots); the struct layouts are unchanged.
 
 // Default tuning. The normal-alignment threshold gates leakage onto
 // perpendicular surfaces inside the decal volume — 0.3 ≈ 70°, beyond
@@ -152,12 +120,15 @@ static void BuildDecalInstance(const Zenith_Maths::Vector3& xPosition,
 // number of active decals after the tick. Also queues a debug sphere
 // per active decal via Flux_Primitives — primitives are cleared each
 // frame, so re-queuing per-frame is the right pattern.
-static u_int TickAndPackDense(float fDt)
+//
+// Promoted to a Flux_DecalsImpl member so it reads/writes the now-member
+// ring pool (m_axDecalSlots) + staging array (m_axDecalStaging) directly.
+u_int Flux_DecalsImpl::TickAndPackDense(float fDt)
 {
 	u_int uActive = 0;
-	for (u_int u = 0; u < Flux_DecalsImpl::uMAX_DECALS; ++u)
+	for (u_int u = 0; u < uMAX_DECALS; ++u)
 	{
-		CpuDecalSlot& xSlot = s_axDecalSlots[u];
+		CpuDecalSlot& xSlot = m_axDecalSlots[u];
 		if (!xSlot.m_bActive)
 			continue;
 
@@ -186,7 +157,7 @@ static u_int TickAndPackDense(float fDt)
 		}
 #endif
 
-		s_axDecalStaging[uActive] = xSlot.m_xInstance;
+		m_axDecalStaging[uActive] = xSlot.m_xInstance;
 		++uActive;
 	}
 	return uActive;
@@ -289,7 +260,7 @@ void Flux_DecalsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swa
 
 	// CPU pool starts empty.
 	for (u_int u = 0; u < uMAX_DECALS; ++u)
-		s_axDecalSlots[u].m_bActive = false;
+		m_axDecalSlots[u].m_bActive = false;
 	m_uNextSlot         = 0;
 	m_uActiveDecalCount = 0;
 
@@ -368,7 +339,7 @@ void Flux_DecalsImpl::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 	// Pick the next slot in the ring. If the slot was active, we're
 	// recycling — the active count stays the same. Otherwise we grow.
 	const u_int uSlot = m_uNextSlot;
-	CpuDecalSlot& xSlot = s_axDecalSlots[uSlot];
+	CpuDecalSlot& xSlot = m_axDecalSlots[uSlot];
 	const bool bWasActive = xSlot.m_bActive;
 
 	xSlot.m_bActive            = true;
@@ -457,14 +428,15 @@ static void PrepareDecals(void*)
 	const u_int uPriorActive = xDecals.m_uActiveDecalCount;
 
 	// Tick lifetimes + pack active decals into the dense staging array.
-	const u_int uActive = TickAndPackDense(fDt);
+	// Reuses the already-cached Decals() instance — no new g_xEngine reach.
+	const u_int uActive = xDecals.TickAndPackDense(fDt);
 	xDecals.m_uActiveDecalCount = uActive;
 
 	if (uActive > 0)
 	{
 		xDecals.m_pxVulkanMemory->UploadBufferData(
 			xDecals.m_xDecalBuffer.GetBuffer().m_xVRAMHandle,
-			s_axDecalStaging,
+			xDecals.m_axDecalStaging,
 			uActive * sizeof(DecalInstance));
 	}
 
@@ -532,7 +504,7 @@ u_int Flux_DecalsImpl::GetActiveCountForTest()
 Flux_DecalsImpl::TestSlotView Flux_DecalsImpl::GetSlotForTest(u_int uSlotIndex)
 {
 	Zenith_Assert(uSlotIndex < uMAX_DECALS, "Flux_DecalsImpl::GetSlotForTest: index %u >= %u", uSlotIndex, uMAX_DECALS);
-	const CpuDecalSlot& xSlot = s_axDecalSlots[uSlotIndex];
+	const CpuDecalSlot& xSlot = m_axDecalSlots[uSlotIndex];
 	TestSlotView xView;
 	xView.m_xPosition          = xSlot.m_xPosition;
 	xView.m_xNormal            = xSlot.m_xNormal;
@@ -544,7 +516,7 @@ Flux_DecalsImpl::TestSlotView Flux_DecalsImpl::GetSlotForTest(u_int uSlotIndex)
 void Flux_DecalsImpl::ResetForTest()
 {
 	for (u_int u = 0; u < uMAX_DECALS; ++u)
-		s_axDecalSlots[u].m_bActive = false;
+		m_axDecalSlots[u].m_bActive = false;
 	m_uNextSlot         = 0;
 	m_uActiveDecalCount = 0;
 }

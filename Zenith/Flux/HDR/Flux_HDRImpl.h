@@ -110,6 +110,14 @@ public:
 	Flux_RenderGraph*         m_pxGraph = nullptr;
 	bool                      m_bAutoExposureWasEnabled = false;
 
+	// Strongly-typed per-pass user data fed to AddPass(... , void*): each bloom
+	// downsample / upsample pass gets &m_axBloom*UserData[i]. Stored here (rather
+	// than module-scope statics) so the pointers stay stable for the graph's
+	// lifetime — the Impl is engine-owned and outlives the graph. The Execute*
+	// trampolines recover the index purely via pUserData.
+	u_int                     m_axBloomMipUserData[5]      = { 0, 1, 2, 3, 4 };
+	u_int                     m_axBloomUpsampleUserData[4] = { 0, 1, 2, 3 };
+
 	Flux_Pipeline             m_xToneMappingPipeline;
 	Flux_Pipeline             m_xBloomDownsamplePipeline;
 	Flux_Pipeline             m_xBloomUpsamplePipeline;

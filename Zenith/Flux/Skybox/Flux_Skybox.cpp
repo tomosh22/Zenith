@@ -18,39 +18,9 @@
 #endif
 
 // Phase 7g: subsystem state moved to Flux_SkyboxImpl held by Zenith_Engine.
-
-// Solid colour override constants
-struct SkyboxOverrideConstants
-{
-	Zenith_Maths::Vector4 m_xColour;
-};
-static SkyboxOverrideConstants s_xSolidColourConstants;
-
-// Atmosphere constants buffer structure
-struct AtmosphereConstants
-{
-	// Scattering coefficients
-	Zenith_Maths::Vector4 m_xRayleighScatter;      // RGB coefficients, W = scale height
-	Zenith_Maths::Vector4 m_xMieScatter;           // RGB = scatter, W = scale height
-
-	// Planet parameters
-	float m_fPlanetRadius;
-	float m_fAtmosphereRadius;
-	float m_fMieG;                                   // Henyey-Greenstein asymmetry
-	float m_fSunIntensity;
-
-	// Configuration
-	float m_fRayleighScale;
-	float m_fMieScale;
-	float m_fAerialPerspectiveStrength;
-	u_int m_uDebugMode;
-
-	// Ray march settings
-	u_int m_uSkySamples;
-	u_int m_uLightSamples;
-	Zenith_Maths::Vector2 m_xPad;
-};
-static AtmosphereConstants s_xAtmosphereConstants;
+// AtmosphereConstants / SkyboxOverrideConstants CB structs + their scratch
+// instances now live on Flux_SkyboxImpl (m_xAtmosphereConstants /
+// m_xSolidColourConstants); see Flux_SkyboxImpl.h.
 
 // Debug variables
 u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
@@ -158,8 +128,8 @@ void Flux_SkyboxImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHD
 
 	// Atmosphere & solid-colour CB allocations are one-time — kept in
 	// Initialise so hot-reload's BuildPipelines() doesn't leak them.
-	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
-	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&this->m_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
+	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&this->m_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
 
 	BuildPipelines();
 
@@ -243,38 +213,38 @@ static void PreExecuteSkybox(void*)
 	// Upload buffer data sequentially before parallel recording
 	if (!xOpts.m_bSkyboxEnabled)
 	{
-		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
-		xSkybox.m_pxVulkanMemory->UploadBufferData(xSkybox.m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
+		xSkybox.m_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
+		xSkybox.m_pxVulkanMemory->UploadBufferData(xSkybox.m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &xSkybox.m_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
 	else if (xSkybox.IsAtmosphereEnabled())
 	{
-		s_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
+		xSkybox.m_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::afRAYLEIGH_SCATTER[0],
 			AtmosphereConfig::afRAYLEIGH_SCATTER[1],
 			AtmosphereConfig::afRAYLEIGH_SCATTER[2],
 			AtmosphereConfig::fRAYLEIGH_SCALE_HEIGHT);
 
-		s_xAtmosphereConstants.m_xMieScatter = Zenith_Maths::Vector4(
+		xSkybox.m_xAtmosphereConstants.m_xMieScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::fMIE_SCATTER,
 			AtmosphereConfig::fMIE_SCATTER,
 			AtmosphereConfig::fMIE_SCATTER,
 			AtmosphereConfig::fMIE_SCALE_HEIGHT);
 
-		s_xAtmosphereConstants.m_fPlanetRadius = AtmosphereConfig::fEARTH_RADIUS;
-		s_xAtmosphereConstants.m_fAtmosphereRadius = AtmosphereConfig::fATMOSPHERE_RADIUS;
-		s_xAtmosphereConstants.m_fMieG = xSkybox.GetMieG();
-		s_xAtmosphereConstants.m_fSunIntensity = xSkybox.GetSunIntensity();
+		xSkybox.m_xAtmosphereConstants.m_fPlanetRadius = AtmosphereConfig::fEARTH_RADIUS;
+		xSkybox.m_xAtmosphereConstants.m_fAtmosphereRadius = AtmosphereConfig::fATMOSPHERE_RADIUS;
+		xSkybox.m_xAtmosphereConstants.m_fMieG = xSkybox.GetMieG();
+		xSkybox.m_xAtmosphereConstants.m_fSunIntensity = xSkybox.GetSunIntensity();
 
-		s_xAtmosphereConstants.m_fRayleighScale = xSkybox.GetRayleighScale();
-		s_xAtmosphereConstants.m_fMieScale = xSkybox.GetMieScale();
-		s_xAtmosphereConstants.m_fAerialPerspectiveStrength = xSkybox.GetAerialPerspectiveStrength();
-		s_xAtmosphereConstants.m_uDebugMode = dbg_uSkyboxDebugMode;
+		xSkybox.m_xAtmosphereConstants.m_fRayleighScale = xSkybox.GetRayleighScale();
+		xSkybox.m_xAtmosphereConstants.m_fMieScale = xSkybox.GetMieScale();
+		xSkybox.m_xAtmosphereConstants.m_fAerialPerspectiveStrength = xSkybox.GetAerialPerspectiveStrength();
+		xSkybox.m_xAtmosphereConstants.m_uDebugMode = dbg_uSkyboxDebugMode;
 
-		s_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
-		s_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
-		s_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
+		xSkybox.m_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
+		xSkybox.m_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
+		xSkybox.m_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
 
-		xSkybox.m_pxVulkanMemory->UploadBufferData(xSkybox.m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
+		xSkybox.m_pxVulkanMemory->UploadBufferData(xSkybox.m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &xSkybox.m_xAtmosphereConstants, sizeof(AtmosphereConstants));
 	}
 }
 

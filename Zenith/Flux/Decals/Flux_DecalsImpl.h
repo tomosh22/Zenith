@@ -8,6 +8,40 @@
 class Zenith_TextureAsset;
 class Flux_RenderGraph;
 
+// ===== INSTANCE STRUCT (mirrors Flux_Decals_Apply.slang) =====
+//
+// 160 bytes. xyz/w packing keeps std430 alignment clean. Reserved slots
+// are intentional — adding fields without breaking the size assert is a
+// readability win when iterating.
+//
+// Lives here (not in the .cpp) so the dense GPU staging array can be a
+// Flux_DecalsImpl member; the layout is unchanged from when it was a
+// .cpp-local struct.
+struct DecalInstance
+{
+	Zenith_Maths::Matrix4 m_xWorld;          // 64 — unit-cube-local -> world (T * R * S)
+	Zenith_Maths::Matrix4 m_xWorldInverse;   // 64 — world -> unit-cube-local
+	// xyz = unit-length projection axis (surface normal at hit); w = fade opacity.
+	// Packed into one float4 for std430 alignment, not because the two are one concept.
+	Zenith_Maths::Vector4 m_xAxisOpacity;    // 16
+	Zenith_Maths::Vector4 m_xParams;         // 16 — x = normal-alignment threshold; yzw reserved
+};
+static_assert(sizeof(DecalInstance) == 160, "DecalInstance must match Flux_Decals_Apply.slang");
+
+// CPU-side pool slot. Ring buffer for slot recycling — m_uNextSlot tracks the
+// next slot to overwrite when SpawnDecal is called. Lives here (not in the
+// .cpp) so the CPU ring pool can be a Flux_DecalsImpl member.
+struct CpuDecalSlot
+{
+	bool                  m_bActive            = false;
+	Zenith_Maths::Vector3 m_xPosition;
+	Zenith_Maths::Vector3 m_xNormal;           // unit-length projection axis
+	float                 m_fSize              = 0.0f;
+	float                 m_fInitialLifetime   = 0.0f;
+	float                 m_fRemainingLifetime = 0.0f;
+	DecalInstance         m_xInstance{};
+};
+
 // Cross-subsystem dependencies injected into Initialise (Wave-17 DI seam, the
 // SSAO leaf-seam shape: explicit ref params -> stored member pointers).
 // Forward-declared here; full headers are pulled in by Flux_Decals.cpp.
@@ -59,6 +93,15 @@ public:
 	                float                        fSize,
 	                float                        fLifetime);
 
+	// Build the dense GPU staging array from active CPU slots, ticking
+	// per-slot lifetimes by fDt and deactivating expired slots. Returns the
+	// number of active decals after the tick. Promoted from a file-static
+	// helper so it can read/write the now-member ring pool + staging array
+	// directly; the only g_xEngine reach left inside is Primitives() for the
+	// debug spheres. Called only from the PrepareDecals trampoline, which
+	// already holds a cached Decals() reference.
+	u_int TickAndPackDense(float fDt);
+
 	bool IsInitialised() const { return m_bInitialised; }
 
 	static constexpr u_int uMAX_DECALS = 64;
@@ -92,6 +135,16 @@ public:
 
 	Flux_DynamicReadWriteBuffer m_xDecalBuffer;
 	Flux_IndexBuffer            m_xDecalIndexBuffer;
+
+	// CPU-side pool. Ring buffer for slot recycling — m_uNextSlot tracks the
+	// next slot to overwrite when SpawnDecal is called. (Relocated from a
+	// module-scope static; same type, same default-empty state.)
+	CpuDecalSlot                m_axDecalSlots[uMAX_DECALS];
+
+	// Dense GPU staging — packed at upload time so SV_InstanceID indexes
+	// 0..uActiveDecalCount-1 contiguously regardless of CPU ring layout.
+	// (Relocated from a module-scope static.)
+	DecalInstance               m_axDecalStaging[uMAX_DECALS];
 
 	// Injected cross-subsystem dependencies (stored by Initialise). Default
 	// nullptr so a default-constructed instance is headless-safe; the real boot

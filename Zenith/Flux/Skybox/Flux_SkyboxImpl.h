@@ -45,6 +45,37 @@ namespace AtmosphereConfig
 	constexpr float fAERIAL_MAX_DISTANCE = 128000.0f;
 }
 
+// Solid colour override constants
+struct SkyboxOverrideConstants
+{
+	Zenith_Maths::Vector4 m_xColour;
+};
+
+// Atmosphere constants buffer structure
+struct AtmosphereConstants
+{
+	// Scattering coefficients
+	Zenith_Maths::Vector4 m_xRayleighScatter;      // RGB coefficients, W = scale height
+	Zenith_Maths::Vector4 m_xMieScatter;           // RGB = scatter, W = scale height
+
+	// Planet parameters
+	float m_fPlanetRadius;
+	float m_fAtmosphereRadius;
+	float m_fMieG;                                   // Henyey-Greenstein asymmetry
+	float m_fSunIntensity;
+
+	// Configuration
+	float m_fRayleighScale;
+	float m_fMieScale;
+	float m_fAerialPerspectiveStrength;
+	u_int m_uDebugMode;
+
+	// Ray march settings
+	u_int m_uSkySamples;
+	u_int m_uLightSamples;
+	Zenith_Maths::Vector2 m_xPad;
+};
+
 enum Skybox_DebugMode : u_int
 {
 	SKYBOX_DEBUG_NONE,
@@ -137,6 +168,11 @@ public:
 
 	Flux_DynamicConstantBuffer m_xAtmosphereConstantsBuffer;
 	Flux_DynamicConstantBuffer m_xSolidColourConstantsBuffer;
+
+	// CB scratch (formerly module-scope statics in Flux_Skybox.cpp). Filled in
+	// Initialise (for initial sizing/fill) and per-frame in PreExecuteSkybox.
+	AtmosphereConstants        m_xAtmosphereConstants;
+	SkyboxOverrideConstants    m_xSolidColourConstants;
 
 	float                      m_fSunIntensity              = AtmosphereConfig::fSUN_INTENSITY;
 	float                      m_fRayleighScale             = 1.0f;

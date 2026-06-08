@@ -28,16 +28,10 @@
 // Render-graph pass indices — populated by SetupRenderGraph, consumed every
 // frame by UpdateGraphPassEnables.
 
-// Per-pass user data structs — small PODs holding the (mip, face) the pass
-// targets. Pointer-stable file-static storage so the graph can hand them as
-// void* without lifetime concerns.
-struct IBLPrefilterPassData
-{
-	u_int m_uMip;
-	u_int m_uFace;
-};
-static IBLPrefilterPassData s_axPrefilterPassData[IBLConfig::uPREFILTER_MIP_COUNT][6];
-static u_int s_auIrradianceFaceData[6] = { 0, 1, 2, 3, 4, 5 };
+// Per-pass user data is now pointer-stable storage on Flux_IBLImpl
+// (m_auIrradianceFaceData / m_axPrefilterPassData), populated + registered in
+// SetupRenderGraph and handed back to the Execute*Pass trampolines as void*.
+// IBLPrefilterPassData is a nested type of Flux_IBLImpl (see Flux_IBLImpl.h).
 
 DEBUGVAR bool dbg_bIBLShowBRDFLUT = false;
 DEBUGVAR bool dbg_bIBLForceRoughness = false;
@@ -387,7 +381,7 @@ void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		// Per-(mip 0, face uFace) slice write — the graph picks the per-(mip, face)
 		// RTV and emits a tight subresource barrier.
 		m_axIrradianceFacePassHandles[uFace] = xGraph.AddPass(
-				s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace])
+				s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &m_auIrradianceFaceData[uFace])
 			.ClearTargets()
 			.Writes(m_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1, uFace, 1);
 	}
@@ -407,11 +401,11 @@ void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		for (u_int uFace = 0; uFace < 6; uFace++)
 		{
-			s_axPrefilterPassData[uMip][uFace].m_uMip = uMip;
-			s_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
+			m_axPrefilterPassData[uMip][uFace].m_uMip = uMip;
+			m_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
 			m_axPrefilterMipFacePassHandles[uMip][uFace] = xGraph.AddPass(
 					s_aszPrefilterPassNames[uMip * 6 + uFace],
-					ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace])
+					ExecutePrefilterMipFacePass, &m_axPrefilterPassData[uMip][uFace])
 				.ClearTargets()
 				.Writes(m_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1, uFace, 1);
 		}

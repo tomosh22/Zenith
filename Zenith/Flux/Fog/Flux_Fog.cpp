@@ -25,10 +25,10 @@
 
 // Render graph pass indices for dynamic enable/disable
 
-// Game-side override flag (EXT-1). When true, all 6 fog passes are explicitly
+// Game-side override flag (EXT-1) now lives on Flux_FogImpl as
+// m_bExternallyOverridden. When true, all 6 fog passes are explicitly
 // disabled on the active render graph and ApplyTechniqueSelectionToGraph
 // short-circuits.
-static bool s_bExternallyOverridden = false;
 
 void Flux_FogImpl::DisableAllFogPasses(Flux_RenderGraph& xGraph)
 {
@@ -144,7 +144,7 @@ void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 	// short-circuit completely — DON'T re-toggle SetEnabled per frame, otherwise
 	// the per-frame technique cache would re-enable engine fog passes the next
 	// time the cached technique compares unequal.
-	if (s_bExternallyOverridden)
+	if (m_bExternallyOverridden)
 		return;
 
 	const u_int uTechnique = Zenith_GraphicsOptions::Get().m_uVolFogTechnique;
@@ -314,7 +314,7 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_FogImpl::SetExternallyOverridden(bool bOverridden)
 {
-	s_bExternallyOverridden = bOverridden;
+	m_bExternallyOverridden = bOverridden;
 
 	// Touch the active graph immediately so the change takes effect this
 	// frame, regardless of whether ApplyTechniqueSelectionToGraph runs.
@@ -337,7 +337,7 @@ void Flux_FogImpl::SetExternallyOverridden(bool bOverridden)
 
 void Flux_FogImpl::ReapplyOverrideToCurrentGraph()
 {
-	if (!s_bExternallyOverridden) return;
+	if (!m_bExternallyOverridden) return;
 	if (!m_pxFluxRenderer->IsRenderGraphValid()) return;
 	DisableAllFogPasses(m_pxFluxRenderer->GetRenderGraph());
 }

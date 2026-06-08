@@ -54,51 +54,10 @@ DEBUGVAR float dbg_fFroxelHeightFalloff = 0.01f;
 DEBUGVAR float dbg_fVolShadowBias = 0.001f;
 DEBUGVAR float dbg_fVolShadowConeRadius = 0.002f;
 
-// Push constant structures (must match shader)
-struct InjectConstants
-{
-	Zenith_Maths::Vector4 m_xFogParams;       // x = density, y = scattering, z = absorption, w = time
-	Zenith_Maths::Vector4 m_xNoiseParams;     // x = scale, y = speed, z = detail, w = unused
-	Zenith_Maths::Vector4 m_xHeightParams;    // x = base height, y = falloff, z = min height, w = max height
-	Zenith_Maths::Vector4 m_xGridDimensions;  // x = width, y = height, z = depth, w = unused
-	float m_fNearZ;
-	float m_fFarZ;
-	u_int m_uFrameIndex;
-	float m_fPad0;
-};
-
-struct LightConstants
-{
-	Zenith_Maths::Vector4 m_xFogColour;
-	Zenith_Maths::Vector4 m_xLightDirection;
-	Zenith_Maths::Vector4 m_xLightColour;      // RGB = color, A = intensity
-	Zenith_Maths::Vector4 m_xGridDimensions;
-	float m_fScatteringCoeff;
-	float m_fAbsorptionCoeff;
-	float m_fPhaseG;
-	u_int m_uDebugMode;
-	// Volumetric shadow parameters (now runtime-adjustable)
-	// Shadow bias prevents self-shadowing artifacts in fog
-	// Cone radius controls softness of volumetric shadows
-	float m_fVolShadowBias;
-	float m_fVolShadowConeRadius;
-	// Ambient irradiance ratio: fraction of sky light vs direct sun (0.15-0.6 typical)
-	float m_fAmbientIrradianceRatio;
-	float m_fPad0;  // Padding to maintain 16-byte alignment
-};
-
-struct ApplyConstants
-{
-	Zenith_Maths::Vector4 m_xGridDimensions;
-	float m_fNearZ;
-	float m_fFarZ;
-	u_int m_uDebugMode;
-	u_int m_uDebugSliceIndex;
-};
-
-static InjectConstants s_xInjectConstants;
-static LightConstants s_xLightConstants;
-static ApplyConstants s_xApplyConstants;
+// Push constant structures (InjectConstants / LightConstants / ApplyConstants)
+// now live in Flux_FroxelFogImpl.h, and the per-frame scratch instances are
+// members of Flux_FroxelFogImpl (m_xInjectConstants / m_xLightConstants /
+// m_xApplyConstants), accessed via implicit this inside the Render* members.
 
 Flux_RenderAttachment& Flux_FroxelFogImpl::GetDensityGridInternal()
 {
@@ -272,33 +231,33 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 	const Flux_VolumeFogConstants& xShared = m_pxVolumeFog->GetSharedConstants();
 	float fTime = static_cast<float>(m_pxFluxRenderer->GetFrameCounter()) * 0.016f;
 
-	s_xInjectConstants.m_xFogParams = Zenith_Maths::Vector4(
+	m_xInjectConstants.m_xFogParams = Zenith_Maths::Vector4(
 		xShared.m_fDensity,
 		xShared.m_fScatteringCoeff,
 		xShared.m_fAbsorptionCoeff,
 		fTime
 	);
-	s_xInjectConstants.m_xNoiseParams = Zenith_Maths::Vector4(
+	m_xInjectConstants.m_xNoiseParams = Zenith_Maths::Vector4(
 		dbg_fFroxelNoiseScale,
 		dbg_fFroxelNoiseSpeed,
 		1.0f,
 		0.0f
 	);
-	s_xInjectConstants.m_xHeightParams = Zenith_Maths::Vector4(
+	m_xInjectConstants.m_xHeightParams = Zenith_Maths::Vector4(
 		dbg_fFroxelHeightBase,
 		dbg_fFroxelHeightFalloff,
 		-1000.0f,  // min height
 		1000.0f    // max height
 	);
-	s_xInjectConstants.m_xGridDimensions = Zenith_Maths::Vector4(
+	m_xInjectConstants.m_xGridDimensions = Zenith_Maths::Vector4(
 		static_cast<float>(FROXEL_WIDTH),
 		static_cast<float>(FROXEL_HEIGHT),
 		static_cast<float>(FROXEL_DEPTH),
 		0.0f
 	);
-	s_xInjectConstants.m_fNearZ = dbg_fFroxelNearZ;
-	s_xInjectConstants.m_fFarZ = dbg_fFroxelFarZ;
-	s_xInjectConstants.m_uFrameIndex = m_pxFluxRenderer->GetFrameCounter();
+	m_xInjectConstants.m_fNearZ = dbg_fFroxelNearZ;
+	m_xInjectConstants.m_fFarZ = dbg_fFroxelFarZ;
+	m_xInjectConstants.m_uFrameIndex = m_pxFluxRenderer->GetFrameCounter();
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&m_xInjectPipeline);
 
@@ -306,7 +265,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 	xInjectBinder.BindCBV(m_xInjectShader, "FrameConstants", &m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
 	xInjectBinder.BindSRV(m_xInjectShader, "u_xNoiseTexture3D", &m_pxVolumeFog->GetNoiseTexture3D()->m_xSRV, &m_pxFluxGraphics->m_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(m_xInjectShader, "u_xDensityGrid", &GetDensityGridInternal().UAV(0));
-	xInjectBinder.BindDrawConstants(m_xInjectShader, "InjectConstants", &s_xInjectConstants, sizeof(InjectConstants));
+	xInjectBinder.BindDrawConstants(m_xInjectShader, "InjectConstants", &m_xInjectConstants, sizeof(InjectConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
@@ -319,22 +278,22 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
 	extern u_int dbg_uVolFogDebugMode;
 	const Flux_VolumeFogConstants& xShared = m_pxVolumeFog->GetSharedConstants();
 
-	s_xLightConstants.m_xFogColour = xShared.m_xFogColour;
-	s_xLightConstants.m_xLightDirection = Zenith_Maths::Vector4(
+	m_xLightConstants.m_xFogColour = xShared.m_xFogColour;
+	m_xLightConstants.m_xLightDirection = Zenith_Maths::Vector4(
 		m_pxFluxGraphics->m_xFrameConstants.m_xSunDir_Pad.x,
 		m_pxFluxGraphics->m_xFrameConstants.m_xSunDir_Pad.y,
 		m_pxFluxGraphics->m_xFrameConstants.m_xSunDir_Pad.z,
 		0.0f
 	);
-	s_xLightConstants.m_xLightColour = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-	s_xLightConstants.m_xGridDimensions = s_xInjectConstants.m_xGridDimensions;
-	s_xLightConstants.m_fScatteringCoeff = xShared.m_fScatteringCoeff;
-	s_xLightConstants.m_fAbsorptionCoeff = xShared.m_fAbsorptionCoeff;
-	s_xLightConstants.m_fPhaseG = dbg_fFroxelPhaseG;
-	s_xLightConstants.m_uDebugMode = dbg_uVolFogDebugMode;
-	s_xLightConstants.m_fVolShadowBias = dbg_fVolShadowBias;
-	s_xLightConstants.m_fVolShadowConeRadius = dbg_fVolShadowConeRadius;
-	s_xLightConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
+	m_xLightConstants.m_xLightColour = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+	m_xLightConstants.m_xGridDimensions = m_xInjectConstants.m_xGridDimensions;
+	m_xLightConstants.m_fScatteringCoeff = xShared.m_fScatteringCoeff;
+	m_xLightConstants.m_fAbsorptionCoeff = xShared.m_fAbsorptionCoeff;
+	m_xLightConstants.m_fPhaseG = dbg_fFroxelPhaseG;
+	m_xLightConstants.m_uDebugMode = dbg_uVolFogDebugMode;
+	m_xLightConstants.m_fVolShadowBias = dbg_fVolShadowBias;
+	m_xLightConstants.m_fVolShadowConeRadius = dbg_fVolShadowConeRadius;
+	m_xLightConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&m_xLightPipeline);
 
@@ -354,7 +313,7 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
 		xLightBinder.BindCBV(m_xLightShader, s_aszShadowMatrixNames[u], &m_pxShadows->GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xLightBinder.BindDrawConstants(m_xLightShader, "LightConstants", &s_xLightConstants, sizeof(LightConstants));
+	xLightBinder.BindDrawConstants(m_xLightShader, "LightConstants", &m_xLightConstants, sizeof(LightConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
@@ -366,11 +325,11 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
 {
 	extern u_int dbg_uVolFogDebugMode;
 
-	s_xApplyConstants.m_xGridDimensions = s_xInjectConstants.m_xGridDimensions;
-	s_xApplyConstants.m_fNearZ = dbg_fFroxelNearZ;
-	s_xApplyConstants.m_fFarZ = dbg_fFroxelFarZ;
-	s_xApplyConstants.m_uDebugMode = dbg_uVolFogDebugMode;
-	s_xApplyConstants.m_uDebugSliceIndex = dbg_uFroxelDebugSlice;
+	m_xApplyConstants.m_xGridDimensions = m_xInjectConstants.m_xGridDimensions;
+	m_xApplyConstants.m_fNearZ = dbg_fFroxelNearZ;
+	m_xApplyConstants.m_fFarZ = dbg_fFroxelFarZ;
+	m_xApplyConstants.m_uDebugMode = dbg_uVolFogDebugMode;
+	m_xApplyConstants.m_uDebugSliceIndex = dbg_uFroxelDebugSlice;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xApplyPipeline);
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&m_pxFluxGraphics->m_xQuadMesh.GetVertexBuffer());
@@ -381,6 +340,6 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
 	xApplyBinder.BindSRV(m_xApplyShader, "u_xDepthTexture", m_pxFluxGraphics->GetDepthStencilSRV());
 	xApplyBinder.BindSRV(m_xApplyShader, "u_xLightingGrid", &GetLightingGridInternal().SRV());
 	xApplyBinder.BindSRV(m_xApplyShader, "u_xScatteringGrid", &GetScatteringGridInternal().SRV());
-	xApplyBinder.BindDrawConstants(m_xApplyShader, "ApplyConstants", &s_xApplyConstants, sizeof(ApplyConstants));
+	xApplyBinder.BindDrawConstants(m_xApplyShader, "ApplyConstants", &m_xApplyConstants, sizeof(ApplyConstants));
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

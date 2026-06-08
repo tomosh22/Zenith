@@ -24,9 +24,11 @@
 
 // Strongly-typed per-pass user data: each downsample / upsample pass is given
 // a pointer into one of these arrays so the execute callback recovers the mip
-// index without going through a void*-as-int reinterpret_cast.
-static u_int s_axBloomMipUserData[5]      = { 0, 1, 2, 3, 4 };
-static u_int s_axBloomUpsampleUserData[4] = { 0, 1, 2, 3 };
+// index without going through a void*-as-int reinterpret_cast. These now live
+// as Flux_HDRImpl members (m_axBloomMipUserData / m_axBloomUpsampleUserData) so
+// they are not module-scope statics; SetupRenderGraph feeds &member[i] to
+// AddPass and the pointers stay stable for the graph's lifetime (the Impl is
+// engine-owned and outlives the graph).
 
 // Bloom chain format.
 static constexpr TextureFormat BLOOM_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
@@ -611,7 +613,7 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	};
 	for (u_int i = 1; i < 5; i++)
 	{
-		xGraph.AddPass(s_aszBloomDownsampleNames[i - 1], ExecuteBloomDownsample, &s_axBloomMipUserData[i])
+		xGraph.AddPass(s_aszBloomDownsampleNames[i - 1], ExecuteBloomDownsample, &m_axBloomMipUserData[i])
 			.ClearTargets()
 			.ReadsTransient (m_axBloomChainHandles[i - 1], RESOURCE_ACCESS_READ_SRV)
 			.WritesTransient(m_axBloomChainHandles[i],     RESOURCE_ACCESS_WRITE_RTV);
@@ -625,7 +627,7 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		const u_int uTargetMip = 3 - i;
 		const u_int uSourceMip = uTargetMip + 1;
-		xGraph.AddPass(s_aszBloomUpsampleNames[i], ExecuteBloomUpsample, &s_axBloomUpsampleUserData[i])
+		xGraph.AddPass(s_aszBloomUpsampleNames[i], ExecuteBloomUpsample, &m_axBloomUpsampleUserData[i])
 			.ReadsTransient (m_axBloomChainHandles[uSourceMip], RESOURCE_ACCESS_READ_SRV)
 			.WritesTransient(m_axBloomChainHandles[uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
 	}

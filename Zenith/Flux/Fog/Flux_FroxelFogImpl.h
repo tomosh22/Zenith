@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Maths/Zenith_Maths.h"
 
 class Flux_CommandList;
 class Flux_RenderGraph;
@@ -9,6 +10,48 @@ class Flux_VolumeFogImpl;
 class Flux_RendererImpl;
 class Flux_GraphicsImpl;
 class Flux_ShadowsImpl;
+
+// Push constant structures (must match shader)
+struct InjectConstants
+{
+	Zenith_Maths::Vector4 m_xFogParams;       // x = density, y = scattering, z = absorption, w = time
+	Zenith_Maths::Vector4 m_xNoiseParams;     // x = scale, y = speed, z = detail, w = unused
+	Zenith_Maths::Vector4 m_xHeightParams;    // x = base height, y = falloff, z = min height, w = max height
+	Zenith_Maths::Vector4 m_xGridDimensions;  // x = width, y = height, z = depth, w = unused
+	float m_fNearZ;
+	float m_fFarZ;
+	u_int m_uFrameIndex;
+	float m_fPad0;
+};
+
+struct LightConstants
+{
+	Zenith_Maths::Vector4 m_xFogColour;
+	Zenith_Maths::Vector4 m_xLightDirection;
+	Zenith_Maths::Vector4 m_xLightColour;      // RGB = color, A = intensity
+	Zenith_Maths::Vector4 m_xGridDimensions;
+	float m_fScatteringCoeff;
+	float m_fAbsorptionCoeff;
+	float m_fPhaseG;
+	u_int m_uDebugMode;
+	// Volumetric shadow parameters (now runtime-adjustable)
+	// Shadow bias prevents self-shadowing artifacts in fog
+	// Cone radius controls softness of volumetric shadows
+	float m_fVolShadowBias;
+	float m_fVolShadowConeRadius;
+	// Ambient irradiance ratio: fraction of sky light vs direct sun (0.15-0.6 typical)
+	float m_fAmbientIrradianceRatio;
+	float m_fPad0;  // Padding to maintain 16-byte alignment
+};
+
+struct ApplyConstants
+{
+	Zenith_Maths::Vector4 m_xGridDimensions;
+	float m_fNearZ;
+	float m_fFarZ;
+	u_int m_uDebugMode;
+	u_int m_uDebugSliceIndex;
+};
 
 // Phase 9: state + behaviour for FroxelFog subsystem.
 class Flux_FroxelFogImpl
@@ -74,4 +117,9 @@ private:
 	Flux_RendererImpl*  m_pxFluxRenderer = nullptr;
 	Flux_GraphicsImpl*  m_pxFluxGraphics = nullptr;
 	Flux_ShadowsImpl*   m_pxShadows      = nullptr;
+
+	// Per-frame push-constant scratch PODs (relocated from module-scope statics).
+	InjectConstants m_xInjectConstants;
+	LightConstants  m_xLightConstants;
+	ApplyConstants  m_xApplyConstants;
 };
