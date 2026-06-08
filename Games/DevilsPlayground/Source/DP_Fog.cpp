@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "DP_Fog.h"
 #include "DPCommonTypes.h"

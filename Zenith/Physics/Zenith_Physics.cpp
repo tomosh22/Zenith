@@ -1,6 +1,7 @@
 // This file creates Jolt Physics objects - disable memory tracking macro to avoid conflicts
 // with Jolt's custom operator new
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 // Wave-13 PCH slim round 2: <iostream> was demoted out of Zenith.h. This is the
 // only TU that uses iostream facilities (std::cout / std::endl in the Jolt trace
 // + assert callbacks below) without already pulling the header in, so it carries

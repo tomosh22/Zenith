@@ -33,12 +33,12 @@ static_assert(sizeof(u_int64) == 8);
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_String.h"
 #include "Zenith_Core.h"
-// Phase 2: g_xEngine.Frame() is the universal per-frame timing
-// accessor (replaces Zenith_Core::GetDt etc). Pulled into the PCH so
-// every TU has it without per-file include churn. Both headers are
-// light: Zenith_Engine.h is just a class decl + <type_traits>,
-// FrameContext.h adds <chrono> only.
-#include "Core/Zenith_Engine.h"
+// W5.3 (PCH slimming): Zenith_Engine.h (the g_xEngine accessor surface) was
+// DEMOTED out of the PCH so a subsystem add no longer invalidates the precompiled
+// header for TUs that don't use g_xEngine. The actual g_xEngine code-users now
+// include it themselves (it's just a class decl + <type_traits> — cheap + cycle-free);
+// the ZenithECS leaf is deliberately excluded (it uses g_xEngine only in doc comments,
+// staying engine-include-free). FrameContext.h stays (g_xEngine.Frame() timing prelude).
 #include "Core/FrameContext.h"
 
 #include "Zenith_OS_Include.h"

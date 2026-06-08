@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Survival_WorldQuery.h - Entity queries using Zenith_Query
  *

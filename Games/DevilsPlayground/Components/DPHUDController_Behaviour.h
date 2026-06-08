@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPHUDController_Behaviour - in-game HUD. Updates:
  *   - Life bar: 20-tick bar reflecting possessed villager's remaining life,

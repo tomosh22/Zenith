@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"

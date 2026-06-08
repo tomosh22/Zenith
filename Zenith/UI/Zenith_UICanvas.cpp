@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"

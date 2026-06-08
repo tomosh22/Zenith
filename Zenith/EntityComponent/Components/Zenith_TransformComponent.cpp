@@ -1,5 +1,6 @@
 // This file uses Jolt Physics - disable memory tracking macro to avoid conflicts
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #define ZENITH_PLACEMENT_NEW_ZONE
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"

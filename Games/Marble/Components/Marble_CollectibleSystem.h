@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Marble_CollectibleSystem.h - Pickup detection and scoring
  *

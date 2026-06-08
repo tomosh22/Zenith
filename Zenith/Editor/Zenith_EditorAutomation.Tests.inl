@@ -1,3 +1,4 @@
+#include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
 #include "UnitTests/Zenith_EditorTestFixture.h"

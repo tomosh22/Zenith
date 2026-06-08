@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Survival_TaskProcessor.h - Background task processing using Zenith_TaskSystem
  *

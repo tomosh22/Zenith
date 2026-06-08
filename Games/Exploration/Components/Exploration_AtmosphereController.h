@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Exploration_AtmosphereController.h - Day/night cycle and weather system
  *

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 // State lives on Flux_GraphicsImpl, reachable via g_xEngine.FluxGraphics().
 // Static methods in Flux_Graphics are thin forwards (post-Phase-6a-1). See

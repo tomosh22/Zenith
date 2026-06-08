@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 
 #include "Collections/Zenith_CircularQueue.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"

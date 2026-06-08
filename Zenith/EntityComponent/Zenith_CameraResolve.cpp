@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "ZenithECS/Zenith_SceneData.h"

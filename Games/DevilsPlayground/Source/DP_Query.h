@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "ZenithECS/Zenith_SceneData.h"

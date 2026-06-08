@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"

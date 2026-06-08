@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Priest_Behaviour - the priest agent. Owns its Zenith_BehaviorTree and ticks
  * it manually each frame using the AGENT'S blackboard (so engine-built BT

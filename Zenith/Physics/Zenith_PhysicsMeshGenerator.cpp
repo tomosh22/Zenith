@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"

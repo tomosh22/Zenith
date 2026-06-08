@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * TilePuzzle_MetaGame.h - Meta-game systems for Paws & Pins
  *

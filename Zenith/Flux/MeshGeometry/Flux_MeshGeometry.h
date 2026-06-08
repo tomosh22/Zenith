@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_Buffers.h"
 

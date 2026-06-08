@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Runner_ParticleManager.h - Particle effects management
  *

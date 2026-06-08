@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Zenith_EditorAutomation.h"

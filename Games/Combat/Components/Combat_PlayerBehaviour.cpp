@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Combat_PlayerBehaviour.h"
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"

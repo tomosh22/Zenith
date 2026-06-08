@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPItemBase_Behaviour - tagged pickup item.
  *

@@ -1,6 +1,7 @@
 // This file creates Jolt Physics objects - disable memory tracking macro to avoid conflicts
 // with Jolt's custom operator new
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #define ZENITH_PLACEMENT_NEW_ZONE
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"

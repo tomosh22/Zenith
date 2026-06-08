@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Pinball_Behaviour.h - Pinball minigame controller
  *

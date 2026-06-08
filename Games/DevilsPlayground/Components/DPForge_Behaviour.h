@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPForge_Behaviour - gym-map crafting station. Consumes the held item if
  * it matches m_eRecipeInputTag and spawns an output item next to the forge,

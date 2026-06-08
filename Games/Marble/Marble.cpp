@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Marble/Components/Marble_Behaviour.h"
 #include "Marble/Components/Marble_Config.h"

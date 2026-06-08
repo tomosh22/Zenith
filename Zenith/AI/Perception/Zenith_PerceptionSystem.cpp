@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "ZenithECS/Zenith_Scene.h"

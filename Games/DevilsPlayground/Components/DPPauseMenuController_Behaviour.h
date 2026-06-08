@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPPauseMenuController_Behaviour - Esc-toggleable pause overlay + real pause.
  *

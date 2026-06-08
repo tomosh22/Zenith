@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPFogPass_Behaviour - per-frame fog-hole table maintenance.
  *

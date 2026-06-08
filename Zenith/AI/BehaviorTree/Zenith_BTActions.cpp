@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "AI/BehaviorTree/Zenith_BTActions.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"

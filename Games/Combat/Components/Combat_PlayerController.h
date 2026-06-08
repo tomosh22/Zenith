@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Combat_PlayerController.h - Player movement and combat input
  *

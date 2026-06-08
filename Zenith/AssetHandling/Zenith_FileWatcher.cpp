@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 #include "AssetHandling/Zenith_FileWatcher.h"
 #include <filesystem>

@@ -1,3 +1,4 @@
+#include "Core/Zenith_Engine.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_Input.h"

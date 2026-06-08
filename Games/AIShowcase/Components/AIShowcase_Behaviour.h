@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * AIShowcase_Behaviour.h - Main AI demonstration coordinator
  *

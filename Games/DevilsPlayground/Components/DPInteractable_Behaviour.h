@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPInteractable_Behaviour - proximity + F-press based interaction.
  *

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Components/DPProcLevelBootstrap_Behaviour.h"
 

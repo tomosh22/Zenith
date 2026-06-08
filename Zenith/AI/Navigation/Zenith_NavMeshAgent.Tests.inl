@@ -1,3 +1,4 @@
+#include "Core/Zenith_Engine.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "ZenithECS/Zenith_Entity.h"

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Survival_ResourceNode.h - Harvestable resource nodes (trees, rocks, berry bushes)
  *

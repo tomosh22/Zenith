@@ -6,6 +6,7 @@ Contact:richgdavison@gmail.com
 License: MIT (see LICENSE file at the top of the source tree)
 *//////////////////////////////////////////////////////////////////////////////
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Zenith_Vulkan_Pipeline.h"
 

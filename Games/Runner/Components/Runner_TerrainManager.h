@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Runner_TerrainManager.h - Terrain entity setup and management
  *

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPDoubleDoor_Behaviour - same lock semantics as DPDoor, but rotates two
  * child entities (left + right leaf) outwards on open. Children are

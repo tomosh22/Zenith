@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/Zenith_AIDebugVariables.h"

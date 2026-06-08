@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_RoadMesh.h"

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPMainMenuController_Behaviour - L_FrontEnd controller. Wires the "Play"
  * button to LoadSceneByIndex(1, SCENE_LOAD_SINGLE).

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 #include "Zenith_PlatformGraphics_Include.h"
 
 #include "Profiling/Zenith_Profiling.h"

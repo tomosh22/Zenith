@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED

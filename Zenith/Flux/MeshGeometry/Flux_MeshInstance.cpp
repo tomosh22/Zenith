@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Flux_MeshInstance.h"
 #include "Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"

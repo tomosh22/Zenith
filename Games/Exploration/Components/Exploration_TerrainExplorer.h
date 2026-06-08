@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Exploration_TerrainExplorer.h - Terrain interaction and observation
  *

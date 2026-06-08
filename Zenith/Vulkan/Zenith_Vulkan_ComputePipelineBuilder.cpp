@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Zenith_Vulkan_Pipeline.h"
 #include "Zenith_Vulkan.h"

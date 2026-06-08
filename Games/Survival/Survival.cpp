@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Survival/Components/Survival_Behaviour.h"
 #include "Survival/Components/Survival_Config.h"

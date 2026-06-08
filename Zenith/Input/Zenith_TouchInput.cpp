@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Input/Zenith_TouchInput.h"
 #include "Input/Zenith_TouchInput.h"

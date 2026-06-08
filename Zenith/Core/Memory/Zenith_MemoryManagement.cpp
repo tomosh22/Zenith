@@ -11,6 +11,7 @@
 // =============================================================================
 
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Zenith_MemoryManagement.h"
 
 #ifdef ZENITH_TOOLS

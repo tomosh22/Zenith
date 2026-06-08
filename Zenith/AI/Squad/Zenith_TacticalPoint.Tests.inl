@@ -1,3 +1,4 @@
+#include "Core/Zenith_Engine.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "ZenithECS/Zenith_Scene.h"

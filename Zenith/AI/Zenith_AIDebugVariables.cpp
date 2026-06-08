@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "AI/Zenith_AIDebugVariables.h"
 
 #ifdef ZENITH_TOOLS

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * Custom BT nodes used by Priest_Behaviour.
  *

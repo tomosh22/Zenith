@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "AI/BehaviorTree/Zenith_BTConditions.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * TilePuzzle_LevelGenerator.h - Procedural level generation via reverse scramble
  *

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 // Needed for the clean-shutdown path on early-exit branches (list,
 // not-found, no-tests-registered). Zenith_Window.h is platform-routed by
 // Zenith.h so the include is portable between win64 and Android.

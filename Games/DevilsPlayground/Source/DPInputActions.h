@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_KeyCodes.h"

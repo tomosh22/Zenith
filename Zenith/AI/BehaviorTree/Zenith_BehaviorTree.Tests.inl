@@ -1,3 +1,4 @@
+#include "Core/Zenith_Engine.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/BehaviorTree/Zenith_BTNode.h"

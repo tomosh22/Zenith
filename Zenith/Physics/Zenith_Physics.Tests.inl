@@ -1,3 +1,4 @@
+#include "Core/Zenith_Engine.h"
 // This file queries Jolt Physics objects - disable memory tracking macro to avoid conflicts
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Physics/Zenith_Physics.h"

@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPPentagram_Behaviour - win-condition altar. Each interact consumes one
  * Objective[1..5] item; collecting all five fires DP_OnVictory.

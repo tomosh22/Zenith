@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"

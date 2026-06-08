@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Profiling/Zenith_Profiling.h"

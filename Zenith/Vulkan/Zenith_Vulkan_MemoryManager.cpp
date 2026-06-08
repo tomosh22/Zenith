@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #define VMA_IMPLEMENTATION
 
 #include "Zenith_Vulkan_MemoryManager.h"

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Combat/Components/Combat_Behaviour.h"
 #include "Combat/Components/Combat_Config.h"

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "CityBuilder/Source/CB_ToolSystem.h"
 #include "EntityComponent/Zenith_CameraResolve.h"

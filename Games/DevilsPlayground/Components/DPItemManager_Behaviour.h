@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Zenith_Engine.h"
 /**
  * DPItemManager_Behaviour - one per scene; instantiates items at spawners
  * during OnStart.

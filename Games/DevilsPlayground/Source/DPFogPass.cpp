@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Source/DPFogPass.h"
 #include "Source/PublicInterfaces.h"
