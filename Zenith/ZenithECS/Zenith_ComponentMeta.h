@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
-#include <vector>
+#include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_Vector.h"
 #include <concepts>
 
 // Include SceneData.h to get the Zenith_SceneData type (TransferComponent /
@@ -17,8 +17,6 @@
 // RegisterComponent<T> (and its include of the editor registry header here) has
 // moved engine-side to Zenith_ComponentMeta_Registration.cpp, which owns the
 // concrete-type knowledge and the editor-registry population.
-
-#include "Collections/Zenith_Vector.h"
 
 // Implementation-detail metaprogramming (the type-erased function-pointer
 // typedefs, the C++20 lifecycle-detection concepts, ComponentSchemaVersion<T>(),
@@ -153,7 +151,7 @@ public:
 		u_int uSceneVersion = Zenith_SceneData::uSCENE_VERSION_CURRENT) const;
 
 	// Get all registered component metas (sorted by serialization order)
-	const std::vector<const Zenith_ComponentMeta*>& GetAllMetasSorted() const;
+	const Zenith_Vector<const Zenith_ComponentMeta*>& GetAllMetasSorted() const;
 
 	// Check if registry is initialized with all components
 	bool IsInitialized() const { return m_bInitialized; }
@@ -272,8 +270,8 @@ private:
 		Zenith_SceneData::TransferComponent<T>(xEntityID, pxSource, pxTarget);
 	}
 
-	std::unordered_map<std::string, Zenith_ComponentMeta> m_xMetaByName;
-	std::vector<const Zenith_ComponentMeta*> m_xMetasSorted;
+	Zenith_HashMap<std::string, Zenith_ComponentMeta> m_xMetaByName;
+	Zenith_Vector<const Zenith_ComponentMeta*> m_xMetasSorted;
 	bool m_bInitialized = false;
 
 	// Engine-installed registrar for the built-in components (and, in TOOLS, the

@@ -6784,13 +6784,13 @@ void Zenith_UnitTests::TestSwapAndPopMovesIndex(){
 	// The stored component index lives in exactly one place: the global per-entity
 	// component map keyed by component TypeID. Read the LAST entity's index now.
 	const Zenith_SceneData::TypeID uTypeID = Zenith_SceneData::TypeIDGenerator::GetTypeID<Zenith_TransformComponent>();
-	const u_int uLastIndexBefore = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).at(uTypeID);
+	const u_int uLastIndexBefore = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).Get(uTypeID);
 
 	// Remove the FIRST entity's component. Real swap-and-pop moves the last live
 	// element (entity3) into the freed slot, so entity3's stored index must change.
 	xEntity1.RemoveComponent<Zenith_TransformComponent>();
 
-	const u_int uLastIndexAfter = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).at(uTypeID);
+	const u_int uLastIndexAfter = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntity3.GetEntityID().m_uIndex).Get(uTypeID);
 	ZENITH_ASSERT_NE(uLastIndexAfter, uLastIndexBefore, "TestSwapAndPopMovesIndex: last entity's component index did not move — removal is not a real swap-and-pop");
 
 	// And its component data must be intact at the new slot.
@@ -7761,7 +7761,7 @@ void Zenith_UnitTests::TestComponentMetaRegistration(){
 	const auto& xMetasSorted = Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
 
 	// Verify we have the expected number of component types (8 components)
-	ZENITH_ASSERT_GE(xMetasSorted.size(), 8, "TestComponentMetaRegistration: Expected at least 8 registered component types");
+	ZENITH_ASSERT_GE(xMetasSorted.GetSize(), 8, "TestComponentMetaRegistration: Expected at least 8 registered component types");
 
 	// Verify Transform is registered
 	const Zenith_ComponentMeta* pxTransformMeta =
@@ -7877,10 +7877,10 @@ void Zenith_UnitTests::TestComponentMetaTypeIDConsistency(){
 	// Verify all metas in sorted list have increasing serialization order
 	const auto& xMetasSorted = Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
 	u_int uPrevOrder = 0;
-	for (size_t i = 1; i < xMetasSorted.size(); ++i)
+	for (u_int i = 1; i < xMetasSorted.GetSize(); ++i)
 	{
-		ZENITH_ASSERT_GE(xMetasSorted[i]->m_uSerializationOrder, uPrevOrder, "TestComponentMetaTypeIDConsistency: Metas not sorted by serialization order");
-		uPrevOrder = xMetasSorted[i]->m_uSerializationOrder;
+		ZENITH_ASSERT_GE(xMetasSorted.Get(i)->m_uSerializationOrder, uPrevOrder, "TestComponentMetaTypeIDConsistency: Metas not sorted by serialization order");
+		uPrevOrder = xMetasSorted.Get(i)->m_uSerializationOrder;
 	}
 
 }

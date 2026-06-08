@@ -737,7 +737,7 @@ bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 	if (!EntityExists(xID)) return false;
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	const auto& xMap = Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
-	return xMap.contains(uTypeID);
+	return xMap.Contains(uTypeID);
 }
 
 template<typename T>
@@ -749,9 +749,9 @@ T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	const auto& xMap = Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
-	auto xIt = xMap.find(uTypeID);
-	Zenith_Assert(xIt != xMap.end(), "GetComponentFromEntity: Entity does not have component");
-	const u_int uIndex = xIt->second;
+	const u_int* puIndex = xMap.TryGet(uTypeID);
+	Zenith_Assert(puIndex != nullptr, "GetComponentFromEntity: Entity does not have component");
+	const u_int uIndex = *puIndex;
 	return GetComponentPool<T>()->Get(uIndex);
 }
 
@@ -763,10 +763,10 @@ bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	auto& xMap = Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
-	auto xIt = xMap.find(uTypeID);
-	if (xIt == xMap.end()) return false;
+	const u_int* puComponentIndex = xMap.TryGet(uTypeID);
+	if (puComponentIndex == nullptr) return false;
 
-	u_int uComponentIndex = xIt->second;
+	u_int uComponentIndex = *puComponentIndex;
 	Zenith_ComponentPool<T>* pxPool = GetOrCreateComponentPool<T>();
 
 	// Call OnRemove lifecycle if the component type has it (C++20 requires clause)
@@ -783,7 +783,7 @@ bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 	// Erase the removed entity's entry BEFORE repointing the moved owner — the
 	// moved owner may be a different entity, and (in the last-element case) is
 	// INVALID_ENTITY_ID, so its branch is skipped.
-	xMap.erase(xIt);
+	xMap.Remove(uTypeID);
 
 	if (xMovedOwner.IsValid() && xMovedOwner != xID)
 	{
@@ -826,10 +826,10 @@ void Zenith_SceneData::TransferComponent(Zenith_EntityID xEntityID, Zenith_Scene
 {
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	auto& xMap = Zenith_ECS_EntityStore().m_axEntityComponents.Get(xEntityID.m_uIndex);
-	auto xIt = xMap.find(uTypeID);
-	if (xIt == xMap.end()) return;
+	const u_int* puSourcePoolIndex = xMap.TryGet(uTypeID);
+	if (puSourcePoolIndex == nullptr) return;
 
-	u_int uSourcePoolIndex = xIt->second;
+	u_int uSourcePoolIndex = *puSourcePoolIndex;
 
 	Zenith_ComponentPool<T>* pxSourcePool = pxSource->GetComponentPool<T>();
 	Zenith_ComponentPool<T>* pxTargetPool = pxTarget->GetOrCreateComponentPool<T>();

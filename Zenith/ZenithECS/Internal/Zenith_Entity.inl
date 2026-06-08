@@ -48,9 +48,9 @@ T& Zenith_Entity::AddComponent(Args&&... args)
 	Zenith_Assert(pxSceneData->EntityExists(m_xEntityID), "AddComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
 
 	const Zenith_SceneData::TypeID uTypeID = Zenith_SceneData::TypeIDGenerator::GetTypeID<T>();
-	const std::unordered_map<Zenith_SceneData::TypeID, u_int>& xComponentsForThisEntity =
+	const Zenith_HashMap<Zenith_SceneData::TypeID, u_int>& xComponentsForThisEntity =
 		Zenith_ECS_EntityStore().m_axEntityComponents.Get(m_xEntityID.m_uIndex);
-	Zenith_Assert(!xComponentsForThisEntity.contains(uTypeID), "AddComponent: Entity already has this component type");
+	Zenith_Assert(!xComponentsForThisEntity.Contains(uTypeID), "AddComponent: Entity already has this component type");
 
 	return pxSceneData->CreateComponent<T>(m_xEntityID, std::forward<Args>(args)..., *this);
 }

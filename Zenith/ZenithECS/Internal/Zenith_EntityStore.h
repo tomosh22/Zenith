@@ -12,9 +12,9 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include <string>
-#include <unordered_map>
 
 // Phase 5a: the three "global entity storage" arrays were class statics on
 // Zenith_SceneData (s_axEntitySlots / s_axFreeEntityIndices /
@@ -181,7 +181,7 @@ public:
 
 	Zenith_Vector<Zenith_EntitySlot>                               m_axEntitySlots;
 	Zenith_Vector<uint32_t>                                        m_axFreeEntityIndices;
-	Zenith_Vector<std::unordered_map<TypeID, u_int>>               m_axEntityComponents;
+	Zenith_Vector<Zenith_HashMap<TypeID, u_int>>                   m_axEntityComponents;
 
 	void Reset()
 	{

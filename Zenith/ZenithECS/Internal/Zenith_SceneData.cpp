@@ -161,7 +161,7 @@ void Zenith_SceneData::FreeGlobalSlotsForActiveEntities()
 		if (xID.m_uIndex >= Zenith_ECS_EntityStore().m_axEntitySlots.GetSize()) continue;
 		Zenith_EntitySlot& xSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xID.m_uGeneration) continue;
-		Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex).clear();
+		Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex).Clear();
 		xSlot.ReleaseSlot();
 		Zenith_ECS_EntityStore().m_axFreeEntityIndices.PushBack(xID.m_uIndex);
 	}
@@ -449,7 +449,7 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 		DestroyEntityComponents(xEntityID);
 		Zenith_EntitySlot& xSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 
-		Zenith_ECS_EntityStore().m_axEntityComponents.Get(xEntityID.m_uIndex).clear();
+		Zenith_ECS_EntityStore().m_axEntityComponents.Get(xEntityID.m_uIndex).Clear();
 
 		// Cancel any pending start before releasing the slot
 		if (xSlot.IsPendingStart())

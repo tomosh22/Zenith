@@ -43,10 +43,10 @@ void Zenith_ComponentMetaRegistry::SetComponentRegistrar(void (*pfn)())
 
 const Zenith_ComponentMeta* Zenith_ComponentMetaRegistry::GetMetaByName(const std::string& strTypeName) const
 {
-	auto xIt = m_xMetaByName.find(strTypeName);
-	if (xIt != m_xMetaByName.end())
+	const Zenith_ComponentMeta* pxMeta = m_xMetaByName.TryGet(strTypeName);
+	if (pxMeta != nullptr)
 	{
-		return &xIt->second;
+		return pxMeta;
 	}
 	return nullptr;
 }
@@ -98,12 +98,12 @@ void Zenith_ComponentMetaRegistry::Finalize()
 	// their macro thunks -- this TU names none of them.
 
 	// Build sorted list of metas
-	m_xMetasSorted.clear();
-	m_xMetasSorted.reserve(m_xMetaByName.size());
+	m_xMetasSorted.Clear();
+	m_xMetasSorted.Reserve(m_xMetaByName.GetSize());
 
-	for (auto& [strName, xMeta] : m_xMetaByName)
+	for (Zenith_HashMap<std::string, Zenith_ComponentMeta>::Iterator xIt(m_xMetaByName); !xIt.Done(); xIt.Next())
 	{
-		m_xMetasSorted.push_back(&xMeta);
+		m_xMetasSorted.PushBack(&xIt.GetValueMutable());
 	}
 
 	// Sort by serialization order
@@ -115,7 +115,7 @@ void Zenith_ComponentMetaRegistry::Finalize()
 
 	m_bInitialized = true;
 
-	Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] Finalized with %u component types:", static_cast<u_int>(m_xMetasSorted.size()));
+	Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] Finalized with %u component types:", m_xMetasSorted.GetSize());
 	for (const auto* pxMeta : m_xMetasSorted)
 	{
 		Zenith_Log(LOG_CATEGORY_ECS, "  [%u] %s",
@@ -123,7 +123,7 @@ void Zenith_ComponentMetaRegistry::Finalize()
 	}
 }
 
-const std::vector<const Zenith_ComponentMeta*>& Zenith_ComponentMetaRegistry::GetAllMetasSorted() const
+const Zenith_Vector<const Zenith_ComponentMeta*>& Zenith_ComponentMetaRegistry::GetAllMetasSorted() const
 {
 	return m_xMetasSorted;
 }
@@ -133,18 +133,18 @@ void Zenith_ComponentMetaRegistry::SerializeEntityComponents(Zenith_Entity& xEnt
 	EnsureInitialized();
 
 	// Collect all components the entity has (in serialization order)
-	std::vector<const Zenith_ComponentMeta*> xComponentsToSerialize;
+	Zenith_Vector<const Zenith_ComponentMeta*> xComponentsToSerialize;
 
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
 		{
-			xComponentsToSerialize.push_back(pxMeta);
+			xComponentsToSerialize.PushBack(pxMeta);
 		}
 	}
 
 	// Write component count
-	u_int uNumComponents = static_cast<u_int>(xComponentsToSerialize.size());
+	u_int uNumComponents = xComponentsToSerialize.GetSize();
 	xStream << uNumComponents;
 
 	// Write each component's type name and data with size prefix for forward compatibility.
@@ -267,9 +267,9 @@ void Zenith_ComponentMetaRegistry::RemoveAllComponents(Zenith_Entity& xEntity) c
 	EnsureInitialized();
 
 	// Dispatch OnDestroy first (in reverse order - last added, first destroyed)
-	for (auto xIt = m_xMetasSorted.rbegin(); xIt != m_xMetasSorted.rend(); ++xIt)
+	for (u_int u = m_xMetasSorted.GetSize(); u-- > 0; )
 	{
-		const Zenith_ComponentMeta* pxMeta = *xIt;
+		const Zenith_ComponentMeta* pxMeta = m_xMetasSorted.Get(u);
 		if (pxMeta->m_pfnOnDestroy && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
 		{
 			pxMeta->m_pfnOnDestroy(xEntity);
@@ -277,9 +277,9 @@ void Zenith_ComponentMetaRegistry::RemoveAllComponents(Zenith_Entity& xEntity) c
 	}
 
 	// Now remove all components (in reverse order)
-	for (auto xIt = m_xMetasSorted.rbegin(); xIt != m_xMetasSorted.rend(); ++xIt)
+	for (u_int u = m_xMetasSorted.GetSize(); u-- > 0; )
 	{
-		const Zenith_ComponentMeta* pxMeta = *xIt;
+		const Zenith_ComponentMeta* pxMeta = m_xMetasSorted.Get(u);
 		if (pxMeta->m_pfnRemoveComponent && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
 		{
 			pxMeta->m_pfnRemoveComponent(xEntity);
@@ -308,7 +308,7 @@ namespace
 	// REVERSE (last-added, first-destroyed) and has no IsValid guard.
 	template<typename HookFn, typename... Args>
 	void DispatchLifecycleHook(
-		const std::vector<const Zenith_ComponentMeta*>& xMetasSorted,
+		const Zenith_Vector<const Zenith_ComponentMeta*>& xMetasSorted,
 		Zenith_Entity& xEntity,
 		HookFn Zenith_ComponentMeta::* pfnHook,
 		Args... xArgs)
@@ -368,9 +368,9 @@ void Zenith_ComponentMetaRegistry::DispatchOnDestroy(Zenith_Entity& xEntity) con
 {
 	EnsureInitialized();
 	// Dispatch in reverse order for destruction (last added, first destroyed)
-	for (auto xIt = m_xMetasSorted.rbegin(); xIt != m_xMetasSorted.rend(); ++xIt)
+	for (u_int u = m_xMetasSorted.GetSize(); u-- > 0; )
 	{
-		const Zenith_ComponentMeta* pxMeta = *xIt;
+		const Zenith_ComponentMeta* pxMeta = m_xMetasSorted.Get(u);
 		if (pxMeta->m_pfnOnDestroy && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
 			pxMeta->m_pfnOnDestroy(xEntity);
 	}

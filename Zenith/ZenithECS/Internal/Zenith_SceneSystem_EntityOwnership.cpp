@@ -35,7 +35,7 @@ Zenith_Entity Zenith_SceneSystem::CreateEntityInScene(Zenith_SceneData* pxSceneD
 	// Allocate a slot and construct a generation-aware handle. This is the exact
 	// slot-level path the old creating ctor used.
 	Zenith_EntityID xID = pxSceneData->CreateEntity();
-	Zenith_Assert(Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex).empty(),
+	Zenith_Assert(Zenith_ECS_EntityStore().m_axEntityComponents.Get(xID.m_uIndex).IsEmpty(),
 		"Entity slot %u already has components - registry not cleared or ID collision", xID.m_uIndex);
 
 	Zenith_Entity xEntity(pxSceneData, xID);

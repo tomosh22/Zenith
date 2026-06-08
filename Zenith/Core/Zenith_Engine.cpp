@@ -552,9 +552,9 @@ void Zenith_Engine::Initialise()
 	{
 		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 		const auto& xRegisteredMetas = xRegistry.GetAllMetasSorted();
-		Zenith_Check(!xRegisteredMetas.empty(),
+		Zenith_Check(xRegisteredMetas.GetSize() != 0,
 			"Component registry is EMPTY after EnsureInitialized() — the registrar was dead-stripped or never ran; component (de)serialization will fail");
-		Zenith_Log(LOG_CATEGORY_CORE, "W6.3: %u component types registered at boot", (u_int)xRegisteredMetas.size());
+		Zenith_Log(LOG_CATEGORY_CORE, "W6.3: %u component types registered at boot", xRegisteredMetas.GetSize());
 
 		static const char* const s_aszCoreEngineComponents[] = { "Transform", "Model", "Camera", "Light", "Collider", "Terrain" };
 		for (const char* szExpected : s_aszCoreEngineComponents)
