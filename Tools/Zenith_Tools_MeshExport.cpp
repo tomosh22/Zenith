@@ -769,7 +769,7 @@ static void ExtractAnimations(
 			pxAnim->mName.C_Str(),
 			strAnimPath.c_str(),
 			xClip.GetDuration(),
-			static_cast<uint32_t>(xClip.GetBoneChannels().size()));
+			static_cast<uint32_t>(xClip.GetBoneChannels().GetSize()));
 	}
 }
 

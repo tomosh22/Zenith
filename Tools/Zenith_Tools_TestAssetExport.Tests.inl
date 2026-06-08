@@ -97,9 +97,9 @@ void Zenith_UnitTests::TestStickFigureFireClipReturnsToAimPoseAtEnd()
 	// directly — Flux_BoneChannel::SampleRotation has an off-by-one quirk at
 	// end-of-clip that returns the first keyframe instead of the last.
 	const auto& axRotations = pxCh->GetRotationKeyframes();
-	ZENITH_ASSERT_TRUE(!axRotations.empty(), "Fire RightUpperArm should have keyframes");
+	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Fire RightUpperArm should have keyframes");
 	const Zenith_Maths::Quat xExpected = StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xLast = axRotations.back().first;
+	const Zenith_Maths::Quat xLast = axRotations.GetBack().first;
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xExpected),
 		"Fire RightUpperArm last keyframe should be aim hold pose");
 	delete pxClip;
@@ -141,7 +141,7 @@ void Zenith_UnitTests::TestStickFigureReloadClipFiveKeyframesOnLeftArm()
 	Flux_AnimationClip* pxClip = CreateReloadAnimation();
 	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("LeftUpperArm");
 	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Reload should have LeftUpperArm channel");
-	ZENITH_ASSERT_TRUE(pxCh->GetRotationKeyframes().size() == 5,
+	ZENITH_ASSERT_TRUE(pxCh->GetRotationKeyframes().GetSize() == 5,
 		"Reload LeftUpperArm should have 5 rotation keyframes (rest, drop, reach, lift, rest)");
 	delete pxClip;
 }
@@ -157,9 +157,9 @@ void Zenith_UnitTests::TestStickFigureReloadClipReturnsToAimPoseAtEnd()
 	// is seamless. Read the authored last keyframe directly (see Fire test for
 	// why we don't sample at the boundary).
 	const auto& axRotations = pxCh->GetRotationKeyframes();
-	ZENITH_ASSERT_TRUE(!axRotations.empty(), "Reload LeftUpperArm should have keyframes");
+	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Reload LeftUpperArm should have keyframes");
 	const Zenith_Maths::Quat xExpected = StickFigureAimHoldPose::LeftUpperArm();
-	const Zenith_Maths::Quat xLast = axRotations.back().first;
+	const Zenith_Maths::Quat xLast = axRotations.GetBack().first;
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xExpected),
 		"Reload LeftUpperArm last keyframe should be aim hold pose");
 	delete pxClip;
@@ -200,9 +200,9 @@ void Zenith_UnitTests::TestStickFigureJumpClipReturnsToIdentityAtEnd()
 	// authored last keyframe directly (see Fire test for why we don't sample
 	// at the boundary).
 	const auto& axRotations = pxCh->GetRotationKeyframes();
-	ZENITH_ASSERT_TRUE(!axRotations.empty(), "Jump Spine should have keyframes");
+	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Jump Spine should have keyframes");
 	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
-	const Zenith_Maths::Quat xLast = axRotations.back().first;
+	const Zenith_Maths::Quat xLast = axRotations.GetBack().first;
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xIdentity),
 		"Jump Spine last keyframe should be identity");
 	delete pxClip;

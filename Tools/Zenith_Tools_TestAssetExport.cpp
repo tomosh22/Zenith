@@ -1485,8 +1485,8 @@ void GenerateProceduralTreeAssets()
 
 	// Bake and export VAT
 	Flux_AnimationTexture* pxVAT = new Flux_AnimationTexture();
-	std::vector<Flux_AnimationClip*> axAnimations;
-	axAnimations.push_back(pxSwayClip);
+	Zenith_Vector<Flux_AnimationClip*> axAnimations;
+	axAnimations.PushBack(pxSwayClip);
 	bool bBakeSuccess = pxVAT->BakeFromAnimations(pxFluxGeometry, pxSkel, axAnimations, 30);
 	if (bBakeSuccess)
 	{

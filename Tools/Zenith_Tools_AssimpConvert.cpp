@@ -329,40 +329,40 @@ aiNodeAnim* ZenithToAssimp(const Flux_BoneChannel& xChannel, const std::string& 
 
 	// Position keyframes
 	const auto& xPositions = xChannel.GetPositionKeyframes();
-	pxOut->mNumPositionKeys = static_cast<uint32_t>(xPositions.size());
+	pxOut->mNumPositionKeys = static_cast<uint32_t>(xPositions.GetSize());
 	if (pxOut->mNumPositionKeys > 0)
 	{
 		pxOut->mPositionKeys = new aiVectorKey[pxOut->mNumPositionKeys];
 		for (uint32_t i = 0; i < pxOut->mNumPositionKeys; i++)
 		{
-			pxOut->mPositionKeys[i].mTime = xPositions[i].second;
-			pxOut->mPositionKeys[i].mValue = ZenithToAssimp(xPositions[i].first);
+			pxOut->mPositionKeys[i].mTime = xPositions.Get(i).second;
+			pxOut->mPositionKeys[i].mValue = ZenithToAssimp(xPositions.Get(i).first);
 		}
 	}
 
 	// Rotation keyframes
 	const auto& xRotations = xChannel.GetRotationKeyframes();
-	pxOut->mNumRotationKeys = static_cast<uint32_t>(xRotations.size());
+	pxOut->mNumRotationKeys = static_cast<uint32_t>(xRotations.GetSize());
 	if (pxOut->mNumRotationKeys > 0)
 	{
 		pxOut->mRotationKeys = new aiQuatKey[pxOut->mNumRotationKeys];
 		for (uint32_t i = 0; i < pxOut->mNumRotationKeys; i++)
 		{
-			pxOut->mRotationKeys[i].mTime = xRotations[i].second;
-			pxOut->mRotationKeys[i].mValue = ZenithToAssimp(xRotations[i].first);
+			pxOut->mRotationKeys[i].mTime = xRotations.Get(i).second;
+			pxOut->mRotationKeys[i].mValue = ZenithToAssimp(xRotations.Get(i).first);
 		}
 	}
 
 	// Scale keyframes
 	const auto& xScales = xChannel.GetScaleKeyframes();
-	pxOut->mNumScalingKeys = static_cast<uint32_t>(xScales.size());
+	pxOut->mNumScalingKeys = static_cast<uint32_t>(xScales.GetSize());
 	if (pxOut->mNumScalingKeys > 0)
 	{
 		pxOut->mScalingKeys = new aiVectorKey[pxOut->mNumScalingKeys];
 		for (uint32_t i = 0; i < pxOut->mNumScalingKeys; i++)
 		{
-			pxOut->mScalingKeys[i].mTime = xScales[i].second;
-			pxOut->mScalingKeys[i].mValue = ZenithToAssimp(xScales[i].first);
+			pxOut->mScalingKeys[i].mTime = xScales.Get(i).second;
+			pxOut->mScalingKeys[i].mValue = ZenithToAssimp(xScales.Get(i).first);
 		}
 	}
 
@@ -379,17 +379,17 @@ aiAnimation* ZenithToAssimp(const Flux_AnimationClip* pxClip)
 	pxOut->mDuration = pxClip->GetDurationInTicks();
 	pxOut->mTicksPerSecond = pxClip->GetTicksPerSecond();
 
-	const auto& xChannels = pxClip->GetBoneChannels();
-	pxOut->mNumChannels = static_cast<uint32_t>(xChannels.size());
+	const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = pxClip->GetBoneChannels();
+	pxOut->mNumChannels = static_cast<uint32_t>(xChannels.GetSize());
 
 	if (pxOut->mNumChannels > 0)
 	{
 		pxOut->mChannels = new aiNodeAnim*[pxOut->mNumChannels];
 
 		uint32_t uIdx = 0;
-		for (const auto& [strName, xChannel] : xChannels)
+		for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels); !xIt.Done(); xIt.Next())
 		{
-			pxOut->mChannels[uIdx++] = ZenithToAssimp(xChannel, strName);
+			pxOut->mChannels[uIdx++] = ZenithToAssimp(xIt.GetValue(), xIt.GetKey());
 		}
 	}
 
