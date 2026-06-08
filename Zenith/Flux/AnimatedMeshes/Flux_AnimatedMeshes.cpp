@@ -11,12 +11,9 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
-#include "ZenithECS/Zenith_Scene.h"
-#include "ZenithECS/Zenith_SceneSystem.h"
-// Zenith_Query.h arrives transitively via Zenith_SceneSystem.h (QueryAllScenes needs it);
-// including it explicitly here would add a new EC<->Flux cross-layer edge.
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
+// Wave 3: models arrive from the EC-side gatherer (g_pfnZenithModelGather, declared in
+// Flux_ModelInstance.h) as (instance, matrix) pairs; the skeleton is read from the
+// instance. No Zenith_ModelComponent.h / Zenith_TransformComponent.h / scene-query here.
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -159,50 +156,41 @@ void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
-// Prepare callback (main thread): walk every Zenith_ModelComponent in all
-// scenes once, keep ONLY skinned-animated models (the inverse of the
-// StaticMeshes filter), and store everything the worker-thread record path
-// needs — the resolved model matrix (from the live Zenith_TransformComponent),
-// the Flux_ModelInstance*, and the Flux_SkeletonInstance* (its bone buffer is
-// read at record time). This is the single shared source for the GBuffer pass
-// and all shadow cascades; it removes every live-ECS read from those worker
-// paths. The selection/skip filter MUST stay identical to the old GBuffer
-// callback so the same set of models renders, in the same order.
+// Prepare callback (main thread): consume the EC-side model gather (every model
+// instance + its world matrix), keep ONLY skinned-animated models (the inverse of
+// the StaticMeshes filter), and store everything the worker-thread record path
+// needs — the model matrix, the Flux_ModelInstance*, and the Flux_SkeletonInstance*
+// (its bone buffer is read at record time). This is the single shared source for the
+// GBuffer pass and all shadow cascades; the worker paths do no live-ECS read. The
+// selection/skip filter MUST stay identical to the old GBuffer callback so the same
+// set of models renders, in the same order.
 void Flux_AnimatedMeshesImpl::GatherDrawPacket(void*)
 {
-	// Instance method: the packet is our own member (direct access). The
-	// g_xEngine.Scenes() reach below is an ECS lookup and stays self-routed
-	// (deliberately NOT injected).
+	// Instance method: the packet is our own member (direct access). Wave 3: the
+	// scene query now lives in the EC-side gatherer; this body touches no ECS.
 	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = m_xDrawPacket;
 	xPacket.Clear();
 
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	xModels.Clear();
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach([&xModels](Zenith_EntityID, Zenith_ModelComponent& xModel){ xModels.PushBack(&xModel); });
+	// Wave 3: models are gathered EC-side into parallel (instance, matrix) lists.
+	Zenith_Vector<Flux_ModelInstance*> xInstances;
+	Zenith_Vector<Zenith_Maths::Matrix4> xMatrices;
+	if (g_pfnZenithModelGather) g_pfnZenithModelGather(xInstances, xMatrices);
 
-	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	for (u_int u = 0; u < xInstances.GetSize(); ++u)
 	{
-		Zenith_ModelComponent* pxModelComponent = xIt.GetData();
+		Flux_ModelInstance* pxModelInstance = xInstances.Get(u);
 
-		// Skip components without a model or skeleton (not animated).
-		if (!pxModelComponent->HasModel() || !pxModelComponent->HasSkeleton())
-		{
-			continue;
-		}
-
-		Flux_ModelInstance* pxModelInstance = pxModelComponent->GetModelInstance();
-		Flux_SkeletonInstance* pxSkeleton = pxModelComponent->GetSkeletonInstance();
-
-		if (!pxModelInstance || !pxSkeleton)
-		{
-			continue;
-		}
+		// The skeleton instance distinguishes animated (skinned) models from static
+		// ones. No skeleton -> rendered by Flux_StaticMeshes instead. (Equivalent to
+		// the old HasModel() && HasSkeleton() component test — both delegate to the
+		// model instance.)
+		Flux_SkeletonInstance* pxSkeleton = pxModelInstance->GetSkeletonInstance();
+		if (!pxSkeleton) continue;
 
 		Flux_AnimatedMeshDrawItem xItem;
-		xItem.m_pxModel = pxModelComponent;
 		xItem.m_pxModelInstance = pxModelInstance;
-		xItem.m_pxSkeleton = pxSkeleton;
-		pxModelComponent->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xItem.m_xModelMatrix);
+		xItem.m_pxSkeleton      = pxSkeleton;
+		xItem.m_xModelMatrix    = xMatrices.Get(u);
 		xPacket.PushBack(xItem);
 	}
 }

@@ -8,27 +8,22 @@
 class Flux_DynamicConstantBuffer;
 class Flux_ModelInstance;
 class Flux_SkeletonInstance;
-class Zenith_ModelComponent;
 
 // Cross-subsystem dependency injected into Initialise (Wave-15 DI seam, twin of
 // Flux_StaticMeshesImpl, built on the WS9.2 Flux_HiZImpl / Wave-11 Flux_SSAOImpl /
 // Wave-14 Flux_QuadsImpl template). Forward-declared here; the full header is
 // pulled in by Flux_AnimatedMeshes.cpp. Flux_GraphicsImpl is the ONLY render dep.
-// The Prepare-gather's g_xEngine.Scenes() reach is an ECS lookup that stays
-// self-routed (NOT injected); bone buffers are sourced from the gathered
-// Zenith_AnimatorComponent/Flux_SkeletonInstance, not from a render dep.
+// Wave 3: the model+transform+skeleton read that the Prepare-gather did is now done
+// by the EC-side model gatherer (g_pfnZenithModelGather), so this TU names no
+// EntityComponent type; the skeleton is read from the gathered Flux_ModelInstance.
 class Flux_GraphicsImpl;
 
-// Per-frame draw item resolved on the main thread during Prepare. The model
-// matrix is resolved here (not in the record path) so the live
-// Zenith_TransformComponent read happens on the main thread too. The skeleton
-// instance pointer is resolved from the live Zenith_ModelComponent here as well
-// — the record callbacks run on worker threads and must not touch the ECS. The
-// worker path only dereferences m_pxModelInstance / m_pxSkeleton (heap-stable
-// Flux objects), never the component.
+// Per-frame draw item resolved on the main thread during Prepare. The (instance,
+// skeleton, matrix) come from the EC-side model gather; the record callbacks run on
+// worker threads and only dereference m_pxModelInstance / m_pxSkeleton (heap-stable
+// Flux objects).
 struct Flux_AnimatedMeshDrawItem
 {
-	Zenith_ModelComponent* m_pxModel = nullptr;
 	Flux_ModelInstance*    m_pxModelInstance = nullptr;
 	Flux_SkeletonInstance* m_pxSkeleton = nullptr;
 	Zenith_Maths::Matrix4  m_xModelMatrix;
