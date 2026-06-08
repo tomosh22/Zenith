@@ -116,6 +116,18 @@ public:
 	// deliberately NOT added here — see the .cpp.)
 	void AddToShutdownWalk(u_int uFeatureIndex);
 
+	// W6.1 (declarative lifecycle ordering): declare that the feature at
+	// uFeatureIndex must INITIALISE AFTER the feature named szDependsOnName — a real
+	// init dependency (uFeatureIndex's Initialise trampoline consumes that feature
+	// via g_xEngine, so it must already be brought up). These declarations form a
+	// dependency graph over the init order; VerifyInitDependencies() then asserts the
+	// hand-maintained init order is a valid topological order of it. The runtime init
+	// order is UNCHANGED (still registration order) — this only makes a future reorder
+	// that puts a feature before a dependency it consumes a STRUCTURAL boot error
+	// (caught by the dependency graph), not just a snapshot mismatch against the golden
+	// array (which a reorder + golden-update would silently pass).
+	void DeclareInitDependsOn(u_int uFeatureIndex, const char* szDependsOnName);
+
 	// Init-order feature view. The init walk iterates [0, GetNumFeatures()) and
 	// calls m_pfnInitialise where non-null.
 	const Flux_FeatureDesc* GetFeatures() const { return m_axFeatures; }
@@ -136,6 +148,13 @@ public:
 	// it now SURVIVES Release builds — not just Debug) rather than as a subtle
 	// render/teardown corruption later.
 	void VerifyOrder() const;
+
+	// W6.1: verify the init order is a valid topological order of the declared init
+	// dependency graph (DeclareInitDependsOn) — every feature initialises strictly
+	// after every feature it depends on. Catches a dependency-violating reorder
+	// (e.g. DeferredShading before HDR) structurally, even if the golden array was
+	// updated to match the bad order. Release-survivable (Zenith_Check).
+	void VerifyInitDependencies() const;
 #endif
 
 private:
@@ -153,4 +172,11 @@ private:
 	// Shutdown order: indices into m_axFeatures, in shutdown sequence.
 	u_int m_auShutdownOrder[FLUX_MAX_FEATURES];
 	u_int m_uNumShutdown = 0;
+
+	// W6.1: declared init dependency edges — m_auDepFeature[i] must init AFTER the
+	// feature named m_aszDepName[i]. Verified by VerifyInitDependencies. Sized for
+	// up to 4 deps per feature (the heaviest, DeferredShading, declares 7; ~16 total).
+	u_int       m_auDepFeature[FLUX_MAX_FEATURES * 4];
+	const char* m_aszDepName[FLUX_MAX_FEATURES * 4];
+	u_int       m_uNumInitDeps = 0;
 };

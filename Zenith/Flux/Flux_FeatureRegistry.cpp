@@ -102,6 +102,7 @@ void Flux_FeatureRegistry::Reset()
 	m_uNumFeatures = 0;
 	m_uNumSetup = 0;
 	m_uNumShutdown = 0;
+	m_uNumInitDeps = 0;
 }
 
 u_int Flux_FeatureRegistry::Register(const char* szName,
@@ -150,6 +151,17 @@ void Flux_FeatureRegistry::AddToShutdownWalk(u_int uFeatureIndex)
 	Zenith_Assert(m_uNumShutdown < FLUX_MAX_FEATURES, "Flux_FeatureRegistry::AddToShutdownWalk: shutdown-order overflow");
 	m_auShutdownOrder[m_uNumShutdown] = uFeatureIndex;
 	m_uNumShutdown++;
+}
+
+void Flux_FeatureRegistry::DeclareInitDependsOn(u_int uFeatureIndex, const char* szDependsOnName)
+{
+	Zenith_Assert(uFeatureIndex < m_uNumFeatures,
+		"Flux_FeatureRegistry::DeclareInitDependsOn: feature index %u out of range (%u registered)", uFeatureIndex, m_uNumFeatures);
+	Zenith_Assert(szDependsOnName != nullptr, "Flux_FeatureRegistry::DeclareInitDependsOn: null dependency name");
+	Zenith_Assert(m_uNumInitDeps < FLUX_MAX_FEATURES * 4, "Flux_FeatureRegistry::DeclareInitDependsOn: init-dep overflow");
+	m_auDepFeature[m_uNumInitDeps] = uFeatureIndex;
+	m_aszDepName[m_uNumInitDeps] = szDependsOnName;
+	m_uNumInitDeps++;
 }
 
 void Flux_FeatureRegistry::RunSetupPhase(Flux_RenderGraph& xGraph, Flux_FeatureSetupPhase ePhase) const
@@ -405,8 +417,35 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToShutdownWalk(uSkybox);
 	xReg.AddToShutdownWalk(uShadows);
 
+	// ===== INIT DEPENDENCIES (W6.1: declarative lifecycle ordering) =========
+	// Real init dependencies, read straight off each feature's Initialise trampoline
+	// above (which consumes these features via g_xEngine, so they must be up first).
+	// Declaring them makes the init ORDER checkable against the dependency GRAPH
+	// (VerifyInitDependencies) — a reorder that puts a feature before a dependency it
+	// consumes is now a structural boot error, not just a mismatch against the
+	// transcribed golden snapshot (which a reorder + golden edit would silently pass).
+	// FluxGraphics deps are omitted: it is brought up inline before the whole walk, so
+	// it trivially precedes every feature.
+	xReg.DeclareInitDependsOn(uSkybox,          szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(uGrass,           szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(uSSR,             szFLUX_FEATURE_HIZ);
+	xReg.DeclareInitDependsOn(uSSGI,            szFLUX_FEATURE_HIZ);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_SHADOWS);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_IBL);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_SSR);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_SSGI);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_DYNAMIC_LIGHTS);
+	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_LIGHT_CLUSTERING);
+	xReg.DeclareInitDependsOn(uSSAO,            szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(uFog,             szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(uFog,             szFLUX_FEATURE_SHADOWS);
+	xReg.DeclareInitDependsOn(uSDFs,            szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(uParticles,       szFLUX_FEATURE_HDR);
+
 #ifdef ZENITH_RUNTIME_CHECKS
 	xReg.VerifyOrder();
+	xReg.VerifyInitDependencies();
 #endif
 }
 
@@ -580,6 +619,43 @@ void Flux_FeatureRegistry::VerifyOrder() const
 		Zenith_Check(strcmp(szName, s_aszGoldenShutdownOrder[u]) == 0,
 			"Flux_FeatureRegistry::VerifyOrder: shutdown order mismatch at %u: registry '%s' != golden '%s'",
 			u, szName, s_aszGoldenShutdownOrder[u]);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// W6.1 DEPENDENCY-GRAPH CHECK. Where VerifyOrder above asserts the init order
+// equals a transcribed golden SNAPSHOT, this asserts it satisfies the declared
+// dependency GRAPH: every feature initialises strictly after every feature it
+// consumes. This catches a *semantically* wrong reorder (a feature moved ahead of
+// a dependency) even if someone updated the golden array to match the bad order —
+// the golden check alone would pass that, the graph check will not.
+// ---------------------------------------------------------------------------
+void Flux_FeatureRegistry::VerifyInitDependencies() const
+{
+	for (u_int u = 0; u < m_uNumInitDeps; u++)
+	{
+		const u_int uFeature = m_auDepFeature[u];
+		const char* szDep    = m_aszDepName[u];
+
+		// Resolve the dependency's init index by name (it must be a registered feature).
+		u_int uDepIndex = FLUX_MAX_FEATURES;
+		for (u_int v = 0; v < m_uNumFeatures; v++)
+		{
+			if (strcmp(m_axFeatures[v].m_szName, szDep) == 0)
+			{
+				uDepIndex = v;
+				break;
+			}
+		}
+		Zenith_Check(uDepIndex < m_uNumFeatures,
+			"Flux_FeatureRegistry::VerifyInitDependencies: '%s' declares a dependency on '%s', which is not a registered feature",
+			m_axFeatures[uFeature].m_szName, szDep);
+
+		// Init order == registration order == index order, so the dependency must
+		// have a strictly lower index (initialise first).
+		Zenith_Check(uFeature > uDepIndex,
+			"Flux_FeatureRegistry::VerifyInitDependencies: init order violates a declared dependency — '%s' (init #%u) must initialise AFTER '%s' (init #%u) which it consumes",
+			m_axFeatures[uFeature].m_szName, uFeature, szDep, uDepIndex);
 	}
 }
 #endif // ZENITH_RUNTIME_CHECKS
