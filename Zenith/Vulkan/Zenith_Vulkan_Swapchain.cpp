@@ -12,6 +12,9 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Core/Zenith_CommandLine.h"
+
+#include <cstdio>
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
@@ -188,6 +191,16 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	xCreateInfo.imageExtent = xExtent;
 	xCreateInfo.imageArrayLayers = 1;
 	xCreateInfo.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
+
+	// --screenshot copies the swapchain image to a buffer, which requires
+	// TRANSFER_SRC usage. Add it only when a screenshot was requested so
+	// default rendering keeps byte-identical swapchain creation. Guarded on
+	// surface support (virtually all desktop surfaces allow it).
+	if (Zenith_CommandLine::GetScreenshotPath() != nullptr &&
+		(xSwapChainSupport.m_xCapabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferSrc))
+	{
+		xCreateInfo.imageUsage |= vk::ImageUsageFlagBits::eTransferSrc;
+	}
 
 	uint32_t uGraphicsQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_GRAPHICS);
 	uint32_t uPresentQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_GRAPHICS);
@@ -473,6 +486,160 @@ bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
 	return m_bShouldWaitOnImageAvailableSem;
 }
 
+namespace
+{
+	// --screenshot readback. Copies the just-rendered swapchain image into a
+	// host-visible buffer and writes an uncompressed 32-bit TGA (top-left
+	// origin, BGRA byte order — matches the usual B8G8R8A8 swapchain, R/B
+	// swapped for an R8G8B8A8 surface). Self-contained (own buffer + one-time
+	// command buffer, no engine registries) and runs only on the single
+	// --screenshot-frame, so the waitIdle cost is irrelevant. Deterministic
+	// with --fixed-dt; the in-engine dump avoids OS-compositor noise that
+	// makes the CopyFromScreen fallback flaky for sub-0.1% A/B compares.
+	void WriteSwapchainScreenshotTGA(Zenith_Vulkan_Swapchain& xSwapchain, const char* szPath)
+	{
+		// No valid acquired image this frame (transient acquire failure) — skip.
+		if (!xSwapchain.m_bShouldWaitOnImageAvailableSem)
+		{
+			return;
+		}
+
+		Zenith_Vulkan* pxVulkan = xSwapchain.m_pxVulkan;
+		const vk::Device& xDevice = pxVulkan->GetDevice();
+		const uint32_t uW = xSwapchain.m_xExtent.width;
+		const uint32_t uH = xSwapchain.m_xExtent.height;
+		const vk::DeviceSize ulSize = vk::DeviceSize(uW) * uH * 4;
+
+		// Ensure the just-submitted render into the swapchain image is complete.
+		VkCheck(xDevice.waitIdle());
+
+		// --- host-visible staging buffer ---
+		vk::Buffer xBuf = VkUnwrap(xDevice.createBuffer(vk::BufferCreateInfo()
+			.setSize(ulSize)
+			.setUsage(vk::BufferUsageFlagBits::eTransferDst)
+			.setSharingMode(vk::SharingMode::eExclusive)));
+
+		const vk::MemoryRequirements xReq = xDevice.getBufferMemoryRequirements(xBuf);
+		const vk::PhysicalDeviceMemoryProperties xMemProps = pxVulkan->GetPhysicalDevice().getMemoryProperties();
+		const vk::MemoryPropertyFlags eWant = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+		uint32_t uMemType = UINT32_MAX;
+		for (uint32_t u = 0; u < xMemProps.memoryTypeCount; ++u)
+		{
+			if ((xReq.memoryTypeBits & (1u << u)) && (xMemProps.memoryTypes[u].propertyFlags & eWant) == eWant)
+			{
+				uMemType = u;
+				break;
+			}
+		}
+		Zenith_Assert(uMemType != UINT32_MAX, "screenshot: no host-visible coherent memory type");
+
+		vk::DeviceMemory xMem = VkUnwrap(xDevice.allocateMemory(vk::MemoryAllocateInfo()
+			.setAllocationSize(xReq.size)
+			.setMemoryTypeIndex(uMemType)));
+		VkCheck(xDevice.bindBufferMemory(xBuf, xMem, 0));
+
+		// --- one-time copy command buffer ---
+		vk::CommandBuffer xCmd = VkUnwrap(xDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo()
+			.setCommandPool(pxVulkan->GetCommandPool(COMMANDTYPE_GRAPHICS))
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(1)))[0];
+
+		VkCheck(xCmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)));
+
+		vk::Image xImage = xSwapchain.m_xImages[xSwapchain.m_uCurrentImageIndex];
+		const vk::ImageSubresourceRange xColourRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+		// PresentSrc -> TransferSrc (render pass left the image in PresentSrc).
+		vk::ImageMemoryBarrier xToSrc = vk::ImageMemoryBarrier()
+			.setOldLayout(vk::ImageLayout::ePresentSrcKHR)
+			.setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
+			.setSrcAccessMask(vk::AccessFlagBits::eMemoryRead)
+			.setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+			.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+			.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+			.setImage(xImage)
+			.setSubresourceRange(xColourRange);
+		xCmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer,
+			{}, nullptr, nullptr, xToSrc);
+
+		xCmd.copyImageToBuffer(xImage, vk::ImageLayout::eTransferSrcOptimal, xBuf,
+			vk::BufferImageCopy()
+				.setImageSubresource(vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1))
+				.setImageExtent(vk::Extent3D(uW, uH, 1)));
+
+		// TransferSrc -> PresentSrc so the subsequent present is valid.
+		vk::ImageMemoryBarrier xToPresent = xToSrc;
+		xToPresent
+			.setOldLayout(vk::ImageLayout::eTransferSrcOptimal)
+			.setNewLayout(vk::ImageLayout::ePresentSrcKHR)
+			.setSrcAccessMask(vk::AccessFlagBits::eTransferRead)
+			.setDstAccessMask(vk::AccessFlagBits::eMemoryRead);
+		xCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands,
+			{}, nullptr, nullptr, xToPresent);
+
+		VkCheck(xCmd.end());
+		vk::SubmitInfo xSubmit = vk::SubmitInfo().setCommandBufferCount(1).setPCommandBuffers(&xCmd);
+		VkCheck(pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).submit(xSubmit, nullptr));
+		VkCheck(pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).waitIdle());
+
+		// --- map + write TGA ---
+		const uint8_t* pSrc = static_cast<const uint8_t*>(VkUnwrap(xDevice.mapMemory(xMem, 0, ulSize)));
+		const bool bIsBGRA =
+			xSwapchain.m_xImageFormat == vk::Format::eB8G8R8A8Unorm ||
+			xSwapchain.m_xImageFormat == vk::Format::eB8G8R8A8Srgb;
+
+		std::FILE* pFile = nullptr;
+#ifdef _MSC_VER
+		::fopen_s(&pFile, szPath, "wb");
+#else
+		pFile = std::fopen(szPath, "wb");
+#endif
+		if (pFile != nullptr)
+		{
+			uint8_t aHeader[18] = {};
+			aHeader[2]  = 2;                              // uncompressed true-color
+			aHeader[12] = uint8_t(uW & 0xFF);
+			aHeader[13] = uint8_t((uW >> 8) & 0xFF);
+			aHeader[14] = uint8_t(uH & 0xFF);
+			aHeader[15] = uint8_t((uH >> 8) & 0xFF);
+			aHeader[16] = 32;                            // bits per pixel
+			aHeader[17] = 0x28;                          // top-left origin (0x20) + 8 alpha bits (0x08)
+			std::fwrite(aHeader, 1, sizeof(aHeader), pFile);
+
+			// TGA 32-bit is stored BGRA. A B8G8R8A8 surface already matches; for
+			// an R8G8B8A8 surface swap R/B in place in the (host-visible, about
+			// to be unmapped) staging memory so the on-disk dump is consistent
+			// regardless of swapchain format.
+			if (!bIsBGRA)
+			{
+				uint8_t* pMut = const_cast<uint8_t*>(pSrc);
+				const uint32_t uPixels = uW * uH;
+				for (uint32_t p = 0; p < uPixels; ++p)
+				{
+					uint8_t* px = pMut + p * 4;
+					const uint8_t uR = px[0];
+					px[0] = px[2];
+					px[2] = uR;
+				}
+			}
+			std::fwrite(pSrc, 1, size_t(ulSize), pFile);
+
+			std::fclose(pFile);
+			Zenith_Log(LOG_CATEGORY_VULKAN, "Screenshot written: %s (%ux%u)", szPath, uW, uH);
+		}
+		else
+		{
+			Zenith_Error(LOG_CATEGORY_VULKAN, "Screenshot: failed to open '%s' for writing", szPath);
+		}
+		xDevice.unmapMemory(xMem);
+
+		// --- cleanup ---
+		xDevice.freeCommandBuffers(pxVulkan->GetCommandPool(COMMANDTYPE_GRAPHICS), xCmd);
+		xDevice.destroyBuffer(xBuf);
+		xDevice.freeMemory(xMem);
+	}
+}
+
 void Zenith_Vulkan_Swapchain::EndFrame()
 {
 	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.VulkanSwapchain();
@@ -535,6 +702,19 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		.setSignalSemaphoreCount(xSwapchain.m_bShouldWaitOnImageAvailableSem ? 1 : 0);
 
 	VkCheck(xSwapchain.m_pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, xSwapchain.m_pxVulkan->GetCurrentInFlightFence()));
+
+	// --screenshot: capture the freshly-rendered swapchain image on the
+	// requested frame, before present (the helper restores the PresentSrc
+	// layout so present stays valid). Fires exactly once — the frame counter
+	// equals the target on a single EndFrame.
+	{
+		const char* szScreenshotPath = Zenith_CommandLine::GetScreenshotPath();
+		if (szScreenshotPath != nullptr &&
+			g_xEngine.FluxRenderer().GetFrameCounter() == Zenith_CommandLine::GetScreenshotFrame())
+		{
+			WriteSwapchainScreenshotTGA(xSwapchain, szScreenshotPath);
+		}
+	}
 
 	if (xSwapchain.m_bShouldWaitOnImageAvailableSem)
 	{

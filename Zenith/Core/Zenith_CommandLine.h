@@ -42,4 +42,14 @@ namespace Zenith_CommandLine
     // True iff `--headless` was on the command line. Implies "no Vulkan
     // device, no GPU resources, no window visible".
     bool IsHeadless();
+
+    // Screenshot capture: `--screenshot <path>` [`--screenshot-frame <N>`].
+    // The render backend dumps the swapchain image to <path> (an uncompressed
+    // 32-bit TGA) on the EndFrame whose FluxRenderer frame counter equals N,
+    // giving a deterministic, OS-compositor-free A/B oracle (cf. the
+    // CopyFromScreen fallback). Returns nullptr when --screenshot was absent;
+    // the returned pointer is into argv (process-lifetime), mirroring the
+    // automated-test runner. GetScreenshotFrame() defaults to 120.
+    const char* GetScreenshotPath();
+    u_int       GetScreenshotFrame();
 }
