@@ -18,16 +18,6 @@ class Zenith_DataStream;
 
 namespace Zenith_UI {
 
-// Text entry for batch submission to Flux_Text
-struct UITextEntry
-{
-    std::string m_strText;
-    Zenith_Maths::Vector2 m_xPosition;
-    float m_fSize;
-    Zenith_Maths::Vector4 m_xColor;
-    int m_iSortOrder = 0; // Owning element's sort order (for overlay clip partitioning)
-};
-
 class Zenith_UICanvas
 {
 public:
@@ -87,6 +77,19 @@ public:
     static Zenith_UICanvas* GetPrimaryCanvas() { return s_pxPrimaryCanvas; }
     static void SetPrimaryCanvas(Zenith_UICanvas* pxCanvas) { s_pxPrimaryCanvas = pxCanvas; }
 
+#ifdef ZENITH_INPUT_SIMULATOR
+    // ========== Automation Helper ==========
+    //
+    // Resolves a named element on the primary canvas to its screen center and
+    // simulates a left click there via Zenith_InputSimulator::SimulateMouseClick.
+    // Relocated here from Zenith_InputSimulator so the L1 Input layer no longer
+    // depends UP on UI; this UI-layer helper calls DOWN into Input legitimately.
+    // NOTE: SimulateMouseClick ticks a frame (StepFrame) internally, so this is
+    // NOT safe to call reentrantly from inside an AutomatedTest Step — see the
+    // inline-replicated equivalents in the game test suites.
+    static void SimulateClickOnUIElement(const char* szElementName);
+#endif
+
     // ========== Focus Navigation ==========
 
     void SetFocusedElement(Zenith_UIElement* pxElement);
@@ -112,12 +115,9 @@ public:
         float fCornerRadius = 0.0f, const Zenith_Maths::Vector4& xGradientColor = {-1,-1,-1,-1});
     void SubmitQuadWithUV(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID, const Zenith_Maths::Vector2& xUVMin, const Zenith_Maths::Vector2& xUVMax);
 
-    // Submit text (called by UI elements, batched and sent to Flux_Text)
+    // Submit text (called by UI elements, batched and sent to Flux_Text via the
+    // Flux-owned queue in Flux/Text/Flux_TextQueue.h)
     void SubmitText(const std::string& strText, const Zenith_Maths::Vector2& xPosition, float fSize, const Zenith_Maths::Vector4& xColor = {1,1,1,1});
-
-    // Get pending text entries (for Flux_Text to process)
-    static Zenith_Vector<UITextEntry>& GetPendingTextEntries() { return s_xPendingTextEntries; }
-    static void ClearPendingTextEntries() { s_xPendingTextEntries.Clear(); }
 
     // ========== Serialization ==========
 
@@ -155,9 +155,6 @@ private:
 
     // Primary canvas
     static Zenith_UICanvas* s_pxPrimaryCanvas;
-
-    // Static text entries for Flux_Text integration
-    static Zenith_Vector<UITextEntry> s_xPendingTextEntries;
 };
 
 } // namespace Zenith_UI

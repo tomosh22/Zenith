@@ -7,7 +7,9 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIToggle.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
+#include "Flux/Text/Flux_TextQueue.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputSimulator.h"
 #include <algorithm>
 
 namespace Zenith_UI {
@@ -16,7 +18,6 @@ static constexpr uint32_t UI_CANVAS_VERSION = 2;
 
 // Static member initialization
 Zenith_UICanvas* Zenith_UICanvas::s_pxPrimaryCanvas = nullptr;
-Zenith_Vector<UITextEntry> Zenith_UICanvas::s_xPendingTextEntries;
 
 void Zenith_UICanvas::Initialise()
 {
@@ -26,7 +27,7 @@ void Zenith_UICanvas::Initialise()
 void Zenith_UICanvas::Shutdown()
 {
     s_pxPrimaryCanvas = nullptr;
-    s_xPendingTextEntries.Clear();
+    Flux::Flux_TextQueue::ClearPending();
     Zenith_Log(LOG_CATEGORY_UI, "Zenith_UICanvas system shutdown");
 }
 
@@ -178,6 +179,22 @@ Zenith_UIElement* Zenith_UICanvas::FindElement(const std::string& strName) const
     }
     return nullptr;
 }
+
+#ifdef ZENITH_INPUT_SIMULATOR
+void Zenith_UICanvas::SimulateClickOnUIElement(const char* szElementName)
+{
+    Zenith_UICanvas* pxCanvas = GetPrimaryCanvas();
+    Zenith_Assert(pxCanvas, "No primary canvas for SimulateClickOnUIElement");
+    Zenith_UIElement* pxElement = pxCanvas->FindElement(szElementName);
+    Zenith_Assert(pxElement, "UI element not found: %s", szElementName);
+
+    Zenith_Maths::Vector4 xBounds = pxElement->GetScreenBounds();
+    double fCenterX = static_cast<double>((xBounds.x + xBounds.z) * 0.5f);
+    double fCenterY = static_cast<double>((xBounds.y + xBounds.w) * 0.5f);
+
+    Zenith_InputSimulator::SimulateMouseClick(fCenterX, fCenterY);
+}
+#endif
 
 Zenith_UIElement* Zenith_UICanvas::FindElementRecursive(Zenith_UIElement* pxElement, const std::string& strName) const
 {
@@ -441,14 +458,14 @@ void Zenith_UICanvas::SubmitText(const std::string& strText, const Zenith_Maths:
         }
     }
 
-    UITextEntry xEntry;
+    Flux::Flux_TextEntry xEntry;
     xEntry.m_strText = strText;
     xEntry.m_xPosition = xPosition;
     xEntry.m_fSize = fSize;
     xEntry.m_xColor = xColor;
     xEntry.m_iSortOrder = m_iCurrentSortOrder;
 
-    s_xPendingTextEntries.PushBack(xEntry);
+    Flux::Flux_TextQueue::Submit(xEntry);
 }
 
 // ========== Focus Navigation ==========

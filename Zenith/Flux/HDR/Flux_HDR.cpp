@@ -7,7 +7,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
-#include "UI/Zenith_UICanvas.h"
+#include "Flux/Text/Flux_TextQueue.h"
 // Injected deps: VulkanMemory owns the auto-exposure VRAM buffers + uploads,
 // the swapchain supplies the back-buffer dims, FrameContext supplies the
 // per-frame delta-time. Method bodies need the full types.
@@ -389,11 +389,11 @@ static void SubmitHistogramLabels()
 	const Zenith_Maths::Vector4 xGray(0.7f, 0.7f, 0.7f, 1.0f);
 
 	// Get text entries vector
-	Zenith_Vector<Zenith_UI::UITextEntry>& xTextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
+	Zenith_Vector<Flux::Flux_TextEntry>& xTextEntries = Flux::Flux_TextQueue::GetPending();
 
 	// Title above histogram
 	{
-		Zenith_UI::UITextEntry xEntry;
+		Flux::Flux_TextEntry xEntry;
 		xEntry.m_strText = "Luminance Histogram";
 		xEntry.m_xPosition = Zenith_Maths::Vector2(fHistLeft, fHistTop - fTitleSize - 5.0f);
 		xEntry.m_fSize = fTitleSize;
@@ -407,7 +407,7 @@ static void SubmitHistogramLabels()
 
 	// Shadows label (left third)
 	{
-		Zenith_UI::UITextEntry xEntry;
+		Flux::Flux_TextEntry xEntry;
 		xEntry.m_strText = "Shadows";
 		xEntry.m_xPosition = Zenith_Maths::Vector2(fHistLeft + fZoneWidth * 0.1f, fLabelY);
 		xEntry.m_fSize = fLabelSize;
@@ -417,7 +417,7 @@ static void SubmitHistogramLabels()
 
 	// Midtones label (middle third)
 	{
-		Zenith_UI::UITextEntry xEntry;
+		Flux::Flux_TextEntry xEntry;
 		xEntry.m_strText = "Mids";
 		xEntry.m_xPosition = Zenith_Maths::Vector2(fHistLeft + fZoneWidth * 1.3f, fLabelY);
 		xEntry.m_fSize = fLabelSize;
@@ -427,7 +427,7 @@ static void SubmitHistogramLabels()
 
 	// Highlights label (right third)
 	{
-		Zenith_UI::UITextEntry xEntry;
+		Flux::Flux_TextEntry xEntry;
 		xEntry.m_strText = "Highs";
 		xEntry.m_xPosition = Zenith_Maths::Vector2(fHistLeft + fZoneWidth * 2.3f, fLabelY);
 		xEntry.m_fSize = fLabelSize;

@@ -1341,6 +1341,7 @@
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManagerImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h" />
+    <ClInclude Include="..\Zenith\Flux\Text\Flux_TextQueue.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h" />
@@ -2557,6 +2558,7 @@
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.cpp" />
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Text\Flux_TextQueue.cpp" />
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp" />
     <ClCompile Include="..\Zenith\Flux\Zenith_GameRenderHook.cpp" />
     <ClCompile Include="..\Zenith\Flux\Zenith_RenderBus.cpp" />

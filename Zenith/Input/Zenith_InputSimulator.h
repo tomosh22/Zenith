@@ -40,8 +40,11 @@ public:
 	// EndTestFrame clears it, mirroring SimulateKeyPress semantics.
 	static void SimulateMouseWheel(float fDelta);
 
-	// UI element click helper: resolves element name to screen center and simulates a click
-	static void SimulateClickOnUIElement(const char* szElementName);
+	// NOTE: the UI-element click helper that resolved a named element to its
+	// screen center and clicked it formerly lived here. It pulled UI/Zenith_UICanvas.h
+	// into this L1 Input TU (an illegal layer-up dependency). It has been relocated
+	// to the UI layer as Zenith_UI::Zenith_UICanvas::SimulateClickOnUIElement, which
+	// may legitimately include UICanvas and call back DOWN into SimulateMouseClick.
 
 	// Key state manipulation (for unit tests that need explicit held-key control)
 	static void SetKeyHeld(Zenith_KeyCode eKey, bool bHeld);

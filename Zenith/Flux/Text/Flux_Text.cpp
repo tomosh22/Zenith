@@ -8,7 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "UI/Zenith_UICanvas.h"
+#include "Flux/Text/Flux_TextQueue.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
@@ -23,7 +23,7 @@
 // self-lookup survives only in the non-capturing ExecuteText / hot-reload
 // fn-pointer trampolines below (they re-enter to recover the singleton instance).
 // DebugVariables() stays a direct g_xEngine lookup (ZENITH_TOOLS-only, reached once
-// under #ifdef ZENITH_DEBUG_VARIABLES). The Zenith_UI::Zenith_UICanvas statics + the
+// under #ifdef ZENITH_DEBUG_VARIABLES). The Flux::Flux_TextQueue statics + the
 // FontHandle asset are not g_xEngine subsystems (out of scope for this seam).
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
@@ -101,7 +101,7 @@ void Flux_TextImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Memor
 
 void Flux_TextImpl::Reset()
 {
-	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
+	Flux::Flux_TextQueue::ClearPending();
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_TextImpl::Reset() - Cleared pending text entries");
 }
 
@@ -143,7 +143,7 @@ void Flux_TextImpl::ClearOverlayClipRect()
 // Baseline-Y semantics: fBaselineYPx = fAscentPx for the first line. The plane
 // bounds in GlyphMetric are RELATIVE TO BASELINE (Y-down, see Zenith_FontAsset.h),
 // so they're added to (cursorX, baselineY) without further sign-flips.
-static void ProcessTextEntry(const Zenith_UI::UITextEntry& xEntry,
+static void ProcessTextEntry(const Flux::Flux_TextEntry& xEntry,
 							 const Zenith_FontAsset* pxFont,
 							 Zenith_Vector<Flux_TextVertex>& xVertices,
 							 uint32_t& uCharCount)
@@ -220,25 +220,25 @@ uint32_t Flux_TextImpl::UploadChars()
 
 	const Zenith_FontAsset* pxFont = this->m_xFontAsset.Resolve();
 
-	Zenith_Vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
+	Zenith_Vector<Flux::Flux_TextEntry>& xTextEntries = Flux::Flux_TextQueue::GetPending();
 
 	if (this->m_bOverlayClipActive)
 	{
 		this->m_uBgCharCount = 0;
 		this->m_uFgCharCount = 0;
 
-		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
+		for (Zenith_Vector<Flux::Flux_TextEntry>::Iterator xIt(xTextEntries); !xIt.Done(); xIt.Next())
 		{
-			const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
+			const Flux::Flux_TextEntry& xEntry = xIt.GetData();
 			if (xEntry.m_iSortOrder < this->m_iOverlayClipSortOrder)
 			{
 				ProcessTextEntry(xEntry, pxFont, xVertices, this->m_uBgCharCount);
 			}
 		}
 
-		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
+		for (Zenith_Vector<Flux::Flux_TextEntry>::Iterator xIt(xTextEntries); !xIt.Done(); xIt.Next())
 		{
-			const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
+			const Flux::Flux_TextEntry& xEntry = xIt.GetData();
 			if (xEntry.m_iSortOrder >= this->m_iOverlayClipSortOrder)
 			{
 				ProcessTextEntry(xEntry, pxFont, xVertices, this->m_uFgCharCount);
@@ -252,13 +252,13 @@ uint32_t Flux_TextImpl::UploadChars()
 		this->m_uBgCharCount = 0;
 		this->m_uFgCharCount = 0;
 
-		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
+		for (Zenith_Vector<Flux::Flux_TextEntry>::Iterator xIt(xTextEntries); !xIt.Done(); xIt.Next())
 		{
 			ProcessTextEntry(xIt.GetData(), pxFont, xVertices, uCharCount);
 		}
 	}
 
-	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
+	Flux::Flux_TextQueue::ClearPending();
 
 	if (xVertices.GetSize() > 0)
 	{

@@ -925,6 +925,9 @@
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp">
       <Filter>Flux\Text</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Text\Flux_TextQueue.cpp">
+      <Filter>Flux\Text</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp">
       <Filter>Flux\Vegetation</Filter>
     </ClCompile>
@@ -4039,6 +4042,9 @@
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h">
+      <Filter>Flux\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Text\Flux_TextQueue.h">
       <Filter>Flux\Text</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h">

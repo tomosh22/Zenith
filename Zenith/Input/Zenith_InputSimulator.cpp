@@ -3,7 +3,6 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Input/Zenith_InputSimulator.h"
-#include "UI/Zenith_UICanvas.h"
 #include "Zenith_Core.h"
 
 bool Zenith_InputSimulator::s_bEnabled = false;
@@ -179,19 +178,10 @@ void Zenith_InputSimulator::SimulateSwipe(double fStartX, double fStartY, double
 	SimulateMouseDrag(fStartX, fStartY, fEndX, fEndY, uDurationFrames);
 }
 
-void Zenith_InputSimulator::SimulateClickOnUIElement(const char* szElementName)
-{
-	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-	Zenith_Assert(pxCanvas, "No primary canvas for SimulateClickOnUIElement");
-	Zenith_UI::Zenith_UIElement* pxElement = pxCanvas->FindElement(szElementName);
-	Zenith_Assert(pxElement, "UI element not found: %s", szElementName);
-
-	Zenith_Maths::Vector4 xBounds = pxElement->GetScreenBounds();
-	double fCenterX = static_cast<double>((xBounds.x + xBounds.z) * 0.5f);
-	double fCenterY = static_cast<double>((xBounds.y + xBounds.w) * 0.5f);
-
-	SimulateMouseClick(fCenterX, fCenterY);
-}
+// NOTE: SimulateClickOnUIElement was relocated UP to the UI layer
+// (Zenith_UI::Zenith_UICanvas::SimulateClickOnUIElement) so this L1 Input TU no
+// longer needs to include UI/Zenith_UICanvas.h. The UI-side helper resolves the
+// named element to its screen center and calls back DOWN into SimulateMouseClick.
 
 // ========== Key State Manipulation ==========
 
