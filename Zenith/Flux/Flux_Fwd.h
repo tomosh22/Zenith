@@ -53,22 +53,73 @@ class Flux_AnimationController;
 class Flux_AnimationStateMachine;
 class Flux_IKSolver;
 
-// Platform abstraction types
-// These are concrete Vulkan types, aliased via macros in Zenith_PlatformGraphics_Include.h.
-// Flux source code uses the Flux_* aliases; a second backend would swap these declarations.
-// See Flux_Backend.h for the backend contract documentation.
+// ============================================================================
+// Platform abstraction aliases (the LIGHT backend seam)
+//
+// The backend macro (ZENITH_VULKAN / ZENITH_D3D12, selected by the Sharpmake
+// RenderBackend fragment) chooses which concrete backend classes the Flux_*
+// aliases name. Only forward-declarations + the `using` aliases live here, so
+// declaration-only consumers (the *Impl.h headers, Zenith_Engine.h) stay
+// light. Method-call sites that invoke methods on these types include the
+// HEAVY Flux_BackendTypes.h, which pulls the full backend headers. See
+// Flux_Backend.h for the backend contract documentation.
+// ============================================================================
+#include "Flux/Flux_BackendGuard.h"
+
+#if defined(ZENITH_VULKAN)
+class Zenith_Vulkan;
+class Zenith_Vulkan_MemoryManager;
+class Zenith_Vulkan_CommandBuffer;
+class Zenith_Vulkan_Swapchain;
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_PipelineBuilder;
-class Zenith_Vulkan_ComputePipelineBuilder;
 class Zenith_Vulkan_Shader;
 class Zenith_Vulkan_Sampler;
 class Zenith_Vulkan_RootSig;
+class Zenith_Vulkan_ComputePipelineBuilder;
 class Zenith_Vulkan_RootSigBuilder;
-class Zenith_Vulkan_CommandBuffer;
-class Zenith_Vulkan_Swapchain;
-class Zenith_Vulkan_MemoryManager;
-class Zenith_Vulkan;
 class Zenith_Vulkan_VRAM;
+
+using Flux_PlatformAPI            = Zenith_Vulkan;
+using Flux_MemoryManager          = Zenith_Vulkan_MemoryManager;
+using Flux_CommandBuffer          = Zenith_Vulkan_CommandBuffer;
+using Flux_Swapchain              = Zenith_Vulkan_Swapchain;
+using Flux_Pipeline               = Zenith_Vulkan_Pipeline;
+using Flux_PipelineBuilder        = Zenith_Vulkan_PipelineBuilder;
+using Flux_Shader                 = Zenith_Vulkan_Shader;
+using Flux_Sampler                = Zenith_Vulkan_Sampler;
+using Flux_RootSig                = Zenith_Vulkan_RootSig;
+using Flux_ComputePipelineBuilder = Zenith_Vulkan_ComputePipelineBuilder;
+using Flux_RootSigBuilder         = Zenith_Vulkan_RootSigBuilder;
+using Flux_VRAM                   = Zenith_Vulkan_VRAM;
+
+#elif defined(ZENITH_D3D12)
+class Zenith_D3D12;
+class Zenith_D3D12_MemoryManager;
+class Zenith_D3D12_CommandBuffer;
+class Zenith_D3D12_Swapchain;
+class Zenith_D3D12_Pipeline;
+class Zenith_D3D12_PipelineBuilder;
+class Zenith_D3D12_Shader;
+class Zenith_D3D12_Sampler;
+class Zenith_D3D12_RootSig;
+class Zenith_D3D12_ComputePipelineBuilder;
+class Zenith_D3D12_RootSigBuilder;
+class Zenith_D3D12_VRAM;
+
+using Flux_PlatformAPI            = Zenith_D3D12;
+using Flux_MemoryManager          = Zenith_D3D12_MemoryManager;
+using Flux_CommandBuffer          = Zenith_D3D12_CommandBuffer;
+using Flux_Swapchain              = Zenith_D3D12_Swapchain;
+using Flux_Pipeline               = Zenith_D3D12_Pipeline;
+using Flux_PipelineBuilder        = Zenith_D3D12_PipelineBuilder;
+using Flux_Shader                 = Zenith_D3D12_Shader;
+using Flux_Sampler                = Zenith_D3D12_Sampler;
+using Flux_RootSig                = Zenith_D3D12_RootSig;
+using Flux_ComputePipelineBuilder = Zenith_D3D12_ComputePipelineBuilder;
+using Flux_RootSigBuilder         = Zenith_D3D12_RootSigBuilder;
+using Flux_VRAM                   = Zenith_D3D12_VRAM;
+#endif
 
 // Handle type (lightweight, doesn't need Vulkan)
 class Flux_VRAMHandle;

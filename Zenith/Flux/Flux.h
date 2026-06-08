@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
-#include "Zenith_PlatformGraphics_Include.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Flux/Flux_CommandList.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
-#include "Zenith_PlatformGraphics_Include.h"
+#include "Flux/Flux_BackendTypes.h"
 
 class Flux_CommandList;
 

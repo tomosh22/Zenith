@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Zenith_Engine.h"
-#include "Zenith_PlatformGraphics_Include.h"
+#include "Flux/Flux_BackendTypes.h"
 
 #include "Profiling/Zenith_Profiling.h"
 
