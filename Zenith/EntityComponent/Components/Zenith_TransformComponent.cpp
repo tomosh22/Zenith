@@ -64,8 +64,9 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 
 	// Check if this entity's scene is the current active scene
 	// If not, we're likely in a test scenario with a local scene being destroyed
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	Zenith_SceneData* pxActiveSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	Zenith_Scene xActiveScene = xScenes.GetActiveScene();
+	Zenith_SceneData* pxActiveSceneData = xScenes.GetSceneData(xActiveScene);
 	if (pxOwningSceneData != pxActiveSceneData)
 	{
 		// Different scene - skip hierarchy cleanup to avoid accessing wrong scene data
@@ -111,12 +112,13 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 
 	// Mirror the move onto the Jolt body when one exists.
 	// Use BodyInterface with BodyID for thread-safe access.
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
-			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
+			JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
 			JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
 			xBodyInterface.SetPosition(xCollider.GetBodyID(), xJoltPos, JPH::EActivation::Activate);
 		}
@@ -131,12 +133,13 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 
 	// Mirror the move onto the Jolt body when one exists.
 	// Use BodyInterface with BodyID for thread-safe access.
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
-			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
+			JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
 			JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
 			xBodyInterface.SetRotation(xCollider.GetBodyID(), xJoltRot, JPH::EActivation::Activate);
 		}
@@ -175,13 +178,14 @@ void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			// Use BodyInterface for safe access - never access Body pointer directly
-			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterfaceNoLock();
+			JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterfaceNoLock();
 			JPH::Vec3 xJoltPos = xBodyInterface.GetPosition(xCollider.GetBodyID());
 			xPos.x = xJoltPos.GetX();
 			xPos.y = xJoltPos.GetY();
@@ -200,13 +204,14 @@ void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			// Use BodyInterface for safe access - never access Body pointer directly
-			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterfaceNoLock();
+			JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterfaceNoLock();
 			JPH::Quat xJoltRot = xBodyInterface.GetRotation(xCollider.GetBodyID());
 			xRot.x = xJoltRot.GetX();
 			xRot.y = xJoltRot.GetY();

@@ -283,9 +283,10 @@ void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 
 	// No per-frame gate — disabled passes are skipped before record runs
 	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
+	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xBRDFLUTPipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&xFG.m_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&xFG.m_xQuadMesh.GetIndexBuffer());
 
 	// BRDF integration only reads its UV input; the Slang version exposes no
 	// CBs in reflection so no binder calls are needed before the draw.
@@ -307,17 +308,18 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUse
 	xConsts.m_uFaceIndex = uFace;
 	xConsts.m_fPad = 0.0f;
 
+	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xIrradianceConvolvePipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&xFG.m_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(xIBL.m_xIrradianceConvolveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(xIBL.m_xIrradianceConvolveShader, "FrameConstants", &xFG.m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(xIBL.m_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
-		if (Zenith_TextureAsset* pxCubemap = g_xEngine.FluxGraphics().m_xCubemapTexture.GetDirect())
+		if (Zenith_TextureAsset* pxCubemap = xFG.m_xCubemapTexture.GetDirect())
 			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
-		else if (Zenith_TextureAsset* pxBlack = g_xEngine.FluxGraphics().m_xBlackTexture.GetDirect())
+		else if (Zenith_TextureAsset* pxBlack = xFG.m_xBlackTexture.GetDirect())
 			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -337,17 +339,18 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pU
 	xConsts.m_fSunIntensity = g_xEngine.Skybox().GetSunIntensity();
 	xConsts.m_uFaceIndex = pxData->m_uFace;
 
+	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xPrefilterPipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&xFG.m_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(xIBL.m_xPrefilterShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(xIBL.m_xPrefilterShader, "FrameConstants", &xFG.m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(xIBL.m_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
-		if (Zenith_TextureAsset* pxCubemap = g_xEngine.FluxGraphics().m_xCubemapTexture.GetDirect())
+		if (Zenith_TextureAsset* pxCubemap = xFG.m_xCubemapTexture.GetDirect())
 			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
-		else if (Zenith_TextureAsset* pxBlack = g_xEngine.FluxGraphics().m_xBlackTexture.GetDirect())
+		else if (Zenith_TextureAsset* pxBlack = xFG.m_xBlackTexture.GetDirect())
 			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);

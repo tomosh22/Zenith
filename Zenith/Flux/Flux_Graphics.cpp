@@ -163,11 +163,12 @@ void Flux_GraphicsImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Z
 bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 {
 #ifdef ZENITH_TOOLS
-	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing)
+	auto& xEditor = g_xEngine.Editor();
+	if (xEditor.GetEditorMode() != EditorMode::Playing)
 	{
-		g_xEngine.Editor().BuildViewMatrix(xConstants.m_xViewMat);
-		g_xEngine.Editor().BuildProjectionMatrix(xConstants.m_xProjMat);
-		g_xEngine.Editor().GetCameraPosition(xConstants.m_xCamPos_Pad);
+		xEditor.BuildViewMatrix(xConstants.m_xViewMat);
+		xEditor.BuildProjectionMatrix(xConstants.m_xProjMat);
+		xEditor.GetCameraPosition(xConstants.m_xCamPos_Pad);
 		return true;
 	}
 #endif

@@ -114,9 +114,10 @@ bool Zenith_ColliderComponent::HasValidBody() const
 
 Zenith_ColliderComponent::~Zenith_ColliderComponent()
 {
-	if (m_xBodyID.IsInvalid() == false && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	if (m_xBodyID.IsInvalid() == false && xPhysics.m_pxPhysicsSystem != nullptr)
 	{
-		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
 		// Check if the body actually exists in the physics system before trying to destroy it.
 		// This handles cases where scene restore loads stale body IDs that don't exist.
 		if (xBodyInterface.IsAdded(m_xBodyID))
@@ -579,7 +580,8 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	const JPH::ObjectLayer uObjectLayer = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) ? 1 : 0; // MOVING : NON_MOVING
 
 	JPH::BodyCreationSettings xBodySettings(pxShape, xJoltPos, xJoltRot, eMotionType, uObjectLayer);
-	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
 	m_xBodyID = xBodyInterface.CreateAndAddBody(xBodySettings, JPH::EActivation::Activate);
 
 	if (m_xBodyID.IsInvalid())
@@ -588,7 +590,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		return;
 	}
 
-	JPH::BodyLockWrite xLock(g_xEngine.Physics().m_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
+	JPH::BodyLockWrite xLock(xPhysics.m_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
 	if (xLock.Succeeded())
 	{
 		m_pxRigidBody = &xLock.GetBody();
@@ -619,6 +621,8 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 	xTransform.GetRotation(xRotation);
 	xScale = ClampScale(xScale);
 
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+
 	switch (m_eVolumeType)
 	{
 	case COLLISION_VOLUME_TYPE_AABB:
@@ -629,7 +633,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 		Zenith_Maths::Vector3 xHalfExtents, xLocalOffset;
 		ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset,
 			/*bWarnOnDegenerateBounds=*/false);
-		g_xEngine.Primitives().AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
+		xPrimitives.AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
 		break;
 	}
 
@@ -673,7 +677,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 	case COLLISION_VOLUME_TYPE_SPHERE:
 	{
 		const float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
-		g_xEngine.Primitives().AddSphere(xPosition, fRadius, xColor);
+		xPrimitives.AddSphere(xPosition, fRadius, xColor);
 		break;
 	}
 
@@ -701,7 +705,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 			Zenith_Maths::RotateVector(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), xRotation));
 		const Zenith_Maths::Vector3 xStart = xPosition - xAxis * fHalfHeight;
 		const Zenith_Maths::Vector3 xEnd = xPosition + xAxis * fHalfHeight;
-		g_xEngine.Primitives().AddCapsule(xStart, xEnd, fRadius, xColor);
+		xPrimitives.AddCapsule(xStart, xEnd, fRadius, xColor);
 		break;
 	}
 
@@ -794,15 +798,17 @@ void Zenith_ColliderComponent::SetIsSensor(bool bSensor)
 
 void Zenith_ColliderComponent::RebuildCollider()
 {
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+
 	// Store current velocity and other physics state if it's a dynamic body
 	Zenith_Maths::Vector3 xLinearVel(0.0f, 0.0f, 0.0f);
 	Zenith_Maths::Vector3 xAngularVel(0.0f, 0.0f, 0.0f);
 	bool bWasDynamic = (m_eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC);
-	
+
 	if (bWasDynamic && HasValidBody())
 	{
-		xLinearVel = g_xEngine.Physics().GetLinearVelocity(m_xBodyID);
-		xAngularVel = g_xEngine.Physics().GetAngularVelocity(m_xBodyID);
+		xLinearVel = xPhysics.GetLinearVelocity(m_xBodyID);
+		xAngularVel = xPhysics.GetAngularVelocity(m_xBodyID);
 	}
 
 	// Snapshot the live body transform into the transform cache BEFORE the body
@@ -819,7 +825,7 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// Remove existing collider
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
 		xBodyInterface.RemoveBody(m_xBodyID);
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();
@@ -841,8 +847,8 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// Restore velocity if it was a dynamic body
 	if (bWasDynamic && HasValidBody())
 	{
-		g_xEngine.Physics().SetLinearVelocity(m_xBodyID, xLinearVel);
-		g_xEngine.Physics().SetAngularVelocity(m_xBodyID, xAngularVel);
+		xPhysics.SetLinearVelocity(m_xBodyID, xLinearVel);
+		xPhysics.SetAngularVelocity(m_xBodyID, xAngularVel);
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Rebuilt collider after scale change");

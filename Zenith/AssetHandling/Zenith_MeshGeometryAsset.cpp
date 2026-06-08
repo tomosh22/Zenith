@@ -84,8 +84,9 @@ void GenerateSphere(Flux_MeshGeometry& xGeometryOut, uint32_t uLatitudeSegments,
 	}
 
 	xGeometryOut.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	auto& xVM = g_xEngine.VulkanMemory();
+	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices, uint32_t uStacks)
@@ -176,8 +177,9 @@ void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeig
 	}
 
 	xGeometryOut.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	auto& xVM = g_xEngine.VulkanMemory();
+	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 void GenerateCylinder(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices)
@@ -296,8 +298,9 @@ void GenerateCylinder(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHei
 	}
 
 	xGeometryOut.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	auto& xVM = g_xEngine.VulkanMemory();
+	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices)
@@ -377,8 +380,9 @@ void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight,
 	}
 
 	xGeometryOut.GenerateLayoutAndVertexData();
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	auto& xVM = g_xEngine.VulkanMemory();
+	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 } // anonymous namespace

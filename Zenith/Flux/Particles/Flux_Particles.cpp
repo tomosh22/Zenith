@@ -87,8 +87,9 @@ void Flux_ParticlesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& 
 	BuildPipelines();
 
 	// Allocate instance buffers for both blend modes
-	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAlpha, false);
-	g_xEngine.VulkanMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAdditive, false);
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAlpha, false);
+	xVulkanMemory.InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAdditive, false);
 
 	// Load default particle texture (pinned)
 	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
@@ -129,8 +130,9 @@ void Flux_ParticlesImpl::Shutdown()
 {
 	// Routed through the injected ParticleGPU member.
 	m_pxParticleGPU->Shutdown();
-	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(m_xInstanceBufferAlpha);
-	g_xEngine.VulkanMemory().DestroyDynamicVertexBuffer(m_xInstanceBufferAdditive);
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.DestroyDynamicVertexBuffer(m_xInstanceBufferAlpha);
+	xVulkanMemory.DestroyDynamicVertexBuffer(m_xInstanceBufferAdditive);
 	// Drop the injected deps so the instance returns to a clean default state.
 	m_pxGraphics    = nullptr;
 	m_pxHDR         = nullptr;
@@ -174,9 +176,10 @@ void Flux_ParticlesImpl::UploadInstanceData()
 	// Promoted from a file-static free function to an instance member: buffer/count
 	// self-references now resolve through 'this'. VulkanMemory() stays a direct
 	// g_xEngine lookup (engine-infra carve-out, same as SSAO/Quads).
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
 	if (m_uAlphaInstanceCount > 0)
 	{
-		g_xEngine.VulkanMemory().UploadBufferData(
+		xVulkanMemory.UploadBufferData(
 			m_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
 			m_axAlphaInstances,
 			m_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
@@ -184,7 +187,7 @@ void Flux_ParticlesImpl::UploadInstanceData()
 	}
 	if (m_uAdditiveInstanceCount > 0)
 	{
-		g_xEngine.VulkanMemory().UploadBufferData(
+		xVulkanMemory.UploadBufferData(
 			m_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
 			m_axAdditiveInstances,
 			m_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)

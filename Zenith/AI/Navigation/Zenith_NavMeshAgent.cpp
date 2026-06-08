@@ -133,9 +133,10 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		// driven intent is zeroed.
 		if (bUsePhysics)
 		{
+			Zenith_Physics& xPhysics = g_xEngine.Physics();
 			const JPH::BodyID& xBodyID = pxCollider->GetBodyID();
-			const Zenith_Maths::Vector3 xCurVel = g_xEngine.Physics().GetLinearVelocity(xBodyID);
-			g_xEngine.Physics().SetLinearVelocity(xBodyID,
+			const Zenith_Maths::Vector3 xCurVel = xPhysics.GetLinearVelocity(xBodyID);
+			xPhysics.SetLinearVelocity(xBodyID,
 				Zenith_Maths::Vector3(0.0f, xCurVel.y, 0.0f));
 		}
 		return;
@@ -396,6 +397,8 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		return;
 	}
 
+	Flux_PrimitivesImpl& xPrims = g_xEngine.Primitives();
+
 	const Zenith_Maths::Vector3 xPathColor(1.0f, 1.0f, 0.0f);      // Yellow
 	const Zenith_Maths::Vector3 xWaypointColor(1.0f, 0.5f, 0.0f);  // Orange
 	const Zenith_Maths::Vector3 xTargetColor(0.0f, 1.0f, 0.0f);    // Green
@@ -406,7 +409,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		// Draw line from agent to current waypoint
 		if (m_uCurrentWaypoint < m_xCurrentPath.m_axWaypoints.GetSize())
 		{
-			g_xEngine.Primitives().AddLine(xAgentPosition,
+			xPrims.AddLine(xAgentPosition,
 				m_xCurrentPath.m_axWaypoints.Get(m_uCurrentWaypoint),
 				xPathColor, 0.03f);
 		}
@@ -414,7 +417,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		// Draw remaining path
 		for (uint32_t u = m_uCurrentWaypoint; u + 1 < m_xCurrentPath.m_axWaypoints.GetSize(); ++u)
 		{
-			g_xEngine.Primitives().AddLine(m_xCurrentPath.m_axWaypoints.Get(u),
+			xPrims.AddLine(m_xCurrentPath.m_axWaypoints.Get(u),
 				m_xCurrentPath.m_axWaypoints.Get(u + 1),
 				xPathColor, 0.02f);
 		}
@@ -427,11 +430,11 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		{
 			Zenith_Maths::Vector3 xColor = (u == m_xCurrentPath.m_axWaypoints.GetSize() - 1)
 				? xTargetColor : xWaypointColor;
-			g_xEngine.Primitives().AddSphere(m_xCurrentPath.m_axWaypoints.Get(u), 0.1f, xColor);
+			xPrims.AddSphere(m_xCurrentPath.m_axWaypoints.Get(u), 0.1f, xColor);
 		}
 
 		// Draw destination marker
-		g_xEngine.Primitives().AddSphere(m_xDestination, 0.15f, xTargetColor);
+		xPrims.AddSphere(m_xDestination, 0.15f, xTargetColor);
 	}
 }
 #endif

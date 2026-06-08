@@ -133,7 +133,8 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	// the cluster-count buffer has fresh zeroes (no stale carry-over
 	// from a previous frame). Skipping the dispatch when the count is
 	// zero would leave the buffer dirty.
-	const u_int uLightCount = g_xEngine.DynamicLights().GetLightCount();
+	auto& xDynamicLights = g_xEngine.DynamicLights();
+	const u_int uLightCount = xDynamicLights.GetLightCount();
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xLightClustering.m_xComputePipeline);
 
@@ -143,7 +144,7 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	xBinder.BindCBV(xLightClustering.m_xComputeShader, "FrameConstants",
 		&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV_Buffer(xLightClustering.m_xComputeShader, "LightBuffer",
-		g_xEngine.DynamicLights().GetLightBufferSRV());
+		xDynamicLights.GetLightBufferSRV());
 
 	// Outputs (UAVs).
 	xBinder.BindUAV_Buffer(xLightClustering.m_xComputeShader, "ClusterLightCounts",

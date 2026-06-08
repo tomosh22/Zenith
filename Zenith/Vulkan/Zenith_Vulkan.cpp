@@ -214,11 +214,12 @@ void Zenith_Vulkan::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
-	g_xEngine.DebugVariables().AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
-	g_xEngine.DebugVariables().AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bOnlyUpdateDirtyDescriptors);
+	Zenith_DebugVariables& xDebugVariables = g_xEngine.DebugVariables();
+	xDebugVariables.AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
+	xDebugVariables.AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
+	xDebugVariables.AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bOnlyUpdateDirtyDescriptors);
 
-	g_xEngine.DebugVariables().AddUInt32_ReadOnly({ "Vulkan", "Descriptor Sets Allocated" }, dbg_uNumDescSetAllocations);
+	xDebugVariables.AddUInt32_ReadOnly({ "Vulkan", "Descriptor Sets Allocated" }, dbg_uNumDescSetAllocations);
 #endif
 
 	m_pxCurrentFrame = &m_axPerFrame[0];
@@ -1237,28 +1238,30 @@ void Zenith_Vulkan_PerFrame::Initialise()
 		.setMaxSets(100000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
+	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
-		xPool = VkUnwrap(g_xEngine.Vulkan().GetDevice().createDescriptorPool(xPoolInfo));
+		xPool = VkUnwrap(xVulkan.GetDevice().createDescriptorPool(xPoolInfo));
 	}
-	
+
 	// Create per-worker-thread command pools for multithreaded command buffer recording
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
 	{
-		m_axCommandPools[i] = VkUnwrap(g_xEngine.Vulkan().GetDevice().createCommandPool(
+		m_axCommandPools[i] = VkUnwrap(xVulkan.GetDevice().createCommandPool(
 			vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-			g_xEngine.Vulkan().GetQueueIndex(COMMANDTYPE_GRAPHICS))));
-		
+			xVulkan.GetQueueIndex(COMMANDTYPE_GRAPHICS))));
+
 		// Initialize worker command buffers with their dedicated command pools and worker index
 		m_axWorkerCommandBuffers[i].InitialiseWithCustomPool(m_axCommandPools[i], i);
 	}
 
 	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
 		.setFlags(vk::FenceCreateFlagBits::eSignaled);
-	m_xFence = VkUnwrap(g_xEngine.Vulkan().GetDevice().createFence(xFenceInfo));
+	m_xFence = VkUnwrap(xVulkan.GetDevice().createFence(xFenceInfo));
 
 	// Create persistent semaphore for memory submit synchronization (fixes per-frame semaphore leak)
-	m_xMemorySemaphore = VkUnwrap(g_xEngine.Vulkan().GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
+	m_xMemorySemaphore = VkUnwrap(xVulkan.GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
 }
 
 void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
@@ -1315,19 +1318,21 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	}
 #endif
 
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
+	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
+
+	xProfiling.BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
+	xProfiling.EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	eResult = xDevice.resetFences(1, &m_xFence);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to reset fence");
 
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+	xProfiling.BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
 		xDevice.resetDescriptorPool(xPool);
 	}
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+	xProfiling.EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	// Destroy framebuffers and render passes from the previous use of this frame slot
 	for (vk::Framebuffer& xFB : m_axPendingFramebuffers)
 	{

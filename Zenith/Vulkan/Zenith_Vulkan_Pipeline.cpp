@@ -416,15 +416,17 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 		break;
 	}
 
+	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+
 	std::vector<vk::AttachmentDescription> xAttachmentDescs(uNumColourAttachments);
 	std::vector<vk::AttachmentReference> xAttachmentRefs(uNumColourAttachments);
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
 	{
 		xAttachmentDescs.at(i)
-			.setFormat(g_xEngine.Vulkan().ConvertToVkFormat_Colour(aeColourFormats[i]))
+			.setFormat(xVulkan.ConvertToVkFormat_Colour(aeColourFormats[i]))
 			.setSamples(vk::SampleCountFlagBits::e1)
-			.setLoadOp(g_xEngine.Vulkan().ConvertToVkLoadAction(eColourLoad))
-			.setStoreOp(g_xEngine.Vulkan().ConvertToVkStoreAction(eColourStore))
+			.setLoadOp(xVulkan.ConvertToVkLoadAction(eColourLoad))
+			.setStoreOp(xVulkan.ConvertToVkStoreAction(eColourStore))
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 			.setInitialLayout(eLayout)
@@ -450,12 +452,12 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 			? vk::ImageLayout::eDepthStencilReadOnlyOptimal
 			: vk::ImageLayout::eDepthStencilAttachmentOptimal;
 		xDepthStencilAttachment = vk::AttachmentDescription()
-			.setFormat(g_xEngine.Vulkan().ConvertToVkFormat_DepthStencil(eDepthStencilFormat))
+			.setFormat(xVulkan.ConvertToVkFormat_DepthStencil(eDepthStencilFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
-			.setLoadOp(g_xEngine.Vulkan().ConvertToVkLoadAction(eDepthStencilLoad))
-			.setStoreOp(g_xEngine.Vulkan().ConvertToVkStoreAction(eDepthStencilStore))
-			.setStencilLoadOp(g_xEngine.Vulkan().ConvertToVkLoadAction(eDepthStencilLoad))
-			.setStencilStoreOp(g_xEngine.Vulkan().ConvertToVkStoreAction(eDepthStencilStore))
+			.setLoadOp(xVulkan.ConvertToVkLoadAction(eDepthStencilLoad))
+			.setStoreOp(xVulkan.ConvertToVkStoreAction(eDepthStencilStore))
+			.setStencilLoadOp(xVulkan.ConvertToVkLoadAction(eDepthStencilLoad))
+			.setStencilStoreOp(xVulkan.ConvertToVkStoreAction(eDepthStencilStore))
 			.setInitialLayout(eDepthLayout)
 			.setFinalLayout(eDepthLayout);
 
@@ -484,12 +486,13 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 		.setDependencyCount(0)
 		.setPDependencies(nullptr);
 
-	return VkUnwrap(g_xEngine.Vulkan().GetDevice().createRenderPass(xRenderPassInfo));
+	return VkUnwrap(xVulkan.GetDevice().createRenderPass(xRenderPassInfo));
 }
 
 vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& xDepthStencil, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
 	const vk::Device& xDevice = g_xEngine.Vulkan().GetDevice();
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
 	const bool bHasDepth = xDepthStencil.IsValid();
 	const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
 
@@ -522,14 +525,14 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_Rend
 			xViewHandle = rxRef.m_xResource.AsImageCube()->RTV(rxRef.m_uMip, rxRef.m_uLayer).m_xImageViewHandle;
 		}
 
-		axAttachments[i] = g_xEngine.VulkanMemory().GetImageView(xViewHandle);
+		axAttachments[i] = xVulkanMemory.GetImageView(xViewHandle);
 		Zenith_Assert(axAttachments[i], "TargetSetupToFramebuffer: null image view for colour attachment %u (format %u, mip %u, layer %u)", i, static_cast<uint32_t>(rxRef.m_xResource.GetSurfaceInfo().m_eFormat), static_cast<uint32_t>(rxRef.m_uMip), static_cast<uint32_t>(rxRef.m_uLayer));
 	}
 	if (bHasDepth)
 	{
 		Zenith_Assert(xDepthStencil.m_xResource.GetKind() == Flux_GraphResourceKind::Image, "TargetSetupToFramebuffer: depth attachment must be 2D image kind");
 		Flux_RenderAttachment* pxDepthStencil = xDepthStencil.m_xResource.AsImage();
-		axAttachments[uNumAttachments - 1] = g_xEngine.VulkanMemory().GetImageView(pxDepthStencil->DSV().m_xImageViewHandle);
+		axAttachments[uNumAttachments - 1] = xVulkanMemory.GetImageView(pxDepthStencil->DSV().m_xImageViewHandle);
 		Zenith_Assert(axAttachments[uNumAttachments - 1], "TargetSetupToFramebuffer: null depth image view (format %u)", static_cast<uint32_t>(pxDepthStencil->m_xSurfaceInfo.m_eFormat));
 	}
 
@@ -725,6 +728,8 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
 {
+	Zenith_Vulkan& xVulkan = g_xEngine.Vulkan();
+
 	// Clear stale binding metadata — hot-reload reuses static Flux_RootSig
 	// objects, so the previous build's m_axBindingTypes survives unless we
 	// wipe it here before re-populating from the new spec. (Reset on the
@@ -746,7 +751,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		if (xLayout.m_axBindings[0].m_eType == BINDING_TYPE_UNBOUNDED_TEXTURES)
 		{
 			// Borrowed handle — Pipeline::Reset must skip its destruction.
-			xRootSigOut.m_axDescSetLayouts[uDescSet]    = g_xEngine.Vulkan().GetBindlessTexturesDescriptorSetLayout();
+			xRootSigOut.m_axDescSetLayouts[uDescSet]    = xVulkan.GetBindlessTexturesDescriptorSetLayout();
 			xRootSigOut.m_abOwnsDescSetLayout[uDescSet] = false;
 			continue;
 		}
@@ -797,7 +802,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		xInfo.setPBindings(axBindings);
 		xInfo.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
 
-		xRootSigOut.m_axDescSetLayouts[uDescSet]    = VkUnwrap(g_xEngine.Vulkan().GetDevice().createDescriptorSetLayout(xInfo));
+		xRootSigOut.m_axDescSetLayouts[uDescSet]    = VkUnwrap(xVulkan.GetDevice().createDescriptorSetLayout(xInfo));
 		xRootSigOut.m_abOwnsDescSetLayout[uDescSet] = true;
 	}
 	// Push constants replaced with scratch buffer system - no push constant ranges needed
@@ -807,7 +812,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		.setPushConstantRangeCount(0)
 		.setPPushConstantRanges(nullptr);
 
-	xRootSigOut.m_xLayout = VkUnwrap(g_xEngine.Vulkan().GetDevice().createPipelineLayout(xPipelineLayoutInfo));
+	xRootSigOut.m_xLayout = VkUnwrap(xVulkan.GetDevice().createPipelineLayout(xPipelineLayoutInfo));
 }
 
 void Zenith_Vulkan_RootSigBuilder::FromReflection(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_ShaderReflection& xReflection)

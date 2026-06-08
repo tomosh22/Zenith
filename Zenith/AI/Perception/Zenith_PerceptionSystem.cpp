@@ -635,6 +635,8 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	float fFOVRad = xConfig.m_fFOVAngle * 0.5f * (3.14159265f / 180.0f);
 	float fPeriphRad = xConfig.m_fPeripheralAngle * 0.5f * (3.14159265f / 180.0f);
 
+	Flux_PrimitivesImpl& xPrims = g_xEngine.Primitives();
+
 	// Draw FOV lines
 	auto DrawConeEdge = [&](float fAngle, const Zenith_Maths::Vector3& xColor)
 	{
@@ -648,7 +650,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 		xDir.z = xForward.x * fSin + xForward.z * fCos;
 		xDir = Zenith_Maths::Normalize(xDir);
 
-		g_xEngine.Primitives().AddLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
+		xPrims.AddLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
 	};
 
 	DrawConeEdge(fFOVRad, xFOVColor);
@@ -657,7 +659,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	DrawConeEdge(-fPeriphRad, xPeripheralColor);
 
 	// Draw forward direction
-	g_xEngine.Primitives().AddLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
+	xPrims.AddLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
 
 	// Draw perceived targets
 	for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); ++u)
@@ -668,10 +670,10 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 		Zenith_Maths::Vector3 xColor(xTarget.m_fAwareness, 1.0f - xTarget.m_fAwareness, 0.0f);
 
 		// Line to last known position
-		g_xEngine.Primitives().AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
+		xPrims.AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
 
 		// Sphere at last known position
-		g_xEngine.Primitives().AddSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
+		xPrims.AddSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
 	}
 }
 #endif

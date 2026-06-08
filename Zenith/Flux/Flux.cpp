@@ -85,8 +85,9 @@ bool              Flux_RendererImpl::IsRenderGraphValid(){ return g_xEngine.Flux
 void Flux_RendererImpl::RequestGraphRebuild() { g_xEngine.FluxRenderer().m_bGraphRebuildRequested = true; }
 bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 {
-	bool b = g_xEngine.FluxRenderer().m_bGraphRebuildRequested;
-	g_xEngine.FluxRenderer().m_bGraphRebuildRequested = false;
+	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	bool b = xRenderer.m_bGraphRebuildRequested;
+	xRenderer.m_bGraphRebuildRequested = false;
 	return b;
 }
 
@@ -363,7 +364,8 @@ void Flux_RendererImpl::SetupRenderGraph()
 	// Clear pending command lists first — they hold pointers to the graph's command lists
 	// which will be destroyed by Clear(). Caller must have already drained the GPU.
 	ClearPendingCommandLists();
-	g_xEngine.FluxRenderer().m_pxRenderGraph->Clear();
+	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	xRenderer.m_pxRenderGraph->Clear();
 
 	// Sync the transient-aliasing debug toggle into the graph. SetAliasingEnabled
 	// is a no-op if the value is unchanged; on change it calls MarkDirty so the
@@ -371,8 +373,8 @@ void Flux_RendererImpl::SetupRenderGraph()
 	SyncRenderGraphDebugToggles();
 
 	// Core render targets FIRST — every other subsystem depends on these.
-	g_xEngine.FluxGraphics().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	g_xEngine.HDR().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph); // HDR scene target used by many subsystems
+	g_xEngine.FluxGraphics().SetupTransients(*xRenderer.m_pxRenderGraph);
+	g_xEngine.HDR().SetupTransients(*xRenderer.m_pxRenderGraph); // HDR scene target used by many subsystems
 
 	// Wave-13.B: the feature SetupRenderGraph ladder now walks the
 	// Flux_FeatureRegistry in four sub-walks separated by the inline irregulars
@@ -392,27 +394,27 @@ void Flux_RendererImpl::SetupRenderGraph()
 	// screen-space effects (HiZ, SSR, SSGI) -> clustering + deferred lighting.
 	// Clustering precedes DeferredShading so the per-cluster light lists are
 	// declared as writers before the shading pass reads them.
-	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
+	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
 
 	// Aerial perspective runs after DeferredShading — it blends scattering on
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
 	// topological order correct.
-	g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(*xRenderer.m_pxRenderGraph);
 
 	// Phase 2: SSAO + Fog.
-	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_SSAO_FOG);
+	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_SSAO_FOG);
 
 	// Game-side post-fog hook: contracted to fire AFTER engine fog passes are
 	// registered and BEFORE any post-processing passes. Games that disable the
 	// engine fog system (g_xEngine.Fog().SetExternallyOverridden(true)) and substitute
 	// their own atmospheric pass register here. See Zenith_GameRenderHook.h.
-	Zenith_GameRenderHook::InvokePostFogRegistrations(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	Zenith_GameRenderHook::InvokePostFogRegistrations(*xRenderer.m_pxRenderGraph);
 
 	// Phase 3: post-processing (SDFs, Particles, HDR composite).
-	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_POST_PROCESS);
+	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_POST_PROCESS);
 
 	// Phase 4: UI & presentation (Quads, Text, [tools] Gizmos).
-	xRegistry.RunSetupPhase(*g_xEngine.FluxRenderer().m_pxRenderGraph, FLUX_SETUP_PHASE_UI);
+	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_UI);
 
 	// Final-layout transition pass — leaves the Final Render Target in
 	// SHADER_READ_ONLY_OPTIMAL so the swapchain copy command buffer (which
@@ -420,7 +422,7 @@ void Flux_RendererImpl::SetupRenderGraph()
 	// mismatch. The pass has no commands and no target setup; it exists
 	// purely so the graph emits a prologue barrier transitioning the Final
 	// RT from WRITE_RTV (set by tonemap / last writer) to READ_SRV.
-	g_xEngine.FluxRenderer().m_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
+	xRenderer.m_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
 		.Reads(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
@@ -444,11 +446,12 @@ void Flux_RendererImpl::ReleaseAssetReferences()
 
 void Flux_RendererImpl::Shutdown()
 {
-	delete g_xEngine.FluxRenderer().m_pxRenderGraph;
-	g_xEngine.FluxRenderer().m_pxRenderGraph = nullptr;
+	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	delete xRenderer.m_pxRenderGraph;
+	xRenderer.m_pxRenderGraph = nullptr;
 	// Clear res-change callbacks so OnResChange has nothing to invoke — the
-	// callbacks would otherwise deref the now-null g_xEngine.FluxRenderer().m_pxRenderGraph and crash.
-	g_xEngine.FluxRenderer().m_xResChangeCallbacks.Clear();
+	// callbacks would otherwise deref the now-null m_pxRenderGraph and crash.
+	xRenderer.m_xResChangeCallbacks.Clear();
 
 	// Shutdown Flux subsystems in REVERSE order of initialization. This ensures
 	// dependencies are destroyed after their dependents.
@@ -496,9 +499,10 @@ void Flux_RendererImpl::Shutdown()
 
 void Flux_RendererImpl::OnResChange()
 {
-	for (u_int i = 0; i < g_xEngine.FluxRenderer().m_xResChangeCallbacks.GetSize(); i++)
+	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	for (u_int i = 0; i < xRenderer.m_xResChangeCallbacks.GetSize(); i++)
 	{
-		g_xEngine.FluxRenderer().m_xResChangeCallbacks.Get(i)();
+		xRenderer.m_xResChangeCallbacks.Get(i)();
 	}
 }
 
@@ -510,10 +514,12 @@ bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 
 	// The render graph submits command lists in topological order — no sort needed here.
 
+	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+
 	// Count total commands
-	for (u_int i = 0; i < g_xEngine.FluxRenderer().m_xPendingCommandLists.GetSize(); i++)
+	for (u_int i = 0; i < xRenderer.m_xPendingCommandLists.GetSize(); i++)
 	{
-		xOutDistribution.uTotalCommandCount += g_xEngine.FluxRenderer().m_xPendingCommandLists.Get(i).m_pxCmdList->GetCommandCount();
+		xOutDistribution.uTotalCommandCount += xRenderer.m_xPendingCommandLists.Get(i).m_pxCmdList->GetCommandCount();
 	}
 
 	if (xOutDistribution.uTotalCommandCount == 0)
@@ -528,9 +534,9 @@ bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 
 	xOutDistribution.auStartIndex[0] = 0;
 
-	for (u_int uIndex = 0; uIndex < g_xEngine.FluxRenderer().m_xPendingCommandLists.GetSize(); uIndex++)
+	for (u_int uIndex = 0; uIndex < xRenderer.m_xPendingCommandLists.GetSize(); uIndex++)
 	{
-		const u_int uCommandCount = g_xEngine.FluxRenderer().m_xPendingCommandLists.Get(uIndex).m_pxCmdList->GetCommandCount();
+		const u_int uCommandCount = xRenderer.m_xPendingCommandLists.Get(uIndex).m_pxCmdList->GetCommandCount();
 
 		if (uCurrentThreadCommandCount > 0 &&
 			uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread &&
@@ -551,14 +557,14 @@ bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 
 	if (uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS)
 	{
-		xOutDistribution.auEndIndex[uCurrentThreadIndex] = g_xEngine.FluxRenderer().m_xPendingCommandLists.GetSize();
+		xOutDistribution.auEndIndex[uCurrentThreadIndex] = xRenderer.m_xPendingCommandLists.GetSize();
 	}
 
 	// Explicitly write empty (N, N) ranges for any worker that did not receive
 	// a command-list slice. The invariant is relied on by the consumer; writing
 	// it here defensively protects against xOutDistribution.Clear() behaviour
 	// changing in future.
-	const u_int uPendingSize = g_xEngine.FluxRenderer().m_xPendingCommandLists.GetSize();
+	const u_int uPendingSize = xRenderer.m_xPendingCommandLists.GetSize();
 	for (u_int u = uCurrentThreadIndex + 1; u < FLUX_NUM_WORKER_THREADS; u++)
 	{
 		xOutDistribution.auStartIndex[u] = uPendingSize;

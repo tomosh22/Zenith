@@ -273,7 +273,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 	}
 
 	// Create GPU vertex buffer
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.InitialiseVertexBuffer(
 		pVertexData,
 		uVertexDataSize,
 		pxInstance->m_xVertexBuffer
@@ -281,7 +282,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 
 	// Create GPU index buffer
 	const size_t uIndexDataSize = static_cast<size_t>(uNumIndices) * sizeof(uint32_t);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	xVulkanMemory.InitialiseIndexBuffer(
 		pxAsset->m_xIndices.GetDataPointer(),
 		uIndexDataSize,
 		pxInstance->m_xIndexBuffer
@@ -299,8 +300,9 @@ void Flux_MeshInstance::Destroy()
 {
 	if (m_bInitialized)
 	{
-		g_xEngine.VulkanMemory().DestroyVertexBuffer(m_xVertexBuffer);
-		g_xEngine.VulkanMemory().DestroyIndexBuffer(m_xIndexBuffer);
+		Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.VulkanMemory();
+		xVulkanMemory.DestroyVertexBuffer(m_xVertexBuffer);
+		xVulkanMemory.DestroyIndexBuffer(m_xIndexBuffer);
 		m_xBufferLayout.Reset();
 		m_uNumVerts = 0;
 		m_uNumIndices = 0;
@@ -477,7 +479,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 	}
 
 	// Create GPU vertex buffer
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.InitialiseVertexBuffer(
 		pVertexData,
 		uVertexDataSize,
 		pxInstance->m_xVertexBuffer
@@ -485,7 +488,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 
 	// Create GPU index buffer
 	const size_t uIndexDataSize = static_cast<size_t>(uNumIndices) * sizeof(uint32_t);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	xVulkanMemory.InitialiseIndexBuffer(
 		pxAsset->m_xIndices.GetDataPointer(),
 		uIndexDataSize,
 		pxInstance->m_xIndexBuffer
@@ -627,7 +630,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 	}
 
 	// Create GPU vertex buffer
-	g_xEngine.VulkanMemory().InitialiseVertexBuffer(
+	Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.InitialiseVertexBuffer(
 		pVertexData,
 		uVertexDataSize,
 		pxInstance->m_xVertexBuffer
@@ -635,7 +639,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 
 	// Create GPU index buffer
 	const size_t uIndexDataSize = static_cast<size_t>(uNumIndices) * sizeof(uint32_t);
-	g_xEngine.VulkanMemory().InitialiseIndexBuffer(
+	xVulkanMemory.InitialiseIndexBuffer(
 		pxAsset->m_xIndices.GetDataPointer(),
 		uIndexDataSize,
 		pxInstance->m_xIndexBuffer

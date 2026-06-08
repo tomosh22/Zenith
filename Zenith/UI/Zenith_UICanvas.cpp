@@ -205,28 +205,30 @@ void Zenith_UICanvas::UpdateFocusNavigation()
     if (!m_pxFocusedElement)
         return;
 
-    if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP))
+    Zenith_Input& xInput = g_xEngine.Input();
+
+    if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_UP))
         NavigateUp();
-    else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+    else if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
         NavigateDown();
-    else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+    else if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
         NavigateLeft();
-    else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+    else if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
         NavigateRight();
 
-    if (!g_xEngine.Input().IsGamepadConnected())
+    if (!xInput.IsGamepadConnected())
         return;
 
-    if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
+    if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
         NavigateUp();
-    else if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
+    else if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
         NavigateDown();
-    else if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
+    else if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
         NavigateLeft();
-    else if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
+    else if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
         NavigateRight();
 
-    if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
+    if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
         ActivateFocused();
 }
 

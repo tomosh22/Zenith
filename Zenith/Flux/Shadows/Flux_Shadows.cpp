@@ -153,15 +153,17 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 	// AnimatedMeshes) are recovered as their own singletons.
 	Flux_ShadowsImpl& xZZ = g_xEngine.Shadows();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.StaticMeshes().GetShadowPipeline());
+	auto& xStaticMeshes = g_xEngine.StaticMeshes();
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xStaticMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	g_xEngine.StaticMeshes().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+	xStaticMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.AnimatedMeshes().GetShadowPipeline());
+	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xAnimatedMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	g_xEngine.AnimatedMeshes().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 
 	// #TODO: Enable terrain shadow casting
 	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);

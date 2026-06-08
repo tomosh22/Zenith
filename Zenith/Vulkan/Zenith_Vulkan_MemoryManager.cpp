@@ -2278,8 +2278,9 @@ Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(PoolTag, const VmaAllocation xAllocation,
 		if (xInfo.size > 0)
 			m_ulPoolSize = xInfo.size;
 	}
-	g_xEngine.VulkanMemory().IncreaseImageMemoryUsage(m_ulPoolSize);
-	g_xEngine.VulkanMemory().IncreaseMemoryUsage(m_ulPoolSize);
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.IncreaseImageMemoryUsage(m_ulPoolSize);
+	xVulkanMemory.IncreaseMemoryUsage(m_ulPoolSize);
 }
 
 // VMA treats VmaAllocation (= VmaAllocation_T*) as an OPAQUE handle; its internal
@@ -2298,21 +2299,25 @@ static VkDeviceSize GetVmaAllocationSizeBytes(VmaAllocator xAllocator, VmaAlloca
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
 	: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
 {
-	g_xEngine.VulkanMemory().IncreaseImageMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
-	g_xEngine.VulkanMemory().IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.IncreaseImageMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
+	xVulkanMemory.IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 }
 
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
 	: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize)
 {
-	g_xEngine.VulkanMemory().IncreaseBufferMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
-	g_xEngine.VulkanMemory().IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	xVulkanMemory.IncreaseBufferMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
+	xVulkanMemory.IncreaseMemoryUsage(GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation));
 }
 
 Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 {
 	// Three destruction paths: aliased-image (image only), pool (allocation
 	// only), or regular owned resource (image+allocation or buffer+allocation).
+
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
 
 	if (m_bAliased)
 	{
@@ -2327,8 +2332,8 @@ Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 	if (m_bPool)
 	{
 		Zenith_Assert(m_xAllocation != VK_NULL_HANDLE, "Pool VRAM missing allocation");
-		g_xEngine.VulkanMemory().DecreaseImageMemoryUsage(m_ulPoolSize);
-		g_xEngine.VulkanMemory().DecreaseMemoryUsage(m_ulPoolSize);
+		xVulkanMemory.DecreaseImageMemoryUsage(m_ulPoolSize);
+		xVulkanMemory.DecreaseMemoryUsage(m_ulPoolSize);
 		vmaFreeMemory(m_xAllocator, m_xAllocation);
 		return;
 	}
@@ -2344,15 +2349,15 @@ Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 		const VkDeviceSize ulAllocationSize = GetVmaAllocationSizeBytes(m_xAllocator, m_xAllocation);
 		if (m_xImage != VK_NULL_HANDLE)
 		{
-			g_xEngine.VulkanMemory().DecreaseImageMemoryUsage(ulAllocationSize);
+			xVulkanMemory.DecreaseImageMemoryUsage(ulAllocationSize);
 			vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
 		}
 		else if (m_xBuffer != VK_NULL_HANDLE)
 		{
-			g_xEngine.VulkanMemory().DecreaseBufferMemoryUsage(ulAllocationSize);
+			xVulkanMemory.DecreaseBufferMemoryUsage(ulAllocationSize);
 			vmaDestroyBuffer(m_xAllocator, m_xBuffer, m_xAllocation);
 		}
-		g_xEngine.VulkanMemory().DecreaseMemoryUsage(ulAllocationSize);
+		xVulkanMemory.DecreaseMemoryUsage(ulAllocationSize);
 	}
 	else
 	{

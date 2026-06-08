@@ -258,6 +258,8 @@ void Zenith_TacticalPointSystem::Update()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE);
 
+	auto& xScenes = g_xEngine.Scenes();
+
 	// Validate owner entities still exist. Audit §3.18 fix: resolve each
 	// referenced entity's OWN scene rather than assuming all tactical points
 	// belong to the active scene.
@@ -273,7 +275,7 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if occupied entity still exists
 		if (xPoint.m_xOccupiedBy.IsValid())
 		{
-			Zenith_SceneData* pxOccupantScene = g_xEngine.Scenes().GetSceneDataForEntity(xPoint.m_xOccupiedBy);
+			Zenith_SceneData* pxOccupantScene = xScenes.GetSceneDataForEntity(xPoint.m_xOccupiedBy);
 			bool bValid = false;
 			if (pxOccupantScene)
 			{
@@ -290,7 +292,7 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if owner entity (dynamic points) still exists
 		if ((xPoint.m_uFlags & TACPOINT_FLAG_DYNAMIC) && xPoint.m_xOwnerEntity.IsValid())
 		{
-			Zenith_SceneData* pxOwnerScene = g_xEngine.Scenes().GetSceneDataForEntity(xPoint.m_xOwnerEntity);
+			Zenith_SceneData* pxOwnerScene = xScenes.GetSceneDataForEntity(xPoint.m_xOwnerEntity);
 			bool bValid = false;
 			if (pxOwnerScene)
 			{
@@ -575,6 +577,8 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 	const float fGridSpacing = 3.0f;
 	const int32_t iGridSize = static_cast<int32_t>(fRadius / fGridSpacing);
 
+	auto& xPhysics = g_xEngine.Physics();
+
 	for (int32_t x = -iGridSize; x <= iGridSize; ++x)
 	{
 		for (int32_t z = -iGridSize; z <= iGridSize; ++z)
@@ -590,7 +594,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 			}
 
 			// Raycast downward to find ground
-			Zenith_Physics::RaycastResult xGroundResult = g_xEngine.Physics().Raycast(
+			Zenith_Physics::RaycastResult xGroundResult = xPhysics.Raycast(
 				xPos + Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f),
 				Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
 				5.0f);
@@ -606,7 +610,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 			// Raycast horizontally toward center to check for cover geometry
 			Zenith_Maths::Vector3 xToCenter = Zenith_Maths::Normalize(xCenter - xGroundPos);
 			Zenith_Maths::Vector3 xCoverCheckStart = xGroundPos + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-			Zenith_Physics::RaycastResult xCoverResult = g_xEngine.Physics().Raycast(
+			Zenith_Physics::RaycastResult xCoverResult = xPhysics.Raycast(
 				xCoverCheckStart, xToCenter, 2.0f);
 
 			TacticalPointType eCoverType = TacticalPointType::COVER_HALF;
@@ -614,7 +618,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 			{
 				// Check if cover is tall (full cover) or short (half cover)
 				Zenith_Maths::Vector3 xHighCheck = xGroundPos + Zenith_Maths::Vector3(0.0f, 1.8f, 0.0f);
-				Zenith_Physics::RaycastResult xHighResult = g_xEngine.Physics().Raycast(
+				Zenith_Physics::RaycastResult xHighResult = xPhysics.Raycast(
 					xHighCheck, xToCenter, 2.0f);
 				eCoverType = xHighResult.m_bHit ? TacticalPointType::COVER_FULL : TacticalPointType::COVER_HALF;
 			}
@@ -845,6 +849,8 @@ void Zenith_TacticalPointSystem::DebugDraw()
 
 void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoint)
 {
+	auto& xPrimitives = g_xEngine.Primitives();
+
 	// Color and score from lookup table
 	uint8_t uTypeIndex = static_cast<uint8_t>(xPoint.m_eType);
 	Zenith_Maths::Vector3 xColor = (uTypeIndex < static_cast<uint8_t>(TacticalPointType::COUNT))
@@ -862,17 +868,17 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 	}
 
 	// Draw sphere at position
-	g_xEngine.Primitives().AddSphere(xPoint.m_xPosition, 0.3f, xColor);
+	xPrimitives.AddSphere(xPoint.m_xPosition, 0.3f, xColor);
 
 	// Draw facing direction
 	Zenith_Maths::Vector3 xFacingEnd = xPoint.m_xPosition + xPoint.m_xFacing * 0.8f;
-	g_xEngine.Primitives().AddLine(xPoint.m_xPosition, xFacingEnd, xColor);
+	xPrimitives.AddLine(xPoint.m_xPosition, xFacingEnd, xColor);
 
 	// Draw vertical line for elevated points
 	if (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED)
 	{
 		Zenith_Maths::Vector3 xTop = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
-		g_xEngine.Primitives().AddLine(xPoint.m_xPosition, xTop, Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f));
+		xPrimitives.AddLine(xPoint.m_xPosition, xTop, Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f));
 	}
 
 	// Draw score if enabled
@@ -909,10 +915,10 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 		// Visual indicator of score (taller = higher score)
 		float fScoreHeight = fDisplayScore * 0.3f;
 		Zenith_Maths::Vector3 xScoreTop = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f + fScoreHeight, 0.0f);
-		g_xEngine.Primitives().AddLine(xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xScoreTop, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f), 0.03f);
+		xPrimitives.AddLine(xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xScoreTop, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f), 0.03f);
 
 		// Add a small sphere at top to make it more visible
-		g_xEngine.Primitives().AddSphere(xScoreTop, 0.08f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
+		xPrimitives.AddSphere(xScoreTop, 0.08f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
 	}
 }
 #endif

@@ -157,9 +157,10 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	// boot, where FontAtlas uploads before the device is ready), so hard-failing
 	// would be a behaviour change. Hard-failing on genuine GPU-OOM is Wave-9
 	// error-handling scope, where the tolerant-caller contract is revisited.
-	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
 	Zenith_Check(m_xVRAMHandle.IsValid(), "Zenith_TextureAsset: GPU upload returned an invalid handle for '%s'", strPath.c_str());
-	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	// Free the staging data
@@ -185,8 +186,9 @@ bool Zenith_TextureAsset::CreateFromData(const void* pData, const Flux_SurfaceIn
 	}
 
 	// Create GPU resources
-	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
-	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	return m_xVRAMHandle.IsValid();
@@ -227,8 +229,9 @@ bool Zenith_TextureAsset::CreateCubemap(const void* apFaceData[6], const Flux_Su
 	}
 
 	// Create GPU resources
-	m_xVRAMHandle = g_xEngine.VulkanMemory().CreateTextureVRAM(pAllData, m_xSurfaceInfo, false);
-	m_xSRV = g_xEngine.VulkanMemory().CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	auto& xVulkanMemory = g_xEngine.VulkanMemory();
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pAllData, m_xSurfaceInfo, false);
+	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
 	m_bGPUResourcesAllocated = true;
 
 	Zenith_MemoryManagement::Deallocate(pAllData);
