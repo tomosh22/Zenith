@@ -61,7 +61,7 @@ void Flux_QuadsImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory)
+void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory)
 {
 	// Wave-14 DI seam (Wave-4 extension): store the injected deps. The FluxGraphics
 	// + VulkanMemory reach-ins route through these instead of g_xEngine.

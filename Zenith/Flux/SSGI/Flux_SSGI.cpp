@@ -12,7 +12,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -145,7 +145,7 @@ void Flux_SSGIImpl::BuildPipelines()
 		FluxShaderProgram::SSGI_DenoiseV, SSGI_FORMAT);
 }
 
-void Flux_SSGIImpl::Initialise(Zenith_Vulkan_Swapchain& xSwapchain, Flux_HiZImpl& xHiZ, Flux_GraphicsImpl& xGraphics, Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer)
+void Flux_SSGIImpl::Initialise(Flux_Swapchain& xSwapchain, Flux_HiZImpl& xHiZ, Flux_GraphicsImpl& xGraphics, Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer)
 {
 	m_pxSwapchain = &xSwapchain;
 	m_pxHiZ       = &xHiZ;

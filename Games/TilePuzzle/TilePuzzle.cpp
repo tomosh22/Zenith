@@ -18,7 +18,7 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIRect.h"

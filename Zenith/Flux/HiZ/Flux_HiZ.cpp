@@ -10,7 +10,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 // Injected dep: GetWidth/GetHeight on the stored swapchain pointer need the
 // full type (only transitively available before this seam).
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
@@ -58,7 +58,7 @@ void Flux_HiZImpl::BuildPipelines()
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_HiZImpl::Initialise(Zenith_Vulkan_Swapchain& xSwapchain, Flux_GraphicsImpl& xGraphics, Flux_RendererImpl& xRenderer)
+void Flux_HiZImpl::Initialise(Flux_Swapchain& xSwapchain, Flux_GraphicsImpl& xGraphics, Flux_RendererImpl& xRenderer)
 {
 	// Wave 9 DI seam: store the injected cross-subsystem deps. Every later
 	// instance-method reach-in routes through these instead of g_xEngine.

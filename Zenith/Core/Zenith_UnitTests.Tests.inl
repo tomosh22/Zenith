@@ -15119,7 +15119,7 @@ void Zenith_UnitTests::TestHiZInjectedDepsWired(){
 
 	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
 	//    and are independent (the DI seam stores each ref into its own member).
-	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x1000));
+	Flux_Swapchain* pxSentinelSwapchain = reinterpret_cast<Flux_Swapchain*>(static_cast<uintptr_t>(0x1000));
 	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x2000));
 	Flux_RendererImpl*       pxSentinelRenderer  = reinterpret_cast<Flux_RendererImpl*>      (static_cast<uintptr_t>(0x3000));
 
@@ -15164,7 +15164,7 @@ void Zenith_UnitTests::TestSSAOInjectedDepsWired(){
 	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
 	//    and are independent (the DI seam stores each ref into its own member).
 	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
-	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x2000));
+	Flux_Swapchain* pxSentinelSwapchain = reinterpret_cast<Flux_Swapchain*>(static_cast<uintptr_t>(0x2000));
 	Flux_HDRImpl*            pxSentinelHDR       = reinterpret_cast<Flux_HDRImpl*>           (static_cast<uintptr_t>(0x3000));
 
 	xSSAO.m_pxGraphics  = pxSentinelGraphics;
@@ -15326,7 +15326,7 @@ void Zenith_UnitTests::TestDecalsInjectedDepsWired(){
 	ZENITH_ASSERT_NULL(xDecals.m_pxGraphics,  "Fresh Flux_DecalsImpl: m_pxGraphics defaults nullptr (headless-safe)");
 	ZENITH_ASSERT_NULL(xDecals.m_pxSwapchain, "Fresh Flux_DecalsImpl: m_pxSwapchain defaults nullptr (headless-safe)");
 	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
-	Zenith_Vulkan_Swapchain* pxSentinelSwapchain = reinterpret_cast<Zenith_Vulkan_Swapchain*>(static_cast<uintptr_t>(0x2000));
+	Flux_Swapchain* pxSentinelSwapchain = reinterpret_cast<Flux_Swapchain*>(static_cast<uintptr_t>(0x2000));
 	xDecals.m_pxGraphics  = pxSentinelGraphics;
 	xDecals.m_pxSwapchain = pxSentinelSwapchain;
 	ZENITH_ASSERT_EQ(xDecals.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");

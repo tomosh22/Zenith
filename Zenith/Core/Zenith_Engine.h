@@ -2,6 +2,11 @@
 
 #include <type_traits>
 
+// Backend seam: forward-decls + the Flux_* aliases (Flux_PlatformAPI /
+// Flux_MemoryManager / Flux_Swapchain). Light header -- no full backend
+// headers, so Zenith_Engine.h stays cheap to include.
+#include "Flux/Flux_Fwd.h"
+
 // Forward decls -- keep this header light. Full subsystem headers are
 // only included by Zenith_Engine.cpp where the accessor bodies live.
 class FrameContext;
@@ -40,9 +45,6 @@ class Flux_GrassImpl;
 class Flux_PrimitivesImpl;
 class Flux_HDRImpl;
 class Flux_TerrainImpl;
-class Zenith_Vulkan;
-class Zenith_Vulkan_MemoryManager;
-class Zenith_Vulkan_Swapchain;
 class Zenith_DebugVariables;
 class Zenith_EditorAutomation;
 class Zenith_Editor;
@@ -114,9 +116,9 @@ public:
 	Zenith_TouchInput& Touch();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
-	Zenith_Vulkan& FluxBackend();
-	Zenith_Vulkan_MemoryManager& FluxMemory();
-	Zenith_Vulkan_Swapchain& FluxSwapchain();
+	Flux_PlatformAPI& FluxBackend();
+	Flux_MemoryManager& FluxMemory();
+	Flux_Swapchain& FluxSwapchain();
 	Flux_HiZImpl& HiZ();
 	Flux_StaticMeshesImpl& StaticMeshes();
 	Flux_AnimatedMeshesImpl& AnimatedMeshes();
@@ -194,9 +196,9 @@ private:
 	Zenith_TouchInput*              m_pxTouch           = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*                  m_pxFluxGraphics    = nullptr;
-	Zenith_Vulkan*                  m_pxVulkan          = nullptr;
-	Zenith_Vulkan_MemoryManager*    m_pxVulkanMemory    = nullptr;
-	Zenith_Vulkan_Swapchain*        m_pxVulkanSwapchain = nullptr;
+	Flux_PlatformAPI*               m_pxVulkan          = nullptr;
+	Flux_MemoryManager*             m_pxVulkanMemory    = nullptr;
+	Flux_Swapchain*                 m_pxVulkanSwapchain = nullptr;
 	Flux_HiZImpl*                       m_pxHiZ              = nullptr;
 	Flux_StaticMeshesImpl*              m_pxStaticMeshes     = nullptr;
 	Flux_AnimatedMeshesImpl*            m_pxAnimatedMeshes   = nullptr;

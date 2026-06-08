@@ -38,7 +38,7 @@
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 
 #include <cstring> // strcmp — golden-order verification only; deliberately not in the header.
 

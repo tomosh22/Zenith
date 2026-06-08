@@ -28,9 +28,7 @@
 #include "Input/Zenith_TouchInput.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Vulkan/Zenith_Vulkan.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
@@ -238,7 +236,7 @@ Flux_GraphicsImpl& Zenith_Engine::FluxGraphics()
 	return *m_pxFluxGraphics;
 }
 
-Zenith_Vulkan& Zenith_Engine::FluxBackend()
+Flux_PlatformAPI& Zenith_Engine::FluxBackend()
 {
 	// No assert: Vulkan instance / device / queues / per-frame state are
 	// read from every frame and from Vulkan worker threads. Allocated
@@ -247,12 +245,12 @@ Zenith_Vulkan& Zenith_Engine::FluxBackend()
 	return *m_pxVulkan;
 }
 
-Zenith_Vulkan_MemoryManager& Zenith_Engine::FluxMemory()
+Flux_MemoryManager& Zenith_Engine::FluxMemory()
 {
 	return *m_pxVulkanMemory;
 }
 
-Zenith_Vulkan_Swapchain& Zenith_Engine::FluxSwapchain()
+Flux_Swapchain& Zenith_Engine::FluxSwapchain()
 {
 	return *m_pxVulkanSwapchain;
 }
@@ -358,13 +356,13 @@ void Zenith_Engine::Initialise()
 	// per-frame ring / VRAM registry / pending command buffers / ImGui).
 	// Must exist before Flux::EarlyInitialise -> Zenith_Vulkan::Initialise.
 	Zenith_Assert(m_pxVulkan == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxVulkan = new Zenith_Vulkan();
+	m_pxVulkan = new Flux_PlatformAPI();
 
 	Zenith_Assert(m_pxVulkanMemory == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxVulkanMemory = new Zenith_Vulkan_MemoryManager();
+	m_pxVulkanMemory = new Flux_MemoryManager();
 
 	Zenith_Assert(m_pxVulkanSwapchain == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxVulkanSwapchain = new Zenith_Vulkan_Swapchain();
+	m_pxVulkanSwapchain = new Flux_Swapchain();
 
 	// Phase 7a: HiZ subsystem state.
 	Zenith_Assert(m_pxHiZ == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
@@ -881,8 +879,8 @@ void Zenith_Engine::Shutdown()
 	delete m_pxFluxGraphics;
 	m_pxFluxGraphics = nullptr;
 
-	// Free Vulkan backend state last among graphics holders so device-backed
-	// member destructors above can still call g_xEngine.FluxBackend().GetDevice().
+	// Free the render backend state last among graphics holders so device-backed
+	// member destructors above can still reach the live backend (FluxBackend()).
 	delete m_pxVulkanSwapchain;
 	m_pxVulkanSwapchain = nullptr;
 	delete m_pxVulkanMemory;

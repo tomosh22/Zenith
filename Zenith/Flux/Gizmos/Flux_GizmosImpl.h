@@ -11,7 +11,6 @@ class Flux_RenderGraph;
 class Zenith_Entity;
 class Flux_GraphicsImpl;
 class Flux_PrimitivesImpl;
-class Zenith_Vulkan_MemoryManager;
 
 enum class GizmoComponent
 {
@@ -64,7 +63,7 @@ public:
 	Flux_GizmosImpl(const Flux_GizmosImpl&) = delete;
 	Flux_GizmosImpl& operator=(const Flux_GizmosImpl&) = delete;
 
-	void Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_PrimitivesImpl& xPrimitives, Zenith_Vulkan_MemoryManager& xVulkanMemory);
+	void Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_PrimitivesImpl& xPrimitives, Flux_MemoryManager& xVulkanMemory);
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -151,7 +150,7 @@ public:
 	// Injected engine-infra dependencies (de-globalization pass).
 	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 	Flux_PrimitivesImpl*         m_pxPrimitives   = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager*          m_pxVulkanMemory = nullptr;
 };
 
 #endif // ZENITH_TOOLS

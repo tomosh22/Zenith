@@ -9,10 +9,9 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 // Injected dep: GetWidth/GetHeight on the stored swapchain pointer need the
 // full type (only transitively available before this seam).
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 // Injected deps: buffer/index-buffer lifetime + staging upload (VulkanMemory)
 // and the per-frame delta-time (FrameContext) need the full types.
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Core/FrameContext.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -237,8 +236,8 @@ void Flux_DecalsImpl::BuildPipelines()
 
 // ===== INIT / SHUTDOWN =====
 
-void Flux_DecalsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swapchain& xSwapchain,
-                                 Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame)
+void Flux_DecalsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_Swapchain& xSwapchain,
+                                 Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame)
 {
 	// Wave-17 DI seam: store the injected cross-subsystem deps. The
 	// SetupRenderGraph / Prepare reach-ins route through these instead of g_xEngine.

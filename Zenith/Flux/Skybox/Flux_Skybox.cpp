@@ -115,7 +115,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 	}
 }
 
-void Flux_SkyboxImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan& xVulkan)
+void Flux_SkyboxImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Flux_MemoryManager& xVulkanMemory, Flux_PlatformAPI& xVulkan)
 {
 	// Wave-15 DI seam: store the injected cross-subsystem deps. Every later
 	// instance-method reach-in routes through these instead of g_xEngine.

@@ -10,8 +10,7 @@
 #include "Memory/Zenith_MemoryBudgets.h"
 #include "Memory/Zenith_MemoryCategories.h"
 #include "Callstack/Zenith_Callstack.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Physics/Zenith_Physics.h"
 #ifdef ZENITH_WINDOWS
 #include "Windows/Zenith_Windows_Window.h"
@@ -146,7 +145,7 @@ namespace Zenith_EditorPanelMemory
 		ImGui::Text("GPU Memory (VMA)");
 		ImGui::Separator();
 
-		Zenith_Vulkan_MemoryManager::VMAStats xVmaStats = g_xEngine.FluxMemory().GetVMAStats();
+		Flux_MemoryManager::VMAStats xVmaStats = g_xEngine.FluxMemory().GetVMAStats();
 
 		// Manual tracking (for comparison)
 		u_int64 ulImageMem = *g_xEngine.FluxMemory().GetImageMemoryUsagePtr();

@@ -3,7 +3,7 @@
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/FrameContext.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
@@ -106,7 +106,7 @@ void Flux_GrassImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xGrassPipeline, xPipelineSpec);
 }
 
-void Flux_GrassImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame,
+void Flux_GrassImpl::Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame,
 	Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
 {
 	m_pxVulkanMemory = &xVulkanMemory;

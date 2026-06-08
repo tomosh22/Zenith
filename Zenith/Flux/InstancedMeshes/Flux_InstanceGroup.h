@@ -1,12 +1,12 @@
 #pragma once
 
+#include "Flux/Flux_Fwd.h"
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Collections/Zenith_Vector.h"
 
 class Flux_AnimationTexture;
-class Zenith_Vulkan_MemoryManager;
 class Zenith_Multithreading;
 
 //=============================================================================
@@ -237,6 +237,6 @@ private:
 	// constructed long after boot (first instance added at runtime), and we only
 	// store the pointer here — no method is called at construction time.
 	//-------------------------------------------------------------------------
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 	Zenith_Multithreading* m_pxThreading = nullptr;
 };

@@ -7,7 +7,7 @@
 
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -235,7 +235,7 @@ void Flux_TerrainImpl::BuildPipelines()
 	m_xResetCountersPipeline.m_xRootSig = m_xResetCountersRootSig;
 }
 
-void Flux_TerrainImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming)
+void Flux_TerrainImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming)
 {
 	// De-globalisation DI seam: store the injected cross-subsystem deps. Every
 	// later reach (including from the static graph trampolines, which re-acquire

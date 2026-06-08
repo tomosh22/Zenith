@@ -11,7 +11,6 @@ class Flux_MeshInstance;
 class Flux_ShaderBinder;
 class Flux_CommandList;
 class Flux_GraphicsImpl;
-class Zenith_Vulkan_MemoryManager;
 
 // Phase 9: state + behaviour for InstancedMeshes subsystem.
 class Flux_InstancedMeshesImpl
@@ -23,7 +22,7 @@ public:
 	Flux_InstancedMeshesImpl(const Flux_InstancedMeshesImpl&) = delete;
 	Flux_InstancedMeshesImpl& operator=(const Flux_InstancedMeshesImpl&) = delete;
 
-	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics);
+	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics);
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -73,6 +72,6 @@ public:
 	uint32_t                   m_uVisibleInstances   = 0;
 
 	// Injected engine-infra singletons (de-globalization pass).
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 };

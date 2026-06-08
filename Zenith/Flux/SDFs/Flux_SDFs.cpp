@@ -55,7 +55,7 @@ void Flux_SDFsImpl::BuildPipelines()
 }
 
 void Flux_SDFsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR,
-	Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame)
+	Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame)
 {
 	// Wave-14 DI seam (Wave-4 extension): store the injected cross-subsystem deps.
 	// Every later instance-method reach-in routes through these instead of g_xEngine.

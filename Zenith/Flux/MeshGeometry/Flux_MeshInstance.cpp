@@ -273,7 +273,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 	}
 
 	// Create GPU vertex buffer
-	Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.InitialiseVertexBuffer(
 		pVertexData,
 		uVertexDataSize,
@@ -300,7 +300,7 @@ void Flux_MeshInstance::Destroy()
 {
 	if (m_bInitialized)
 	{
-		Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+		Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 		xVulkanMemory.DestroyVertexBuffer(m_xVertexBuffer);
 		xVulkanMemory.DestroyIndexBuffer(m_xIndexBuffer);
 		m_xBufferLayout.Reset();
@@ -479,7 +479,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 	}
 
 	// Create GPU vertex buffer
-	Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.InitialiseVertexBuffer(
 		pVertexData,
 		uVertexDataSize,
@@ -630,7 +630,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 	}
 
 	// Create GPU vertex buffer
-	Zenith_Vulkan_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.InitialiseVertexBuffer(
 		pVertexData,
 		uVertexDataSize,

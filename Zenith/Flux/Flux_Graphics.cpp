@@ -9,8 +9,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Core/Zenith_RenderGather.h" // Wave 3: main camera comes through the neutral gather
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -46,7 +45,7 @@ void Flux_GraphicsImpl::InitialiseSamplers()
 	Flux_Sampler::InitialiseClamp(m_xClampSampler);
 }
 
-void Flux_GraphicsImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan_Swapchain& xVulkanSwapchain, Flux_ShadowsImpl& xShadows)
+void Flux_GraphicsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_Swapchain& xVulkanSwapchain, Flux_ShadowsImpl& xShadows)
 {
 	m_pxVulkanMemory    = &xVulkanMemory;
 	m_pxVulkanSwapchain = &xVulkanSwapchain;

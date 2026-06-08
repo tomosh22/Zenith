@@ -18,7 +18,6 @@ class Zenith_FontAsset;
 // Zenith_UI::Zenith_UICanvas statics + the FontHandle asset are not g_xEngine
 // subsystems, so they are out of scope.)
 class Flux_GraphicsImpl;
-class Zenith_Vulkan_MemoryManager;
 
 // Per-glyph instance vertex pushed to the GPU. One per visible glyph quad.
 // Layout matches the vertex input description in Flux_TextImpl::BuildPipelines.
@@ -64,7 +63,7 @@ public:
 
 	// Cross-subsystem dep is injected here and stored into m_pxGraphics below.
 	// This is the WS9.2 DI template: explicit ref param -> stored member pointer.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory);
 	void BuildPipelines();
 	void ReleaseAssetReferences();
 	void Shutdown();
@@ -98,5 +97,5 @@ public:
 	// so a default-constructed instance is headless-safe; the real boot path wires
 	// it in via the Text init trampoline (Flux_FeatureRegistry.cpp).
 	Flux_GraphicsImpl*       m_pxGraphics            = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory    = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory    = nullptr;
 };

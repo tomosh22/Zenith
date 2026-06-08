@@ -5,7 +5,7 @@
 
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -424,7 +424,7 @@ void Flux_PrimitivesImpl::BuildPipelines()
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 
-void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory)
+void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory)
 {
 	// Store the injected cross-subsystem deps. The FluxGraphics reach-ins (in
 	// ExecuteGBuffer / SetupRenderGraph) route through m_pxGraphics; the buffer

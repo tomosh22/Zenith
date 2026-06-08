@@ -308,7 +308,7 @@ void Zenith_TextureAsset::ReleaseGPU()
 {
 	if (m_bGPUResourcesAllocated && m_xVRAMHandle.IsValid())
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(m_xVRAMHandle);
+		Flux_VRAM* pxVRAM = g_xEngine.FluxBackend().GetVRAM(m_xVRAMHandle);
 		g_xEngine.FluxMemory().QueueVRAMDeletion(pxVRAM, m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
 		m_xSRV = Flux_ShaderResourceView();
 		m_bGPUResourcesAllocated = false;

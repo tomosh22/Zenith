@@ -8,7 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -52,7 +52,7 @@ void Flux_LightClusteringImpl::BuildPipelines()
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_LightClusteringImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory)
+void Flux_LightClusteringImpl::Initialise(Flux_MemoryManager& xVulkanMemory)
 {
 	m_pxVulkanMemory = &xVulkanMemory;
 

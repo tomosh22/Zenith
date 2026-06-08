@@ -11,8 +11,7 @@
 // Injected deps: VulkanMemory owns the auto-exposure VRAM buffers + uploads,
 // the swapchain supplies the back-buffer dims, FrameContext supplies the
 // per-frame delta-time. Method bodies need the full types.
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Core/FrameContext.h"
 
 #ifdef ZENITH_TOOLS
@@ -152,8 +151,8 @@ static void ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserD
 static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData);
 static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData);
 
-void Flux_HDRImpl::Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory,
-                             Zenith_Vulkan_Swapchain& xSwapchain, FrameContext& xFrame)
+void Flux_HDRImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory,
+                             Flux_Swapchain& xSwapchain, FrameContext& xFrame)
 {
 	m_pxGraphics     = &xGraphics;
 	m_pxVulkanMemory = &xVulkanMemory;

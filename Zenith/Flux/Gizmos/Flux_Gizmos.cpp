@@ -20,7 +20,7 @@
 #include "Maths/Zenith_Maths_Intersections.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 
 // Constants
 static constexpr float GIZMO_BASE_SIZE = 1.0f;
@@ -81,7 +81,7 @@ void Flux_GizmosImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xSpec);
 }
 
-void Flux_GizmosImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_PrimitivesImpl& xPrimitives, Zenith_Vulkan_MemoryManager& xVulkanMemory)
+void Flux_GizmosImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_PrimitivesImpl& xPrimitives, Flux_MemoryManager& xVulkanMemory)
 {
 	m_pxFluxGraphics = &xFluxGraphics;
 	m_pxPrimitives   = &xPrimitives;
@@ -110,7 +110,7 @@ void Flux_GizmosImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_Primitiv
 void Flux_GizmosImpl::Shutdown()
 {
 	// Destroy GPU buffers for all gizmo geometry
-	Zenith_Vulkan_MemoryManager* pxVulkanMemory = m_pxVulkanMemory;
+	Flux_MemoryManager* pxVulkanMemory = m_pxVulkanMemory;
 	auto DestroyGeometryBuffers = [pxVulkanMemory](Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometry)
 	{
 		for (uint32_t i = 0; i < xGeometry.GetSize(); ++i)

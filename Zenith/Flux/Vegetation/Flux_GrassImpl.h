@@ -8,7 +8,6 @@
 class Flux_MeshGeometry;
 class Flux_GraphicsImpl;
 class Flux_HDRImpl;
-class Zenith_Vulkan_MemoryManager;
 class FrameContext;
 
 enum Grass_DebugMode : u_int
@@ -75,7 +74,7 @@ public:
 	//   xVulkanMemory owns the grass instance/constants/blade-mesh GPU buffers,
 	//   xFrame supplies the wind animation time, xGraphics provides the camera /
 	//   frame-constants / depth attachment, xHDR provides the HDR scene target.
-	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame,
+	void Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame,
 		Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR);
 	void BuildPipelines();
 	void Shutdown();
@@ -140,7 +139,7 @@ public:
 	// Injected engine-infra deps (stored in Initialise, nulled in Shutdown).
 	// Public so the static graph trampoline can route through them after it
 	// recovers the subsystem via g_xEngine.Grass().
-	Zenith_Vulkan_MemoryManager*      m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager*               m_pxVulkanMemory = nullptr;
 	FrameContext*                     m_pxFrame        = nullptr;
 	Flux_GraphicsImpl*                m_pxGraphics     = nullptr;
 	Flux_HDRImpl*                     m_pxHDR          = nullptr;

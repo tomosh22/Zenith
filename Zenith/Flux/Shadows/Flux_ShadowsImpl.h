@@ -5,7 +5,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 // Injected engine-infra deps (forward-declared; full types pulled in the .cpp).
-class Zenith_Vulkan_MemoryManager;
 class Flux_GraphicsImpl;
 class Zenith_Profiling;
 
@@ -27,7 +26,7 @@ public:
 	Flux_ShadowsImpl(const Flux_ShadowsImpl&) = delete;
 	Flux_ShadowsImpl& operator=(const Flux_ShadowsImpl&) = delete;
 
-	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling);
+	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling);
 	void Shutdown();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -52,7 +51,7 @@ private:
 	Flux_RenderAttachment& GetCSM(u_int uIndex);
 
 	// Injected engine-infra deps (stored in Initialise, nulled in Shutdown).
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 	Zenith_Profiling*            m_pxProfiling = nullptr;
 };

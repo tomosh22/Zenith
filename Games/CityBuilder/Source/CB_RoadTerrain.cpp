@@ -7,8 +7,7 @@
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Maths/Zenith_FrustumCulling.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan.h"
+#include "Flux/Flux_BackendTypes.h"
 #include <string>
 
 // The game's asset dir hook (CityBuilder.cpp) — used to find the baked chunk meshes.
@@ -135,7 +134,7 @@ void CB_RoadTerrain::CarveTerrainMesh(const CB_RoadGraph& xGraph, Zenith_Terrain
 	// (including the frames still in flight). We're about to overwrite resident chunk verts
 	// in place via memcpy — that races the in-flight GPU read and corrupts terrain. Wait for
 	// the GPU to finish before touching the buffer. (Infrequent — only on a road change.)
-	g_xEngine.FluxBackend().GetDevice().waitIdle();
+	g_xEngine.FluxBackend().WaitForGPUIdle();
 
 	for (int cx = iCXMin; cx <= iCXMax; ++cx)
 	{
@@ -241,7 +240,7 @@ void CB_RoadTerrain::RefreshTerrainRegionFromField(const CB_TerrainHeightfield& 
 
 	// Same GPU sync as CarveTerrainMesh: these are resident, actively-rendered chunks, so an
 	// in-place host-visible re-upload races the in-flight GPU read without this wait.
-	g_xEngine.FluxBackend().GetDevice().waitIdle();
+	g_xEngine.FluxBackend().WaitForGPUIdle();
 
 	for (int cx = iCXMin; cx <= iCXMax; ++cx)
 	{

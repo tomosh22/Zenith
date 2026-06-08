@@ -13,8 +13,6 @@
 // aggressive g_xEngine-shrink directive) — previously direct g_xEngine lookups.
 class Flux_GraphicsImpl;
 class Flux_HDRImpl;
-class Zenith_Vulkan_MemoryManager;
-class Zenith_Vulkan;
 
 namespace AtmosphereConfig
 {
@@ -119,7 +117,7 @@ public:
 	// Cross-subsystem deps are injected here and stored into the member pointers
 	// below. This is the WS9.2 DI template: explicit ref params -> stored member
 	// pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan& xVulkan);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Flux_MemoryManager& xVulkanMemory, Flux_PlatformAPI& xVulkan);
 	void ReleaseAssetReferences();
 	void Shutdown();
 	void Reset();
@@ -185,6 +183,6 @@ public:
 	// path wires them through the Flux_FeatureRegistry Skybox init trampoline.
 	Flux_GraphicsImpl*           m_pxGraphics      = nullptr;
 	Flux_HDRImpl*                m_pxHDR           = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory  = nullptr;
-	Zenith_Vulkan*               m_pxVulkan        = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory  = nullptr;
+	Flux_PlatformAPI*               m_pxVulkan        = nullptr;
 };

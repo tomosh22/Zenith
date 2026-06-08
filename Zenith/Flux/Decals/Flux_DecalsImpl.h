@@ -46,8 +46,6 @@ struct CpuDecalSlot
 // SSAO leaf-seam shape: explicit ref params -> stored member pointers).
 // Forward-declared here; full headers are pulled in by Flux_Decals.cpp.
 class Flux_GraphicsImpl;
-class Zenith_Vulkan_Swapchain;
-class Zenith_Vulkan_MemoryManager;
 class FrameContext;
 
 // Phase 9: state + behaviour for Decals subsystem.
@@ -75,8 +73,8 @@ public:
 	// per-frame staging upload; xFrame supplies the delta-time for the lifetime
 	// tick. Both are reached through the stored member pointers (incl. from the
 	// non-capturing Prepare trampoline, which recovers this instance first).
-	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swapchain& xSwapchain,
-	                Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_Swapchain& xSwapchain,
+	                Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame);
 	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -150,7 +148,7 @@ public:
 	// nullptr so a default-constructed instance is headless-safe; the real boot
 	// path wires them in Flux_FeatureRegistry's Decals init trampoline.
 	Flux_GraphicsImpl*           m_pxGraphics     = nullptr;
-	Zenith_Vulkan_Swapchain*     m_pxSwapchain    = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_Swapchain*              m_pxSwapchain    = nullptr;
+	Flux_MemoryManager*          m_pxVulkanMemory = nullptr;
 	FrameContext*                m_pxFrame        = nullptr;
 };

@@ -5,7 +5,6 @@
 
 // Cross-subsystem dependencies injected into Initialise (see the DI seam note
 // below). Forward-declared here; full headers are pulled in by Flux_HiZ.cpp.
-class Zenith_Vulkan_Swapchain;
 class Flux_GraphicsImpl;
 class Flux_RendererImpl;
 
@@ -37,7 +36,7 @@ public:
 	// Cross-subsystem deps are injected here and stored into the member
 	// pointers below. This is the Wave 9 DI template: explicit ref params ->
 	// stored member pointers.
-	void Initialise(Zenith_Vulkan_Swapchain& xSwapchain, Flux_GraphicsImpl& xGraphics, Flux_RendererImpl& xRenderer);
+	void Initialise(Flux_Swapchain& xSwapchain, Flux_GraphicsImpl& xGraphics, Flux_RendererImpl& xRenderer);
 	void Shutdown();
 	void BuildPipelines();
 
@@ -69,7 +68,7 @@ public:
 	// Injected cross-subsystem dependencies (stored by Initialise). Default
 	// nullptr so a default-constructed instance is headless-safe; the real
 	// boot path wires them in Flux.cpp.
-	Zenith_Vulkan_Swapchain* m_pxSwapchain = nullptr;
+	Flux_Swapchain*          m_pxSwapchain = nullptr;
 	Flux_GraphicsImpl*       m_pxGraphics  = nullptr;
 	Flux_RendererImpl*       m_pxRenderer  = nullptr;
 

@@ -7,7 +7,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -84,7 +84,7 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 	return xRet;
 }
 
-void Flux_ShadowsImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling)
+void Flux_ShadowsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling)
 {
 	m_pxVulkanMemory = &xVulkanMemory;
 	m_pxFluxGraphics = &xFluxGraphics;

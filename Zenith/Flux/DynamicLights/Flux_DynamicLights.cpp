@@ -3,7 +3,7 @@
 
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 // Wave 3: lights are gathered EC-side into renderer-neutral Zenith_LightRenderData
 // (no Zenith_LightComponent.h / Zenith_TransformComponent.h here). The renderer keeps
 // the frustum cull, intensity threshold, direction validation and GPU staging.
@@ -155,7 +155,7 @@ static float CalculateLightPriority(const Flux_GraphicsImpl& xFluxGraphics,
 
 // ========== PUBLIC API ==========
 
-void Flux_DynamicLightsImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics)
+void Flux_DynamicLightsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics)
 {
 	m_pxVulkanMemory = &xVulkanMemory;
 	m_pxFluxGraphics = &xFluxGraphics;

@@ -10,7 +10,6 @@
 
 class Flux_ParticleEmitterConfig;
 class Flux_CommandList;
-class Zenith_Vulkan_MemoryManager;
 class FrameContext;
 
 /**
@@ -37,7 +36,7 @@ public:
 	Flux_ParticleGPUImpl(const Flux_ParticleGPUImpl&) = delete;
 	Flux_ParticleGPUImpl& operator=(const Flux_ParticleGPUImpl&) = delete;
 
-	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame);
+	void Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame);
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -106,7 +105,7 @@ public:
 	};
 
 	// Injected cross-subsystem dependencies (stored in Initialise).
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory       = nullptr;
+	Flux_MemoryManager*          m_pxVulkanMemory       = nullptr;
 	FrameContext*                m_pxFrame              = nullptr;
 
 	Zenith_Vector<EmitterData> m_axEmitters;

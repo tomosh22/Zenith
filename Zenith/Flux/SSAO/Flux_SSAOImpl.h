@@ -9,7 +9,6 @@ class Flux_RenderGraph;
 // 2nd leaf seam built on the WS9.2 Flux_HiZImpl template). Forward-declared
 // here; full headers are pulled in by Flux_SSAO.cpp.
 class Flux_GraphicsImpl;
-class Zenith_Vulkan_Swapchain;
 class Flux_HDRImpl;
 
 // Phase 9: state + behaviour for SSAO subsystem.
@@ -34,7 +33,7 @@ public:
 	// Cross-subsystem deps are injected here and stored into the member pointers
 	// below. This is the WS9.2 DI template: explicit ref params -> stored member
 	// pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_Swapchain& xSwapchain, Flux_HDRImpl& xHDR);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_Swapchain& xSwapchain, Flux_HDRImpl& xHDR);
 	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -63,6 +62,6 @@ public:
 	// nullptr so a default-constructed instance is headless-safe; the real boot
 	// path wires them in Flux.cpp.
 	Flux_GraphicsImpl*       m_pxGraphics  = nullptr;
-	Zenith_Vulkan_Swapchain* m_pxSwapchain = nullptr;
+	Flux_Swapchain* m_pxSwapchain = nullptr;
 	Flux_HDRImpl*            m_pxHDR       = nullptr;
 };

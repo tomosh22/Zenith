@@ -5,7 +5,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_RenderGraph;
-class Zenith_Vulkan_Swapchain;
 class Flux_HiZImpl;
 class Flux_GraphicsImpl;
 class Flux_VolumeFogImpl;
@@ -43,7 +42,7 @@ public:
 	Flux_SSGIImpl(const Flux_SSGIImpl&) = delete;
 	Flux_SSGIImpl& operator=(const Flux_SSGIImpl&) = delete;
 
-	void Initialise(Zenith_Vulkan_Swapchain& xSwapchain, Flux_HiZImpl& xHiZ, Flux_GraphicsImpl& xGraphics, Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer);
+	void Initialise(Flux_Swapchain& xSwapchain, Flux_HiZImpl& xHiZ, Flux_GraphicsImpl& xGraphics, Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer);
 	void BuildPipelines();
 
 	// CRTP hook called by Flux_ScreenSpaceEffectBase::Shutdown(). SSGI owns no
@@ -90,7 +89,7 @@ public:
 
 	// Injected engine-infra / sibling-subsystem dependencies (de-globalization).
 	// Stored in Initialise, nulled in ShutdownImpl.
-	Zenith_Vulkan_Swapchain* m_pxSwapchain = nullptr;
+	Flux_Swapchain* m_pxSwapchain = nullptr;
 	Flux_HiZImpl*            m_pxHiZ        = nullptr;
 	Flux_GraphicsImpl*       m_pxGraphics   = nullptr;
 	Flux_VolumeFogImpl*      m_pxVolumeFog  = nullptr;

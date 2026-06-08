@@ -14,7 +14,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Flux/Flux_BackendTypes.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -134,7 +134,7 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 	}
 }
 
-void Flux_InstancedMeshesImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics)
+void Flux_InstancedMeshesImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics)
 {
 	m_pxVulkanMemory = &xVulkanMemory;
 	m_pxFluxGraphics = &xFluxGraphics;

@@ -14,7 +14,6 @@
 // are the non-capturing fn-pointer trampolines (the ExecuteGBuffer graph callback and
 // the ZENITH_TOOLS hot-reload lambda), which cannot capture state.
 class Flux_GraphicsImpl;
-class Zenith_Vulkan_MemoryManager;
 class Flux_CommandList;
 class Flux_ShaderBinder;
 
@@ -90,7 +89,7 @@ public:
 
 	// Cross-subsystem deps are injected here and stored into m_pxGraphics /
 	// m_pxVulkanMemory below. Explicit ref params -> stored member pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory);
 	void BuildPipelines();
 	void Shutdown();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -185,5 +184,5 @@ public:
 	// so a default-constructed instance is headless-safe; the real boot path wires
 	// them in via the Primitives init trampoline (Flux_FeatureRegistry.cpp).
 	Flux_GraphicsImpl* m_pxGraphics = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 };

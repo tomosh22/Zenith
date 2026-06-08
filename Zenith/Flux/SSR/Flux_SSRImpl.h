@@ -16,8 +16,6 @@ class Flux_GraphicsImpl;
 class Flux_HiZImpl;
 class Flux_VolumeFogImpl;
 class Flux_RendererImpl;
-class Zenith_Vulkan_Swapchain;
-class Zenith_Vulkan_MemoryManager;
 
 enum SSR_DebugMode : u_int
 {
@@ -51,7 +49,7 @@ public:
 	// below (aggressive DI seam). Reached through the stored member pointers from
 	// the instance methods; the non-capturing Execute* / hot-reload trampolines
 	// recover this instance via g_xEngine.SSR() first, then route through these.
-	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan_Swapchain& xSwapchain,
+	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_Swapchain& xSwapchain,
 	                Flux_GraphicsImpl& xGraphics, Flux_HiZImpl& xHiZ,
 	                Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer);
 	void BuildPipelines();
@@ -104,8 +102,8 @@ public:
 	// Injected cross-subsystem dependencies (stored by Initialise). Default
 	// nullptr so a default-constructed instance is headless-safe; the real boot
 	// path wires them in Flux_FeatureRegistry's SSR init trampoline.
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory  = nullptr;
-	Zenith_Vulkan_Swapchain*     m_pxSwapchain     = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory  = nullptr;
+	Flux_Swapchain*     m_pxSwapchain     = nullptr;
 	Flux_GraphicsImpl*           m_pxGraphics      = nullptr;
 	Flux_HiZImpl*                m_pxHiZ           = nullptr;
 	Flux_VolumeFogImpl*          m_pxVolumeFog     = nullptr;

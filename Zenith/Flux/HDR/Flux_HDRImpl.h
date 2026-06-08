@@ -15,8 +15,6 @@
 // their reach-ins through these members, plus the ZENITH_TOOLS DebugVariables
 // reaches (conditional accessor).
 class Flux_GraphicsImpl;
-class Zenith_Vulkan_MemoryManager;
-class Zenith_Vulkan_Swapchain;
 class FrameContext;
 
 enum ToneMappingOperator : u_int
@@ -61,8 +59,8 @@ public:
 	// adaptation dispatch sizing and transient creation; xFrame supplies the
 	// delta-time for exposure adaptation; xGraphics owns the fullscreen quad mesh
 	// + the final/depth render targets the bloom/tonemap passes draw into.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Zenith_Vulkan_MemoryManager& xVulkanMemory,
-	                Zenith_Vulkan_Swapchain& xSwapchain, FrameContext& xFrame);
+	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory,
+	                Flux_Swapchain& xSwapchain, FrameContext& xFrame);
 	void Shutdown();
 	void Reset();
 	void BuildPipelines();
@@ -156,7 +154,7 @@ public:
 	// Public so the non-capturing graph trampolines can route through them after
 	// recovering this instance via g_xEngine.HDR().
 	Flux_GraphicsImpl*           m_pxGraphics      = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory  = nullptr;
-	Zenith_Vulkan_Swapchain*     m_pxSwapchain     = nullptr;
+	Flux_MemoryManager*          m_pxVulkanMemory  = nullptr;
+	Flux_Swapchain*              m_pxSwapchain     = nullptr;
 	FrameContext*                m_pxFrame         = nullptr;
 };

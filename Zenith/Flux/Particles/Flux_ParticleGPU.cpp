@@ -70,7 +70,7 @@ void Flux_ParticleGPUImpl::BuildPipelines()
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_ParticleGPUImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame)
+void Flux_ParticleGPUImpl::Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame)
 {
 	m_pxVulkanMemory = &xVulkanMemory;
 	m_pxFrame = &xFrame;

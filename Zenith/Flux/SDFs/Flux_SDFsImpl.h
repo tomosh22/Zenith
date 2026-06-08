@@ -11,7 +11,6 @@ class Flux_RenderGraph;
 // seams). Forward-declared here; full headers are pulled in by Flux_SDFs.cpp.
 class Flux_GraphicsImpl;
 class Flux_HDRImpl;
-class Zenith_Vulkan_MemoryManager;
 class FrameContext;
 
 // Phase 9: state + behaviour for SDFs subsystem.
@@ -38,7 +37,7 @@ public:
 	// below. This is the WS9.2 DI template: explicit ref params -> stored member
 	// pointers.
 	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR,
-		Zenith_Vulkan_MemoryManager& xVulkanMemory, FrameContext& xFrame);
+		Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame);
 	void BuildPipelines();
 	void Shutdown();
 
@@ -60,6 +59,6 @@ public:
 	// path wires them through the Flux_FeatureRegistry SDFs init trampoline.
 	Flux_GraphicsImpl* m_pxGraphics = nullptr;
 	Flux_HDRImpl*      m_pxHDR      = nullptr;
-	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory = nullptr;
+	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 	FrameContext*                m_pxFrame        = nullptr;
 };

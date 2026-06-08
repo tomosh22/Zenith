@@ -8,7 +8,6 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h" // Wave 3: Flux_TerrainRenderRecord (by-value in the render list)
 
 class Flux_DynamicConstantBuffer;
-class Zenith_Vulkan_MemoryManager;
 class Flux_GraphicsImpl;
 class Zenith_Profiling;
 class Flux_TerrainStreamingManagerImpl;
@@ -23,7 +22,7 @@ public:
 	Flux_TerrainImpl(const Flux_TerrainImpl&) = delete;
 	Flux_TerrainImpl& operator=(const Flux_TerrainImpl&) = delete;
 
-	void Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming);
+	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming);
 	void BuildPipelines();
 
 	void ReleaseAssetReferences();
@@ -92,7 +91,7 @@ public:
 	// Initialise, nulled in Shutdown. Instance methods + the static graph
 	// trampolines (which re-acquire the singleton via g_xEngine.Terrain())
 	// route their reaches through these instead of g_xEngine.<Accessor>().
-	Zenith_Vulkan_MemoryManager*      m_pxVulkanMemory     = nullptr;
+	Flux_MemoryManager*      m_pxVulkanMemory     = nullptr;
 	Flux_GraphicsImpl*                m_pxFluxGraphics     = nullptr;
 	Zenith_Profiling*                 m_pxProfiling        = nullptr;
 	Flux_TerrainStreamingManagerImpl* m_pxTerrainStreaming = nullptr;

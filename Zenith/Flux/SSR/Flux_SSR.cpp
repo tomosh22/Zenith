@@ -18,8 +18,7 @@
 // Injected deps: VulkanMemory owns the SSR constants CBV lifetime + the
 // per-frame upload; VulkanSwapchain supplies the render dimensions. Both need
 // their full types where the instance-method bodies dereference the members.
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
+#include "Flux/Flux_BackendTypes.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
@@ -245,7 +244,7 @@ void Flux_SSRImpl::BuildPipelines()
 		FluxShaderProgram::SSR_DenoiseV, SSR_FORMAT);
 }
 
-void Flux_SSRImpl::Initialise(Zenith_Vulkan_MemoryManager& xVulkanMemory, Zenith_Vulkan_Swapchain& xSwapchain,
+void Flux_SSRImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_Swapchain& xSwapchain,
                               Flux_GraphicsImpl& xGraphics, Flux_HiZImpl& xHiZ,
                               Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer)
 {
