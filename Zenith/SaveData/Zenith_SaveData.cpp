@@ -20,7 +20,7 @@ namespace Zenith_SaveData
 	// circuits to it. Both wiped only by ClearForTest.
 	// ============================================================================
 	static Zenith_Vector<WrittenSlot>     s_xWrittenSlotsLog;
-	static std::vector<WrittenSlot>       s_xReadbackStash;
+	static Zenith_Vector<WrittenSlot>     s_xReadbackStash;
 
 	static WrittenSlot* FindReadbackSlot(const char* szSlotName)
 	{
@@ -380,14 +380,14 @@ namespace Zenith_SaveData
 		}
 		else
 		{
-			s_xReadbackStash.push_back(std::move(xSlot));
+			s_xReadbackStash.PushBack(std::move(xSlot));
 		}
 	}
 
 	void ClearForTest()
 	{
 		s_xWrittenSlotsLog.Clear();
-		s_xReadbackStash.clear();
+		s_xReadbackStash.Clear();
 	}
 #endif
 }

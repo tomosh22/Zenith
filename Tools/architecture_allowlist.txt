@@ -24,7 +24,6 @@ layer-up: Zenith/Flux/Flux_Graphics.cpp => Editor/Zenith_Editor.h
 layer-up: Zenith/Flux/HDR/Flux_HDR.cpp => UI/Zenith_UICanvas.h
 layer-up: Zenith/Flux/Text/Flux_Text.cpp => UI/Zenith_UICanvas.h
 layer-up: Zenith/Input/Zenith_InputSimulator.cpp => UI/Zenith_UICanvas.h
-layer-up: Zenith/Profiling/Zenith_Profiling.cpp => Flux/Flux.h
 layer-up: Zenith/UI/Zenith_UIButton.cpp => Editor/Zenith_Editor.h
 layer-up: Zenith/UI/Zenith_UIElement.cpp => Editor/Zenith_Editor.h
 layer-up: Zenith/UI/Zenith_UIScrollView.cpp => Editor/Zenith_Editor.h

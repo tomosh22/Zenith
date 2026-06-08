@@ -11,6 +11,7 @@
 #include "AssetHandling/Zenith_ScriptAsset.h"
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "Collections/Zenith_Vector.h"
 #include <fstream>
 
 // Loader implementations
@@ -416,12 +417,12 @@ void Zenith_AssetRegistry::UnloadUnusedInternal()
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
 	// Collect assets with ref count 0
-	std::vector<std::string> xToRemove;
+	Zenith_Vector<std::string> xToRemove;
 	for (const auto& xPair : m_xAssetsByPath)
 	{
 		if (xPair.second->GetRefCount() == 0)
 		{
-			xToRemove.push_back(xPair.first);
+			xToRemove.PushBack(xPair.first);
 		}
 	}
 
@@ -437,9 +438,9 @@ void Zenith_AssetRegistry::UnloadUnusedInternal()
 		m_xAssetsByPath.erase(strPath);
 	}
 
-	if (m_bLifecycleLogging && !xToRemove.empty())
+	if (m_bLifecycleLogging && xToRemove.GetSize() > 0)
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloaded %zu unused assets", xToRemove.size());
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloaded %u unused assets", xToRemove.GetSize());
 	}
 }
 
@@ -840,11 +841,11 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 
 	if (xDataSize > 0)
 	{
-		std::vector<char> xBuffer(static_cast<size_t>(xDataSize));
-		xFile.read(xBuffer.data(), xDataSize);
+		Zenith_Vector<char> xBuffer(static_cast<u_int>(xDataSize));
+		xFile.read(xBuffer.GetDataPointer(), xDataSize);
 
 		// Create DataStream with external data and deserialize
-		Zenith_DataStream xStream(xBuffer.data(), static_cast<uint64_t>(xDataSize));
+		Zenith_DataStream xStream(xBuffer.GetDataPointer(), static_cast<uint64_t>(xDataSize));
 		pxAsset->ReadFromDataStream(xStream);
 	}
 

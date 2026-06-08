@@ -4,15 +4,15 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "Collections/Zenith_HashMap.h"
 #include <queue>
-#include <unordered_set>
 #include <algorithm>
 
 namespace
 {
 	// A* node for the priority queue. Lives at file scope (anonymous namespace)
 	// so file-scope helpers can take it directly without polluting the public
-	// header with <queue> / <unordered_set> / <unordered_map>.
+	// header with <queue> / Zenith_HashMap.
 	struct AStarNode
 	{
 		uint32_t m_uPolygonIndex;
@@ -39,10 +39,10 @@ namespace
 		const Zenith_Maths::Vector3& xCurrentCenter,
 		const Zenith_Maths::Vector3& xEndProjected,
 		AStarOpenSet& xOpenSet,
-		const std::unordered_set<uint32_t>& xClosedSet,
-		std::unordered_map<uint32_t, float>& xOpenSetGCosts)
+		const Zenith_HashMap<uint32_t, bool>& xClosedSet,
+		Zenith_HashMap<uint32_t, float>& xOpenSetGCosts)
 	{
-		if (xClosedSet.count(uNeighbor) > 0) return;
+		if (xClosedSet.Contains(uNeighbor)) return;
 
 		Zenith_Assert(uNeighbor < xNavMesh.GetPolygonCount(),
 			"Pathfinding: Neighbor index %u out of bounds", uNeighbor);
@@ -60,11 +60,11 @@ namespace
 
 		const float fNewGCost = xCurrent.m_fGCost + fEdgeCost;
 
-		auto itOpen = xOpenSetGCosts.find(uNeighbor);
-		if (itOpen != xOpenSetGCosts.end())
+		float* pfOpen = xOpenSetGCosts.TryGet(uNeighbor);
+		if (pfOpen != nullptr)
 		{
-			if (fNewGCost >= itOpen->second) return;
-			itOpen->second = fNewGCost;
+			if (fNewGCost >= *pfOpen) return;
+			*pfOpen = fNewGCost;
 		}
 		else
 		{
@@ -208,8 +208,8 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 	}
 
 	AStarOpenSet xOpenSet;
-	std::unordered_set<uint32_t> xClosedSet;
-	std::unordered_map<uint32_t, float> xOpenSetGCosts;  // Best g-cost seen for nodes still in the open set.
+	Zenith_HashMap<uint32_t, bool> xClosedSet;
+	Zenith_HashMap<uint32_t, float> xOpenSetGCosts;  // Best g-cost seen for nodes still in the open set.
 	Zenith_Vector<AStarNode> axClosedList;
 
 	AStarNode xStartNode;
@@ -230,11 +230,11 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 		AStarNode xCurrent = xOpenSet.top();
 		xOpenSet.pop();
 
-		if (xClosedSet.count(xCurrent.m_uPolygonIndex) > 0) continue;
+		if (xClosedSet.Contains(xCurrent.m_uPolygonIndex)) continue;
 
 		const uint32_t uCurrentClosedIndex = axClosedList.GetSize();
 		axClosedList.PushBack(xCurrent);
-		xClosedSet.insert(xCurrent.m_uPolygonIndex);
+		xClosedSet.Insert(xCurrent.m_uPolygonIndex, true);
 
 		if (xCurrent.m_fHCost < fBestPartialDist)
 		{

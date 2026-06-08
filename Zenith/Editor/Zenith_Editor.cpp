@@ -1718,18 +1718,18 @@ void Zenith_Editor::AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLev
 	static Zenith_Mutex_NoProfiling s_xLogMutex;
 	Zenith_ScopedMutexLock_T xLock(s_xLogMutex);
 
-	g_xEngine.Editor().m_xConsoleLogs.push_back(xEntry);
+	g_xEngine.Editor().m_xConsoleLogs.PushBack(xEntry);
 
 	// Limit console entries
-	if (g_xEngine.Editor().m_xConsoleLogs.size() > MAX_CONSOLE_ENTRIES)
+	if (g_xEngine.Editor().m_xConsoleLogs.GetSize() > MAX_CONSOLE_ENTRIES)
 	{
-		g_xEngine.Editor().m_xConsoleLogs.erase(g_xEngine.Editor().m_xConsoleLogs.begin());
+		g_xEngine.Editor().m_xConsoleLogs.Remove(0);
 	}
 }
 
 void Zenith_Editor::ClearConsole()
 {
-	g_xEngine.Editor().m_xConsoleLogs.clear();
+	g_xEngine.Editor().m_xConsoleLogs.Clear();
 }
 
 void Zenith_Editor::RenderConsolePanel()

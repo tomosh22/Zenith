@@ -124,7 +124,7 @@ bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 }
 
 Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
-	std::unordered_map<uint32_t, Zenith_EntityID>& xFileIndexToNewID) // #TODO: Replace with engine hash map
+	Zenith_HashMap<uint32_t, Zenith_EntityID>& xFileIndexToNewID)
 {
 	uint32_t uFileIndex;
 	std::string strName;
@@ -310,8 +310,8 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 		return false;
 	}
 
-	std::unordered_map<uint32_t, Zenith_EntityID> xFileIndexToNewID; // #TODO: Replace with engine hash map
-	xFileIndexToNewID.reserve(uNumEntities);
+	Zenith_HashMap<uint32_t, Zenith_EntityID> xFileIndexToNewID;
+	xFileIndexToNewID.Reserve(uNumEntities);
 
 	for (u_int u = 0; u < uNumEntities; u++)
 	{
@@ -347,10 +347,10 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 
 		if (uParentFileIndex != Zenith_EntityID::INVALID_INDEX)
 		{
-			auto it = xFileIndexToNewID.find(uParentFileIndex);
-			if (it != xFileIndexToNewID.end() && EntityExists(it->second))
+			const Zenith_EntityID* pxParentID = xFileIndexToNewID.TryGet(uParentFileIndex);
+			if (pxParentID != nullptr && EntityExists(*pxParentID))
 			{
-				xEntity.SetParent(it->second);
+				xEntity.SetParent(*pxParentID);
 			}
 		}
 	}
@@ -371,10 +371,10 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uMainCameraFileIndex != Zenith_EntityID::INVALID_INDEX)
 	{
-		auto it = xFileIndexToNewID.find(uMainCameraFileIndex);
-		if (it != xFileIndexToNewID.end() && EntityExists(it->second))
+		const Zenith_EntityID* pxCameraID = xFileIndexToNewID.TryGet(uMainCameraFileIndex);
+		if (pxCameraID != nullptr && EntityExists(*pxCameraID))
 		{
-			m_xMainCameraEntity = it->second;
+			m_xMainCameraEntity = *pxCameraID;
 		}
 	}
 

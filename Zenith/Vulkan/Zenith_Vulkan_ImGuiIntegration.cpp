@@ -10,7 +10,7 @@
 #include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 //=============================================================================
 // Vulkan Implementation of Flux ImGui Integration
@@ -25,7 +25,7 @@ namespace
 		u_int uFramesRemaining;
 	};
 
-	std::vector<PendingDeletion> s_xPendingDeletions;
+	Zenith_Vector<PendingDeletion> s_xPendingDeletions;
 }
 
 Flux_ImGuiTextureHandle Flux_ImGuiIntegration::RegisterTexture(
@@ -66,24 +66,28 @@ void Flux_ImGuiIntegration::UnregisterTexture(Flux_ImGuiTextureHandle xHandle, u
 
 	// Queue for deferred deletion
 	// We can't free immediately because the GPU may still be using it in in-flight command buffers
-	s_xPendingDeletions.push_back({ xDescriptorSet, uFramesToWait });
+	s_xPendingDeletions.PushBack({ xDescriptorSet, uFramesToWait });
 }
 
 void Flux_ImGuiIntegration::ProcessDeferredUnregistrations()
 {
-	// Process pending deletions - decrement counters and remove expired ones
-	for (auto it = s_xPendingDeletions.begin(); it != s_xPendingDeletions.end(); )
+	// Process pending deletions - decrement counters and remove expired ones.
+	// Order doesn't matter for a deletion queue, so use O(1) swap-and-pop removal.
+	// On RemoveSwap(u) the last element moves into slot u, so re-process that slot
+	// (do NOT advance u); otherwise advance to the next slot.
+	for (u_int u = 0; u < s_xPendingDeletions.GetSize(); )
 	{
-		if (it->uFramesRemaining == 0)
+		PendingDeletion& xEntry = s_xPendingDeletions.Get(u);
+		if (xEntry.uFramesRemaining == 0)
 		{
 			// Safe to delete now
-			ImGui_ImplVulkan_RemoveTexture(it->xDescriptorSet);
-			it = s_xPendingDeletions.erase(it);
+			ImGui_ImplVulkan_RemoveTexture(xEntry.xDescriptorSet);
+			s_xPendingDeletions.RemoveSwap(u);
 		}
 		else
 		{
-			it->uFramesRemaining--;
-			++it;
+			xEntry.uFramesRemaining--;
+			u++;
 		}
 	}
 }

@@ -25,7 +25,7 @@
 
 #include <filesystem>
 #include <algorithm>
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
 
 //=============================================================================
 // Zenith File Type Registry
@@ -148,7 +148,7 @@ namespace
 	};
 
 	// Cache of loaded texture thumbnails keyed by file path
-	static std::unordered_map<std::string, TextureThumbnailEntry> s_xThumbnailCache;
+	static Zenith_HashMap<std::string, TextureThumbnailEntry> s_xThumbnailCache;
 
 	// Maximum number of thumbnails to keep loaded (LRU would be ideal, but simple cap for now)
 	static constexpr size_t MAX_CACHED_THUMBNAILS = 100;
@@ -159,22 +159,22 @@ namespace
 //-----------------------------------------------------------------------------
 static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 {
-	auto it = s_xThumbnailCache.find(strPath);
-	if (it != s_xThumbnailCache.end())
+	TextureThumbnailEntry* pxExisting = s_xThumbnailCache.TryGet(strPath);
+	if (pxExisting != nullptr)
 	{
-		if (it->second.m_xImGuiHandle.IsValid())
+		if (pxExisting->m_xImGuiHandle.IsValid())
 		{
-			return it->second.m_xImGuiHandle;
+			return pxExisting->m_xImGuiHandle;
 		}
 		// Already tried loading and failed
-		if (it->second.m_bLoadAttempted)
+		if (pxExisting->m_bLoadAttempted)
 		{
 			return Flux_ImGuiTextureHandle();
 		}
 	}
 
 	// Limit cache size
-	if (s_xThumbnailCache.size() >= MAX_CACHED_THUMBNAILS)
+	if (s_xThumbnailCache.GetSize() >= MAX_CACHED_THUMBNAILS)
 	{
 		// Simple eviction: just don't load more for now
 		// A proper implementation would use LRU eviction
@@ -865,14 +865,15 @@ void Zenith_EditorPanelContentBrowser::NavigateToDirectory(ContentBrowserState& 
 {
 	// Clear thumbnail cache when changing directories to avoid memory buildup
 	// Unregister all ImGui texture handles before clearing
-	for (auto& [path, entry] : s_xThumbnailCache)
+	for (Zenith_HashMap<std::string, TextureThumbnailEntry>::Iterator xIt(s_xThumbnailCache); !xIt.Done(); xIt.Next())
 	{
-		if (entry.m_xImGuiHandle.IsValid())
+		TextureThumbnailEntry& xEntry = xIt.GetValueMutable();
+		if (xEntry.m_xImGuiHandle.IsValid())
 		{
-			Flux_ImGuiIntegration::UnregisterTexture(entry.m_xImGuiHandle);
+			Flux_ImGuiIntegration::UnregisterTexture(xEntry.m_xImGuiHandle);
 		}
 	}
-	s_xThumbnailCache.clear();
+	s_xThumbnailCache.Clear();
 
 	// Add to navigation history if requested
 	if (bAddToHistory)
@@ -917,14 +918,15 @@ void Zenith_EditorPanelContentBrowser::NavigateToParent(ContentBrowserState& xSt
 	if (xParent.string().length() >= strAssetsRoot.length())
 	{
 		// Clear thumbnail cache when changing directories
-		for (auto& [path, entry] : s_xThumbnailCache)
+		for (Zenith_HashMap<std::string, TextureThumbnailEntry>::Iterator xIt(s_xThumbnailCache); !xIt.Done(); xIt.Next())
 		{
-			if (entry.m_xImGuiHandle.IsValid())
+			TextureThumbnailEntry& xEntry = xIt.GetValueMutable();
+			if (xEntry.m_xImGuiHandle.IsValid())
 			{
-				Flux_ImGuiIntegration::UnregisterTexture(entry.m_xImGuiHandle);
+				Flux_ImGuiIntegration::UnregisterTexture(xEntry.m_xImGuiHandle);
 			}
 		}
-		s_xThumbnailCache.clear();
+		s_xThumbnailCache.Clear();
 
 		xState.m_strCurrentDirectory = xParent.string();
 		xState.m_bDirectoryNeedsRefresh = true;

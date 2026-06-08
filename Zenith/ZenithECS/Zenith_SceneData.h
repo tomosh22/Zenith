@@ -13,6 +13,7 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include <atomic>
 #include <string>
@@ -604,7 +605,7 @@ private:
 
 	// Shared deserialization helper
 	Zenith_EntityID ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
-		std::unordered_map<uint32_t, Zenith_EntityID>& xFileIndexToNewID); // #TODO: Replace with engine hash map
+		Zenith_HashMap<uint32_t, Zenith_EntityID>& xFileIndexToNewID);
 
 	// Shared helper: dispatch OnAwake for a single entity if not already awoken
 	void DispatchAwakeForEntity(Zenith_EntityID xEntityID);

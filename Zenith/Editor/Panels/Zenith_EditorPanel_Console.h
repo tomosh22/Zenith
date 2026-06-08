@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Zenith_Editor.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <bitset>
 
 //=============================================================================
@@ -25,7 +25,7 @@ namespace Zenith_EditorPanelConsole
 	 * @param xCategoryFilters Reference to category filter bitset
 	 */
 	void Render(
-		std::vector<ConsoleLogEntry>& xLogs,
+		Zenith_Vector<ConsoleLogEntry>& xLogs,
 		bool& bAutoScroll,
 		bool& bShowInfo,
 		bool& bShowWarnings,

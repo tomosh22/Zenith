@@ -7,7 +7,8 @@
 #include <fstream>
 #include <map>
 #include <string>
-#include <vector>
+
+#include "Collections/Zenith_Vector.h"
 
 namespace
 {
@@ -395,22 +396,22 @@ bool Flux_CodeGenerator::WriteAllHeaders(const char* szOutputDir,
 	// already deterministic (registry iteration order is fixed) but unordered
 	// iteration would still give different timestamps run-to-run when the
 	// content matches and WriteIfChanged early-outs.
-	std::map<std::string, std::vector<ProgramReflection>> xBySubsystem;
+	std::map<std::string, Zenith_Vector<ProgramReflection>> xBySubsystem;
 	for (u_int u = 0; u < uProgramCount; u++)
 	{
 		const ProgramReflection& xPR = axAll[u];
 		if (xPR.m_eId >= FluxShaderProgram::COUNT) continue;
 		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(xPR.m_eId);
 		std::string strSubsystem = xEntry.m_szSubsystem ? xEntry.m_szSubsystem : "Misc";
-		xBySubsystem[strSubsystem].push_back(xPR);
+		xBySubsystem[strSubsystem].PushBack(xPR);
 	}
 
 	for (const auto& xPair : xBySubsystem)
 	{
 		bOk = bOk && WriteSubsystemHeader(szOutputDir,
 										   xPair.first.c_str(),
-										   xPair.second.data(),
-										   static_cast<u_int>(xPair.second.size()));
+										   xPair.second.GetDataPointer(),
+										   static_cast<u_int>(xPair.second.GetSize()));
 	}
 	return bOk;
 }

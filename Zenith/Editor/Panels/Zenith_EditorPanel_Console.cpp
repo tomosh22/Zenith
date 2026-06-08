@@ -53,13 +53,13 @@ namespace
 		ImGui::SameLine();
 	}
 
-	void RenderToolbar(std::vector<ConsoleLogEntry>& xLogs, bool& bAutoScroll,
+	void RenderToolbar(Zenith_Vector<ConsoleLogEntry>& xLogs, bool& bAutoScroll,
 		bool& bShowInfo, bool& bShowWarnings, bool& bShowErrors,
 		std::bitset<LOG_CATEGORY_COUNT>& xCategoryFilters)
 	{
 		if (ImGui::Button("Clear"))
 		{
-			xLogs.clear();
+			xLogs.Clear();
 		}
 		ImGui::SameLine();
 		ImGui::Checkbox("Auto-scroll", &bAutoScroll);
@@ -96,7 +96,7 @@ namespace
 		}
 	}
 
-	void RenderLogList(const std::vector<ConsoleLogEntry>& xLogs, bool bAutoScroll,
+	void RenderLogList(const Zenith_Vector<ConsoleLogEntry>& xLogs, bool bAutoScroll,
 		bool bShowInfo, bool bShowWarnings, bool bShowErrors,
 		const std::bitset<LOG_CATEGORY_COUNT>& xCategoryFilters)
 	{
@@ -124,7 +124,7 @@ namespace
 }
 
 void Render(
-	std::vector<ConsoleLogEntry>& xLogs,
+	Zenith_Vector<ConsoleLogEntry>& xLogs,
 	bool& bAutoScroll,
 	bool& bShowInfo,
 	bool& bShowWarnings,

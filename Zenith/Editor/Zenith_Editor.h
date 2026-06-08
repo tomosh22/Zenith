@@ -16,6 +16,7 @@
 #include "Editor/Panels/Zenith_EditorPanel_Viewport.h"   // PendingImGuiTextureDeletion
 #include "Flux/Flux_Types.h"                              // Flux_ImGuiTextureHandle, Flux_ImageViewHandle
 #include "AssetHandling/Zenith_AssetHandle.h"             // MaterialHandle
+#include "Collections/Zenith_Vector.h"
 #include <vector>
 #include <string>
 #include <unordered_set>
@@ -275,7 +276,7 @@ public:
 	ContentBrowserViewMode            m_eViewMode              = ContentBrowserViewMode::Grid;
 
 	// Console state.
-	std::vector<ConsoleLogEntry>      m_xConsoleLogs;
+	Zenith_Vector<ConsoleLogEntry>    m_xConsoleLogs;
 	bool                              m_bConsoleAutoScroll     = true;
 	bool                              m_bShowConsoleInfo       = true;
 	bool                              m_bShowConsoleWarnings   = true;

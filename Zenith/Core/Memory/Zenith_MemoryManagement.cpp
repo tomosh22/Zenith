@@ -22,9 +22,9 @@
 #include "Memory/Zenith_MemoryTracker.h"
 #include "Memory/Zenith_MemoryBudgets.h"
 #include "Callstack/Zenith_Callstack.h"
+#include "Collections/Zenith_Vector.h"
 #include <cstring>
 #include <algorithm>
-#include <vector>
 #include <atomic>
 #endif
 
@@ -354,14 +354,14 @@ void Zenith_MemoryManagement::DumpAllocationsByCategory()
 
 void Zenith_MemoryManagement::DumpLargestAllocations(u_int uCount)
 {
-	std::vector<const Zenith_AllocationRecord*> axRecords;
-	axRecords.reserve(Zenith_MemoryTracker::GetAllocationCount());
+	Zenith_Vector<const Zenith_AllocationRecord*> axRecords;
+	axRecords.Reserve(Zenith_MemoryTracker::GetAllocationCount());
 
 	Zenith_MemoryTracker::ForEachAllocation(
 		[](const Zenith_AllocationRecord& xRecord, void* pUserData)
 		{
-			auto* pRecords = static_cast<std::vector<const Zenith_AllocationRecord*>*>(pUserData);
-			pRecords->push_back(&xRecord);
+			auto* pRecords = static_cast<Zenith_Vector<const Zenith_AllocationRecord*>*>(pUserData);
+			pRecords->PushBack(&xRecord);
 		},
 		&axRecords
 	);
@@ -375,9 +375,9 @@ void Zenith_MemoryManagement::DumpLargestAllocations(u_int uCount)
 	);
 
 	Zenith_Log(LOG_CATEGORY_CORE, "=== Largest %u Allocations ===", uCount);
-	for (u_int i = 0; i < uCount && i < axRecords.size(); ++i)
+	for (u_int i = 0; i < uCount && i < axRecords.GetSize(); ++i)
 	{
-		const Zenith_AllocationRecord* pRecord = axRecords[i];
+		const Zenith_AllocationRecord* pRecord = axRecords.Get(i);
 		Zenith_Log(LOG_CATEGORY_CORE, "  #%u: %zu bytes at 0x%p [%s]",
 			i + 1, pRecord->m_ulSize, pRecord->m_pAddress,
 			GetMemoryCategoryName(pRecord->m_eCategory));

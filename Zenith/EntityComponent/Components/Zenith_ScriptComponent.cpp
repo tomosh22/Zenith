@@ -693,16 +693,11 @@ void Zenith_ScriptComponent::RenderAddScriptPopup()
 	Zenith_Vector<std::string> axTypeNames;
 	Zenith_ScriptAsset::GetPublicRegisteredTypeNames(axTypeNames);
 
-	// Sort for stable UX (Zenith_Vector doesn't expose iterators, so sort by hand into a temp std::vector)
-	std::vector<std::string> axSorted;
-	axSorted.reserve(axTypeNames.GetSize());
-	for (uint32_t u = 0; u < axTypeNames.GetSize(); ++u)
-	{
-		axSorted.push_back(axTypeNames.Get(u));
-	}
-	std::sort(axSorted.begin(), axSorted.end());
+	// Sort for stable UX. Zenith_Vector now exposes begin()/end() over its contiguous
+	// storage, so sort it directly - no temp copy needed.
+	std::sort(axTypeNames.begin(), axTypeNames.end());
 
-	for (const std::string& strTypeName : axSorted)
+	for (const std::string& strTypeName : axTypeNames)
 	{
 		if (ImGui::MenuItem(strTypeName.c_str()))
 		{
@@ -711,7 +706,7 @@ void Zenith_ScriptComponent::RenderAddScriptPopup()
 		}
 	}
 
-	if (axSorted.empty())
+	if (axTypeNames.GetSize() == 0)
 	{
 		ImGui::TextDisabled("(no registered scripts)");
 	}
