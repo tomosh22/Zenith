@@ -188,6 +188,16 @@ public:
 	T* GetDataPointer() { return m_pxData; }
 	const T* GetDataPointer() const { return m_pxData; }
 
+	// W5.4 (arch remediation): range-for + <algorithm> support. The storage is
+	// contiguous, so begin/end are raw pointers into it (T* / const T*). ADDED PER
+	// THE REMEDIATION PLAN, which supersedes the historical "no begin/end" convention
+	// — index loops and the custom Iterator below remain the primary patterns; these
+	// are purely additive (zero behavior change, no allocation, no STL dependency).
+	T*       begin()       { return m_pxData; }
+	T*       end()         { return m_pxData + m_uSize; }
+	const T* begin() const { return m_pxData; }
+	const T* end()   const { return m_pxData + m_uSize; }
+
 	u_int Find(const T& xValue) const
 	{
 		for (u_int u = 0; u < m_uSize; u++)
