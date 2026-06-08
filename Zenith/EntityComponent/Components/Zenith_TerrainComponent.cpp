@@ -8,6 +8,11 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Maths/Zenith_FrustumCulling.h"
+// Wave 3 PART B: terrain render-record gather (so Flux_Terrain drops Zenith_TerrainComponent.h).
+#include "Core/Zenith_Engine.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_Query.h"
 #include <fstream>
 
 // The Flux GPU state these methods operate on now lives on the owning
@@ -939,3 +944,22 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
 	if (m_pxStreamingState) g_xEngine.TerrainStreaming().UpdateCullingAndLod(*m_pxStreamingState, xCmdList);
 }
 // Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp// Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp
+// ============================================================================
+// Wave 3 PART B: terrain render-record gather. Flux_Terrain consumes these neutral
+// records (Flux state + asset handles) instead of querying/holding Zenith_TerrainComponent.
+// ============================================================================
+static void Zenith_GatherTerrainRecordsImpl(Zenith_Vector<Flux_TerrainRenderRecord>& xOut)
+{
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(
+		[&xOut](Zenith_EntityID, Zenith_TerrainComponent& xTerrain)
+	{
+		Flux_TerrainRenderRecord xRec;
+		xRec.m_pxState = xTerrain.m_pxStreamingState;
+		for (u_int m = 0; m < 4; ++m)
+			xRec.m_apxMaterials[m] = xTerrain.GetMaterial(m);
+		xRec.m_pxSplatmap = xTerrain.GetSplatmapTexture();
+		xOut.PushBack(xRec);
+	});
+}
+
+Zenith_TerrainGatherFn g_pfnZenithTerrainGather = &Zenith_GatherTerrainRecordsImpl;

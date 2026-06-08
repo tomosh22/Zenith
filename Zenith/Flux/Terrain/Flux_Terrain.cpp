@@ -15,7 +15,6 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 // Zenith_Query.h arrives transitively via Zenith_SceneSystem.h (QueryAllScenes needs it);
 // including it explicitly here would add a new EC<->Flux cross-layer edge.
-#include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -285,7 +284,7 @@ void Flux_TerrainImpl::Reset()
 {
 	// Reset is handled by the render graph
 	// Clear cached terrain components (will be repopulated next frame)
-	m_xTerrainComponentsToRender.Clear();
+	m_xTerrainRenderRecords.Clear();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainImpl::Reset()");
 }
@@ -320,9 +319,8 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// usage. SetupRenderGraph re-runs whenever the graph rebuilds (Flux::
 	// RequestGraphRebuild on terrain construct/destroy), so the registry walked
 	// here always reflects the current scene's terrain set.
-	Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
-	xTerrains.Clear();
-	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach([&xTerrains](Zenith_EntityID, Zenith_TerrainComponent& xTerrain){ xTerrains.PushBack(&xTerrain); });
+	Zenith_Vector<Flux_TerrainRenderRecord> xTerrains;
+	if (g_pfnZenithTerrainGather) g_pfnZenithTerrainGather(xTerrains);
 
 	// Pass 0: Reset visible-count buffers. One dispatch per terrain, each
 	// writes a single uint32 to the corresponding visible-count buffer. The
@@ -332,8 +330,7 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_PassHandle xResetPass = xGraph.AddPass("Terrain Reset Counters", ExecuteResetCounters);
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxT = xTerrains.Get(u);
-		Flux_TerrainStreamingState* pxState = pxT->m_pxStreamingState;
+		Flux_TerrainStreamingState* pxState = xTerrains.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
 		xGraph.WriteBuffer(xResetPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
@@ -349,8 +346,7 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxT = xTerrains.Get(u);
-		Flux_TerrainStreamingState* pxState = pxT->m_pxStreamingState;
+		Flux_TerrainStreamingState* pxState = xTerrains.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
 		// m_xChunkDataBuffer and m_xFrustumPlanesBuffer are intentionally NOT
 		// declared here: both are frame-indexed (Flux_DynamicReadWriteBuffer
@@ -390,8 +386,7 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxT = xTerrains.Get(u);
-		Flux_TerrainStreamingState* pxState = pxT->m_pxStreamingState;
+		Flux_TerrainStreamingState* pxState = xTerrains.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
 		// DrawIndexedIndirectCount reads the indirect-args buffer and the
 		// count buffer at the GPU command-processor stage; LODLevelBuffer is
@@ -407,10 +402,9 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	m_uFrameCounter++;
 
 	// Get all terrain components
-	m_xTerrainComponentsToRender.Clear();
-	// g_xEngine.Scenes() kept self-routed: injecting the ECS would create a
-	// forbidden Flux<-EntityComponent cross-layer edge.
-	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach([this](Zenith_EntityID, Zenith_TerrainComponent& xTerrain){ m_xTerrainComponentsToRender.PushBack(&xTerrain); });
+	m_xTerrainRenderRecords.Clear();
+	// Wave 3: gather neutral render records EC-side (no Flux<-EntityComponent edge).
+	if (g_pfnZenithTerrainGather) g_pfnZenithTerrainGather(m_xTerrainRenderRecords);
 
 	m_pxVulkanMemory->UploadBufferData(m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
@@ -425,12 +419,12 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 	const Zenith_Maths::Vector3 xCameraPos = m_pxFluxGraphics->GetCameraPosition();
 	const Zenith_Maths::Matrix4& xViewProj = m_pxFluxGraphics->m_xFrameConstants.m_xViewProjMat;
-	for (u_int u = 0; u < m_xTerrainComponentsToRender.GetSize(); u++)
+	for (u_int u = 0; u < m_xTerrainRenderRecords.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = m_xTerrainComponentsToRender.Get(u);
-		m_pxTerrainStreaming->UpdateStreamingForTerrain(pxTerrain->m_pxStreamingState, xCameraPos);
-		m_pxTerrainStreaming->UpdateChunkLODAllocations(*pxTerrain->m_pxStreamingState);
-		m_pxTerrainStreaming->UploadFrustumPlanesForFrame(*pxTerrain->m_pxStreamingState, xViewProj);
+		Flux_TerrainStreamingState* pxState = m_xTerrainRenderRecords.Get(u).m_pxState;
+		m_pxTerrainStreaming->UpdateStreamingForTerrain(pxState, xCameraPos);
+		m_pxTerrainStreaming->UpdateChunkLODAllocations(*pxState);
+		m_pxTerrainStreaming->UploadFrustumPlanesForFrame(*pxState, xViewProj);
 
 		// m_xChunkDataBuffer is now a frame-indexed host-visible buffer; no
 		// MarkBufferHostWritten needed (vkSubmit's implicit host-write barrier
@@ -455,10 +449,9 @@ static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
 
 	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xTerrain.m_xResetCountersPipeline);
 
-	for (u_int u = 0; u < xTerrain.m_xTerrainComponentsToRender.GetSize(); u++)
+	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = xTerrain.m_xTerrainComponentsToRender.Get(u);
-		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
+		Flux_TerrainStreamingState* pxState = xTerrain.m_xTerrainRenderRecords.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
 
 		// Bind set 0, slot 0: visibleCount UAV. Dispatch a single thread that
@@ -488,13 +481,12 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xTerrain.m_xCullingPipeline);
 
 	// For each terrain component, dispatch culling using its own buffers
-	for (u_int u = 0; u < xTerrain.m_xTerrainComponentsToRender.GetSize(); u++)
+	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = xTerrain.m_xTerrainComponentsToRender.Get(u);
+		Flux_TerrainStreamingState* pxState = xTerrain.m_xTerrainRenderRecords.Get(u).m_pxState;
 
-		// Component records buffer bindings and dispatch (assumes pipeline already bound).
-		// Frustum upload + visible-count reset happened upstream (PreRenderUpdate, reset pass).
-		xTerrain.m_pxTerrainStreaming->UpdateCullingAndLod(*pxTerrain->m_pxStreamingState, *pxCmdList);
+		// Record buffer bindings + dispatch (pipeline already bound; frustum + visible-count upstream).
+		xTerrain.m_pxTerrainStreaming->UpdateCullingAndLod(*pxState, *pxCmdList);
 	}
 
 	xTerrain.m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
@@ -521,15 +513,13 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	xBinder.BindCBV(xTerrain.m_xTerrainGBufferShader, "FrameConstants", &xTerrain.m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindCBV(xTerrain.m_xTerrainGBufferShader, "TerrainConstants", &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
 
-	for (u_int u = 0; u < xTerrain.m_xTerrainComponentsToRender.GetSize(); u++)
+	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* const pxTerrain = xTerrain.m_xTerrainComponentsToRender.Get(u);
-		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
+		const Flux_TerrainRenderRecord& xRec = xTerrain.m_xTerrainRenderRecords.Get(u);
+		Flux_TerrainStreamingState* const pxState = xRec.m_pxState;
+		if(!pxState->m_xUnifiedVertexBuffer.GetBuffer().m_ulSize) continue;
 
-		// Gather 4 material pointers
-		Zenith_MaterialAsset* apxMaterials[4];
-		for (u_int m = 0; m < 4; m++)
-			apxMaterials[m] = pxTerrain->GetMaterial(m);
+		Zenith_MaterialAsset* apxMaterials[4] = { xRec.m_apxMaterials[0], xRec.m_apxMaterials[1], xRec.m_apxMaterials[2], xRec.m_apxMaterials[3] };
 
 		// Build and push terrain material constants (288 bytes) - uses scratch buffer in set 1
 		TerrainMaterialDrawConstants xTerrainMatConst;
@@ -542,15 +532,15 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		// kLODLevelBuffer kind: StructuredBuffer); route through BindSRV_Buffer
 		// so the render-graph declaration RESOURCE_ACCESS_READ_BUFFER_SRV
 		// matches the bind direction.
-		xBinder.BindSRV_Buffer(xTerrain.m_xTerrainGBufferShader, "LODLevelBuffer", pxTerrain->GetLODLevelBuffer().GetSRV());
+		xBinder.BindSRV_Buffer(xTerrain.m_xTerrainGBufferShader, "LODLevelBuffer", pxState->m_xLODLevelBuffer.GetSRV());
 
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxState->m_xUnifiedVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxState->m_xUnifiedIndexBuffer);
 
 		// Bind splatmap texture — always bound (Vulkan rejects an unbound
 		// SRV slot the shader is declared to read). Falls back to the 1x1
 		// "material 0 only" texture when the component has no splatmap.
-		Zenith_TextureAsset* pxSplatmap = pxTerrain->GetSplatmapTexture();
+		Zenith_TextureAsset* pxSplatmap = xRec.m_pxSplatmap;
 		xBinder.BindSRV(xTerrain.m_xTerrainGBufferShader, "g_xSplatmap",
 			pxSplatmap ? &pxSplatmap->m_xSRV : &xTerrain.GetFallbackSplatmapSRV());
 
@@ -583,9 +573,9 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer
 		pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirectCount>(
-			&pxTerrain->GetIndirectDrawBuffer(),  // Per-component indirect buffer with sorted draw commands
-			&pxTerrain->GetVisibleCountBuffer(),   // Per-component count buffer with actual number of visible chunks
-			pxTerrain->GetMaxDrawCount(),          // Max 4096 draws (theoretical maximum)
+			&pxState->m_xIndirectDrawBuffer,  // Per-component indirect buffer with sorted draw commands
+			&pxState->m_xVisibleCountBuffer,   // Per-component count buffer with actual number of visible chunks
+			Flux_TerrainConfig::TOTAL_CHUNKS,          // Max 4096 draws (theoretical maximum)
 			0,                                      // Indirect buffer offset (bytes)
 			0,                                      // Count buffer offset (bytes)
 			20                                      // Stride between commands (5 * sizeof(uint32_t))

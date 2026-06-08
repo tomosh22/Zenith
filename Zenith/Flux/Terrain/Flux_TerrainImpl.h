@@ -5,9 +5,9 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h" // Wave 3: Flux_TerrainRenderRecord (by-value in the render list)
 
 class Flux_DynamicConstantBuffer;
-class Zenith_TerrainComponent;
 class Zenith_Vulkan_MemoryManager;
 class Flux_GraphicsImpl;
 class Zenith_Profiling;
@@ -49,7 +49,9 @@ public:
 	const Flux_ShaderResourceView& GetFallbackSplatmapSRV();
 
 	// Per-frame list of terrain components contributing to the current draw.
-	Zenith_Vector<Zenith_TerrainComponent*> m_xTerrainComponentsToRender;
+	// Wave 3: per-frame terrain render records (Flux state + asset handles), gathered
+	// EC-side via g_pfnZenithTerrainGather — Flux_Terrain names no Zenith_TerrainComponent.
+	Zenith_Vector<Flux_TerrainRenderRecord> m_xTerrainRenderRecords;
 
 	// GBuffer / shadow pass pipelines + shaders.
 	Flux_Shader   m_xTerrainGBufferShader;

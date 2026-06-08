@@ -188,6 +188,28 @@ struct Flux_TerrainStreamingState
 	void Shutdown();
 };
 
+// ---------------------------------------------------------------------------
+// Wave 3 (PART B): per-terrain render inputs, gathered EC-side so Flux_Terrain names
+// no Zenith_TerrainComponent. The Flux_TerrainStreamingState supplies every GPU buffer
+// (unified vertex/index, indirect, visible-count, LOD-level, chunk-data, frustum) and
+// the per-frame culling/LOD drive (the relocated manager methods); the materials +
+// splatmap are the component's asset handles (asset types, not EC components).
+// ---------------------------------------------------------------------------
+class Zenith_MaterialAsset;
+class Zenith_TextureAsset;
+
+struct Flux_TerrainRenderRecord
+{
+	Flux_TerrainStreamingState* m_pxState        = nullptr;
+	Zenith_MaterialAsset*       m_apxMaterials[4] = { nullptr, nullptr, nullptr, nullptr };
+	Zenith_TextureAsset*        m_pxSplatmap      = nullptr;
+};
+
+// The EC side sets this to its gatherer (defined in Zenith_TerrainComponent.cpp, which
+// owns the components); Flux_Terrain calls it each frame to rebuild its record list.
+using Zenith_TerrainGatherFn = void (*)(Zenith_Vector<Flux_TerrainRenderRecord>& xOut);
+extern Zenith_TerrainGatherFn g_pfnZenithTerrainGather;
+
 // Phase 9: state + behaviour for the terrain streaming manager.
 //
 // Methods that touch the registry are non-static instance members
