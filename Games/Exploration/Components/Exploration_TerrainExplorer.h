@@ -172,7 +172,7 @@ namespace Exploration_TerrainExplorer
 		StreamingStats xStats;
 
 		Zenith_TerrainComponent* pxTerrain = GetFirstTerrainComponent();
-		Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 		if (pxState != nullptr)
 		{
 			const Flux_TerrainStreamingStats& xEngineStats = pxState->m_xStats;
@@ -197,7 +197,7 @@ namespace Exploration_TerrainExplorer
 			return LOD_ALWAYS_RESIDENT;
 
 		Zenith_TerrainComponent* pxTerrain = GetFirstTerrainComponent();
-		Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 		if (pxState == nullptr) return LOD_ALWAYS_RESIDENT;
 
 		const uint32_t uChunkIndex = ChunkCoordsToIndex(

@@ -106,7 +106,7 @@ namespace
 void CB_RoadTerrain::CarveTerrainMesh(const CB_RoadGraph& xGraph, Zenith_TerrainComponent* pxTerrain)
 {
 	if (pxTerrain == nullptr) { return; }
-	Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+	Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 	if (pxState == nullptr) { return; }
 
 	Zenith_Vector<CB_RoadTerrain::RoadSample> xSamples;
@@ -179,7 +179,7 @@ void CB_RoadTerrain::ChunkVertexCarveHook(void* pUser, uint32_t /*uChunkX*/, uin
 void CB_RoadTerrain::RegisterStreamHook(Zenith_TerrainComponent* pxTerrain, const CB_TerrainHeightfield& xField)
 {
 	if (pxTerrain == nullptr) { return; }
-	Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+	Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 	if (pxState == nullptr) { return; }
 	// Publish the user pointer before the function pointer (the engine null-checks the fn).
 	pxState->m_pChunkVertexHookUser = const_cast<void*>(static_cast<const void*>(&xField));
@@ -189,7 +189,7 @@ void CB_RoadTerrain::RegisterStreamHook(Zenith_TerrainComponent* pxTerrain, cons
 void CB_RoadTerrain::UnregisterStreamHook(Zenith_TerrainComponent* pxTerrain)
 {
 	if (pxTerrain == nullptr) { return; }
-	Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+	Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 	if (pxState == nullptr) { return; }
 	pxState->m_pfnChunkVertexHook   = nullptr;
 	pxState->m_pChunkVertexHookUser = nullptr;
@@ -198,7 +198,7 @@ void CB_RoadTerrain::UnregisterStreamHook(Zenith_TerrainComponent* pxTerrain)
 void CB_RoadTerrain::ForceRestreamCarveChunks(const CarveContext& xCtx, Zenith_TerrainComponent* pxTerrain)
 {
 	if (pxTerrain == nullptr || !xCtx.m_bActive) { return; }
-	Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+	Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 	if (pxState == nullptr) { return; }
 
 	// The road world bbox → the chunk range under the roads.
@@ -229,7 +229,7 @@ void CB_RoadTerrain::RefreshTerrainRegionFromField(const CB_TerrainHeightfield& 
                                                    float fMinX, float fMaxX, float fMinZ, float fMaxZ)
 {
 	if (pxTerrain == nullptr) { return; }
-	Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
+	Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 	if (pxState == nullptr) { return; }
 
 	const int iMax = static_cast<int>(CHUNK_GRID_SIZE) - 1;
