@@ -17,6 +17,7 @@ using namespace Flux_TerrainConfig;
 // Forward declarations
 class Flux_MeshGeometry;
 class Flux_RendererImpl;
+class Flux_CommandList;
 
 // ========== Residency State ==========
 enum class Flux_TerrainLODResidencyState : uint8_t
@@ -227,6 +228,14 @@ public:
 	bool IsChunkDataDirty(const Flux_TerrainStreamingState* pxState);
 	void ClearChunkDataDirty(Flux_TerrainStreamingState* pxState); // mutates (.store) -> non-const
 	Zenith_TerrainChunkData* GetCachedChunkDataBuffer(const Flux_TerrainStreamingState* pxState);
+
+	// ========== Per-frame GPU culling/LOD drive ==========
+	// Wave 3: relocated verbatim from Zenith_TerrainComponent — they operate purely on the
+	// Flux_TerrainStreamingState (+ this manager / VulkanMemory / FluxGraphics), naming no EC
+	// type, so the renderer can drive them through the state without including the component.
+	void UpdateChunkLODAllocations(Flux_TerrainStreamingState& xState);
+	void UploadFrustumPlanesForFrame(Flux_TerrainStreamingState& xState, const Zenith_Maths::Matrix4& xViewProjMatrix);
+	void UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandList& xCmdList);
 
 	// ========== Stats type alias ==========
 	using StreamingStats = Flux_TerrainStreamingStats;

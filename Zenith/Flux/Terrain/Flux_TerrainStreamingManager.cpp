@@ -5,6 +5,11 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+// Wave 3: needed by the relocated per-frame culling/LOD drive (UpdateCullingAndLod records
+// compute commands; UploadFrustumPlanesForFrame extracts the camera frustum).
+#include "Flux/Flux_CommandList.h"
+#include "Flux/Flux_GraphicsImpl.h" // FluxGraphics().GetCameraPosition() in UploadFrustumPlanesForFrame
+#include "Maths/Zenith_FrustumCulling.h"
 #include <algorithm>
 #include <fstream>
 
@@ -1142,3 +1147,87 @@ void Flux_TerrainStreamingManagerImpl::BuildChunkDataForGPU(const Flux_TerrainSt
 }
 
 
+
+// ============================================================================
+// Wave 3: per-frame GPU culling/LOD drive, relocated VERBATIM from
+// Zenith_TerrainComponent (UpdateChunkLODAllocations / UploadFrustumPlanesForFrame /
+// UpdateCullingAndLod). They operate purely on the Flux_TerrainStreamingState (+ this
+// manager / VulkanMemory / FluxGraphics) -- no EntityComponent type -- so Flux_Terrain
+// can drive them through the state instead of the component. Same GPU commands/uploads.
+// ============================================================================
+
+void Flux_TerrainStreamingManagerImpl::UpdateChunkLODAllocations(Flux_TerrainStreamingState& xState)
+{
+	if (!xState.m_bCullingResourcesInitialized)
+	{
+		return; // Terrain not ready for rendering yet
+	}
+
+	// Always rebuild + upload (the per-component dirty-flag short-circuit produced a
+	// stretched-triangle spike; see the original component note). 256 KB/terrain/frame.
+	Zenith_TerrainChunkData* pxChunkData = GetCachedChunkDataBuffer(&xState);
+	bool bUsedCachedBuffer = (pxChunkData != nullptr);
+	if (pxChunkData == nullptr)
+	{
+		pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
+	}
+
+	BuildChunkDataForGPU(&xState, pxChunkData);
+
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
+		xState.m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
+		pxChunkData,
+		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
+		0);
+
+	if (!bUsedCachedBuffer)
+	{
+		delete[] pxChunkData;
+	}
+
+	ClearChunkDataDirty(&xState);
+}
+
+void Flux_TerrainStreamingManagerImpl::UploadFrustumPlanesForFrame(Flux_TerrainStreamingState& xState, const Zenith_Maths::Matrix4& xViewProjMatrix)
+{
+	if (!xState.m_bCullingResourcesInitialized)
+	{
+		return;
+	}
+
+	Zenith_CameraDataGPU xCameraData;
+	Zenith_Frustum xFrustum;
+	xFrustum.ExtractFromViewProjection(xViewProjMatrix);
+
+	for (int i = 0; i < 6; ++i)
+	{
+		xCameraData.m_axFrustumPlanes[i].m_xNormalAndDistance = Zenith_Maths::Vector4(
+			xFrustum.m_axPlanes[i].m_xNormal,
+			xFrustum.m_axPlanes[i].m_fDistance);
+	}
+
+	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
+	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
+
+	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(xState.m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
+}
+
+void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandList& xCmdList)
+{
+	if (!xState.m_bCullingResourcesInitialized)
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod() called before culling resources initialised");
+		return;
+	}
+
+	// Pipeline already bound by Flux_Terrain; frustum/visible-count prepared upstream.
+	xCmdList.AddCommand<Flux_CommandBeginBind>(0);
+	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xState.m_xChunkDataBuffer.GetSRV(), 0);
+	xCmdList.AddCommand<Flux_CommandBindCBV>(&xState.m_xFrustumPlanesBuffer.GetCBV(), 1);
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xIndirectDrawBuffer.GetUAV(), 2);
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xVisibleCountBuffer.GetUAV(), 3);
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xLODLevelBuffer.GetUAV(), 4);
+
+	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
+	xCmdList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
+}

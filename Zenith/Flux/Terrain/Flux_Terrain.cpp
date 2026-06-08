@@ -429,8 +429,8 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	{
 		Zenith_TerrainComponent* pxTerrain = m_xTerrainComponentsToRender.Get(u);
 		m_pxTerrainStreaming->UpdateStreamingForTerrain(pxTerrain->m_pxStreamingState, xCameraPos);
-		pxTerrain->UpdateChunkLODAllocations();
-		pxTerrain->UploadFrustumPlanesForFrame(xViewProj);
+		m_pxTerrainStreaming->UpdateChunkLODAllocations(*pxTerrain->m_pxStreamingState);
+		m_pxTerrainStreaming->UploadFrustumPlanesForFrame(*pxTerrain->m_pxStreamingState, xViewProj);
 
 		// m_xChunkDataBuffer is now a frame-indexed host-visible buffer; no
 		// MarkBufferHostWritten needed (vkSubmit's implicit host-write barrier
@@ -494,7 +494,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 
 		// Component records buffer bindings and dispatch (assumes pipeline already bound).
 		// Frustum upload + visible-count reset happened upstream (PreRenderUpdate, reset pass).
-		pxTerrain->UpdateCullingAndLod(*pxCmdList);
+		xTerrain.m_pxTerrainStreaming->UpdateCullingAndLod(*pxTerrain->m_pxStreamingState, *pxCmdList);
 	}
 
 	xTerrain.m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);

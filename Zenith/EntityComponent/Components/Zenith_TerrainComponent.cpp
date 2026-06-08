@@ -906,72 +906,9 @@ void Zenith_TerrainComponent::BuildChunkData()
 
 void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 {
-	// CRITICAL: Skip if culling resources not initialized (e.g., terrain component added via editor but not yet set up)
-	if (!m_pxStreamingState->m_bCullingResourcesInitialized)
-	{
-		return;  // Terrain not ready for rendering yet
-	}
-
-	// The per-component dirty-flag short-circuit used to live here:
-	//
-	//   if (!g_xEngine.TerrainStreaming().IsChunkDataDirty(m_pxStreamingState)) return;
-	//
-	// It produced a steady-state "stretched-triangle to a previously-resident
-	// chunk's slot" spike. Disabling the short-circuit and re-uploading every
-	// frame eliminates the spike; a full audit of every m_axChunkResidency
-	// mutation site failed to identify which state-change path was leaking
-	// (StreamInLOD, EvictLOD, RegisterTerrainBuffers, RequestNearbyHighLOD,
-	// EvictDistantHighLOD, RebuildActiveChunkSet, EvictToMakeSpace all set
-	// m_bChunkDataDirty by code inspection). Rather than ship a flaky cache,
-	// we always rebuild + upload — the chunk buffer is one TerrainChunkData
-	// struct (64 bytes) per chunk × TOTAL_CHUNKS = 256 KB per terrain per
-	// frame, which at 60 fps is ~15 MB/s of memory-queue bandwidth. That's
-	// negligible against the streaming-region budget (256 MB vertex / 64 MB
-	// index) and well below the staging buffer chunk size, so the upload
-	// stays in a single staging slot.
-	//
-	// The dirty-flag setters in the streaming manager are kept (harmless
-	// dead state) so that revisiting this optimisation later doesn't have
-	// to re-thread the flag through every call site.
-
-	// DEBUG: Log when we're updating chunk allocations
-	static uint32_t s_uUpdateCount = 0;
-	s_uUpdateCount++;
-
-	// OPTIMIZATION: Use this terrain's pre-allocated cached buffer to avoid
-	// per-frame heap allocation.
-	Zenith_TerrainChunkData* pxChunkData = g_xEngine.TerrainStreaming().GetCachedChunkDataBuffer(m_pxStreamingState);
-	bool bUsedCachedBuffer = (pxChunkData != nullptr);
-
-	if (pxChunkData == nullptr)
-	{
-		// Fallback to allocation if cached buffer not available (shouldn't happen)
-		pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
-	}
-
-	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(m_pxStreamingState, pxChunkData);
-
-	// Upload to the CURRENT FRAME's chunk-data buffer slot. m_xChunkDataBuffer
-	// is frame-indexed, so GetBuffer() resolves to the current ring-slot's
-	// buffer; the previous frame slot's buffer is owned by the GPU work still
-	// in flight on the other slot and must not be touched. The host-visible
-	// memory residency means the write goes direct (no staging) and vkSubmit's
-	// implicit host-write-available barrier carries the visibility into the
-	// compute read on the render queue.
-	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(
-		m_pxStreamingState->m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
-		pxChunkData,
-		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
-		0  // Offset 0 - replace entire buffer
-	);
-
-	if (!bUsedCachedBuffer)
-	{
-		delete[] pxChunkData;
-	}
-
-	// Clear THIS terrain's dirty flag after successful upload.
-	g_xEngine.TerrainStreaming().ClearChunkDataDirty(m_pxStreamingState);
+	// Wave 3: GPU chunk-data upload relocated to Flux_TerrainStreamingManagerImpl (operates on
+	// the Flux state). Thin forwarder kept for API compatibility.
+	if (m_pxStreamingState) g_xEngine.TerrainStreaming().UpdateChunkLODAllocations(*m_pxStreamingState);
 }
 
 void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes)
@@ -992,57 +929,13 @@ void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& 
 
 void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Matrix4& xViewProjMatrix)
 {
-	if (!m_pxStreamingState->m_bCullingResourcesInitialized)
-	{
-		return;
-	}
-
-	Zenith_CameraDataGPU xCameraData;
-	Zenith_Frustum xFrustum;
-	xFrustum.ExtractFromViewProjection(xViewProjMatrix);
-
-	for (int i = 0; i < 6; ++i)
-	{
-		xCameraData.m_axFrustumPlanes[i].m_xNormalAndDistance = Zenith_Maths::Vector4(
-			xFrustum.m_axPlanes[i].m_xNormal,
-			xFrustum.m_axPlanes[i].m_fDistance
-		);
-	}
-
-	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
-	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
-
-	g_xEngine.VulkanMemory().UploadBufferDataAtOffset(m_pxStreamingState->m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
+	// Wave 3: relocated to Flux_TerrainStreamingManagerImpl. Thin forwarder.
+	if (m_pxStreamingState) g_xEngine.TerrainStreaming().UploadFrustumPlanesForFrame(*m_pxStreamingState, xViewProjMatrix);
 }
 
 void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
 {
-	if (!m_pxStreamingState->m_bCullingResourcesInitialized)
-	{
-		Zenith_Error(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
-		return;
-	}
-
-	// IMPORTANT: Assumes the terrain culling compute pipeline is already bound by Flux_Terrain.
-	// Frustum planes + camera position were uploaded in PreRenderUpdate; visible-count was
-	// zeroed by the dedicated reset pass that this pass DependsOn. We only record bindings
-	// and the dispatch here.
-
-	// Bind descriptor set 0 with all buffers. ChunkBuffer is reflected as
-	// StructuredBuffer<TerrainChunkData> (read-only) so it goes through the
-	// SRV-buffer path. m_xChunkDataBuffer is frame-indexed, so GetSRV()
-	// resolves to the current frame's SRV — the same slot CPU just wrote to
-	// in PreRenderUpdate via UpdateChunkLODAllocations.
-	xCmdList.AddCommand<Flux_CommandBeginBind>(0);
-	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(m_pxStreamingState->m_xChunkDataBuffer.GetSRV(), 0);            // Chunk data (read-only StructuredBuffer)
-	xCmdList.AddCommand<Flux_CommandBindCBV>(&m_pxStreamingState->m_xFrustumPlanesBuffer.GetCBV(), 1);              // Frustum planes (read)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_pxStreamingState->m_xIndirectDrawBuffer.GetUAV(), 2);        // Indirect commands (write)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_pxStreamingState->m_xVisibleCountBuffer.GetUAV(), 3);        // Visible count (read/write atomic)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_pxStreamingState->m_xLODLevelBuffer.GetUAV(), 4);            // LOD levels (read-modify-write for hysteresis)
-
-	// Dispatch compute shader
-	// We have TOTAL_CHUNKS chunks, with local_size_x=64 we need (TOTAL_CHUNKS + 63) / 64 workgroups
-	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
-	xCmdList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
+	// Wave 3: relocated to Flux_TerrainStreamingManagerImpl. Thin forwarder.
+	if (m_pxStreamingState) g_xEngine.TerrainStreaming().UpdateCullingAndLod(*m_pxStreamingState, xCmdList);
 }
 // Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp// Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp
