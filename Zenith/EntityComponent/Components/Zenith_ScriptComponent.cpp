@@ -667,9 +667,9 @@ void Zenith_ScriptComponent::RenderScriptSlot(uint32_t uIndex, const Zenith_Scri
 
 	if (bOpen)
 	{
-		if (xSlot.m_pxBehaviour->m_axGUIDRefs.size() > 0)
+		if (xSlot.m_pxBehaviour->m_axGUIDRefs.GetSize() > 0)
 		{
-			ImGui::Text("GUID References: %zu", xSlot.m_pxBehaviour->m_axGUIDRefs.size());
+			ImGui::Text("GUID References: %zu", static_cast<size_t>(xSlot.m_pxBehaviour->m_axGUIDRefs.GetSize()));
 		}
 		xSlot.m_pxBehaviour->RenderPropertiesPanel();
 		ImGui::TreePop();

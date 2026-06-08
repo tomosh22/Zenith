@@ -292,7 +292,7 @@ private:
 
 	// Cached temporary pose for layer blending (avoids per-frame stack allocation of ~23KB poses)
 	Flux_SkeletonPose m_xTempBlendPose;
-	std::vector<float> m_xScaledMaskWeights; // #TODO: Replace with engine type when MaskedBlend accepts non-std::vector
+	Zenith_Vector<float> m_xScaledMaskWeights;
 
 	// Event callback
 	Flux_AnimationEventCallback m_pfnEventCallback = nullptr;

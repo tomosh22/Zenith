@@ -80,9 +80,9 @@ namespace
 		const auto& xEntries = xRegistry.GetEntries();
 		bool bAnyAvailable = false;
 
-		for (size_t i = 0; i < xEntries.size(); ++i)
+		for (u_int i = 0; i < xEntries.GetSize(); ++i)
 		{
-			const Zenith_ComponentRegistryEntry& xEntry = xEntries[i];
+			const Zenith_ComponentRegistryEntry& xEntry = xEntries.Get(i);
 			const bool bHasComponent = xRegistry.EntityHasComponent(i, xEntity);
 
 			if (bHasComponent)

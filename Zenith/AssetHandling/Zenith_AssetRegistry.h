@@ -4,8 +4,8 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Core/Zenith_Result.h"
+#include "Collections/Zenith_HashMap.h"
 #include <string>
-#include <unordered_map>
 
 // Compile-time type index (no RTTI required)
 // Each unique type T gets a unique address via function-local static
@@ -334,7 +334,7 @@ private:
 
 	// Serializable asset type registry accessors (use function-local statics to avoid
 	// static initialization order fiasco - registration happens during static init)
-	static std::unordered_map<std::string, SerializableAssetFactoryFn>& GetSerializableTypeRegistry();
+	static Zenith_HashMap<std::string, SerializableAssetFactoryFn>& GetSerializableTypeRegistry();
 	static Zenith_Mutex_NoProfiling& GetSerializableTypeRegistryMutex();
 
 	// .zdata file format constants
@@ -342,10 +342,10 @@ private:
 	static constexpr uint32_t ZDATA_VERSION = 1;
 
 	// Unified asset cache: path -> asset
-	std::unordered_map<std::string, Zenith_Asset*> m_xAssetsByPath;
+	Zenith_HashMap<std::string, Zenith_Asset*> m_xAssetsByPath;
 
 	// Type-specific loaders
-	std::unordered_map<Zenith_TypeIndex, AssetLoaderFn> m_xLoaders;
+	Zenith_HashMap<Zenith_TypeIndex, AssetLoaderFn> m_xLoaders;
 
 	// Thread safety. CONTRACT: Zenith_Mutex MUST be recursive — Get<T>() runs the
 	// type-specific loader inside this lock, and a loader that calls Get<U>() for a

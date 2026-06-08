@@ -2,6 +2,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
+#include "Collections/Zenith_Vector.h"
 #include <string>
 #include <cstring>
 
@@ -90,7 +91,7 @@ public:
 
 	Zenith_Entity& GetEntity() { return m_xParentEntity; }
 
-	std::vector<Zenith_GUID> m_axGUIDRefs;
+	Zenith_Vector<Zenith_GUID> m_axGUIDRefs;
 
 protected:
 	Zenith_Entity m_xParentEntity;

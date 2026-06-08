@@ -7,7 +7,6 @@
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Collections/Zenith_Vector.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
-#include <vector>
 #include <cstdint>
 #include <atomic>
 
@@ -56,7 +55,7 @@ public:
 
 	uint32_t GetUnusedSpace() const { return m_uUnusedSpace; }
 	uint32_t GetTotalSpace() const { return m_uTotalSize; }
-	uint32_t GetFragmentationCount() const { return static_cast<uint32_t>(m_axFreeBlocks.size()); }
+	uint32_t GetFragmentationCount() const { return static_cast<uint32_t>(m_axFreeBlocks.GetSize()); }
 
 private:
 	struct FreeBlock
@@ -65,7 +64,7 @@ private:
 		uint32_t m_uSize;
 	};
 
-	std::vector<FreeBlock> m_axFreeBlocks;
+	Zenith_Vector<FreeBlock> m_axFreeBlocks;
 	uint32_t m_uTotalSize;
 	uint32_t m_uUnusedSpace;
 	const char* m_szDebugName;
@@ -122,7 +121,7 @@ struct Flux_TerrainStreamingState
 	int32_t                     m_iLastCameraChunkX = INT32_MIN;
 	int32_t                     m_iLastCameraChunkY = INT32_MIN;
 
-	std::vector<uint32_t>       m_xActiveChunkIndices;
+	Zenith_Vector<uint32_t>     m_xActiveChunkIndices;
 	uint32_t                    m_uActiveChunkRadius = 16;
 
 	Flux_TerrainStreamingStats  m_xStats;

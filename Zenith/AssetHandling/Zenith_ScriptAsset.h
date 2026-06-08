@@ -2,9 +2,8 @@
 
 #include "AssetHandling/Zenith_Asset.h"
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 
 class Zenith_DataStream;
 class Zenith_Entity;
@@ -95,6 +94,8 @@ private:
 	// Function-local statics (construct-on-first-use) - safe under static init order.
 	// The internal-name set lets SyncRegisteredTypesToDisk and editor enumeration
 	// exclude test/runtime-only factories from the on-disk asset surface.
-	static std::unordered_map<std::string, Zenith_ScriptBehaviourFactoryFn>& GetFactoryMap();
-	static std::unordered_set<std::string>& GetInternalNameSet();
+	// The internal-name "set" is a Zenith_HashMap<std::string, bool> used as a set:
+	// presence (Contains) is the membership test; the bool value is an unused dummy.
+	static Zenith_HashMap<std::string, Zenith_ScriptBehaviourFactoryFn>& GetFactoryMap();
+	static Zenith_HashMap<std::string, bool>& GetInternalNameSet();
 };

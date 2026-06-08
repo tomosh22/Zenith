@@ -2,7 +2,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Flux_AnimationClip.h"
 #include "Flux_MeshAnimation.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 
 // Forward declarations
@@ -155,7 +155,7 @@ public:
 	static void MaskedBlend(Flux_SkeletonPose& xOut,
 		const Flux_SkeletonPose& xLower,
 		const Flux_SkeletonPose& xUpper,
-		const std::vector<float>& xBoneMask);
+		const Zenith_Vector<float>& xBoneMask);
 
 	// Copy pose data
 	void CopyFrom(const Flux_SkeletonPose& xOther);
@@ -189,7 +189,7 @@ public:
 	Flux_BoneMask();
 
 	// Initialize from bone names (weight 1.0 for named bones, 0.0 for others)
-	void SetFromBoneNames(const std::vector<std::string>& xBoneNames,
+	void SetFromBoneNames(const Zenith_Vector<std::string>& xBoneNames,
 		const Flux_MeshGeometry& xGeometry);
 
 	// Set weight for specific bone
@@ -199,7 +199,7 @@ public:
 	float GetBoneWeight(uint32_t uBoneIndex) const;
 
 	// Get all weights for use in MaskedBlend
-	const std::vector<float>& GetWeights() const { return m_xWeights; }
+	const Zenith_Vector<float>& GetWeights() const { return m_xWeights; }
 
 	// Common masks
 	static Flux_BoneMask CreateUpperBodyMask(const Flux_MeshGeometry& xGeometry,
@@ -212,7 +212,7 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	std::vector<float> m_xWeights;
+	Zenith_Vector<float> m_xWeights;
 };
 
 //=============================================================================

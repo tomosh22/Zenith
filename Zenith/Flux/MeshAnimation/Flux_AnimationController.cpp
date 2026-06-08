@@ -222,10 +222,11 @@ void Flux_AnimationController::EvaluateAndComposeLayers(float fDt)
 		else if (pxLayer->HasAvatarMask())
 		{
 			// Masked override: per-bone weights × layer weight.
-			const std::vector<float>& xWeights = pxLayer->GetAvatarMask().GetWeights();
-			m_xScaledMaskWeights.resize(xWeights.size());
-			for (size_t j = 0; j < xWeights.size(); ++j)
-				m_xScaledMaskWeights[j] = xWeights[j] * fWeight;
+			const Zenith_Vector<float>& xWeights = pxLayer->GetAvatarMask().GetWeights();
+			m_xScaledMaskWeights.Clear();
+			m_xScaledMaskWeights.Reserve(xWeights.GetSize());
+			for (u_int j = 0; j < xWeights.GetSize(); ++j)
+				m_xScaledMaskWeights.PushBack(xWeights.Get(j) * fWeight);
 			Flux_SkeletonPose::MaskedBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, m_xScaledMaskWeights);
 		}
 		else

@@ -108,10 +108,10 @@ void Flux_AnimationLayer::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xAvatarMask.ReadFromDataStream(xStream);
 	// Check if any weight is non-zero to determine if mask was explicitly set
 	m_bHasAvatarMask = false;
-	const std::vector<float>& xWeights = m_xAvatarMask.GetWeights();
-	for (size_t j = 0; j < xWeights.size(); ++j)
+	const Zenith_Vector<float>& xWeights = m_xAvatarMask.GetWeights();
+	for (u_int j = 0; j < xWeights.GetSize(); ++j)
 	{
-		if (xWeights[j] > 0.0f)
+		if (xWeights.Get(j) > 0.0f)
 		{
 			m_bHasAvatarMask = true;
 			break;

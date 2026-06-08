@@ -21,7 +21,7 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include <algorithm>
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 #ifdef ZENITH_WINDOWS
 #include <windows.h>
@@ -372,41 +372,52 @@ namespace Zenith_EditorPanelMemory
 	// Helper: Gather every live allocation from the tracker, drop records that
 	// do not match the filter, then sort by the active column/direction.
 	//-------------------------------------------------------------------------
-	void Private::CollectAndSortAllocations(std::vector<const Zenith_AllocationRecord*>& axRecords)
+	void Private::CollectAndSortAllocations(Zenith_Vector<const Zenith_AllocationRecord*>& axRecords)
 	{
-		axRecords.reserve(Zenith_MemoryTracker::GetAllocationCount());
+		axRecords.Reserve(Zenith_MemoryTracker::GetAllocationCount());
 
 		Zenith_MemoryTracker::ForEachAllocation(
 			[](const Zenith_AllocationRecord& xRecord, void* pUserData)
 			{
-				auto* pRecords = static_cast<std::vector<const Zenith_AllocationRecord*>*>(pUserData);
-				pRecords->push_back(&xRecord);
+				auto* pRecords = static_cast<Zenith_Vector<const Zenith_AllocationRecord*>*>(pUserData);
+				pRecords->PushBack(&xRecord);
 			},
 			&axRecords
 		);
 
-		// Filter
+		// Filter - in-place compaction (Zenith_Vector has no range-erase): keep
+		// only records that pass the predicate, then shrink to the kept count.
 		if (s_acFilterText[0] != '\0')
 		{
-			axRecords.erase(
-				std::remove_if(axRecords.begin(), axRecords.end(),
-					[](const Zenith_AllocationRecord* pRecord)
-					{
-						// Filter by file name or category
-						if (pRecord->m_szFile != nullptr &&
-							strstr(pRecord->m_szFile, s_acFilterText) != nullptr)
-						{
-							return false;
-						}
-						if (strstr(GetMemoryCategoryName(pRecord->m_eCategory), s_acFilterText) != nullptr)
-						{
-							return false;
-						}
-						return true;
-					}
-				),
-				axRecords.end()
-			);
+			auto pfnKeep = [](const Zenith_AllocationRecord* pRecord) -> bool
+			{
+				// Keep records whose file name or category matches the filter.
+				if (pRecord->m_szFile != nullptr &&
+					strstr(pRecord->m_szFile, s_acFilterText) != nullptr)
+				{
+					return true;
+				}
+				if (strstr(GetMemoryCategoryName(pRecord->m_eCategory), s_acFilterText) != nullptr)
+				{
+					return true;
+				}
+				return false;
+			};
+
+			u_int uWrite = 0;
+			for (u_int uRead = 0; uRead < axRecords.GetSize(); ++uRead)
+			{
+				const Zenith_AllocationRecord* pRecord = axRecords.Get(uRead);
+				if (pfnKeep(pRecord))
+				{
+					axRecords.Get(uWrite) = pRecord;
+					++uWrite;
+				}
+			}
+			while (axRecords.GetSize() > uWrite)
+			{
+				axRecords.PopBack();
+			}
 		}
 
 		// Sort - use proper strict weak ordering (swap operands for descending, don't negate)
@@ -439,7 +450,7 @@ namespace Zenith_EditorPanelMemory
 	// Helper: Render the scrollable allocation table. Syncs sort specs back to
 	// the static state so subsequent frames honour the user's sort choice.
 	//-------------------------------------------------------------------------
-	void Private::RenderAllocationTable(const std::vector<const Zenith_AllocationRecord*>& axRecords)
+	void Private::RenderAllocationTable(const Zenith_Vector<const Zenith_AllocationRecord*>& axRecords)
 	{
 		if (ImGui::BeginTable("AllocationTable", 5,
 			ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
@@ -468,13 +479,13 @@ namespace Zenith_EditorPanelMemory
 
 			char acBuffer[64];
 			ImGuiListClipper xClipper;
-			xClipper.Begin(static_cast<int>(axRecords.size()));
+			xClipper.Begin(static_cast<int>(axRecords.GetSize()));
 
 			while (xClipper.Step())
 			{
 				for (int i = xClipper.DisplayStart; i < xClipper.DisplayEnd; ++i)
 				{
-					const Zenith_AllocationRecord* pRecord = axRecords[i];
+					const Zenith_AllocationRecord* pRecord = axRecords.Get(static_cast<u_int>(i));
 
 					ImGui::TableNextRow();
 
@@ -522,14 +533,14 @@ namespace Zenith_EditorPanelMemory
 	// Helper: Show the symbolicated callstack for the currently selected row,
 	// if any. Falls back to raw addresses when symbolication fails.
 	//-------------------------------------------------------------------------
-	void Private::RenderAllocationCallstack(const std::vector<const Zenith_AllocationRecord*>& axRecords)
+	void Private::RenderAllocationCallstack(const Zenith_Vector<const Zenith_AllocationRecord*>& axRecords)
 	{
-		if (s_iSelectedAllocationIndex < 0 || s_iSelectedAllocationIndex >= static_cast<int>(axRecords.size()))
+		if (s_iSelectedAllocationIndex < 0 || s_iSelectedAllocationIndex >= static_cast<int>(axRecords.GetSize()))
 		{
 			return;
 		}
 
-		const Zenith_AllocationRecord* pRecord = axRecords[s_iSelectedAllocationIndex];
+		const Zenith_AllocationRecord* pRecord = axRecords.Get(static_cast<u_int>(s_iSelectedAllocationIndex));
 
 		ImGui::Separator();
 		ImGui::Text("Callstack for allocation #%llu:", pRecord->m_ulAllocationID);
@@ -574,10 +585,10 @@ namespace Zenith_EditorPanelMemory
 
 		Private::RenderAllocationFilters();
 
-		std::vector<const Zenith_AllocationRecord*> axRecords;
+		Zenith_Vector<const Zenith_AllocationRecord*> axRecords;
 		Private::CollectAndSortAllocations(axRecords);
 
-		ImGui::Text("%zu allocations", axRecords.size());
+		ImGui::Text("%u allocations", axRecords.GetSize());
 
 		Private::RenderAllocationTable(axRecords);
 		Private::RenderAllocationCallstack(axRecords);

@@ -3,7 +3,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 class Flux_DynamicConstantBuffer;
 class Flux_InstanceGroup;
@@ -53,9 +53,9 @@ public:
 
 	uint32_t GetTotalInstanceCount() const   { return m_uTotalInstances; }
 	uint32_t GetVisibleInstanceCount() const { return m_uVisibleInstances; }
-	uint32_t GetGroupCount() const           { return static_cast<uint32_t>(m_apxInstanceGroups.size()); }
+	uint32_t GetGroupCount() const           { return static_cast<uint32_t>(m_apxInstanceGroups.GetSize()); }
 
-	std::vector<Flux_InstanceGroup*> m_apxInstanceGroups;
+	Zenith_Vector<Flux_InstanceGroup*> m_apxInstanceGroups;
 
 	Flux_Shader                m_xGBufferShader;
 	Flux_Pipeline              m_xGBufferPipeline;

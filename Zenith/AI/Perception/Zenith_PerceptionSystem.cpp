@@ -11,29 +11,29 @@
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #endif
 
-std::unordered_map<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData; // #TODO: Replace with engine hash map
-std::unordered_map<uint64_t, Zenith_PerceptionSystem::TargetInfo> Zenith_PerceptionSystem::s_xTargets; // #TODO: Replace with engine hash map
+Zenith_HashMap<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData;
+Zenith_HashMap<uint64_t, Zenith_PerceptionSystem::TargetInfo> Zenith_PerceptionSystem::s_xTargets;
 Zenith_Vector<Zenith_SoundStimulus> Zenith_PerceptionSystem::s_axActiveSounds;
 
 void Zenith_PerceptionSystem::Initialise()
 {
-	s_xAgentData.clear();
-	s_xTargets.clear();
+	s_xAgentData.Clear();
+	s_xTargets.Clear();
 	s_axActiveSounds.Clear();
 	Zenith_Log(LOG_CATEGORY_AI, "PerceptionSystem initialized");
 }
 
 void Zenith_PerceptionSystem::Shutdown()
 {
-	s_xAgentData.clear();
-	s_xTargets.clear();
+	s_xAgentData.Clear();
+	s_xTargets.Clear();
 	s_axActiveSounds.Clear();
 }
 
 void Zenith_PerceptionSystem::Reset()
 {
-	s_xAgentData.clear();
-	s_xTargets.clear();
+	s_xAgentData.Clear();
+	s_xTargets.Clear();
 	s_axActiveSounds.Clear();
 }
 
@@ -49,7 +49,7 @@ void Zenith_PerceptionSystem::Update(float fDt)
 	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_UPDATE);
 
-	if (s_xAgentData.empty())
+	if (s_xAgentData.IsEmpty())
 	{
 		return;
 	}
@@ -63,7 +63,7 @@ void Zenith_PerceptionSystem::Update(float fDt)
 void Zenith_PerceptionSystem::RegisterAgent(Zenith_EntityID xAgentID)
 {
 	uint64_t uKey = xAgentID.GetPacked();
-	if (s_xAgentData.find(uKey) == s_xAgentData.end())
+	if (!s_xAgentData.Contains(uKey))
 	{
 		s_xAgentData[uKey] = AgentPerceptionData();
 		Zenith_Log(LOG_CATEGORY_AI, "Registered perception agent: %u", xAgentID.m_uIndex);
@@ -72,24 +72,24 @@ void Zenith_PerceptionSystem::RegisterAgent(Zenith_EntityID xAgentID)
 
 void Zenith_PerceptionSystem::UnregisterAgent(Zenith_EntityID xAgentID)
 {
-	s_xAgentData.erase(xAgentID.GetPacked());
+	s_xAgentData.Remove(xAgentID.GetPacked());
 }
 
 void Zenith_PerceptionSystem::SetSightConfig(Zenith_EntityID xAgentID, const Zenith_SightConfig& xConfig)
 {
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it != s_xAgentData.end())
+	AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (pxData)
 	{
-		it->second.m_xSightConfig = xConfig;
+		pxData->m_xSightConfig = xConfig;
 	}
 }
 
 void Zenith_PerceptionSystem::SetHearingConfig(Zenith_EntityID xAgentID, const Zenith_HearingConfig& xConfig)
 {
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it != s_xAgentData.end())
+	AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (pxData)
 	{
-		it->second.m_xHearingConfig = xConfig;
+		pxData->m_xHearingConfig = xConfig;
 	}
 }
 
@@ -109,14 +109,14 @@ void Zenith_PerceptionSystem::EmitSoundStimulus(const Zenith_Maths::Vector3& xPo
 void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 	Zenith_EntityID xAttacker)
 {
-	auto it = s_xAgentData.find(xVictim.GetPacked());
-	if (it == s_xAgentData.end())
+	AgentPerceptionData* pxData = s_xAgentData.TryGet(xVictim.GetPacked());
+	if (!pxData)
 	{
 		return;
 	}
 
 	// Immediate full awareness of attacker
-	Zenith_PerceivedTarget* pxTarget = FindOrCreateTarget(it->second, xAttacker);
+	Zenith_PerceivedTarget* pxTarget = FindOrCreateTarget(*pxData, xAttacker);
 	if (pxTarget)
 	{
 		pxTarget->m_fAwareness = 1.0f;
@@ -139,7 +139,7 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 			}
 		}
 
-		UpdatePrimaryTarget(it->second);
+		UpdatePrimaryTarget(*pxData);
 	}
 }
 
@@ -152,12 +152,12 @@ void Zenith_PerceptionSystem::RegisterTarget(Zenith_EntityID xTargetID, bool bHo
 
 void Zenith_PerceptionSystem::UnregisterTarget(Zenith_EntityID xTargetID)
 {
-	s_xTargets.erase(xTargetID.GetPacked());
+	s_xTargets.Remove(xTargetID.GetPacked());
 
 	// Remove from all agent perceptions
-	for (auto& xPair : s_xAgentData)
+	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xIt(s_xAgentData); !xIt.Done(); xIt.Next())
 	{
-		auto& axTargets = xPair.second.m_axPerceivedTargets;
+		Zenith_Vector<Zenith_PerceivedTarget>& axTargets = xIt.GetValueMutable().m_axPerceivedTargets;
 		for (uint32_t u = 0; u < axTargets.GetSize(); )
 		{
 			if (axTargets.Get(u).m_xEntityID == xTargetID)
@@ -174,19 +174,19 @@ void Zenith_PerceptionSystem::UnregisterTarget(Zenith_EntityID xTargetID)
 
 void Zenith_PerceptionSystem::SetTargetHostile(Zenith_EntityID xTargetID, bool bHostile)
 {
-	auto it = s_xTargets.find(xTargetID.GetPacked());
-	if (it != s_xTargets.end())
+	TargetInfo* pxInfo = s_xTargets.TryGet(xTargetID.GetPacked());
+	if (pxInfo)
 	{
-		it->second.m_bHostile = bHostile;
+		pxInfo->m_bHostile = bHostile;
 	}
 }
 
 const Zenith_Vector<Zenith_PerceivedTarget>* Zenith_PerceptionSystem::GetPerceivedTargets(Zenith_EntityID xAgentID)
 {
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it != s_xAgentData.end())
+	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (pxData)
 	{
-		return &it->second.m_axPerceivedTargets;
+		return &pxData->m_axPerceivedTargets;
 	}
 	return nullptr;
 }
@@ -199,10 +199,10 @@ Zenith_PerceptionSystem::Zenith_LastHeardSound
 Zenith_PerceptionSystem::GetLastHeardSoundFor(Zenith_EntityID xAgentID)
 {
 	Zenith_LastHeardSound xResult;
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it == s_xAgentData.end()) return xResult;
+	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (!pxData) return xResult;
 
-	const Zenith_Vector<Zenith_PerceivedTarget>& axTargets = it->second.m_axPerceivedTargets;
+	const Zenith_Vector<Zenith_PerceivedTarget>& axTargets = pxData->m_axPerceivedTargets;
 	float fBestAge = -1.0f; // sentinel for "no candidate yet"
 	for (uint32_t i = 0; i < axTargets.GetSize(); ++i)
 	{
@@ -222,10 +222,10 @@ Zenith_PerceptionSystem::GetLastHeardSoundFor(Zenith_EntityID xAgentID)
 
 Zenith_EntityID Zenith_PerceptionSystem::GetPrimaryTarget(Zenith_EntityID xAgentID)
 {
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it != s_xAgentData.end())
+	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (pxData)
 	{
-		return it->second.m_xPrimaryTarget;
+		return pxData->m_xPrimaryTarget;
 	}
 	return INVALID_ENTITY_ID;
 }
@@ -237,17 +237,17 @@ bool Zenith_PerceptionSystem::IsAwareOf(Zenith_EntityID xAgentID, Zenith_EntityI
 
 float Zenith_PerceptionSystem::GetAwarenessOf(Zenith_EntityID xAgentID, Zenith_EntityID xTargetID)
 {
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it == s_xAgentData.end())
+	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (!pxData)
 	{
 		return 0.0f;
 	}
 
-	for (uint32_t u = 0; u < it->second.m_axPerceivedTargets.GetSize(); ++u)
+	for (uint32_t u = 0; u < pxData->m_axPerceivedTargets.GetSize(); ++u)
 	{
-		if (it->second.m_axPerceivedTargets.Get(u).m_xEntityID == xTargetID)
+		if (pxData->m_axPerceivedTargets.Get(u).m_xEntityID == xTargetID)
 		{
-			return it->second.m_axPerceivedTargets.Get(u).m_fAwareness;
+			return pxData->m_axPerceivedTargets.Get(u).m_fAwareness;
 		}
 	}
 	return 0.0f;
@@ -300,10 +300,10 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT);
 
-	for (auto& xPair : s_xAgentData)
+	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
 	{
-		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
-		AgentPerceptionData& xData = xPair.second;
+		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xAgentIt.GetKey());
+		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
 
 		// Audit §3.18 fix: resolve agent's OWN scene — supports agents in any
 		// loaded scene, not just the active one.
@@ -337,9 +337,9 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 		}
 
 		// Check each registered target
-		for (auto& xTargetPair : s_xTargets)
+		for (Zenith_HashMap<uint64_t, TargetInfo>::Iterator xTargetIt(s_xTargets); !xTargetIt.Done(); xTargetIt.Next())
 		{
-			Zenith_EntityID xTargetID = Zenith_EntityID::FromPacked(xTargetPair.first);
+			Zenith_EntityID xTargetID = Zenith_EntityID::FromPacked(xTargetIt.GetKey());
 
 			// Don't perceive self
 			if (xTargetID == xAgentID)
@@ -373,7 +373,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			pxTarget->m_fTimeSinceLastSeen = 0.0f;
 			pxTarget->m_xLastKnownPosition = xEval.m_xTargetPos;
 			pxTarget->m_uStimulusMask |= PERCEPTION_STIMULUS_SIGHT;
-			pxTarget->m_bHostile = xTargetPair.second.m_bHostile;
+			pxTarget->m_bHostile = xTargetIt.GetValue().m_bHostile;
 
 			// Awareness gain (peripheral vision is slower)
 			float fGainRate = xData.m_xSightConfig.m_fAwarenessGainRate;
@@ -426,10 +426,10 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 	// Audit §3.18 fix: resolve each agent's OWN scene instead of the active
 	// scene — agents in persistent or additively-loaded scenes must still hear.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	for (auto& xPair : s_xAgentData)
+	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
 	{
-		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
-		AgentPerceptionData& xData = xPair.second;
+		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xAgentIt.GetKey());
+		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
 
 		Zenith_SceneData* pxAgentScene = g_xEngine.Scenes().GetSceneDataForEntity(xAgentID);
 		if (!pxAgentScene)
@@ -479,9 +479,9 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 
 void Zenith_PerceptionSystem::UpdateMemoryDecay(float fDt)
 {
-	for (auto& xPair : s_xAgentData)
+	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
 	{
-		AgentPerceptionData& xData = xPair.second;
+		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
 
 		for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); )
 		{
@@ -616,13 +616,13 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	const Zenith_Maths::Vector3& xAgentPos,
 	const Zenith_Maths::Vector3& xForward)
 {
-	auto it = s_xAgentData.find(xAgentID.GetPacked());
-	if (it == s_xAgentData.end())
+	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	if (!pxData)
 	{
 		return;
 	}
 
-	const AgentPerceptionData& xData = it->second;
+	const AgentPerceptionData& xData = *pxData;
 	const Zenith_SightConfig& xConfig = xData.m_xSightConfig;
 
 	Zenith_Maths::Vector3 xEyePos = xAgentPos;

@@ -69,16 +69,17 @@ void Zenith_ScriptAsset::RenderPropertiesPanel()
 // Static factory registry (folded in from the deleted Zenith_BehaviourRegistry)
 //------------------------------------------------------------------------------
 
-std::unordered_map<std::string, Zenith_ScriptBehaviourFactoryFn>& Zenith_ScriptAsset::GetFactoryMap()
+Zenith_HashMap<std::string, Zenith_ScriptBehaviourFactoryFn>& Zenith_ScriptAsset::GetFactoryMap()
 {
 	// Construct-on-first-use - safe under static initialization order
-	static std::unordered_map<std::string, Zenith_ScriptBehaviourFactoryFn> s_xFactoryMap;
+	static Zenith_HashMap<std::string, Zenith_ScriptBehaviourFactoryFn> s_xFactoryMap;
 	return s_xFactoryMap;
 }
 
-std::unordered_set<std::string>& Zenith_ScriptAsset::GetInternalNameSet()
+Zenith_HashMap<std::string, bool>& Zenith_ScriptAsset::GetInternalNameSet()
 {
-	static std::unordered_set<std::string> s_xInternalNames;
+	// Used as a set: keys are internal behaviour names, the bool value is an unused dummy.
+	static Zenith_HashMap<std::string, bool> s_xInternalNames;
 	return s_xInternalNames;
 }
 
@@ -98,7 +99,7 @@ void Zenith_ScriptAsset::RegisterFactoryInternal(const char* szTypeName, Zenith_
 		return;
 	}
 	GetFactoryMap()[szTypeName] = pfnFactory;
-	GetInternalNameSet().insert(szTypeName);
+	GetInternalNameSet().Insert(szTypeName, true);
 }
 
 bool Zenith_ScriptAsset::IsInternalFactory(const char* szTypeName)
@@ -108,7 +109,7 @@ bool Zenith_ScriptAsset::IsInternalFactory(const char* szTypeName)
 		return false;
 	}
 	const auto& xSet = GetInternalNameSet();
-	return xSet.find(szTypeName) != xSet.end();
+	return xSet.Contains(szTypeName);
 }
 
 void Zenith_ScriptAsset::GetPublicRegisteredTypeNames(Zenith_Vector<std::string>& xOut)
@@ -116,11 +117,11 @@ void Zenith_ScriptAsset::GetPublicRegisteredTypeNames(Zenith_Vector<std::string>
 	xOut.Clear();
 	const auto& xMap = GetFactoryMap();
 	const auto& xInternal = GetInternalNameSet();
-	for (const auto& xPair : xMap)
+	for (Zenith_HashMap<std::string, Zenith_ScriptBehaviourFactoryFn>::Iterator xIt(xMap); !xIt.Done(); xIt.Next())
 	{
-		if (xInternal.find(xPair.first) == xInternal.end())
+		if (!xInternal.Contains(xIt.GetKey()))
 		{
-			xOut.PushBack(xPair.first);
+			xOut.PushBack(xIt.GetKey());
 		}
 	}
 }
@@ -132,8 +133,8 @@ Zenith_ScriptBehaviourFactoryFn Zenith_ScriptAsset::LookupFactory(const char* sz
 		return nullptr;
 	}
 	const auto& xMap = GetFactoryMap();
-	auto xIt = xMap.find(szTypeName);
-	return (xIt != xMap.end()) ? xIt->second : nullptr;
+	const Zenith_ScriptBehaviourFactoryFn* pxFactory = xMap.TryGet(szTypeName);
+	return pxFactory ? *pxFactory : nullptr;
 }
 
 bool Zenith_ScriptAsset::HasFactory(const char* szTypeName)
@@ -145,9 +146,9 @@ void Zenith_ScriptAsset::GetAllRegisteredTypeNames(Zenith_Vector<std::string>& x
 {
 	xOut.Clear();
 	const auto& xMap = GetFactoryMap();
-	for (const auto& xPair : xMap)
+	for (Zenith_HashMap<std::string, Zenith_ScriptBehaviourFactoryFn>::Iterator xIt(xMap); !xIt.Done(); xIt.Next())
 	{
-		xOut.PushBack(xPair.first);
+		xOut.PushBack(xIt.GetKey());
 	}
 }
 
@@ -174,8 +175,8 @@ void Zenith_ScriptAsset::SyncRegisteredTypesToDisk()
 	const auto& xFactoryMap = GetFactoryMap();
 	const auto& xInternalNames = GetInternalNameSet();
 	Zenith_Log(LOG_CATEGORY_ASSET,
-		"Zenith_ScriptAsset::SyncRegisteredTypesToDisk: %zu registered behaviours (%zu internal/excluded), target dir '%s'",
-		xFactoryMap.size(), xInternalNames.size(), strScriptsAbsolute.c_str());
+		"Zenith_ScriptAsset::SyncRegisteredTypesToDisk: %u registered behaviours (%u internal/excluded), target dir '%s'",
+		xFactoryMap.GetSize(), xInternalNames.GetSize(), strScriptsAbsolute.c_str());
 
 	std::error_code xEC;
 	fs::create_directories(strScriptsAbsolute, xEC);
@@ -188,14 +189,14 @@ void Zenith_ScriptAsset::SyncRegisteredTypesToDisk()
 	}
 
 	// Pass 1: write missing .zscript files for each registered behaviour
-	for (const auto& xPair : xFactoryMap)
+	for (Zenith_HashMap<std::string, Zenith_ScriptBehaviourFactoryFn>::Iterator xIt(xFactoryMap); !xIt.Done(); xIt.Next())
 	{
-		const std::string& strTypeName = xPair.first;
+		const std::string& strTypeName = xIt.GetKey();
 
 		// Internal behaviours (test fixtures, runtime-only helpers) are excluded from the
 		// on-disk asset surface: they're useful at runtime via LookupFactory but should not
 		// pollute game:Scripts/ or appear in the editor's content browser. See P2.4.
-		if (xInternalNames.find(strTypeName) != xInternalNames.end())
+		if (xInternalNames.Contains(strTypeName))
 		{
 			continue;
 		}
@@ -209,7 +210,7 @@ void Zenith_ScriptAsset::SyncRegisteredTypesToDisk()
 		}
 
 		// Construct the asset and save it via the registry's standard pipeline
-		Zenith_ScriptAsset xAsset(strTypeName.c_str(), xPair.second);
+		Zenith_ScriptAsset xAsset(strTypeName.c_str(), xIt.GetValue());
 		if (!Zenith_AssetRegistry::Save(&xAsset, strAssetPath))
 		{
 			Zenith_Log(LOG_CATEGORY_ASSET,
@@ -244,7 +245,7 @@ void Zenith_ScriptAsset::SyncRegisteredTypesToDisk()
 		}
 
 		const std::string strStem = xPath.stem().string();
-		if (xFactoryMap.find(strStem) != xFactoryMap.end())
+		if (xFactoryMap.Contains(strStem))
 		{
 			continue;  // Has a registered factory - keep it
 		}

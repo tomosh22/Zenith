@@ -4,9 +4,9 @@
 
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Entity.h"
+#include "Collections/Zenith_Vector.h"
 #include <concepts>
 #include <string>
-#include <vector>
 
 // Forward declarations
 class Zenith_Entity;
@@ -131,7 +131,7 @@ public:
 			}
 		};
 		
-		m_xEntries.push_back(xEntry);
+		m_xEntries.PushBack(xEntry);
 		
 		Zenith_Log(LOG_CATEGORY_ECS, "Registered component: %s (TypeID: %u)",
 			strDisplayName.c_str(), xEntry.m_uTypeID);
@@ -142,14 +142,14 @@ public:
 	//--------------------------------------------------------------------------
 	// Registry Access
 	//--------------------------------------------------------------------------
-	const std::vector<Zenith_ComponentRegistryEntry>& GetEntries() const
+	const Zenith_Vector<Zenith_ComponentRegistryEntry>& GetEntries() const
 	{
 		return m_xEntries;
 	}
-	
+
 	size_t GetComponentCount() const
 	{
-		return m_xEntries.size();
+		return m_xEntries.GetSize();
 	}
 	
 	//--------------------------------------------------------------------------
@@ -160,13 +160,13 @@ public:
 	//--------------------------------------------------------------------------
 	bool TryAddComponent(size_t uIndex, Zenith_Entity& xEntity)
 	{
-		if (uIndex >= m_xEntries.size())
+		if (uIndex >= m_xEntries.GetSize())
 		{
 			Zenith_Error(LOG_CATEGORY_ECS, "Invalid component index %zu", uIndex);
 			return false;
 		}
-		
-		const Zenith_ComponentRegistryEntry& xEntry = m_xEntries[uIndex];
+
+		const Zenith_ComponentRegistryEntry& xEntry = m_xEntries.Get(static_cast<u_int>(uIndex));
 		
 		// Check for duplicate
 		if (xEntry.m_pfnHasComponent(xEntity))
@@ -198,11 +198,11 @@ public:
 	//--------------------------------------------------------------------------
 	bool EntityHasComponent(size_t uIndex, const Zenith_Entity& xEntity) const
 	{
-		if (uIndex >= m_xEntries.size())
+		if (uIndex >= m_xEntries.GetSize())
 		{
 			return false;
 		}
-		return m_xEntries[uIndex].m_pfnHasComponent(xEntity);
+		return m_xEntries.Get(static_cast<u_int>(uIndex)).m_pfnHasComponent(xEntity);
 	}
 	
 	//--------------------------------------------------------------------------
@@ -226,13 +226,13 @@ public:
 	void LogRegisteredComponents() const
 	{
 		Zenith_Log(LOG_CATEGORY_ECS, "=== Registered Components ===");
-		for (size_t i = 0; i < m_xEntries.size(); ++i)
+		for (u_int i = 0; i < m_xEntries.GetSize(); ++i)
 		{
-			const auto& xEntry = m_xEntries[i];
-			Zenith_Log(LOG_CATEGORY_ECS, "  [%zu] %s (TypeID: %u)",
+			const auto& xEntry = m_xEntries.Get(i);
+			Zenith_Log(LOG_CATEGORY_ECS, "  [%u] %s (TypeID: %u)",
 				i, xEntry.m_strDisplayName.c_str(), xEntry.m_uTypeID);
 		}
-		Zenith_Log(LOG_CATEGORY_ECS, "=== Total: %zu components ===", m_xEntries.size());
+		Zenith_Log(LOG_CATEGORY_ECS, "=== Total: %u components ===", m_xEntries.GetSize());
 	}
 
 private:
@@ -243,7 +243,7 @@ private:
 	Zenith_ComponentRegistry(const Zenith_ComponentRegistry&) = delete;
 	Zenith_ComponentRegistry& operator=(const Zenith_ComponentRegistry&) = delete;
 	
-	std::vector<Zenith_ComponentRegistryEntry> m_xEntries;
+	Zenith_Vector<Zenith_ComponentRegistryEntry> m_xEntries;
 };
 
 //==============================================================================

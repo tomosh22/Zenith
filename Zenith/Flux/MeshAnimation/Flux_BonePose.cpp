@@ -412,14 +412,14 @@ void Flux_SkeletonPose::AdditiveBlend(Flux_SkeletonPose& xOut,
 void Flux_SkeletonPose::MaskedBlend(Flux_SkeletonPose& xOut,
 	const Flux_SkeletonPose& xLower,
 	const Flux_SkeletonPose& xUpper,
-	const std::vector<float>& xBoneMask)
+	const Zenith_Vector<float>& xBoneMask)
 {
 	uint32_t uNumBones = glm::max(xLower.m_uNumBones, xUpper.m_uNumBones);
 	xOut.m_uNumBones = uNumBones;
 
 	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
 	{
-		float fMask = (i < xBoneMask.size()) ? xBoneMask[i] : 0.0f;
+		float fMask = (i < xBoneMask.GetSize()) ? xBoneMask.Get(i) : 0.0f;
 		xOut.m_axLocalPoses[i] = Flux_BoneLocalPose::Blend(
 			xLower.m_axLocalPoses[i],
 			xUpper.m_axLocalPoses[i],
@@ -444,11 +444,16 @@ void Flux_SkeletonPose::CopyFrom(const Flux_SkeletonPose& xOther)
 // Flux_BoneMask
 //=============================================================================
 Flux_BoneMask::Flux_BoneMask()
+	: m_xWeights(FLUX_MAX_BONES)
 {
-	m_xWeights.resize(FLUX_MAX_BONES, 0.0f);
+	// Zenith_Vector's capacity ctor only reserves; fill to size with zero weights.
+	for (uint32_t i = 0; i < FLUX_MAX_BONES; ++i)
+	{
+		m_xWeights.PushBack(0.0f);
+	}
 }
 
-void Flux_BoneMask::SetFromBoneNames(const std::vector<std::string>& xBoneNames,
+void Flux_BoneMask::SetFromBoneNames(const Zenith_Vector<std::string>& xBoneNames,
 	const Flux_MeshGeometry& xGeometry)
 {
 	// Reset all weights to 0
@@ -461,9 +466,9 @@ void Flux_BoneMask::SetFromBoneNames(const std::vector<std::string>& xBoneNames,
 		if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
 		{
 			uint32_t uBoneIndex = it->second.first;
-			if (uBoneIndex < m_xWeights.size())
+			if (uBoneIndex < m_xWeights.GetSize())
 			{
-				m_xWeights[uBoneIndex] = 1.0f;
+				m_xWeights.Get(uBoneIndex) = 1.0f;
 			}
 		}
 	}
@@ -471,17 +476,17 @@ void Flux_BoneMask::SetFromBoneNames(const std::vector<std::string>& xBoneNames,
 
 void Flux_BoneMask::SetBoneWeight(uint32_t uBoneIndex, float fWeight)
 {
-	if (uBoneIndex < m_xWeights.size())
+	if (uBoneIndex < m_xWeights.GetSize())
 	{
-		m_xWeights[uBoneIndex] = glm::clamp(fWeight, 0.0f, 1.0f);
+		m_xWeights.Get(uBoneIndex) = glm::clamp(fWeight, 0.0f, 1.0f);
 	}
 }
 
 float Flux_BoneMask::GetBoneWeight(uint32_t uBoneIndex) const
 {
-	if (uBoneIndex < m_xWeights.size())
+	if (uBoneIndex < m_xWeights.GetSize())
 	{
-		return m_xWeights[uBoneIndex];
+		return m_xWeights.Get(uBoneIndex);
 	}
 	return 0.0f;
 }
@@ -568,7 +573,7 @@ Flux_BoneMask Flux_BoneMask::CreateLowerBodyMask(const Flux_MeshGeometry& xGeome
 
 void Flux_BoneMask::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	uint32_t uNumWeights = static_cast<uint32_t>(m_xWeights.size());
+	uint32_t uNumWeights = static_cast<uint32_t>(m_xWeights.GetSize());
 	xStream << uNumWeights;
 	for (float fWeight : m_xWeights)
 	{
@@ -580,10 +585,13 @@ void Flux_BoneMask::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	uint32_t uNumWeights = 0;
 	xStream >> uNumWeights;
-	m_xWeights.resize(uNumWeights);
+	m_xWeights.Clear();
+	m_xWeights.Reserve(uNumWeights);
 	for (uint32_t i = 0; i < uNumWeights; ++i)
 	{
-		xStream >> m_xWeights[i];
+		float fWeight = 0.0f;
+		xStream >> fWeight;
+		m_xWeights.PushBack(fWeight);
 	}
 }
 

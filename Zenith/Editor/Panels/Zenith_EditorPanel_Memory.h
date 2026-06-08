@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 struct Zenith_AllocationRecord;
 
@@ -35,14 +35,14 @@ namespace Zenith_EditorPanelMemory
 		// Collects live allocation records from the tracker, applies the
 		// current filter text, and sorts them according to the active sort
 		// column / direction. Output is written into axRecords.
-		void CollectAndSortAllocations(std::vector<const Zenith_AllocationRecord*>& axRecords);
+		void CollectAndSortAllocations(Zenith_Vector<const Zenith_AllocationRecord*>& axRecords);
 
 		// Renders the scrollable allocation table, handling sort-spec changes
 		// and row selection.
-		void RenderAllocationTable(const std::vector<const Zenith_AllocationRecord*>& axRecords);
+		void RenderAllocationTable(const Zenith_Vector<const Zenith_AllocationRecord*>& axRecords);
 
 		// If a row is selected, renders the callstack for that allocation.
-		void RenderAllocationCallstack(const std::vector<const Zenith_AllocationRecord*>& axRecords);
+		void RenderAllocationCallstack(const Zenith_Vector<const Zenith_AllocationRecord*>& axRecords);
 	}
 }
 

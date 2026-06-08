@@ -192,9 +192,9 @@ std::string Zenith_AssetRegistry::s_strGameAssetsDir;
 std::string Zenith_AssetRegistry::s_strEngineAssetsDir;
 
 // Serializable asset type registry - uses function-local statics to avoid static initialization order fiasco
-std::unordered_map<std::string, Zenith_AssetRegistry::SerializableAssetFactoryFn>& Zenith_AssetRegistry::GetSerializableTypeRegistry()
+Zenith_HashMap<std::string, Zenith_AssetRegistry::SerializableAssetFactoryFn>& Zenith_AssetRegistry::GetSerializableTypeRegistry()
 {
-	static std::unordered_map<std::string, SerializableAssetFactoryFn> s_xRegistry;
+	static Zenith_HashMap<std::string, SerializableAssetFactoryFn> s_xRegistry;
 	return s_xRegistry;
 }
 
@@ -390,17 +390,17 @@ void Zenith_AssetRegistry::Shutdown()
 bool Zenith_AssetRegistry::IsLoadedInternal(const std::string& strPath) const
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
-	return m_xAssetsByPath.find(strPath) != m_xAssetsByPath.end();
+	return m_xAssetsByPath.Contains(strPath);
 }
 
 void Zenith_AssetRegistry::UnloadInternal(const std::string& strPath)
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
-	auto it = m_xAssetsByPath.find(strPath);
-	if (it != m_xAssetsByPath.end())
+	Zenith_Asset** ppxAsset = m_xAssetsByPath.TryGet(strPath);
+	if (ppxAsset != nullptr)
 	{
-		Zenith_Asset* pxAsset = it->second;
+		Zenith_Asset* pxAsset = *ppxAsset;
 
 		if (m_bLifecycleLogging)
 		{
@@ -408,7 +408,7 @@ void Zenith_AssetRegistry::UnloadInternal(const std::string& strPath)
 		}
 
 		delete pxAsset;
-		m_xAssetsByPath.erase(it);
+		m_xAssetsByPath.Remove(strPath);
 	}
 }
 
@@ -418,11 +418,11 @@ void Zenith_AssetRegistry::UnloadUnusedInternal()
 
 	// Collect assets with ref count 0
 	Zenith_Vector<std::string> xToRemove;
-	for (const auto& xPair : m_xAssetsByPath)
+	for (Zenith_HashMap<std::string, Zenith_Asset*>::Iterator xIt(m_xAssetsByPath); !xIt.Done(); xIt.Next())
 	{
-		if (xPair.second->GetRefCount() == 0)
+		if (xIt.GetValue()->GetRefCount() == 0)
 		{
-			xToRemove.PushBack(xPair.first);
+			xToRemove.PushBack(xIt.GetKey());
 		}
 	}
 
@@ -435,7 +435,7 @@ void Zenith_AssetRegistry::UnloadUnusedInternal()
 		}
 
 		delete m_xAssetsByPath[strPath];
-		m_xAssetsByPath.erase(strPath);
+		m_xAssetsByPath.Remove(strPath);
 	}
 
 	if (m_bLifecycleLogging && xToRemove.GetSize() > 0)
@@ -450,69 +450,77 @@ void Zenith_AssetRegistry::UnloadAllInternal()
 
 	if (m_bLifecycleLogging)
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloading all %zu assets", m_xAssetsByPath.size());
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloading all %u assets", m_xAssetsByPath.GetSize());
 	}
 
 	// Phase A: drain refcount==0 assets to a fixed point. Each delete may release
 	// refs to other assets (e.g. a material releasing texture handles), dropping
 	// them to zero — repeat until no more do.
+	//
+	// Zenith_HashMap's Iterator asserts on mid-iteration mutation (generation
+	// guard), so unlike the old std::unordered_map erase-while-iterating, each
+	// pass first collects the refcount==0 keys, then removes them after the
+	// iterator is destroyed.
 	bool bAnyDeleted;
 	do
 	{
 		bAnyDeleted = false;
-		for (auto it = m_xAssetsByPath.begin(); it != m_xAssetsByPath.end(); )
+
+		Zenith_Vector<std::string> xToRemove;
+		for (Zenith_HashMap<std::string, Zenith_Asset*>::Iterator xIt(m_xAssetsByPath); !xIt.Done(); xIt.Next())
 		{
-			if (it->second->GetRefCount() == 0)
+			if (xIt.GetValue()->GetRefCount() == 0)
 			{
-				if (m_bLifecycleLogging)
-				{
-					Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloading '%s'", it->first.c_str());
-				}
-				delete it->second;
-				it = m_xAssetsByPath.erase(it);
-				bAnyDeleted = true;
+				xToRemove.PushBack(xIt.GetKey());
 			}
-			else
+		}
+
+		for (const std::string& strPath : xToRemove)
+		{
+			if (m_bLifecycleLogging)
 			{
-				++it;
+				Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloading '%s'", strPath.c_str());
 			}
+			delete m_xAssetsByPath[strPath];
+			m_xAssetsByPath.Remove(strPath);
+			bAnyDeleted = true;
 		}
 	} while (bAnyDeleted);
 
 	// Phase B: anything still held is a real cycle or a leaked handle — log loudly
 	// so the leak is discoverable but don't abort (cycles can be legitimate, and
 	// we still need to free the memory either way).
-	for (auto& xPair : m_xAssetsByPath)
+	for (Zenith_HashMap<std::string, Zenith_Asset*>::Iterator xIt(m_xAssetsByPath); !xIt.Done(); xIt.Next())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET,
 			"AssetRegistry shutdown: '%s' still held with %u refs — cycle or leaked handle",
-			xPair.first.c_str(), xPair.second->GetRefCount());
+			xIt.GetKey().c_str(), xIt.GetValue()->GetRefCount());
 	}
 
 	// Phase C: force-delete the remaining assets (the registry itself is being torn
 	// down, so we cannot leave the heap allocations dangling).
-	for (auto& xPair : m_xAssetsByPath)
+	for (Zenith_HashMap<std::string, Zenith_Asset*>::Iterator xIt(m_xAssetsByPath); !xIt.Done(); xIt.Next())
 	{
-		delete xPair.second;
+		delete xIt.GetValue();
 	}
-	m_xAssetsByPath.clear();
+	m_xAssetsByPath.Clear();
 }
 
 uint32_t Zenith_AssetRegistry::GetLoadedAssetCountInternal() const
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
-	return static_cast<uint32_t>(m_xAssetsByPath.size());
+	return static_cast<uint32_t>(m_xAssetsByPath.GetSize());
 }
 
 void Zenith_AssetRegistry::LogLoadedAssetsInternal() const
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
-	Zenith_Log(LOG_CATEGORY_ASSET, "=== Loaded Assets (%zu total) ===", m_xAssetsByPath.size());
+	Zenith_Log(LOG_CATEGORY_ASSET, "=== Loaded Assets (%u total) ===", m_xAssetsByPath.GetSize());
 
-	for (const auto& xPair : m_xAssetsByPath)
+	for (Zenith_HashMap<std::string, Zenith_Asset*>::Iterator xIt(m_xAssetsByPath); !xIt.Done(); xIt.Next())
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "  [ref=%u] %s", xPair.second->GetRefCount(), xPair.first.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "  [ref=%u] %s", xIt.GetValue()->GetRefCount(), xIt.GetKey().c_str());
 	}
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "=================================");
@@ -533,15 +541,15 @@ Zenith_Asset* Zenith_AssetRegistry::GetInternal(Zenith_TypeIndex xType, const st
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
 	// Check cache first (using the prefixed path as key for portability)
-	auto itAsset = m_xAssetsByPath.find(strPath);
-	if (itAsset != m_xAssetsByPath.end())
+	Zenith_Asset** ppxAsset = m_xAssetsByPath.TryGet(strPath);
+	if (ppxAsset != nullptr)
 	{
-		return itAsset->second;
+		return *ppxAsset;
 	}
 
 	// Find loader for this type
-	auto itLoader = m_xLoaders.find(xType);
-	if (itLoader == m_xLoaders.end())
+	AssetLoaderFn* ppfnLoader = m_xLoaders.TryGet(xType);
+	if (ppfnLoader == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: No loader registered for type");
 		return nullptr;
@@ -551,7 +559,7 @@ Zenith_Asset* Zenith_AssetRegistry::GetInternal(Zenith_TypeIndex xType, const st
 	std::string strAbsolutePath = ResolvePath(strPath);
 
 	// Load the asset using the absolute path
-	Zenith_Result<Zenith_Asset*> xRes = itLoader->second(strAbsolutePath);
+	Zenith_Result<Zenith_Asset*> xRes = (*ppfnLoader)(strAbsolutePath);
 	if (!xRes.IsOk())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to load asset '%s' (resolved: '%s') [error %u]",
@@ -577,8 +585,8 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType)
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
 	// Find loader - use empty path to indicate creation
-	auto itLoader = m_xLoaders.find(xType);
-	if (itLoader == m_xLoaders.end())
+	AssetLoaderFn* ppfnLoader = m_xLoaders.TryGet(xType);
+	if (ppfnLoader == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: No loader registered for type");
 		return nullptr;
@@ -588,7 +596,7 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType)
 	std::string strPath = GenerateProceduralPath("asset");
 
 	// Create the asset (loader should handle empty path as "create new")
-	Zenith_Result<Zenith_Asset*> xRes = itLoader->second("");
+	Zenith_Result<Zenith_Asset*> xRes = (*ppfnLoader)("");
 	if (!xRes.IsOk())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset [error %u]",
@@ -614,15 +622,15 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType, const
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
 	// Find loader
-	auto itLoader = m_xLoaders.find(xType);
-	if (itLoader == m_xLoaders.end())
+	AssetLoaderFn* ppfnLoader = m_xLoaders.TryGet(xType);
+	if (ppfnLoader == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: No loader registered for type");
 		return nullptr;
 	}
 
 	// Create the asset (loader should handle empty path as "create new")
-	Zenith_Result<Zenith_Asset*> xRes = itLoader->second("");
+	Zenith_Result<Zenith_Asset*> xRes = (*ppfnLoader)("");
 	if (!xRes.IsOk())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset [error %u]",
@@ -662,7 +670,7 @@ void Zenith_AssetRegistry::RegisterSerializableAssetType(const char* szTypeName,
 bool Zenith_AssetRegistry::IsSerializableTypeRegistered(const char* szTypeName)
 {
 	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(GetSerializableTypeRegistryMutex());
-	return GetSerializableTypeRegistry().find(szTypeName) != GetSerializableTypeRegistry().end();
+	return GetSerializableTypeRegistry().Contains(szTypeName);
 }
 
 bool Zenith_AssetRegistry::SaveInternal(Zenith_Asset* pxAsset, const std::string& strPath)
@@ -718,11 +726,7 @@ bool Zenith_AssetRegistry::SaveInternal(Zenith_Asset* pxAsset, const std::string
 		Zenith_ScopedMutexLock xLock(m_xMutex);
 
 		// Remove from old procedural path in cache
-		auto it = m_xAssetsByPath.find(pxAsset->m_strPath);
-		if (it != m_xAssetsByPath.end())
-		{
-			m_xAssetsByPath.erase(it);
-		}
+		m_xAssetsByPath.Remove(pxAsset->m_strPath);
 
 		// Update path and re-cache with new path
 		pxAsset->m_strPath = strPath;
@@ -809,11 +813,11 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 	Zenith_AssetRegistry::SerializableAssetFactoryFn pfnFactory = nullptr;
 	{
 		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Zenith_AssetRegistry::GetSerializableTypeRegistryMutex());
-		auto& xRegistry = Zenith_AssetRegistry::GetSerializableTypeRegistry();
-		auto xIt = xRegistry.find(strTypeName);
-		if (xIt != xRegistry.end())
+		Zenith_HashMap<std::string, Zenith_AssetRegistry::SerializableAssetFactoryFn>& xRegistry = Zenith_AssetRegistry::GetSerializableTypeRegistry();
+		Zenith_AssetRegistry::SerializableAssetFactoryFn* ppfnFactory = xRegistry.TryGet(strTypeName);
+		if (ppfnFactory != nullptr)
 		{
-			pfnFactory = xIt->second;
+			pfnFactory = *ppfnFactory;
 		}
 	}
 

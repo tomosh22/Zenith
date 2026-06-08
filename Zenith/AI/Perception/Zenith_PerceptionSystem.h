@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Entity.h"
-#include <unordered_map>
 
 class Zenith_SceneData;
 
@@ -197,8 +197,8 @@ private:
 		bool m_bHostile = true;
 	};
 
-	static std::unordered_map<uint64_t, AgentPerceptionData> s_xAgentData; // #TODO: Replace with engine hash map
-	static std::unordered_map<uint64_t, TargetInfo> s_xTargets; // #TODO: Replace with engine hash map
+	static Zenith_HashMap<uint64_t, AgentPerceptionData> s_xAgentData;
+	static Zenith_HashMap<uint64_t, TargetInfo> s_xTargets;
 	static Zenith_Vector<Zenith_SoundStimulus> s_axActiveSounds;
 
 	// Update helpers. Audit §3.18: each agent/target resolves its own scene via

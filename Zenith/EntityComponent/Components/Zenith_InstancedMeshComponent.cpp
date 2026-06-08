@@ -468,11 +468,11 @@ void Zenith_InstancedMeshComponent::WriteToDataStream(Zenith_DataStream& xStream
 	// Serialize instance transforms
 	if (uInstanceCount > 0 && m_pxInstanceGroup != nullptr)
 	{
-		const std::vector<Zenith_Maths::Matrix4>& axTransforms = m_pxInstanceGroup->GetTransforms();
+		const Zenith_Vector<Zenith_Maths::Matrix4>& axTransforms = m_pxInstanceGroup->GetTransforms();
 		// Write all transform matrices
 		for (uint32_t i = 0; i < uInstanceCount; ++i)
 		{
-			const Zenith_Maths::Matrix4& xTransform = axTransforms[i];
+			const Zenith_Maths::Matrix4& xTransform = axTransforms.Get(i);
 			// Write matrix as 16 floats
 			for (int col = 0; col < 4; ++col)
 			{

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 
 #include <chrono>
-#include <unordered_map>
 
 // Forward-declared so Initialise(Zenith_Multithreading&) can take the thread
 // subsystem by reference (injected at the composition root) without dragging
@@ -284,7 +284,7 @@ public:
 
 	const Zenith_ProfileIndex GetCurrentIndex();
 
-	const std::unordered_map<u_int, Zenith_Vector<Event>>& GetEvents();
+	const Zenith_HashMap<u_int, Zenith_Vector<Event>>& GetEvents();
 
 	void ClearEvents();
 	void WriteTextReport(FILE* pFile);
@@ -323,8 +323,8 @@ public:
 	// can read it — matching the existing public-member design here.
 	Zenith_Multithreading*                          m_pxThreading = nullptr;
 
-	std::unordered_map<u_int, Zenith_Vector<Event>> m_xEvents;
-	std::unordered_map<u_int, Zenith_Vector<Event>> m_xPreviousFrameEvents;
+	Zenith_HashMap<u_int, Zenith_Vector<Event>>     m_xEvents;
+	Zenith_HashMap<u_int, Zenith_Vector<Event>>     m_xPreviousFrameEvents;
 	Zenith_Mutex_NoProfiling                        m_xEventsMutex;
 	std::chrono::time_point<std::chrono::high_resolution_clock> m_xFrameStart;
 	std::chrono::time_point<std::chrono::high_resolution_clock> m_xFrameEnd;

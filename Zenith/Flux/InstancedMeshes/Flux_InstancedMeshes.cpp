@@ -193,28 +193,27 @@ void Flux_InstancedMeshesImpl::RegisterInstanceGroup(Flux_InstanceGroup* pxGroup
 	}
 
 	// Check if already registered
-	for (size_t i = 0; i < m_apxInstanceGroups.size(); ++i)
+	for (u_int i = 0; i < m_apxInstanceGroups.GetSize(); ++i)
 	{
-		if (m_apxInstanceGroups[i] == pxGroup)
+		if (m_apxInstanceGroups.Get(i) == pxGroup)
 		{
 			return;  // Already registered
 		}
 	}
 
-	m_apxInstanceGroups.push_back(pxGroup);
-	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Registered instance group (total: %zu)", m_apxInstanceGroups.size());
+	m_apxInstanceGroups.PushBack(pxGroup);
+	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Registered instance group (total: %u)", m_apxInstanceGroups.GetSize());
 }
 
 void Flux_InstancedMeshesImpl::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 {
-	for (size_t i = 0; i < m_apxInstanceGroups.size(); ++i)
+	for (u_int i = 0; i < m_apxInstanceGroups.GetSize(); ++i)
 	{
-		if (m_apxInstanceGroups[i] == pxGroup)
+		if (m_apxInstanceGroups.Get(i) == pxGroup)
 		{
 			// Swap with last and pop
-			m_apxInstanceGroups[i] = m_apxInstanceGroups.back();
-			m_apxInstanceGroups.pop_back();
-			Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Unregistered instance group (remaining: %zu)", m_apxInstanceGroups.size());
+			m_apxInstanceGroups.RemoveSwap(i);
+			Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Unregistered instance group (remaining: %u)", m_apxInstanceGroups.GetSize());
 			return;
 		}
 	}
@@ -222,7 +221,7 @@ void Flux_InstancedMeshesImpl::UnregisterInstanceGroup(Flux_InstanceGroup* pxGro
 
 void Flux_InstancedMeshesImpl::ClearAllGroups()
 {
-	m_apxInstanceGroups.clear();
+	m_apxInstanceGroups.Clear();
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Cleared all instance groups");
 }
 
@@ -278,7 +277,7 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 	xSelf.m_uTotalInstances = 0;
 	xSelf.m_uVisibleInstances = 0;
 
-	if (xSelf.m_apxInstanceGroups.empty())
+	if (xSelf.m_apxInstanceGroups.GetSize() == 0)
 	{
 		return;
 	}
@@ -299,9 +298,9 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 		xCameraPos = m_pxFluxGraphics->GetCameraPosition();
 	}
 
-	for (size_t uGroup = 0; uGroup < xSelf.m_apxInstanceGroups.size(); ++uGroup)
+	for (u_int uGroup = 0; uGroup < xSelf.m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = xSelf.m_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = xSelf.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;
@@ -366,7 +365,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	if (xZZ.m_apxInstanceGroups.empty())
+	if (xZZ.m_apxInstanceGroups.GetSize() == 0)
 	{
 		return;
 	}
@@ -376,9 +375,9 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	// Create binder for compute shader bindings
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	for (size_t uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.size(); ++uGroup)
+	for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;
@@ -514,7 +513,7 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 	// through its members.
 	Flux_InstancedMeshesImpl& xZZ = g_xEngine.InstancedMeshes();
 
-	if (xZZ.m_apxInstanceGroups.empty())
+	if (xZZ.m_apxInstanceGroups.GetSize() == 0)
 	{
 		return;
 	}
@@ -529,9 +528,9 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 
 	const bool bUseGPUCulling = xZZ.m_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && xZZ.m_bCullingInitialized;
 
-	for (size_t uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.size(); ++uGroup)
+	for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;
@@ -564,7 +563,7 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, cons
 		return;
 	}
 
-	if (m_apxInstanceGroups.empty())
+	if (m_apxInstanceGroups.GetSize() == 0)
 	{
 		return;
 	}
@@ -575,9 +574,9 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, cons
 	// Shadow pass: DrawConstants + ShadowMatrix + transform/visible-index
 	// SSBOs only — Slang reflection won't show FrameConstants.
 
-	for (size_t uGroup = 0; uGroup < m_apxInstanceGroups.size(); ++uGroup)
+	for (u_int uGroup = 0; uGroup < m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = m_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;

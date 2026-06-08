@@ -17,6 +17,37 @@ struct Flux_DrawIndexedIndirectCommand
 static_assert(sizeof(Flux_DrawIndexedIndirectCommand) == 20, "DrawIndexedIndirectCommand must be 20 bytes");
 
 //=============================================================================
+// std::vector::resize(n) shim for Zenith_Vector.
+//
+// The CPU SoA arrays below were resized to capacity with std::vector::resize so
+// arbitrary slots could be index-assigned (m_axTransforms[uID] = ...). Zenith_Vector
+// has Reserve (capacity-only) but no public size-growing Resize, so this local
+// helper reproduces resize(n) EXACTLY: grow by default-constructing (PushBack),
+// shrink by PopBack. Every call site here only ever grows (Reserve early-returns on
+// shrink; SeedInstancesForTest fills from empty), but the shrink branch keeps the
+// shim a faithful std::vector::resize so behaviour is preserved regardless.
+//=============================================================================
+template<typename T>
+static void ResizeVectorTo(Zenith_Vector<T>& xVec, uint32_t uNewSize)
+{
+	if (uNewSize > xVec.GetSize())
+	{
+		xVec.Reserve(uNewSize);  // single allocation up to target, then fill
+		while (xVec.GetSize() < uNewSize)
+		{
+			xVec.PushBack(T{});
+		}
+	}
+	else
+	{
+		while (xVec.GetSize() > uNewSize)
+		{
+			xVec.PopBack();
+		}
+	}
+}
+
+//=============================================================================
 // Constructor / Destructor
 //=============================================================================
 
@@ -70,10 +101,10 @@ uint32_t Flux_InstanceGroup::AddInstance()
 	uint32_t uID;
 
 	// Reuse a recycled ID if available
-	if (!m_auFreeIDs.empty())
+	if (m_auFreeIDs.GetSize() > 0)
 	{
-		uID = m_auFreeIDs.back();
-		m_auFreeIDs.pop_back();
+		uID = m_auFreeIDs.GetBack();
+		m_auFreeIDs.PopBack();
 	}
 	else
 	{
@@ -86,7 +117,7 @@ uint32_t Flux_InstanceGroup::AddInstance()
 	}
 
 	// Initialize instance data
-	m_axTransforms[uID] = glm::identity<Zenith_Maths::Matrix4>();
+	m_axTransforms.Get(uID) = glm::identity<Zenith_Maths::Matrix4>();
 
 	Flux_InstanceAnimData xAnimData = {};
 	xAnimData.m_uAnimationIndex = 0;
@@ -94,9 +125,9 @@ uint32_t Flux_InstanceGroup::AddInstance()
 	xAnimData.m_fAnimTime = 0.0f;
 	xAnimData.m_uColorTint = 0xFFFFFFFF;  // White, full alpha
 	xAnimData.m_uFlags = 1;               // Enabled
-	m_axAnimData[uID] = xAnimData;
+	m_axAnimData.Get(uID) = xAnimData;
 
-	m_abDirty[uID] = true;
+	m_abDirty.Get(uID) = true;
 	m_uInstanceCount++;
 	m_bTransformsDirty = true;
 	m_bAnimDataDirty = true;
@@ -110,12 +141,12 @@ void Flux_InstanceGroup::RemoveInstance(uint32_t uInstanceID)
 	Zenith_Assert(m_uInstanceCount > 0, "Cannot remove from empty group");
 
 	// Mark as disabled (won't be culled or rendered)
-	m_axAnimData[uInstanceID].m_uFlags = 0;
-	m_abDirty[uInstanceID] = true;
+	m_axAnimData.Get(uInstanceID).m_uFlags = 0;
+	m_abDirty.Get(uInstanceID) = true;
 	m_bAnimDataDirty = true;
 
 	// Add to free list for reuse
-	m_auFreeIDs.push_back(uInstanceID);
+	m_auFreeIDs.PushBack(uInstanceID);
 	m_uInstanceCount--;
 }
 
@@ -123,7 +154,7 @@ void Flux_InstanceGroup::Clear()
 {
 	m_uInstanceCount = 0;
 	m_uVisibleCount = 0;
-	m_auFreeIDs.clear();
+	m_auFreeIDs.Clear();
 
 	// Mark all as dirty for next upload
 	m_bTransformsDirty = true;
@@ -133,7 +164,7 @@ void Flux_InstanceGroup::Clear()
 void Flux_InstanceGroup::SetInstanceTransform(uint32_t uInstanceID, const Zenith_Maths::Matrix4& xMatrix)
 {
 	Zenith_Assert(uInstanceID < m_uCapacity, "Invalid instance ID");
-	m_axTransforms[uInstanceID] = xMatrix;
+	m_axTransforms.Get(uInstanceID) = xMatrix;
 	MarkDirty(uInstanceID);
 	m_bTransformsDirty = true;
 }
@@ -141,7 +172,7 @@ void Flux_InstanceGroup::SetInstanceTransform(uint32_t uInstanceID, const Zenith
 void Flux_InstanceGroup::SetInstanceAnimation(uint32_t uInstanceID, uint32_t uAnimIndex, float fNormalizedTime, uint32_t uFrameCount)
 {
 	Zenith_Assert(uInstanceID < m_uCapacity, "Invalid instance ID");
-	Flux_InstanceAnimData& xData = m_axAnimData[uInstanceID];
+	Flux_InstanceAnimData& xData = m_axAnimData.Get(uInstanceID);
 	xData.m_uAnimationIndex = static_cast<uint16_t>(uAnimIndex);
 	xData.m_uFrameCount = static_cast<uint16_t>(uFrameCount);
 	xData.m_fAnimTime = fNormalizedTime;
@@ -152,7 +183,7 @@ void Flux_InstanceGroup::SetInstanceAnimation(uint32_t uInstanceID, uint32_t uAn
 void Flux_InstanceGroup::SetInstanceColor(uint32_t uInstanceID, const Zenith_Maths::Vector4& xColor)
 {
 	Zenith_Assert(uInstanceID < m_uCapacity, "Invalid instance ID");
-	m_axAnimData[uInstanceID].m_uColorTint = PackColorRGBA8(xColor);
+	m_axAnimData.Get(uInstanceID).m_uColorTint = PackColorRGBA8(xColor);
 	MarkDirty(uInstanceID);
 	m_bAnimDataDirty = true;
 }
@@ -160,7 +191,7 @@ void Flux_InstanceGroup::SetInstanceColor(uint32_t uInstanceID, const Zenith_Mat
 void Flux_InstanceGroup::SetInstanceEnabled(uint32_t uInstanceID, bool bEnabled)
 {
 	Zenith_Assert(uInstanceID < m_uCapacity, "Invalid instance ID");
-	m_axAnimData[uInstanceID].m_uFlags = bEnabled ? 1 : 0;
+	m_axAnimData.Get(uInstanceID).m_uFlags = bEnabled ? 1 : 0;
 	MarkDirty(uInstanceID);
 	m_bAnimDataDirty = true;
 }
@@ -178,10 +209,10 @@ void Flux_InstanceGroup::AdvanceAllAnimations(float fDt, float fAnimDuration)
 
 	for (uint32_t i = 0; i < m_uCapacity; ++i)
 	{
-		if (m_axAnimData[i].m_uFlags != 0)  // Only active instances
+		if (m_axAnimData.Get(i).m_uFlags != 0)  // Only active instances
 		{
-			float fNewTime = m_axAnimData[i].m_fAnimTime + fNormalizedDt;
-			m_axAnimData[i].m_fAnimTime = fmod(fNewTime, 1.0f);
+			float fNewTime = m_axAnimData.Get(i).m_fAnimTime + fNormalizedDt;
+			m_axAnimData.Get(i).m_fAnimTime = fmod(fNewTime, 1.0f);
 		}
 	}
 
@@ -195,16 +226,16 @@ void Flux_InstanceGroup::Reserve(uint32_t uCapacity)
 
 	uCapacity = std::min(uCapacity, uMAX_INSTANCES);
 
-	m_axTransforms.resize(uCapacity);
-	m_axAnimData.resize(uCapacity);
-	m_abDirty.resize(uCapacity);
+	ResizeVectorTo(m_axTransforms, uCapacity);
+	ResizeVectorTo(m_axAnimData, uCapacity);
+	ResizeVectorTo(m_abDirty, uCapacity);
 
 	// Initialize new slots
 	for (uint32_t i = m_uCapacity; i < uCapacity; ++i)
 	{
-		m_axTransforms[i] = glm::identity<Zenith_Maths::Matrix4>();
-		m_axAnimData[i] = {};
-		m_abDirty[i] = false;
+		m_axTransforms.Get(i) = glm::identity<Zenith_Maths::Matrix4>();
+		m_axAnimData.Get(i) = {};
+		m_abDirty.Get(i) = false;
 	}
 
 	m_uCapacity = uCapacity;
@@ -299,7 +330,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 		const size_t ulSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
 		m_pxVulkanMemory->UploadBufferData(
 			m_xTransformBuffer.GetBuffer().m_xVRAMHandle,
-			m_axTransforms.data(),
+			m_axTransforms.GetDataPointer(),
 			ulSize);
 		m_bTransformsDirty = false;
 	}
@@ -310,7 +341,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 		const size_t ulSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
 		m_pxVulkanMemory->UploadBufferData(
 			m_xAnimDataBuffer.GetBuffer().m_xVRAMHandle,
-			m_axAnimData.data(),
+			m_axAnimData.GetDataPointer(),
 			ulSize);
 		m_bAnimDataDirty = false;
 	}
@@ -340,7 +371,7 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	// Clear dirty flags
 	for (uint32_t i = 0; i < m_uCapacity; ++i)
 	{
-		m_abDirty[i] = false;
+		m_abDirty.Get(i) = false;
 	}
 }
 
@@ -391,7 +422,7 @@ void Flux_InstanceGroup::ComputeVisibleIndices(Zenith_Vector<uint32_t>& xauVisib
 
 	for (uint32_t i = 0; i < m_uCapacity; ++i)
 	{
-		if (m_axAnimData[i].m_uFlags != 0)
+		if (m_axAnimData.Get(i).m_uFlags != 0)
 		{
 			xauVisibleOut.PushBack(i);
 		}
@@ -431,10 +462,10 @@ void Flux_InstanceGroup::SeedInstancesForTest(uint32_t uCount, uint32_t uSeed)
 	// allocator-backed path asserts in headless). Deterministic by (uSeed, slot).
 	uCount = std::min(uCount, uMAX_INSTANCES);
 
-	m_axTransforms.resize(uCount);
-	m_axAnimData.resize(uCount);
-	m_abDirty.resize(uCount);
-	m_auFreeIDs.clear();
+	ResizeVectorTo(m_axTransforms, uCount);
+	ResizeVectorTo(m_axAnimData, uCount);
+	ResizeVectorTo(m_abDirty, uCount);
+	m_auFreeIDs.Clear();
 
 	for (uint32_t i = 0; i < uCount; ++i)
 	{
@@ -443,7 +474,7 @@ void Flux_InstanceGroup::SeedInstancesForTest(uint32_t uCount, uint32_t uSeed)
 		// only depends on the enabled flag, but this keeps the seed realistic.
 		Zenith_Maths::Matrix4 xTransform = glm::identity<Zenith_Maths::Matrix4>();
 		xTransform[3][0] = static_cast<float>(i);
-		m_axTransforms[i] = xTransform;
+		m_axTransforms.Get(i) = xTransform;
 
 		Flux_InstanceAnimData xAnimData = {};
 		xAnimData.m_uAnimationIndex = 0;
@@ -461,9 +492,9 @@ void Flux_InstanceGroup::SeedInstancesForTest(uint32_t uCount, uint32_t uSeed)
 		if (i == 0) uFlags = 0u;
 		else if (i == 1) uFlags = 1u;
 		xAnimData.m_uFlags = uFlags;
-		m_axAnimData[i] = xAnimData;
+		m_axAnimData.Get(i) = xAnimData;
 
-		m_abDirty[i] = true;
+		m_abDirty.Get(i) = true;
 	}
 
 	m_uCapacity = uCount;
@@ -494,7 +525,7 @@ void Flux_InstanceGroup::MarkDirty(uint32_t uInstanceID)
 {
 	if (uInstanceID < m_uCapacity)
 	{
-		m_abDirty[uInstanceID] = true;
+		m_abDirty.Get(uInstanceID) = true;
 	}
 }
 

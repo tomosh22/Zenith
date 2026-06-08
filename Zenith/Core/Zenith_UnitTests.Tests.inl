@@ -172,13 +172,13 @@ void Zenith_UnitTests::TestProfiling(){
 	ZENITH_ASSERT_TRUE(xTest1.Validate(), "");
 	ZENITH_ASSERT_TRUE(xTest2.Validate(), "");
 
-	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = g_xEngine.Profiling().GetEvents();
-	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(g_xEngine.Threading().GetCurrentThreadID());
-	(void)xEvents.at(pxTask0->GetCompletedThreadID());
-	(void)xEvents.at(pxTask1->GetCompletedThreadID());
-	(void)xEvents.at(pxTask2->GetCompletedThreadID());
+	const Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = g_xEngine.Profiling().GetEvents();
+	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.Get(g_xEngine.Threading().GetCurrentThreadID());
+	(void)xEvents.Get(pxTask0->GetCompletedThreadID());
+	(void)xEvents.Get(pxTask1->GetCompletedThreadID());
+	(void)xEvents.Get(pxTask2->GetCompletedThreadID());
 
-	ZENITH_ASSERT_EQ(xEventsMain.GetSize(), 8, "Expected 8 events, have %zu", xEvents.size());
+	ZENITH_ASSERT_EQ(xEventsMain.GetSize(), 8, "Expected 8 events, have %u", xEvents.GetSize());
 	ZENITH_ASSERT_EQ(xEventsMain.Get(0).m_eIndex, eIndex1, "Wrong profile index");
 	ZENITH_ASSERT_EQ(xEventsMain.Get(1).m_eIndex, eIndex0, "Wrong profile index");
 
@@ -3498,9 +3498,9 @@ void Zenith_UnitTests::TestBoneMasking(){
 		float fWeight = xMask.GetBoneWeight(5);
 		ZENITH_ASSERT_TRUE(FloatEquals(fWeight, 0.75f), "Weight should be 0.75");
 
-		const std::vector<float>& xWeights = xMask.GetWeights();
-		ZENITH_ASSERT_GE(xWeights.size(), 6, "Should have at least 6 weights");
-		ZENITH_ASSERT_TRUE(FloatEquals(xWeights[5], 0.75f), "Weight at index 5 should be 0.75");
+		const Zenith_Vector<float>& xWeights = xMask.GetWeights();
+		ZENITH_ASSERT_GE(xWeights.GetSize(), 6, "Should have at least 6 weights");
+		ZENITH_ASSERT_TRUE(FloatEquals(xWeights.Get(5), 0.75f), "Weight at index 5 should be 0.75");
 
 	}
 
@@ -3529,7 +3529,12 @@ void Zenith_UnitTests::TestBoneMasking(){
 		xOverridePose.Initialize(5);
 
 		// Create mask that affects only bones 2, 3, 4
-		std::vector<float> xBoneWeights = { 0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
+		Zenith_Vector<float> xBoneWeights;
+		xBoneWeights.PushBack(0.0f);
+		xBoneWeights.PushBack(0.0f);
+		xBoneWeights.PushBack(1.0f);
+		xBoneWeights.PushBack(1.0f);
+		xBoneWeights.PushBack(1.0f);
 
 		Flux_SkeletonPose xResult;
 		xResult.Initialize(5);
@@ -13603,12 +13608,12 @@ void Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(){
 
 	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
 
-	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.size(), (size_t)9, "Active set with radius 1 should hold 9 chunks (3×3)");
+	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.GetSize(), (u_int)9, "Active set with radius 1 should hold 9 chunks (3×3)");
 
 	float fPrevDistSq = -1.0f;
-	for (size_t u = 0; u < xState.m_xActiveChunkIndices.size(); ++u)
+	for (u_int u = 0; u < xState.m_xActiveChunkIndices.GetSize(); ++u)
 	{
-		const uint32_t uIdx       = xState.m_xActiveChunkIndices[u];
+		const uint32_t uIdx       = xState.m_xActiveChunkIndices.Get(u);
 		const float    fDistanceSq = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uIdx, xCameraPos);
 		ZENITH_ASSERT_TRUE(fDistanceSq + 0.0001f >= fPrevDistSq, "Active set must be non-decreasing in distance, entry %zu broke ordering", u);
 		fPrevDistSq = fDistanceSq;
@@ -13641,9 +13646,9 @@ void Zenith_UnitTests::TestTerrainActiveSetCenterIndexFirst(){
 
 	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
 
-	ZENITH_ASSERT_TRUE(xState.m_xActiveChunkIndices.size() > 0, "Active set must be non-empty");
+	ZENITH_ASSERT_TRUE(xState.m_xActiveChunkIndices.GetSize() > 0, "Active set must be non-empty");
 	const uint32_t uExpectedCenter = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(5, 5);
-	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uExpectedCenter, "First entry of sorted active set must be the chunk under the camera");
+	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.Get(0), uExpectedCenter, "First entry of sorted active set must be the chunk under the camera");
 }
 
 // Terrain assets can be authored/exported with world-space AABBs offset from
@@ -13688,8 +13693,8 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 	ZENITH_ASSERT_EQ(iChunkY, static_cast<int32_t>(uTargetY), "Resolved camera chunk Y should come from nearest AABB");
 
 	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, iChunkX, iChunkY, xCameraPos);
-	ZENITH_ASSERT_TRUE(xState.m_xActiveChunkIndices.size() > 0, "Offset active set should be non-empty");
-	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uTargetIdx, "Nearest offset chunk should be first in the sorted active set");
+	ZENITH_ASSERT_TRUE(xState.m_xActiveChunkIndices.GetSize() > 0, "Offset active set should be non-empty");
+	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.Get(0), uTargetIdx, "Nearest offset chunk should be first in the sorted active set");
 }
 
 // When LOW residency is populated for every chunk, chunk-data generation

@@ -36,17 +36,17 @@ void Flux_TerrainBufferAllocator::Initialize(uint32_t uTotalSize, const char* sz
 	m_uUnusedSpace = uTotalSize;
 	m_szDebugName = szDebugName;
 
-	m_axFreeBlocks.clear();
+	m_axFreeBlocks.Clear();
 
 	FreeBlock xInitialBlock;
 	xInitialBlock.m_uOffset = 0;
 	xInitialBlock.m_uSize = uTotalSize;
-	m_axFreeBlocks.push_back(xInitialBlock);
+	m_axFreeBlocks.PushBack(xInitialBlock);
 }
 
 void Flux_TerrainBufferAllocator::Reset()
 {
-	m_axFreeBlocks.clear();
+	m_axFreeBlocks.Clear();
 	m_uTotalSize = 0;
 	m_uUnusedSpace = 0;
 }
@@ -61,12 +61,12 @@ uint32_t Flux_TerrainBufferAllocator::Allocate(uint32_t uSize)
 	uint32_t uBestIdx = UINT32_MAX;
 	uint32_t uBestSize = UINT32_MAX;
 
-	for (uint32_t i = 0; i < static_cast<uint32_t>(m_axFreeBlocks.size()); ++i)
+	for (uint32_t i = 0; i < static_cast<uint32_t>(m_axFreeBlocks.GetSize()); ++i)
 	{
-		if (m_axFreeBlocks[i].m_uSize >= uSize && m_axFreeBlocks[i].m_uSize < uBestSize)
+		if (m_axFreeBlocks.Get(i).m_uSize >= uSize && m_axFreeBlocks.Get(i).m_uSize < uBestSize)
 		{
 			uBestIdx = i;
-			uBestSize = m_axFreeBlocks[i].m_uSize;
+			uBestSize = m_axFreeBlocks.Get(i).m_uSize;
 
 			// Exact fit - can't do better
 			if (uBestSize == uSize)
@@ -77,19 +77,19 @@ uint32_t Flux_TerrainBufferAllocator::Allocate(uint32_t uSize)
 	if (uBestIdx == UINT32_MAX)
 		return UINT32_MAX;
 
-	uint32_t uAllocatedOffset = m_axFreeBlocks[uBestIdx].m_uOffset;
-	uint32_t uRemainder = m_axFreeBlocks[uBestIdx].m_uSize - uSize;
+	uint32_t uAllocatedOffset = m_axFreeBlocks.Get(uBestIdx).m_uOffset;
+	uint32_t uRemainder = m_axFreeBlocks.Get(uBestIdx).m_uSize - uSize;
 
 	if (uRemainder > 0)
 	{
 		// Shrink the block in-place (keep sorted order since offset increases)
-		m_axFreeBlocks[uBestIdx].m_uOffset += uSize;
-		m_axFreeBlocks[uBestIdx].m_uSize = uRemainder;
+		m_axFreeBlocks.Get(uBestIdx).m_uOffset += uSize;
+		m_axFreeBlocks.Get(uBestIdx).m_uSize = uRemainder;
 	}
 	else
 	{
-		// Exact fit - remove the block
-		m_axFreeBlocks.erase(m_axFreeBlocks.begin() + uBestIdx);
+		// Exact fit - remove the block (order-preserving: free list stays sorted by offset)
+		m_axFreeBlocks.Remove(uBestIdx);
 	}
 
 	m_uUnusedSpace -= uSize;
@@ -107,11 +107,11 @@ void Flux_TerrainBufferAllocator::Free(uint32_t uOffset, uint32_t uSize)
 	uint32_t uInsertIdx = 0;
 	{
 		uint32_t uLow = 0;
-		uint32_t uHigh = static_cast<uint32_t>(m_axFreeBlocks.size());
+		uint32_t uHigh = static_cast<uint32_t>(m_axFreeBlocks.GetSize());
 		while (uLow < uHigh)
 		{
 			uint32_t uMid = (uLow + uHigh) / 2;
-			if (m_axFreeBlocks[uMid].m_uOffset < uOffset)
+			if (m_axFreeBlocks.Get(uMid).m_uOffset < uOffset)
 				uLow = uMid + 1;
 			else
 				uHigh = uMid;
@@ -119,33 +119,41 @@ void Flux_TerrainBufferAllocator::Free(uint32_t uOffset, uint32_t uSize)
 		uInsertIdx = uLow;
 	}
 
-	// Insert the new free block
+	// Insert the new free block at uInsertIdx, preserving the offset-sorted order.
+	// Zenith_Vector has no insert-at-position, so grow by one (PushBack) then shift
+	// the tail right by one slot to open a gap at uInsertIdx.
 	FreeBlock xNewBlock;
 	xNewBlock.m_uOffset = uOffset;
 	xNewBlock.m_uSize = uSize;
-	m_axFreeBlocks.insert(m_axFreeBlocks.begin() + uInsertIdx, xNewBlock);
+	const uint32_t uOldCount = static_cast<uint32_t>(m_axFreeBlocks.GetSize());
+	m_axFreeBlocks.PushBack(xNewBlock); // size now uOldCount + 1; placeholder slot at the end
+	for (uint32_t i = uOldCount; i > uInsertIdx; --i)
+	{
+		m_axFreeBlocks.Get(i) = m_axFreeBlocks.Get(i - 1);
+	}
+	m_axFreeBlocks.Get(uInsertIdx) = xNewBlock;
 
 	// Coalesce with right neighbor
-	if (uInsertIdx + 1 < static_cast<uint32_t>(m_axFreeBlocks.size()))
+	if (uInsertIdx + 1 < static_cast<uint32_t>(m_axFreeBlocks.GetSize()))
 	{
-		FreeBlock& xCurrent = m_axFreeBlocks[uInsertIdx];
-		FreeBlock& xRight = m_axFreeBlocks[uInsertIdx + 1];
+		FreeBlock& xCurrent = m_axFreeBlocks.Get(uInsertIdx);
+		FreeBlock& xRight = m_axFreeBlocks.Get(uInsertIdx + 1);
 		if (xCurrent.m_uOffset + xCurrent.m_uSize == xRight.m_uOffset)
 		{
 			xCurrent.m_uSize += xRight.m_uSize;
-			m_axFreeBlocks.erase(m_axFreeBlocks.begin() + uInsertIdx + 1);
+			m_axFreeBlocks.Remove(uInsertIdx + 1);
 		}
 	}
 
 	// Coalesce with left neighbor
 	if (uInsertIdx > 0)
 	{
-		FreeBlock& xLeft = m_axFreeBlocks[uInsertIdx - 1];
-		FreeBlock& xCurrent = m_axFreeBlocks[uInsertIdx];
+		FreeBlock& xLeft = m_axFreeBlocks.Get(uInsertIdx - 1);
+		FreeBlock& xCurrent = m_axFreeBlocks.Get(uInsertIdx);
 		if (xLeft.m_uOffset + xLeft.m_uSize == xCurrent.m_uOffset)
 		{
 			xLeft.m_uSize += xCurrent.m_uSize;
-			m_axFreeBlocks.erase(m_axFreeBlocks.begin() + uInsertIdx);
+			m_axFreeBlocks.Remove(uInsertIdx);
 		}
 	}
 }
@@ -159,8 +167,8 @@ void Flux_TerrainStreamingState::Initialize()
 	if (!m_pxCachedChunkData)
 		m_pxCachedChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 
-	m_xActiveChunkIndices.clear();
-	m_xActiveChunkIndices.reserve(1024);
+	m_xActiveChunkIndices.Clear();
+	m_xActiveChunkIndices.Reserve(1024);
 
 	m_xLastCameraPos    = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
 	m_iLastCameraChunkX = INT32_MIN;
@@ -193,7 +201,7 @@ void Flux_TerrainStreamingState::Shutdown()
 		m_pxCachedChunkData = nullptr;
 	}
 
-	m_xActiveChunkIndices.clear();
+	m_xActiveChunkIndices.Clear();
 	m_xVertexAllocator.Reset();
 	m_xIndexAllocator.Reset();
 	m_bAABBsCached = false;
@@ -396,14 +404,14 @@ void Flux_TerrainStreamingManagerImpl::RequestNearbyHighLOD(Flux_TerrainStreamin
 	uint32_t uStreamAttemptsThisFrame = 0;
 	bool     bAllocationFailed        = false;
 
-	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.size());
+	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.GetSize());
 
-	for (uint32_t uActiveIdx = 0; uActiveIdx < xState.m_xActiveChunkIndices.size(); ++uActiveIdx)
+	for (uint32_t uActiveIdx = 0; uActiveIdx < xState.m_xActiveChunkIndices.GetSize(); ++uActiveIdx)
 	{
 		if (uStreamsThisFrame >= MAX_UPLOADS_PER_FRAME || bAllocationFailed) break;
 		if (uStreamAttemptsThisFrame >= MAX_UPLOADS_PER_FRAME * 2) break;
 
-		const uint32_t uChunkIndex = xState.m_xActiveChunkIndices[uActiveIdx];
+		const uint32_t uChunkIndex = xState.m_xActiveChunkIndices.Get(uActiveIdx);
 		const float    fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xCameraPos);
 		const uint32_t uDesiredLOD = CalculateDesiredLOD(fDistanceSq);
 		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
@@ -538,13 +546,13 @@ void Flux_TerrainStreamingManagerImpl::UpdateStreamingForTerrain(Flux_TerrainStr
 		xState.m_bChunkDataDirty.store(true, std::memory_order_release);
 
 		if (dbg_bLogTerrainStreaming)
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Camera moved to chunk (%d,%d), active set: %zu chunks",
-				iCameraChunkX, iCameraChunkY, xState.m_xActiveChunkIndices.size());
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Camera moved to chunk (%d,%d), active set: %u chunks",
+				iCameraChunkX, iCameraChunkY, static_cast<uint32_t>(xState.m_xActiveChunkIndices.GetSize()));
 	}
 
 	RequestNearbyHighLOD(xState, xCameraPos, xDiagnostics);
 	EvictDistantHighLOD(xState, xCameraPos);
-	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.size());
+	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.GetSize());
 	xDiagnostics.m_uLowZeroCount = CountLowZeroChunks(xState);
 	xDiagnostics.m_uHighResidentCount = CountHighResidentChunks(xState);
 
@@ -792,7 +800,7 @@ bool Flux_TerrainStreamingManagerImpl::EvictToMakeSpace(Flux_TerrainStreamingSta
 		float    m_fDistanceSq;
 	};
 
-	std::vector<EvictionCandidate> candidates;
+	Zenith_Vector<EvictionCandidate> candidates;
 
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
 	{
@@ -813,11 +821,11 @@ bool Flux_TerrainStreamingManagerImpl::EvictToMakeSpace(Flux_TerrainStreamingSta
 			EvictionCandidate candidate;
 			candidate.m_uChunkIndex = i;
 			candidate.m_fDistanceSq = fDistanceSq;
-			candidates.push_back(candidate);
+			candidates.PushBack(candidate);
 		}
 	}
 
-	if (candidates.empty())
+	if (candidates.GetSize() == 0)
 		return false;
 
 	// Sort by distance (farthest first)
@@ -1004,7 +1012,7 @@ void Flux_TerrainStreamingManagerImpl::LogStreamingHeartbeat(const Flux_TerrainS
 
 void Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(Flux_TerrainStreamingState& xState, int32_t iCameraChunkX, int32_t iCameraChunkY, const Zenith_Maths::Vector3& xCameraPos)
 {
-	xState.m_xActiveChunkIndices.clear();
+	xState.m_xActiveChunkIndices.Clear();
 
 	const int32_t iRadius  = static_cast<int32_t>(xState.m_uActiveChunkRadius);
 	const int32_t iGridMax = static_cast<int32_t>(CHUNK_GRID_SIZE - 1);
@@ -1027,12 +1035,12 @@ void Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(Flux_TerrainStreami
 	// raster-order rectangle. Sort runs once per rebuild (rebuild fires only
 	// when the camera crosses a chunk boundary), not per frame.
 	struct ChunkDist { uint32_t m_uChunkIndex; float m_fDistSq; };
-	std::vector<ChunkDist> xCandidates;
+	Zenith_Vector<ChunkDist> xCandidates;
 	const int32_t iWidth  = iMaxX - iMinX + 1;
 	const int32_t iHeight = iMaxY - iMinY + 1;
 	if (iWidth > 0 && iHeight > 0)
 	{
-		xCandidates.reserve(static_cast<size_t>(iWidth) * static_cast<size_t>(iHeight));
+		xCandidates.Reserve(static_cast<u_int>(iWidth) * static_cast<u_int>(iHeight));
 	}
 	for (int32_t x = iMinX; x <= iMaxX; ++x)
 	{
@@ -1042,16 +1050,16 @@ void Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(Flux_TerrainStreami
 			ChunkDist xCD;
 			xCD.m_uChunkIndex = uChunkIndex;
 			xCD.m_fDistSq     = GetChunkDistanceSq(xState, uChunkIndex, xCameraPos);
-			xCandidates.push_back(xCD);
+			xCandidates.PushBack(xCD);
 		}
 	}
 	std::sort(xCandidates.begin(), xCandidates.end(), [](const ChunkDist& a, const ChunkDist& b)
 	{
 		return a.m_fDistSq < b.m_fDistSq;
 	});
-	xState.m_xActiveChunkIndices.reserve(xCandidates.size());
+	xState.m_xActiveChunkIndices.Reserve(xCandidates.GetSize());
 	for (const ChunkDist& xCD : xCandidates)
-		xState.m_xActiveChunkIndices.push_back(xCD.m_uChunkIndex);
+		xState.m_xActiveChunkIndices.PushBack(xCD.m_uChunkIndex);
 }
 
 // Populate one per-LOD slot of a chunk's GPU data from its residency state.

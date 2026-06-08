@@ -3,7 +3,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 class Flux_AnimationTexture;
 class Zenith_Vulkan_MemoryManager;
@@ -136,7 +136,7 @@ public:
 	void SeedInstancesForTest(uint32_t uCount, uint32_t uSeed);
 
 	// Access to CPU-side transform data (for serialization)
-	const std::vector<Zenith_Maths::Matrix4>& GetTransforms() const { return m_axTransforms; }
+	const Zenith_Vector<Zenith_Maths::Matrix4>& GetTransforms() const { return m_axTransforms; }
 
 	// READ accessors consumed inside the worker-thread record callbacks
 	// (ExecuteCulling / ExecuteInstancedGBuffer / RenderToShadowMap). These stay
@@ -192,10 +192,10 @@ private:
 	//-------------------------------------------------------------------------
 	// CPU-side instance data (Structure of Arrays for cache efficiency)
 	//-------------------------------------------------------------------------
-	std::vector<Zenith_Maths::Matrix4> m_axTransforms;
-	std::vector<Flux_InstanceAnimData> m_axAnimData;
-	std::vector<bool> m_abDirty;              // Per-instance dirty flags
-	std::vector<uint32_t> m_auFreeIDs;        // Recycled instance IDs
+	Zenith_Vector<Zenith_Maths::Matrix4> m_axTransforms;
+	Zenith_Vector<Flux_InstanceAnimData> m_axAnimData;
+	Zenith_Vector<bool> m_abDirty;            // Per-instance dirty flags
+	Zenith_Vector<uint32_t> m_auFreeIDs;      // Recycled instance IDs
 
 	uint32_t m_uInstanceCount = 0;
 	uint32_t m_uVisibleCount = 0;

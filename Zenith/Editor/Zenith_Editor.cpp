@@ -1554,9 +1554,9 @@ bool Zenith_Editor::AddComponentToSelected(const char* szDisplayName)
 	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
 	const auto& xEntries = xRegistry.GetEntries();
 
-	for (size_t i = 0; i < xEntries.size(); ++i)
+	for (u_int i = 0; i < xEntries.GetSize(); ++i)
 	{
-		if (xEntries[i].m_strDisplayName == szDisplayName)
+		if (xEntries.Get(i).m_strDisplayName == szDisplayName)
 		{
 			bool bSuccess = xRegistry.TryAddComponent(i, *pxEntity);
 			if (bSuccess)

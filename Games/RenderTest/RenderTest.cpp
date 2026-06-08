@@ -295,7 +295,7 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 		Zenith_TerrainComponent* pxTerrain = xTerrains.Get(u);
 		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 
-		const uint32_t uActiveCount = pxState ? static_cast<uint32_t>(pxState->m_xActiveChunkIndices.size()) : 0;
+		const uint32_t uActiveCount = pxState ? static_cast<uint32_t>(pxState->m_xActiveChunkIndices.GetSize()) : 0;
 		const uint32_t uHighResident = pxState ? RenderTest_CountHighResidentChunks(*pxState) : 0;
 		const uint32_t uLowZero = pxState ? RenderTest_CountLowZeroChunks(*pxState) : TOTAL_CHUNKS;
 
