@@ -18,10 +18,10 @@ template <typename T>
 concept FluxBackendPresentation = requires(T t)
 {
 	{ t.Initialise()                                                           } -> std::same_as<void>;
-	// BeginFrame and EndFrame stay static — main loop calls them via
-	// Flux_Swapchain::BeginFrame() in the swapchain-acquire-failed branch.
-	{ T::BeginFrame()                                                          } -> std::same_as<bool>;
-	{ T::EndFrame()                                                            } -> std::same_as<void>;
+	// BeginFrame / EndFrame are instance methods — the main loop calls them via
+	// g_xEngine.FluxSwapchain().BeginFrame() / .EndFrame().
+	{ t.BeginFrame()                                                           } -> std::same_as<bool>;
+	{ t.EndFrame()                                                             } -> std::same_as<void>;
 	{ t.GetWidth()                                                             } -> std::same_as<uint32_t>;
 	{ t.GetHeight()                                                            } -> std::same_as<uint32_t>;
 	{ t.GetCurrentFrameIndex()                                                 } -> std::same_as<uint32_t>;

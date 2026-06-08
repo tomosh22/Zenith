@@ -168,7 +168,7 @@ void Zenith_Core::Zenith_MainLoop()
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		g_xEngine.FluxMemory().BeginFrame();
-		if (!Flux_Swapchain::BeginFrame())
+		if (!g_xEngine.FluxSwapchain().BeginFrame())
 		{
 			g_xEngine.FluxMemory().EndFrame(false);
 			// Skipped frame still fires end-frame callbacks so the deferred VRAM
@@ -314,7 +314,13 @@ void Zenith_Core::Zenith_MainLoop()
 			g_xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
 		}
 
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+		{
+			// Manual scope (rather than FUNCTION_WRAPPER macro) because EndFrame
+			// is now an instance method on the swapchain and can't be passed as a
+			// callable -- mirrors the Zenith_Vulkan::EndFrame conversion above.
+			Zenith_Profiling::Scope xSwapchainEndFrameProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+			g_xEngine.FluxSwapchain().EndFrame();
+		}
 	}
 
 	// Final action of the main loop: fires registered end-frame callbacks

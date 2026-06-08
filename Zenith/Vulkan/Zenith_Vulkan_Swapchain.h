@@ -37,12 +37,12 @@ public:
 	void Initialise();
 	void Shutdown();
 
-	// BeginFrame stays callable as a free-function-style entry (used by the
-	// main loop's swapchain-acquire-failed branch via Flux_Swapchain alias).
-	// Returns false on swapchain-out-of-date so the main loop can short-circuit
-	// the frame; in that case the caller must NOT advance the frame counter.
-	static bool BeginFrame();
-	static void EndFrame();
+	// Instance entries called from the main loop via g_xEngine.FluxSwapchain().
+	// BeginFrame returns false on swapchain-out-of-date so the main loop can
+	// short-circuit the frame; in that case the caller must NOT advance the
+	// frame counter.
+	bool BeginFrame();
+	void EndFrame();
 
 	uint32_t GetWidth();
 	uint32_t GetHeight();

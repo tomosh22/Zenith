@@ -389,9 +389,9 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 
 bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
-	// Static entry — no 'this'. Recover the singleton once (legitimate re-entry,
-	// like a render-graph trampoline) and route all reaches through it.
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
+	// Instance method — alias the body's existing xSwapchain references to *this
+	// so the rest of the function is unchanged.
+	Zenith_Vulkan_Swapchain& xSwapchain = *this;
 
 	xSwapchain.m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
 	const vk::Device& xDevice = xSwapchain.m_pxVulkan->GetDevice();
@@ -642,7 +642,7 @@ namespace
 
 void Zenith_Vulkan_Swapchain::EndFrame()
 {
-	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
+	Zenith_Vulkan_Swapchain& xSwapchain = *this;
 	Zenith_Vulkan_CommandBuffer& xCmd = xSwapchain.m_xCopyToFramebufferCmd;
 
 	xCmd.BeginRecording();
