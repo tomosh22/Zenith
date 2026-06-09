@@ -55,5 +55,5 @@ namespace Zenith_FileAccess
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
 {
-	EnterCriticalSection(&m_xCriticalSection);
+	EnterCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(m_axCriticalSectionStorage));
 }

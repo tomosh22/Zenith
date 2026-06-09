@@ -945,7 +945,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
@@ -1977,8 +1977,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_CameraResolve.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>

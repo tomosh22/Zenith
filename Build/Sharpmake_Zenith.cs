@@ -301,7 +301,7 @@ public class ZenithProject : ZenithBaseProject
 		//
 		// The aggregate STILL compiles the engine-side EntityComponent/ files
 		// (Zenith_ComponentMeta_Registration.cpp, Zenith_CameraResolve.cpp,
-		// Zenith_ComponentRegistry.cpp, and the entire Components/ subtree) — they
+		// Zenith_ComponentEditorRegistry.cpp, and the entire Components/ subtree) — they
 		// live in a DIFFERENT directory and so are never matched here.
 		conf.SourceFilesBuildExcludeRegex.Add(@".*\\ZenithECS\\.*\.cpp$");
 

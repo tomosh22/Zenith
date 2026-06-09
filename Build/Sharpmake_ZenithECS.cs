@@ -87,7 +87,7 @@ public class ZenithECSLibProject : ZenithBaseProject
 		// source root contains EXACTLY the ECS-core set -- there are no engine-side
 		// files here to exclude. The files that USE the ECS but are NOT part of the
 		// leaf (the concrete Components/ subtree, Zenith_ComponentMeta_Registration.cpp,
-		// Zenith_CameraResolve.cpp, and the editor Zenith_ComponentRegistry.cpp) stay
+		// Zenith_CameraResolve.cpp, and the editor Zenith_ComponentEditorRegistry.cpp) stay
 		// behind in Zenith/EntityComponent/ and compile into the aggregate engine lib.
 	}
 

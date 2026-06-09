@@ -727,10 +727,10 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_CameraResolve.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp">
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp">
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp">
@@ -3537,7 +3537,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h">
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h">
