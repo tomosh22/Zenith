@@ -42,7 +42,7 @@ type.
 ### ECS↔engine glue (the wiring the leaf cannot contain)
 - **`Zenith_ComponentMeta_Registration.cpp`** — defines `Zenith_RegisterEngineComponents()`, which calls `RegisterComponent<T>(name, order)` for the 12 built-ins (Transform=0, Model=10, Tween=12, Animator=15, Camera=20, Light=25, Terrain=40, Collider=50, Script=60, UI=70, InstancedMesh=80, ParticleEmitter=85) then `Zenith_AI_RegisterComponents()` (AIAgent=90). In `ZENITH_TOOLS` builds it also mirrors the set into the editor "Add Component" registry. `Zenith_Engine::Initialise` installs this via `SetComponentRegistrar(&Zenith_RegisterEngineComponents)` then `EnsureInitialized()`. **Orders are centralised here.**
 - **`Zenith_CameraResolve.h/cpp`** — the engine-side main-camera resolver. The leaf exposes only `FindMainCameraEntityAcrossScenes()` / `GetMainCameraEntity()` (EntityID-only); `Zenith_GetMainCamera()` / `Zenith_GetMainCameraAcrossScenes()` here wrap that and resolve to a `Zenith_CameraComponent&` (naming the concrete type, hence engine-side).
-- **`Zenith_ComponentRegistry.h/cpp`** — the editor "Add Component" registry (display name + has/render/add callbacks per component type). Consumed by the editor property/hierarchy panels.
+- **`Zenith_ComponentEditorRegistry.h/cpp`** — the editor "Add Component" registry (display name + has/render/add callbacks per component type). Consumed by the editor property/hierarchy panels.
 
 ## How it wires to the leaf
 `Zenith_Engine::Initialise` (`../Core/Zenith_Engine.cpp`) installs everything the

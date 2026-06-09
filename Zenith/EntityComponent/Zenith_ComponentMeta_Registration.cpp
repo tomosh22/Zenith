@@ -21,7 +21,7 @@
 #ifdef ZENITH_TOOLS
 // Editor "Add Component" menu registry. Engine-side only -- populated here so the
 // ECS reflection core (Zenith_ComponentMeta.h/.cpp) never names it.
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 //------------------------------------------------------------------------------
@@ -91,7 +91,7 @@ void Zenith_RegisterEngineComponents()
 	// Component" menu lists components in exactly the same order as before. AIAgent
 	// is appended last by Zenith_AI_RegisterComponents (the AI cpp), matching the
 	// historical behaviour where the AI forwarder ran after the built-ins.
-	Zenith_ComponentRegistry& xEditorRegistry = Zenith_ComponentRegistry::Get();
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
 	xEditorRegistry.RegisterComponent<Zenith_TransformComponent>("Transform");
 	xEditorRegistry.RegisterComponent<Zenith_ModelComponent>("Model");
 	xEditorRegistry.RegisterComponent<Zenith_TweenComponent>("Tween");

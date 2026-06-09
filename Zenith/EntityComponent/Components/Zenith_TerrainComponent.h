@@ -26,7 +26,7 @@ struct Flux_TerrainStreamingState;
 struct Zenith_FrustumPlaneGPU;
 
 #ifdef ZENITH_TOOLS
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 class Zenith_TerrainComponent

@@ -5,7 +5,7 @@
 #include <Jolt/Core/Reference.h>
 
 #ifdef ZENITH_TOOLS
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 namespace JPH

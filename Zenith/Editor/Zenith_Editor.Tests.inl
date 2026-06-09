@@ -10,7 +10,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Entity.h"
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
@@ -785,7 +785,7 @@ ZENITH_TEST(Editor, ComponentAddViaRegistry)
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// The component registry provides type-erased component operations
-	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+	Zenith_ComponentEditorRegistry& xRegistry = Zenith_ComponentEditorRegistry::Get();
 
 	// Verify registry is accessible
 	ZENITH_ASSERT_GT(xRegistry.GetComponentCount(), 0, "Registry should have registered components");

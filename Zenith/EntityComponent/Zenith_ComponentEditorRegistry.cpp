@@ -2,14 +2,14 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Zenith_ComponentRegistry.h"
+#include "Zenith_ComponentEditorRegistry.h"
 
 //==============================================================================
-// Component Registry Auto-Registration
+// Component Editor Registry Auto-Registration
 //==============================================================================
 // Components automatically register with the editor via ZENITH_REGISTER_COMPONENT.
 // The macro registers with ComponentMetaRegistry, which also registers with
-// ComponentRegistry in ZENITH_TOOLS builds.
+// ComponentEditorRegistry in ZENITH_TOOLS builds.
 //
 // This ensures:
 // 1. Single registration point - ZENITH_REGISTER_COMPONENT handles everything

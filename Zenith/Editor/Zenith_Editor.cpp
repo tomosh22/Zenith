@@ -36,7 +36,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -1557,7 +1557,7 @@ bool Zenith_Editor::AddComponentToSelected(const char* szDisplayName)
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	Zenith_Assert(pxEntity, "No entity selected");
 
-	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+	Zenith_ComponentEditorRegistry& xRegistry = Zenith_ComponentEditorRegistry::Get();
 	const auto& xEntries = xRegistry.GetEntries();
 
 	for (u_int i = 0; i < xEntries.GetSize(); ++i)

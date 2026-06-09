@@ -10,7 +10,7 @@
 // Editor "Add Component" menu registry. Registering AIAgent here keeps the AI
 // module the single owner of its component's registration (meta + editor menu)
 // without the ECS reflection core ever naming AIAgent.
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 // Registrar for the AI module's components, invoked engine-side from
@@ -30,7 +30,7 @@ void Zenith_AI_RegisterComponents()
 	// before the ECS core was made leaf-clean; the AI module now owns it for its
 	// own component. Inserted after the built-ins (this forwarder runs last),
 	// preserving the historical menu ordering where AIAgent appeared last.
-	Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_AIAgentComponent>("AIAgent");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Zenith_AIAgentComponent>("AIAgent");
 #endif
 }
 

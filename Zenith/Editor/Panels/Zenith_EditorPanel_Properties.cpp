@@ -5,7 +5,7 @@
 
 #include "Zenith_EditorPanel_Properties.h"
 #include "Editor/Zenith_Editor.h"
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -47,9 +47,9 @@ namespace
 
 	void RenderComponentProperties(Zenith_Entity& xEntity)
 	{
-		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+		Zenith_ComponentEditorRegistry& xRegistry = Zenith_ComponentEditorRegistry::Get();
 		const auto& xEntries = xRegistry.GetEntries();
-		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
+		for (const Zenith_ComponentEditorRegistryEntry& xEntry : xEntries)
 		{
 			if (xEntry.m_pfnHasComponent(xEntity))
 			{
@@ -76,13 +76,13 @@ namespace
 		if (!ImGui::BeginPopup("AddComponentPopup"))
 			return;
 
-		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+		Zenith_ComponentEditorRegistry& xRegistry = Zenith_ComponentEditorRegistry::Get();
 		const auto& xEntries = xRegistry.GetEntries();
 		bool bAnyAvailable = false;
 
 		for (u_int i = 0; i < xEntries.GetSize(); ++i)
 		{
-			const Zenith_ComponentRegistryEntry& xEntry = xEntries.Get(i);
+			const Zenith_ComponentEditorRegistryEntry& xEntry = xEntries.Get(i);
 			const bool bHasComponent = xRegistry.EntityHasComponent(i, xEntity);
 
 			if (bHasComponent)

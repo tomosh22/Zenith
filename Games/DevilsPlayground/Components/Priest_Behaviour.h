@@ -75,7 +75,7 @@ public:
 
 		// Ensure the AIAgent component is on this entity. The scene authoring
 		// step `AddStep_AddComponent("AIAgent")` resolves through
-		// Zenith_ComponentRegistry, which fails silently when the AIAgent's
+		// Zenith_ComponentEditorRegistry, which fails silently when the AIAgent's
 		// .cpp is dead-stripped by the linker (its `ZENITH_REGISTER_COMPONENT`
 		// static-init never runs because no game symbol references its .obj).
 		// Header-inlined methods like `GetBlackboard` aren't enough to anchor

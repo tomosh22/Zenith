@@ -40,7 +40,7 @@ class Zenith_Entity;
 // - Check function to see if entity already has this component
 //==============================================================================
 
-struct Zenith_ComponentRegistryEntry
+struct Zenith_ComponentEditorRegistryEntry
 {
 	// Human-readable name shown in editor UI
 	std::string m_strDisplayName;
@@ -72,15 +72,15 @@ struct Zenith_ComponentRegistryEntry
 // - Duplicate component prevention
 //==============================================================================
 
-class Zenith_ComponentRegistry
+class Zenith_ComponentEditorRegistry
 {
 public:
 	//--------------------------------------------------------------------------
 	// Singleton Access
 	//--------------------------------------------------------------------------
-	static Zenith_ComponentRegistry& Get()
+	static Zenith_ComponentEditorRegistry& Get()
 	{
-		static Zenith_ComponentRegistry s_xInstance;
+		static Zenith_ComponentEditorRegistry s_xInstance;
 		return s_xInstance;
 	}
 	
@@ -93,7 +93,7 @@ public:
 	template<Zenith_Component T>
 	void RegisterComponent(const std::string& strDisplayName)
 	{
-		Zenith_ComponentRegistryEntry xEntry;
+		Zenith_ComponentEditorRegistryEntry xEntry;
 		xEntry.m_strDisplayName = strDisplayName;
 		xEntry.m_uTypeID = Zenith_SceneData::TypeIDGenerator::GetTypeID<T>();
 		
@@ -142,7 +142,7 @@ public:
 	//--------------------------------------------------------------------------
 	// Registry Access
 	//--------------------------------------------------------------------------
-	const Zenith_Vector<Zenith_ComponentRegistryEntry>& GetEntries() const
+	const Zenith_Vector<Zenith_ComponentEditorRegistryEntry>& GetEntries() const
 	{
 		return m_xEntries;
 	}
@@ -166,7 +166,7 @@ public:
 			return false;
 		}
 
-		const Zenith_ComponentRegistryEntry& xEntry = m_xEntries.Get(static_cast<u_int>(uIndex));
+		const Zenith_ComponentEditorRegistryEntry& xEntry = m_xEntries.Get(static_cast<u_int>(uIndex));
 		
 		// Check for duplicate
 		if (xEntry.m_pfnHasComponent(xEntity))
@@ -236,14 +236,14 @@ public:
 	}
 
 private:
-	Zenith_ComponentRegistry() = default;
-	~Zenith_ComponentRegistry() = default;
-	
+	Zenith_ComponentEditorRegistry() = default;
+	~Zenith_ComponentEditorRegistry() = default;
+
 	// Non-copyable
-	Zenith_ComponentRegistry(const Zenith_ComponentRegistry&) = delete;
-	Zenith_ComponentRegistry& operator=(const Zenith_ComponentRegistry&) = delete;
-	
-	Zenith_Vector<Zenith_ComponentRegistryEntry> m_xEntries;
+	Zenith_ComponentEditorRegistry(const Zenith_ComponentEditorRegistry&) = delete;
+	Zenith_ComponentEditorRegistry& operator=(const Zenith_ComponentEditorRegistry&) = delete;
+
+	Zenith_Vector<Zenith_ComponentEditorRegistryEntry> m_xEntries;
 };
 
 //==============================================================================

@@ -5,7 +5,7 @@
 #include "Zenith_EditorPanel_Hierarchy.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorSceneAccess.h"
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -223,9 +223,9 @@ static EntityDisplayLabel BuildEntityDisplayLabel(Zenith_Entity xEntity)
 		? ("Entity_" + std::to_string(uEntityID.m_uIndex))
 		: xEntity.GetName();
 
-	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+	Zenith_ComponentEditorRegistry& xRegistry = Zenith_ComponentEditorRegistry::Get();
 	const auto& xEntries = xRegistry.GetEntries();
-	for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
+	for (const Zenith_ComponentEditorRegistryEntry& xEntry : xEntries)
 	{
 		if (xEntry.m_pfnHasComponent(xEntity))
 		{

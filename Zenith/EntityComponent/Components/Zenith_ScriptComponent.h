@@ -7,7 +7,7 @@
 #include <cstring>
 
 #ifdef ZENITH_TOOLS
-#include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 class Zenith_DataStream;
