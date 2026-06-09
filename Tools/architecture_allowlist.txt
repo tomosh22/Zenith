@@ -3,9 +3,23 @@
 # One wire key per line; '#'/blank lines ignored. A NEW key not listed here fails
 # the gate; a removed finding leaves a stale line (INFO only). Shrink, don't grow.
 encapsulation: Zenith/Core/Zenith_Engine.cpp => ZenithECS/Internal/Zenith_EntityStore.h
-layer-up: Zenith/Android/Vulkan/Zenith_Android_Vulkan.cpp => Vulkan/Zenith_Vulkan_Platform.h
 layer-up: Zenith/Android/Zenith_Android_Window.cpp => Input/Zenith_Input.h
 layer-up: Zenith/Android/Zenith_Android_Window.h => Input/Zenith_KeyCodes.h
+layer-up: Zenith/Core/Zenith_Engine.h => Flux/Flux_Fwd.h
+layer-up: Zenith/D3D12/Zenith_D3D12.h => Flux/Flux_Fwd.h
+layer-up: Zenith/D3D12/Zenith_D3D12.h => Flux/Flux_Types.h
+layer-up: Zenith/D3D12/Zenith_D3D12_CommandBuffer.h => Flux/Flux_Fwd.h
+layer-up: Zenith/D3D12/Zenith_D3D12_CommandBuffer.h => Flux/Flux_Types.h
+layer-up: Zenith/D3D12/Zenith_D3D12_MemoryManager.cpp => Flux/Flux_Buffers.h
+layer-up: Zenith/D3D12/Zenith_D3D12_MemoryManager.h => Flux/Flux_Fwd.h
+layer-up: Zenith/D3D12/Zenith_D3D12_MemoryManager.h => Flux/Flux_Types.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Pipeline.h => Flux/Flux_Fwd.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Pipeline.h => Flux/Flux_Types.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Pipeline.h => Flux/Shaders/Generated/FluxShaderProgram.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Pipeline.h => Flux/Slang/Flux_ShaderRegistry.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Pipeline.h => Flux/Slang/Flux_SlangCompiler.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Swapchain.h => Flux/Flux_Fwd.h
+layer-up: Zenith/D3D12/Zenith_D3D12_Swapchain.h => Flux/Flux_Types.h
 layer-up: Zenith/DebugVariables/Zenith_DebugVariables.cpp => Flux/Flux.h
 layer-up: Zenith/DebugVariables/Zenith_DebugVariables.cpp => Flux/Flux_GraphicsImpl.h
 layer-up: Zenith/EntityComponent/Components/Zenith_ModelComponent.h => Editor/Zenith_Editor_MaterialUI.h
@@ -14,7 +28,6 @@ layer-up: Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp =
 layer-up: Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Editor/Zenith_Editor_MaterialUI.h
 layer-up: Zenith/EntityComponent/Components/Zenith_UIComponent.h => UI/Zenith_UI.h
 layer-up: Zenith/Flux/Flux_Graphics.cpp => Editor/Zenith_Editor.h
-layer-up: Zenith/Windows/Vulkan/Zenith_Windows_Vulkan.cpp => Vulkan/Zenith_Vulkan_Platform.h
 layer-up: Zenith/Windows/Zenith_Windows_Window.cpp => Input/Zenith_Input.h
 layer-up: Zenith/Windows/Zenith_Windows_Window.h => Input/Zenith_KeyCodes.h
 module-fanout: AI
