@@ -88,7 +88,6 @@ extern void GenerateTestAssets();
 #endif
 
 extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
-extern const char* Project_GetGameAssetsDir();
 extern void Project_RegisterScriptBehaviours();
 extern void Project_Shutdown();
 
@@ -482,7 +481,7 @@ void Zenith_Engine::Initialise()
 
 	// Set asset directories before registry initialization
 	// Game assets dir comes from the game project (each game defines GAME_ASSETS_DIR)
-	Zenith_AssetRegistry::SetGameAssetsDir(Project_GetGameAssetsDir());
+	Zenith_AssetRegistry::SetGameAssetsDir(Project_GetGameAssetsDirectory());
 #ifdef ENGINE_ASSETS_DIR
 	Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
 #else

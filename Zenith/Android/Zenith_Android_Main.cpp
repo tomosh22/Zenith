@@ -135,7 +135,7 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 }
 
 extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
-extern const char* Project_GetGameAssetsDir();
+extern const char* Project_GetGameAssetsDirectory();
 
 void android_main(android_app* pxApp)
 {

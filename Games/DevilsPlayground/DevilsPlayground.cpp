@@ -280,8 +280,6 @@ const char* Project_GetGameAssetsDirectory()
 	return GAME_ASSETS_DIR;
 }
 
-const char* Project_GetGameAssetsDir() { return GAME_ASSETS_DIR; }
-
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 	// W0 stub. B6 may set fog technique here; the game disables engine fog
