@@ -6,52 +6,41 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-// Phase 3b: the 8 non-TLS module statics moved onto
-// Zenith_ProfilingImpl held by Zenith_Engine. Read/written here as
-// g_xEngine.Profiling().m_xFoo (formerly g_xFoo). The 5 TLS variables
-// below stay at file scope -- per-OS-thread, not per-engine.
 static constexpr float fPROFILING_MAX_EVENT_TIME_SECONDS = 0.5f;
 static constexpr u_int uMAX_PROFILE_DEPTH = 16;
-thread_local static u_int tl_g_uCurrentDepth;
-thread_local static Zenith_ProfileIndex tl_g_aeIndices[uMAX_PROFILE_DEPTH];
-thread_local static const char* tl_g_aszLabels[uMAX_PROFILE_DEPTH];
-thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axStartPoints[uMAX_PROFILE_DEPTH];
-thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axEndPoints[uMAX_PROFILE_DEPTH];
 
-// Pause has two flags because the ImGui checkbox can be toggled mid-frame, but
-// pause must take effect at frame boundary for the recorded events to be
-// internally consistent.
-//
-//   dbg_bPauseRequested                       - ImGui checkbox / debug var. Live.
-//   g_xEngine.Profiling().m_bPauseEffective   - latched at EndFrame. Read by
-//                                               Begin/EndFrame and the
-//                                               BeginProfile/EndProfile fast-path.
-//
-// EndFrame compares the two: on a request->effective transition it still closes
-// the in-flight TOTAL_FRAME scope so the displayed final frame is well-formed.
+struct ProfileStack
+{
+	struct Frame
+	{
+		Zenith_ProfileIndex m_eIndex;
+		const char* m_szLabel;
+		std::chrono::time_point<std::chrono::high_resolution_clock> m_xStart;
+	};
+
+	u_int m_uDepth;
+	Frame m_axFrames[uMAX_PROFILE_DEPTH];
+};
+thread_local static ProfileStack tl_g_xProfileStack;
+
+// Pause is requested live (ImGui checkbox) but only latched into
+// m_bPauseEffective at EndFrame, which closes the in-flight TOTAL_FRAME scope
+// on the transition so the recorded final frame is internally consistent.
 DEBUGVAR bool dbg_bPauseRequested = false;
 
 void Zenith_Profiling::Initialise(Zenith_Multithreading& xThreading)
 {
 	m_pxThreading = &xThreading;
 
-	tl_g_uCurrentDepth = 0;
-	memset(tl_g_aeIndices, ZENITH_PROFILE_INDEX__TOTAL_FRAME, sizeof(tl_g_aeIndices));
-	memset(tl_g_aszLabels, 0, sizeof(tl_g_aszLabels));
-	memset(tl_g_axStartPoints, 0, sizeof(tl_g_axStartPoints));
-	memset(tl_g_axEndPoints, 0, sizeof(tl_g_axEndPoints));
+	tl_g_xProfileStack = {};
 	Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
 	m_xEvents.Clear();
 }
 
 void Zenith_Profiling::RegisterThread()
 {
-	// NOTE: this runs during engine bootstrap BEFORE Initialise() stores
-	// m_pxThreading (Zenith_Engine::Initialise calls Threading().RegisterThread()
-	// -> here, then Profiling().Initialise()). m_pxThreading is therefore not
-	// guaranteed valid yet, so the thread-id query stays on g_xEngine.Threading()
-	// rather than the injected member. The injected m_pxThreading covers the
-	// frame-loop sites (EndProfile + the GetOrCreateThreadEvents helper).
+	// Runs during engine bootstrap BEFORE Initialise() stores m_pxThreading,
+	// so the thread-id query must go through g_xEngine.Threading().
 	const u_int uThreadID = g_xEngine.Threading().GetCurrentThreadID();
 	Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
 	Zenith_Assert(!m_xEvents.Contains(uThreadID), "Thread already registered");
@@ -64,7 +53,6 @@ void Zenith_Profiling::BeginFrame()
 
 	{
 		Zenith_ScopedMutexLock_T xLock(m_xEventsMutex);
-		// Save previous frame's data for rendering
 		m_xPreviousFrameEvents = m_xEvents;
 		m_xPreviousFrameStart = m_xFrameStart;
 		m_xPreviousFrameEnd = m_xFrameEnd;
@@ -179,9 +167,7 @@ void Zenith_Profiling::RenderToImGui()
 	ImGui::End();
 }
 
-// Per-frame canvas + interaction context for the timeline event renderer. Holds
-// derived layout info (sizes, scaling) plus the cached colour/text-width arrays
-// so the inner loop doesn't need 15 individual parameters.
+// Per-frame canvas, layout, and cache state for the timeline event renderer.
 struct TimelineRenderContext
 {
 	ImDrawList* pxDrawList;
@@ -208,13 +194,10 @@ struct TimelineHoveredEvent
 	float fDurationNs = 0.0f;
 };
 
-// Walk every thread × event in the previous frame, draw each visible event as a
-// coloured rect with optional label, and report which event the mouse hovers
-// (so the caller can render a tooltip outside the loop).
+// Draws every visible event in the previous frame and reports which one the
+// mouse hovers, so the caller can render the tooltip outside the loop.
 static TimelineHoveredEvent RenderTimelineEvents(const TimelineRenderContext& xCtx)
 {
-	// Static free function: cannot use 'this'. Recover the engine-owned
-	// instance once and route every member reach through xSelf.
 	auto& xSelf = g_xEngine.Profiling();
 	TimelineHoveredEvent xHovered;
 	for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xSelf.m_xPreviousFrameEvents); !xIt.Done(); xIt.Next())
@@ -376,8 +359,8 @@ void Zenith_Profiling::RenderTimelineView(TimelineViewState& xState)
 	static ImU32 ls_axCachedColors[ZENITH_PROFILE_INDEX__COUNT] = {0};
 	static float ls_afCachedTextWidths[ZENITH_PROFILE_INDEX__COUNT] = { 0.f };
 
-	// Cached on first render rather than in Initialise() because ImGui isn't yet
-	// initialised when Zenith_Profiling::Initialise runs.
+	// Cached on first render because ImGui isn't initialised when
+	// Zenith_Profiling::Initialise runs.
 	static bool ls_bOnce = true;
 	if (ls_bOnce)
 	{
@@ -417,9 +400,6 @@ void Zenith_Profiling::RenderTimelineView(TimelineViewState& xState)
 	ImGui::EndChild();
 }
 
-// Hierarchy node built from a thread's profile events. Lives at file scope so the
-// data-build pass (BuildProfileHierarchy) and the render lambda inside
-// RenderThreadBreakdown share the same type without crossing translation units.
 struct ProfileNode
 {
 	Zenith_ProfileIndex eIndex;
@@ -433,9 +413,6 @@ struct ProfileNode
 	ProfileNode() : eIndex(ZENITH_PROFILE_INDEX__COUNT), fTotalTimeMs(0.0f), fSelfTimeMs(0.0f), uCallCount(0), uDepth(0), pEvent(nullptr) {}
 };
 
-// Sort a thread's events by start-timestamp. Stable order is required because the
-// hierarchy reconstruction below assumes that, within a depth, events appear in
-// the order they were entered.
 static Zenith_Vector<const Zenith_Profiling::Event*> SortEventsByStart(const Zenith_Vector<Zenith_Profiling::Event>& xThreadEvents)
 {
 	Zenith_Vector<const Zenith_Profiling::Event*> xSorted;
@@ -449,8 +426,7 @@ static Zenith_Vector<const Zenith_Profiling::Event*> SortEventsByStart(const Zen
 	return xSorted;
 }
 
-// Build a leaf ProfileNode from a single event. Self-time starts equal to total
-// time; it is reduced as children are added in the main loop.
+// Self-time starts equal to total time; it is reduced as children are added.
 static ProfileNode MakeNodeFromEvent(const Zenith_Profiling::Event* pEvent)
 {
 	const float fDurationNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count());
@@ -466,8 +442,7 @@ static ProfileNode MakeNodeFromEvent(const Zenith_Profiling::Event* pEvent)
 	return xNode;
 }
 
-// Pop entries from the depth stack whose scope ended before the new event begins.
-// These are completed siblings/parents and must not collect further children.
+// Scopes that ended before the new event begins must not collect further children.
 static void PopExpiredScopes(Zenith_Vector<ProfileNode*>& xDepthStack, const Zenith_Profiling::Event* pNewEvent)
 {
 	while (xDepthStack.GetSize() > 0)
@@ -484,9 +459,6 @@ static void PopExpiredScopes(Zenith_Vector<ProfileNode*>& xDepthStack, const Zen
 	}
 }
 
-// Trim the stack so its size matches the requested depth. Anything beyond that
-// depth is a sibling at or below the new event's level and must be removed
-// before the new event becomes the active scope at its depth.
 static void TrimStackToDepth(Zenith_Vector<ProfileNode*>& xDepthStack, u_int uDepth)
 {
 	while (xDepthStack.GetSize() > uDepth)
@@ -495,17 +467,8 @@ static void TrimStackToDepth(Zenith_Vector<ProfileNode*>& xDepthStack, u_int uDe
 	}
 }
 
-// Sort a thread's events by start time and assemble them into a parent/child tree
-// using the per-event depth field. Self-time is subtracted from the parent as each
-// child is added, so no second pass is needed.
-//
-// Algorithm:
-//   For each event in start-time order:
-//     1) Pop any scope on the depth stack that has already ended (PopExpiredScopes).
-//     2) Trim the stack to the new event's depth so we have the correct parent.
-//     3) Either push as a root (depth 0) or attach to the parent at depth-1,
-//        subtracting our duration from the parent's self-time.
-//     4) Push the new node as the active scope at its depth.
+// Assembles a thread's events (in start-time order) into a parent/child tree
+// keyed on the per-event depth field.
 static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zenith_Profiling::Event>& xThreadEvents)
 {
 	const Zenith_Vector<const Zenith_Profiling::Event*> xSortedEvents = SortEventsByStart(xThreadEvents);
@@ -540,13 +503,10 @@ static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zeni
 	return xRootNodes;
 }
 
-// Thread combo box for RenderThreadBreakdown — reads the current selection from
-// uThreadID and writes back any new selection.
 static void RenderThreadSelector(u_int& uThreadID)
 {
 	ImGui::Text("Select Thread:");
 
-	// Static free function: recover the engine-owned instance once.
 	auto& xSelf = g_xEngine.Profiling();
 	Zenith_Vector<u_int> xAvailableThreads;
 	for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xSelf.m_xPreviousFrameEvents); !xIt.Done(); xIt.Next())
@@ -588,8 +548,8 @@ struct ProfileRowContext
 	u_int uNodeIDCounter;
 };
 
-// Render a single ProfileNode row (6 columns). Recurses into children when open.
-// `uNodeIDCounter` is carried in-context so every node gets a unique ImGui ID.
+// Renders one table row per node, recursing into children when open.
+// uNodeIDCounter gives every node a unique ImGui ID.
 static void RenderProfileNodeRow(const ProfileNode& xNode, u_int uIndentLevel, ProfileRowContext& xCtx)
 {
 	const u_int uCurrentNodeID = xCtx.uNodeIDCounter++;
@@ -722,57 +682,52 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 }
 #endif
 
-static Zenith_Vector<Zenith_Profiling::Event>& GetOrCreateThreadEvents()
+// The whole map access must stay under the lock: Zenith_HashMap is
+// open-addressed with flat value storage, so any other thread's registration
+// can rehash and move every mapped vector — pointers into m_xEvents are not
+// stable and cannot be cached per-thread or held across the unlock.
+// TryGet-else-Emplace doubles as the fallback for unregistered threads.
+static void PushThreadEvent(const Zenith_Profiling::Event& xEvent)
 {
-	// Static free function: recover the engine-owned instance once and route
-	// both the thread-id query (via the injected m_pxThreading) and the event
-	// map through xSelf.
 	auto& xSelf = g_xEngine.Profiling();
-	u_int uThreadID = xSelf.m_pxThreading->GetCurrentThreadID();
+	const u_int uThreadID = xSelf.m_pxThreading->GetCurrentThreadID();
 	Zenith_ScopedMutexLock_T xLock(xSelf.m_xEventsMutex);
 	Zenith_Vector<Zenith_Profiling::Event>* pxEvents = xSelf.m_xEvents.TryGet(uThreadID);
 	if (pxEvents == nullptr)
 	{
 		pxEvents = &xSelf.m_xEvents.Emplace(uThreadID);
 	}
-	return *pxEvents;
+	pxEvents->PushBack(xEvent);
 }
 
 void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel)
 {
 	if (m_bPauseEffective) return;
 
-	Zenith_Assert(tl_g_uCurrentDepth < uMAX_PROFILE_DEPTH, "Profiling has nested too far");
+	Zenith_Assert(tl_g_xProfileStack.m_uDepth < uMAX_PROFILE_DEPTH, "Profiling has nested too far");
 
-	tl_g_aeIndices[tl_g_uCurrentDepth] = eIndex;
-	tl_g_aszLabels[tl_g_uCurrentDepth] = szLabel;
-	tl_g_axStartPoints[tl_g_uCurrentDepth] = std::chrono::high_resolution_clock::now();
-
-	tl_g_uCurrentDepth++;
+	ProfileStack::Frame& xFrame = tl_g_xProfileStack.m_axFrames[tl_g_xProfileStack.m_uDepth++];
+	xFrame.m_eIndex = eIndex;
+	xFrame.m_szLabel = szLabel;
+	xFrame.m_xStart = std::chrono::high_resolution_clock::now();
 }
 
 void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 {
 	if (m_bPauseEffective) return;
 
-	Zenith_Assert(tl_g_uCurrentDepth > 0, "Ending profiling but it never started");
-	Zenith_Assert(tl_g_aeIndices[tl_g_uCurrentDepth - 1] == eIndex, "Expecting to end profile index %u but %u was found", eIndex, tl_g_aeIndices[tl_g_uCurrentDepth]);
+	Zenith_Assert(tl_g_xProfileStack.m_uDepth > 0, "Ending profiling but it never started");
+	Zenith_Assert(tl_g_xProfileStack.m_axFrames[tl_g_xProfileStack.m_uDepth - 1].m_eIndex == eIndex,
+		"Expecting to end profile index %u but %u was found", eIndex, tl_g_xProfileStack.m_axFrames[tl_g_xProfileStack.m_uDepth - 1].m_eIndex);
 
-	tl_g_uCurrentDepth--;
+	const std::chrono::time_point<std::chrono::high_resolution_clock> xEnd = std::chrono::high_resolution_clock::now();
+	const u_int uDepth = --tl_g_xProfileStack.m_uDepth;
+	const ProfileStack::Frame& xFrame = tl_g_xProfileStack.m_axFrames[uDepth];
 
-	tl_g_axEndPoints[tl_g_uCurrentDepth] = std::chrono::high_resolution_clock::now();
-	const Event xEvent = {
-		tl_g_axStartPoints[tl_g_uCurrentDepth],
-		tl_g_axEndPoints[tl_g_uCurrentDepth],
-		tl_g_aeIndices[tl_g_uCurrentDepth],
-		tl_g_uCurrentDepth,
-		tl_g_aszLabels[tl_g_uCurrentDepth]
-	};
-
-	const float fDurationSeconds = std::chrono::duration<float>(tl_g_axEndPoints[tl_g_uCurrentDepth] - tl_g_axStartPoints[tl_g_uCurrentDepth]).count();
+	const float fDurationSeconds = std::chrono::duration<float>(xEnd - xFrame.m_xStart).count();
 	if (fDurationSeconds > fPROFILING_MAX_EVENT_TIME_SECONDS)
 	{
-		const char* szEventName = tl_g_aszLabels[tl_g_uCurrentDepth] ? tl_g_aszLabels[tl_g_uCurrentDepth] : g_aszProfileNames[tl_g_aeIndices[tl_g_uCurrentDepth]];
+		const char* szEventName = xFrame.m_szLabel ? xFrame.m_szLabel : g_aszProfileNames[xFrame.m_eIndex];
 		Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: Event '%s' took %.3fms (threshold: %.3fms) on thread %u",
 			szEventName,
 			fDurationSeconds * 1000.0f,
@@ -780,16 +735,13 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 			m_pxThreading->GetCurrentThreadID());
 	}
 
-	GetOrCreateThreadEvents().PushBack(xEvent);
-
-	tl_g_aeIndices[tl_g_uCurrentDepth] = ZENITH_PROFILE_INDEX__TOTAL_FRAME;
-	tl_g_aszLabels[tl_g_uCurrentDepth] = nullptr;
+	PushThreadEvent({ xFrame.m_xStart, xEnd, xFrame.m_eIndex, uDepth, xFrame.m_szLabel });
 }
 
 const Zenith_ProfileIndex Zenith_Profiling::GetCurrentIndex()
 {
-	Zenith_Assert(tl_g_uCurrentDepth > 0, "Trying to get profiling index but nothing is being profiled");
-	return tl_g_aeIndices[tl_g_uCurrentDepth - 1];
+	Zenith_Assert(tl_g_xProfileStack.m_uDepth > 0, "Trying to get profiling index but nothing is being profiled");
+	return tl_g_xProfileStack.m_axFrames[tl_g_xProfileStack.m_uDepth - 1].m_eIndex;
 }
 
 const Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>& Zenith_Profiling::GetEvents()
@@ -893,11 +845,7 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 	fprintf(pFile, "\n");
 }
 
-// ===== Bridge forwarders (documented header-include-cycle break) =====
-// These let header-inline code (Zenith_Profiling::Scope ctor/dtor and the
-// ZENITH_PROFILING_FUNCTION_WRAPPER macro body) call into the engine-owned
-// instance without dragging Zenith_Engine.h into Zenith_Profiling.h.
-// See Zenith_Profiling.h for the matching declarations.
+// Bridge forwarders — see the matching declarations in Zenith_Profiling.h.
 void Zenith_Profiling_Detail::BeginProfile(Zenith_ProfileIndex eIndex, const char* szLabel)
 {
 	g_xEngine.Profiling().BeginProfile(eIndex, szLabel);
