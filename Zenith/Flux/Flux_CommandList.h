@@ -29,7 +29,6 @@ struct Flux_RenderAttachment;
 	X(DRAW_INDEXED_INDIRECT_COUNT, Flux_CommandDrawIndexedIndirectCount) \
 	X(BIND_COMPUTE_PIPELINE,       Flux_CommandBindComputePipeline) \
 	X(DISPATCH,                    Flux_CommandDispatch) \
-	X(SET_CULL_MODE,               Flux_CommandSetCullMode) \
 	X(SET_DEPTH_BIAS,              Flux_CommandSetDepthBias) \
 	X(RENDER_IMGUI,                Flux_CommandRenderImGui)
 
@@ -347,21 +346,6 @@ public:
 // necessary transitions outside the pass's command list. There is no
 // supported way for a pass to emit a barrier from inside its own recording
 // (it wouldn't be visible to the graph's tracker and would cause sync drift).
-
-class Flux_CommandSetCullMode
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_CULL_MODE;
-
-	Flux_CommandSetCullMode(CullMode eCullMode) : m_eCullMode(eCullMode) {}
-
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->SetCullMode(m_eCullMode);
-	}
-private:
-	CullMode m_eCullMode;
-};
 
 class Flux_CommandSetDepthBias
 {

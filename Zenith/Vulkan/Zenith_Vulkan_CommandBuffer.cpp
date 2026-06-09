@@ -605,17 +605,6 @@ void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, c
 	m_uDescriptorDirty |= 1 << uGroup;
 }
 
-void Zenith_Vulkan_CommandBuffer::SetCullMode(CullMode eCullMode)
-{
-	// Dynamic cull mode is not used by the engine: cull is baked statically into
-	// the pipeline via Flux_PipelineSpecification::m_eCullMode. vkCmdSetCullMode is
-	// VK_EXT_extended_dynamic_state (Vulkan 1.3 core) and is NOT exported by the
-	// Android NDK libvulkan loader, so calling it through the static dispatch
-	// loader broke the agde link. This is a no-op stub kept only to satisfy the
-	// FluxBackendCommandRecorder concept; the dynamic-cull path is otherwise gone.
-	(void)eCullMode;
-}
-
 void Zenith_Vulkan_CommandBuffer::SetDepthBias(float fConstant, float fSlope, float fClamp)
 {
 	m_xCurrentCmdBuffer.setDepthBias(fConstant, fSlope, fClamp);

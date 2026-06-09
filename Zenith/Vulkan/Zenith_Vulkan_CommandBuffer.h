@@ -101,7 +101,6 @@ public:
 
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void BindDrawConstants(void* pData, size_t uSize, const Flux_BindingSlot& xSlot);
-	void SetCullMode(CullMode eCullMode);
 	void SetDepthBias(float fConstant, float fSlope, float fClamp);
 	void SetShoudClear(const bool bClear);
 

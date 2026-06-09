@@ -129,12 +129,10 @@ concept FluxBackendResourceBinding = requires(
 template <typename T>
 concept FluxBackendDynamicState = requires(
 	T& xRec,
-	CullMode eCull,
 	float fConstantBias,
 	float fSlopeBias,
 	float fClampBias)
 {
-	{ xRec.SetCullMode(eCull)                                                                  } -> std::same_as<void>;
 	{ xRec.SetDepthBias(fConstantBias, fSlopeBias, fClampBias)                                 } -> std::same_as<void>;
 };
 
