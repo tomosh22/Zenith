@@ -892,6 +892,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\Sokoban_Animation.h" />
     <ClInclude Include="..\Components\Sokoban_Behaviour.h" />
     <ClInclude Include="..\Components\Sokoban_Config.h" />
     <ClInclude Include="..\Components\Sokoban_GridLogic.h" />

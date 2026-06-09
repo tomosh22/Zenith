@@ -35,6 +35,7 @@
 
 // Include extracted modules
 #include "Sokoban_Input.h"
+#include "Sokoban_Animation.h"
 #include "Sokoban_GridLogic.h"
 #include "Sokoban_Rendering.h"
 #include "Sokoban_LevelGenerator.h"
@@ -91,7 +92,6 @@ namespace Sokoban
 // Configuration Constants
 // ============================================================================
 static constexpr uint32_t s_uMaxGridSizeConfig = 16;
-static constexpr float s_fAnimationDuration = 0.1f;
 
 // ============================================================================
 // Game State
@@ -124,21 +124,6 @@ public:
 		, m_uTargetCount(0)
 		, m_uMinMoves(0)
 		, m_bWon(false)
-		, m_bAnimating(false)
-		, m_fAnimationTimer(0.f)
-		, m_fPlayerVisualX(0.f)
-		, m_fPlayerVisualY(0.f)
-		, m_fPlayerStartX(0.f)
-		, m_fPlayerStartY(0.f)
-		, m_uPlayerTargetX(0)
-		, m_uPlayerTargetY(0)
-		, m_bBoxAnimating(false)
-		, m_uAnimBoxFromX(0)
-		, m_uAnimBoxFromY(0)
-		, m_uAnimBoxToX(0)
-		, m_uAnimBoxToY(0)
-		, m_fBoxVisualX(0.f)
-		, m_fBoxVisualY(0.f)
 		, m_xRng(std::random_device{}())
 		, m_eState(SokobanGameState::MAIN_MENU)
 		, m_iFocusIndex(0)
@@ -245,9 +230,15 @@ public:
 				return;
 			}
 
-			if (m_bAnimating)
+			if (m_xAnimation.IsAnimating())
 			{
-				UpdateAnimation(fDt);
+				const bool bStepComplete = m_xAnimation.Update(fDt, m_uGridWidth, m_uGridHeight, Sokoban::Resources().m_uDustEmitterID);
+				if (bStepComplete && Sokoban_GridLogic::CheckWinCondition(m_abBoxes, m_abTargets,
+					m_uGridWidth * m_uGridHeight, m_uTargetCount))
+				{
+					m_bWon = true;
+					UpdateUI();
+				}
 			}
 			else if (!m_bWon)
 			{
@@ -442,9 +433,7 @@ private:
 
 		// Reset game state
 		m_bWon = false;
-		m_bAnimating = false;
-		m_bBoxAnimating = false;
-		StopDustParticles();
+		m_xAnimation.Cancel(Sokoban::Resources().m_uDustEmitterID);
 
 		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
@@ -517,7 +506,7 @@ private:
 	// ========================================================================
 	void HandleInput()
 	{
-		if (m_bAnimating) return;
+		if (m_xAnimation.IsAnimating()) return;
 
 		SokobanDirection eDir = Sokoban_Input::GetInputDirection();
 		if (eDir != SOKOBAN_DIR_NONE)
@@ -531,7 +520,7 @@ private:
 	// ========================================================================
 	bool TryMove(SokobanDirection eDir)
 	{
-		if (m_bAnimating) return false;
+		if (m_xAnimation.IsAnimating()) return false;
 
 		if (!Sokoban_GridLogic::CanMove(m_aeTiles, m_abBoxes, m_uPlayerX, m_uPlayerY,
 			m_uGridWidth, m_uGridHeight, eDir))
@@ -563,131 +552,14 @@ private:
 		m_uPlayerY = uNewY;
 		m_uMoveCount++;
 
-		StartAnimation(uOldX, uOldY, uNewX, uNewY);
+		m_xAnimation.StartPlayerMove(uOldX, uOldY, uNewX, uNewY);
 		if (bPushingBox)
 		{
-			StartBoxAnimation(uNewX, uNewY, uBoxDestX, uBoxDestY);
+			m_xAnimation.StartBoxPush(uNewX, uNewY, uBoxDestX, uBoxDestY);
 		}
 
 		UpdateUI();
 		return true;
-	}
-
-	// ========================================================================
-	// Animation System
-	// ========================================================================
-	void UpdateAnimation(float fDt)
-	{
-		m_fAnimationTimer += fDt;
-		float fProgress = std::min(m_fAnimationTimer / s_fAnimationDuration, 1.f);
-
-		m_fPlayerVisualX = m_fPlayerStartX + (static_cast<float>(m_uPlayerTargetX) - m_fPlayerStartX) * fProgress;
-		m_fPlayerVisualY = m_fPlayerStartY + (static_cast<float>(m_uPlayerTargetY) - m_fPlayerStartY) * fProgress;
-
-		if (m_bBoxAnimating)
-		{
-			m_fBoxVisualX = static_cast<float>(m_uAnimBoxFromX) +
-				(static_cast<float>(m_uAnimBoxToX) - static_cast<float>(m_uAnimBoxFromX)) * fProgress;
-			m_fBoxVisualY = static_cast<float>(m_uAnimBoxFromY) +
-				(static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)) * fProgress;
-
-			UpdateDustParticles();
-		}
-
-		if (fProgress >= 1.f)
-		{
-			m_bAnimating = false;
-			m_bBoxAnimating = false;
-			m_fPlayerVisualX = static_cast<float>(m_uPlayerTargetX);
-			m_fPlayerVisualY = static_cast<float>(m_uPlayerTargetY);
-
-			StopDustParticles();
-
-			if (Sokoban_GridLogic::CheckWinCondition(m_abBoxes, m_abTargets,
-				m_uGridWidth * m_uGridHeight, m_uTargetCount))
-			{
-				m_bWon = true;
-				UpdateUI();
-			}
-		}
-	}
-
-	void UpdateDustParticles()
-	{
-		// Dust emitter is in the persistent scene (DontDestroyOnLoad)
-		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistentScene);
-
-		if (!pxSceneData ||
-			Sokoban::Resources().m_uDustEmitterID == INVALID_ENTITY_ID ||
-			!pxSceneData->EntityExists(Sokoban::Resources().m_uDustEmitterID))
-		{
-			return;
-		}
-
-		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::Resources().m_uDustEmitterID);
-		if (!xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
-		{
-			return;
-		}
-
-		Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
-
-		float fOffsetX = -static_cast<float>(m_uGridWidth) * 0.5f + 0.5f;
-		float fOffsetZ = -static_cast<float>(m_uGridHeight) * 0.5f + 0.5f;
-		Zenith_Maths::Vector3 xBoxPos(
-			m_fBoxVisualX + fOffsetX,
-			0.1f,
-			m_fBoxVisualY + fOffsetZ
-		);
-
-		Zenith_Maths::Vector3 xDustDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-
-		xEmitter.SetEmitPosition(xBoxPos);
-		xEmitter.SetEmitDirection(xDustDir);
-		xEmitter.SetEmitting(true);
-	}
-
-	void StopDustParticles()
-	{
-		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistentScene);
-
-		if (!pxSceneData ||
-			Sokoban::Resources().m_uDustEmitterID == INVALID_ENTITY_ID ||
-			!pxSceneData->EntityExists(Sokoban::Resources().m_uDustEmitterID))
-		{
-			return;
-		}
-
-		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::Resources().m_uDustEmitterID);
-		if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
-		{
-			xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetEmitting(false);
-		}
-	}
-
-	void StartAnimation(uint32_t uFromX, uint32_t uFromY, uint32_t uToX, uint32_t uToY)
-	{
-		m_bAnimating = true;
-		m_fAnimationTimer = 0.f;
-		m_fPlayerStartX = static_cast<float>(uFromX);
-		m_fPlayerStartY = static_cast<float>(uFromY);
-		m_fPlayerVisualX = m_fPlayerStartX;
-		m_fPlayerVisualY = m_fPlayerStartY;
-		m_uPlayerTargetX = uToX;
-		m_uPlayerTargetY = uToY;
-	}
-
-	void StartBoxAnimation(uint32_t uFromX, uint32_t uFromY, uint32_t uToX, uint32_t uToY)
-	{
-		m_bBoxAnimating = true;
-		m_uAnimBoxFromX = uFromX;
-		m_uAnimBoxFromY = uFromY;
-		m_uAnimBoxToX = uToX;
-		m_uAnimBoxToY = uToY;
-		m_fBoxVisualX = static_cast<float>(uFromX);
-		m_fBoxVisualY = static_cast<float>(uFromY);
 	}
 
 	// ========================================================================
@@ -702,12 +574,13 @@ private:
 		if (!pxPuzzleData)
 			return;
 
-		float fVisualX = m_bAnimating ? m_fPlayerVisualX : static_cast<float>(m_uPlayerX);
-		float fVisualY = m_bAnimating ? m_fPlayerVisualY : static_cast<float>(m_uPlayerY);
+		float fVisualX = m_xAnimation.IsAnimating() ? m_xAnimation.GetPlayerVisualX() : static_cast<float>(m_uPlayerX);
+		float fVisualY = m_xAnimation.IsAnimating() ? m_xAnimation.GetPlayerVisualY() : static_cast<float>(m_uPlayerY);
 		m_xRenderer.UpdatePlayerPosition(fVisualX, fVisualY, pxPuzzleData);
 
 		m_xRenderer.UpdateBoxPositions(m_abBoxes, m_uGridWidth, m_uGridHeight,
-			m_bBoxAnimating, m_uAnimBoxToX, m_uAnimBoxToY, m_fBoxVisualX, m_fBoxVisualY,
+			m_xAnimation.IsBoxAnimating(), m_xAnimation.GetBoxToX(), m_xAnimation.GetBoxToY(),
+			m_xAnimation.GetBoxVisualX(), m_xAnimation.GetBoxVisualY(),
 			pxPuzzleData);
 	}
 
@@ -718,7 +591,7 @@ private:
 	{
 		m_uMoveCount = 0;
 		m_bWon = false;
-		m_bAnimating = false;
+		m_xAnimation.Cancel(Sokoban::Resources().m_uDustEmitterID);
 
 		Sokoban_LevelGenerator::LevelData xData;
 		xData.aeTiles = m_aeTiles;
@@ -746,8 +619,7 @@ private:
 			}
 		}
 
-		m_fPlayerVisualX = static_cast<float>(m_uPlayerX);
-		m_fPlayerVisualY = static_cast<float>(m_uPlayerY);
+		m_xAnimation.SnapPlayerTo(m_uPlayerX, m_uPlayerY);
 
 		// Create 3D entities in the puzzle scene
 		Zenith_SceneData* pxPuzzleData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
@@ -881,24 +753,8 @@ private:
 	uint32_t m_uMinMoves;
 	bool m_bWon;
 
-	// Animation state
-	bool m_bAnimating;
-	float m_fAnimationTimer;
-	float m_fPlayerVisualX;
-	float m_fPlayerVisualY;
-	float m_fPlayerStartX;
-	float m_fPlayerStartY;
-	uint32_t m_uPlayerTargetX;
-	uint32_t m_uPlayerTargetY;
-
-	// Box animation
-	bool m_bBoxAnimating;
-	uint32_t m_uAnimBoxFromX;
-	uint32_t m_uAnimBoxFromY;
-	uint32_t m_uAnimBoxToX;
-	uint32_t m_uAnimBoxToY;
-	float m_fBoxVisualX;
-	float m_fBoxVisualY;
+	// Player/box step animation (tween state + dust emitter driving).
+	Sokoban_Animation m_xAnimation;
 
 	// Random number generator
 	std::mt19937 m_xRng;

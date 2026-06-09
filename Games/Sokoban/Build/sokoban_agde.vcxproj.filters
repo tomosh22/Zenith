@@ -4,6 +4,9 @@
     <ClCompile Include="..\Sokoban.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\Sokoban_Animation.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\Sokoban_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
