@@ -74,6 +74,18 @@ struct Flux_BindingSlot
 	Flux_BindingSlot(u_int uGroup, u_int uBinding, bool bResetGroup) : m_uGroup(uGroup), m_uBinding(uBinding), m_bResetGroup(bResetGroup) {}
 };
 
+// A range of image subresources (mip levels + array layers) for a resource
+// barrier. Defaults cover mip 0 / layer 0 only. Replaces the four loose
+// base-mip / mip-count / base-layer / layer-count parameters the old
+// ImageTransition overloads took.
+struct Flux_SubresourceRange
+{
+	u_int m_uBaseMip = 0;
+	u_int m_uMipCount = 1;
+	u_int m_uBaseLayer = 0;
+	u_int m_uLayerCount = 1;
+};
+
 static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 {
 	switch (t)

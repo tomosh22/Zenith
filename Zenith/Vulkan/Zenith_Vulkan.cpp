@@ -316,22 +316,15 @@ static void EmitGraphPrologueBarriers(Zenith_Vulkan_CommandBuffer& xCommandBuffe
 	}
 
 	// Image- and buffer-kind prologue barriers share one list (see header doc
-	// on Flux_RenderGraph_Barrier); dispatch on resource kind here.
+	// on Flux_RenderGraph_Barrier); the neutral ResourceBarrier dispatches on
+	// resource kind inside the backend.
 	for (Zenith_Vector<Flux_RenderGraph_Barrier>::Iterator itB(xEntry.m_pxPass->m_xPrologueBarriers); !itB.Done(); itB.Next())
 	{
 		const Flux_RenderGraph_Barrier& rxB = itB.GetData();
-		if (rxB.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
-		{
-			xCommandBuffer.BufferBarrier(rxB.m_xResource.AsBuffer(), rxB.m_eSrcAccess, rxB.m_eDstAccess);
-		}
-		else
-		{
-			xCommandBuffer.ImageTransition(
-				rxB.m_xResource,
-				rxB.m_uBaseMip, rxB.m_uMipCount,
-				rxB.m_uBaseLayer, rxB.m_uLayerCount,
-				rxB.m_eSrcAccess, rxB.m_eDstAccess);
-		}
+		xCommandBuffer.ResourceBarrier(
+			rxB.m_xResource,
+			Flux_SubresourceRange{ rxB.m_uBaseMip, rxB.m_uMipCount, rxB.m_uBaseLayer, rxB.m_uLayerCount },
+			rxB.m_eSrcAccess, rxB.m_eDstAccess);
 	}
 }
 

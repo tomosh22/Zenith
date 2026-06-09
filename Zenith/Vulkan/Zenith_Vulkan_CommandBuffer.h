@@ -147,6 +147,14 @@ public:
 	void BufferBarrier(Flux_Buffer* pxBuffer,
 		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);
 
+	// FluxBackendSync concept entry point. Dispatches on xResource.GetKind() to
+	// ImageTransition (image) or BufferBarrier (buffer) -- the single neutral
+	// barrier call the render-graph prologue emitter uses. ImageTransition /
+	// BufferBarrier above are now backend-internal helpers, not concept methods.
+	void ResourceBarrier(const Flux_GraphResource& xResource,
+		const Flux_SubresourceRange& xRange,
+		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);
+
 	void RenderImGui();
 	void SetCurrentRenderPass(vk::RenderPass xRenderPass) { m_xCurrentRenderPass = xRenderPass; }
 

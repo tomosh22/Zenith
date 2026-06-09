@@ -906,6 +906,26 @@ void Zenith_Vulkan_CommandBuffer::BufferBarrier(Flux_Buffer* pxBuffer,
 		0, nullptr);
 }
 
+void Zenith_Vulkan_CommandBuffer::ResourceBarrier(const Flux_GraphResource& xResource,
+	const Flux_SubresourceRange& xRange,
+	ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
+{
+	// Buffer- and image-kind barriers share one render-graph barrier list; the
+	// neutral concept call dispatches on the resource kind here so the engine
+	// layer never names the backend-specific image/buffer barrier helpers.
+	if (xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+	{
+		BufferBarrier(xResource.AsBuffer(), eSrcAccess, eDstAccess);
+	}
+	else
+	{
+		ImageTransition(xResource,
+			xRange.m_uBaseMip, xRange.m_uMipCount,
+			xRange.m_uBaseLayer, xRange.m_uLayerCount,
+			eSrcAccess, eDstAccess);
+	}
+}
+
 void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
 	m_eCurrentBindPoint = vk::PipelineBindPoint::eCompute;
