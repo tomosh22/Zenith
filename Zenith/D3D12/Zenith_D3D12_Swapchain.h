@@ -12,7 +12,7 @@
 // EndFrame() presents nothing, every accessor returns a benign zero / empty
 // value. Exists only to prove the Flux presentation concept is backend-neutral.
 //
-// vk::-typed methods on the Vulkan class (GetExent, GetCurrentImageAvailable-
+// vk::-typed methods on the Vulkan class (GetExtent, GetCurrentImageAvailable-
 // Semaphore, GetFormat) are intentionally OMITTED: their signatures mention
 // backend-internal Vulkan types, so the engine never calls them on the neutral
 // Flux_Swapchain alias.

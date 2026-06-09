@@ -19,13 +19,13 @@ public:
 	Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
 	virtual ~Zenith_Window();
 
-	static void Inititalise(const char* szTitle, uint32_t uWidth, uint32_t uHeight) { s_pxInstance = new Zenith_Window(szTitle, uWidth, uHeight); }
+	static void Initialise(const char* szTitle, uint32_t uWidth, uint32_t uHeight) { s_pxInstance = new Zenith_Window(szTitle, uWidth, uHeight); }
 
 	GLFWwindow* GetNativeWindow() const { return m_pxNativeWindow; }
 
 	static Zenith_Window* GetInstance()
 	{
-		assert(s_pxInstance != nullptr && "Zenith_Window::GetInstance() called before Inititalise()");
+		assert(s_pxInstance != nullptr && "Zenith_Window::GetInstance() called before Initialise()");
 		return s_pxInstance;
 	}
 

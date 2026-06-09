@@ -12,7 +12,7 @@ public:
 	Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
 	virtual ~Zenith_Window();
 
-	static void Inititalise(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
+	static void Initialise(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
 	static void SetAndroidApp(android_app* pxApp);
 	static android_app* GetAndroidApp() { return s_pxAndroidApp; }
 

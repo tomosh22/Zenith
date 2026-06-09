@@ -56,7 +56,7 @@ void Zenith_Core::Zenith_Main()
 	// but we need window dimensions before that, so call it here too (idempotent)
 	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
 	Zenith_CommandLine::Parse(__argc, __argv);
-	Zenith_Window::Inititalise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
+	Zenith_Window::Initialise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
 	Zenith_Init();
 
 	// --bench-ecs: run the GPU-free ECS micro-benchmark once (after engine init

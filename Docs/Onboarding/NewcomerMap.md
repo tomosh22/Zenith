@@ -13,7 +13,7 @@ The engine boots in a fixed sequence. Knowing this order is enough to debug 80% 
 ```
 main()                                   Zenith/Windows/Zenith_Windows_Main.cpp
   └─ Zenith_Core::Zenith_Main()          Zenith/Core/Zenith_Main.cpp:231
-       ├─ Zenith_Window::Inititalise()   GLFW window
+       ├─ Zenith_Window::Initialise()    GLFW window
        ├─ Zenith_Init()                  Zenith/Core/Zenith_Main.cpp:59
        │     ├─ MemoryManagement
        │     ├─ Multithreading           main thread registers itself

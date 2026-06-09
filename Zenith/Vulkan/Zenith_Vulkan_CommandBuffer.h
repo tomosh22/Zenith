@@ -49,15 +49,6 @@ struct DescSetBindings {
 	// Read-only structured-buffer SSBO slots. Stored by value (not pointer) so
 	// the staging is self-contained even if the source Flux_ReadWriteBuffer's
 	// lifetime ends between BindSRV_Buffer and the next descriptor update.
-	//
-	// Slot validity uses the parallel bool array below, NOT
-	// m_xVRAMHandle.IsValid(): BeginRecording / BeginBind clear this struct
-	// via memset(0), which sets every byte to 0 — and a Flux_VRAMHandle of 0
-	// reports IsValid()==true (its sentinel for "unset" is UINT32_MAX, set
-	// only by the default constructor). With memset zeroing, every slot
-	// would otherwise look "valid" and the descriptor-update path would
-	// emit storage-buffer writes for binding slots the layout reserves for
-	// uniform buffers, tripping VK_DESCRIPTOR_TYPE mismatch validation.
 	Flux_ShaderResourceView_Buffer m_xSRV_Buffers[FLUX_MAX_BINDINGS_PER_GROUP];
 	bool                           m_abSRV_BuffersActive[FLUX_MAX_BINDINGS_PER_GROUP];
 	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[FLUX_MAX_BINDINGS_PER_GROUP];
@@ -67,6 +58,11 @@ struct DescSetBindings {
 	Zenith_Vulkan_Sampler* m_apxSamplers[FLUX_MAX_BINDINGS_PER_GROUP];
 
 	ScratchBufferBinding m_xScratchBuffer;
+
+	// A zero-filled Flux_VRAMHandle (0) reports IsValid()==true (its "unset"
+	// sentinel is UINT32_MAX), so cleared m_xSRV_Buffers slots are gated by
+	// m_abSRV_BuffersActive rather than handle validity.
+	void Clear() { memset(this, 0, sizeof(*this)); }
 
 	bool operator==(const DescSetBindings& other) const
 	{

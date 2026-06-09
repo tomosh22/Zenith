@@ -153,7 +153,7 @@ void android_main(android_app* pxApp)
 	// Initialise window with placeholder dimensions
 	// The actual screen size is set in APP_CMD_INIT_WINDOW via SetNativeWindow
 	// Graphics options are populated inside Zenith_Init() for all platforms
-	Zenith_Window::Inititalise("Zenith", 0, 0);
+	Zenith_Window::Initialise("Zenith", 0, 0);
 
 	// Set up callbacks
 	pxApp->onAppCmd = OnAppCmd;

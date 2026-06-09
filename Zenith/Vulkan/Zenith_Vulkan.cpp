@@ -36,8 +36,6 @@
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation", /*"VK_LAYER_KHRONOS_synchronization2"*/ };
 #endif
 
-#include "Vulkan/Zenith_Vulkan.h"
-
 // Phase 6b: Vulkan backend state lives on Zenith_Vulkan held by
 // Zenith_Engine. Methods below dereference g_xEngine.FluxBackend().m_xXxx.
 
@@ -136,8 +134,6 @@ vk::DescriptorSetLayout&    Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayou
 #ifdef ZENITH_FLUX_PROFILING
 vk::DispatchLoaderDynamic&  Zenith_Vulkan::GetDispatchLoader()            { return Zenith_Vulkan::m_xDispatchLoader; }
 #endif
-Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
-
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
 DEBUGVAR bool dbg_bUseDescSetCache = true;
 DEBUGVAR bool dbg_bOnlyUpdateDirtyDescriptors = true;
@@ -223,8 +219,6 @@ void Zenith_Vulkan::Initialise()
 #endif
 
 	m_pxCurrentFrame = &m_axPerFrame[0];
-
-	g_xCommandBuffer.Initialise();
 
 	// Register the per-frame begin callback with Flux_PerFrame. This is the
 	// load-bearing begin callback (waits for the slot's fence, resets descriptor
@@ -727,10 +721,10 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 	}
 
 	const vk::PhysicalDeviceProperties& xProps = m_xPhysicalDevice.getProperties();
-	m_xGPUCapabilties.m_uMaxTextureWidth = xProps.limits.maxImageDimension2D;
-	m_xGPUCapabilties.m_uMaxTextureHeight = xProps.limits.maxImageDimension2D;
-	m_xGPUCapabilties.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
-	m_xGPUCapabilties.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
+	m_xGPUCapabilities.m_uMaxTextureWidth = xProps.limits.maxImageDimension2D;
+	m_xGPUCapabilities.m_uMaxTextureHeight = xProps.limits.maxImageDimension2D;
+	m_xGPUCapabilities.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
+	m_xGPUCapabilities.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU: %s", xProps.deviceName);
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU API version: %u.%u.%u",

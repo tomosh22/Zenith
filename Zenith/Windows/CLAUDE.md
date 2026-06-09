@@ -17,7 +17,7 @@ Singleton wrapping `GLFWwindow*`.
 
 | Function | Description |
 |----------|-------------|
-| `Inititalise(title, w, h)` | Create window (static factory) |
+| `Initialise(title, w, h)` | Create window (static factory) |
 | `GetInstance()` | Singleton accessor (asserts initialized) |
 | `GetNativeWindow()` | Returns `GLFWwindow*` for Vulkan surface |
 | `BeginFrame()` | Poll events, update state |

@@ -17,8 +17,8 @@ Singleton wrapping `ANativeWindow*`. Requires `SetAndroidApp()` before initializ
 
 | Function | Description |
 |----------|-------------|
-| `SetAndroidApp(android_app*)` | Set native activity (must call before Inititalise) |
-| `Inititalise(title, w, h)` | Create window (static factory) |
+| `SetAndroidApp(android_app*)` | Set native activity (must call before Initialise) |
+| `Initialise(title, w, h)` | Create window (static factory) |
 | `GetInstance()` | Singleton accessor (non-asserting for async setup) |
 | `GetNativeWindow()` | Returns `ANativeWindow*` for Vulkan surface |
 | `BeginFrame()` | Process events |

@@ -47,7 +47,7 @@ public:
 	uint32_t GetWidth();
 	uint32_t GetHeight();
 
-	vk::Extent2D& GetExent();
+	vk::Extent2D& GetExtent();
 
 	vk::Semaphore& GetCurrentImageAvailableSemaphore();
 

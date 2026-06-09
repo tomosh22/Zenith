@@ -4,10 +4,8 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include "Vulkan/Zenith_Vulkan.h"
-#include "Vulkan/Zenith_Vulkan.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 
 //#TO purely for the static assert in SetIndexBuffer
@@ -80,7 +78,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	{
 		m_axDescriptorSetCache[i].descriptorSet = VK_NULL_HANDLE;
 		m_axDescriptorSetCache[i].layout = VK_NULL_HANDLE;
-		memset(&m_axDescriptorSetCache[i].bindings, 0, sizeof(DescSetBindings));
+		m_axDescriptorSetCache[i].bindings.Clear();
 	}
 }
 
@@ -535,7 +533,7 @@ void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, 
 {
 	const u_int uGroup = xSlot.m_uGroup;
 	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
-	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	if (xSlot.m_bResetGroup) { m_xBindings[uGroup].Clear(); }
 	Zenith_Assert(pxSRV && pxSRV->m_xImageViewHandle.IsValid(), "Invalid SRV");
 	m_uDescriptorDirty |= 1 << uGroup;
 	m_xBindings[uGroup].m_xSRVs[xSlot.m_uBinding] = pxSRV;
@@ -546,7 +544,7 @@ void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView
 {
 	const u_int uGroup = xSlot.m_uGroup;
 	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
-	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	if (xSlot.m_bResetGroup) { m_xBindings[uGroup].Clear(); }
 	Zenith_Assert(pxUAV && pxUAV->m_xImageViewHandle.IsValid(), "Invalid UAV");
 	m_uDescriptorDirty |= 1 << uGroup;
 	m_xBindings[uGroup].m_xUAV_Textures[xSlot.m_uBinding] = pxUAV;
@@ -557,7 +555,7 @@ void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_
 {
 	const u_int uGroup = xSlot.m_uGroup;
 	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
-	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	if (xSlot.m_bResetGroup) { m_xBindings[uGroup].Clear(); }
 	Zenith_Assert(pxUAV, "Invalid UAV");
 	m_uDescriptorDirty |= 1 << uGroup;
 	m_xBindings[uGroup].m_xUAV_Buffers[xSlot.m_uBinding] = pxUAV;
@@ -568,7 +566,7 @@ void Zenith_Vulkan_CommandBuffer::BindSRV_Buffer(const Flux_ShaderResourceView_B
 {
 	const u_int uGroup = xSlot.m_uGroup;
 	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
-	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	if (xSlot.m_bResetGroup) { m_xBindings[uGroup].Clear(); }
 	Zenith_Assert(xSRV.m_xVRAMHandle.IsValid(), "Invalid SRV buffer (no VRAM handle)");
 	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "Invalid SRV buffer (no descriptor handle)");
 	m_uDescriptorDirty |= 1 << uGroup;
@@ -581,7 +579,7 @@ void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, 
 {
 	const u_int uGroup = xSlot.m_uGroup;
 	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
-	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	if (xSlot.m_bResetGroup) { m_xBindings[uGroup].Clear(); }
 	Zenith_Assert(pxCBV, "Invalid CBV (null)");
 	Zenith_Assert(xSlot.m_uBinding < FLUX_MAX_BINDINGS_PER_GROUP, "Bind point out of range: %u", xSlot.m_uBinding);
 	// Validate the CBV has valid buffer info
@@ -607,7 +605,7 @@ void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, c
 	// Stage the scratch-buffer binding for the slot's descriptor group.
 	const u_int uGroup = xSlot.m_uGroup;
 	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
-	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	if (xSlot.m_bResetGroup) { m_xBindings[uGroup].Clear(); }
 	m_xBindings[uGroup].m_xScratchBuffer.m_uOffset = uOffset;
 	m_xBindings[uGroup].m_xScratchBuffer.m_uSize = static_cast<u_int>(uSize);
 	m_xBindings[uGroup].m_xScratchBuffer.m_uBinding = xSlot.m_uBinding;

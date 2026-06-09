@@ -244,7 +244,7 @@ public:
 #endif
 	vk::SurfaceKHR                m_xSurface;
 	vk::PhysicalDevice            m_xPhysicalDevice;
-	GPUCapabilities               m_xGPUCapabilties = {};
+	GPUCapabilities               m_xGPUCapabilities = {};
 	uint32_t                      m_auQueueIndices[COMMANDTYPE_MAX] = {};
 	vk::Device                    m_xDevice;
 	vk::Queue                     m_axQueues[COMMANDTYPE_MAX];

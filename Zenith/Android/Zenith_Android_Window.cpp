@@ -22,7 +22,7 @@ Zenith_Window::~Zenith_Window()
 	// Android manages its own window lifecycle
 }
 
-void Zenith_Window::Inititalise(const char* szTitle, uint32_t uWidth, uint32_t uHeight)
+void Zenith_Window::Initialise(const char* szTitle, uint32_t uWidth, uint32_t uHeight)
 {
 	s_pxInstance = new Zenith_Window(szTitle, uWidth, uHeight);
 }
