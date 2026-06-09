@@ -175,6 +175,28 @@ public:
 #endif
 
 private:
+	// Initialise() phases, in call order. Each is a thin orchestrator over
+	// the m_px* members; the call ORDER in Initialise() is load-bearing.
+	void AllocateCoreState();
+	void AllocateRenderer();
+	void AllocateFluxSubsystems();
+	void AllocateEditorSubsystems();
+	void InitialiseRuntimeServices();
+	void InitialiseAssets();
+	void InitialiseRendererAndPhysics();
+	void InitialiseECS();
+	void InitialiseGPUAssets();
+	void InitialiseEditor();
+	void InitialiseProject();
+
+	// Shutdown() phases, in call order (reverse of Initialise).
+	void ShutdownGameSystems();
+	void ShutdownAssetsAndRenderer();
+	void ShutdownRuntimeServices();
+	void DeleteSceneAndInputState();
+	void DeleteRendererState();
+	void DeleteEditorState();
+
 	// Subsystem members. The scene system is a single Zenith_SceneSystem
 	// instance exposed via Scenes() — there are no per-subsystem accessors
 	// (Registry/Operations/Lifecycle/Callbacks were all merged into it).
