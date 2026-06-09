@@ -240,138 +240,167 @@ void Flux_FeatureRegistry::RunShutdown() const
 }
 
 // ---------------------------------------------------------------------------
-// Default feature set. RegisterDefaultFeatures emits ONE Register(...) per
-// feature in INIT order (matching the pre-refactor LateInitialise block), then
-// records the setup-order sub-walk membership (matching SetupRenderGraph) and
-// the shutdown order (matching the reverse-order Shutdown block).
+// Default feature set, registered in four steps that mirror the lifecycle:
+//   RegisterDefaultFeatureSet  -> one Register(...) per feature, in INIT order
+//   BuildDefaultSetupWalk      -> the single ordered SetupRenderGraph sequence
+//   BuildDefaultShutdownWalk   -> the explicit (non-mechanical) shutdown order
+//   DeclareDefaultInitDependencies -> the checkable init dependency graph
+// The golden arrays + VerifyOrder/VerifyInitDependencies below are the
+// release-survivable backstop that pins all three orders.
 //
-// Trampolines are captureless +[]{} free functions routed through g_xEngine.
-// HiZ and SSAO take DI-injected dependency params, so their init trampolines
-// gather those deps from g_xEngine (mirrors the explicit-injection call sites
-// the inline LateInitialise used).
+// Trampolines are captureless lambdas; the leading '+' decays each to a plain
+// function pointer (std::function is forbidden engine-wide). HiZ, SSAO and
+// friends take DI-injected dependency params, so their init trampolines gather
+// those deps from g_xEngine (mirrors the explicit-injection call sites the
+// inline LateInitialise used).
 // ---------------------------------------------------------------------------
-void Flux_FeatureRegistry::RegisterDefaultFeatures()
+
+// Register() indices for the default features, used to wire the walks + deps.
+struct DefaultFeatureIndices
 {
-	Flux_FeatureRegistry& xReg = Flux_FeatureRegistry::Get();
+	u_int uGraphics = 0;
+	u_int uHDR = 0;
+	u_int uShadows = 0;
+	u_int uSkybox = 0;
+	u_int uIBL = 0;
+	u_int uStaticMeshes = 0;
+	u_int uAnimatedMeshes = 0;
+	u_int uInstancedMeshes = 0;
+	u_int uTerrain = 0;
+	u_int uGrass = 0;
+	u_int uPrimitives = 0;
+	u_int uHiZ = 0;
+	u_int uSSR = 0;
+	u_int uSSGI = 0;
+	u_int uDynamicLights = 0;
+	u_int uLightClustering = 0;
+	u_int uDeferredShading = 0;
+	u_int uDecals = 0;
+	u_int uSSAO = 0;
+	u_int uFog = 0;
+	u_int uSDFs = 0;
+	u_int uParticles = 0;
+	u_int uQuads = 0;
+	u_int uText = 0;
+#ifdef ZENITH_TOOLS
+	u_int uGizmos = 0;
+#endif
+};
 
-	// Idempotency: headless boots skip LateInitialise and unit tests re-init
-	// Flux in-process, so this may be called more than once per process. Reset
-	// to a known-empty table on every entry so re-registration is exact rather
-	// than doubling the lists.
-	xReg.Reset();
-
-	// ===== INIT ORDER ======================================================
-	// Matches Flux_RendererImpl::LateInitialise. The prologue (PerFrame /
-	// Vulkan / Swapchain / Slang / HotReload / ImGui) stays INLINE there; the
-	// init walk begins at FluxGraphics. Trampolines also carry each feature's
-	// setup + shutdown function pointers (null where the feature lacks that
-	// phase). Fog has no Shutdown() (RAII / stateless) -> null shutdown.
-	const u_int uGraphics = xReg.Register(szFLUX_FEATURE_GRAPHICS,
+// One Register(...) per feature, in INIT order (matches the pre-refactor
+// LateInitialise block). The prologue (PerFrame / Vulkan / Swapchain / Slang /
+// HotReload / ImGui) stays INLINE there; the init walk begins at FluxGraphics.
+// Each Register also carries the feature's setup + shutdown function pointers
+// (null where the feature lacks that phase).
+static DefaultFeatureIndices RegisterDefaultFeatureSet(Flux_FeatureRegistry& xReg)
+{
+	DefaultFeatureIndices xIdx;
+	xIdx.uGraphics = xReg.Register(szFLUX_FEATURE_GRAPHICS,
 		nullptr, // FluxGraphics is brought up by its own Initialise() inline (core graphics, not a registry-init feature); its setup is the SetupTransients irregular below.
 		nullptr,
 		+[](){ g_xEngine.FluxGraphics().Shutdown(); });
-	const u_int uHDR = xReg.Register(szFLUX_FEATURE_HDR,
+	xIdx.uHDR = xReg.Register(szFLUX_FEATURE_HDR,
 		+[](){ g_xEngine.HDR().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory(), g_xEngine.FluxSwapchain(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.HDR().SetupRenderGraph(g); }, // HDR's SECOND setup touch (bloom/tonemap); its FIRST touch (SetupTransients) is an inline irregular.
 		+[](){ g_xEngine.HDR().Shutdown(); });
 #ifdef ZENITH_TOOLS
-	const u_int uGizmos = xReg.Register(szFLUX_FEATURE_GIZMOS,
+	xIdx.uGizmos = xReg.Register(szFLUX_FEATURE_GIZMOS,
 		+[](){ g_xEngine.Gizmos().Initialise(g_xEngine.FluxGraphics(), g_xEngine.Primitives(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Gizmos().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Gizmos().Shutdown(); });
 #endif
-	const u_int uShadows = xReg.Register(szFLUX_FEATURE_SHADOWS,
+	xIdx.uShadows = xReg.Register(szFLUX_FEATURE_SHADOWS,
 		+[](){ g_xEngine.Shadows().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Shadows().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Shadows().Shutdown(); });
-	const u_int uSkybox = xReg.Register(szFLUX_FEATURE_SKYBOX,
+	xIdx.uSkybox = xReg.Register(szFLUX_FEATURE_SKYBOX,
 		+[](){ g_xEngine.Skybox().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.FluxMemory(), g_xEngine.FluxBackend()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Skybox().SetupRenderGraph(g); }, // Skybox's aerial-perspective pass is a separate method invoked inline as an irregular.
 		+[](){ g_xEngine.Skybox().Shutdown(); });
-	const u_int uIBL = xReg.Register(szFLUX_FEATURE_IBL,
+	xIdx.uIBL = xReg.Register(szFLUX_FEATURE_IBL,
 		+[](){ g_xEngine.IBL().Initialise(); },
 		+[](Flux_RenderGraph& g){ g_xEngine.IBL().SetupRenderGraph(g); },
 		+[](){ g_xEngine.IBL().Shutdown(); });
-	const u_int uStaticMeshes = xReg.Register(szFLUX_FEATURE_STATIC_MESHES,
+	xIdx.uStaticMeshes = xReg.Register(szFLUX_FEATURE_STATIC_MESHES,
 		// DI seam: StaticMeshes::Initialise takes (Graphics&). FluxGraphics is brought
 		// up inline before this walk, so the dep is ready. The ECS reach inside
 		// GatherDrawPacket (g_xEngine.Scenes()) stays self-routed by design.
 		+[](){ g_xEngine.StaticMeshes().Initialise(g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.StaticMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.StaticMeshes().Shutdown(); });
-	const u_int uAnimatedMeshes = xReg.Register(szFLUX_FEATURE_ANIMATED_MESHES,
+	xIdx.uAnimatedMeshes = xReg.Register(szFLUX_FEATURE_ANIMATED_MESHES,
 		// DI seam: AnimatedMeshes::Initialise takes (Graphics&). FluxGraphics is
 		// brought up inline at the top of LateInitialise before this walk, so the
 		// dep is ready.
 		+[](){ g_xEngine.AnimatedMeshes().Initialise(g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.AnimatedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.AnimatedMeshes().Shutdown(); });
-	const u_int uInstancedMeshes = xReg.Register(szFLUX_FEATURE_INSTANCED_MESHES,
+	xIdx.uInstancedMeshes = xReg.Register(szFLUX_FEATURE_INSTANCED_MESHES,
 		+[](){ g_xEngine.InstancedMeshes().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.InstancedMeshes().SetupRenderGraph(g); },
 		+[](){ g_xEngine.InstancedMeshes().Shutdown(); });
-	const u_int uTerrain = xReg.Register(szFLUX_FEATURE_TERRAIN,
+	xIdx.uTerrain = xReg.Register(szFLUX_FEATURE_TERRAIN,
 		+[](){ g_xEngine.Terrain().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics(), g_xEngine.Profiling(), g_xEngine.TerrainStreaming()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Terrain().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Terrain().Shutdown(); });
-	const u_int uGrass = xReg.Register(szFLUX_FEATURE_GRASS,
+	xIdx.uGrass = xReg.Register(szFLUX_FEATURE_GRASS,
 		+[](){ g_xEngine.Grass().Initialise(g_xEngine.FluxMemory(), g_xEngine.Frame(), g_xEngine.FluxGraphics(), g_xEngine.HDR()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Grass().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Grass().Shutdown(); });
-	const u_int uPrimitives = xReg.Register(szFLUX_FEATURE_PRIMITIVES,
+	xIdx.uPrimitives = xReg.Register(szFLUX_FEATURE_PRIMITIVES,
 		// DI seam: Primitives::Initialise takes (Graphics&). FluxGraphics is brought
 		// up before the walk reaches Primitives, so the trampoline forwards it.
 		+[](){ g_xEngine.Primitives().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Primitives().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Primitives().Shutdown(); });
-	const u_int uHiZ = xReg.Register(szFLUX_FEATURE_HIZ,
+	xIdx.uHiZ = xReg.Register(szFLUX_FEATURE_HIZ,
 		// DI seam: HiZ::Initialise takes (Swapchain&, Graphics&, Renderer&) — the
 		// trampoline gathers them from g_xEngine, mirroring the inline call site.
 		+[](){ g_xEngine.HiZ().Initialise(g_xEngine.FluxSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.HiZ().SetupRenderGraph(g); },
 		+[](){ g_xEngine.HiZ().Shutdown(); });
-	const u_int uSSR = xReg.Register(szFLUX_FEATURE_SSR,
+	xIdx.uSSR = xReg.Register(szFLUX_FEATURE_SSR,
 		+[](){ g_xEngine.SSR().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxSwapchain(), g_xEngine.FluxGraphics(), g_xEngine.HiZ(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSR().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSR().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
-	const u_int uSSGI = xReg.Register(szFLUX_FEATURE_SSGI,
+	xIdx.uSSGI = xReg.Register(szFLUX_FEATURE_SSGI,
 		+[](){ g_xEngine.SSGI().Initialise(g_xEngine.FluxSwapchain(), g_xEngine.HiZ(), g_xEngine.FluxGraphics(), g_xEngine.VolumeFog(), g_xEngine.FluxRenderer()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSGI().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSGI().Shutdown(); }); // Shutdown inherited from Flux_ScreenSpaceEffectBase CRTP base.
-	const u_int uDynamicLights = xReg.Register(szFLUX_FEATURE_DYNAMIC_LIGHTS,
+	xIdx.uDynamicLights = xReg.Register(szFLUX_FEATURE_DYNAMIC_LIGHTS,
 		+[](){ g_xEngine.DynamicLights().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxGraphics()); },
 		nullptr, // DynamicLights has no SetupRenderGraph (gather/upload front-end only).
 		+[](){ g_xEngine.DynamicLights().Shutdown(); });
-	const u_int uLightClustering = xReg.Register(szFLUX_FEATURE_LIGHT_CLUSTERING,
+	xIdx.uLightClustering = xReg.Register(szFLUX_FEATURE_LIGHT_CLUSTERING,
 		+[](){ g_xEngine.LightClustering().Initialise(g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.LightClustering().SetupRenderGraph(g); },
 		+[](){ g_xEngine.LightClustering().Shutdown(); });
-	const u_int uDeferredShading = xReg.Register(szFLUX_FEATURE_DEFERRED_SHADING,
+	xIdx.uDeferredShading = xReg.Register(szFLUX_FEATURE_DEFERRED_SHADING,
 		+[](){ g_xEngine.DeferredShading().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.Shadows(), g_xEngine.IBL(), g_xEngine.SSR(), g_xEngine.SSGI(), g_xEngine.DynamicLights(), g_xEngine.LightClustering()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.DeferredShading().SetupRenderGraph(g); },
 		+[](){ g_xEngine.DeferredShading().Shutdown(); });
-	const u_int uDecals = xReg.Register(szFLUX_FEATURE_DECALS,
+	xIdx.uDecals = xReg.Register(szFLUX_FEATURE_DECALS,
 		// DI seam: Decals::Initialise takes (Graphics&, Swapchain&).
 		+[](){ g_xEngine.Decals().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxSwapchain(), g_xEngine.FluxMemory(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Decals().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Decals().Shutdown(); });
-	const u_int uSSAO = xReg.Register(szFLUX_FEATURE_SSAO,
+	xIdx.uSSAO = xReg.Register(szFLUX_FEATURE_SSAO,
 		// DI seam: SSAO::Initialise takes (Graphics&, Swapchain&, HDR&).
 		+[](){ g_xEngine.SSAO().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxSwapchain(), g_xEngine.HDR()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SSAO().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSAO().Shutdown(); });
-	const u_int uFog = xReg.Register(szFLUX_FEATURE_FOG,
+	xIdx.uFog = xReg.Register(szFLUX_FEATURE_FOG,
 		+[](){ g_xEngine.Fog().Initialise(g_xEngine.VolumeFog(), g_xEngine.GodRaysFog(), g_xEngine.RaymarchFog(), g_xEngine.FroxelFog(), g_xEngine.HDR(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer(), g_xEngine.Shadows(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Fog().SetupRenderGraph(g); },
 		nullptr); // Fog has no Shutdown() — RAII / stateless.
-	const u_int uSDFs = xReg.Register(szFLUX_FEATURE_SDFS,
+	xIdx.uSDFs = xReg.Register(szFLUX_FEATURE_SDFS,
 		// DI seam: SDFs::Initialise takes (Graphics&, HDR&) — the trampoline
 		// gathers them from g_xEngine. HDR is registered first (above) so it
 		// inits before the walk reaches SDFs.
 		+[](){ g_xEngine.SDFs().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.FluxMemory(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.SDFs().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SDFs().Shutdown(); });
-	const u_int uParticles = xReg.Register(szFLUX_FEATURE_PARTICLES,
+	xIdx.uParticles = xReg.Register(szFLUX_FEATURE_PARTICLES,
 		// DI seam (Wave-17, heaviest leaf — 3 cross-subsystem deps): Particles::Initialise
 		// takes (Graphics&, HDR&, ParticleGPU&). FluxGraphics is brought up inline before
 		// this walk; HDR is registered first (above) so it inits before the walk reaches
@@ -382,20 +411,23 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](){ g_xEngine.Particles().Initialise(g_xEngine.FluxGraphics(), g_xEngine.HDR(), g_xEngine.ParticleGPU()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Particles().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Particles().Shutdown(); });
-	const u_int uQuads = xReg.Register(szFLUX_FEATURE_QUADS,
+	xIdx.uQuads = xReg.Register(szFLUX_FEATURE_QUADS,
 		// DI seam: Quads::Initialise takes (Graphics&). FluxGraphics is brought up
 		// inline at the top of LateInitialise before this walk, so the dep is ready.
 		+[](){ g_xEngine.Quads().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Quads().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Quads().Shutdown(); });
-	const u_int uText = xReg.Register(szFLUX_FEATURE_TEXT,
+	xIdx.uText = xReg.Register(szFLUX_FEATURE_TEXT,
 		// DI seam: Text::Initialise takes (Graphics&). FluxGraphics is brought up
 		// inline at the top of LateInitialise before this walk, so the dep is ready.
 		+[](){ g_xEngine.Text().Initialise(g_xEngine.FluxGraphics(), g_xEngine.FluxMemory()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Text().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Text().Shutdown(); });
+	return xIdx;
+}
 
-	// ===== SETUP WALK (single ordered declaration sequence) ================
+static void BuildDefaultSetupWalk(Flux_FeatureRegistry& xReg, const DefaultFeatureIndices& xIdx)
+{
 	// One continuous walk — NO discrete phases. The render graph computes pass
 	// execution order by topologically sorting each pass's declared Reads/Writes,
 	// but declaration order is load-bearing where it seeds that sort: producers
@@ -409,34 +441,34 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// final-RT layout-transition pass — are ordinary ordered steps here.
 	xReg.AddSetupStep(szFLUX_STEP_TRANSIENTS_GRAPHICS, +[](Flux_RenderGraph& g){ g_xEngine.FluxGraphics().SetupTransients(g); });
 	xReg.AddSetupStep(szFLUX_STEP_TRANSIENTS_HDR,      +[](Flux_RenderGraph& g){ g_xEngine.HDR().SetupTransients(g); });
-	xReg.AddToSetupWalk(uIBL);
-	xReg.AddToSetupWalk(uSkybox);
-	xReg.AddToSetupWalk(uShadows);
-	xReg.AddToSetupWalk(uStaticMeshes);
-	xReg.AddToSetupWalk(uTerrain);
-	xReg.AddToSetupWalk(uPrimitives);
-	xReg.AddToSetupWalk(uAnimatedMeshes);
-	xReg.AddToSetupWalk(uInstancedMeshes);
-	xReg.AddToSetupWalk(uGrass);
-	xReg.AddToSetupWalk(uDecals);
-	xReg.AddToSetupWalk(uHiZ);
-	xReg.AddToSetupWalk(uSSR);
-	xReg.AddToSetupWalk(uSSGI);
-	xReg.AddToSetupWalk(uLightClustering);
-	xReg.AddToSetupWalk(uDeferredShading);
+	xReg.AddToSetupWalk(xIdx.uIBL);
+	xReg.AddToSetupWalk(xIdx.uSkybox);
+	xReg.AddToSetupWalk(xIdx.uShadows);
+	xReg.AddToSetupWalk(xIdx.uStaticMeshes);
+	xReg.AddToSetupWalk(xIdx.uTerrain);
+	xReg.AddToSetupWalk(xIdx.uPrimitives);
+	xReg.AddToSetupWalk(xIdx.uAnimatedMeshes);
+	xReg.AddToSetupWalk(xIdx.uInstancedMeshes);
+	xReg.AddToSetupWalk(xIdx.uGrass);
+	xReg.AddToSetupWalk(xIdx.uDecals);
+	xReg.AddToSetupWalk(xIdx.uHiZ);
+	xReg.AddToSetupWalk(xIdx.uSSR);
+	xReg.AddToSetupWalk(xIdx.uSSGI);
+	xReg.AddToSetupWalk(xIdx.uLightClustering);
+	xReg.AddToSetupWalk(xIdx.uDeferredShading);
 	xReg.AddSetupStep(szFLUX_STEP_AERIAL_PERSPECTIVE,  +[](Flux_RenderGraph& g){ g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(g); });
-	xReg.AddToSetupWalk(uSSAO);
-	xReg.AddToSetupWalk(uFog);
+	xReg.AddToSetupWalk(xIdx.uSSAO);
+	xReg.AddToSetupWalk(xIdx.uFog);
 	// (The former @GameHook:PostFog step is gone. Game render features now anchor
 	// runAfter="Fog" and are interleaved by RunSetup right here — see
 	// Zenith_GameRenderFeatures + RunSetup's InvokeFeaturesAnchoredAfter.)
-	xReg.AddToSetupWalk(uSDFs);
-	xReg.AddToSetupWalk(uParticles);
-	xReg.AddToSetupWalk(uHDR);
-	xReg.AddToSetupWalk(uQuads);
-	xReg.AddToSetupWalk(uText);
+	xReg.AddToSetupWalk(xIdx.uSDFs);
+	xReg.AddToSetupWalk(xIdx.uParticles);
+	xReg.AddToSetupWalk(xIdx.uHDR);
+	xReg.AddToSetupWalk(xIdx.uQuads);
+	xReg.AddToSetupWalk(xIdx.uText);
 #ifdef ZENITH_TOOLS
-	xReg.AddToSetupWalk(uGizmos);
+	xReg.AddToSetupWalk(xIdx.uGizmos);
 #endif
 	xReg.AddSetupStep(szFLUX_STEP_FINAL_RT_TRANSITION, +[](Flux_RenderGraph& g){
 		// Leaves the Final Render Target in SHADER_READ_ONLY_OPTIMAL so the
@@ -447,39 +479,42 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	});
 
 	// FluxGraphics' own feature setup trampoline is null (its transient creation
-	// is the @SetupTransients step above), so uGraphics is intentionally absent
+	// is the @SetupTransients step above), so Graphics is intentionally absent
 	// from the AddToSetupWalk calls.
-	(void)uGraphics;
+}
 
-	// ===== SHUTDOWN ORDER ==================================================
+static void BuildDefaultShutdownWalk(Flux_FeatureRegistry& xReg, const DefaultFeatureIndices& xIdx)
+{
 	// Matches Flux_RendererImpl::Shutdown's explicit reverse-order block. NOT a
 	// mechanical reverse(init): it is transcribed exactly. FluxGraphics, HDR and
 	// (tools) Gizmos shut down INLINE in Shutdown() — they are deliberately NOT
 	// added here. Fog has no Shutdown and is therefore absent too.
-	xReg.AddToShutdownWalk(uText);
-	xReg.AddToShutdownWalk(uQuads);
-	xReg.AddToShutdownWalk(uParticles);
-	xReg.AddToShutdownWalk(uSDFs);
+	xReg.AddToShutdownWalk(xIdx.uText);
+	xReg.AddToShutdownWalk(xIdx.uQuads);
+	xReg.AddToShutdownWalk(xIdx.uParticles);
+	xReg.AddToShutdownWalk(xIdx.uSDFs);
 	// (Fog — no Shutdown())
-	xReg.AddToShutdownWalk(uDeferredShading);
-	xReg.AddToShutdownWalk(uSSAO);
-	xReg.AddToShutdownWalk(uDecals);
-	xReg.AddToShutdownWalk(uLightClustering);
-	xReg.AddToShutdownWalk(uDynamicLights);
-	xReg.AddToShutdownWalk(uSSGI);
-	xReg.AddToShutdownWalk(uSSR);
-	xReg.AddToShutdownWalk(uHiZ);
-	xReg.AddToShutdownWalk(uPrimitives);
-	xReg.AddToShutdownWalk(uGrass);
-	xReg.AddToShutdownWalk(uTerrain);
-	xReg.AddToShutdownWalk(uInstancedMeshes);
-	xReg.AddToShutdownWalk(uAnimatedMeshes);
-	xReg.AddToShutdownWalk(uStaticMeshes);
-	xReg.AddToShutdownWalk(uIBL);
-	xReg.AddToShutdownWalk(uSkybox);
-	xReg.AddToShutdownWalk(uShadows);
+	xReg.AddToShutdownWalk(xIdx.uDeferredShading);
+	xReg.AddToShutdownWalk(xIdx.uSSAO);
+	xReg.AddToShutdownWalk(xIdx.uDecals);
+	xReg.AddToShutdownWalk(xIdx.uLightClustering);
+	xReg.AddToShutdownWalk(xIdx.uDynamicLights);
+	xReg.AddToShutdownWalk(xIdx.uSSGI);
+	xReg.AddToShutdownWalk(xIdx.uSSR);
+	xReg.AddToShutdownWalk(xIdx.uHiZ);
+	xReg.AddToShutdownWalk(xIdx.uPrimitives);
+	xReg.AddToShutdownWalk(xIdx.uGrass);
+	xReg.AddToShutdownWalk(xIdx.uTerrain);
+	xReg.AddToShutdownWalk(xIdx.uInstancedMeshes);
+	xReg.AddToShutdownWalk(xIdx.uAnimatedMeshes);
+	xReg.AddToShutdownWalk(xIdx.uStaticMeshes);
+	xReg.AddToShutdownWalk(xIdx.uIBL);
+	xReg.AddToShutdownWalk(xIdx.uSkybox);
+	xReg.AddToShutdownWalk(xIdx.uShadows);
+}
 
-	// ===== INIT DEPENDENCIES (W6.1: declarative lifecycle ordering) =========
+static void DeclareDefaultInitDependencies(Flux_FeatureRegistry& xReg, const DefaultFeatureIndices& xIdx)
+{
 	// Real init dependencies, read straight off each feature's Initialise trampoline
 	// above (which consumes these features via g_xEngine, so they must be up first).
 	// Declaring them makes the init ORDER checkable against the dependency GRAPH
@@ -488,22 +523,36 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// transcribed golden snapshot (which a reorder + golden edit would silently pass).
 	// FluxGraphics deps are omitted: it is brought up inline before the whole walk, so
 	// it trivially precedes every feature.
-	xReg.DeclareInitDependsOn(uSkybox,          szFLUX_FEATURE_HDR);
-	xReg.DeclareInitDependsOn(uGrass,           szFLUX_FEATURE_HDR);
-	xReg.DeclareInitDependsOn(uSSR,             szFLUX_FEATURE_HIZ);
-	xReg.DeclareInitDependsOn(uSSGI,            szFLUX_FEATURE_HIZ);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_HDR);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_SHADOWS);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_IBL);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_SSR);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_SSGI);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_DYNAMIC_LIGHTS);
-	xReg.DeclareInitDependsOn(uDeferredShading, szFLUX_FEATURE_LIGHT_CLUSTERING);
-	xReg.DeclareInitDependsOn(uSSAO,            szFLUX_FEATURE_HDR);
-	xReg.DeclareInitDependsOn(uFog,             szFLUX_FEATURE_HDR);
-	xReg.DeclareInitDependsOn(uFog,             szFLUX_FEATURE_SHADOWS);
-	xReg.DeclareInitDependsOn(uSDFs,            szFLUX_FEATURE_HDR);
-	xReg.DeclareInitDependsOn(uParticles,       szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uSkybox,          szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uGrass,           szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uSSR,             szFLUX_FEATURE_HIZ);
+	xReg.DeclareInitDependsOn(xIdx.uSSGI,            szFLUX_FEATURE_HIZ);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_SHADOWS);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_IBL);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_SSR);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_SSGI);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_DYNAMIC_LIGHTS);
+	xReg.DeclareInitDependsOn(xIdx.uDeferredShading, szFLUX_FEATURE_LIGHT_CLUSTERING);
+	xReg.DeclareInitDependsOn(xIdx.uSSAO,            szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uFog,             szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uFog,             szFLUX_FEATURE_SHADOWS);
+	xReg.DeclareInitDependsOn(xIdx.uSDFs,            szFLUX_FEATURE_HDR);
+	xReg.DeclareInitDependsOn(xIdx.uParticles,       szFLUX_FEATURE_HDR);
+}
+
+void Flux_FeatureRegistry::RegisterDefaultFeatures()
+{
+	Flux_FeatureRegistry& xReg = Flux_FeatureRegistry::Get();
+
+	// Idempotency: headless boots skip LateInitialise and unit tests re-init
+	// Flux in-process — reset to a known-empty table on every entry.
+	xReg.Reset();
+
+	const DefaultFeatureIndices xIdx = RegisterDefaultFeatureSet(xReg);
+	BuildDefaultSetupWalk(xReg, xIdx);
+	BuildDefaultShutdownWalk(xReg, xIdx);
+	DeclareDefaultInitDependencies(xReg, xIdx);
 
 #ifdef ZENITH_RUNTIME_CHECKS
 	xReg.VerifyOrder();
