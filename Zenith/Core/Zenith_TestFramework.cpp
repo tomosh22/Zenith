@@ -6,6 +6,18 @@
 #include <cstring>
 #include <cmath>
 
+#ifdef ZENITH_WINDOWS
+// __try / __except / EXCEPTION_EXECUTE_HANDLER. Per the W5.2 note in Zenith.h,
+// <Windows.h> is no longer in the PCH; this TU used to get it transitively via
+// vulkan.hpp, but the D3D12 backend does not pull Vulkan, so include it directly.
+// GLFW (in the PCH) leaves APIENTRY defined and no earlier <windows.h> reset it
+// under D3D12, so undef before minwindef.h redefines it (C4005 / WX).
+#ifdef APIENTRY
+#undef APIENTRY
+#endif
+#include <Windows.h>
+#endif
+
 Zenith_TestRunner& Zenith_TestRunner::Instance()
 {
 	static Zenith_TestRunner s_xInstance;

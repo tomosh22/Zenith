@@ -6,7 +6,7 @@
 #include <algorithm>
 
 #ifdef _WIN32
-#include <windows.h>
+#include "Core/Zenith_Win32.h"   // <windows.h> with the APIENTRY/LEAN guards (D3D12 has no vulkan.hpp to reset APIENTRY)
 #endif
 
 // Static member initialization

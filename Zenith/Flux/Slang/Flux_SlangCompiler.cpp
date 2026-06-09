@@ -2,7 +2,7 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_Types.h"
 
-#ifdef ZENITH_WINDOWS
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 #include <slang.h>
 #include <slang-com-ptr.h>
 
@@ -207,7 +207,7 @@ void Flux_ShaderReflection::ReadFromDataStream(Zenith_DataStream& xStream)
 	BuildLookupMap();
 }
 
-#ifdef ZENITH_WINDOWS
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 void Flux_SlangCompiler::Initialise()
 {
 	if (s_pxGlobalSession)

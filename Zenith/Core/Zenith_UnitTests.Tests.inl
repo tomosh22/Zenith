@@ -13752,6 +13752,10 @@ void Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(){
 
 // ========== Vulkan Memory Manager Tests ==========
 
+// DetermineImageViewType returns a vk::ImageViewType and is a Vulkan-backend
+// internal method, so these three tests are Vulkan-only (the D3D12 null backend
+// has no such method and no vk:: types).
+#ifdef ZENITH_VULKAN
 ZENITH_TEST(Vulkan, ImageViewType3D) { Zenith_UnitTests::TestImageViewType3D(); }
 
 void Zenith_UnitTests::TestImageViewType3D(){
@@ -13806,6 +13810,7 @@ void Zenith_UnitTests::TestImageViewTypeDefault2D(){
 	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e2D, "Expected VK_IMAGE_VIEW_TYPE_2D for standard 2D texture");
 
 }
+#endif // ZENITH_VULKAN (DetermineImageViewType tests)
 
 ZENITH_TEST(Vulkan, DestroySkipsInvalidHandle) { Zenith_UnitTests::TestDestroySkipsInvalidHandle(); }
 

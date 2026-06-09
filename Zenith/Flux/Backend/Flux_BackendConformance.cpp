@@ -39,6 +39,7 @@
 // Pull in the concrete backend classes so the concepts can substitute.
 
 // ---- Vulkan backend conformance --------------------------------------------
+#ifdef ZENITH_VULKAN
 
 static_assert(FluxBackendDevice                <Zenith_Vulkan>,
 	"Zenith_Vulkan does not satisfy FluxBackendDevice");
@@ -112,3 +113,71 @@ static_assert(FluxBackendRootSigBuilder        <Zenith_Vulkan_RootSigBuilder>,
 static_assert(FluxBackendImGuiTools            <Zenith_Vulkan>,
 	"Zenith_Vulkan does not satisfy FluxBackendImGuiTools");
 #endif
+
+#endif // ZENITH_VULKAN
+
+// ---- D3D12 null-backend conformance ----------------------------------------
+// The no-op null backend must satisfy EVERY concept (and, via the link step,
+// every non-concept call the engine makes) -- this is the whole point of the
+// backend: a compile/link proof that the Flux surface is renderer-neutral.
+#ifdef ZENITH_D3D12
+
+static_assert(FluxBackendDevice                <Zenith_D3D12>,
+	"Zenith_D3D12 does not satisfy FluxBackendDevice");
+
+static_assert(FluxBackendMemoryAlloc           <Zenith_D3D12_MemoryManager>,
+	"Zenith_D3D12_MemoryManager does not satisfy FluxBackendMemoryAlloc");
+
+static_assert(FluxBackendMemoryDelete          <Zenith_D3D12_MemoryManager>,
+	"Zenith_D3D12_MemoryManager does not satisfy FluxBackendMemoryDelete");
+
+static_assert(FluxBackendTransientAliasing     <Zenith_D3D12_MemoryManager>,
+	"Zenith_D3D12_MemoryManager does not satisfy FluxBackendTransientAliasing");
+
+static_assert(FluxBackendCommandRecorder       <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendCommandRecorder (umbrella)");
+static_assert(FluxBackendRecordingLifecycle    <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendRecordingLifecycle");
+static_assert(FluxBackendPipelineBinding       <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendPipelineBinding");
+static_assert(FluxBackendVertexIndexStreams    <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendVertexIndexStreams");
+static_assert(FluxBackendBasicDraws            <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendBasicDraws");
+static_assert(FluxBackendIndirectDraws         <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendIndirectDraws");
+static_assert(FluxBackendCompute               <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendCompute");
+static_assert(FluxBackendResourceBinding       <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendResourceBinding");
+static_assert(FluxBackendDynamicState          <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendDynamicState");
+#ifdef ZENITH_FLUX_PROFILING
+static_assert(FluxBackendDebugMarkers          <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendDebugMarkers");
+#endif
+
+static_assert(FluxBackendSync                  <Zenith_D3D12_CommandBuffer>,
+	"Zenith_D3D12_CommandBuffer does not satisfy FluxBackendSync");
+
+static_assert(FluxBackendPresentation          <Zenith_D3D12_Swapchain>,
+	"Zenith_D3D12_Swapchain does not satisfy FluxBackendPresentation");
+
+static_assert(FluxBackendShader                <Zenith_D3D12_Shader>,
+	"Zenith_D3D12_Shader does not satisfy FluxBackendShader");
+
+static_assert(FluxBackendPipelineBuilder       <Zenith_D3D12_PipelineBuilder>,
+	"Zenith_D3D12_PipelineBuilder does not satisfy FluxBackendPipelineBuilder");
+
+static_assert(FluxBackendComputePipelineBuilder<Zenith_D3D12_ComputePipelineBuilder>,
+	"Zenith_D3D12_ComputePipelineBuilder does not satisfy FluxBackendComputePipelineBuilder");
+
+static_assert(FluxBackendRootSigBuilder        <Zenith_D3D12_RootSigBuilder>,
+	"Zenith_D3D12_RootSigBuilder does not satisfy FluxBackendRootSigBuilder");
+
+#ifdef ZENITH_TOOLS
+static_assert(FluxBackendImGuiTools            <Zenith_D3D12>,
+	"Zenith_D3D12 does not satisfy FluxBackendImGuiTools");
+#endif
+
+#endif // ZENITH_D3D12

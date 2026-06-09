@@ -89,6 +89,12 @@ public abstract class ZenithBaseProject : Project
 		else if (target.RenderBackend == RenderBackend.D3D12)
 		{
 			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Vulkan\\.*");
+			// The ImGui Vulkan backend is a filename, not a path segment, so the
+			// Vulkan exclude above misses it; it #includes <vulkan/vulkan.h> which
+			// the D3D12 config has no SDK path for. The null backend does no real
+			// ImGui rendering, so drop it (a real D3D12 backend would swap in
+			// imgui_impl_dx12).
+			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui_impl_vulkan.*");
 		}
 	}
 

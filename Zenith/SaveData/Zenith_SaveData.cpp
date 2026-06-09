@@ -10,6 +10,18 @@
 #include <android_native_app_glue.h>
 #endif
 
+#ifdef ZENITH_WINDOWS
+// DWORD / GetEnvironmentVariableA. Per the W5.2 note in Zenith.h, <Windows.h> is
+// no longer in the PCH; this TU used to get it transitively via vulkan.hpp, but
+// the D3D12 backend does not pull Vulkan, so include it directly here. GLFW (in
+// the PCH) leaves APIENTRY defined and -- unlike the Vulkan build -- no earlier
+// <windows.h> reset it, so undef before minwindef.h redefines it (C4005 / WX).
+#ifdef APIENTRY
+#undef APIENTRY
+#endif
+#include <Windows.h>
+#endif
+
 namespace Zenith_SaveData
 {
 #ifdef ZENITH_INPUT_SIMULATOR

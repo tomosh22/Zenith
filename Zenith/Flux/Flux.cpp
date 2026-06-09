@@ -206,8 +206,9 @@ void Flux_RendererImpl::LateInitialise()
 
 	g_xEngine.FluxMemory().BeginFrame();
 
-#ifdef ZENITH_WINDOWS
-	// Initialize Slang compiler before any shader loading
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
+	// Initialize Slang compiler before any shader loading. Slang is the Vulkan
+	// SPIR-V toolchain; the D3D12 null backend loads pre-baked reflection only.
 	Flux_SlangCompiler::Initialise();
 	// Tell the modern session API where to resolve `loadModule` paths from.
 	// Required for FluxShaderProgram-based runtime compilation; the legacy
@@ -466,7 +467,7 @@ void Flux_RendererImpl::Shutdown()
 	// here, deliberately absent from the registry shutdown walk) follow.
 	Flux_FeatureRegistry::Get().RunShutdown();
 
-#ifdef ZENITH_WINDOWS
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 	Flux_SlangCompiler::Shutdown();
 #endif
 

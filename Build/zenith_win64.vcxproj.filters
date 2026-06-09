@@ -3405,6 +3405,24 @@
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12.h">
+      <Filter>D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_CommandBuffer.h">
+      <Filter>D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.h">
+      <Filter>D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_Pipeline.h">
+      <Filter>D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_Swapchain.h">
+      <Filter>D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\D3D12\Zenith_PlatformGraphics_Include_D3D12.h">
+      <Filter>D3D12</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h">
       <Filter>DataStream</Filter>
     </ClInclude>
@@ -4312,6 +4330,9 @@
     </Filter>
     <Filter Include="Core\Multithreading">
       <UniqueIdentifier>{c892d468-1246-8692-ce31-ca4253070505}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="D3D12">
+      <UniqueIdentifier>{d277c7fa-cd30-7571-6977-48a8c5260df6}</UniqueIdentifier>
     </Filter>
     <Filter Include="DataStream">
       <UniqueIdentifier>{544d37bf-b368-d1f2-d32b-177ae42c6e2b}</UniqueIdentifier>

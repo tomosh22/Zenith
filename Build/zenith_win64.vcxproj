@@ -1468,6 +1468,12 @@
     <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12.h" />
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_CommandBuffer.h" />
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.h" />
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_Pipeline.h" />
+    <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_Swapchain.h" />
+    <ClInclude Include="..\Zenith\D3D12\Zenith_PlatformGraphics_Include_D3D12.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
@@ -1778,10 +1784,10 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_vulkan.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
