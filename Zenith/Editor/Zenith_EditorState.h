@@ -189,20 +189,31 @@ struct Zenith_EditorCameraState
 //-----------------------------------------------------------------------------
 struct Zenith_EditorMaterialState
 {
-	// Same lifetime rule as Zenith_Editor::m_xSelectedMaterial -- use a
-	// MaterialHandle so the asset survives UnloadUnusedAssets cycles.
+	// A MaterialHandle (not a raw pointer) so the asset survives
+	// UnloadUnusedAssets cycles while selected.
 	MaterialHandle m_xSelectedMaterial;
 	bool m_bShowEditor = true;
 };
 
 //-----------------------------------------------------------------------------
-// Combined Editor State
+// Panel Visibility (View menu toggles)
+//-----------------------------------------------------------------------------
+struct Zenith_EditorPanelVisibility
+{
+	bool m_bShowHierarchy = true;
+	bool m_bShowProperties = true;
+	bool m_bShowConsole = true;
+};
+
+//-----------------------------------------------------------------------------
+// Combined Editor State — the single source of truth for editor domain state.
+// (Zenith_Editor keeps only runtime GPU/frame caches outside this struct.)
 //-----------------------------------------------------------------------------
 struct Zenith_EditorState
 {
 	// Mode
-	EditorMode m_eEditorMode;
-	EditorGizmoMode m_eGizmoMode;
+	EditorMode m_eEditorMode = EditorMode::Stopped;
+	EditorGizmoMode m_eGizmoMode = EditorGizmoMode::Translate;
 
 	// Sub-states
 	Zenith_EditorSelectionState m_xSelection;
@@ -213,6 +224,7 @@ struct Zenith_EditorState
 	Zenith_EditorConsoleState m_xConsole;
 	Zenith_EditorCameraState m_xCamera;
 	Zenith_EditorMaterialState m_xMaterial;
+	Zenith_EditorPanelVisibility m_xPanels;
 };
 
 #endif // ZENITH_TOOLS

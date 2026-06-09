@@ -209,8 +209,6 @@ public:
 		const std::string& strCurrentPath,
 		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 
-	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
-
 	// Editor theme
 	void ApplyEditorTheme();
 
@@ -231,69 +229,15 @@ public:
 	float GetCameraFOV();
 	float GetCameraAspectRatio();
 
-	// ===== Data members (was Zenith_Editor) =====
+	// ===== Data members =====
 
-	// Mode flags.
-	EditorMode      m_eEditorMode = EditorMode::Stopped;
-	EditorGizmoMode m_eGizmoMode  = EditorGizmoMode::Translate;
+	// ALL editor domain state lives here (mode, selection, viewport, deferred
+	// ops, play backup, content browser, console, camera, material, panel
+	// visibility). See Zenith_EditorState.h.
+	Zenith_EditorState m_xEditorState;
 
-	// Multi-select state.
-	std::unordered_set<Zenith_EntityID> m_xSelectedEntityIDs;
-	Zenith_EntityID m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
-	Zenith_EntityID m_uLastClickedEntityID     = INVALID_ENTITY_ID;
-
-	// Viewport state.
-	Zenith_Maths::Vector2 m_xViewportSize = { 1280, 720 };
-	Zenith_Maths::Vector2 m_xViewportPos  = { 0, 0 };
-	bool                  m_bViewportHovered = false;
-	bool                  m_bViewportFocused = false;
-
-	// Aggregate state container (mid-migration target — pre-existing).
-	Zenith_EditorState    m_xEditorState;
-
-	// Content Browser state.
-	std::string                       m_strCurrentDirectory;
-	Zenith_Vector<ContentBrowserEntry> m_xDirectoryContents;
-	Zenith_Vector<ContentBrowserEntry> m_xFilteredContents;
-	bool                              m_bDirectoryNeedsRefresh = true;
-	char                              m_szSearchBuffer[256]    = "";
-	int                               m_iAssetTypeFilter       = 0;
-	int                               m_iSelectedContentIndex  = -1;
-	float                             m_fThumbnailSize         = 80.0f;
-	Zenith_Vector<std::string>        m_axNavigationHistory;
-	int                               m_iHistoryIndex          = -1;
-	ContentBrowserViewMode            m_eViewMode              = ContentBrowserViewMode::Grid;
-
-	// Console state.
-	Zenith_Vector<ConsoleLogEntry>    m_xConsoleLogs;
-	bool                              m_bConsoleAutoScroll     = true;
-	bool                              m_bShowConsoleInfo       = true;
-	bool                              m_bShowConsoleWarnings   = true;
-	bool                              m_bShowConsoleErrors     = true;
-	std::bitset<LOG_CATEGORY_COUNT>   m_xCategoryFilters       = std::bitset<LOG_CATEGORY_COUNT>().set();
-
-	// Panel visibility (View menu toggles).
-	bool                              m_bShowHierarchyPanel    = true;
-	bool                              m_bShowPropertiesPanel   = true;
-	bool                              m_bShowConsolePanel      = true;
-
-	// Material Editor state.
-	MaterialHandle                    m_xSelectedMaterial;
-	bool                              m_bShowMaterialEditor    = true;
-
-	// Editor camera state.
-	Zenith_Maths::Vector3             m_xEditorCameraPosition  = { 0, 100, 0 };
-	double                            m_fEditorCameraPitch     = 0.0;
-	double                            m_fEditorCameraYaw       = 0.0;
-	float                             m_fEditorCameraFOV       = 45.0f;
-	float                             m_fEditorCameraNear      = 1.0f;
-	float                             m_fEditorCameraFar       = 2000.0f;
-	Zenith_EntityID                   m_uGameCameraEntity      = INVALID_ENTITY_ID;
-	float                             m_fEditorCameraMoveSpeed = 50.0f;
-	float                             m_fEditorCameraRotateSpeed = 0.1f;
-	bool                              m_bEditorCameraInitialized = false;
-
-	// ImGui texture handle caching for the game viewport.
+	// Runtime GPU/frame caches — deliberately NOT part of Zenith_EditorState
+	// (tied to the current frame's graphics resources, not editor state).
 	Flux_ImGuiTextureHandle           m_xCachedGameTextureHandle;
 	Flux_ImageViewHandle              m_xCachedImageViewHandle;
 

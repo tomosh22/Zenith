@@ -26,7 +26,7 @@
 // Carved out of Zenith_Editor.cpp so each top-level menu (File/Edit/View)
 // lives next to the dispatcher, rather than one end of a 1000+ LOC file.
 // All symbols used here — ShowOpenFileDialog, ShowSaveFileDialog,
-// Zenith_Editor::g_xEngine.Editor().m_uGameCameraEntity, ClearSelection, ResetEditorCameraToDefaults,
+// Zenith_Editor::g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity, ClearSelection, ResetEditorCameraToDefaults,
 // RequestLoadSceneFromFile — have external linkage already, so the extraction
 // did not require any changes to the Zenith_Editor interface.
 //==========================================================================
@@ -77,7 +77,7 @@ void Zenith_Editor::RenderFileMenu()
 			g_xEngine.Scenes().SetActiveScene(xNewScene);
 
 			ClearSelection();
-			g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
+			g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 			ResetEditorCameraToDefaults();
 			g_xEngine.UndoSystem().Clear();
 			Zenith_Log(LOG_CATEGORY_EDITOR, "New scene created (handle=%d, name='Untitled')", xNewScene.GetHandle());
@@ -179,19 +179,19 @@ void Zenith_Editor::RenderViewMenu()
 {
 	if (ImGui::BeginMenu("View"))
 	{
-		if (ImGui::MenuItem("Hierarchy", nullptr, g_xEngine.Editor().m_bShowHierarchyPanel))
+		if (ImGui::MenuItem("Hierarchy", nullptr, g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowHierarchy))
 		{
-			g_xEngine.Editor().m_bShowHierarchyPanel = !g_xEngine.Editor().m_bShowHierarchyPanel;
+			g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowHierarchy = !g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowHierarchy;
 		}
 
-		if (ImGui::MenuItem("Properties", nullptr, g_xEngine.Editor().m_bShowPropertiesPanel))
+		if (ImGui::MenuItem("Properties", nullptr, g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowProperties))
 		{
-			g_xEngine.Editor().m_bShowPropertiesPanel = !g_xEngine.Editor().m_bShowPropertiesPanel;
+			g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowProperties = !g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowProperties;
 		}
 
-		if (ImGui::MenuItem("Console", nullptr, g_xEngine.Editor().m_bShowConsolePanel))
+		if (ImGui::MenuItem("Console", nullptr, g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowConsole))
 		{
-			g_xEngine.Editor().m_bShowConsolePanel = !g_xEngine.Editor().m_bShowConsolePanel;
+			g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowConsole = !g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowConsole;
 		}
 
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
