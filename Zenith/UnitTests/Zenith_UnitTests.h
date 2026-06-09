@@ -595,6 +595,14 @@ public:
 	static void TestRenderGraphPassHandles();
 	static void TestRenderGraphTransientGeneration();
 	static void TestRenderGraphSetEnabled();
+	// Generic pass identity + effective-enabled force-disable overlay (the
+	// game-render-feature support). FindPass lookup; owner-tag population;
+	// force-disable by owner/name flips EFFECTIVE not BASE; override persists
+	// across Clear(); base bit preserved under override.
+	static void TestRenderGraphFindPass();
+	static void TestRenderGraphForceDisableOverlay();
+	static void TestRenderGraphForceDisablePersistsClear();
+	static void TestRenderGraphForceDisableBasePreserved();
 	static void TestRenderGraphBufferBarrierRMW();
 	// Compute-write -> indirect-arg-read barrier (terrain culling writes
 	// indirect/count buffers, GBuffer pass reads them via DrawIndexedIndirectCount).

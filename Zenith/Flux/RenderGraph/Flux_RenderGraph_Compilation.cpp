@@ -154,7 +154,7 @@ void Flux_RenderGraph::Validate() const
     for (u_int i = 0; i < m_xPasses.GetSize(); i++)
     {
         Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
-        if (!pxP->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxP)) continue;
 
         ValidatePassBasics(pxP);
         ValidatePassAttachmentCounts(pxP);
@@ -287,11 +287,11 @@ void Flux_RenderGraph::AddExplicitDependencies()
     for (u_int i = 0; i < uN; i++)
     {
         Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
-        if (!pxP->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxP)) continue;
         for (Zenith_Vector<u_int>::Iterator it(pxP->m_xExplicitDependencies); !it.Done(); it.Next())
         {
             u_int d = it.GetData();
-            if (m_xPasses.Get(d)->m_bEnabled) AddEdgeIfNew(d, i);
+            if (IsPassEffectivelyEnabled(m_xPasses.Get(d))) AddEdgeIfNew(d, i);
         }
     }
 }
@@ -312,7 +312,7 @@ bool Flux_RenderGraph::TopologicalSort()
         m_xPasses.Get(i)->m_uTopologicalOrder = UINT32_MAX;
 
     for (u_int i = 0; i < uN; i++)
-        if (m_xPasses.Get(i)->m_bEnabled && m_xInDegree.Get(i) == 0)
+        if (IsPassEffectivelyEnabled(m_xPasses.Get(i)) && m_xInDegree.Get(i) == 0)
             xQueue.PushBack(i);
 
     u_int uProcessed = 0;
@@ -334,7 +334,7 @@ bool Flux_RenderGraph::TopologicalSort()
 
     u_int uEnabledCount = 0;
     for (u_int i = 0; i < uN; i++)
-        if (m_xPasses.Get(i)->m_bEnabled) uEnabledCount++;
+        if (IsPassEffectivelyEnabled(m_xPasses.Get(i))) uEnabledCount++;
 
     if (uProcessed != uEnabledCount)
     {
@@ -344,7 +344,7 @@ bool Flux_RenderGraph::TopologicalSort()
 #ifdef ZENITH_TOOLS
         for (u_int i = 0; i < uN; i++)
         {
-            if (m_xPasses.Get(i)->m_bEnabled && m_xInDegree.Get(i) > 0)
+            if (IsPassEffectivelyEnabled(m_xPasses.Get(i)) && m_xInDegree.Get(i) > 0)
             {
                 Zenith_Error(LOG_CATEGORY_RENDERER, "Flux_RenderGraph: pass '%s' has unresolved in-degree %u (part of a cycle)",
                     m_xPasses.Get(i)->DebugName(), m_xInDegree.Get(i));
@@ -360,7 +360,7 @@ bool Flux_RenderGraph::TopologicalSort()
     for (u_int i = 0; i < uN; i++)
     {
         const Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
-        if (!pxP->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxP)) continue;
         Zenith_Assert(pxP->m_uTopologicalOrder != UINT32_MAX,
             "Flux_RenderGraph::TopologicalSort: enabled pass '%s' (index %u) never got a topological order",
             pxP->DebugName(), i);

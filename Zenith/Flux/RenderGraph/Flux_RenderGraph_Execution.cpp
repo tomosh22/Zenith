@@ -54,7 +54,10 @@ void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int 
 	const Zenith_Vector<Flux_RenderGraph_Pass*>& xPasses = pxGraph->GetPasses();
 	Flux_RenderGraph_Pass& xPass = *xPasses.Get(xExecOrder.Get(uPassIndex));
 	xPass.m_pxCommandList->Reset();
-	if (!xPass.m_bEnabled || !xPass.m_pfnOnRecord) return;
+	// Friend free function → may call the private effective-enabled predicate on
+	// the graph (this task is declared friend in Flux_RenderGraph.h). Honours both
+	// the per-pass base bit and any game force-disable overlay.
+	if (!pxGraph->IsPassEffectivelyEnabled(&xPass) || !xPass.m_pfnOnRecord) return;
 
 	// Set the thread-local current-pass and current-graph pointers so
 	// Flux_ShaderBinder bind-time assertions can cross-reference against this
@@ -95,7 +98,7 @@ void Flux_RenderGraph::Execute()
 		const Flux_RenderGraph_Pass* pxP = m_xPasses.Get(it.GetData());
 		Zenith_Assert(pxP != nullptr,
 			"Flux_RenderGraph::Execute: null pass at execution order index %u", it.GetData());
-		if (!pxP->m_bEnabled) continue;
+		if (!IsPassEffectivelyEnabled(pxP)) continue;
 		Zenith_Assert(pxP->m_pxCommandList != nullptr,
 			"Flux_RenderGraph::Execute: enabled pass '%s' has null command list", pxP->DebugName());
 		Zenith_Assert(pxP->m_pfnOnRecord != nullptr,
@@ -138,7 +141,7 @@ void Flux_RenderGraph::CallPrepareCallbacks()
 	for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
 	{
 		Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
-		if (pxPass->m_bEnabled && pxPass->m_pfnOnPrepare) pxPass->m_pfnOnPrepare(pxPass->m_pUserData);
+		if (IsPassEffectivelyEnabled(pxPass) && pxPass->m_pfnOnPrepare) pxPass->m_pfnOnPrepare(pxPass->m_pUserData);
 	}
 }
 
@@ -165,7 +168,7 @@ void Flux_RenderGraph::SubmitRecordedLists()
 	for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
 	{
 		Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
-		if (!pxPass->m_bEnabled || !pxPass->m_pfnOnRecord) continue;
+		if (!IsPassEffectivelyEnabled(pxPass) || !pxPass->m_pfnOnRecord) continue;
 		// A pass with zero recorded commands is normally pruned, but if it has
 		// graph-synthesised prologue barriers (e.g. the "Final RT Layout
 		// Transition" no-op pass that exists purely to flip the swapchain

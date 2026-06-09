@@ -38,9 +38,19 @@
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 
+#include "Flux/Zenith_GameRenderFeatures.h" // generic game render-feature interleave + anchor verify
 #include "Flux/Flux_BackendTypes.h"
 
 #include <cstring> // strcmp — golden-order verification only; deliberately not in the header.
+
+// Moved here from Flux.cpp: no-op record callback for the final-layout-transition
+// pass. The pass carries no commands — it exists only so the render graph emits a
+// prologue barrier putting the Final RT into SHADER_READ_ONLY_OPTIMAL for the
+// swapchain copy (which lives outside the graph). File-static, not header-exposed;
+// referenced solely by the @FinalRTLayoutTransition setup step below.
+static void Flux_FinalLayoutTransitionNoOp(Flux_CommandList*, void*)
+{
+}
 
 // ---------------------------------------------------------------------------
 // Feature name constants. Register() and the golden arrays both reference these
@@ -76,6 +86,14 @@ namespace
 	constexpr const char* szFLUX_FEATURE_PARTICLES        = "Particles";
 	constexpr const char* szFLUX_FEATURE_QUADS            = "Quads";
 	constexpr const char* szFLUX_FEATURE_TEXT             = "Text";
+
+	// Irregular setup-step pseudo-names (NOT registered features). Referenced by
+	// both the setup walk in RegisterDefaultFeatures and the golden-order check
+	// in VerifyOrder, so a typo in one place can't silently agree with the other.
+	constexpr const char* szFLUX_STEP_TRANSIENTS_GRAPHICS = "@SetupTransients:FluxGraphics";
+	constexpr const char* szFLUX_STEP_TRANSIENTS_HDR      = "@SetupTransients:HDR";
+	constexpr const char* szFLUX_STEP_AERIAL_PERSPECTIVE  = "@Skybox:AerialPerspective";
+	constexpr const char* szFLUX_STEP_FINAL_RT_TRANSITION = "@FinalRTLayoutTransition";
 }
 
 // ---------------------------------------------------------------------------
@@ -134,14 +152,35 @@ u_int Flux_FeatureRegistry::Register(const char* szName,
 	return uIndex;
 }
 
-void Flux_FeatureRegistry::AddToSetupWalk(u_int uFeatureIndex, Flux_FeatureSetupPhase ePhase)
+void Flux_FeatureRegistry::AddToSetupWalk(u_int uFeatureIndex)
 {
 	Zenith_Assert(uFeatureIndex < m_uNumFeatures,
 		"Flux_FeatureRegistry::AddToSetupWalk: feature index %u out of range (%u registered)", uFeatureIndex, m_uNumFeatures);
-	Zenith_Assert(m_uNumSetup < FLUX_MAX_FEATURES, "Flux_FeatureRegistry::AddToSetupWalk: setup-order overflow");
-	m_auSetupOrder[m_uNumSetup] = uFeatureIndex;
-	m_aeSetupPhase[m_uNumSetup] = ePhase;
+	Zenith_Assert(m_axFeatures[uFeatureIndex].m_pfnSetupRenderGraph != nullptr,
+		"Flux_FeatureRegistry::AddToSetupWalk: feature '%s' has no SetupRenderGraph trampoline; do not add it to the setup walk",
+		m_axFeatures[uFeatureIndex].m_szName);
+	AddSetupStep(m_axFeatures[uFeatureIndex].m_szName, m_axFeatures[uFeatureIndex].m_pfnSetupRenderGraph);
+}
+
+void Flux_FeatureRegistry::AddSetupStep(const char* szName, void (*pfnSetup)(Flux_RenderGraph&))
+{
+	Zenith_Assert(szName != nullptr, "Flux_FeatureRegistry::AddSetupStep: null step name");
+	Zenith_Assert(pfnSetup != nullptr, "Flux_FeatureRegistry::AddSetupStep: null step fn for '%s'", szName);
+	Zenith_Assert(m_uNumSetup < FLUX_MAX_SETUP_STEPS, "Flux_FeatureRegistry::AddSetupStep: setup-walk overflow");
+	m_axSetupSteps[m_uNumSetup].m_szName = szName;
+	m_axSetupSteps[m_uNumSetup].m_pfnSetup = pfnSetup;
 	m_uNumSetup++;
+}
+
+bool Flux_FeatureRegistry::HasSetupStepNamed(const char* szName) const
+{
+	if (szName == nullptr) return false;
+	for (u_int u = 0; u < m_uNumSetup; u++)
+	{
+		if (m_axSetupSteps[u].m_szName != nullptr && strcmp(m_axSetupSteps[u].m_szName, szName) == 0)
+			return true;
+	}
+	return false;
 }
 
 void Flux_FeatureRegistry::AddToShutdownWalk(u_int uFeatureIndex)
@@ -164,15 +203,29 @@ void Flux_FeatureRegistry::DeclareInitDependsOn(u_int uFeatureIndex, const char*
 	m_uNumInitDeps++;
 }
 
-void Flux_FeatureRegistry::RunSetupPhase(Flux_RenderGraph& xGraph, Flux_FeatureSetupPhase ePhase) const
+void Flux_FeatureRegistry::RunSetup(Flux_RenderGraph& xGraph) const
 {
+#ifdef ZENITH_RUNTIME_CHECKS
+	// Backstop: every registered game feature's runAfter anchor must name a real
+	// engine setup step (analogue of VerifyInitDependencies for game features).
+	Zenith_GameRenderFeatures::VerifyGameFeatureAnchors();
+#endif
+	// Single ordered walk — no phase filtering. Every step's fn is non-null
+	// (asserted at append time). For each engine step: tag the passes it adds with
+	// the step name as their graph OWNER (so a game can force-disable a whole
+	// feature group by name), run the step, clear the tag, then fire any game
+	// render features anchored AFTER this step (their passes are owner-tagged with
+	// the feature name inside InvokeFeaturesAnchoredAfter). This interleave is what
+	// replaces the old hardcoded @GameHook:PostFog step — a game feature anchored
+	// runAfter="Fog" lands in the exact declaration slot the hook used to occupy.
+	// Pass execution order is then derived by the render graph's topological sort;
+	// this walk is just the declaration order it falls back to.
 	for (u_int u = 0; u < m_uNumSetup; u++)
 	{
-		if (m_aeSetupPhase[u] != ePhase)
-			continue;
-		const Flux_FeatureDesc& xDesc = m_axFeatures[m_auSetupOrder[u]];
-		if (xDesc.m_pfnSetupRenderGraph != nullptr)
-			xDesc.m_pfnSetupRenderGraph(xGraph);
+		xGraph.SetCurrentSetupOwner(m_axSetupSteps[u].m_szName);
+		m_axSetupSteps[u].m_pfnSetup(xGraph);
+		xGraph.SetCurrentSetupOwner(nullptr);
+		Zenith_GameRenderFeatures::InvokeFeaturesAnchoredAfter(m_axSetupSteps[u].m_szName, xGraph);
 	}
 }
 
@@ -342,51 +395,60 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 		+[](Flux_RenderGraph& g){ g_xEngine.Text().SetupRenderGraph(g); },
 		+[](){ g_xEngine.Text().Shutdown(); });
 
-	// ===== SETUP ORDER (four sub-walks) ====================================
-	// Matches Flux_RendererImpl::SetupRenderGraph EXACTLY. The inline irregulars
-	// (FluxGraphics/HDR SetupTransients, Skybox aerial perspective, post-fog game
-	// hook, final-RT pass) live in SetupRenderGraph between these phases.
-
-	// Phase 1: preprocessing -> geometry -> decals -> screen-space -> lighting,
-	// up to and including DeferredShading.
-	xReg.AddToSetupWalk(uIBL,             FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uSkybox,          FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uShadows,         FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uStaticMeshes,    FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uTerrain,         FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uPrimitives,      FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uAnimatedMeshes,  FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uInstancedMeshes, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uGrass,           FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uDecals,          FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uHiZ,             FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uSSR,             FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uSSGI,            FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uLightClustering, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	xReg.AddToSetupWalk(uDeferredShading, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-	// (inline irregular: Skybox aerial perspective)
-
-	// Phase 2: SSAO + Fog.
-	xReg.AddToSetupWalk(uSSAO, FLUX_SETUP_PHASE_SSAO_FOG);
-	xReg.AddToSetupWalk(uFog,  FLUX_SETUP_PHASE_SSAO_FOG);
-	// (inline irregular: post-fog game render hook)
-
-	// Phase 3: SDFs + Particles + HDR (HDR second touch).
-	xReg.AddToSetupWalk(uSDFs,      FLUX_SETUP_PHASE_POST_PROCESS);
-	xReg.AddToSetupWalk(uParticles, FLUX_SETUP_PHASE_POST_PROCESS);
-	xReg.AddToSetupWalk(uHDR,       FLUX_SETUP_PHASE_POST_PROCESS);
-
-	// Phase 4: UI quads + text + (tools) gizmos.
-	xReg.AddToSetupWalk(uQuads, FLUX_SETUP_PHASE_UI);
-	xReg.AddToSetupWalk(uText,  FLUX_SETUP_PHASE_UI);
+	// ===== SETUP WALK (single ordered declaration sequence) ================
+	// One continuous walk — NO discrete phases. The render graph computes pass
+	// execution order by topologically sorting each pass's declared Reads/Writes,
+	// but declaration order is load-bearing where it seeds that sort: producers
+	// MUST precede consumers (a reader links only to an earlier-declared writer
+	// of the same resource — see the ORDERING note in Flux_FeatureRegistry.h),
+	// and same-resource writers run in declaration order. So this is transcribed
+	// verbatim from the pre-collapse sequence (the four former sub-walks
+	// concatenated + the former inline irregulars at their exact positions), and
+	// the compiled order is unchanged. The irregulars — FluxGraphics/HDR transient
+	// creation, the Skybox aerial-perspective pass, the post-fog game hook, and the
+	// final-RT layout-transition pass — are ordinary ordered steps here.
+	xReg.AddSetupStep(szFLUX_STEP_TRANSIENTS_GRAPHICS, +[](Flux_RenderGraph& g){ g_xEngine.FluxGraphics().SetupTransients(g); });
+	xReg.AddSetupStep(szFLUX_STEP_TRANSIENTS_HDR,      +[](Flux_RenderGraph& g){ g_xEngine.HDR().SetupTransients(g); });
+	xReg.AddToSetupWalk(uIBL);
+	xReg.AddToSetupWalk(uSkybox);
+	xReg.AddToSetupWalk(uShadows);
+	xReg.AddToSetupWalk(uStaticMeshes);
+	xReg.AddToSetupWalk(uTerrain);
+	xReg.AddToSetupWalk(uPrimitives);
+	xReg.AddToSetupWalk(uAnimatedMeshes);
+	xReg.AddToSetupWalk(uInstancedMeshes);
+	xReg.AddToSetupWalk(uGrass);
+	xReg.AddToSetupWalk(uDecals);
+	xReg.AddToSetupWalk(uHiZ);
+	xReg.AddToSetupWalk(uSSR);
+	xReg.AddToSetupWalk(uSSGI);
+	xReg.AddToSetupWalk(uLightClustering);
+	xReg.AddToSetupWalk(uDeferredShading);
+	xReg.AddSetupStep(szFLUX_STEP_AERIAL_PERSPECTIVE,  +[](Flux_RenderGraph& g){ g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(g); });
+	xReg.AddToSetupWalk(uSSAO);
+	xReg.AddToSetupWalk(uFog);
+	// (The former @GameHook:PostFog step is gone. Game render features now anchor
+	// runAfter="Fog" and are interleaved by RunSetup right here — see
+	// Zenith_GameRenderFeatures + RunSetup's InvokeFeaturesAnchoredAfter.)
+	xReg.AddToSetupWalk(uSDFs);
+	xReg.AddToSetupWalk(uParticles);
+	xReg.AddToSetupWalk(uHDR);
+	xReg.AddToSetupWalk(uQuads);
+	xReg.AddToSetupWalk(uText);
 #ifdef ZENITH_TOOLS
-	xReg.AddToSetupWalk(uGizmos, FLUX_SETUP_PHASE_UI);
+	xReg.AddToSetupWalk(uGizmos);
 #endif
-	// (inline irregular: final-RT layout-transition pass)
+	xReg.AddSetupStep(szFLUX_STEP_FINAL_RT_TRANSITION, +[](Flux_RenderGraph& g){
+		// Leaves the Final Render Target in SHADER_READ_ONLY_OPTIMAL so the
+		// swapchain copy (outside the graph) can sample it. Pure reader → sorts
+		// strictly after every Final-RT writer (tonemap/quads/text/gizmos).
+		g.AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
+		 .Reads(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
+	});
 
-	// Note: FluxGraphics' setup is the SetupTransients irregular (handled inline,
-	// no registry setup trampoline), so uGraphics is intentionally absent from
-	// the setup walk.
+	// FluxGraphics' own feature setup trampoline is null (its transient creation
+	// is the @SetupTransients step above), so uGraphics is intentionally absent
+	// from the AddToSetupWalk calls.
 	(void)uGraphics;
 
 	// ===== SHUTDOWN ORDER ==================================================
@@ -494,9 +556,14 @@ namespace
 		szFLUX_FEATURE_TEXT,
 	};
 
-	// SETUP sub-walks — match SetupRenderGraph between the inline irregulars.
-	const char* const s_aszGoldenSetupPrepassToLighting[] =
+	// SETUP walk — the single ordered list (feature setups + irregular steps),
+	// matching RegisterDefaultFeatures' AddSetupStep / AddToSetupWalk sequence
+	// exactly. This is the declaration order the render graph falls back to when
+	// ordering writers of the same resource.
+	const char* const s_aszGoldenSetupOrder[] =
 	{
+		szFLUX_STEP_TRANSIENTS_GRAPHICS,
+		szFLUX_STEP_TRANSIENTS_HDR,
 		szFLUX_FEATURE_IBL,
 		szFLUX_FEATURE_SKYBOX,
 		szFLUX_FEATURE_SHADOWS,
@@ -512,25 +579,18 @@ namespace
 		szFLUX_FEATURE_SSGI,
 		szFLUX_FEATURE_LIGHT_CLUSTERING,
 		szFLUX_FEATURE_DEFERRED_SHADING,
-	};
-	const char* const s_aszGoldenSetupSSAOFog[] =
-	{
+		szFLUX_STEP_AERIAL_PERSPECTIVE,
 		szFLUX_FEATURE_SSAO,
 		szFLUX_FEATURE_FOG,
-	};
-	const char* const s_aszGoldenSetupPostProcess[] =
-	{
 		szFLUX_FEATURE_SDFS,
 		szFLUX_FEATURE_PARTICLES,
 		szFLUX_FEATURE_HDR,
-	};
-	const char* const s_aszGoldenSetupUI[] =
-	{
 		szFLUX_FEATURE_QUADS,
 		szFLUX_FEATURE_TEXT,
 #ifdef ZENITH_TOOLS
 		szFLUX_FEATURE_GIZMOS,
 #endif
+		szFLUX_STEP_FINAL_RT_TRANSITION,
 	};
 
 	// SHUTDOWN order — matches the reverse-order Shutdown block (FluxGraphics /
@@ -574,39 +634,15 @@ void Flux_FeatureRegistry::VerifyOrder() const
 			u, m_axFeatures[u].m_szName, s_aszGoldenInitOrder[u]);
 	}
 
-	// ---- SETUP sub-walks ----
-	struct GoldenPhase
+	// ---- SETUP walk (single flat ordered list) ----
+	Zenith_Check(m_uNumSetup == COUNT_OF(s_aszGoldenSetupOrder),
+		"Flux_FeatureRegistry::VerifyOrder: setup step count %u != golden %u — a setup step (feature or irregular) was added/removed without updating the golden setup array",
+		m_uNumSetup, (u_int)COUNT_OF(s_aszGoldenSetupOrder));
+	for (u_int u = 0; u < m_uNumSetup; u++)
 	{
-		Flux_FeatureSetupPhase ePhase;
-		const char* const*     aszGolden;
-		u_int                  uCount;
-	};
-	const GoldenPhase axGolden[] =
-	{
-		{ FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING, s_aszGoldenSetupPrepassToLighting, (u_int)COUNT_OF(s_aszGoldenSetupPrepassToLighting) },
-		{ FLUX_SETUP_PHASE_SSAO_FOG,            s_aszGoldenSetupSSAOFog,           (u_int)COUNT_OF(s_aszGoldenSetupSSAOFog) },
-		{ FLUX_SETUP_PHASE_POST_PROCESS,        s_aszGoldenSetupPostProcess,       (u_int)COUNT_OF(s_aszGoldenSetupPostProcess) },
-		{ FLUX_SETUP_PHASE_UI,                  s_aszGoldenSetupUI,                (u_int)COUNT_OF(s_aszGoldenSetupUI) },
-	};
-	for (const GoldenPhase& xGolden : axGolden)
-	{
-		u_int uSeen = 0;
-		for (u_int u = 0; u < m_uNumSetup; u++)
-		{
-			if (m_aeSetupPhase[u] != xGolden.ePhase)
-				continue;
-			Zenith_Check(uSeen < xGolden.uCount,
-				"Flux_FeatureRegistry::VerifyOrder: setup phase %u has more features than golden (%u)",
-				(u_int)xGolden.ePhase, xGolden.uCount);
-			const char* szName = m_axFeatures[m_auSetupOrder[u]].m_szName;
-			Zenith_Check(strcmp(szName, xGolden.aszGolden[uSeen]) == 0,
-				"Flux_FeatureRegistry::VerifyOrder: setup phase %u mismatch at %u: registry '%s' != golden '%s'",
-				(u_int)xGolden.ePhase, uSeen, szName, xGolden.aszGolden[uSeen]);
-			uSeen++;
-		}
-		Zenith_Check(uSeen == xGolden.uCount,
-			"Flux_FeatureRegistry::VerifyOrder: setup phase %u count %u != golden %u",
-			(u_int)xGolden.ePhase, uSeen, xGolden.uCount);
+		Zenith_Check(strcmp(m_axSetupSteps[u].m_szName, s_aszGoldenSetupOrder[u]) == 0,
+			"Flux_FeatureRegistry::VerifyOrder: setup order mismatch at %u: registry '%s' != golden '%s'",
+			u, m_axSetupSteps[u].m_szName, s_aszGoldenSetupOrder[u]);
 	}
 
 	// ---- SHUTDOWN order ----

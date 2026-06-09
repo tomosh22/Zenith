@@ -20,7 +20,7 @@
 #include "Flux/SSAO/Flux_SSAOImpl.h"
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
-#include "Flux/Zenith_GameRenderHook.h"
+#include "Flux/Zenith_GameRenderFeatures.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
@@ -101,14 +101,8 @@ Zenith_Vector<Flux_CommandListEntry>& Flux_RendererImpl::GetPendingCommandLists(
 // changes trigger MarkDirty so the next Compile rebuilds the pool layout.
 DEBUGVAR bool dbg_bTransientAliasing = true;
 
-// No-op record callback used by the final-layout-transition barrier pass — the
-// pass exists purely so the render graph emits a prologue barrier transitioning
-// the Final Render Target into SHADER_READ_ONLY_OPTIMAL at end-of-frame, ready
-// for the swapchain copy command buffer (which lives outside the graph) to
-// sample it without a layout mismatch.
-static void Flux_FinalLayoutTransitionNoOp(Flux_CommandList*, void*)
-{
-}
+// (Flux_FinalLayoutTransitionNoOp moved to Flux_FeatureRegistry.cpp, where the
+// final-RT layout-transition setup step that uses it now lives.)
 
 void Flux_PipelineHelper::BuildFullscreenPipeline(
 	Flux_Shader& xShader,
@@ -307,6 +301,14 @@ void Flux_RendererImpl::LateInitialise()
 	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom2(); });
 #endif
 
+	// Initialise any game render features registered BEFORE Flux came up (their
+	// Initialise was deferred since the graph wasn't valid yet). Runs after the
+	// graph exists and before the first SetupRenderGraph walk so their setup is
+	// picked up immediately. No-op for the common late-registration case (games
+	// that register during Project init, after this point — those initialise on
+	// Register and request a rebuild).
+	Zenith_GameRenderFeatures::InitialiseAllPending();
+
 	SetupRenderGraph();
 	// Free-function wrapper for AddResChangeCallback — pfnCallback is a
 	// `void(*)()` callable, which a member function pointer can't satisfy
@@ -373,58 +375,18 @@ void Flux_RendererImpl::SetupRenderGraph()
 	// next Compile rebuilds the pool layout.
 	SyncRenderGraphDebugToggles();
 
-	// Core render targets FIRST — every other subsystem depends on these.
-	g_xEngine.FluxGraphics().SetupTransients(*xRenderer.m_pxRenderGraph);
-	g_xEngine.HDR().SetupTransients(*xRenderer.m_pxRenderGraph); // HDR scene target used by many subsystems
-
-	// Wave-13.B: the feature SetupRenderGraph ladder now walks the
-	// Flux_FeatureRegistry in four sub-walks separated by the inline irregulars
-	// below. The order is identical to the pre-refactor sequence and is backed
-	// by the registry's debug golden-order assert. The irregulars are NOT plain
-	// feature SetupRenderGraph calls and so stay inline:
-	//   - FluxGraphics/HDR SetupTransients (above, before phase 1)
-	//   - Skybox aerial perspective (separate method, after phase 1)
-	//   - post-fog game render hook (after phase 2)
-	//   - HDR's second SetupRenderGraph (it IS a feature, in phase 3)
-	//   - final-RT layout-transition pass (below, after phase 4)
-	const Flux_FeatureRegistry& xRegistry = Flux_FeatureRegistry::Get();
-
-	// Phase 1: preprocessing (IBL, Skybox) -> geometry G-buffer writers
-	// (Shadows, StaticMeshes, Terrain, Primitives, AnimatedMeshes,
-	// InstancedMeshes, Grass) -> decals (after writers, before readers) ->
-	// screen-space effects (HiZ, SSR, SSGI) -> clustering + deferred lighting.
-	// Clustering precedes DeferredShading so the per-cluster light lists are
-	// declared as writers before the shading pass reads them.
-	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING);
-
-	// Aerial perspective runs after DeferredShading — it blends scattering on
-	// top of the already-lit HDR scene. Registering here keeps the writer-chain
-	// topological order correct.
-	g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(*xRenderer.m_pxRenderGraph);
-
-	// Phase 2: SSAO + Fog.
-	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_SSAO_FOG);
-
-	// Game-side post-fog hook: contracted to fire AFTER engine fog passes are
-	// registered and BEFORE any post-processing passes. Games that disable the
-	// engine fog system (g_xEngine.Fog().SetExternallyOverridden(true)) and substitute
-	// their own atmospheric pass register here. See Zenith_GameRenderHook.h.
-	Zenith_GameRenderHook::InvokePostFogRegistrations(*xRenderer.m_pxRenderGraph);
-
-	// Phase 3: post-processing (SDFs, Particles, HDR composite).
-	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_POST_PROCESS);
-
-	// Phase 4: UI & presentation (Quads, Text, [tools] Gizmos).
-	xRegistry.RunSetupPhase(*xRenderer.m_pxRenderGraph, FLUX_SETUP_PHASE_UI);
-
-	// Final-layout transition pass — leaves the Final Render Target in
-	// SHADER_READ_ONLY_OPTIMAL so the swapchain copy command buffer (which
-	// lives outside the render graph) can sample it without a layout
-	// mismatch. The pass has no commands and no target setup; it exists
-	// purely so the graph emits a prologue barrier transitioning the Final
-	// RT from WRITE_RTV (set by tonemap / last writer) to READ_SRV.
-	xRenderer.m_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
-		.Reads(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
+	// Single ordered setup walk — there are NO discrete render phases. The render
+	// graph computes pass execution order by topologically sorting each pass's
+	// declared Reads/Writes; the walk's declaration order seeds that sort where it
+	// matters — producers must precede consumers (a reader links only to an
+	// earlier-declared writer of the same resource) and same-resource writers run
+	// in declaration order (see the ORDERING note in Flux_FeatureRegistry.h). The
+	// walk (built in Flux_FeatureRegistry::RegisterDefaultFeatures) folds the former
+	// inline irregulars — FluxGraphics/HDR transient creation, the Skybox aerial-
+	// perspective pass, the post-fog game hook, and the final-RT layout-transition
+	// pass — in as ordinary ordered steps at their exact prior positions, so the
+	// compiled order is unchanged.
+	Flux_FeatureRegistry::Get().RunSetup(*xRenderer.m_pxRenderGraph);
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
 }
@@ -450,6 +412,15 @@ void Flux_RendererImpl::Shutdown()
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
 	delete xRenderer.m_pxRenderGraph;
 	xRenderer.m_pxRenderGraph = nullptr;
+
+	// Shut down any still-registered game render features (reverse registration
+	// order) AFTER the graph is gone, so a feature's Shutdown can't touch a live
+	// graph — but while the Vulkan device / FluxBackend are still up, so
+	// device-touching resource deletes in a feature Shutdown are safe (matches
+	// where the engine features shut down below). Games that explicitly Unregister
+	// in their own teardown already ran their Shutdown; this is the backstop.
+	Zenith_GameRenderFeatures::ShutdownAll();
+
 	// Clear res-change callbacks so OnResChange has nothing to invoke — the
 	// callbacks would otherwise deref the now-null m_pxRenderGraph and crash.
 	xRenderer.m_xResChangeCallbacks.Clear();

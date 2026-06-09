@@ -129,6 +129,16 @@ namespace std
 
 struct Flux_RenderGraph_Pass
 {
+    // Always-on pass identity. m_szName is the const char* passed to AddPass (a
+    // static-lifetime string literal — the graph only stores the pointer). It is
+    // present in ALL configs so FindPass / GetPassOrderDescription work in
+    // shipping, where the tools-only std::string m_strName below is absent.
+    // m_szOwner is the setup-STEP name that added this pass (set from the graph's
+    // m_szCurrentSetupOwner at AddPass time); nullptr for passes added outside a
+    // setup walk (e.g. unit tests). The effective-enabled overlay force-disables
+    // by owner or by name without ever touching m_bEnabled.
+    const char* m_szName = nullptr;
+    const char* m_szOwner = nullptr;
 #ifdef ZENITH_TOOLS
     std::string m_strName;
 #endif
@@ -159,14 +169,13 @@ struct Flux_RenderGraph_Pass
     Flux_RenderGraph_AttachmentRef m_xDepthStencil;
     Flux_CommandList* m_pxCommandList = nullptr;
 
-    // Debug-name accessor that compiles in all configurations. Tools builds return the real
-    // name; shipping builds return a placeholder so Zenith_Assert(...) sites keep compiling
-    // without pulling std::string weight into release binaries.
-#ifdef ZENITH_TOOLS
-    const char* DebugName() const { return m_strName.c_str(); }
-#else
-    const char* DebugName() const { return "<release>"; }
-#endif
+    // Debug-name accessor that compiles in all configurations. Returns the
+    // always-on m_szName (the AddPass label), so the name is meaningful in
+    // shipping too — GetPassOrderDescription and assertion messages now carry the
+    // real pass name in every config. Falls back to "<unnamed>" only if a pass
+    // was somehow constructed without a name (should never happen — AddPass
+    // asserts a non-empty name).
+    const char* DebugName() const { return m_szName ? m_szName : "<unnamed>"; }
 
     ~Flux_RenderGraph_Pass()
     {
@@ -324,6 +333,38 @@ public:
     // AddPass returns a Flux_PassBuilder; subsystems that need this capture
     // the handle via the builder's implicit conversion to Flux_PassHandle.
     void SetEnabled(Flux_PassHandle xPass, bool bEnabled);
+
+    // Look up a pass by its AddPass name. O(n) strcmp scan (never a pointer
+    // compare — callers pass their own string literal, not the stored pointer).
+    // Returns an invalid handle on miss. On a DUPLICATE name it Zenith_Checks and
+    // returns invalid — a public, shipping-facing lookup must never hand back an
+    // ambiguous handle. The returned handle is generation-stamped: resolve it
+    // during your SetupRenderGraph and use it immediately; do NOT cache it across
+    // frames (handles invalidate on Clear()/rebuild). The name argument and the
+    // names passed to AddPass must be static-lifetime strings (string literals).
+    Flux_PassHandle FindPass(const char* szName) const;
+
+    // --- Generic effective-enabled overlay ---------------------------------
+    // A game (or any external system) can force-disable engine passes WITHOUT
+    // mutating their system-owned base m_bEnabled bit, by pass name and/or by
+    // owner (the setup-step name that added them). The graph schedules off
+    // IsPassEffectivelyEnabled = base && !ownerForceDisabled && !nameForceDisabled,
+    // so removing an override restores the base state automatically (the owning
+    // subsystem keeps the base bit current every frame). Changing an override
+    // calls MarkDirty() so the next Compile rebuilds the execution order
+    // (force-disabled passes drop out of it entirely). The override set PERSISTS
+    // across Clear()/rebuild — a game-level decision must not be rebuild-fragile.
+    // Owner/name pointers are stored: pass static-lifetime strings (literals).
+    void SetOwnerForceDisabled(const char* szOwner, bool bForceDisabled);
+    void SetPassForceDisabled(const char* szPassName, bool bForceDisabled);
+    bool IsOwnerForceDisabled(const char* szOwner) const;
+    bool IsPassForceDisabled(const char* szPassName) const;
+
+    // Engine-internal: set the owner tag stamped onto every pass added by the
+    // next AddPass calls. The feature-registry setup walk wraps each step (and
+    // each anchored game feature) with this so passes are owner-tagged. Reset to
+    // nullptr by Clear(). Passing nullptr clears the current owner.
+    void SetCurrentSetupOwner(const char* szOwner) { m_szCurrentSetupOwner = szOwner; }
 
     // Transient-aliasing runtime toggle. When enabled (default) AND the
     // backend reports SupportsTransientAliasing() == true, the render graph
@@ -491,6 +532,22 @@ private:
     bool m_bCompiled = false;
     bool m_bDirty = true;
     bool m_bEnabledMaskDirty = false;
+
+    // Owner tag applied to passes added by the current setup step (see
+    // SetCurrentSetupOwner). Transient per-walk state; reset to nullptr by Clear().
+    const char* m_szCurrentSetupOwner = nullptr;
+    // Generic force-disable overlay (see SetOwnerForceDisabled / SetPassForceDisabled).
+    // Grow-able, not a fixed cap. PERSIST across Clear() (NOT cleared there) so a
+    // game-level override survives graph rebuilds. Stored pointers are
+    // static-lifetime strings; membership is tested by strcmp.
+    Zenith_Vector<const char*> m_axForceDisabledOwners;
+    Zenith_Vector<const char*> m_axForceDisabledPassNames;
+    // The single scheduling predicate: base bit AND not-force-disabled-by-owner
+    // AND not-force-disabled-by-name. Every site that filters "is this pass
+    // running?" reads THIS, never m_bEnabled directly (the lone exception is
+    // SetEnabled, which writes the base bit). When both override vectors are
+    // empty this is exactly m_bEnabled — the inert, bit-identical path.
+    bool IsPassEffectivelyEnabled(const Flux_RenderGraph_Pass* pxPass) const;
     // Transient-aliasing toggle (see SetAliasingEnabled). Defaults to true;
     // the effective decision is (m_bAliasingEnabled && backend supports it)
     // evaluated inside Compile. The backend capability may be cached on the

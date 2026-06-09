@@ -285,7 +285,8 @@ const char* Project_GetGameAssetsDir() { return GAME_ASSETS_DIR; }
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 	// W0 stub. B6 may set fog technique here; the game disables engine fog
-	// entirely via g_xEngine.Fog().SetExternallyOverridden(true) inside DPFogPass.
+	// entirely via the render graph force-disable overlay
+	// (SetOwnerForceDisabled("Fog", true)) inside DPFogPass / SetupDPFog.
 }
 
 void Project_RegisterScriptBehaviours()
@@ -297,16 +298,16 @@ void Project_RegisterScriptBehaviours()
 	// non-TOOLS builds.
 	DevilsPlayground::InitializeResources();
 
-	// Register the game's post-fog render-graph pass and disable the engine
-	// fog system. Idempotent — safe across Editor Stop/Play.
+	// Register the game's fog render feature (anchored after the engine fog step)
+	// and force-disable engine fog. Idempotent — safe across Editor Stop/Play.
 	DPFogPass::Init();
 }
 
 void Project_Shutdown()
 {
-	// Order matters: tear down the render hook BEFORE engine resources go
-	// away (g_xEngine.Fog().SetExternallyOverridden is guarded against the
-	// render graph already being torn down).
+	// Order matters: unregister the game render feature BEFORE engine resources
+	// go away (ShutdownDPFog's override-lift is guarded against the render graph
+	// already being torn down).
 	DPFogPass::Shutdown();
 	DevilsPlayground::CleanupResources();
 }

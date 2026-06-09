@@ -1,8 +1,8 @@
 {
   "name": "PostFogHookFires_Test",
   "passed": true,
-  "frames": 0,
-  "durationMs": 0.103,
+  "frames": 1,
+  "durationMs": 16.323,
   "failures": [],
-  "skipped": true
+  "skipped": false
 }

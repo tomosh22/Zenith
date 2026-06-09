@@ -21,12 +21,26 @@
 // Flux -> EntityComponent include. This header therefore includes ONLY
 // Core/Flux types and forward-declares Flux_RenderGraph.
 //
-// ORDERING IS DEPENDENCY-LOAD-BEARING. Init order, the four SetupRenderGraph
-// sub-walks, and the Shutdown order each encode real subsystem dependencies
-// (see the comment block in Flux_RendererImpl::LateInitialise). A reorder is a
-// latent boot/render crash, so RegisterDefaultFeatures() runs a debug
-// VerifyOrder() that asserts the emitted sequences against hardcoded golden
-// arrays transcribed from the pre-refactor Flux.cpp. A reorder fires at boot.
+// ORDERING. Init order and Shutdown order are DEPENDENCY-LOAD-BEARING — they
+// encode real subsystem dependencies (see the comment block in
+// Flux_RendererImpl::LateInitialise); a reorder is a latent boot/teardown
+// crash. The SetupRenderGraph walk is now a SINGLE ordered list (no discrete
+// phases): the render graph COMPUTES pass execution order by topologically
+// sorting each pass's declared Reads/Writes. That sort is SEEDED by the walk's
+// declaration order in two load-bearing ways, so the walk order is NOT free-form:
+//   1. PRODUCERS MUST BE DECLARED BEFORE CONSUMERS. A reader is linked only to a
+//      writer of the SAME resource declared EARLIER in the walk
+//      (Flux_RenderGraph::FindBestWriter requires uBestWriter < uReader).
+//      Declaring a consumer step before its producer silently drops the
+//      dependency edge AND the barrier the graph would synthesise — and
+//      ValidateOrphanedReads will NOT catch it (a writer exists, just later).
+//   2. Multiple writers of the same resource execute in declaration order (the
+//      write-after-write chain). This is the tiebreak the graph falls back to
+//      when two passes write a resource with no dependency between them.
+// Passes touching disjoint resources are order-independent. To keep the walk
+// stable RegisterDefaultFeatures() runs a debug VerifyOrder() that asserts the
+// emitted init / setup-walk / shutdown sequences against hardcoded golden
+// arrays. A reorder fires at boot.
 // ---------------------------------------------------------------------------
 
 class Flux_RenderGraph;
@@ -36,34 +50,27 @@ class Flux_RenderGraph;
 // trips if the registration list ever exceeds this (count is a runtime value).
 static constexpr u_int FLUX_MAX_FEATURES = 40;
 
-// Which SetupRenderGraph sub-walk a feature belongs to. The full setup order
-// INTERLEAVES irregular cross-cuts (FluxGraphics/HDR SetupTransients, Skybox
-// aerial perspective, the post-fog game hook, HDR's second SetupRenderGraph
-// touch, the final-RT layout-transition pass) that are NOT plain feature
-// SetupRenderGraph calls, so a single monolithic walk cannot reproduce it.
-// Flux_RendererImpl::SetupRenderGraph runs these four sub-walks in order,
-// emitting the inline irregulars between them. Within a phase, features run in
-// registration (setup-order) sequence.
-enum Flux_FeatureSetupPhase : u_int
+// One step in the single ordered SetupRenderGraph walk. Most steps are a
+// feature's SetupRenderGraph trampoline; a few are "irregulars" — the
+// FluxGraphics/HDR transient creation, the Skybox aerial-perspective pass, the
+// post-fog game hook, and the final-RT layout-transition pass — which are not
+// plain feature setups but share the void(Flux_RenderGraph&) signature. They
+// are ordinary ordered steps in the one walk. The render graph computes pass
+// execution order by topologically sorting declared Reads/Writes, but the walk
+// order is load-bearing where it seeds that sort: a reader links only to an
+// EARLIER-declared writer of the same resource (so producers must be declared
+// before consumers), and same-resource writers run in declaration order. See
+// the ORDERING note above for the full rule.
+struct Flux_SetupStep
 {
-	// Preprocessing -> geometry (G-buffer writers) -> decals -> screen-space
-	// effects -> clustering + deferred lighting. Everything up to and including
-	// DeferredShading, before the aerial-perspective irregular.
-	FLUX_SETUP_PHASE_PREPASS_TO_LIGHTING = 0,
-	// SSAO + Fog. Runs after the Skybox aerial-perspective irregular and before
-	// the post-fog game hook irregular.
-	FLUX_SETUP_PHASE_SSAO_FOG,
-	// SDFs + Particles + HDR (HDR's SECOND touch — bloom/tonemap composite).
-	// Runs after the post-fog game hook.
-	FLUX_SETUP_PHASE_POST_PROCESS,
-	// UI quads + text + (tools) gizmos. Runs before the final-RT irregular.
-	FLUX_SETUP_PHASE_UI,
-
-	FLUX_SETUP_PHASE_COUNT,
-	// Sentinel for features that do NOT participate in any setup sub-walk (none
-	// today, but keeps the contract explicit).
-	FLUX_SETUP_PHASE_NONE = 0xFFFFFFFFu,
+	const char* m_szName              = nullptr;
+	void      (*m_pfnSetup)(Flux_RenderGraph&) = nullptr;
 };
+
+// Setup walk holds every feature's setup trampoline (~25) plus the 5 irregular
+// steps, so it can exceed the feature count. +8 leaves slack; AddToSetupWalk /
+// AddSetupStep assert against this bound at runtime.
+static constexpr u_int FLUX_MAX_SETUP_STEPS = FLUX_MAX_FEATURES + 8;
 
 // One registered renderer feature. Every function pointer is NULLABLE; a null
 // pointer means "this feature does not participate in that phase". Captureless
@@ -100,15 +107,22 @@ public:
 
 	// Append a feature in INIT order. Asserts on overflow / duplicate name.
 	// Returns the index of the just-added feature so the caller can wire its
-	// setup-phase / shutdown participation by index without a name lookup.
+	// setup-walk / shutdown participation by index without a name lookup.
 	u_int Register(const char* szName,
 		void (*pfnInitialise)(),
 		void (*pfnSetupRenderGraph)(Flux_RenderGraph&),
 		void (*pfnShutdown)());
 
-	// Record that the feature at uFeatureIndex participates in setup sub-walk
-	// ePhase. Call order across features defines the within-phase setup order.
-	void AddToSetupWalk(u_int uFeatureIndex, Flux_FeatureSetupPhase ePhase);
+	// Append the feature at uFeatureIndex's SetupRenderGraph trampoline to the
+	// single ordered setup walk. Call order defines the walk (= declaration)
+	// order. Asserts the feature actually has a SetupRenderGraph trampoline — a
+	// feature with none (e.g. DynamicLights) must NOT be added to the walk.
+	void AddToSetupWalk(u_int uFeatureIndex);
+
+	// Append a raw named setup step — an "irregular" that is not a registered
+	// feature's setup (FluxGraphics/HDR transient creation, Skybox aerial
+	// perspective, the post-fog game hook, the final-RT layout-transition pass).
+	void AddSetupStep(const char* szName, void (*pfnSetup)(Flux_RenderGraph&));
 
 	// Record that the feature at uFeatureIndex participates in the registry-
 	// driven Shutdown walk. Call order defines shutdown order. (FluxGraphics /
@@ -133,9 +147,16 @@ public:
 	const Flux_FeatureDesc* GetFeatures() const { return m_axFeatures; }
 	u_int GetNumFeatures() const { return m_uNumFeatures; }
 
-	// Run one SetupRenderGraph sub-walk: invoke m_pfnSetupRenderGraph for every
-	// feature tagged with ePhase, in recorded setup order, skipping nulls.
-	void RunSetupPhase(Flux_RenderGraph& xGraph, Flux_FeatureSetupPhase ePhase) const;
+	// Run the single ordered setup walk: invoke each step's setup fn in walk
+	// order. Every step's fn is non-null (asserted at append time). Between steps
+	// it tags pass ownership and interleaves any game render features anchored
+	// after each step (see Zenith_GameRenderFeatures).
+	void RunSetup(Flux_RenderGraph& xGraph) const;
+
+	// True if a setup step with this exact name exists in the walk. Used to
+	// validate game-feature runAfter anchors (Zenith_GameRenderFeatures). O(n)
+	// strcmp scan; names are static-lifetime literals.
+	bool HasSetupStepNamed(const char* szName) const;
 
 	// Walk the explicit shutdown order, invoking m_pfnShutdown where non-null.
 	void RunShutdown() const;
@@ -163,11 +184,11 @@ private:
 	Flux_FeatureDesc m_axFeatures[FLUX_MAX_FEATURES];
 	u_int            m_uNumFeatures = 0;
 
-	// Setup order: indices into m_axFeatures, in setup sequence, each tagged with
-	// its sub-walk phase. RunSetupPhase filters this by phase preserving order.
-	u_int                  m_auSetupOrder[FLUX_MAX_FEATURES];
-	Flux_FeatureSetupPhase m_aeSetupPhase[FLUX_MAX_FEATURES];
-	u_int                  m_uNumSetup = 0;
+	// Single ordered setup walk: feature setup trampolines + irregular steps, in
+	// the order RunSetup invokes them. This IS the declaration order the render
+	// graph falls back to when ordering writers of the same resource.
+	Flux_SetupStep m_axSetupSteps[FLUX_MAX_SETUP_STEPS];
+	u_int          m_uNumSetup = 0;
 
 	// Shutdown order: indices into m_axFeatures, in shutdown sequence.
 	u_int m_auShutdownOrder[FLUX_MAX_FEATURES];

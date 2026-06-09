@@ -23,23 +23,14 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-// Render graph pass indices for dynamic enable/disable
-
-// Game-side override flag (EXT-1) now lives on Flux_FogImpl as
-// m_bExternallyOverridden. When true, all 6 fog passes are explicitly
-// disabled on the active render graph and ApplyTechniqueSelectionToGraph
-// short-circuits.
-
-void Flux_FogImpl::DisableAllFogPasses(Flux_RenderGraph& xGraph)
-{
-	xGraph.SetEnabled(m_xSimpleFogPass,        false);
-	xGraph.SetEnabled(m_xFroxelInjectPass,     false);
-	xGraph.SetEnabled(m_xFroxelLightPass,      false);
-	xGraph.SetEnabled(m_xFroxelApplyPass,      false);
-	xGraph.SetEnabled(m_xRaymarchPass,         false);
-	xGraph.SetEnabled(m_xGodRaysPass,          false);
-}
-
+// Render graph pass indices for dynamic enable/disable.
+//
+// A game disables engine fog generically via the render graph's force-disable
+// overlay (xGraph.SetOwnerForceDisabled("Fog", true)), which masks all 6 fog
+// passes by owner WITHOUT touching their base enable bits — so the technique
+// selection below keeps running harmlessly and the engine fog returns intact the
+// moment the game lifts the override. There is no longer a fog-specific override
+// flag or short-circuit here.
 
 u_int dbg_uVolFogDebugMode = 0;  // Debug visualization mode (non-static for external linkage)
 
@@ -140,13 +131,12 @@ void Flux_FogImpl::Reset()
 
 void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 {
-	// EXT-1: when a game has taken over fog rendering via SetExternallyOverridden,
-	// short-circuit completely — DON'T re-toggle SetEnabled per frame, otherwise
-	// the per-frame technique cache would re-enable engine fog passes the next
-	// time the cached technique compares unequal.
-	if (m_bExternallyOverridden)
-		return;
-
+	// Always keep the per-pass BASE enable bits in sync with the active technique.
+	// If a game force-disables owner "Fog" via the render graph overlay, these
+	// passes are masked regardless of their base bit; when the game lifts the
+	// override the base state (kept current here every frame) re-enables exactly
+	// the active technique's passes — so there is no cached-technique staleness to
+	// go wrong, and no override-awareness needed here.
 	const u_int uTechnique = Zenith_GraphicsOptions::Get().m_uVolFogTechnique;
 	if (uTechnique == m_uLastFogTechnique)
 		return;
@@ -303,41 +293,8 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(m_pxHDR->GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (m_pxFluxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
-	// EXT-1: re-apply game-side override after the graph has been (re)built.
-	// Without this, a RequestGraphRebuild() while the flag is set would leave
-	// fog passes in their default-enabled state until the next technique
-	// switch. Pass handles above are freshly populated, so DisableAllFogPasses
-	// is safe to call here.
-	ReapplyOverrideToCurrentGraph();
-}
-
-
-void Flux_FogImpl::SetExternallyOverridden(bool bOverridden)
-{
-	m_bExternallyOverridden = bOverridden;
-
-	// Touch the active graph immediately so the change takes effect this
-	// frame, regardless of whether ApplyTechniqueSelectionToGraph runs.
-	if (!m_pxFluxRenderer->IsRenderGraphValid()) return;
-	Flux_RenderGraph& xGraph = m_pxFluxRenderer->GetRenderGraph();
-
-	if (bOverridden)
-	{
-		DisableAllFogPasses(xGraph);
-	}
-	else
-	{
-		// Don't blanket-enable all 6 passes — let ApplyTechniqueSelectionToGraph
-		// pick whichever subset matches the current technique on the next
-		// frame. Invalidate the cached technique so the apply path runs.
-		m_uLastFogTechnique = UINT32_MAX;
-	}
-	xGraph.MarkDirty();
-}
-
-void Flux_FogImpl::ReapplyOverrideToCurrentGraph()
-{
-	if (!m_bExternallyOverridden) return;
-	if (!m_pxFluxRenderer->IsRenderGraphValid()) return;
-	DisableAllFogPasses(m_pxFluxRenderer->GetRenderGraph());
+	// A game that overrides fog force-disables owner "Fog" on the graph; that
+	// overlay persists across graph rebuilds (it is NOT cleared by Clear()), so a
+	// RequestGraphRebuild() while a game holds the override automatically re-masks
+	// these freshly-rebuilt passes — no fog-specific re-apply needed here.
 }

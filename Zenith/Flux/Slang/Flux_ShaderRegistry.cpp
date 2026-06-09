@@ -793,7 +793,8 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 	},
 
 	// DevilsPlayground game-side fog (EXT-1). Replaces the engine fog
-	// (which is disabled via g_xEngine.Fog().SetExternallyOverridden) with
+	// (which is disabled via the render graph force-disable overlay,
+	// SetOwnerForceDisabled("Fog")) with
 	// exponential distance fog and circular "holes" around villagers /
 	// lights. Up to DP_FOG_MAX_HOLES (60) holes per frame uploaded as a CBV
 	// array — see DPFogPass.cpp for the matching C++ cap and

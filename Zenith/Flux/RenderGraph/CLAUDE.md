@@ -94,7 +94,20 @@ TerrainGBuffer -> StaticMeshesGBuffer -> AnimatedMeshesGBuffer -> Foliage -> HiZ
 
 It is bound to a debug variable button at `Render/RenderGraph/Print Pass Order` (`Flux.cpp:207`). When you're trying to figure out why a pass runs where it does, click the button and read the resulting log line — it is the live source of truth, ahead of any documentation.
 
-Disabled passes appear suffixed with `(disabled)`. The string is empty before the first successful Compile.
+Passes that are not *effectively enabled* appear suffixed with `(disabled)`. The string is empty before the first successful Compile. Note: a pass that is **force-disabled** (see below) is excluded from the execution order entirely — it does not appear in this list at all. The `(disabled)` suffix is for a pass still in the order whose base bit is off (the `SetEnabled` cheap-toggle case).
+
+## Game render features & generic pass disable
+
+External game code modifies the graph through two generic mechanisms — no hardcoded stages, no fog-specific API.
+
+### Render features (`Zenith_GameRenderFeatures`)
+A game registers a feature `{name, init, setup, shutdown, runAfter}` (captureless free-fn trampolines). The engine drives the lifecycle: `InitialiseAllPending` at Flux init, `ShutdownAll` at Flux shutdown; late registration (after Flux is up) initialises immediately and requests a rebuild. During `Flux_FeatureRegistry::RunSetup`, after each engine setup step runs, every game feature anchored `runAfter="<that step's name>"` has its `SetupRenderGraph` invoked — so the feature's passes are declared at the right index (and therefore land in the correct same-resource write-chain position) without any enum. Cross-resource ordering uses `DependsOn(xGraph.FindPass("EnginePass"))`. Anchor names resolve to engine setup-step names only (v1); to order relative to another game feature, share the anchor (registration order tie-breaks) or use `DependsOn(FindPass(...))`.
+
+### Stable pass identity (`FindPass`)
+Every pass stores the `const char*` name passed to `AddPass` in **all** configs (not just tools), so `FindPass(name)` works in shipping. Names must be **static-lifetime** string literals (only the pointer is stored). `FindPass` returns a generation-stamped handle — resolve it in your `SetupRenderGraph` and use it immediately; never cache it (handles die on `Clear()`/rebuild). Duplicate names are a `Zenith_Check` error (enforced in `AddPass` under `ZENITH_RUNTIME_CHECKS`, which is on in shipping).
+
+### Force-disable overlay (`SetOwnerForceDisabled` / `SetPassForceDisabled`)
+Each pass carries a system-owned base `m_bEnabled` (written only by `SetEnabled`, owned by the subsystem) plus an auto-assigned **owner** = the setup-step name that added it (e.g. all 6 fog passes share owner `"Fog"`; the aerial-perspective pass has owner `"@Skybox:AerialPerspective"`). A game force-disables a whole feature group by owner, or a single pass by name. The graph schedules off **`IsPassEffectivelyEnabled = base && !ownerForceDisabled && !nameForceDisabled`** — read at every site that filters enabled passes — so the base bit is never mutated and lifting the override restores the subsystem's own state automatically. Changing an override calls `MarkDirty()` so the next `Compile` rebuilds the order (force-disabled passes drop out of it). The override set **persists across `Clear()`/rebuild** (a game-level decision must not be rebuild-fragile); a game clears its own override on feature shutdown. When no override is set, the predicate is exactly `m_bEnabled` — the engine pass order is byte-identical to having no overlay at all.
 
 ## Common gotchas
 

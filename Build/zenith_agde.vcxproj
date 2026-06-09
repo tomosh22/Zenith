@@ -1126,7 +1126,7 @@
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextQueue.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h" />
-    <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h" />
+    <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderFeatures.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h" />
@@ -2048,7 +2048,7 @@
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="..\Zenith\Flux\Text\Flux_TextQueue.cpp" />
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp" />
-    <ClCompile Include="..\Zenith\Flux\Zenith_GameRenderHook.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Zenith_GameRenderFeatures.cpp" />
     <ClCompile Include="..\Zenith\Flux\Zenith_RenderBus.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_InputSimulator.cpp" />

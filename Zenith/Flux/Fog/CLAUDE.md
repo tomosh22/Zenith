@@ -123,6 +123,10 @@ Volume fog registers three passes with the render graph; ordering comes from dec
 
 The application pass naturally runs after deferred shading writes the HDR scene and before tonemap reads it.
 
+### Game override (generic)
+
+A game that ships its own fog (e.g. DevilsPlayground's `DP_Fog`) disables the engine fog **generically** via the render graph's force-disable overlay — `xGraph.SetOwnerForceDisabled("Fog", true)` — which masks all fog passes by owner (`"Fog"` is this feature's setup-step name) WITHOUT mutating their base enable bits. The fog orchestrator's `ApplyTechniqueSelectionToGraph` keeps setting those base bits per the active technique every frame regardless; the overlay masks them while the override is held, and the engine technique returns intact the moment the game lifts it. There is no longer any fog-specific override flag or `SetExternallyOverridden` API — see `Flux/RenderGraph/CLAUDE.md` (Game render features & generic pass disable).
+
 ## Architecture
 
 ### Orchestration Pattern

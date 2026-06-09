@@ -37,13 +37,13 @@ public:
 
 	void ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph);
 
-	void SetExternallyOverridden(bool bOverridden);
-	bool IsExternallyOverridden() const { return m_bExternallyOverridden; }
-
-	void ReapplyOverrideToCurrentGraph();
-
-	// Public so the file-static graph trampolines can drive pass enable/disable.
-	void DisableAllFogPasses(Flux_RenderGraph& xGraph);
+	// NOTE: the bespoke game-override path (SetExternallyOverridden /
+	// IsExternallyOverridden / ReapplyOverrideToCurrentGraph / DisableAllFogPasses
+	// / m_bExternallyOverridden) was removed. A game disables engine fog generically
+	// via the render graph's force-disable overlay — SetOwnerForceDisabled("Fog")
+	// masks all 6 fog passes (owner "Fog" = this feature's setup-step name) without
+	// touching their base enable bits. ApplyTechniqueSelectionToGraph keeps the
+	// base bits current; lifting the override restores the active technique exactly.
 
 	Flux_PassHandle m_xSimpleFogPass;
 	Flux_PassHandle m_xFroxelInjectPass;
@@ -53,7 +53,6 @@ public:
 	Flux_PassHandle m_xGodRaysPass;
 
 	u_int           m_uLastFogTechnique = UINT32_MAX;
-	bool            m_bExternallyOverridden = false;
 
 	Flux_Shader     m_xShader;
 	Flux_Pipeline   m_xPipeline;

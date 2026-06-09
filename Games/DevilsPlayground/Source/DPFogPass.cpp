@@ -8,7 +8,7 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Zenith_GameRenderHook.h"
+#include "Flux/Zenith_GameRenderFeatures.h"
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
@@ -26,8 +26,13 @@
 
 namespace
 {
-	// Forward decl — body below uses Flux_RenderGraph internals.
+	// Game render-feature trampolines (registered with Zenith_GameRenderFeatures).
+	// InitialiseDPFog: one-time init (debug vars + shader hot-reload reg).
+	// SetupDPFog: declares the DP_Fog pass + force-disables engine fog each rebuild.
+	// ShutdownDPFog: lifts the force-disable + tears down the pipeline.
+	void InitialiseDPFog();
 	void SetupDPFog(Flux_RenderGraph& xGraph);
+	void ShutdownDPFog();
 
 	// Pass record callback: assembles and binds the per-frame fog CBV,
 	// then issues a fullscreen draw against the HDR scene target.
@@ -124,75 +129,91 @@ void DPFogPass::Init()
 {
 	if (s_bInitialised) return;
 	s_bInitialised = true;
-	Zenith_GameRenderHook::RegisterPostFogPass(&SetupDPFog);
 
-	// CRITICAL ORDERING NOTE — boot sequence is:
-	//   1. g_xEngine.FluxRenderer().LateInitialise() → SetupRenderGraph() → InvokePostFogRegistrations()
-	//   2. Project_RegisterScriptBehaviours() → DPFogPass::Init() → RegisterPostFogPass()
-	// i.e. the post-fog callback list is empty when SetupRenderGraph runs the
-	// first time. Without an explicit rebuild request, our SetupDPFog hook
-	// would NEVER fire in non-tools builds (which is why the fog rendered in
-	// tools — Terrain/SSR/etc trigger incidental rebuilds during gameplay
-	// init that pick up the late-registered hook — but didn't render at all
-	// in non-tools where no rebuild ever happened). Force the rebuild here so
-	// the graph picks up our callback before the first frame ticks.
-	g_xEngine.FluxRenderer().RequestGraphRebuild();
-
-#ifdef ZENITH_TOOLS
-	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "Density"          }, s_fDebugDensity,         0.0f, 10.0f);
-	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorR"           }, s_fDebugColorR,          0.0f,  1.0f);
-	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorG"           }, s_fDebugColorG,          0.0f,  1.0f);
-	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorB"           }, s_fDebugColorB,          0.0f,  1.0f);
-	g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "HoleRadiusScale"  }, s_fDebugHoleRadiusScale, 0.0f,  2.0f);
-#endif
-
-#ifdef ZENITH_TOOLS
-	// Re-build the DP_Fog pipeline whenever the shader hot-reloads.
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::DevilsPlayground_DPFog,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem(&BuildPipelines,
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
+	// Register DP_Fog as a generic game render feature. It anchors runAfter="Fog"
+	// so its pass is declared right after the engine fog step — the exact slot the
+	// old hardcoded @GameHook:PostFog occupied — keeping DP_Fog's HDR write-chain
+	// position unchanged. The registry owns the lifecycle: because Flux is already
+	// up when this runs (Project_RegisterScriptBehaviours fires after
+	// FluxRenderer().LateInitialise()), Register() calls InitialiseDPFog()
+	// immediately and requests a graph rebuild so SetupDPFog runs before the first
+	// frame — no manual RequestGraphRebuild() needed here anymore.
+	Zenith_GameRenderFeatureDesc xDesc;
+	xDesc.m_szName             = "DP_Fog";
+	xDesc.m_pfnInitialise      = &InitialiseDPFog;
+	xDesc.m_pfnSetupRenderGraph = &SetupDPFog;
+	xDesc.m_pfnShutdown        = &ShutdownDPFog;
+	xDesc.m_szRunAfter         = "Fog";
+	Zenith_GameRenderFeatures::Register(xDesc);
 }
 
 void DPFogPass::Shutdown()
 {
 	if (!s_bInitialised) return;
 	s_bInitialised = false;
-	Zenith_GameRenderHook::UnregisterPostFogPass(&SetupDPFog);
-	// Re-engage normal fog technique selection so a follow-on project (or
-	// Editor Stop without restart) doesn't boot with the engine fog system
-	// silently disabled. Guarded against teardown order — see EXT-1.
-	if (g_xEngine.FluxRenderer().IsRenderGraphValid())
-	{
-		g_xEngine.Fog().SetExternallyOverridden(false);
-	}
-	// delete (not Reset) so the device-touching destructors run HERE, in the
-	// shutdown sequence with the Vulkan device still alive -- not at C++
-	// static-exit, by which time g_xEngine.FluxBackend() has been freed (the
-	// 0xC0000005). delete on nullptr (pipeline never built, e.g.
-	// --list-automated-tests) is a safe no-op.
-	delete s_pxPipeline;
-	s_pxPipeline = nullptr;
-	delete s_pxShader;
-	s_pxShader = nullptr;
-	s_bPipelineBuilt = false;
+	// The registry calls ShutdownDPFog() (lift override + tear down pipeline) if
+	// the feature was initialised. Order-preserving unregister.
+	Zenith_GameRenderFeatures::Unregister("DP_Fog");
 }
 
 namespace
 {
+	void InitialiseDPFog()
+	{
+#ifdef ZENITH_TOOLS
+		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "Density"          }, s_fDebugDensity,         0.0f, 10.0f);
+		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorR"           }, s_fDebugColorR,          0.0f,  1.0f);
+		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorG"           }, s_fDebugColorG,          0.0f,  1.0f);
+		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorB"           }, s_fDebugColorB,          0.0f,  1.0f);
+		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "HoleRadiusScale"  }, s_fDebugHoleRadiusScale, 0.0f,  2.0f);
+
+		// Re-build the DP_Fog pipeline whenever the shader hot-reloads.
+		static const FluxShaderProgram s_axPrograms[] = {
+			FluxShaderProgram::DevilsPlayground_DPFog,
+		};
+		Flux_ShaderHotReload::RegisterSubsystem(&BuildPipelines,
+			s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
+	}
+
 	void SetupDPFog(Flux_RenderGraph& xGraph)
 	{
-		// EXT-1: kill the 6 engine fog passes — DP ships its own.
-		g_xEngine.Fog().SetExternallyOverridden(true);
+		// Kill the 6 engine fog passes generically — DP ships its own. The overlay
+		// force-disables every pass owned by the "Fog" setup step (owner == engine
+		// fog feature name) WITHOUT touching their base enable bits, and persists
+		// across graph rebuilds; ShutdownDPFog lifts it. Engine fog returns intact
+		// (at the active technique) the moment the override is lifted.
+		xGraph.SetOwnerForceDisabled("Fog", true);
 
-		// Register the actual DP_Fog pass. Reads scene depth so the shader can
+		// Declare the actual DP_Fog pass. Reads scene depth so the shader can
 		// reconstruct world position; writes the HDR scene target. Pass builder
-		// is &&-qualified so the chain MUST be consumed inline.
+		// is &&-qualified so the chain MUST be consumed inline. RunSetup tags this
+		// pass with owner "DP_Fog" (the feature name) around this call.
 		xGraph.AddPass("DP_Fog", &ExecuteDPFog)
 			.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
 			.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	void ShutdownDPFog()
+	{
+		// Lift the generic fog override so a follow-on project (or Editor Stop
+		// without restart) doesn't boot with engine fog silently masked. Guarded
+		// against teardown order — when Flux is already gone the graph is invalid
+		// and there's nothing to restore.
+		if (g_xEngine.FluxRenderer().IsRenderGraphValid())
+		{
+			g_xEngine.FluxRenderer().GetRenderGraph().SetOwnerForceDisabled("Fog", false);
+		}
+		// delete (not Reset) so the device-touching destructors run HERE, in the
+		// shutdown sequence with the Vulkan device still alive -- not at C++
+		// static-exit, by which time g_xEngine.FluxBackend() has been freed (the
+		// 0xC0000005). delete on nullptr (pipeline never built, e.g.
+		// --list-automated-tests) is a safe no-op.
+		delete s_pxPipeline;
+		s_pxPipeline = nullptr;
+		delete s_pxShader;
+		s_pxShader = nullptr;
+		s_bPipelineBuilt = false;
 	}
 
 	void ExecuteDPFog(Flux_CommandList* pxCommandList, void* /*pUserData*/)

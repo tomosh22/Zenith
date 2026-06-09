@@ -92,7 +92,7 @@
     <ClCompile Include="..\Tests\Test_GameplaySystems.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_GameRenderHook.cpp">
+    <ClCompile Include="..\Tests\Test_GameRenderFeatures.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_HearingFlow.cpp">

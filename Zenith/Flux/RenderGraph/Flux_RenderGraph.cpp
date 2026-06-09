@@ -6,6 +6,8 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
+#include <cstring> // strcmp — FindPass + force-disable overlay membership tests
+
 // Hard cap on pass count. Chosen to be generous (current engine sits around
 // 60 passes); a runaway loop registering passes trips the assert before it
 // chews all of heap / the topo-sort adjacency vectors blow up.
@@ -345,18 +347,25 @@ Flux_PassBuilder Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_
     Zenith_Assert(uInitialCapacity > 0, "Flux_RenderGraph::AddPass: command-list capacity must be > 0 for pass '%s'", szName);
     Zenith_Assert(m_xPasses.GetSize() < kMaxPassCount, "Flux_RenderGraph::AddPass: exceeded hard pass cap (%u) when adding '%s'", kMaxPassCount, szName);
     Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::AddPass: must be called from main thread ('%s')", szName);
-#ifdef ZENITH_TOOLS
+#ifdef ZENITH_RUNTIME_CHECKS
     // Duplicate-name detection: two passes sharing a name makes the ImGui panel
     // and assertion messages ambiguous, and usually indicates a copy-paste bug in
-    // a subsystem's SetupRenderGraph. Only enforced in tools builds because
-    // m_strName is tools-only.
+    // a subsystem's SetupRenderGraph. Enforced in all RUNTIME_CHECKS builds (which
+    // includes shipping _False) because FindPass is now public and a public,
+    // shipping-facing name lookup must not be able to resolve an ambiguous name.
+    // Compares the always-on m_szName via strcmp (m_strName is tools-only).
     for (u_int i = 0; i < m_xPasses.GetSize(); i++)
     {
-        Zenith_Assert(m_xPasses.Get(i)->m_strName != szName,
+        Zenith_Assert(m_xPasses.Get(i)->m_szName == nullptr || strcmp(m_xPasses.Get(i)->m_szName, szName) != 0,
             "Flux_RenderGraph::AddPass: duplicate pass name '%s' (already used by pass %u)", szName, i);
     }
 #endif
     Flux_RenderGraph_Pass* pxPass = new Flux_RenderGraph_Pass();
+    // Always-on identity (present in every config). m_szName is the AddPass label;
+    // m_szOwner is the current setup-step owner so the effective-enabled overlay
+    // can force-disable by owner. Both are static-lifetime string pointers.
+    pxPass->m_szName = szName;
+    pxPass->m_szOwner = m_szCurrentSetupOwner;
 #ifdef ZENITH_TOOLS
     pxPass->m_strName = szName;
 #endif
@@ -598,6 +607,82 @@ void Flux_RenderGraph::SetEnabled(Flux_PassHandle xPass, bool bEnabled)
     if (pxPass->m_bEnabled != bEnabled) { pxPass->m_bEnabled = bEnabled; m_bEnabledMaskDirty = true; }
 }
 
+Flux_PassHandle Flux_RenderGraph::FindPass(const char* szName) const
+{
+    Zenith_Assert(szName != nullptr, "Flux_RenderGraph::FindPass: null name");
+    Flux_PassHandle xFound; // invalid by default
+    for (u_int i = 0; i < m_xPasses.GetSize(); i++)
+    {
+        const Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(i);
+        if (pxPass->m_szName != nullptr && strcmp(pxPass->m_szName, szName) == 0)
+        {
+            // Duplicate-name guard: a public, shipping-facing lookup must never
+            // resolve an ambiguous name to a usable handle. AddPass already
+            // Zenith_Checks duplicates under ZENITH_RUNTIME_CHECKS, but defend
+            // here too — return invalid on the second hit.
+            Zenith_Check(!xFound.IsValid(),
+                "Flux_RenderGraph::FindPass: duplicate pass name '%s' — ambiguous lookup, returning invalid handle", szName);
+            if (xFound.IsValid()) return Flux_PassHandle();
+            xFound = MakePassHandle(i);
+        }
+    }
+    return xFound;
+}
+
+bool Flux_RenderGraph::IsPassEffectivelyEnabled(const Flux_RenderGraph_Pass* pxPass) const
+{
+    // base bit AND not force-disabled by owner AND not force-disabled by name.
+    // When both override vectors are empty this is exactly m_bEnabled.
+    return pxPass->m_bEnabled
+        && !(pxPass->m_szOwner != nullptr && IsOwnerForceDisabled(pxPass->m_szOwner))
+        && !(pxPass->m_szName  != nullptr && IsPassForceDisabled(pxPass->m_szName));
+}
+
+// --- Force-disable overlay -------------------------------------------------
+// Membership helper: index of szValue in xVec by strcmp, or UINT32_MAX on miss.
+static u_int FindStringIndex(const Zenith_Vector<const char*>& xVec, const char* szValue)
+{
+    for (u_int i = 0; i < xVec.GetSize(); i++)
+    {
+        if (xVec.Get(i) != nullptr && strcmp(xVec.Get(i), szValue) == 0) return i;
+    }
+    return UINT32_MAX;
+}
+
+void Flux_RenderGraph::SetOwnerForceDisabled(const char* szOwner, bool bForceDisabled)
+{
+    Zenith_Assert(szOwner != nullptr, "Flux_RenderGraph::SetOwnerForceDisabled: null owner");
+    const u_int uExisting = FindStringIndex(m_axForceDisabledOwners, szOwner);
+    const bool bAlready = (uExisting != UINT32_MAX);
+    if (bForceDisabled == bAlready) return; // no change
+    if (bForceDisabled) m_axForceDisabledOwners.PushBack(szOwner);
+    else                m_axForceDisabledOwners.Remove(uExisting);
+    // Order changed → the topological sort (which reads the effective predicate)
+    // must rebuild so force-disabled passes drop out of / return to the order.
+    MarkDirty();
+}
+
+void Flux_RenderGraph::SetPassForceDisabled(const char* szPassName, bool bForceDisabled)
+{
+    Zenith_Assert(szPassName != nullptr, "Flux_RenderGraph::SetPassForceDisabled: null pass name");
+    const u_int uExisting = FindStringIndex(m_axForceDisabledPassNames, szPassName);
+    const bool bAlready = (uExisting != UINT32_MAX);
+    if (bForceDisabled == bAlready) return; // no change
+    if (bForceDisabled) m_axForceDisabledPassNames.PushBack(szPassName);
+    else                m_axForceDisabledPassNames.Remove(uExisting);
+    MarkDirty();
+}
+
+bool Flux_RenderGraph::IsOwnerForceDisabled(const char* szOwner) const
+{
+    return FindStringIndex(m_axForceDisabledOwners, szOwner) != UINT32_MAX;
+}
+
+bool Flux_RenderGraph::IsPassForceDisabled(const char* szPassName) const
+{
+    return FindStringIndex(m_axForceDisabledPassNames, szPassName) != UINT32_MAX;
+}
+
 void Flux_RenderGraph::SetAliasingEnabled(bool bEnabled)
 {
     // Needs a full recompile — the aliasing phase changes the pool layout and
@@ -641,7 +726,7 @@ std::string Flux_RenderGraph::GetPassOrderDescription() const
             strResult += " -> ";
         }
         strResult += pxPass->DebugName();
-        if (!pxPass->m_bEnabled)
+        if (!IsPassEffectivelyEnabled(pxPass))
         {
             strResult += " (disabled)";
         }
@@ -665,6 +750,12 @@ void Flux_RenderGraph::Clear()
     m_bCompiled = false;
     m_bDirty = true;
     m_bEnabledMaskDirty = false;
+    // Reset the transient per-walk owner tag, but DELIBERATELY do NOT clear the
+    // force-disable overlay vectors (m_axForceDisabledOwners /
+    // m_axForceDisabledPassNames): a game-level override must survive
+    // Clear()/rebuild so it doesn't have to be reasserted on every recompile. A
+    // game clears its own override explicitly on feature shutdown.
+    m_szCurrentSetupOwner = nullptr;
     // Bump the generation so any Flux_PassHandle / Flux_TransientHandle issued
     // by the previous build can't be silently reused to address the new build's
     // passes/transients. AssertPassHandleValid / AssertTransientHandleValid
@@ -1004,7 +1095,7 @@ void Flux_RenderGraph::BuildResourceTraffic()
     for (u_int uPass = 0; uPass < m_xPasses.GetSize(); uPass++)
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPass);
-        if (!pxPass->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxPass)) continue;
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
         {
             const Flux_RenderGraph_ResourceUsage& xWrite = it.GetData();
@@ -1070,7 +1161,7 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
     {
         u_int uPassIdx = itE.GetData();
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIdx);
-        if (!pxPass->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxPass)) continue;
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
         {
             const Flux_RenderGraph_ResourceUsage& xWrite = it.GetData();
@@ -1226,7 +1317,7 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
     {
         const u_int uPassIdx = itE.GetData();
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIdx);
-        if (!pxPass->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxPass)) continue;
 
         for (u_int u = 0; u < m_axTransients.GetSize(); u++)
         {
@@ -1560,7 +1651,7 @@ void Flux_RenderGraph::CollectClearRequirements()
     for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
-        if (pxPass->m_bIsCompute || !pxPass->m_bEnabled) continue;
+        if (pxPass->m_bIsCompute || !IsPassEffectivelyEnabled(pxPass)) continue;
         if (pxPass->m_uNumColourAttachments == 0 && !pxPass->m_xDepthStencil.IsValid()) continue;
         for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
         {
@@ -1589,7 +1680,7 @@ void Flux_RenderGraph::AssignClearFlags()
     for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
-        if (pxPass->m_bIsCompute || !pxPass->m_bEnabled) continue;
+        if (pxPass->m_bIsCompute || !IsPassEffectivelyEnabled(pxPass)) continue;
         if (pxPass->m_uNumColourAttachments == 0 && !pxPass->m_xDepthStencil.IsValid()) continue;
         bool bNeedsClear = false;
         for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
@@ -1658,7 +1749,7 @@ bool Flux_RenderGraph::Compile()
     for (u_int i = 0; i < m_xPasses.GetSize(); i++)
     {
         const Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
-        if (!pxP->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxP)) continue;
         ValidatePassMemoryFlagCompatibility(pxP);
     }
 
@@ -1925,7 +2016,7 @@ void Flux_RenderGraph::SynthesizeBarriers()
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
-        if (!pxPass->m_bEnabled) continue;
+        if (!IsPassEffectivelyEnabled(pxPass)) continue;
 
         // Reads first so READWRITE_UAV (appearing as a Read declaration when the
         // caller used the read-modify-write convention) sets state to the RMW

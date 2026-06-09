@@ -22,7 +22,7 @@ Source/
   PublicInterfaces.h / .cpp          # DP_Player / DP_Items / DP_Interactables / DP_AI / DP_Fog / DP_Win / DP_Query
   DevilsPlayground_Tags.h            # DP_ItemTag enum + helpers
   DPInputActions.h                   # WASD/Q-E/F/Space/Esc/click readers
-  DPFogPass.h / .cpp                 # Engine fog override + post-fog hook registration
+  DPFogPass.h / .cpp                 # Registers DP_Fog as a generic game render feature + force-disables engine fog
   DPProcLevel/                       # Procgen generator (deterministic integer-coord internals)
     DPProcLevel_Generator.{h,cpp}    # BSP → rooms → doors → walls → game elements → AI placement
     DPProcLevel_LevelLayout.h        # Public layout struct (float fields; integer math internal)
@@ -83,7 +83,7 @@ they live in the engine, not here, but the port is the primary client.
 
 | Extension | Files | What it does |
 |---|---|---|
-| **EXT-1 game render hook** | `Zenith/Flux/Zenith_GameRenderHook.{h,cpp}`, `Flux_Fog::SetExternallyOverridden` | DP can register a post-fog pass and disable the engine's 6 fog passes |
+| **EXT-1 generic game render features** | `Zenith/Flux/Zenith_GameRenderFeatures.{h,cpp}`, `Flux_RenderGraph::SetOwnerForceDisabled` / `FindPass` | DP registers `DP_Fog` as a render feature (anchored `runAfter="Fog"`) and force-disables the engine's 6 fog passes generically via the graph overlay (`SetOwnerForceDisabled("Fog")`) — no fog-specific engine API. Any game can now register features with lifecycle + anchor and disable/replace any engine pass or feature group. |
 | **EXT-2 navmesh random reachable point** | `Zenith_NavMesh::GetRandomReachablePointInRadius` | Priest patrol target picker; reachability via polygon-neighbour BFS, area-weighted polygon pick, fan-triangulated barycentric sample |
 | **EXT-3a automated-test harness** | `Zenith/Core/Zenith_AutomatedTest.{h,cpp}`, CLI flags in `Zenith_Main` | DP harness driver; `--automated-test`, `--list-automated-tests`, `--exit-after-frames`, `--test-results`, `--fixed-dt`. Process exit code propagated via `Zenith_AutomatedTestRunner::GetPendingExitCode` |
 | **EXT-3b headless** | `--headless` → `glfwHideWindow` in `Zenith_Windows_Window.cpp` | CI-friendly; window stays hidden for the whole run |

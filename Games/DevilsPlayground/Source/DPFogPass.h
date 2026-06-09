@@ -1,16 +1,14 @@
 #pragma once
 /**
- * DPFogPass - registers a game-side fog pass via Zenith_GameRenderHook
- * (EXT-1) and disables the engine fog system via
- * g_xEngine.Fog().SetExternallyOverridden.
+ * DPFogPass - registers a game-side fog pass as a generic Zenith render feature
+ * (Zenith_GameRenderFeatures, "DP_Fog", anchored runAfter="Fog") and disables
+ * the engine fog system generically via the render graph's force-disable overlay
+ * (xGraph.SetOwnerForceDisabled("Fog", ...)) — no fog-specific engine API.
  *
- * Init() is called from Project_RegisterScriptBehaviours.
- * Shutdown() is called from Project_Shutdown — guarded so it survives
- * render-graph teardown order.
- *
- * Skeleton-grade ships only the override + a no-op pass registration. The
- * fog shader (DP_Fog.slang) and CBV upload land in Wave 4 along with the
- * FluxShaderProgram codegen entries.
+ * Init() is called from Project_RegisterScriptBehaviours; it registers the
+ * feature, and the registry drives its lifecycle (InitialiseDPFog / SetupDPFog /
+ * ShutdownDPFog). Shutdown() is called from Project_Shutdown and unregisters the
+ * feature; ShutdownDPFog is guarded so it survives render-graph teardown order.
  */
 
 namespace DPFogPass

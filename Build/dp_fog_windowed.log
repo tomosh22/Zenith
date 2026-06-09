@@ -1,0 +1,49 @@
+[run_dp_tests] Discovering tests...
+[run_dp_tests] Found 8 test(s):
+    DP_Fog_Test
+    PostFogHookFires_Test
+    Test_P2Fog_MemoryFollowsPossessedVillager
+    Test_P2Fog_MemoryDimsAfter10s
+    Test_P2Fog_LightAddsHole
+    Test_P2Fog_AelfricNotRevealed
+    DPFogPass_Test
+    DimLightsCutFog_Test
+
+[run_dp_tests] Running DP_Fog_Test...
+    PASS (build\dp_test_results\DP_Fog_Test.json)
+
+[run_dp_tests] Running PostFogHookFires_Test...
+    PASS (build\dp_test_results\PostFogHookFires_Test.json)
+
+[run_dp_tests] Running Test_P2Fog_MemoryFollowsPossessedVillager...
+    PASS (build\dp_test_results\Test_P2Fog_MemoryFollowsPossessedVillager.json)
+
+[run_dp_tests] Running Test_P2Fog_MemoryDimsAfter10s...
+    PASS (build\dp_test_results\Test_P2Fog_MemoryDimsAfter10s.json)
+
+[run_dp_tests] Running Test_P2Fog_LightAddsHole...
+    PASS (build\dp_test_results\Test_P2Fog_LightAddsHole.json)
+
+[run_dp_tests] Running Test_P2Fog_AelfricNotRevealed...
+    PASS (build\dp_test_results\Test_P2Fog_AelfricNotRevealed.json)
+
+[run_dp_tests] Running DPFogPass_Test...
+    PASS (build\dp_test_results\DPFogPass_Test.json)
+
+[run_dp_tests] Running DimLightsCutFog_Test...
+    FAIL exit=1 (build\dp_test_results\DimLightsCutFog_Test.json)
+
+[run_dp_tests] Summary: 7 passed, 1 failed
+
+[run_dp_tests] Timing: 8 tests measured, total = 7,228 ms, avg = 903.6 ms
+[run_dp_tests] Slowest 8 tests:
+    1,973.3 ms      26 frames  Test_P2Fog_MemoryFollowsPossessedVillager
+    1,736.1 ms      14 frames  Test_P2Fog_LightAddsHole
+    1,707.9 ms      14 frames  Test_P2Fog_AelfricNotRevealed
+    1,614.5 ms       7 frames  DimLightsCutFog_Test
+      149.8 ms       9 frames  DPFogPass_Test
+       16.6 ms       1 frames  Test_P2Fog_MemoryDimsAfter10s
+       16.3 ms       1 frames  PostFogHookFires_Test
+       14.0 ms       1 frames  DP_Fog_Test
+Failed tests:
+    DimLightsCutFog_Test

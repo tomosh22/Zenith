@@ -5,54 +5,57 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "Flux/Fog/Flux_FogImpl.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 // ============================================================================
 // PostFogHookFires_Test
 //
-// Regression test for a tools-vs-non-tools differential bug. Boot order is:
+// Regression test for a late-registration-needs-rebuild differential. Boot order:
 //
 //   1. g_xEngine.FluxRenderer().LateInitialise()
-//        -> SetupRenderGraph()
-//             -> Zenith_GameRenderHook::InvokePostFogRegistrations()
-//                  (callback list is EMPTY here — DPFogPass has not run yet)
+//        -> InitialiseAllPending() + SetupRenderGraph()
+//             (DP_Fog is not registered yet — DPFogPass::Init runs later)
 //   2. Project_RegisterScriptBehaviours()
 //        -> DPFogPass::Init()
-//             -> Zenith_GameRenderHook::RegisterPostFogPass(SetupDPFog)
+//             -> Zenith_GameRenderFeatures::Register("DP_Fog", runAfter="Fog")
 //
-// In step 1 there's no DP callback to fire, and in step 2 the graph has
-// already been built. Without an explicit g_xEngine.FluxRenderer().RequestGraphRebuild() in
-// DPFogPass::Init, the post-fog hook is never invoked — the DP_Fog pass
-// never lands in the render graph and the engine fog override never sticks.
+// The graph is already built when DP_Fog registers in step 2. The registry's
+// late-registration path requests a graph rebuild so SetupDPFog runs before the
+// first frame — without it, the DP_Fog pass would never land in the graph and
+// the engine fog would never be force-disabled. (Historically this was masked in
+// tools builds by incidental Terrain/SSR rebuilds; non-tools surfaced it as
+// "fog completely missing".)
 //
-// In tools builds this was masked because Terrain / SSR / etc. trigger
-// incidental graph rebuilds during gameplay init. Non-tools builds have
-// no such rebuild and the bug surfaces as "fog completely missing".
-//
-// Symptom probe: g_xEngine.Fog().IsExternallyOverridden() — set true only inside
-// DPFogPass::SetupDPFog. If the hook fired, the flag is true. If it
-// didn't, the flag stayed false from boot.
+// Symptom probe (post-refactor): the render graph must, by the first frame, both
+//   (a) have owner "Fog" force-disabled  (set inside SetupDPFog), AND
+//   (b) contain a pass named "DP_Fog"    (added by SetupDPFog).
+// Either being false means the rebuild/anchor path didn't fire.
 // ============================================================================
 
 namespace
 {
-	bool g_bWasOverriddenAfterBoot = false;
+	bool g_bDPFogActiveAfterBoot = false;
 }
 
 static void Setup_PostFogHookFires()
 {
-	g_bWasOverriddenAfterBoot = false;
+	g_bDPFogActiveAfterBoot = false;
 }
 
 static bool Step_PostFogHookFires(int iFrame)
 {
-	// One frame is enough: the override flag is set inside SetupDPFog,
-	// which fires from InvokePostFogRegistrations during graph (re)build.
-	// DPFogPass::Init's RequestGraphRebuild forces the rebuild before the
-	// first frame ticks, so by Step's first call the flag must be true.
+	// One frame is enough: the override + DP_Fog pass are established inside
+	// SetupDPFog, which fires from the feature interleave during the graph
+	// (re)build that DP_Fog's late registration requested — so by Step's first
+	// call both probes must be true.
 	if (iFrame == 0)
 	{
-		g_bWasOverriddenAfterBoot = g_xEngine.Fog().IsExternallyOverridden();
+		if (g_xEngine.FluxRenderer().IsRenderGraphValid())
+		{
+			const Flux_RenderGraph& xGraph = g_xEngine.FluxRenderer().GetRenderGraph();
+			g_bDPFogActiveAfterBoot =
+				xGraph.IsOwnerForceDisabled("Fog") && xGraph.FindPass("DP_Fog").IsValid();
+		}
 		return false;
 	}
 	return false;
@@ -60,7 +63,7 @@ static bool Step_PostFogHookFires(int iFrame)
 
 static bool Verify_PostFogHookFires()
 {
-	return g_bWasOverriddenAfterBoot;
+	return g_bDPFogActiveAfterBoot;
 }
 
 static const Zenith_AutomatedTest g_xPostFogHookFiresTest = {

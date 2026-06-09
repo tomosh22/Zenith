@@ -14298,6 +14298,148 @@ void Zenith_UnitTests::TestRenderGraphSetEnabled(){
 
 }
 
+// FindPass: hit / miss / empty. (The duplicate-name case is NOT unit-tested here:
+// AddPass itself Zenith_Asserts on a duplicate under ZENITH_RUNTIME_CHECKS, so two
+// same-named passes can't be constructed to reach FindPass's defensive guard
+// without first aborting in AddPass — that path is covered by the AddPass assert.)
+ZENITH_TEST(Core, RenderGraphFindPass) { Zenith_UnitTests::TestRenderGraphFindPass(); }
+
+void Zenith_UnitTests::TestRenderGraphFindPass(){
+	Flux_RenderGraph xGraph;
+
+	// Empty graph: any lookup misses.
+	ZENITH_ASSERT_FALSE(xGraph.FindPass("nope").IsValid(), "FindPass on empty graph misses");
+
+	Flux_PassHandle xA = xGraph.AddPass("Alpha", EmptyRecordCallback);
+	Flux_PassHandle xB = xGraph.AddPass("Beta",  EmptyRecordCallback);
+
+	// Hit: resolves to the right pass index, with a valid generation-stamped handle.
+	Flux_PassHandle xFoundA = xGraph.FindPass("Alpha");
+	Flux_PassHandle xFoundB = xGraph.FindPass("Beta");
+	ZENITH_ASSERT_TRUE(xFoundA.IsValid(), "FindPass(\"Alpha\") hits");
+	ZENITH_ASSERT_TRUE(xFoundB.IsValid(), "FindPass(\"Beta\") hits");
+	ZENITH_ASSERT_EQ(xFoundA.m_uIndex, xA.m_uIndex, "FindPass(\"Alpha\") resolves to pass A");
+	ZENITH_ASSERT_EQ(xFoundB.m_uIndex, xB.m_uIndex, "FindPass(\"Beta\") resolves to pass B");
+
+	// Miss: an unknown name returns invalid.
+	ZENITH_ASSERT_FALSE(xGraph.FindPass("Gamma").IsValid(), "FindPass(\"Gamma\") misses");
+
+}
+
+// Effective-enabled overlay: owner-tag population; force-disable by owner AND by
+// name flips IsPassEffectivelyEnabled off WITHOUT touching the base m_bEnabled;
+// clearing restores; both-vectors-empty ⇒ effective == base for every pass.
+ZENITH_TEST(Core, RenderGraphForceDisableOverlay) { Zenith_UnitTests::TestRenderGraphForceDisableOverlay(); }
+
+void Zenith_UnitTests::TestRenderGraphForceDisableOverlay(){
+	Flux_RenderGraph xGraph;
+
+	// Owner tag is stamped from the graph's current setup owner at AddPass time.
+	// Compare the exact stored pointer (the graph stores, not copies, the literal).
+	const char* szOwner = "OwnerX";
+	xGraph.SetCurrentSetupOwner(szOwner);
+	Flux_PassHandle xP = xGraph.AddPass("Pass1", EmptyRecordCallback);
+	xGraph.SetCurrentSetupOwner(nullptr);
+
+	// A pass added with no owner tag has a null owner.
+	Flux_PassHandle xQ = xGraph.AddPass("Pass2", EmptyRecordCallback);
+
+	const Flux_RenderGraph_Pass* pxP = xGraph.GetPasses().Get(xP.m_uIndex);
+	const Flux_RenderGraph_Pass* pxQ = xGraph.GetPasses().Get(xQ.m_uIndex);
+	ZENITH_ASSERT_TRUE(pxP->m_szOwner == szOwner, "AddPass stamps current setup owner");
+	ZENITH_ASSERT_TRUE(pxQ->m_szOwner == nullptr, "AddPass with no current owner leaves owner null");
+
+	// Both override vectors empty ⇒ effective == base for every pass.
+	ZENITH_ASSERT_TRUE(xGraph.IsPassEffectivelyEnabled(pxP), "no override: P effective == base (true)");
+	ZENITH_ASSERT_TRUE(xGraph.IsPassEffectivelyEnabled(pxQ), "no override: Q effective == base (true)");
+
+	// Force-disable by OWNER: P (owner OwnerX) goes effective-off; Q (no owner) unaffected.
+	xGraph.SetOwnerForceDisabled("OwnerX", true);
+	ZENITH_ASSERT_TRUE(xGraph.IsOwnerForceDisabled("OwnerX"), "owner override recorded");
+	ZENITH_ASSERT_FALSE(xGraph.IsPassEffectivelyEnabled(pxP), "owner force-disable: P effective off");
+	ZENITH_ASSERT_TRUE(pxP->m_bEnabled, "owner force-disable does NOT touch base m_bEnabled");
+	ZENITH_ASSERT_TRUE(xGraph.IsPassEffectivelyEnabled(pxQ), "owner force-disable: Q (other owner) unaffected");
+
+	// Lifting the owner override restores effective == base.
+	xGraph.SetOwnerForceDisabled("OwnerX", false);
+	ZENITH_ASSERT_FALSE(xGraph.IsOwnerForceDisabled("OwnerX"), "owner override cleared");
+	ZENITH_ASSERT_TRUE(xGraph.IsPassEffectivelyEnabled(pxP), "owner override lifted: P effective restored to base");
+
+	// Force-disable by NAME: only the named pass goes effective-off, base untouched.
+	xGraph.SetPassForceDisabled("Pass1", true);
+	ZENITH_ASSERT_TRUE(xGraph.IsPassForceDisabled("Pass1"), "pass-name override recorded");
+	ZENITH_ASSERT_FALSE(xGraph.IsPassEffectivelyEnabled(pxP), "name force-disable: Pass1 effective off");
+	ZENITH_ASSERT_TRUE(pxP->m_bEnabled, "name force-disable does NOT touch base m_bEnabled");
+	ZENITH_ASSERT_TRUE(xGraph.IsPassEffectivelyEnabled(pxQ), "name force-disable: Pass2 unaffected");
+
+	xGraph.SetPassForceDisabled("Pass1", false);
+	ZENITH_ASSERT_TRUE(xGraph.IsPassEffectivelyEnabled(pxP), "name override lifted: Pass1 effective restored");
+
+}
+
+// Force-disable overlay PERSISTS across Clear()/rebuild, and Clear() resets the
+// transient per-walk owner tag to null.
+ZENITH_TEST(Core, RenderGraphForceDisablePersistsClear) { Zenith_UnitTests::TestRenderGraphForceDisablePersistsClear(); }
+
+void Zenith_UnitTests::TestRenderGraphForceDisablePersistsClear(){
+	Flux_RenderGraph xGraph;
+
+	// Set an override BEFORE the pass it targets even exists.
+	xGraph.SetOwnerForceDisabled("Fog", true);
+
+	// Tag + add a pass, then Clear() (simulating a graph rebuild). The pass handle
+	// is intentionally unused here (Clear() drops it); (void)-cast the [[nodiscard]]
+	// builder so /WX doesn't flag the discarded return.
+	xGraph.SetCurrentSetupOwner("Fog");
+	(void)xGraph.AddPass("FogPassA", EmptyRecordCallback);
+	xGraph.Clear();
+
+	// Clear() resets the transient owner tag...
+	ZENITH_ASSERT_TRUE(xGraph.m_szCurrentSetupOwner == nullptr, "Clear() resets current setup owner to null");
+	// ...but the override survives.
+	ZENITH_ASSERT_TRUE(xGraph.IsOwnerForceDisabled("Fog"), "force-disable override persists across Clear()");
+
+	// Re-add the owner-tagged pass after the rebuild: it's still effective-disabled
+	// (no need to reassert the override).
+	xGraph.SetCurrentSetupOwner("Fog");
+	Flux_PassHandle xP = xGraph.AddPass("FogPassA", EmptyRecordCallback);
+	xGraph.SetCurrentSetupOwner(nullptr);
+	const Flux_RenderGraph_Pass* pxP = xGraph.GetPasses().Get(xP.m_uIndex);
+	ZENITH_ASSERT_FALSE(xGraph.IsPassEffectivelyEnabled(pxP), "rebuilt pass still effective-disabled by persisted override");
+
+	// Clean up so we don't leak the override into any later test sharing nothing
+	// (it's a stack graph, so this is just hygiene/documentation of intent).
+	xGraph.SetOwnerForceDisabled("Fog", false);
+
+}
+
+// Base bit is never overwritten by the overlay: a pass disabled via SetEnabled
+// stays disabled after an owner override is set and then lifted.
+ZENITH_TEST(Core, RenderGraphForceDisableBasePreserved) { Zenith_UnitTests::TestRenderGraphForceDisableBasePreserved(); }
+
+void Zenith_UnitTests::TestRenderGraphForceDisableBasePreserved(){
+	Flux_RenderGraph xGraph;
+
+	xGraph.SetCurrentSetupOwner("OwnerY");
+	Flux_PassHandle xP = xGraph.AddPass("BasePass", EmptyRecordCallback);
+	xGraph.SetCurrentSetupOwner(nullptr);
+	const Flux_RenderGraph_Pass* pxP = xGraph.GetPasses().Get(xP.m_uIndex);
+
+	// Turn the BASE bit off via the system-owned path.
+	xGraph.SetEnabled(xP, false);
+	ZENITH_ASSERT_FALSE(pxP->m_bEnabled, "base bit off after SetEnabled(false)");
+	ZENITH_ASSERT_FALSE(xGraph.IsPassEffectivelyEnabled(pxP), "effective off (base off)");
+
+	// Force-disable the owner, then lift it. The base bit must be untouched, so the
+	// pass stays disabled (the overlay never wrote the base bit).
+	xGraph.SetOwnerForceDisabled("OwnerY", true);
+	ZENITH_ASSERT_FALSE(xGraph.IsPassEffectivelyEnabled(pxP), "effective off under override");
+	xGraph.SetOwnerForceDisabled("OwnerY", false);
+	ZENITH_ASSERT_FALSE(pxP->m_bEnabled, "base bit STILL off after override lifted (never overwritten)");
+	ZENITH_ASSERT_FALSE(xGraph.IsPassEffectivelyEnabled(pxP), "effective still off (base remained off)");
+
+}
+
 // Verify that two consecutive compute passes RMW-ing the same Flux_ReadWriteBuffer
 // produce a buffer-kind prologue barrier on the second pass. SynthesizeBarriers is
 // pure CPU once m_xExecutionOrder is populated; we bypass Compile (which would
