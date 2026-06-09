@@ -16,7 +16,7 @@
  * Key Engine Features Demonstrated:
  * - Zenith_ScriptBehaviour lifecycle (OnAwake, OnStart, OnUpdate)
  * - Jolt Physics integration via Zenith_ColliderComponent
- * - Camera-relative input with continuous polling (IsKeyHeld)
+ * - Camera-relative input with continuous polling (IsKeyDown)
  * - Prefab-based entity instantiation
  * - Component order dependencies (Transform before Collider)
  * - Multi-scene architecture (persistent GameManager + level scene)

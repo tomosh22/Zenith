@@ -12,7 +12,7 @@ Frame-based input handling wrapping GLFW (Windows) and touch events (Android). S
 ## Public API
 
 ### Keyboard
-- `IsKeyDown(Zenith_KeyCode)` / `IsKeyHeld(Zenith_KeyCode)` - Current key state (held)
+- `IsKeyDown(Zenith_KeyCode)` - Current key state (held)
 - `WasKeyPressedThisFrame(Zenith_KeyCode)` - Edge detection (pressed this frame only)
 
 ### Mouse

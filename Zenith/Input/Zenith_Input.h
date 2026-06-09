@@ -2,7 +2,6 @@
 
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
-#include <unordered_set>
 
 #ifdef ZENITH_WINDOWS
 #include "GLFW/glfw3.h"
@@ -26,7 +25,6 @@ public:
 	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
 	void GetMouseDelta(Zenith_Maths::Vector2_64& xOut);
 	bool IsKeyDown(Zenith_KeyCode iKey);
-	bool IsKeyHeld(Zenith_KeyCode iKey) { return IsKeyDown(iKey); }
 	bool IsMouseButtonHeld(Zenith_KeyCode iMouseButton) { return IsKeyDown(iMouseButton); }
 	bool WasKeyPressedThisFrame(Zenith_KeyCode iKey);
 
@@ -44,7 +42,10 @@ public:
 
 	static constexpr float GAMEPAD_DEADZONE = 0.15f;
 
-	std::unordered_set<Zenith_KeyCode> m_xFrameKeyPresses;
+	// Covers GLFW keycodes (max 348) and mouse buttons (0-7).
+	static constexpr int MAX_KEY_CODES = 512;
+
+	bool m_abFrameKeyPresses[MAX_KEY_CODES] = {};
 
 	Zenith_Maths::Vector2_64 m_xLastMousePosition = { 0.0, 0.0 };
 	Zenith_Maths::Vector2_64 m_xMouseDelta        = { 0.0, 0.0 };

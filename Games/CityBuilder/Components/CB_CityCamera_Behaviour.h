@@ -52,8 +52,8 @@ public:
 		// ---- Rotate (Q/E + right-drag) ----
 		float fYawDelta = 0.0f;
 		float fPitchDelta = 0.0f;
-		if (xInput.IsKeyHeld(ZENITH_KEY_Q)) { fYawDelta -= m_fKeyRotateSpeed * fDt; }
-		if (xInput.IsKeyHeld(ZENITH_KEY_E)) { fYawDelta += m_fKeyRotateSpeed * fDt; }
+		if (xInput.IsKeyDown(ZENITH_KEY_Q)) { fYawDelta -= m_fKeyRotateSpeed * fDt; }
+		if (xInput.IsKeyDown(ZENITH_KEY_E)) { fYawDelta += m_fKeyRotateSpeed * fDt; }
 		if (xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT))
 		{
 			Zenith_Maths::Vector2_64 xDelta;
@@ -70,10 +70,10 @@ public:
 		const float fKeyPan = m_xController.m_fDistance * m_fPanSpeed * fDt;
 		float fRight = 0.0f;
 		float fForward = 0.0f;
-		if (xInput.IsKeyHeld(ZENITH_KEY_W)) { fForward += fKeyPan; }
-		if (xInput.IsKeyHeld(ZENITH_KEY_S)) { fForward -= fKeyPan; }
-		if (xInput.IsKeyHeld(ZENITH_KEY_D)) { fRight   += fKeyPan; }
-		if (xInput.IsKeyHeld(ZENITH_KEY_A)) { fRight   -= fKeyPan; }
+		if (xInput.IsKeyDown(ZENITH_KEY_W)) { fForward += fKeyPan; }
+		if (xInput.IsKeyDown(ZENITH_KEY_S)) { fForward -= fKeyPan; }
+		if (xInput.IsKeyDown(ZENITH_KEY_D)) { fRight   += fKeyPan; }
+		if (xInput.IsKeyDown(ZENITH_KEY_A)) { fRight   -= fKeyPan; }
 		if (xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_MIDDLE))
 		{
 			Zenith_Maths::Vector2_64 xDelta;

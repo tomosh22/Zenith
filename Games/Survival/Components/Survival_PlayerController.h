@@ -57,21 +57,21 @@ public:
 		Zenith_Maths::Vector3 xDirection(0.f);
 
 		// Forward/backward
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))
 		{
 			xDirection += xForward;
 		}
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))
 		{
 			xDirection -= xForward;
 		}
 
 		// Left/right strafe
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))
 		{
 			xDirection -= xRight;
 		}
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT))
 		{
 			xDirection += xRight;
 		}

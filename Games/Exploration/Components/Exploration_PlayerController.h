@@ -141,21 +141,21 @@ namespace Exploration_PlayerController
 		Zenith_Maths::Vector3 xInput(0.0f, 0.0f, 0.0f);
 
 		// Forward/backward (W/S or Up/Down)
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))
 		{
 			xInput.z += 1.0f;
 		}
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))
 		{
 			xInput.z -= 1.0f;
 		}
 
 		// Strafe left/right (A/D or Left/Right)
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))
 		{
 			xInput.x -= 1.0f;
 		}
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT))
 		{
 			xInput.x += 1.0f;
 		}
@@ -177,8 +177,8 @@ namespace Exploration_PlayerController
 	 */
 	inline bool IsSprinting()
 	{
-		return g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT) ||
-		       g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
+		return g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_SHIFT) ||
+		       g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
 	/**

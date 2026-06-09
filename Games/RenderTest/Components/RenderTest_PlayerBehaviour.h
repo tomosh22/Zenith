@@ -218,8 +218,8 @@ public:
 		const bool bIsReloading = (m_fReloadTimer > 0.0f);
 		const bool bCanAct = !bIsReloading;
 		const bool bSprinting = bCanAct
-			&& (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
-			    || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT))
+			&& (g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_SHIFT)
+			    || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_SHIFT))
 			&& fMoveLen > 0.01f;
 
 		float fSpeed = 0.0f;
@@ -390,10 +390,10 @@ private:
 	Zenith_Maths::Vector3 ReadMovementInput() const
 	{
 		Zenith_Maths::Vector3 xInput(0.0f);
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))    xInput.z += 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))    xInput.z += 1.0f;
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
 		return xInput;
 	}
 

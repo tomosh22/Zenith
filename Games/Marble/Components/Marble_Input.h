@@ -4,13 +4,13 @@
  * Marble_Input.h - Camera-relative input handling
  *
  * Demonstrates:
- * - Continuous input with IsKeyHeld (vs discrete WasKeyPressedThisFrame)
+ * - Continuous input with IsKeyDown (vs discrete WasKeyPressedThisFrame)
  * - Camera-relative movement direction calculation
  * - Projecting camera forward onto XZ plane
  *
  * Key difference from Sokoban:
  * - Sokoban uses WasKeyPressedThisFrame for grid-based movement
- * - Marble uses IsKeyHeld for smooth physics-based movement
+ * - Marble uses IsKeyDown for smooth physics-based movement
  */
 
 #include "Input/Zenith_Input.h"
@@ -58,21 +58,21 @@ public:
 		Zenith_Maths::Vector3 xDirection(0.f);
 
 		// Forward/backward
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))
 		{
 			xDirection += xForward;
 		}
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))
 		{
 			xDirection -= xForward;
 		}
 
 		// Left/right strafe
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))
 		{
 			xDirection -= xRight;
 		}
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT))
 		{
 			xDirection += xRight;
 		}

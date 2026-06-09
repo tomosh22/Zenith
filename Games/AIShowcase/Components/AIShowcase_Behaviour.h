@@ -782,13 +782,13 @@ private:
 
 		// Movement
 		Zenith_Maths::Vector3 xMoveDir(0.0f);
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W))
 			xMoveDir.z += 1.0f;  // Forward = +Z (away from camera)
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S))
 			xMoveDir.z -= 1.0f;  // Backward = -Z (toward camera)
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A))
 			xMoveDir.x -= 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D))
 			xMoveDir.x += 1.0f;
 
 		if (Zenith_Maths::LengthSq(xMoveDir) > 0.01f)

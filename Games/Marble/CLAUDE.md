@@ -55,10 +55,10 @@ Demonstrates:
 - Time-based gameplay (countdown timer)
 
 ### Marble_Input.h - Camera-Relative Input
-**Engine APIs:** `Zenith_Input::IsKeyHeld`, `Zenith_CameraComponent`
+**Engine APIs:** `Zenith_Input::IsKeyDown`, `Zenith_CameraComponent`
 
 Demonstrates:
-- Continuous input with IsKeyHeld (vs WasKeyPressedThisFrame)
+- Continuous input with IsKeyDown (vs WasKeyPressedThisFrame)
 - Camera-relative movement direction calculation
 - Projecting camera forward onto XZ plane
 

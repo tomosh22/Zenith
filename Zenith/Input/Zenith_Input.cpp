@@ -1,39 +1,26 @@
 #include "Zenith.h"
 
 #include "Input/Zenith_Input.h"
-#include "Input/Zenith_Input.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
-#endif
-
-// Phase 5.5a: per-frame input state lives on Zenith_Input held by
-// Zenith_Engine. Within these instance methods the per-frame state
-// (m_xFrameKeyPresses / m_xLastMousePosition / m_xMouseDelta /
-// m_fMouseWheelDelta / m_bFirstFrame / m_bSimWasEnabledLastFrame /
-// m_xLastGamepadState / m_xCurrentGamepadState / m_bGamepadStateInitialized)
-// is reached directly via the member (self-reference, no g_xEngine round-trip).
-#ifdef ZENITH_WINDOWS
-static constexpr int MAX_GAMEPADS = Zenith_Input::MAX_GAMEPADS;
+static inline bool IsSimulatorActive() { return Zenith_InputSimulator::IsEnabled(); }
+#else
+static inline bool IsSimulatorActive() { return false; }
 #endif
 
 void Zenith_Input::BeginFrame()
 {
+	bool bJustLeftSimMode = false;
 #ifdef ZENITH_INPUT_SIMULATOR
-	if (Zenith_InputSimulator::IsEnabled())
+	if (IsSimulatorActive())
 	{
 		Zenith_InputSimulator::ProcessAutoReleases();
 
-		// Mouse delta must still be tracked when simulator is driving input —
-		// otherwise GetMouseDelta() returns a stale value and code that drives
-		// camera-look from the delta (e.g. RenderTest_FollowCamera) can't be
-		// exercised via SimulateMousePosition.
 		Zenith_Maths::Vector2_64 xCurrentMousePos;
 		Zenith_InputSimulator::GetMousePositionSimulated(xCurrentMousePos);
 
-		// Skip delta on the first simulator frame OR the frame we transitioned
-		// from real input — the saved last-position is from a different domain
-		// and would produce a single huge spurious delta.
+		// Skip the delta when last-position came from a different input domain.
 		if (m_bFirstFrame || !m_bSimWasEnabledLastFrame)
 		{
 			m_xMouseDelta = { 0.0, 0.0 };
@@ -48,26 +35,20 @@ void Zenith_Input::BeginFrame()
 		m_bSimWasEnabledLastFrame = true;
 		return;
 	}
-	// Simulator just disabled this frame — skip one frame's delta to avoid the
-	// (sim-position) -> (real-cursor-position) jump.
-	const bool bJustLeftSimMode = m_bSimWasEnabledLastFrame;
+	bJustLeftSimMode = m_bSimWasEnabledLastFrame;
 	m_bSimWasEnabledLastFrame = false;
 #endif
 
-	m_xFrameKeyPresses.clear();
-	// Reset wheel accumulator BEFORE poll — GLFW scroll callbacks accumulate
+	memset(m_abFrameKeyPresses, 0, sizeof(m_abFrameKeyPresses));
+	// Reset the wheel accumulator BEFORE poll — scroll callbacks accumulate
 	// during this BeginFrame's poll cycle; game code reads after.
 	m_fMouseWheelDelta = 0.0f;
 
-	// Calculate mouse delta
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
 	Zenith_Window::GetInstance()->GetMousePosition(xCurrentMousePos);
 
-#ifdef ZENITH_INPUT_SIMULATOR
+	// Skip the delta when last-position came from a different input domain.
 	if (m_bFirstFrame || bJustLeftSimMode)
-#else
-	if (m_bFirstFrame)
-#endif
 	{
 		m_xMouseDelta = { 0.0, 0.0 };
 		m_bFirstFrame = false;
@@ -109,48 +90,44 @@ void Zenith_Input::BeginFrame()
 
 float Zenith_Input::GetMouseWheelDelta() const
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	// Under the input simulator there is no GLFW scroll callback feeding
-	// m_fMouseWheelDelta, so read the simulator's per-frame wheel value
-	// directly. SimulateMouseWheel() typically runs in a test's Setup, which
-	// the harness invokes AFTER Zenith_Input::BeginFrame in the SAME main-loop
-	// tick -- so a BeginFrame-time copy would be a frame stale. Reading through
-	// reflects it the same frame; EndOfFrameTickComplete clears it per frame.
-	if (Zenith_InputSimulator::IsEnabled())
+	// Read through to the simulator each query — SimulateMouseWheel() typically
+	// runs AFTER BeginFrame in the same tick, so a BeginFrame-time copy would
+	// be a frame stale.
+	if (IsSimulatorActive())
 	{
 		return Zenith_InputSimulator::GetMouseWheelDeltaSimulated();
 	}
-#endif
 	return m_fMouseWheelDelta;
 }
 
 void Zenith_Input::KeyPressedCallback(Zenith_KeyCode iKey)
 {
-	m_xFrameKeyPresses.insert(iKey);
+	if (iKey >= 0 && iKey < MAX_KEY_CODES)
+	{
+		m_abFrameKeyPresses[iKey] = true;
+	}
 }
 
 void Zenith_Input::MouseButtonPressedCallback(Zenith_KeyCode iKey)
 {
-	m_xFrameKeyPresses.insert(iKey);
+	if (iKey >= 0 && iKey < MAX_KEY_CODES)
+	{
+		m_abFrameKeyPresses[iKey] = true;
+	}
 }
 
 void Zenith_Input::MouseWheelCallback(double /*fXOffset*/, double fYOffset)
 {
-	// Accumulate within the frame — multiple scroll callbacks may fire
-	// between two BeginFrame calls.
 	m_fMouseWheelDelta += static_cast<float>(fYOffset);
 }
 
-
 void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	if (Zenith_InputSimulator::IsEnabled())
+	if (IsSimulatorActive())
 	{
 		Zenith_InputSimulator::GetMousePositionSimulated(xOut);
 		return;
 	}
-#endif
 	Zenith_Window::GetInstance()->GetMousePosition(xOut);
 }
 
@@ -161,24 +138,20 @@ void Zenith_Input::GetMouseDelta(Zenith_Maths::Vector2_64& xOut)
 
 bool Zenith_Input::IsKeyDown(Zenith_KeyCode iKey)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	if (Zenith_InputSimulator::IsEnabled())
+	if (IsSimulatorActive())
 	{
 		return Zenith_InputSimulator::IsKeyDownSimulated(iKey);
 	}
-#endif
 	return Zenith_Window::GetInstance()->IsKeyDown(iKey);
 }
 
 bool Zenith_Input::WasKeyPressedThisFrame(Zenith_KeyCode iKey)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	if (Zenith_InputSimulator::IsEnabled())
+	if (IsSimulatorActive())
 	{
 		return Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(iKey);
 	}
-#endif
-	return m_xFrameKeyPresses.find(iKey) != m_xFrameKeyPresses.end();
+	return iKey >= 0 && iKey < MAX_KEY_CODES && m_abFrameKeyPresses[iKey];
 }
 
 // ========== Gamepad Functions ==========

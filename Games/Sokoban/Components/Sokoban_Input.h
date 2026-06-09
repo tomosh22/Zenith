@@ -7,7 +7,7 @@
  *
  * Key concepts:
  * - WasKeyPressedThisFrame() for discrete input (movement)
- * - IsKeyHeld() for continuous input (not used here, but available)
+ * - IsKeyDown() for continuous input (not used here, but available)
  * - Key codes defined in Input/Zenith_KeyCodes.h
  */
 

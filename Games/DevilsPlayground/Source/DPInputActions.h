@@ -10,13 +10,13 @@ namespace DP_Input
 	inline Zenith_Maths::Vector2 ReadMoveVillager()
 	{
 		Zenith_Maths::Vector2 xInput(0.0f);
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))
 			xInput.y += 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))
 			xInput.y -= 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))
 			xInput.x -= 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT))
 			xInput.x += 1.0f;
 		return xInput;
 	}
@@ -28,8 +28,8 @@ namespace DP_Input
 	// movement.sprint_life_cost_extra_per_s drain.
 	inline bool ReadSprintHeld()
 	{
-		return g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
-			|| g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
+		return g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_SHIFT)
+			|| g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
 	// MVP-1.7: walk-quiet hold. Either Ctrl key works. While held AND
@@ -40,8 +40,8 @@ namespace DP_Input
 	// sprint -- the louder, faster mode).
 	inline bool ReadWalkQuietHeld()
 	{
-		return g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_CONTROL)
-			|| g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_CONTROL);
+		return g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_CONTROL)
+			|| g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
 	}
 
 	inline bool ReadInteractPressed()
@@ -65,8 +65,8 @@ namespace DP_Input
 	inline float ReadCameraRotate()
 	{
 		float f = 0.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_Q)) f -= 1.0f;
-		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_E)) f += 1.0f;
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_Q)) f -= 1.0f;
+		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_E)) f += 1.0f;
 		return f;
 	}
 
