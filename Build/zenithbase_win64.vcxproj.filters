@@ -133,6 +133,9 @@
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Win32.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h">
       <Filter>DataStream</Filter>
     </ClInclude>

@@ -85,14 +85,21 @@ public:
 	static void OnFluxPerFrameEnd(u_int uRingIndex, void* pUserData) { (void)uRingIndex; (void)pUserData; }
 
 	// ===== Wrapped buffer initialisers (FluxBackendMemoryAlloc) =====
-	void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true) { (void)pData; (void)uSize; (void)xBufferOut; (void)bDeviceLocal; }
-	void InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal = true) { (void)pData; (void)uSize; (void)xBufferOut; (void)bDeviceLocal; }
-	void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut) { (void)pData; (void)uSize; (void)xBufferOut; }
-	void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut) { (void)pData; (void)uSize; (void)xBufferOut; }
-	void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut) { (void)pData; (void)uSize; (void)xBufferOut; }
-	void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut) { (void)uSize; (void)xBufferOut; }
-	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut) { (void)pData; (void)uSize; (void)xBufferOut; }
-	void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut) { (void)pData; (void)uSize; (void)xBufferOut; }
+	// Engine code asserts the wrapped buffer's m_xVRAMHandle (and views) are valid
+	// after init (e.g. Flux_HDR's histogram buffer), so the null backend stamps
+	// every buffer + view with a dummy non-zero handle. DEFINED in
+	// Zenith_D3D12_MemoryManager.cpp: they touch the Flux_*Buffer wrapper types
+	// (GetBuffer/GetCBV/GetUAV/...) whose full definitions live in Flux_Buffers.h,
+	// which cannot be included from this header without re-entering the Flux.h
+	// backend-seam cycle. The .cpp (outside that cycle) includes Flux_Buffers.h.
+	void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true);
+	void InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal = true);
+	void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
+	void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
+	void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
+	void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
+	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
+	void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut);
 
 	// ===== Upload paths (FluxBackendMemoryAlloc) =====
 	void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize) { (void)xBufferHandle; (void)pData; (void)uSize; }
@@ -126,13 +133,15 @@ public:
 	}
 
 	// ===== View creation (FluxBackendMemoryAlloc) =====
-	Flux_RenderTargetView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel) { (void)xVRAMHandle; (void)xInfo; (void)uMipLevel; return {}; }
-	Flux_RenderTargetView CreateRenderTargetViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uMipLevel) { (void)xVRAMHandle; (void)xInfo; (void)uLayer; (void)uMipLevel; return {}; }
-	Flux_DepthStencilView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel) { (void)xVRAMHandle; (void)xInfo; (void)uMipLevel; return {}; }
-	Flux_ShaderResourceView CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1) { (void)xVRAMHandle; (void)xInfo; (void)uBaseMip; (void)uMipCount; return {}; }
-	Flux_ShaderResourceView CreateShaderResourceViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uBaseMip = 0, uint32_t uMipCount = 1) { (void)xVRAMHandle; (void)xInfo; (void)uLayer; (void)uBaseMip; (void)uMipCount; return {}; }
-	Flux_UnorderedAccessView_Texture CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel) { (void)xVRAMHandle; (void)xInfo; (void)uMipLevel; return {}; }
-	Flux_UnorderedAccessView_Texture CreateUnorderedAccessViewForSlice(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uSlice, uint32_t uMipLevel) { (void)xVRAMHandle; (void)xInfo; (void)uSlice; (void)uMipLevel; return {}; }
+	// Views carry a valid dummy image-view handle + the (already valid) VRAM
+	// handle so engine validity asserts pass; the no-op recorder never reads them.
+	Flux_RenderTargetView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel) { (void)xInfo; (void)uMipLevel; Flux_RenderTargetView x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; return x; }
+	Flux_RenderTargetView CreateRenderTargetViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uMipLevel) { (void)xInfo; (void)uLayer; (void)uMipLevel; Flux_RenderTargetView x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; return x; }
+	Flux_DepthStencilView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel) { (void)xInfo; (void)uMipLevel; Flux_DepthStencilView x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; return x; }
+	Flux_ShaderResourceView CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1) { (void)xInfo; Flux_ShaderResourceView x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; x.m_uBaseMip = uBaseMip; x.m_uMipCount = uMipCount; return x; }
+	Flux_ShaderResourceView CreateShaderResourceViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uBaseMip = 0, uint32_t uMipCount = 1) { (void)xInfo; (void)uLayer; Flux_ShaderResourceView x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; x.m_uBaseMip = uBaseMip; x.m_uMipCount = uMipCount; return x; }
+	Flux_UnorderedAccessView_Texture CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel) { (void)xInfo; Flux_UnorderedAccessView_Texture x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; x.m_uMipLevel = uMipLevel; return x; }
+	Flux_UnorderedAccessView_Texture CreateUnorderedAccessViewForSlice(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uSlice, uint32_t uMipLevel) { (void)xInfo; (void)uSlice; Flux_UnorderedAccessView_Texture x; x.m_xImageViewHandle.SetValue(ms_uDummyHandle++); x.m_xVRAMHandle = xVRAMHandle; x.m_uMipLevel = uMipLevel; return x; }
 
 	// ===== Handle release (neutral; counterparts of the vk:: register/get pair) =====
 	void ReleaseImageViewHandle(Flux_ImageViewHandle xHandle) { (void)xHandle; }

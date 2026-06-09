@@ -25,15 +25,28 @@ public:
 	Zenith_D3D12_Swapchain(const Zenith_D3D12_Swapchain&) = delete;
 	Zenith_D3D12_Swapchain& operator=(const Zenith_D3D12_Swapchain&) = delete;
 
-	void Initialise() { }
+	void Initialise()
+	{
+		// Stamp a dummy swapchain target so the render graph's final pass has a
+		// valid colour attachment to "render" to. No GPU resource backs it; the
+		// no-op recorder writes nothing.
+		m_xDummyTarget.m_xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+		m_xDummyTarget.m_xSurfaceInfo.m_uWidth  = GetWidth();
+		m_xDummyTarget.m_xSurfaceInfo.m_uHeight = GetHeight();
+		m_xDummyTarget.m_xVRAMHandle.SetValue(ms_uDummyHandle++);
+		m_xDummyTarget.m_axRTVs[0].m_xImageViewHandle.SetValue(ms_uDummyHandle++);
+		m_xDummyTarget.m_axRTVs[0].m_xVRAMHandle = m_xDummyTarget.m_xVRAMHandle;
+		m_xDummyTarget.m_xSRV.m_xImageViewHandle.SetValue(ms_uDummyHandle++);
+		m_xDummyTarget.m_xSRV.m_xVRAMHandle = m_xDummyTarget.m_xVRAMHandle;
+	}
 	void Shutdown() { }
 
 	// Main-loop entries (called via g_xEngine.FluxSwapchain()).
 	bool BeginFrame() { return true; }
 	void EndFrame() { }
 
-	uint32_t GetWidth() { return 0; }
-	uint32_t GetHeight() { return 0; }
+	uint32_t GetWidth() { return 1280; }
+	uint32_t GetHeight() { return 720; }
 
 	// Ring index in [0, MAX_FRAMES_IN_FLIGHT). Concept contract: matches
 	// g_xEngine.FluxRenderer().GetRingIndex(); a no-op backend just returns 0.
@@ -43,11 +56,12 @@ public:
 
 	Flux_RenderAttachment* GetCurrentSwapchainTarget(uint32_t& uNumColourAttachments, Flux_RenderAttachment*& pxDepthStencil)
 	{
-		uNumColourAttachments = 0;
+		uNumColourAttachments = 1;
 		pxDepthStencil = nullptr;
-		return nullptr;
+		return &m_xDummyTarget;
 	}
 
 private:
+	Flux_RenderAttachment m_xDummyTarget;
 	static inline u_int ms_uDummyHandle = 1;
 };

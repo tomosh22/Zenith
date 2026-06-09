@@ -613,6 +613,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.cpp">
+      <Filter>D3D12</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
       <Filter>DataStream</Filter>
     </ClCompile>
@@ -3403,6 +3406,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Win32.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12.h">

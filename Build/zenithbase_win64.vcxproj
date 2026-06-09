@@ -734,6 +734,7 @@
     <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Win32.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_StreamEnvelope.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />

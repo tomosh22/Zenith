@@ -902,6 +902,7 @@
     <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Win32.h" />
     <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12.h" />
     <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_CommandBuffer.h" />
     <ClInclude Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.h" />
@@ -1872,6 +1873,10 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_TestFramework.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp" />
+    <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
