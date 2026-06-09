@@ -10,332 +10,10 @@
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
-//--------------------------------------------------------------------------
-// Template specializations for Get()
-//--------------------------------------------------------------------------
-
-template<>
-Zenith_TextureAsset* Zenith_AssetHandle<Zenith_TextureAsset>::Get() const
+template<typename T>
+T* Zenith_AssetHandle<T>::Get() const
 {
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-//--------------------------------------------------------------------------
-// Serialization for all handle types
-//--------------------------------------------------------------------------
-
-template<>
-void Zenith_AssetHandle<Zenith_TextureAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_TextureAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	// Release old reference
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-//--------------------------------------------------------------------------
-// Forward declarations for other asset types (to be implemented later)
-//--------------------------------------------------------------------------
-
-// These will be implemented as their respective asset classes are created
-
-template<>
-Zenith_MaterialAsset* Zenith_AssetHandle<Zenith_MaterialAsset>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-template<>
-Zenith_MeshAsset* Zenith_AssetHandle<Zenith_MeshAsset>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-template<>
-Zenith_SkeletonAsset* Zenith_AssetHandle<Zenith_SkeletonAsset>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-template<>
-Zenith_ModelAsset* Zenith_AssetHandle<Zenith_ModelAsset>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_ModelAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-// Serialization stubs for other types
-template<>
-void Zenith_AssetHandle<Zenith_MaterialAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_MaterialAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_MeshAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_MeshAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_SkeletonAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_SkeletonAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_ModelAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_ModelAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-//--------------------------------------------------------------------------
-// Prefab specializations
-//--------------------------------------------------------------------------
-
-template<>
-Zenith_Prefab* Zenith_AssetHandle<Zenith_Prefab>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_Prefab>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_Prefab>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_Prefab>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-//--------------------------------------------------------------------------
-// Animation specializations
-//--------------------------------------------------------------------------
-
-template<>
-Zenith_AnimationAsset* Zenith_AssetHandle<Zenith_AnimationAsset>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_AnimationAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_AnimationAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-//--------------------------------------------------------------------------
-// Font specializations
-//--------------------------------------------------------------------------
-
-template<>
-Zenith_FontAsset* Zenith_AssetHandle<Zenith_FontAsset>::Get() const
-{
+	// Cached check must come first: procedural assets have a pointer but no path
 	if (m_pxCached)
 	{
 		return m_pxCached;
@@ -346,7 +24,7 @@ Zenith_FontAsset* Zenith_AssetHandle<Zenith_FontAsset>::Get() const
 		return nullptr;
 	}
 
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_FontAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<T>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -354,14 +32,14 @@ Zenith_FontAsset* Zenith_AssetHandle<Zenith_FontAsset>::Get() const
 	return m_pxCached;
 }
 
-template<>
-void Zenith_AssetHandle<Zenith_FontAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
+template<typename T>
+void Zenith_AssetHandle<T>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
-template<>
-void Zenith_AssetHandle<Zenith_FontAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
+template<typename T>
+void Zenith_AssetHandle<T>::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	if (m_pxCached)
 	{
@@ -372,48 +50,12 @@ void Zenith_AssetHandle<Zenith_FontAsset>::ReadFromDataStream(Zenith_DataStream&
 	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
-//--------------------------------------------------------------------------
-// MeshGeometry specializations
-//--------------------------------------------------------------------------
-
-template<>
-Zenith_MeshGeometryAsset* Zenith_AssetHandle<Zenith_MeshGeometryAsset>::Get() const
-{
-	// Return cached pointer if available (even for procedural assets with no path)
-	if (m_pxCached)
-	{
-		return m_pxCached;
-	}
-
-	// If no cached pointer and no path, nothing to load
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
-	return m_pxCached;
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_MeshGeometryAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
-
-template<>
-void Zenith_AssetHandle<Zenith_MeshGeometryAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	if (m_pxCached)
-	{
-		m_pxCached->Release();
-		m_pxCached = nullptr;
-	}
-	xStream >> m_strPath;
-	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
-}
+template class Zenith_AssetHandle<Zenith_TextureAsset>;
+template class Zenith_AssetHandle<Zenith_MaterialAsset>;
+template class Zenith_AssetHandle<Zenith_MeshAsset>;
+template class Zenith_AssetHandle<Zenith_SkeletonAsset>;
+template class Zenith_AssetHandle<Zenith_ModelAsset>;
+template class Zenith_AssetHandle<Zenith_AnimationAsset>;
+template class Zenith_AssetHandle<Zenith_MeshGeometryAsset>;
+template class Zenith_AssetHandle<Zenith_FontAsset>;
+template class Zenith_AssetHandle<Zenith_Prefab>;

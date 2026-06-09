@@ -340,9 +340,8 @@ std::string Zenith_AssetRegistry::NormalizeAssetPath(const std::string& strPath)
 
 void Zenith_AssetRegistry::Initialize()
 {
-	// Phase 4: Zenith_Engine owns the instance and installs s_pxInstance
-	// as a view-pointer before calling here. This function now only
-	// registers loaders. Allocation/deletion is the engine's job.
+	// Zenith_Engine owns the instance and installs s_pxInstance before
+	// calling here; this function only registers loaders.
 	Zenith_Assert(s_pxInstance != nullptr, "Zenith_AssetRegistry::Initialize called before Zenith_Engine bound s_pxInstance");
 
 	// Register asset loaders
@@ -373,8 +372,7 @@ void Zenith_AssetRegistry::InitializeGPUDependentAssets()
 
 void Zenith_AssetRegistry::Shutdown()
 {
-	// Phase 4: instance ownership lives on Zenith_Engine. This function
-	// only drains state; Zenith_Engine::Shutdown deletes m_pxAssets and
+	// Drains state only; Zenith_Engine::Shutdown deletes the instance and
 	// clears s_pxInstance after we return.
 	if (s_pxInstance)
 	{
@@ -393,7 +391,7 @@ bool Zenith_AssetRegistry::IsLoadedInternal(const std::string& strPath) const
 	return m_xAssetsByPath.Contains(strPath);
 }
 
-void Zenith_AssetRegistry::UnloadInternal(const std::string& strPath)
+void Zenith_AssetRegistry::ForceUnloadInternal(const std::string& strPath)
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 

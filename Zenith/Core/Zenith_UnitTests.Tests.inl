@@ -9973,7 +9973,7 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave(){
 	ZENITH_ASSERT_TRUE(bExists, "TestDataAssetCreateAndSave: Saved file should exist");
 
 	// Clean up so no stale file or cache entry leaks into another test.
-	Zenith_AssetRegistry::Unload(strTestPath);
+	Zenith_AssetRegistry::ForceUnload(strTestPath);
 	std::filesystem::remove(strTestPath);
 
 }
@@ -10001,7 +10001,7 @@ void Zenith_UnitTests::TestDataAssetLoad(){
 	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetLoad: Failed to save setup asset");
 
 	// Unload to force reload from disk
-	Zenith_AssetRegistry::Unload(strTestPath);
+	Zenith_AssetRegistry::ForceUnload(strTestPath);
 
 	// Load the asset just saved
 	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get<TestSerializableAsset>(strTestPath);
@@ -10014,7 +10014,7 @@ void Zenith_UnitTests::TestDataAssetLoad(){
 	ZENITH_ASSERT_EQ(pxLoaded->m_strTestString, "ModifiedValue", "TestDataAssetLoad: Loaded string should match saved value");
 
 	// Clean up so no stale file or cache entry leaks into another test.
-	Zenith_AssetRegistry::Unload(strTestPath);
+	Zenith_AssetRegistry::ForceUnload(strTestPath);
 	std::filesystem::remove(strTestPath);
 
 }
@@ -10049,7 +10049,7 @@ void Zenith_UnitTests::TestDataAssetRoundTrip(){
 	if (!bSaved) return;
 
 	// Unload to force reload from disk
-	Zenith_AssetRegistry::Unload(strPath);
+	Zenith_AssetRegistry::ForceUnload(strPath);
 
 	// Load
 	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get<TestSerializableAsset>(strPath);
@@ -10060,7 +10060,7 @@ void Zenith_UnitTests::TestDataAssetRoundTrip(){
 	ZENITH_ASSERT_EQ(pxLoaded->m_strTestString, "RoundTripTest", "TestDataAssetRoundTrip: String mismatch");
 
 	// Clean up test files
-	Zenith_AssetRegistry::Unload(strPath);
+	Zenith_AssetRegistry::ForceUnload(strPath);
 	std::filesystem::remove(strPath);
 
 }

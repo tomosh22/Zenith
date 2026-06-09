@@ -123,6 +123,8 @@ public:
 
 	/**
 	 * Get an asset by path, loading if necessary
+	 * Returns a raw pointer with NO AddRef applied — Zenith_AssetHandle does the
+	 * ref-counting; hold a handle if the asset must survive UnloadUnused().
 	 * @param strPath Path to the asset file (e.g., "game:Textures/diffuse.ztxtr")
 	 * @return Pointer to the asset, or nullptr on failure
 	 */
@@ -160,13 +162,13 @@ public:
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Force unload a specific asset
-	 * WARNING: This will delete the asset even if ref count > 0
+	 * Delete a specific asset even if its ref count > 0 — existing handles dangle.
+	 * Prefer UnloadUnused() unless deletion must be unconditional.
 	 * @param strPath Path of asset to unload
 	 */
-	static void Unload(const std::string& strPath)
+	static void ForceUnload(const std::string& strPath)
 	{
-		s_pxInstance->UnloadInternal(strPath);
+		s_pxInstance->ForceUnloadInternal(strPath);
 	}
 
 	/**
@@ -308,7 +310,7 @@ private:
 	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType);
 	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType, const std::string& strPath);
 	bool IsLoadedInternal(const std::string& strPath) const;
-	void UnloadInternal(const std::string& strPath);
+	void ForceUnloadInternal(const std::string& strPath);
 	void UnloadUnusedInternal();
 	void UnloadAllInternal();
 	uint32_t GetLoadedAssetCountInternal() const;
@@ -319,12 +321,8 @@ private:
 	// Generate a unique path for procedural assets
 	std::string GenerateProceduralPath(const std::string& strPrefix);
 
-	// Phase 4: the instance is owned by Zenith_Engine (m_pxAssets);
-	// s_pxInstance is a non-owning view-pointer kept in sync by
-	// Zenith_Engine::Initialise/Shutdown so the existing static-facade
-	// methods on Zenith_AssetRegistry (Get<T>, Initialize, Shutdown,
-	// etc.) compile unchanged. Phase 9 sweeps it away once call sites
-	// migrate to g_xEngine.Assets().X().
+	// Instance owned by Zenith_Engine (lifetime); the static facade is the single
+	// canonical access path. s_pxInstance is installed during engine init.
 	static Zenith_AssetRegistry* s_pxInstance;
 	friend class Zenith_Engine;
 

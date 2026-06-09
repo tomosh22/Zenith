@@ -271,7 +271,7 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	T* Get() const;  // Internal lazy-loading accessor — used only by Zenith_AssetHandle.cpp specializations
+	T* Get() const;  // Internal lazy-loading accessor — defined in Zenith_AssetHandle.cpp
 
 	std::string m_strPath;
 	mutable T* m_pxCached = nullptr;  // mutable: lazy loading doesn't change logical state
@@ -291,8 +291,5 @@ using MeshGeometryHandle = Zenith_AssetHandle<Zenith_MeshGeometryAsset>;
 using FontHandle = Zenith_AssetHandle<Zenith_FontAsset>;
 using PrefabHandle = Zenith_AssetHandle<Zenith_Prefab>;
 
-//--------------------------------------------------------------------------
-// Template implementations that need registry access are in the .cpp
-//--------------------------------------------------------------------------
-
-// Get() implementations are specialized per type in Zenith_AssetHandle.cpp
+// Get/WriteToDataStream/ReadFromDataStream are defined in Zenith_AssetHandle.cpp
+// and explicitly instantiated there for each asset type above.
