@@ -10,6 +10,17 @@ public enum ToolsEnabled
 	False = 2
 }
 
+// Render backend fragment. Selects which Flux backend a config compiles + links:
+// Vulkan (the real renderer) or D3D12 (the no-op null backend that proves the
+// Flux concepts are backend-neutral). Win64 ships both; agde is Vulkan-only.
+// Appears as a "_Vulkan" / "_D3D12" suffix on every config name.
+[Fragment, Flags]
+public enum RenderBackend
+{
+	Vulkan = 1,
+	D3D12 = 2
+}
+
 // Custom target supporting both Windows and Android platforms
 public class ZenithTarget : ITarget
 {
@@ -17,6 +28,7 @@ public class ZenithTarget : ITarget
 	public DevEnv DevEnv;
 	public Optimization Optimization;
 	public ToolsEnabled ToolsEnabled;
+	public RenderBackend RenderBackend;
 
 	// Android-specific fragments (required for AGDE platform)
 	public Android.AndroidBuildTargets AndroidBuildTargets;
@@ -66,6 +78,18 @@ public abstract class ZenithBaseProject : Project
 			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Editor\\.*");
 			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Tools\\.*");
 		}
+
+		// Render-backend source partition: a config compiles exactly one backend's
+		// tree. Path-segment based, so the Vulkan exclude also drops the moved
+		// platform surface under Zenith/Vulkan/Platform/Windows (and Android).
+		if (target.RenderBackend == RenderBackend.Vulkan)
+		{
+			conf.SourceFilesBuildExcludeRegex.Add(@".*\\D3D12\\.*");
+		}
+		else if (target.RenderBackend == RenderBackend.D3D12)
+		{
+			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Vulkan\\.*");
+		}
 	}
 
 	protected void ConfigureCommonSettings(Configuration conf, ZenithTarget target)
@@ -101,7 +125,16 @@ public abstract class ZenithBaseProject : Project
 			conf.AdditionalCompilerOptions.Add("-Wno-nonportable-include-path");
 		}
 
-		conf.Defines.Add("ZENITH_VULKAN");
+		// One render-backend define per config; Flux_BackendGuard.h #errors unless
+		// exactly one is set. Agde is always Vulkan (its targets carry Vulkan).
+		if (target.RenderBackend == RenderBackend.D3D12)
+		{
+			conf.Defines.Add("ZENITH_D3D12");
+		}
+		else
+		{
+			conf.Defines.Add("ZENITH_VULKAN");
+		}
 
 		if (target.Optimization == Optimization.Debug)
 		{
@@ -119,10 +152,20 @@ public abstract class ZenithBaseProject : Project
 
 		if (target.Platform == Platform.win64)
 		{
+			// glfw + the neutral Windows window layer serve both backends.
 			conf.IncludePaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/include");
-			conf.IncludePaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Include");
-			conf.IncludePaths.Add(RootPath + "/Middleware/slang/include");
 			conf.IncludePaths.Add(RootPath + "/Zenith/Windows");
+			if (target.RenderBackend == RenderBackend.Vulkan)
+			{
+				conf.IncludePaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Include");
+				conf.IncludePaths.Add(RootPath + "/Middleware/slang/include");
+			}
+			else if (target.RenderBackend == RenderBackend.D3D12)
+			{
+				// Null D3D12 backend headers (the d3d12/dxgi system headers ship
+				// with the Windows SDK on the default include path).
+				conf.IncludePaths.Add(RootPath + "/Zenith/D3D12");
+			}
 		}
 		else if (target.Platform == Platform.agde)
 		{
@@ -147,12 +190,25 @@ public abstract class ZenithBaseProject : Project
 	{
 		if (target.Platform == Platform.win64 && LinksRendererBackend)
 		{
-			conf.LibraryPaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Lib");
+			// glfw is the windowing backend for both renderers.
 			conf.LibraryPaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
-			conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
 			conf.LibraryFiles.Add("glfw3_mt.lib");
-			conf.LibraryFiles.Add("vulkan-1.lib");
-			conf.LibraryFiles.Add("slang.lib");
+
+			if (target.RenderBackend == RenderBackend.Vulkan)
+			{
+				conf.LibraryPaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Lib");
+				conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
+				conf.LibraryFiles.Add("vulkan-1.lib");
+				conf.LibraryFiles.Add("slang.lib");
+			}
+			else if (target.RenderBackend == RenderBackend.D3D12)
+			{
+				// Null D3D12 backend links the system D3D12 import libs (they ship
+				// with the Windows SDK on the default library search path).
+				conf.LibraryFiles.Add("d3d12.lib");
+				conf.LibraryFiles.Add("dxgi.lib");
+				conf.LibraryFiles.Add("dxguid.lib");
+			}
 
 			// glfw3_mt.lib is compiled with /MT (release CRT), which pulls in LIBCMT.
 			// In debug builds we use /MTd (LIBCMTD), causing a linker conflict.
@@ -178,7 +234,8 @@ public class ZenithSolution : Solution
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
 		// Add Android target separately (no tools)
@@ -188,6 +245,7 @@ public class ZenithSolution : Solution
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan,
 			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
 		});
 	}
@@ -235,12 +293,19 @@ public class ZenithSolution : Solution
 		// Windows-only tools
 		if (target.Platform == Platform.win64)
 		{
-			conf.AddProject<FluxCompilerProject>(target);
-			conf.AddProject<TilePuzzleLevelGenProject>(target);
-			conf.AddProject<TilePuzzleRegistryViewerProject>(target);
+			// FluxCompiler (Slang -> SPIR-V) and the TilePuzzle tools are inherently
+			// Vulkan-side; they have no D3D12 analogue, so only add them to Vulkan
+			// configs (their projects declare Vulkan-only targets to match).
+			if (target.RenderBackend == RenderBackend.Vulkan)
+			{
+				conf.AddProject<FluxCompilerProject>(target);
+				conf.AddProject<TilePuzzleLevelGenProject>(target);
+				conf.AddProject<TilePuzzleRegistryViewerProject>(target);
+			}
 
 			// MSDF font deps — only present in tools-enabled builds (used by
 			// Zenith_Tools_FontExport for the offline atlas bake at engine init).
+			// Backend-agnostic, so they carry both Vulkan + D3D12 configs.
 			if (target.ToolsEnabled == ToolsEnabled.True)
 			{
 				conf.AddProject<FreeTypeProject>(target);

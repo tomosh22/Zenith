@@ -21,7 +21,8 @@ public class GameProject : ZenithBaseProject
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
 		AddTargets(new ZenithTarget
@@ -30,6 +31,7 @@ public class GameProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan,
 			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
 		});
 	}

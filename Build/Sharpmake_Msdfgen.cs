@@ -33,7 +33,8 @@ public class MsdfgenProject : Project
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True
+			ToolsEnabled = ToolsEnabled.True,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
 		// Skip stuff we don't compile at all.

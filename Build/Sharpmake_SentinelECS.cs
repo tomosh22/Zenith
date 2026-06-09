@@ -61,7 +61,8 @@ public class SentinelECSProject : ZenithBaseProject
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.False
+			ToolsEnabled = ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 	}
 

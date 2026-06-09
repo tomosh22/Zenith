@@ -31,7 +31,8 @@ public class FreeTypeProject : Project
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True
+			ToolsEnabled = ToolsEnabled.True,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
 		// Project-level excludes: prune entire vendored subtrees we don't compile at all.

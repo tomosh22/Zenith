@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="vs2022_Debug_Win64_True|x64">
-      <Configuration>vs2022_Debug_Win64_True</Configuration>
+    <ProjectConfiguration Include="D3D12_vs2022_Debug_Win64_True|x64">
+      <Configuration>D3D12_vs2022_Debug_Win64_True</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="vs2022_Release_Win64_True|x64">
-      <Configuration>vs2022_Release_Win64_True</Configuration>
+    <ProjectConfiguration Include="D3D12_vs2022_Release_Win64_True|x64">
+      <Configuration>D3D12_vs2022_Release_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Vulkan_vs2022_Debug_Win64_True|x64">
+      <Configuration>Vulkan_vs2022_Debug_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Vulkan_vs2022_Release_Win64_True|x64">
+      <Configuration>Vulkan_vs2022_Release_Win64_True</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -20,14 +28,28 @@
     <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
@@ -41,7 +63,7 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">
     <TargetName>freetype</TargetName>
     <OutDir>output\freetype\debug\</OutDir>
     <IntDir>obj\freetype_debug\</IntDir>
@@ -51,7 +73,7 @@
     <OutputFile>output\freetype\debug\freetype.lib</OutputFile>
     <IgnoreImportLibrary>false</IgnoreImportLibrary>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">
     <TargetName>freetype</TargetName>
     <OutDir>output\freetype\release\</OutDir>
     <IntDir>obj\freetype_release\</IntDir>
@@ -61,7 +83,27 @@
     <OutputFile>output\freetype\release\freetype.lib</OutputFile>
     <IgnoreImportLibrary>false</IgnoreImportLibrary>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">
+    <TargetName>freetype</TargetName>
+    <OutDir>output\freetype\debug\</OutDir>
+    <IntDir>obj\freetype_debug\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\freetype\debug\freetype.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">
+    <TargetName>freetype</TargetName>
+    <OutDir>output\freetype\release\</OutDir>
+    <IntDir>obj\freetype_release\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\freetype\release\freetype.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
@@ -122,7 +164,129 @@
       <OutputFile>output\freetype\debug\freetype.lib</OutputFile>
     </Lib>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>FT2_BUILD_LIBRARY;FT_CONFIG_OPTION_DISABLE_HARFBUZZ;NDEBUG;WIN64;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\tools\middleware\freetype\include</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\freetype_release\freetype_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\freetype\release\freetype.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>FT2_BUILD_LIBRARY;FT_CONFIG_OPTION_DISABLE_HARFBUZZ;WIN64;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\tools\middleware\freetype\include</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\freetype_debug\freetype_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <OptimizeReferences>false</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\freetype\debug\freetype.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
@@ -454,695 +618,1021 @@
     <ClCompile Include="..\Tools\Middleware\freetype\builds\windows\ftdebug.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\builds\windows\ftsystem.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afblue.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afcjk.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afdummy.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afglobal.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afhints.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afindic.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\aflatin.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afloader.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afmodule.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afranges.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\afshaper.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\autofit.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\autofit\ft-hb.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftadvanc.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftbase.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftbbox.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftbdf.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftbitmap.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftcalc.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftcid.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftcolor.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftdbgmem.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftdebug.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\fterrors.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftfntfmt.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftfstype.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftgasp.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftgloadr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftglyph.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftgxval.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\fthash.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftinit.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftlcdfil.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftmac.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftmm.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftotval.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftoutln.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftpatent.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftpfr.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftpsprop.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftrfork.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftsnames.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftstream.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftstroke.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftsynth.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftsystem.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\fttrigon.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\fttype1.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftutil.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\ftwinfnt.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\base\md5.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\bdf\bdf.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\bdf\bdfdrivr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\bdf\bdflib.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcache.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcbasic.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftccache.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftccmap.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcglyph.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcimage.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcmanag.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcmru.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cache\ftcsbits.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cff.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cffcmap.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cffdrivr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cffgload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cffload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cffobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cff\cffparse.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cid\cidgload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cid\cidload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cid\cidobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cid\cidparse.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cid\cidriver.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\cid\type1cid.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvalid.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvbsln.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvcommn.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvfeat.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvfgen.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvjust.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvkern.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvlcar.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmod.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmort.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmort0.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmort1.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmort2.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmort4.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmort5.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmorx.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmorx0.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmorx1.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmorx2.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmorx4.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvmorx5.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvopbd.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvprop.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gxvalid\gxvtrak.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\adler32.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\crc32.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\ftgzip.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\inffast.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\inflate.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\inftrees.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\gzip\zutil.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\lzw\ftlzw.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\lzw\ftzopen.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvalid.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvbase.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvcommn.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvgdef.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvgpos.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvgsub.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvjstf.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvmath.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\otvalid\otvmod.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pcf\pcf.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\pcf\pcfdrivr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pcf\pcfread.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pcf\pcfutil.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfr.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfrcmap.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfrdrivr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfrgload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfrload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfrobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pfr\pfrsbit.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\afmparse.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\cffdecode.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psarrst.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psaux.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psauxmod.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psblues.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psconv.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\pserror.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psfont.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psft.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\pshints.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psintrp.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psread.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\psstack.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\t1cmap.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psaux\t1decode.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pshinter\pshalgo.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pshinter\pshglob.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pshinter\pshinter.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\pshinter\pshmod.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\pshinter\pshrec.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psnames\psmodule.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\psnames\psnames.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\raster\ftraster.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\raster\ftrend1.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\raster\raster.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\sdf\ftbsdf.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sdf\ftsdf.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sdf\ftsdfcommon.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sdf\ftsdfrend.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sdf\sdf.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\pngshim.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\sfdriver.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\sfnt.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\sfobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\sfwoff.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\sfwoff2.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttbdf.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttcmap.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttcolr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttcpal.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttgpos.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttkern.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttmtx.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttpost.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttsbit.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\ttsvg.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\sfnt\woff2tags.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\smooth\ftgrays.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\smooth\ftsmooth.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\smooth\smooth.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\svg\ftsvg.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\svg\svg.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\truetype.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\ttdriver.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\ttgload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\ttgxvar.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\ttinterp.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\ttobjs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\truetype\ttpload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\t1afm.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\t1driver.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\t1gload.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\t1load.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\t1objs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\t1parse.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type1\type1.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\type42\t42drivr.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type42\t42objs.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type42\t42parse.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Middleware\freetype\src\type42\type42.c" />
     <ClCompile Include="..\Tools\Middleware\freetype\src\winfonts\winfnt.c" />

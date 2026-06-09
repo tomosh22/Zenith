@@ -511,9 +511,6 @@
     <ClCompile Include="..\Zenith\Android\NativeGlue\android_native_app_glue.c">
       <Filter>Android\NativeGlue</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Android\Vulkan\Zenith_Android_Vulkan.cpp">
-      <Filter>Android\Vulkan</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Android\Zenith_Android_DebugBreak.cpp">
       <Filter>Android</Filter>
     </ClCompile>
@@ -1009,6 +1006,12 @@
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Platform\Android\Zenith_Android_Vulkan.cpp">
+      <Filter>Vulkan\Platform\Android</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Platform\Windows\Zenith_Windows_Vulkan.cpp">
+      <Filter>Vulkan\Platform\Windows</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
@@ -1047,9 +1050,6 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp">
       <Filter>Windows\Multithreading</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Windows\Vulkan\Zenith_Windows_Vulkan.cpp">
-      <Filter>Windows\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_DebugBreak.cpp">
       <Filter>Windows</Filter>
@@ -3564,6 +3564,12 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Backend.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_BackendGuard.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_BackendTypes.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -4289,9 +4295,6 @@
     <Filter Include="Android\NativeGlue">
       <UniqueIdentifier>{5aeee7dc-15db-0d52-0641-9c47a0bdaa2f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Android\Vulkan">
-      <UniqueIdentifier>{d57f3a1d-2d0e-30a9-3fdc-68e080c64442}</UniqueIdentifier>
-    </Filter>
     <Filter Include="AssetHandling">
       <UniqueIdentifier>{f488fb33-430f-db1a-5964-4064d92cb0b5}</UniqueIdentifier>
     </Filter>
@@ -4733,6 +4736,15 @@
     <Filter Include="Vulkan">
       <UniqueIdentifier>{70526238-1b23-7164-16c8-0bcbc4f9d1d8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Vulkan\Platform">
+      <UniqueIdentifier>{554749a4-39c8-7655-5650-aa98562ec457}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Vulkan\Platform\Android">
+      <UniqueIdentifier>{71c7c4cf-bbe4-6280-76ca-65bea97d8bdf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Vulkan\Platform\Windows">
+      <UniqueIdentifier>{d77fa716-05ee-44be-3a37-b84c7cb93f6a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Windows">
       <UniqueIdentifier>{8934a2ae-3ace-b6a9-406e-bb28e0cda430}</UniqueIdentifier>
     </Filter>
@@ -4744,9 +4756,6 @@
     </Filter>
     <Filter Include="Windows\Multithreading">
       <UniqueIdentifier>{28a8e0c4-09a7-f692-445a-5f8e170dc29b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Windows\Vulkan">
-      <UniqueIdentifier>{f34ef997-ddf6-89b3-eede-71eeca367b15}</UniqueIdentifier>
     </Filter>
     <Filter Include="ZenithECS">
       <UniqueIdentifier>{155316af-0e96-2557-de51-40a6e7561dd0}</UniqueIdentifier>

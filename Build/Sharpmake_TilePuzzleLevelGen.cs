@@ -17,7 +17,8 @@ public class TilePuzzleLevelGenProject : ZenithBaseProject
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan
 		});
 	}
 

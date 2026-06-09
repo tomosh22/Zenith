@@ -50,7 +50,8 @@ public class ZenithBaseLibProject : ZenithBaseProject
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
 		AddTargets(new ZenithTarget
@@ -59,6 +60,7 @@ public class ZenithBaseLibProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan,
 			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
 		});
 
@@ -181,7 +183,8 @@ public class ZenithProject : ZenithBaseProject
 			Platform = Platform.win64,
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
 		AddTargets(new ZenithTarget
@@ -190,6 +193,7 @@ public class ZenithProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan,
 			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
 		});
 

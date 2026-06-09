@@ -1,12 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
-      <Configuration>arm64_v8a_vs2022_Debug_Agde_False</Configuration>
+    <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
+      <Configuration>Vulkan_arm64_v8a_vs2022_Debug_Agde_False</Configuration>
       <Platform>Android-arm64-v8a</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
-      <Configuration>arm64_v8a_vs2022_Release_Agde_False</Configuration>
+    <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
+      <Configuration>Vulkan_arm64_v8a_vs2022_Release_Agde_False</Configuration>
       <Platform>Android-arm64-v8a</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -24,7 +24,7 @@
     <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <UseOfStl>cpp_shared</UseOfStl>
@@ -34,7 +34,7 @@
     <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <UseOfStl>cpp_shared</UseOfStl>
@@ -51,25 +51,25 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <TargetName>libzenithecs</TargetName>
-    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\</OutDir>
-    <IntDir>obj\zenithecs\agde\arm64_v8a_vs2022_debug_agde_false\</IntDir>
+    <OutDir>$(ProjectDir)output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</OutDir>
+    <IntDir>obj\zenithecs\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</IntDir>
     <TargetExt>.a</TargetExt>
-    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libzenithecs.a</OutputFile>
+    <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libzenithecs.a</OutputFile>
     <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
     <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
     <TargetName>libzenithecs</TargetName>
-    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\</OutDir>
-    <IntDir>obj\zenithecs\agde\arm64_v8a_vs2022_release_agde_false\</IntDir>
+    <OutDir>$(ProjectDir)output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</OutDir>
+    <IntDir>obj\zenithecs\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</IntDir>
     <TargetExt>.a</TargetExt>
-    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libzenithecs.a</OutputFile>
+    <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libzenithecs.a</OutputFile>
     <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
     <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
@@ -90,18 +90,18 @@
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithecs\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithecs\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
       <PositionIndependentCode>true</PositionIndependentCode>
     </ClCompile>
     <Lib>
-      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libzenithecs.a</OutputFile>
+      <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libzenithecs.a</OutputFile>
       <NoWarnOnCreate>true</NoWarnOnCreate>
     </Lib>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
@@ -122,14 +122,14 @@
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithecs\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithecs\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
       <PositionIndependentCode>true</PositionIndependentCode>
     </ClCompile>
     <Lib>
-      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libzenithecs.a</OutputFile>
+      <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libzenithecs.a</OutputFile>
       <NoWarnOnCreate>true</NoWarnOnCreate>
     </Lib>
   </ItemDefinitionGroup>
@@ -154,8 +154,8 @@
   <ItemGroup>
     <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta.cpp" />
     <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_ECS.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_Entity.cpp" />
     <ClCompile Include="..\Zenith\ZenithECS\Internal\Zenith_EventSystem.cpp" />

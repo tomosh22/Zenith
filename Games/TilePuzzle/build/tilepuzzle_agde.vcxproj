@@ -1,12 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
-      <Configuration>arm64_v8a_vs2022_Debug_Agde_False</Configuration>
+    <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
+      <Configuration>Vulkan_arm64_v8a_vs2022_Debug_Agde_False</Configuration>
       <Platform>Android-arm64-v8a</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
-      <Configuration>arm64_v8a_vs2022_Release_Agde_False</Configuration>
+    <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
+      <Configuration>Vulkan_arm64_v8a_vs2022_Release_Agde_False</Configuration>
       <Platform>Android-arm64-v8a</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -24,7 +24,7 @@
     <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <UseOfStl>cpp_shared</UseOfStl>
@@ -34,7 +34,7 @@
     <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <UseOfStl>cpp_shared</UseOfStl>
@@ -51,16 +51,16 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <TargetName>libtilepuzzle</TargetName>
-    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\</OutDir>
-    <IntDir>obj\agde\arm64_v8a_vs2022_debug_agde_false\</IntDir>
+    <OutDir>$(ProjectDir)output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</OutDir>
+    <IntDir>obj\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</IntDir>
     <TargetExt>.so</TargetExt>
-    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.so</OutputFile>
+    <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.so</OutputFile>
     <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
     <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <AndroidEnablePackaging>true</AndroidEnablePackaging>
     <AndroidGradleBuildDir>c:/dev/zenith/Games/TilePuzzle/Android</AndroidGradleBuildDir>
     <AndroidApplicationModule>app</AndroidApplicationModule>
@@ -68,16 +68,16 @@
     <AndroidGradleBuildType>debug</AndroidGradleBuildType>
     <AndroidGradlePackageOutputName>app-debug.apk</AndroidGradlePackageOutputName>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
     <TargetName>libtilepuzzle</TargetName>
-    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\</OutDir>
-    <IntDir>obj\agde\arm64_v8a_vs2022_release_agde_false\</IntDir>
+    <OutDir>$(ProjectDir)output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</OutDir>
+    <IntDir>obj\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</IntDir>
     <TargetExt>.so</TargetExt>
-    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libtilepuzzle.so</OutputFile>
+    <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libtilepuzzle.so</OutputFile>
     <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
     <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
     <AndroidEnablePackaging>true</AndroidEnablePackaging>
     <AndroidGradleBuildDir>c:/dev/zenith/Games/TilePuzzle/Android</AndroidGradleBuildDir>
     <AndroidApplicationModule>app</AndroidApplicationModule>
@@ -85,7 +85,7 @@
     <AndroidGradleBuildType>release</AndroidGradleBuildType>
     <AndroidGradlePackageOutputName>app-release.apk</AndroidGradlePackageOutputName>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <ClCompile>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -111,12 +111,12 @@
     </ClCompile>
     <Link>
       <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
-      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.so</OutputFile>
-      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.so</OutputFile>
+      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
       <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;-l:libzenithecs.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
-      <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.map</GenerateMapFile>
+      <GenerateMapFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
       <FunctionBinding>true</FunctionBinding>
       <NoExecStackRequired>true</NoExecStackRequired>
@@ -124,7 +124,7 @@
       <Relocation>true</Relocation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
     <ClCompile>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -150,12 +150,12 @@
     </ClCompile>
     <Link>
       <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
-      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libtilepuzzle.so</OutputFile>
-      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libtilepuzzle.so</OutputFile>
+      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\vulkan_arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
       <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;-l:libzenithecs.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
-      <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libtilepuzzle.map</GenerateMapFile>
+      <GenerateMapFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libtilepuzzle.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
       <FunctionBinding>true</FunctionBinding>
       <NoExecStackRequired>true</NoExecStackRequired>
