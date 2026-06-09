@@ -104,7 +104,7 @@ template <typename T>
 concept FluxBackendResourceBinding = requires(
 	T& xRec,
 	uint32_t uDescSet,
-	uint32_t uBinding,
+	const Flux_BindingSlot& xSlot,
 	void* pData,
 	size_t sz,
 	const Flux_ShaderResourceView* pxSRV,
@@ -114,13 +114,15 @@ concept FluxBackendResourceBinding = requires(
 	const Flux_ConstantBufferView* pxCBV,
 	Flux_Sampler* pxSampler)
 {
-	{ xRec.BeginBind(uDescSet)                                                                 } -> std::same_as<void>;
-	{ xRec.BindSRV(pxSRV, uBinding, pxSampler)                                                 } -> std::same_as<void>;
-	{ xRec.BindSRV_Buffer(xSRVBuf, uBinding)                                                   } -> std::same_as<void>;
-	{ xRec.BindCBV(pxCBV, uBinding)                                                            } -> std::same_as<void>;
-	{ xRec.BindUAV_Texture(pxUAVTex, uBinding)                                                 } -> std::same_as<void>;
-	{ xRec.BindUAV_Buffer(pxUAVBuf, uBinding)                                                  } -> std::same_as<void>;
-	{ xRec.BindDrawConstants(pData, sz, uBinding)                                              } -> std::same_as<void>;
+	// Each bind carries its full Flux_BindingSlot (group + binding); there is no
+	// stateful BeginBind(group) any more. UseBindlessTextures still takes a bare
+	// descriptor-set/group index (it binds a whole backend-owned bindless set).
+	{ xRec.BindSRV(pxSRV, xSlot, pxSampler)                                                    } -> std::same_as<void>;
+	{ xRec.BindSRV_Buffer(xSRVBuf, xSlot)                                                      } -> std::same_as<void>;
+	{ xRec.BindCBV(pxCBV, xSlot)                                                               } -> std::same_as<void>;
+	{ xRec.BindUAV_Texture(pxUAVTex, xSlot)                                                    } -> std::same_as<void>;
+	{ xRec.BindUAV_Buffer(pxUAVBuf, xSlot)                                                     } -> std::same_as<void>;
+	{ xRec.BindDrawConstants(pData, sz, xSlot)                                                 } -> std::same_as<void>;
 	{ xRec.UseBindlessTextures(uDescSet)                                                       } -> std::same_as<void>;
 };
 

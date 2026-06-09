@@ -10,13 +10,15 @@ Flux_ShaderBinder::Flux_ShaderBinder(Flux_CommandList& xCmdList)
 {
 }
 
-void Flux_ShaderBinder::EnsureSet(u_int uSet)
+Flux_BindingSlot Flux_ShaderBinder::MakeSlot(u_int uSet, u_int uBinding)
 {
-	if (m_uCurrentSet != uSet)
-	{
-		m_xCmdList.AddCommand<Flux_CommandBeginBind>(uSet);
-		m_uCurrentSet = uSet;
-	}
+	// Reset the group on a descriptor-set change (the first bind to the set),
+	// mirroring the old EnsureSet -> BeginBind(set) clear. Subsequent binds to
+	// the same set keep the group's accumulated bindings (multi-draw / partial
+	// re-bind), and a group a later set does not touch survives untouched.
+	const bool bReset = (m_uCurrentSet != uSet);
+	m_uCurrentSet = uSet;
+	return Flux_BindingSlot{ uSet, uBinding, bReset };
 }
 
 // Pointer-identity cache contract: entries are matched by pointer compare on
@@ -101,8 +103,7 @@ void Flux_ShaderBinder::BindCBV(const Flux_Shader& xShader, const char* szName, 
 		"Flux_ShaderBinder::BindCBV: binding '%s' has reflected type %d, expected BINDING_TYPE_BUFFER (%d). Wrong Bind* overload for this binding?",
 		szName, static_cast<int>(xResolved.m_eType), static_cast<int>(BINDING_TYPE_BUFFER));
 
-	EnsureSet(xResolved.m_xHandle.m_uSet);
-	m_xCmdList.AddCommand<Flux_CommandBindCBV>(pxCBV, xResolved.m_xHandle.m_uBinding);
+	m_xCmdList.AddCommand<Flux_CommandBindCBV>(pxCBV, MakeSlot(xResolved.m_xHandle.m_uSet, xResolved.m_xHandle.m_uBinding));
 }
 
 void Flux_ShaderBinder::BindSRV(const Flux_Shader& xShader, const char* szName, const Flux_ShaderResourceView* pxSRV, Flux_Sampler* pxSampler)
@@ -119,8 +120,7 @@ void Flux_ShaderBinder::BindSRV(const Flux_Shader& xShader, const char* szName, 
 	// the correct layout transition.
 	Flux_RenderGraph::AssertBoundResourceDeclared(pxSRV->m_xVRAMHandle, /*bIsWrite*/false, "BindSRV");
 
-	EnsureSet(xResolved.m_xHandle.m_uSet);
-	m_xCmdList.AddCommand<Flux_CommandBindSRV>(pxSRV, xResolved.m_xHandle.m_uBinding, pxSampler);
+	m_xCmdList.AddCommand<Flux_CommandBindSRV>(pxSRV, MakeSlot(xResolved.m_xHandle.m_uSet, xResolved.m_xHandle.m_uBinding), pxSampler);
 }
 
 void Flux_ShaderBinder::BindUAV_Texture(const Flux_Shader& xShader, const char* szName, const Flux_UnorderedAccessView_Texture* pxUAV)
@@ -132,8 +132,7 @@ void Flux_ShaderBinder::BindUAV_Texture(const Flux_Shader& xShader, const char* 
 	Zenith_Assert(pxUAV != nullptr, "Flux_ShaderBinder::BindUAV_Texture: null UAV pointer for binding '%s'", szName);
 	Flux_RenderGraph::AssertBoundResourceDeclared(pxUAV->m_xVRAMHandle, /*bIsWrite*/true, "BindUAV_Texture");
 
-	EnsureSet(xResolved.m_xHandle.m_uSet);
-	m_xCmdList.AddCommand<Flux_CommandBindUAV_Texture>(pxUAV, xResolved.m_xHandle.m_uBinding);
+	m_xCmdList.AddCommand<Flux_CommandBindUAV_Texture>(pxUAV, MakeSlot(xResolved.m_xHandle.m_uSet, xResolved.m_xHandle.m_uBinding));
 }
 
 void Flux_ShaderBinder::BindUAV_Buffer(const Flux_Shader& xShader, const char* szName, const Flux_UnorderedAccessView_Buffer* pxUAV)
@@ -145,8 +144,7 @@ void Flux_ShaderBinder::BindUAV_Buffer(const Flux_Shader& xShader, const char* s
 	Zenith_Assert(pxUAV != nullptr, "Flux_ShaderBinder::BindUAV_Buffer: null UAV pointer for binding '%s'", szName);
 	Flux_RenderGraph::AssertBoundResourceDeclared(pxUAV->m_xVRAMHandle, /*bIsWrite*/true, "BindUAV_Buffer");
 
-	EnsureSet(xResolved.m_xHandle.m_uSet);
-	m_xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(pxUAV, xResolved.m_xHandle.m_uBinding);
+	m_xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(pxUAV, MakeSlot(xResolved.m_xHandle.m_uSet, xResolved.m_xHandle.m_uBinding));
 }
 
 void Flux_ShaderBinder::BindSRV_Buffer(const Flux_Shader& xShader, const char* szName, const Flux_ShaderResourceView_Buffer& xSRV)
@@ -163,8 +161,7 @@ void Flux_ShaderBinder::BindSRV_Buffer(const Flux_Shader& xShader, const char* s
 	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "Flux_ShaderBinder::BindSRV_Buffer: invalid SRV descriptor handle for binding '%s'", szName);
 	Flux_RenderGraph::AssertBoundResourceDeclared(xSRV.m_xVRAMHandle, /*bIsWrite*/false, "BindSRV_Buffer");
 
-	EnsureSet(xResolved.m_xHandle.m_uSet);
-	m_xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xSRV, xResolved.m_xHandle.m_uBinding);
+	m_xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xSRV, MakeSlot(xResolved.m_xHandle.m_uSet, xResolved.m_xHandle.m_uBinding));
 }
 
 void Flux_ShaderBinder::BindDrawConstants(const Flux_Shader& xShader, const char* szName, const void* pData, u_int uSize)
@@ -176,6 +173,5 @@ void Flux_ShaderBinder::BindDrawConstants(const Flux_Shader& xShader, const char
 		"Flux_ShaderBinder::BindDrawConstants: binding '%s' has reflected type %d, expected BINDING_TYPE_BUFFER (%d). Wrong Bind* overload for this binding?",
 		szName, static_cast<int>(xResolved.m_eType), static_cast<int>(BINDING_TYPE_BUFFER));
 
-	EnsureSet(xResolved.m_xHandle.m_uSet);
-	m_xCmdList.AddCommand<Flux_CommandBindDrawConstants>(pData, uSize, xResolved.m_xHandle.m_uBinding);
+	m_xCmdList.AddCommand<Flux_CommandBindDrawConstants>(pData, uSize, MakeSlot(xResolved.m_xHandle.m_uSet, xResolved.m_xHandle.m_uBinding));
 }

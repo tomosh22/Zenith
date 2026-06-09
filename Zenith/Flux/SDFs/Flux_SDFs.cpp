@@ -142,8 +142,7 @@ static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSDFs.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSDFs.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 
-	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSDFs.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSDFs.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSDFs.m_xSpheresBuffer.GetCBV(), 1);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);

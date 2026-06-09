@@ -51,6 +51,29 @@ private:
 	u_int m_uHandle = UINT32_MAX;
 };
 
+// Identifies one shader binding: the descriptor group (set) + the binding index
+// within that group. Replaces the old stateful BeginBind(group) + per-bind index
+// model -- each bind now carries its full slot, so the backend never has to track
+// a "current group". Implicitly constructible from a bare binding index (group 0)
+// so the common single-group call sites stay terse; multi-group sites (e.g. the
+// shader binder resolving a reflected set) pass {group, binding} explicitly.
+struct Flux_BindingSlot
+{
+	u_int m_uGroup = 0;
+	u_int m_uBinding = 0;
+	// When true, the backend clears the group's accumulated bindings before
+	// applying this one -- i.e. this bind starts a fresh sequence for the group.
+	// Set by the shader binder on a descriptor-set change (and by direct bind
+	// sites at the start of their sequence), replacing the old BeginBind(group)
+	// per-sequence clear. A no-op backend simply ignores it.
+	bool m_bResetGroup = false;
+
+	Flux_BindingSlot() = default;
+	Flux_BindingSlot(u_int uBinding) : m_uGroup(0), m_uBinding(uBinding) {}
+	Flux_BindingSlot(u_int uGroup, u_int uBinding) : m_uGroup(uGroup), m_uBinding(uBinding) {}
+	Flux_BindingSlot(u_int uGroup, u_int uBinding, bool bResetGroup) : m_uGroup(uGroup), m_uBinding(uBinding), m_bResetGroup(bResetGroup) {}
+};
+
 static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 {
 	switch (t)

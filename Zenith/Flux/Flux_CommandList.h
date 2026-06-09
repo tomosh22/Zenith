@@ -16,7 +16,6 @@ struct Flux_RenderAttachment;
 	X(SET_PIPELINE,                Flux_CommandSetPipeline) \
 	X(SET_VERTEX_BUFFER,           Flux_CommandSetVertexBuffer) \
 	X(SET_INDEX_BUFFER,            Flux_CommandSetIndexBuffer) \
-	X(BEGIN_BIND,                  Flux_CommandBeginBind) \
 	X(BIND_SRV,                    Flux_CommandBindSRV) \
 	X(BIND_SRV_BUFFER,             Flux_CommandBindSRV_Buffer) \
 	X(BIND_UAV_TEXTURE,            Flux_CommandBindUAV_Texture) \
@@ -71,9 +70,9 @@ class Flux_CommandBindDrawConstants
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_DRAW_CONSTANTS;
 
-	Flux_CommandBindDrawConstants(const void* pData, u_int uSize, u_int uBinding = 0)
+	Flux_CommandBindDrawConstants(const void* pData, u_int uSize, const Flux_BindingSlot& xSlot = {})
 	: m_uSize(uSize)
-	, m_uBinding(uBinding)
+	, m_xSlot(xSlot)
 	{
 		Zenith_Assert(uSize <= uMAX_SIZE, "Scratch UBO payload too big (%u > %u)", uSize, uMAX_SIZE);
 		// Runtime guard for release builds - prevent buffer overflow
@@ -89,7 +88,7 @@ public:
 		// TODO: elide second memcpy by having AddCommand record directly into the
 		// worker's scratch-partition slot. Requires verifying pass-to-worker pinning
 		// holds across record -> execute.
-		pxCmdBuf->BindDrawConstants(m_acData, m_uSize, m_uBinding);
+		pxCmdBuf->BindDrawConstants(m_acData, m_uSize, m_xSlot);
 	}
 private:
 	// Inline storage cap for deferred command payload.
@@ -100,7 +99,7 @@ private:
 
 	u_int8 m_acData[uMAX_SIZE];
 	u_int m_uSize;
-	u_int m_uBinding;
+	Flux_BindingSlot m_xSlot;
 };
 
 class Flux_CommandSetPipeline
@@ -155,31 +154,19 @@ public:
 
 	const Flux_IndexBuffer* m_pxIndexBuffer;
 };
-class Flux_CommandBeginBind
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BEGIN_BIND;
-
-	Flux_CommandBeginBind(const u_int uIndex) : m_uIndex(uIndex) {}
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->BeginBind(m_uIndex);
-	}
-	u_int m_uIndex;
-};
 class Flux_CommandBindCBV
 {
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_CBV;
 
-	Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const u_int uBindPoint);
+	Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const Flux_BindingSlot& xSlot);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindCBV(m_pxCBV, m_uBindPoint);
+		pxCmdBuf->BindCBV(m_pxCBV, m_xSlot);
 	}
 
 	const Flux_ConstantBufferView* m_pxCBV;
-	const u_int m_uBindPoint;
+	Flux_BindingSlot m_xSlot;
 };
 
 class Flux_CommandBindSRV
@@ -187,13 +174,13 @@ class Flux_CommandBindSRV
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_SRV;
 
-	Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr);
+	Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const Flux_BindingSlot& xSlot, Flux_Sampler* pxSampler = nullptr);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindSRV(m_pxSRV, m_uBindPoint, m_pxSampler);
+		pxCmdBuf->BindSRV(m_pxSRV, m_xSlot, m_pxSampler);
 	}
 	const Flux_ShaderResourceView* m_pxSRV;
-	const u_int m_uBindPoint;
+	Flux_BindingSlot m_xSlot;
 	Flux_Sampler* m_pxSampler;
 };
 
@@ -202,13 +189,13 @@ class Flux_CommandBindUAV_Texture
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV_TEXTURE;
 
-	Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const u_int uBindPoint);
+	Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const Flux_BindingSlot& xSlot);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindUAV_Texture(m_pxUAV, m_uBindPoint);
+		pxCmdBuf->BindUAV_Texture(m_pxUAV, m_xSlot);
 	}
 	const Flux_UnorderedAccessView_Texture* m_pxUAV;
-	const u_int m_uBindPoint;
+	Flux_BindingSlot m_xSlot;
 };
 
 class Flux_CommandBindUAV_Buffer
@@ -216,13 +203,13 @@ class Flux_CommandBindUAV_Buffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV_BUFFER;
 
-	Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const u_int uBindPoint);
+	Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const Flux_BindingSlot& xSlot);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindUAV_Buffer(m_pxUAV, m_uBindPoint);
+		pxCmdBuf->BindUAV_Buffer(m_pxUAV, m_xSlot);
 	}
 	const Flux_UnorderedAccessView_Buffer* m_pxUAV;
-	const u_int m_uBindPoint;
+	Flux_BindingSlot m_xSlot;
 };
 
 // Bind a read-only structured-buffer SSBO (StructuredBuffer<T> in Slang). The
@@ -238,13 +225,13 @@ class Flux_CommandBindSRV_Buffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_SRV_BUFFER;
 
-	Flux_CommandBindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const u_int uBindPoint);
+	Flux_CommandBindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const Flux_BindingSlot& xSlot);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindSRV_Buffer(m_xSRV, m_uBindPoint);
+		pxCmdBuf->BindSRV_Buffer(m_xSRV, m_xSlot);
 	}
 	Flux_ShaderResourceView_Buffer m_xSRV;
-	const u_int                    m_uBindPoint;
+	Flux_BindingSlot               m_xSlot;
 };
 
 class Flux_CommandDraw

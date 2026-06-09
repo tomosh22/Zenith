@@ -654,7 +654,6 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	xCmd.SetVertexBuffer(xSwapchain.m_pxFluxGraphics->m_xQuadMesh.GetVertexBuffer());
 	xCmd.SetIndexBuffer(xSwapchain.m_pxFluxGraphics->m_xQuadMesh.GetIndexBuffer());
 
-	xCmd.BeginBind(0);
 #ifdef ZENITH_DEBUG_VARIABLES
 	if (dbg_bOutputMRT)
 	{
@@ -662,7 +661,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		Flux_ShaderResourceView* pxMRTSRV = xSwapchain.m_pxFluxGraphics->GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
 		if (pxMRTSRV)
 		{
-			xCmd.BindSRV(pxMRTSRV, 0);
+			xCmd.BindSRV(pxMRTSRV, Flux_BindingSlot{ 0, 0, true });
 		}
 	}
 	else
@@ -672,7 +671,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		Flux_ShaderResourceView& xSRV = xSwapchain.m_pxFluxGraphics->GetFinalRenderTarget().SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
-			xCmd.BindSRV(&xSRV, 0);
+			xCmd.BindSRV(&xSRV, Flux_BindingSlot{ 0, 0, true });
 		}
 		else
 		{

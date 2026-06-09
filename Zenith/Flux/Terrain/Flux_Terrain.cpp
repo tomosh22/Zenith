@@ -458,8 +458,7 @@ static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
 		// writes 0u. The graph emits a UAV→UAV barrier between this pass and
 		// the culling pass, so the culling dispatch's atomic increments see
 		// the cleared value.
-		pxCmdList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCmdList->AddCommand<Flux_CommandBindUAV_Buffer>(&pxState->m_xVisibleCountBuffer.GetUAV(), 0);
+		pxCmdList->AddCommand<Flux_CommandBindUAV_Buffer>(&pxState->m_xVisibleCountBuffer.GetUAV(), Flux_BindingSlot{ 0, 0, true });
 		pxCmdList->AddCommand<Flux_CommandDispatch>(1, 1, 1);
 	}
 }

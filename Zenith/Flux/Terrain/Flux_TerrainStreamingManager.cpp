@@ -1229,8 +1229,7 @@ void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreaming
 	}
 
 	// Pipeline already bound by Flux_Terrain; frustum/visible-count prepared upstream.
-	xCmdList.AddCommand<Flux_CommandBeginBind>(0);
-	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xState.m_xChunkDataBuffer.GetSRV(), 0);
+	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xState.m_xChunkDataBuffer.GetSRV(), Flux_BindingSlot{ 0, 0, true });
 	xCmdList.AddCommand<Flux_CommandBindCBV>(&xState.m_xFrustumPlanesBuffer.GetCBV(), 1);
 	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xIndirectDrawBuffer.GetUAV(), 2);
 	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xVisibleCountBuffer.GetUAV(), 3);

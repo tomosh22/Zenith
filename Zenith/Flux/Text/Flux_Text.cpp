@@ -322,8 +322,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xText.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xText.m_xInstanceBuffer, 1);
 
-	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xText.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xText.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 	// Explicit clamp sampler at the bind site — MSDF AA assumes no wrap.
 	pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxAtlas->m_xSRV, 1);
 

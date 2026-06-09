@@ -71,10 +71,6 @@ public:
 	void BindDrawConstants(const Flux_Shader& xShader, const char* szName, const void* pData, u_int uSize);
 
 private:
-	// Switch to the specified descriptor set if not already active. Emits a
-	// Flux_CommandBeginBind only on a set change.
-	void EnsureSet(u_int uSet);
-
 	// Resolve (reflection, name) to a handle and reflected type via the
 	// pointer-identity cache. Asserts inside Flux_ShaderReflection::GetBinding
 	// if the name is not present. Takes the reflection pointer directly (not
@@ -86,6 +82,11 @@ private:
 		BindingType        m_eType = BINDING_TYPE_MAX;
 	};
 	ResolvedBinding ResolveNamedBinding(const Flux_ShaderReflection* pxReflection, const char* szName);
+
+	// Builds the Flux_BindingSlot for a resolved (set, binding), flagging it to
+	// reset the group when the descriptor set changes from the previous bind --
+	// the slot-carried replacement for the old EnsureSet/BeginBind clear.
+	Flux_BindingSlot MakeSlot(u_int uSet, u_int uBinding);
 
 	Flux_CommandList& m_xCmdList;
 	u_int m_uCurrentSet = UINT32_MAX;

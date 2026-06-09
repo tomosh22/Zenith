@@ -46,42 +46,42 @@ Flux_CommandSetIndexBuffer::Flux_CommandSetIndexBuffer(const Flux_IndexBuffer* c
 	Zenith_Assert(pxIndexBuffer->GetBuffer().m_xVRAMHandle.IsValid(), "Index buffer has invalid VRAM handle - did you forget to upload to GPU?");
 }
 
-Flux_CommandBindCBV::Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const u_int uBindPoint)
+Flux_CommandBindCBV::Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const Flux_BindingSlot& xSlot)
 	: m_pxCBV(pxCBV)
-	, m_uBindPoint(uBindPoint)
+	, m_xSlot(xSlot)
 {
 	Zenith_Assert(pxCBV != nullptr, "CBV is null");
 	Zenith_Assert(pxCBV->m_xVRAMHandle.IsValid(), "CBV has invalid VRAM handle");
 }
 
-Flux_CommandBindSRV::Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const u_int uBindPoint, Flux_Sampler* pxSampler)
+Flux_CommandBindSRV::Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const Flux_BindingSlot& xSlot, Flux_Sampler* pxSampler)
 	: m_pxSRV(pxSRV)
-	, m_uBindPoint(uBindPoint)
+	, m_xSlot(xSlot)
 	, m_pxSampler(pxSampler)
 {
 	Zenith_Assert(pxSRV != nullptr, "SRV is null");
 	Zenith_Assert(pxSRV->m_xVRAMHandle.IsValid(), "SRV has invalid VRAM handle");
 }
 
-Flux_CommandBindUAV_Texture::Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const u_int uBindPoint)
+Flux_CommandBindUAV_Texture::Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const Flux_BindingSlot& xSlot)
 	: m_pxUAV(pxUAV)
-	, m_uBindPoint(uBindPoint)
+	, m_xSlot(xSlot)
 {
 	Zenith_Assert(pxUAV != nullptr, "UAV texture is null");
 	Zenith_Assert(pxUAV->m_xVRAMHandle.IsValid(), "UAV texture has invalid VRAM handle");
 }
 
-Flux_CommandBindUAV_Buffer::Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const u_int uBindPoint)
+Flux_CommandBindUAV_Buffer::Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const Flux_BindingSlot& xSlot)
 	: m_pxUAV(pxUAV)
-	, m_uBindPoint(uBindPoint)
+	, m_xSlot(xSlot)
 {
 	Zenith_Assert(pxUAV != nullptr, "UAV buffer is null");
 	Zenith_Assert(pxUAV->m_xVRAMHandle.IsValid(), "UAV buffer has invalid VRAM handle");
 }
 
-Flux_CommandBindSRV_Buffer::Flux_CommandBindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const u_int uBindPoint)
+Flux_CommandBindSRV_Buffer::Flux_CommandBindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const Flux_BindingSlot& xSlot)
 	: m_xSRV(xSRV)
-	, m_uBindPoint(uBindPoint)
+	, m_xSlot(xSlot)
 {
 	Zenith_Assert(xSRV.m_xVRAMHandle.IsValid(), "SRV buffer has invalid VRAM handle");
 	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "SRV buffer has invalid descriptor handle");

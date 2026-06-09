@@ -93,21 +93,19 @@ public:
 	void BeginRenderPass(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour, const Flux_RenderGraph_AttachmentRef& rxDepthStencil, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false, bool bDepthIsReadOnly = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
-	void BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
-	void BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, uint32_t uBindPoint);
-	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint);
-	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint);
-	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);
+	void BindSRV(const Flux_ShaderResourceView* pxSRV, const Flux_BindingSlot& xSlot, Zenith_Vulkan_Sampler* pxSampler = nullptr);
+	void BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const Flux_BindingSlot& xSlot);
+	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, const Flux_BindingSlot& xSlot);
+	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, const Flux_BindingSlot& xSlot);
+	void BindCBV(const Flux_ConstantBufferView* pxCBV, const Flux_BindingSlot& xSlot);
 
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
-	void BindDrawConstants(void* pData, size_t uSize, u_int uBinding);
+	void BindDrawConstants(void* pData, size_t uSize, const Flux_BindingSlot& xSlot);
 	void SetCullMode(CullMode eCullMode);
 	void SetDepthBias(float fConstant, float fSlope, float fClamp);
 	void SetShoudClear(const bool bClear);
 
 	void UseBindlessTextures(const uint32_t uSet);
-
-	void BeginBind(u_int uDescSet);
 
 	vk::CommandBuffer& GetCurrentCmdBuffer() { return m_xCurrentCmdBuffer; }
 	void* Platform_GetCurrentCmdBuffer() const { return (void*)&m_xCurrentCmdBuffer; }
@@ -171,13 +169,13 @@ private:
 		vk::DescriptorBufferInfo* axBufferInfos, u_int& uNumBufferWrites,
 		vk::DescriptorImageInfo* axTexInfos, u_int& uNumTexWrites,
 		vk::WriteDescriptorSet* axWrites, u_int& uNumWrites);
+
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;
 	vk::PipelineBindPoint m_eCurrentBindPoint = vk::PipelineBindPoint::eGraphics;
 
 	DescSetBindings m_xBindings[FLUX_MAX_BINDING_GROUPS];
-	u_int m_uCurrentBindFreq = FLUX_MAX_BINDING_GROUPS;
 
 	CommandType m_eCommandType;
 	u_int m_uWorkerIndex;

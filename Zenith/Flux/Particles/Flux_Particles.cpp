@@ -242,8 +242,7 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xParticles.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_xInstanceBufferAlpha, 1);
 
-			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xParticles.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xParticles.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 			pxCommandList->AddCommand<Flux_CommandBindSRV>(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xParticles.m_uAlphaInstanceCount);
@@ -258,8 +257,7 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xParticles.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_xInstanceBufferAdditive, 1);
 
-			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xParticles.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xParticles.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 			pxCommandList->AddCommand<Flux_CommandBindSRV>(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xParticles.m_uAdditiveInstanceCount);

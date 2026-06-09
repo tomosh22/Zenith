@@ -129,8 +129,7 @@ static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xQuads.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xQuads.m_xInstanceBuffer, 1);
 
-	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xQuads.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xQuads.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 
 	pxCommandList->AddCommand<Flux_CommandUseUnboundedTextures>(1);
 

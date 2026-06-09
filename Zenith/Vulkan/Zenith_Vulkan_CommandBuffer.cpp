@@ -68,7 +68,6 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	vk::CommandBufferBeginInfo xBeginInfo;
 	xBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 	VkCheck(m_xCurrentCmdBuffer.begin(xBeginInfo));
-	m_uCurrentBindFreq = FLUX_MAX_BINDING_GROUPS;
 	m_uDescriptorDirty = ~0u;
 	m_pxCurrentPipeline = nullptr;  // Reset pipeline to catch any stale access
 	memset(m_xBindings, 0, sizeof(m_xBindings));
@@ -98,7 +97,6 @@ void Zenith_Vulkan_CommandBuffer::EndRecording(bool bEndPass /*= true*/)
 		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
 	VkCheck(m_xCurrentCmdBuffer.end());
-	m_uCurrentBindFreq = FLUX_MAX_BINDING_GROUPS;
 }
 
 void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
@@ -180,7 +178,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 		// SRV → combined image sampler. Depth textures must use the
 		// DepthStencilReadOnlyOptimal layout, not ShaderReadOnlyOptimal.
 		const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
-		if (pxSRV)
+		if (eType == BINDING_TYPE_TEXTURE && pxSRV)
 		{
 			Zenith_Assert(pxSRV->m_xImageViewHandle.IsValid(), "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
 
@@ -204,7 +202,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 
 		// UAV image → storage image (general layout).
 		const Flux_UnorderedAccessView_Texture* const pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[u];
-		if (pxUAV_Texture)
+		if (eType == BINDING_TYPE_STORAGE_IMAGE && pxUAV_Texture)
 		{
 			axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 				.setImageView(m_pxVulkanMemory->GetImageView(pxUAV_Texture->m_xImageViewHandle))
@@ -221,7 +219,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 
 		// UAV buffer → storage buffer.
 		const Flux_UnorderedAccessView_Buffer* const pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[u];
-		if (pxUAV_Buffer)
+		if (eType == BINDING_TYPE_STORAGE_BUFFER && pxUAV_Buffer)
 		{
 			axBufferInfos[uNumBufferWrites] = m_pxVulkanMemory->GetBufferDescriptor(pxUAV_Buffer->m_xBufferDescHandle);
 			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -242,7 +240,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 		// zero and a Flux_VRAMHandle of value 0 reports IsValid()==true
 		// (its sentinel is UINT32_MAX). The bool array memsets cleanly to
 		// false and only flips true when BindSRV_Buffer is called.
-		if (m_xBindings[uDescSet].m_abSRV_BuffersActive[u])
+		if (eType == BINDING_TYPE_STORAGE_BUFFER && !pxUAV_Buffer && m_xBindings[uDescSet].m_abSRV_BuffersActive[u])
 		{
 			const Flux_ShaderResourceView_Buffer& rxSRV_Buffer = m_xBindings[uDescSet].m_xSRV_Buffers[u];
 			axBufferInfos[uNumBufferWrites] = m_pxVulkanMemory->GetBufferDescriptor(rxSRV_Buffer.m_xBufferDescHandle);
@@ -256,8 +254,13 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 		}
 
 		// CBV → uniform buffer (or storage buffer if the binding type says so).
+		// Gated on eType so a stale CBV left at a slot that a later draw's pipeline
+		// declares as a texture/storage-image is ignored; in the storage-buffer
+		// case it is lowest priority (UAV buffer, then SRV buffer, then CBV) so a
+		// real buffer binding wins over a stale CBV at the same slot.
 		const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
-		if (pxCBV)
+		if (pxCBV && (eType == BINDING_TYPE_BUFFER ||
+			(eType == BINDING_TYPE_STORAGE_BUFFER && !pxUAV_Buffer && !m_xBindings[uDescSet].m_abSRV_BuffersActive[u])))
 		{
 			axBufferInfos[uNumBufferWrites] = m_pxVulkanMemory->GetBufferDescriptor(pxCBV->m_xBufferDescHandle);
 			vk::DescriptorType eBufferType = (eType == BINDING_TYPE_STORAGE_BUFFER)
@@ -277,7 +280,12 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 	// loop because its destination binding index comes from the binding record
 	// itself, not the iteration index.
 	const ScratchBufferBinding& xScratch = m_xBindings[uDescSet].m_xScratchBuffer;
-	if (xScratch.m_bValid)
+	// Only emit the scratch (draw-constants) write if the current pipeline's
+	// layout actually declares a uniform buffer at its binding -- defends against
+	// a stale scratch record persisting onto a slot a later pipeline uses for a
+	// different descriptor type (SetPipeline's clear normally prevents this).
+	if (xScratch.m_bValid &&
+		m_pxCurrentPipeline->m_xRootSig.m_axBindingTypes[uDescSet][xScratch.m_uBinding] == BINDING_TYPE_BUFFER)
 	{
 		Zenith_Vulkan_PerFrame* pxFrame = m_pxVulkan->m_pxCurrentFrame;
 		axBufferInfos[uNumBufferWrites] = vk::DescriptorBufferInfo()
@@ -505,60 +513,78 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 	m_uDescriptorDirty = ~0u;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
+// Each Bind* carries its full Flux_BindingSlot (group + binding) -- there is no
+// stateful BeginBind/m_uCurrentBindFreq. A slot with m_bResetGroup clears the
+// group's accumulated bindings first (the frontend sets it at the start of each
+// bind sequence -- on a descriptor-set change in the shader binder, or at a
+// direct bind site -- exactly replicating the old BeginBind(group) memset, so
+// persistent bindings a later pipeline relies on survive while a new sequence
+// starts clean). BuildDescriptorWritesForSet additionally writes one descriptor
+// per slot keyed on the pipeline layout's type as defence in depth.
+void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, const Flux_BindingSlot& xSlot, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
+	const u_int uGroup = xSlot.m_uGroup;
+	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
+	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
 	Zenith_Assert(pxSRV && pxSRV->m_xImageViewHandle.IsValid(), "Invalid SRV");
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	m_xBindings[m_uCurrentBindFreq].m_xSRVs[uBindPoint] = pxSRV;
-	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = pxSampler;
+	m_uDescriptorDirty |= 1 << uGroup;
+	m_xBindings[uGroup].m_xSRVs[xSlot.m_uBinding] = pxSRV;
+	m_xBindings[uGroup].m_apxSamplers[xSlot.m_uBinding] = pxSampler;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, const Flux_BindingSlot& xSlot)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
+	const u_int uGroup = xSlot.m_uGroup;
+	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
+	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
 	Zenith_Assert(pxUAV && pxUAV->m_xImageViewHandle.IsValid(), "Invalid UAV");
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	m_xBindings[m_uCurrentBindFreq].m_xUAV_Textures[uBindPoint] = pxUAV;
-	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
+	m_uDescriptorDirty |= 1 << uGroup;
+	m_xBindings[uGroup].m_xUAV_Textures[xSlot.m_uBinding] = pxUAV;
+	m_xBindings[uGroup].m_apxSamplers[xSlot.m_uBinding] = nullptr;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, const Flux_BindingSlot& xSlot)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
+	const u_int uGroup = xSlot.m_uGroup;
+	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
+	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
 	Zenith_Assert(pxUAV, "Invalid UAV");
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	m_xBindings[m_uCurrentBindFreq].m_xUAV_Buffers[uBindPoint] = pxUAV;
-	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
+	m_uDescriptorDirty |= 1 << uGroup;
+	m_xBindings[uGroup].m_xUAV_Buffers[xSlot.m_uBinding] = pxUAV;
+	m_xBindings[uGroup].m_apxSamplers[xSlot.m_uBinding] = nullptr;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const Flux_BindingSlot& xSlot)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
+	const u_int uGroup = xSlot.m_uGroup;
+	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
+	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
 	Zenith_Assert(xSRV.m_xVRAMHandle.IsValid(), "Invalid SRV buffer (no VRAM handle)");
 	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "Invalid SRV buffer (no descriptor handle)");
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	m_xBindings[m_uCurrentBindFreq].m_xSRV_Buffers[uBindPoint]        = xSRV;
-	m_xBindings[m_uCurrentBindFreq].m_abSRV_BuffersActive[uBindPoint] = true;
-	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint]         = nullptr;
+	m_uDescriptorDirty |= 1 << uGroup;
+	m_xBindings[uGroup].m_xSRV_Buffers[xSlot.m_uBinding]        = xSRV;
+	m_xBindings[uGroup].m_abSRV_BuffersActive[xSlot.m_uBinding] = true;
+	m_xBindings[uGroup].m_apxSamplers[xSlot.m_uBinding]         = nullptr;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, const Flux_BindingSlot& xSlot)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
+	const u_int uGroup = xSlot.m_uGroup;
+	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
+	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
 	Zenith_Assert(pxCBV, "Invalid CBV (null)");
-	Zenith_Assert(uBindPoint < FLUX_MAX_BINDINGS_PER_GROUP, "Bind point out of range: %u", uBindPoint);
+	Zenith_Assert(xSlot.m_uBinding < FLUX_MAX_BINDINGS_PER_GROUP, "Bind point out of range: %u", xSlot.m_uBinding);
 	// Validate the CBV has valid buffer info
-	Zenith_Assert(pxCBV->m_xBufferDescHandle.IsValid(), "CBV has invalid buffer descriptor at bind point %u", uBindPoint);
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
+	Zenith_Assert(pxCBV->m_xBufferDescHandle.IsValid(), "CBV has invalid buffer descriptor at bind point %u", xSlot.m_uBinding);
+	m_uDescriptorDirty |= 1 << uGroup;
+	m_xBindings[uGroup].m_xCBVs[xSlot.m_uBinding] = pxCBV;
 }
 
 void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void*, uint32_t) {
 	STUBBED
 }
 
-void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, u_int uBinding)
+void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, const Flux_BindingSlot& xSlot)
 {
 	// Allocate from scratch buffer
 	Zenith_Vulkan_PerFrame* pxFrame = m_pxVulkan->m_pxCurrentFrame;
@@ -568,14 +594,15 @@ void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, u
 	void* pDst = static_cast<u_int8*>(pxFrame->GetScratchBufferMappedPtr()) + uOffset;
 	memcpy(pDst, pData, uSize);
 
-	// Stage scratch buffer binding for the current descriptor set
-	// BeginBind() should have been called before this to set m_uCurrentBindFreq
-	u_int uSet = m_uCurrentBindFreq;
-	m_xBindings[uSet].m_xScratchBuffer.m_uOffset = uOffset;
-	m_xBindings[uSet].m_xScratchBuffer.m_uSize = static_cast<u_int>(uSize);
-	m_xBindings[uSet].m_xScratchBuffer.m_uBinding = uBinding;
-	m_xBindings[uSet].m_xScratchBuffer.m_bValid = true;
-	m_uDescriptorDirty |= 1 << uSet;
+	// Stage the scratch-buffer binding for the slot's descriptor group.
+	const u_int uGroup = xSlot.m_uGroup;
+	Zenith_Assert(uGroup < FLUX_MAX_BINDING_GROUPS, "Binding group %u out of range", uGroup);
+	if (xSlot.m_bResetGroup) { memset(&m_xBindings[uGroup], 0, sizeof(DescSetBindings)); }
+	m_xBindings[uGroup].m_xScratchBuffer.m_uOffset = uOffset;
+	m_xBindings[uGroup].m_xScratchBuffer.m_uSize = static_cast<u_int>(uSize);
+	m_xBindings[uGroup].m_xScratchBuffer.m_uBinding = xSlot.m_uBinding;
+	m_xBindings[uGroup].m_xScratchBuffer.m_bValid = true;
+	m_uDescriptorDirty |= 1 << uGroup;
 }
 
 void Zenith_Vulkan_CommandBuffer::SetCullMode(CullMode eCullMode)
@@ -603,12 +630,6 @@ void Zenith_Vulkan_CommandBuffer::UseBindlessTextures(const uint32_t uSet)
 {
 	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uSet, 1, &m_pxVulkan->GetBindlessTexturesDescriptorSet(), 0, nullptr);
 	m_uDescriptorDirty &= ~(1 << uSet);
-}
-
-void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
-{
-	memset(&m_xBindings[uDescSet], 0, sizeof(DescSetBindings));
-	m_uCurrentBindFreq = uDescSet;
 }
 
 // Map an image layout to the access mask that operations using it produce or

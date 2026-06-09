@@ -262,8 +262,7 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xSolidColourPipeline);
 		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
-		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_xSolidColourConstantsBuffer.GetCBV(), 0);
+		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_xSolidColourConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 		return;
 	}
@@ -297,8 +296,7 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xCubemapPipeline);
 		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xSkybox.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
-		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), 0);
+		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 		pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxCubemap->m_xSRV, 1);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 	}
