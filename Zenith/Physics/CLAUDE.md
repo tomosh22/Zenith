@@ -11,12 +11,19 @@ Integration with Jolt Physics library for rigid body dynamics. Features fixed 60
 
 ## Jolt Integration
 
-Uses Jolt Physics types:
-- `JPH::PhysicsSystem` - Main simulation engine
+Uses Jolt Physics types internally:
+- `JPH::PhysicsSystem` - Main simulation engine (private member; engine-internal code reaches it via `GetJoltSystem()`)
 - `JPH::Body` - Rigid body (stored in `Zenith_ColliderComponent`)
-- `JPH::BodyID` - Body identifier with sequence number
 - `JPH::TempAllocatorImpl` - Per-frame scratch memory (10MB)
 - `JPH::JobSystemThreadPool` - Multi-threaded physics jobs (uses hardware_concurrency - 1 threads)
+
+Game-facing code never names `JPH::` types. Bodies are identified by
+`Zenith_PhysicsBodyID` (`Physics/Zenith_Physics_Fwd.h`), a value type mirroring
+`JPH::BodyID`'s uint32 representation: `Zenith_ColliderComponent::GetBodyID()`
+returns one, and every `Zenith_Physics` body method takes one
+(velocity/force/impulse/friction/restitution/sensor/lock-rotation/teleport).
+`Zenith_Physics.h` itself only includes Jolt's `ContactListener.h` (for the
+by-value listener member); the heavy Jolt headers live in the `.cpp`s.
 
 ## Zenith_Physics Class
 

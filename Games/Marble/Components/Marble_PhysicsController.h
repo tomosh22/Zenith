@@ -62,7 +62,7 @@ public:
 		if (!xCollider.HasValidBody())
 			return false;
 
-		const JPH::BodyID& xBodyID = xCollider.GetBodyID();
+		const Zenith_PhysicsBodyID xBodyID = xCollider.GetBodyID();
 
 		// Check current vertical velocity
 		Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xBodyID);

@@ -41,3 +41,22 @@ enum RigidBodyType
 
 // Forward declare the main physics class
 class Zenith_Physics;
+
+// Opaque value-type handle to a physics body. Mirrors JPH::BodyID's single
+// uint32 representation (invalid == 0xffffffff); game code holds and passes
+// these, only the physics layer converts to/from JPH::BodyID.
+class Zenith_PhysicsBodyID
+{
+public:
+	static constexpr u_int32 uINVALID_PHYSICS_BODY_ID = 0xffffffffu;
+
+	Zenith_PhysicsBodyID() = default;
+	explicit Zenith_PhysicsBodyID(u_int32 uID) : m_uID(uID) {}
+
+	bool IsValid() const { return m_uID != uINVALID_PHYSICS_BODY_ID; }
+	bool IsInvalid() const { return m_uID == uINVALID_PHYSICS_BODY_ID; }
+	bool operator==(const Zenith_PhysicsBodyID& xOther) const { return m_uID == xOther.m_uID; }
+	bool operator!=(const Zenith_PhysicsBodyID& xOther) const { return m_uID != xOther.m_uID; }
+
+	u_int32 m_uID = uINVALID_PHYSICS_BODY_ID;
+};

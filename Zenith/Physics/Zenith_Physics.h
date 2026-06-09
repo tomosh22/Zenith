@@ -8,19 +8,11 @@
 #define ZENITH_PLACEMENT_NEW_ZONE
 #endif
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
+// Only what the class shape itself needs: the by-value PhysicsContactListener
+// member derives JPH::ContactListener. Everything else is fwd-declared
+// (Zenith_Physics_Fwd.h) — the full Jolt headers live in Zenith_Physics.cpp.
 #include <Jolt/Jolt.h>
-#include <Jolt/RegisterTypes.h>
-#include <Jolt/Core/Factory.h>
-#include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemThreadPool.h>
-#include <Jolt/Physics/PhysicsSettings.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/Shape/SphereShape.h>
-#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
-#include <Jolt/Physics/Body/BodyActivationListener.h>
-#include <Jolt/Physics/Body/BodyLockInterface.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #ifndef ZENITH_PHYSICS_ZONE_WAS_SET
 #undef ZENITH_PLACEMENT_NEW_ZONE
 #endif
@@ -51,28 +43,28 @@ public:
 	u_int64 GetJoltMemoryAllocated();
 	u_int64 GetJoltAllocationCount();
 
-	void SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity);
-	Zenith_Maths::Vector3 GetLinearVelocity(const JPH::BodyID& xBodyID);
-	void SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity);
-	Zenith_Maths::Vector3 GetAngularVelocity(const JPH::BodyID& xBodyID);
-	void AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce);
-	void AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse);
-	void SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled);
-	// 2026-05-25: toggle a body between solid (collides + pushes) and
-	// sensor (detects overlap but doesn't physically collide). Used by
-	// DPDoor to let the player walk through a door while it's in
-	// Opening / Open / Closing state -- the door's rotating collider
-	// would otherwise sweep through the player's capsule and push them
-	// out of the doorway. Wraps Jolt's BodyInterface::SetIsSensor;
-	// the body must already be created (HasValidBody on the component).
-	void SetIsSensor(const JPH::BodyID& xBodyID, bool bSensor);
-	void LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ);
-	void EnforceUpright(const JPH::BodyID& xBodyID);
+	void SetLinearVelocity(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xVelocity);
+	Zenith_Maths::Vector3 GetLinearVelocity(Zenith_PhysicsBodyID xBodyID);
+	void SetAngularVelocity(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xVelocity);
+	Zenith_Maths::Vector3 GetAngularVelocity(Zenith_PhysicsBodyID xBodyID);
+	void AddForce(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xForce);
+	void AddImpulse(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xImpulse);
+	void SetGravityEnabled(Zenith_PhysicsBodyID xBodyID, bool bEnabled);
+	// Toggle a body between solid (collides + pushes) and sensor (detects
+	// overlap but doesn't physically collide). The body must already be
+	// created (HasValidBody on the component).
+	void SetIsSensor(Zenith_PhysicsBodyID xBodyID, bool bSensor);
+	void LockRotation(Zenith_PhysicsBodyID xBodyID, bool bLockX, bool bLockY, bool bLockZ);
+	void EnforceUpright(Zenith_PhysicsBodyID xBodyID);
 
-	void SetRestitution(const JPH::BodyID& xBodyID, float fRestitution);
-	float GetRestitution(const JPH::BodyID& xBodyID);
-	void SetFriction(const JPH::BodyID& xBodyID, float fFriction);
-	float GetFriction(const JPH::BodyID& xBodyID);
+	void SetRestitution(Zenith_PhysicsBodyID xBodyID, float fRestitution);
+	float GetRestitution(Zenith_PhysicsBodyID xBodyID);
+	void SetFriction(Zenith_PhysicsBodyID xBodyID, float fFriction);
+	float GetFriction(Zenith_PhysicsBodyID xBodyID);
+
+	// Teleport: position + identity rotation + activate + zero velocity.
+	// The wrapper exists so callers never need Jolt's BodyInterface.
+	void TeleportBody(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xPosition);
 
 	struct RaycastInfo
 	{
@@ -129,11 +121,19 @@ public:
 	static constexpr uint32_t s_uMaxBodyPairs = 65536;
 	static constexpr uint32_t s_uMaxContactConstraints = 10240;
 
-	// Heap-allocated Jolt singletons.
+	// Engine-internal escape hatch (collider/transform body sync, tests).
+	// Game code uses the wrapper methods above instead. May be null before
+	// Initialise / after Shutdown — callers null-check.
+	JPH::PhysicsSystem* GetJoltSystem() { return m_pxPhysicsSystem; }
+
+private:
+	// Heap-allocated Jolt singletons — reachable outside the physics layer
+	// only through GetJoltSystem().
 	JPH::TempAllocatorImpl*   m_pxTempAllocator = nullptr;
 	JPH::JobSystemThreadPool* m_pxJobSystem     = nullptr;
 	JPH::PhysicsSystem*       m_pxPhysicsSystem = nullptr;
 
+public:
 	double m_fTimestepAccumulator = 0.0;
 
 	PhysicsContactListener m_xContactListener;

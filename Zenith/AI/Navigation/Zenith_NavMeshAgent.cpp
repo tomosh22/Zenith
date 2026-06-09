@@ -134,7 +134,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		if (bUsePhysics)
 		{
 			Zenith_Physics& xPhysics = g_xEngine.Physics();
-			const JPH::BodyID& xBodyID = pxCollider->GetBodyID();
+			const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
 			const Zenith_Maths::Vector3 xCurVel = xPhysics.GetLinearVelocity(xBodyID);
 			xPhysics.SetLinearVelocity(xBodyID,
 				Zenith_Maths::Vector3(0.0f, xCurVel.y, 0.0f));

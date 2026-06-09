@@ -115,7 +115,7 @@ public:
 			xCollider.SetIncludeInNavMesh(false);
 			if (xCollider.HasValidBody())
 			{
-				const JPH::BodyID& xBodyID = xCollider.GetBodyID();
+				const Zenith_PhysicsBodyID xBodyID = xCollider.GetBodyID();
 				g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
 				g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
 			}

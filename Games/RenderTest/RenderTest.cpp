@@ -632,15 +632,7 @@ private:
 	{
 		Zenith_Entity xPlayer = RenderTest_FindPlayerEntity();
 		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_ColliderComponent>()) return;
-		const JPH::BodyID& xBodyID = xPlayer.GetComponent<Zenith_ColliderComponent>().GetBodyID();
-		if (xBodyID.IsInvalid() || !g_xEngine.Physics().m_pxPhysicsSystem) return;
-
-		JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
-		xBI.SetPositionAndRotation(xBodyID,
-			JPH::RVec3(xTarget.x, xTarget.y, xTarget.z),
-			JPH::Quat::sIdentity(),
-			JPH::EActivation::Activate);
-		g_xEngine.Physics().SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+		g_xEngine.Physics().TeleportBody(xPlayer.GetComponent<Zenith_ColliderComponent>().GetBodyID(), xTarget);
 	}
 
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)

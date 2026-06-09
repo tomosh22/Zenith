@@ -156,8 +156,8 @@ static void StepPhysics(uint32_t uSteps)
 
 static Zenith_Maths::Vector3 GetBodyPosition(const Zenith_ColliderComponent& xCollider)
 {
-	JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
-	JPH::RVec3 xPos = xBI.GetPosition(xCollider.GetBodyID());
+	JPH::BodyInterface& xBI = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+	JPH::RVec3 xPos = xBI.GetPosition(JPH::BodyID(xCollider.GetBodyID().m_uID));
 	return Zenith_Maths::Vector3(
 		static_cast<float>(xPos.GetX()),
 		static_cast<float>(xPos.GetY()),
@@ -853,8 +853,8 @@ ZENITH_TEST(Physics, ColliderBodyIDMatchesJolt)
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 
 	// Verify body exists in Jolt
-	JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
-	bool bIsAdded = xBI.IsAdded(xCollider.GetBodyID());
+	JPH::BodyInterface& xBI = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+	bool bIsAdded = xBI.IsAdded(JPH::BodyID(xCollider.GetBodyID().m_uID));
 	ZENITH_ASSERT_TRUE(bIsAdded, "TestColliderBodyIDMatchesJolt: Body should be added to Jolt physics system");
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
@@ -1006,7 +1006,7 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 	g_xEngine.Physics().Reset();
 
 	// Verify physics system is valid after reset
-	ZENITH_ASSERT_NOT_NULL(g_xEngine.Physics().m_pxPhysicsSystem, "TestResetClearsPhysicsState: Physics system should be valid after Reset");
+	ZENITH_ASSERT_NOT_NULL(g_xEngine.Physics().GetJoltSystem(), "TestResetClearsPhysicsState: Physics system should be valid after Reset");
 
 	// Create a new body and verify it works
 	Zenith_Scene xTestScene2 = g_xEngine.Scenes().LoadScene("PhysicsTest_Reset2", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);

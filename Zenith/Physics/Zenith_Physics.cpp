@@ -9,7 +9,6 @@
 #include <iostream>
 #define ZENITH_PLACEMENT_NEW_ZONE
 #include "Physics/Zenith_Physics.h"
-#include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -21,6 +20,15 @@
 #else
 #define ZENITH_PLACEMENT_NEW_ZONE
 #endif
+#include <Jolt/RegisterTypes.h>
+#include <Jolt/Core/Factory.h>
+#include <Jolt/Core/TempAllocator.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Physics/PhysicsSettings.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyActivationListener.h>
+#include <Jolt/Physics/Body/BodyLockInterface.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
@@ -29,6 +37,13 @@
 #undef ZENITH_PLACEMENT_NEW_ZONE
 #endif
 #undef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
+
+// Wrapper<->Jolt conversion: Zenith_PhysicsBodyID mirrors JPH::BodyID's
+// single-uint32 representation, so conversion is a bit copy.
+static JPH::BodyID ToJolt(Zenith_PhysicsBodyID xID)
+{
+	return JPH::BodyID(xID.m_uID);
+}
 
 // Phase 4: per-Engine physics state lives on Zenith_Physics
 // (held by Zenith_Engine as m_pxPhysics). Everything that used to be
@@ -537,7 +552,7 @@ Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraCompo
 	return xInfo;
 }
 
-void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
+void Zenith_Physics::SetLinearVelocity(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xVelocity)
 {
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
@@ -557,39 +572,39 @@ void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_
 	// timer handles the "approaching rest" decision.
 	if (xVelocity.x != 0.0f || xVelocity.y != 0.0f || xVelocity.z != 0.0f)
 	{
-		xBodyInterface.ActivateBody(xBodyID);
+		xBodyInterface.ActivateBody(ToJolt(xBodyID));
 	}
-	xBodyInterface.SetLinearVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
+	xBodyInterface.SetLinearVelocity(ToJolt(xBodyID), JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 
-Zenith_Maths::Vector3 Zenith_Physics::GetLinearVelocity(const JPH::BodyID& xBodyID)
+Zenith_Maths::Vector3 Zenith_Physics::GetLinearVelocity(Zenith_PhysicsBodyID xBodyID)
 {
 	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
 	// CRITICAL FIX: Use locked interface for thread safety
 	// GetBodyInterfaceNoLock() was unsafe when physics simulation runs on worker threads
 	// The setter uses GetBodyInterface() so the getter must match for consistency
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	JPH::Vec3 xVel = xBodyInterface.GetLinearVelocity(xBodyID);
+	JPH::Vec3 xVel = xBodyInterface.GetLinearVelocity(ToJolt(xBodyID));
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
-void Zenith_Physics::SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
+void Zenith_Physics::SetAngularVelocity(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xVelocity)
 {
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetAngularVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
+	xBodyInterface.SetAngularVelocity(ToJolt(xBodyID), JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 
-Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(const JPH::BodyID& xBodyID)
+Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(Zenith_PhysicsBodyID xBodyID)
 {
 	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
 	// CRITICAL FIX: Use locked interface for thread safety (matches setter)
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	JPH::Vec3 xVel = xBodyInterface.GetAngularVelocity(xBodyID);
+	JPH::Vec3 xVel = xBodyInterface.GetAngularVelocity(ToJolt(xBodyID));
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
-void Zenith_Physics::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce)
+void Zenith_Physics::AddForce(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xForce)
 {
 	if (xBodyID.IsInvalid()) return;
 	Zenith_Assert(m_pxPhysicsSystem != nullptr, "AddForce: Physics system not initialized");
@@ -597,11 +612,11 @@ void Zenith_Physics::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Ve
 
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
 	// CRITICAL: Activate the body first - sleeping bodies ignore forces
-	xBodyInterface.ActivateBody(xBodyID);
-	xBodyInterface.AddForce(xBodyID, JPH::Vec3(xForce.x, xForce.y, xForce.z));
+	xBodyInterface.ActivateBody(ToJolt(xBodyID));
+	xBodyInterface.AddForce(ToJolt(xBodyID), JPH::Vec3(xForce.x, xForce.y, xForce.z));
 }
 
-void Zenith_Physics::AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse)
+void Zenith_Physics::AddImpulse(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xImpulse)
 {
 	if (xBodyID.IsInvalid()) return;
 	Zenith_Assert(m_pxPhysicsSystem != nullptr, "AddImpulse: Physics system not initialized");
@@ -609,22 +624,22 @@ void Zenith_Physics::AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::
 
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
 	// Activate the body and apply instant velocity change
-	xBodyInterface.ActivateBody(xBodyID);
-	xBodyInterface.AddLinearVelocity(xBodyID, JPH::Vec3(xImpulse.x, xImpulse.y, xImpulse.z));
+	xBodyInterface.ActivateBody(ToJolt(xBodyID));
+	xBodyInterface.AddLinearVelocity(ToJolt(xBodyID), JPH::Vec3(xImpulse.x, xImpulse.y, xImpulse.z));
 }
 
-void Zenith_Physics::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled)
+void Zenith_Physics::SetGravityEnabled(Zenith_PhysicsBodyID xBodyID, bool bEnabled)
 {
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetGravityFactor(xBodyID, bEnabled ? 1.0f : 0.0f);
+	xBodyInterface.SetGravityFactor(ToJolt(xBodyID), bEnabled ? 1.0f : 0.0f);
 	if (bEnabled)
 	{
-		xBodyInterface.ActivateBody(xBodyID);
+		xBodyInterface.ActivateBody(ToJolt(xBodyID));
 	}
 }
 
-void Zenith_Physics::SetIsSensor(const JPH::BodyID& xBodyID, bool bSensor)
+void Zenith_Physics::SetIsSensor(Zenith_PhysicsBodyID xBodyID, bool bSensor)
 {
 	if (xBodyID.IsInvalid()) return;
 	if (m_pxPhysicsSystem == nullptr) return;
@@ -634,17 +649,17 @@ void Zenith_Physics::SetIsSensor(const JPH::BodyID& xBodyID, bool bSensor)
 	// wake (sleep timer eventually wakes them but for door state
 	// transitions we want the change to take effect on the next step).
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetIsSensor(xBodyID, bSensor);
-	xBodyInterface.ActivateBody(xBodyID);
+	xBodyInterface.SetIsSensor(ToJolt(xBodyID), bSensor);
+	xBodyInterface.ActivateBody(ToJolt(xBodyID));
 }
 
-void Zenith_Physics::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ)
+void Zenith_Physics::LockRotation(Zenith_PhysicsBodyID xBodyID, bool bLockX, bool bLockY, bool bLockZ)
 {
 	if (xBodyID.IsInvalid()) return;
 	Zenith_Assert(m_pxPhysicsSystem != nullptr, "LockRotation: Physics system not initialized");
 	if (!m_pxPhysicsSystem) return;
 
-	JPH::BodyLockWrite xLock(m_pxPhysicsSystem->GetBodyLockInterface(), xBodyID);
+	JPH::BodyLockWrite xLock(m_pxPhysicsSystem->GetBodyLockInterface(), ToJolt(xBodyID));
 	if (xLock.Succeeded())
 	{
 		JPH::Body& xBody = xLock.GetBody();
@@ -676,13 +691,13 @@ void Zenith_Physics::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool 
 				float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
 				JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
 				// Use NoLock interface since we already hold the body lock
-				m_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
+				m_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(ToJolt(xBodyID), xUprightRot, JPH::EActivation::DontActivate);
 			}
 		}
 	}
 }
 
-void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
+void Zenith_Physics::EnforceUpright(Zenith_PhysicsBodyID xBodyID)
 {
 	if (xBodyID.IsInvalid()) return;
 	if (!m_pxPhysicsSystem) return;
@@ -690,45 +705,56 @@ void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
 
 	// Zero out angular velocity on X and Z axes (keep Y rotation allowed)
-	JPH::Vec3 xAngVel = xBodyInterface.GetAngularVelocity(xBodyID);
+	JPH::Vec3 xAngVel = xBodyInterface.GetAngularVelocity(ToJolt(xBodyID));
 	xAngVel.SetX(0.0f);
 	xAngVel.SetZ(0.0f);
-	xBodyInterface.SetAngularVelocity(xBodyID, xAngVel);
+	xBodyInterface.SetAngularVelocity(ToJolt(xBodyID), xAngVel);
 
 	// Reset rotation to upright (preserve only Y rotation/yaw)
-	JPH::Quat xRot = xBodyInterface.GetRotation(xBodyID);
+	JPH::Quat xRot = xBodyInterface.GetRotation(ToJolt(xBodyID));
 	JPH::Vec3 xForward = xRot.RotateAxisZ();
 	float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
 	JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
-	xBodyInterface.SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
+	xBodyInterface.SetRotation(ToJolt(xBodyID), xUprightRot, JPH::EActivation::DontActivate);
 }
 
-void Zenith_Physics::SetRestitution(const JPH::BodyID& xBodyID, float fRestitution)
+void Zenith_Physics::SetRestitution(Zenith_PhysicsBodyID xBodyID, float fRestitution)
 {
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetRestitution(xBodyID, fRestitution);
+	xBodyInterface.SetRestitution(ToJolt(xBodyID), fRestitution);
 }
 
-float Zenith_Physics::GetRestitution(const JPH::BodyID& xBodyID)
+float Zenith_Physics::GetRestitution(Zenith_PhysicsBodyID xBodyID)
 {
 	if (xBodyID.IsInvalid()) return 0.f;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	return xBodyInterface.GetRestitution(xBodyID);
+	return xBodyInterface.GetRestitution(ToJolt(xBodyID));
 }
 
-void Zenith_Physics::SetFriction(const JPH::BodyID& xBodyID, float fFriction)
+void Zenith_Physics::SetFriction(Zenith_PhysicsBodyID xBodyID, float fFriction)
 {
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetFriction(xBodyID, fFriction);
+	xBodyInterface.SetFriction(ToJolt(xBodyID), fFriction);
 }
 
-float Zenith_Physics::GetFriction(const JPH::BodyID& xBodyID)
+float Zenith_Physics::GetFriction(Zenith_PhysicsBodyID xBodyID)
 {
 	if (xBodyID.IsInvalid()) return 0.f;
 	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
-	return xBodyInterface.GetFriction(xBodyID);
+	return xBodyInterface.GetFriction(ToJolt(xBodyID));
+}
+
+void Zenith_Physics::TeleportBody(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xPosition)
+{
+	if (xBodyID.IsInvalid() || m_pxPhysicsSystem == nullptr) return;
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetPositionAndRotation(ToJolt(xBodyID),
+		JPH::RVec3(xPosition.x, xPosition.y, xPosition.z),
+		JPH::Quat::sIdentity(),
+		JPH::EActivation::Activate);
+	xBodyInterface.SetLinearVelocity(ToJolt(xBodyID), JPH::Vec3::sZero());
 }
 
 // Shared implementation. The body filter is supplied by the caller; passing the
@@ -741,7 +767,7 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 	Zenith_Physics::RaycastResult xResult;
 	xResult.m_bHit = false;
 
-	if (!xSelf.m_pxPhysicsSystem)
+	if (!xSelf.GetJoltSystem())
 	{
 		return xResult;
 	}
@@ -753,7 +779,7 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 	xRay.mDirection = JPH::Vec3(xNormDir.x * fMaxDistance, xNormDir.y * fMaxDistance, xNormDir.z * fMaxDistance);
 
 	JPH::RayCastResult xHit;
-	const JPH::NarrowPhaseQuery& xQuery = xSelf.m_pxPhysicsSystem->GetNarrowPhaseQuery();
+	const JPH::NarrowPhaseQuery& xQuery = xSelf.GetJoltSystem()->GetNarrowPhaseQuery();
 
 	if (xQuery.CastRay(xRay, xHit, JPH::BroadPhaseLayerFilter(), JPH::ObjectLayerFilter(), xBodyFilter))
 	{
@@ -766,7 +792,7 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 			static_cast<float>(xHitPoint.GetY()),
 			static_cast<float>(xHitPoint.GetZ()));
 
-		JPH::BodyLockRead xLock(xSelf.m_pxPhysicsSystem->GetBodyLockInterface(), xHit.mBodyID);
+		JPH::BodyLockRead xLock(xSelf.GetJoltSystem()->GetBodyLockInterface(), xHit.mBodyID);
 		if (xLock.Succeeded())
 		{
 			const JPH::Body& xBody = xLock.GetBody();
@@ -809,7 +835,7 @@ Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector
 		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
 	}
 
-	const JPH::BodyID xBodyID = xEntity.GetComponent<Zenith_ColliderComponent>().GetBodyID();
+	const JPH::BodyID xBodyID = ToJolt(xEntity.GetComponent<Zenith_ColliderComponent>().GetBodyID());
 	if (xBodyID.IsInvalid())
 	{
 		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());

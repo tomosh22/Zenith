@@ -538,7 +538,7 @@ bool DPProcLevelBootstrap_Behaviour::SpawnCharacterEntity(
 		Zenith_ColliderComponent& xCol = xEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCol.HasValidBody())
 		{
-			const JPH::BodyID& xBodyID = xCol.GetBodyID();
+			const Zenith_PhysicsBodyID xBodyID = xCol.GetBodyID();
 			g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
 			g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
 		}

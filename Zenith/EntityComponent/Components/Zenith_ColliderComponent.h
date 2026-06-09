@@ -1,6 +1,6 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_Physics_Fwd.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Reference.h>
 
@@ -41,7 +41,7 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
-	const JPH::BodyID& GetBodyID() const { return m_xBodyID; }
+	Zenith_PhysicsBodyID GetBodyID() const { return m_xBodyID; }
 	bool HasValidBody() const;
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
@@ -118,7 +118,7 @@ private:
 
 	Zenith_Entity m_xParentEntity;
 	JPH::Body* m_pxRigidBody = nullptr;
-	JPH::BodyID m_xBodyID;
+	Zenith_PhysicsBodyID m_xBodyID;
 
 	CollisionVolumeType m_eVolumeType;
 	RigidBodyType m_eRigidBodyType;

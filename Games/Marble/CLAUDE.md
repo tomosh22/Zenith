@@ -63,7 +63,7 @@ Demonstrates:
 - Projecting camera forward onto XZ plane
 
 ### Marble_PhysicsController.h - Physics Movement
-**Engine APIs:** `Zenith_Physics`, `Zenith_ColliderComponent`, `JPH::BodyID`
+**Engine APIs:** `Zenith_Physics`, `Zenith_ColliderComponent`, `Zenith_PhysicsBodyID`
 
 Demonstrates:
 - Getting/setting physics body velocity
@@ -144,7 +144,7 @@ Uses `CreateEmptyScene("Level")` + `SetActiveScene()` to start, `UnloadScene()` 
 ## Key Patterns
 
 ### Physics-Based Movement
-Get `JPH::BodyID` from `Zenith_ColliderComponent`, apply forces via `Zenith_Physics::AddImpulse()`, and check velocity via `GetLinearVelocity()` for jump gating.
+Get `Zenith_PhysicsBodyID` from `Zenith_ColliderComponent`, apply forces via `Zenith_Physics::AddImpulse()`, and check velocity via `GetLinearVelocity()` for jump gating.
 
 ### Component Order for Physics
 Entity creation order matters: 1) Instantiate from prefab, 2) Set transform position/scale, 3) Add ModelComponent, 4) Add ColliderComponent last (reads transform on creation).

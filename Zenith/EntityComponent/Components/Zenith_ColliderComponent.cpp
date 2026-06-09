@@ -11,6 +11,7 @@
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Physics/Zenith_Physics.h"
 #include <Jolt/Jolt.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLockInterface.h>
@@ -28,6 +29,17 @@
 // Flux_MeshGeometry include in the Wave-18 ownership-relocation; include it
 // directly here now (the dependency was always real, just transitive).
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+
+// Wrapper<->Jolt conversion (bit copy; Zenith_PhysicsBodyID mirrors JPH::BodyID).
+static JPH::BodyID ToJolt(Zenith_PhysicsBodyID xID)
+{
+	return JPH::BodyID(xID.m_uID);
+}
+static Zenith_PhysicsBodyID FromJolt(JPH::BodyID xID)
+{
+	return Zenith_PhysicsBodyID(xID.GetIndexAndSequenceNumber());
+}
+
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 
@@ -51,7 +63,7 @@ void Zenith_ColliderComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyD
 
 Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity)
 	: m_xParentEntity(xEntity)
-	, m_xBodyID(JPH::BodyID())
+	, m_xBodyID(Zenith_PhysicsBodyID())
 {
 }
 
@@ -66,7 +78,7 @@ Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_ColliderComponent&& xO
 {
 	// Nullify source so its destructor doesn't destroy the physics body
 	xOther.m_pxRigidBody = nullptr;
-	xOther.m_xBodyID = JPH::BodyID();  // Reset to invalid
+	xOther.m_xBodyID = Zenith_PhysicsBodyID();  // Reset to invalid
 	xOther.m_bDebugDrawPhysicsMesh = false;
 	xOther.m_pxTerrainMeshData = nullptr;
 }
@@ -78,9 +90,9 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 		// Clean up our existing physics body first
 		if (m_xBodyID.IsInvalid() == false)
 		{
-			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
-			xBodyInterface.RemoveBody(m_xBodyID);
-			xBodyInterface.DestroyBody(m_xBodyID);
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+			xBodyInterface.RemoveBody(ToJolt(m_xBodyID));
+			xBodyInterface.DestroyBody(ToJolt(m_xBodyID));
 		}
 		if (m_pxTerrainMeshData != nullptr)
 		{
@@ -100,7 +112,7 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 
 		// Nullify source
 		xOther.m_pxRigidBody = nullptr;
-		xOther.m_xBodyID = JPH::BodyID();
+		xOther.m_xBodyID = Zenith_PhysicsBodyID();
 		xOther.m_bDebugDrawPhysicsMesh = false;
 		xOther.m_pxTerrainMeshData = nullptr;
 	}
@@ -115,15 +127,15 @@ bool Zenith_ColliderComponent::HasValidBody() const
 Zenith_ColliderComponent::~Zenith_ColliderComponent()
 {
 	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	if (m_xBodyID.IsInvalid() == false && xPhysics.m_pxPhysicsSystem != nullptr)
+	if (m_xBodyID.IsInvalid() == false && xPhysics.GetJoltSystem() != nullptr)
 	{
-		JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterface();
 		// Check if the body actually exists in the physics system before trying to destroy it.
 		// This handles cases where scene restore loads stale body IDs that don't exist.
-		if (xBodyInterface.IsAdded(m_xBodyID))
+		if (xBodyInterface.IsAdded(ToJolt(m_xBodyID)))
 		{
-			xBodyInterface.RemoveBody(m_xBodyID);
-			xBodyInterface.DestroyBody(m_xBodyID);
+			xBodyInterface.RemoveBody(ToJolt(m_xBodyID));
+			xBodyInterface.DestroyBody(ToJolt(m_xBodyID));
 		}
 	}
 
@@ -581,8 +593,8 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 
 	JPH::BodyCreationSettings xBodySettings(pxShape, xJoltPos, xJoltRot, eMotionType, uObjectLayer);
 	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
-	m_xBodyID = xBodyInterface.CreateAndAddBody(xBodySettings, JPH::EActivation::Activate);
+	JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterface();
+	m_xBodyID = FromJolt(xBodyInterface.CreateAndAddBody(xBodySettings, JPH::EActivation::Activate));
 
 	if (m_xBodyID.IsInvalid())
 	{
@@ -590,7 +602,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		return;
 	}
 
-	JPH::BodyLockWrite xLock(xPhysics.m_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
+	JPH::BodyLockWrite xLock(xPhysics.GetJoltSystem()->GetBodyLockInterface(), ToJolt(m_xBodyID));
 	if (xLock.Succeeded())
 	{
 		m_pxRigidBody = &xLock.GetBody();
@@ -825,10 +837,10 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// Remove existing collider
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = xPhysics.m_pxPhysicsSystem->GetBodyInterface();
-		xBodyInterface.RemoveBody(m_xBodyID);
-		xBodyInterface.DestroyBody(m_xBodyID);
-		m_xBodyID = JPH::BodyID();
+		JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterface();
+		xBodyInterface.RemoveBody(ToJolt(m_xBodyID));
+		xBodyInterface.DestroyBody(ToJolt(m_xBodyID));
+		m_xBodyID = Zenith_PhysicsBodyID();
 		m_pxRigidBody = nullptr;
 	}
 
@@ -872,10 +884,10 @@ void Zenith_ColliderComponent::DestroyExistingCollider()
 {
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
-		xBodyInterface.RemoveBody(m_xBodyID);
-		xBodyInterface.DestroyBody(m_xBodyID);
-		m_xBodyID = JPH::BodyID();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+		xBodyInterface.RemoveBody(ToJolt(m_xBodyID));
+		xBodyInterface.DestroyBody(ToJolt(m_xBodyID));
+		m_xBodyID = Zenith_PhysicsBodyID();
 		m_pxRigidBody = nullptr;
 	}
 	if (m_pxTerrainMeshData != nullptr)
@@ -910,7 +922,7 @@ void Zenith_ColliderComponent::RenderAddColliderUI()
 
 void Zenith_ColliderComponent::RenderConfiguredColliderUI()
 {
-	ImGui::Text("Body ID: %u", m_xBodyID.GetIndexAndSequenceNumber());
+	ImGui::Text("Body ID: %u", m_xBodyID.m_uID);
 
 	const int iCurrentVolumeType = static_cast<int>(m_eVolumeType);
 	if (iCurrentVolumeType < s_iNumVolumeTypes)
