@@ -382,7 +382,7 @@ public:
 		for (u_int u = 0; u < uSize; u++)
 		{
 			// Check stream has remaining data
-			if (xStream.GetCursor() >= xStream.GetSize())
+			if (xStream.GetCursor() >= xStream.GetCapacity())
 			{
 				Zenith_Error(LOG_CATEGORY_CORE, "ReadFromDataStream: Premature end of stream at element %u of %u - clearing partial data", u, uSize);
 				Clear();  // Clear partial data to prevent inconsistent state

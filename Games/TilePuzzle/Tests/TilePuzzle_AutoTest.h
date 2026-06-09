@@ -5811,7 +5811,7 @@ private:
 
 			// Read back
 			TilePuzzleSaveData xLoaded;
-			Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetSize());
+			Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetCursor());
 			TilePuzzle_ReadSaveData(xReadStream, TilePuzzleSaveData::uGAME_SAVE_VERSION, &xLoaded);
 
 			if (xLoaded.uDailyPuzzleBestMoves != 12)

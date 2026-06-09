@@ -93,15 +93,9 @@ public:
 		return m_ulCursor;
 	}
 
-	// Stream DATA LENGTH in bytes. After ReadFromFile this equals the file size
-	// (the common case, and what scene/asset validation relies on).
-	// FOOTGUN: for a default-constructed in-memory WRITE stream this is the buffer
-	// CAPACITY (uDEFAULT_INITIAL_SIZE), NOT the bytes written — writes advance the
-	// cursor (GetCursor()), not m_ulDataSize. So NEVER size-gate an in-memory
-	// write-then-rewound stream on GetSize(): use GetCursor() for "bytes written",
-	// or construct from an exact-size external buffer (Zenith_DataStream(p, n)).
-	// (This bit the Scene::SceneLoadValidation test — see project memory.)
-	uint64_t GetSize() const
+	// Buffer capacity in bytes (== data length for wrapped/file-loaded streams).
+	// For an owned write stream this is NOT the bytes written — use GetCursor().
+	uint64_t GetCapacity() const
 	{
 		return m_ulDataSize;
 	}
@@ -319,16 +313,16 @@ public:
 #pragma endregion
 
 #pragma region std::unordered_map
-template<typename T1, typename T2>
-void operator<<(const std::unordered_map<T1, T2>& xMap)
-{
-*this << u_int(xMap.size());
-for (auto xIt = xMap.cbegin(); xIt != xMap.cend(); xIt++)
-{
-*this << xIt->first;
-*this << xIt->second;
-}
-}
+	template<typename T1, typename T2>
+	void operator<<(const std::unordered_map<T1, T2>& xMap)
+	{
+		*this << u_int(xMap.size());
+		for (auto xIt = xMap.cbegin(); xIt != xMap.cend(); xIt++)
+		{
+			*this << xIt->first;
+			*this << xIt->second;
+		}
+	}
 	template<typename T1, typename T2>
 	void operator>>(std::unordered_map<T1, T2>& xMap)
 	{

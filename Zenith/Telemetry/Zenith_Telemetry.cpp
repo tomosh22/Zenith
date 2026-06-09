@@ -428,7 +428,7 @@ namespace Zenith_Telemetry
 
 		// Walk records until End sentinel.
 		const uint32_t uVer = m_xHeader.uVersion;
-		while (xStream.GetCursor() < xStream.GetSize())
+		while (xStream.GetCursor() < xStream.GetCapacity())
 		{
 			uint8_t uT = 0;
 			xStream >> uT;

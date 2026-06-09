@@ -60,7 +60,7 @@ namespace DP_Save
 		// fail-soft instead of asserting on truncation.
 		bool HasBytes(const Zenith_DataStream& xStream, uint64_t ulBytesNeeded)
 		{
-			return xStream.GetCursor() + ulBytesNeeded <= xStream.GetSize();
+			return xStream.GetCursor() + ulBytesNeeded <= xStream.GetCapacity();
 		}
 	}
 
@@ -76,7 +76,7 @@ namespace DP_Save
 		{
 			Zenith_Log(LOG_CATEGORY_AI,
 				"DP_Save::TryLoad: stream too small (%llu bytes) for magic prefix",
-				xInStream.GetSize());
+				xInStream.GetCapacity());
 			xOutState = DP_RunState{};
 			return false;
 		}

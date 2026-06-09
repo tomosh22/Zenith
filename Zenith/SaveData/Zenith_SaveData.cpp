@@ -264,7 +264,7 @@ namespace Zenith_SaveData
 		}
 
 		// Validate minimum size for header
-		if (xFileStream.GetSize() < sizeof(Zenith_SaveFileHeader))
+		if (xFileStream.GetCapacity() < sizeof(Zenith_SaveFileHeader))
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: File too small to contain header '%s'", szPath);
 			return Zenith_ErrorCode::CORRUPT_DATA;
@@ -291,7 +291,7 @@ namespace Zenith_SaveData
 		}
 
 		// Validate payload size
-		uint64_t ulRemainingBytes = xFileStream.GetSize() - sizeof(Zenith_SaveFileHeader);
+		uint64_t ulRemainingBytes = xFileStream.GetCapacity() - sizeof(Zenith_SaveFileHeader);
 		if (xHeader.ulPayloadSize > ulRemainingBytes)
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: Payload size mismatch in '%s' (header says %llu, file has %llu)",

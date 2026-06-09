@@ -778,7 +778,7 @@ void Zenith_ColliderComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Older scenes only serialized the volume/body pair, so treat the debug
 	// flag as optional to remain backward compatible.
-	if (xStream.GetCursor() < xStream.GetSize())
+	if (xStream.GetCursor() < xStream.GetCapacity())
 	{
 		xStream >> m_bDebugDrawPhysicsMesh;
 	}

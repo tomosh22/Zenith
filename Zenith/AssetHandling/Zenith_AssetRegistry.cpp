@@ -715,9 +715,9 @@ bool Zenith_AssetRegistry::SaveInternal(Zenith_Asset* pxAsset, const std::string
 	pxAsset->WriteToDataStream(xStream);
 
 	// Write serialized data
-	if (xStream.GetSize() > 0)
+	if (xStream.GetCursor() > 0)
 	{
-		xFile.write(reinterpret_cast<const char*>(xStream.GetData()), xStream.GetSize());
+		xFile.write(reinterpret_cast<const char*>(xStream.GetData()), xStream.GetCursor());
 	}
 
 	// Update the asset's path if it was procedural

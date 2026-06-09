@@ -218,10 +218,10 @@ bool Zenith_SceneData::ValidateSceneStream(Zenith_DataStream& xStream)
 
 	// Validate stream has minimum header data (magic + version = 8 bytes)
 	static constexpr uint64_t ulMIN_HEADER_SIZE = sizeof(u_int) * 2;
-	if (xStream.GetSize() < ulMIN_HEADER_SIZE)
+	if (xStream.GetCapacity() < ulMIN_HEADER_SIZE)
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene file: too small (size=%llu, minimum=%llu)",
-			xStream.GetSize(), ulMIN_HEADER_SIZE);
+			xStream.GetCapacity(), ulMIN_HEADER_SIZE);
 		xStream.SetCursor(ulSavedCursor);
 		return false;
 	}
@@ -302,7 +302,7 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	// the raw bytes still remaining in the stream is provably corrupt and can never
 	// reject a valid scene. Returning false here re-activates the existing rollback
 	// in Zenith_SceneSystem_Operations.cpp (UnloadSceneForced on !bDeserialised).
-	const uint64_t ulRemaining = xStream.GetSize() - xStream.GetCursor();
+	const uint64_t ulRemaining = xStream.GetCapacity() - xStream.GetCursor();
 	if (uNumEntities > ulRemaining)
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene body: entity count %u exceeds remaining %llu bytes",
@@ -359,7 +359,7 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	// stream is truncated before it, the body is malformed — bail (re-activating
 	// the Operations.cpp rollback) rather than letting operator>> clamp/no-op and
 	// silently leaving the camera index garbage.
-	if (xStream.GetCursor() + sizeof(uint32_t) > xStream.GetSize())
+	if (xStream.GetCursor() + sizeof(uint32_t) > xStream.GetCapacity())
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene body: truncated before camera index");
 		return false;

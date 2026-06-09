@@ -51,7 +51,7 @@ public:
 		Reserve(uCount);
 		for (u_int u = 0; u < uCount; u++)
 		{
-			if (xStream.GetCursor() >= xStream.GetSize())
+			if (xStream.GetCursor() >= xStream.GetCapacity())
 			{
 				Zenith_Error(LOG_CATEGORY_CORE, "Zenith_HashSet::ReadFromDataStream: Premature end of stream at entry %u of %u", u, uCount);
 				Clear();

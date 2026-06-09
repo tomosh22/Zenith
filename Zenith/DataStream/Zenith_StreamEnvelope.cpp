@@ -20,7 +20,7 @@ Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xS
 	// A stream too small to contain a full header is treated as headerless
 	// (legacy). Report BAD_MAGIC so the caller rewinds and reads the old layout.
 	static constexpr uint64_t ulHEADER_SIZE = sizeof(u_int) * 4;
-	if (!xStream.IsValid() || (xStream.GetSize() - ulSavedCursor) < ulHEADER_SIZE)
+	if (!xStream.IsValid() || (xStream.GetCapacity() - ulSavedCursor) < ulHEADER_SIZE)
 	{
 		xStream.SetCursor(ulSavedCursor);
 		return Zenith_ErrorCode::BAD_MAGIC;

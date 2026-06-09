@@ -1171,7 +1171,7 @@ void Zenith_UnitTests::TestDataStreamBoundsCheck(){
 		// Test skip to exactly end (valid edge case)
 		xStream.SetCursor(96);
 		xStream.SkipBytes(4);  // Should clamp to size (100)
-		ZENITH_ASSERT_LE(xStream.GetCursor(), xStream.GetSize(), "Cursor should not exceed data size");
+		ZENITH_ASSERT_LE(xStream.GetCursor(), xStream.GetCapacity(), "Cursor should not exceed data size");
 	}
 
 }
@@ -13014,7 +13014,7 @@ void Zenith_UnitTests::TestParamSerializationFloat(){
 	xParams.WriteToDataStream(xWriteStream);
 
 	// Read back
-	Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetSize());
+	Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetCursor());
 	Flux_AnimationParameters xLoaded;
 	xLoaded.ReadFromDataStream(xReadStream);
 
@@ -13037,7 +13037,7 @@ void Zenith_UnitTests::TestParamSerializationBoolTrigger(){
 	Zenith_DataStream xWriteStream(256);
 	xParams.WriteToDataStream(xWriteStream);
 
-	Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetSize());
+	Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetCursor());
 	Flux_AnimationParameters xLoaded;
 	xLoaded.ReadFromDataStream(xReadStream);
 

@@ -365,7 +365,7 @@ void Zenith_TransformComponent::ReadFromDataStream(Zenith_DataStream& xStream, u
 		// does not actually include the parent u32 (e.g. a v7-format blob mislabelled
 		// as schema < 7 in a hand-crafted stream), we simply skip the read rather than
 		// over-read past end-of-stream.
-		if (xStream.GetCursor() + sizeof(uint32_t) <= xStream.GetSize())
+		if (xStream.GetCursor() + sizeof(uint32_t) <= xStream.GetCapacity())
 		{
 			uint32_t uParentFileIndex;
 			xStream >> uParentFileIndex;
