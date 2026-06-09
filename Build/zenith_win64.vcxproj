@@ -3660,6 +3660,36 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Aliasing.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Buffers.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Registries.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Textures.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Views.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>

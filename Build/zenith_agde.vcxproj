@@ -2088,6 +2088,11 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ComputePipelineBuilder.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ImGuiIntegration.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Aliasing.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Buffers.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Registries.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Textures.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Views.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Shader.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />

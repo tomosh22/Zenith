@@ -1033,6 +1033,21 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Aliasing.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Buffers.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Registries.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Textures.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Views.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
