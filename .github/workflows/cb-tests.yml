@@ -215,7 +215,27 @@ jobs:
         run: |
           msbuild Build\zenith_win64.sln `
               /t:CityBuilder `
-              /p:Configuration=vs2022_Debug_Win64_True `
+              /p:Configuration=Vulkan_vs2022_Debug_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount `
+              -nologo `
+              -clp:Summary `
+              -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build CityBuilder (D3D12 null backend -- backend-neutrality link proof)
+        shell: pwsh
+        run: |
+          # The D3D12 null backend is a compile + link conformance oracle proving
+          # the Flux renderer surface is backend-neutral (it does zero real
+          # rendering; Vulkan stays the shipping backend). The _False runtime
+          # config omits editor/tools + Slang/Vulkan; it links the system d3d12/
+          # dxgi import libs only. A clean link here = every concept + non-concept
+          # call the engine makes is satisfied by a second backend.
+          msbuild Build\zenith_win64.sln `
+              /t:CityBuilder `
+              /p:Configuration=D3D12_vs2022_Debug_Win64_False `
               /p:Platform=x64 `
               /p:WindowsTargetPlatformVersion=10.0 `
               -maxCpuCount `
@@ -227,7 +247,7 @@ jobs:
       - name: Copy runtime DLLs into exe output dir
         shell: pwsh
         run: |
-          $exeDir = 'Games\CityBuilder\Build\output\win64\vs2022_debug_win64_true'
+          $exeDir = 'Games\CityBuilder\Build\output\win64\vulkan_vs2022_debug_win64_true'
           if (-not (Test-Path $exeDir)) {
               Write-Error "exe output dir does not exist: $exeDir"
               exit 1
@@ -257,7 +277,7 @@ jobs:
       - name: Verify exe boots far enough to enumerate tests
         shell: pwsh
         run: |
-          $exe = 'Games\CityBuilder\Build\output\win64\vs2022_debug_win64_true\citybuilder.exe'
+          $exe = 'Games\CityBuilder\Build\output\win64\vulkan_vs2022_debug_win64_true\citybuilder.exe'
           # --list-automated-tests exits 0 cleanly without entering main loop;
           # --headless skips Vulkan init entirely (Zenith_CommandLine::IsHeadless
           # short-circuits Flux::EarlyInitialise / LateInitialise / Shutdown so

@@ -16,7 +16,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Exe            = "Games/CityBuilder/Build/output/win64/vs2022_debug_win64_true/citybuilder.exe",
+    [string]$Exe            = "Games/CityBuilder/Build/output/win64/vulkan_vs2022_debug_win64_true/citybuilder.exe",
     [string]$ResultsDir     = "build/citybuilder_test_results",
     [string]$Filter         = "",
     [int]$ExitAfterFrames   = 6000,
@@ -29,7 +29,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $Exe)) {
-    Write-Error "Executable not found: $Exe (build vs2022_Debug_Win64_True first)"
+    Write-Error "Executable not found: $Exe (build Vulkan_vs2022_Debug_Win64_True first)"
     exit 1
 }
 
@@ -60,7 +60,7 @@ if (Test-Path $slangBinDir) {
 
 # Self-heal #2: any other runtime DLL (assimp, etc.) a sibling game already has
 # in its output dir. CityBuilder's first build may not have them yet.
-$siblingDirs = Get-ChildItem "Games/*/Build/output/win64/vs2022_debug_win64_true" -Directory -ErrorAction SilentlyContinue |
+$siblingDirs = Get-ChildItem "Games/*/Build/output/win64/vulkan_vs2022_debug_win64_true" -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -ne $exeDir }
 foreach ($sib in $siblingDirs) {
     foreach ($dll in Get-ChildItem "$($sib.FullName)/*.dll" -ErrorAction SilentlyContinue) {

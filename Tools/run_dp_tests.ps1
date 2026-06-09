@@ -45,7 +45,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Exe         = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe",
+    [string]$Exe         = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_debug_win64_true/devilsplayground.exe",
     [string]$ResultsDir  = "build/dp_test_results",
     [string]$Filter      = "",
     # Bumped 2026-05-17 from 600 to 8500 to give the
@@ -69,7 +69,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $Exe)) {
-    Write-Error "Executable not found: $Exe (build vs2022_Debug_Win64_True first)"
+    Write-Error "Executable not found: $Exe (build Vulkan_vs2022_Debug_Win64_True first)"
     exit 1
 }
 
