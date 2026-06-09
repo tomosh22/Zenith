@@ -4,10 +4,26 @@
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux.h"
-// Pulled in for g_xEngine.FluxGraphics().m_xRepeatSampler (used by the texture preview
-// widget); CreateImGuiTextureID itself is on Flux_PlatformAPI and reachable
-// via the platform-graphics include already in Flux.h.
+// For g_xEngine.FluxGraphics().m_xRepeatSampler.
 #include "Flux/Flux_GraphicsImpl.h"
+
+Zenith_DebugVariableTree::~Zenith_DebugVariableTree()
+{
+	DeleteNode(m_pxRoot);
+}
+
+void Zenith_DebugVariableTree::DeleteNode(Node* pxNode)
+{
+	for (u_int u = 0; u < pxNode->m_xChildren.GetSize(); u++)
+	{
+		DeleteNode(pxNode->m_xChildren.Get(u));
+	}
+	for (u_int u = 0; u < pxNode->m_xLeaves.GetSize(); u++)
+	{
+		delete pxNode->m_xLeaves.Get(u);
+	}
+	delete pxNode;
+}
 
 template<>
 void Zenith_DebugVariableTree::LeafNode<bool>::ImGuiDisplay()
@@ -55,20 +71,14 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
 template<>
 void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDisplay()
 {
-	// Engine-typed wrapper — backend allocates the per-frame descriptor set
-	// and returns an opaque uint64 that ImGui treats as a texture ID. Avoids
-	// dragging Vulkan descriptor / image-view types into the debug-variable
-	// system; portable to backends with different ImGui texture-ID conventions
-	// once each backend implements CreateImGuiTextureID.
+	// The backend returns an opaque ID, keeping backend descriptor types out of this system.
 	const uint64_t ulTextureID = g_xEngine.FluxBackend().CreateImGuiTextureID(*m_pData, g_xEngine.FluxGraphics().m_xRepeatSampler);
 	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 }
 
 void Zenith_DebugVariableTree::TextureCallbackLeafNode::ImGuiDisplay()
 {
-	// Resolve the current SRV each draw so the preview follows render-graph
-	// rebuilds. Callback may return nullptr during early startup before the
-	// graph's transients are allocated — in that case render nothing.
+	// nullptr during early startup, before the graph's transients are allocated.
 	const Flux_ShaderResourceView* pxSRV = m_pfnGetSRV ? m_pfnGetSRV() : nullptr;
 	if (pxSRV == nullptr) return;
 	const uint64_t ulTextureID = g_xEngine.FluxBackend().CreateImGuiTextureID(*pxSRV, g_xEngine.FluxGraphics().m_xRepeatSampler);
@@ -112,7 +122,7 @@ void Zenith_DebugVariableTree::TextNode::ImGuiDisplay()
 	ImGui::Text(m_strText.c_str());
 }
 
-void Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::vector<std::string>& xSplits, uint32_t uCurrentDepth, uint32_t uMaxDepth, bool& bSuccess, Node*& pxResult)
+bool Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::vector<std::string>& xSplits, uint32_t uCurrentDepth, uint32_t uMaxDepth, Node*& pxResult)
 {
 	Zenith_Assert(uCurrentDepth < xSplits.size() - 1, "Gone too deep");
 	if (uCurrentDepth == uMaxDepth)
@@ -123,28 +133,30 @@ void Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::
 			{
 				delete pxNodeToAdd;
 				pxResult = pxChildNode;
-				bSuccess = true;
-				return;
+				return true;
 			}
 		}
 		pxNode->m_xChildren.PushBack(pxNodeToAdd);
 		pxResult = pxNodeToAdd;
-		bSuccess = true;
-		return;
+		return true;
 	}
 	for (Node* pxChildNode : pxNode->m_xChildren)
 	{
 		if (pxChildNode->m_xName.Get(uCurrentDepth + 1) == xSplits[uCurrentDepth])
 		{
-			TryAddNode(pxNodeToAdd, pxChildNode, xSplits, uCurrentDepth + 1, uMaxDepth, bSuccess, pxResult);
+			if (TryAddNode(pxNodeToAdd, pxChildNode, xSplits, uCurrentDepth + 1, uMaxDepth, pxResult))
+			{
+				return true;
+			}
 		}
 	}
+	return false;
 }
 
 void Zenith_DebugVariableTree::AddLeafNode(LeafNodeBase* pxLeafNode, std::vector<std::string>& xSplits)
 {
 	Node* pxParent = m_pxRoot;
-	// Guard against underflow when xSplits.size() is 0 or 1
+	// xSplits.size() - 1 below underflows for sizes 0 and 1
 	if (xSplits.size() < 2)
 	{
 		pxParent->m_xLeaves.PushBack(pxLeafNode);
@@ -158,8 +170,7 @@ void Zenith_DebugVariableTree::AddLeafNode(LeafNodeBase* pxLeafNode, std::vector
 		{
 			pxNodeToAdd->m_xName.PushBack(xSplits[uSub]);
 		}
-		bool bSuccess = false;
-		TryAddNode(pxNodeToAdd, m_pxRoot, xSplits, 0, u, bSuccess, pxParent);
+		TryAddNode(pxNodeToAdd, m_pxRoot, xSplits, 0, u, pxParent);
 	}
 	pxParent->m_xLeaves.PushBack(pxLeafNode);
 }

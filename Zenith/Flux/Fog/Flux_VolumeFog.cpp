@@ -95,7 +95,7 @@ void Flux_VolumeFogImpl::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Master controls
-	g_xEngine.DebugVariables().AddVector3({ "Render", "Volumetric Fog", "Shared", "Colour" }, m_xSharedConstants.m_xFogColour, 0.f, 1.f);
+	g_xEngine.DebugVariables().AddVector4({ "Render", "Volumetric Fog", "Shared", "Colour" }, m_xSharedConstants.m_xFogColour, 0.f, 1.f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Density" }, m_xSharedConstants.m_fDensity, 0.f, 0.01f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Scattering" }, m_xSharedConstants.m_fScatteringCoeff, 0.f, 1.f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Shared", "Absorption" }, m_xSharedConstants.m_fAbsorptionCoeff, 0.f, 1.f);

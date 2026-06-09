@@ -108,7 +108,7 @@ void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImp
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
-	g_xEngine.DebugVariables().AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
+	g_xEngine.DebugVariables().AddVector4({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
 #endif

@@ -6,10 +6,8 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Collections/Zenith_Vector.h"
 
-// Flux_ShaderResourceView is used here ONLY by pointer/reference (AddTexture stores &,
-// the LeafNode holds a T*, the callback returns a T*); every dereference lives in the
-// .cpp. A LOCAL forward-decl keeps this L0 debug header off the Flux (L2) layer entirely
-// — including Flux_Fwd.h would still be a layer-up edge (it's a Flux-layer header).
+// Local forward-decl (not Flux_Fwd.h): this L0 header must stay off the Flux (L2)
+// layer; the SRV is only touched by pointer here, dereferences live in the .cpp.
 struct Flux_ShaderResourceView;
 
 #define ROOT_NAME "Debug Variables"
@@ -24,6 +22,9 @@ public:
 		m_pxRoot = new Node;
 		m_pxRoot->m_xName.PushBack(ROOT_NAME);
 	}
+	~Zenith_DebugVariableTree();
+	Zenith_DebugVariableTree(const Zenith_DebugVariableTree&) = delete;
+	Zenith_DebugVariableTree& operator=(const Zenith_DebugVariableTree&) = delete;
 
 	struct LeafNodeBase
 	{
@@ -70,10 +71,8 @@ public:
 		void ImGuiDisplay() override;
 	};
 
-	// Callback-backed texture preview. The function pointer is invoked on every
-	// ImGui pass to fetch the current SRV, so the displayed texture stays correct
-	// across render-graph rebuilds that invalidate the SRV stored on the
-	// previously-registered transient. Returning nullptr renders nothing.
+	// Fetches the SRV via callback on every draw so the preview survives
+	// render-graph rebuilds; a nullptr result renders nothing.
 	struct TextureCallbackLeafNode : public LeafNodeBase
 	{
 		const Flux_ShaderResourceView*(*m_pfnGetSRV)() = nullptr;
@@ -149,17 +148,16 @@ public:
 		Zenith_Vector<LeafNodeBase*> m_xLeaves;
 	};
 
-	void TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::vector<std::string>& xSplits, uint32_t uCurrentDepth, uint32_t uMaxDepth, bool& bSuccess, Node*& pxResult);
+	bool TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::vector<std::string>& xSplits, uint32_t uCurrentDepth, uint32_t uMaxDepth, Node*& pxResult);
 	void AddLeafNode(LeafNodeBase* pxLeafNode, std::vector<std::string>& xSplits);
 
 	Node* m_pxRoot;
+
+private:
+	static void DeleteNode(Node* pxNode);
 };
 
-// State + behaviour for the DebugVariables subsystem. Held on g_xEngine
-// and accessed via g_xEngine.DebugVariables(). The Add* methods are
-// inline instance members that build the right LeafNode subtype and
-// register it on m_xTree directly — no bridge needed, since the methods
-// are members of the class that owns the tree.
+// Held on g_xEngine, accessed via g_xEngine.DebugVariables().
 class Zenith_DebugVariables
 {
 public:
@@ -191,11 +189,6 @@ public:
 		m_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	inline void AddVector4(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
-	{
-		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
-		m_xTree.AddLeafNode(pxLeaf, xName);
-	}
-	inline void AddVector3(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
 		m_xTree.AddLeafNode(pxLeaf, xName);
