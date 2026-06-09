@@ -856,70 +856,52 @@ int32_t Zenith_Squad::FindSharedTargetIndex(Zenith_EntityID xTarget) const
 
 // ========== Zenith_SquadManager ==========
 
-struct SquadManagerState
-{
-	Zenith_Vector<Zenith_Squad*> m_axSquads;
-};
-
-static SquadManagerState* g_pxState = nullptr;
-
-// Lazy creation preserves the former always-constructed static behaviour for
-// release builds where the called-before-Initialise asserts compile away.
-static SquadManagerState& State()
-{
-	if (!g_pxState)
-	{
-		g_pxState = new SquadManagerState();
-	}
-	return *g_pxState;
-}
+Zenith_Vector<Zenith_Squad*> Zenith_SquadManager::s_axSquads;
+bool Zenith_SquadManager::s_bInitialised = false;
 
 void Zenith_SquadManager::Initialise()
 {
-	if (g_pxState)
+	if (s_bInitialised)
 	{
 		return;
 	}
 
-	g_pxState = new SquadManagerState();
+	s_axSquads.Clear();
+	s_bInitialised = true;
 
 	Zenith_Log(LOG_CATEGORY_AI, "SquadManager initialised");
 }
 
 void Zenith_SquadManager::Shutdown()
 {
-	if (g_pxState)
+	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{
-		for (uint32_t u = 0; u < g_pxState->m_axSquads.GetSize(); ++u)
-		{
-			delete g_pxState->m_axSquads.Get(u);
-		}
-		delete g_pxState;
-		g_pxState = nullptr;
+		delete s_axSquads.Get(u);
 	}
+	s_axSquads.Clear();
+	s_bInitialised = false;
 
 	Zenith_Log(LOG_CATEGORY_AI, "SquadManager shutdown");
 }
 
 void Zenith_SquadManager::Update(float fDt)
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::Update called before Initialise()");
+	Zenith_Assert(s_bInitialised, "SquadManager::Update called before Initialise()");
 
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_SQUAD_UPDATE);
 
-	Zenith_Vector<Zenith_Squad*>& axSquads = State().m_axSquads;
-	for (uint32_t u = 0; u < axSquads.GetSize(); ++u)
+	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{
-		axSquads.Get(u)->Update(fDt);
+		s_axSquads.Get(u)->Update(fDt);
 	}
 }
 
 Zenith_Squad* Zenith_SquadManager::CreateSquad(const std::string& strName)
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::CreateSquad called before Initialise()");
+	Zenith_Assert(s_bInitialised, "SquadManager::CreateSquad called before Initialise()");
 
 	Zenith_Squad* pxSquad = new Zenith_Squad(strName);
-	State().m_axSquads.PushBack(pxSquad);
+	s_axSquads.PushBack(pxSquad);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Created squad '%s'", strName.c_str());
 
@@ -928,22 +910,21 @@ Zenith_Squad* Zenith_SquadManager::CreateSquad(const std::string& strName)
 
 void Zenith_SquadManager::DestroySquad(Zenith_Squad* pxSquad)
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::DestroySquad called before Initialise()");
+	Zenith_Assert(s_bInitialised, "SquadManager::DestroySquad called before Initialise()");
 
-	Zenith_Vector<Zenith_Squad*>& axSquads = State().m_axSquads;
-	for (uint32_t u = 0; u < axSquads.GetSize(); ++u)
+	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{
-		if (axSquads.Get(u) == pxSquad)
+		if (s_axSquads.Get(u) == pxSquad)
 		{
 			Zenith_Log(LOG_CATEGORY_AI, "Destroyed squad '%s'", pxSquad->GetName().c_str());
 			delete pxSquad;
 			// Swap-and-pop removal
-			uint32_t uLast = axSquads.GetSize() - 1;
+			uint32_t uLast = s_axSquads.GetSize() - 1;
 			if (u != uLast)
 			{
-				axSquads.Get(u) = axSquads.Get(uLast);
+				s_axSquads.Get(u) = s_axSquads.Get(uLast);
 			}
-			axSquads.PopBack();
+			s_axSquads.PopBack();
 			return;
 		}
 	}
@@ -951,14 +932,13 @@ void Zenith_SquadManager::DestroySquad(Zenith_Squad* pxSquad)
 
 Zenith_Squad* Zenith_SquadManager::GetSquadByName(const std::string& strName)
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::GetSquadByName called before Initialise()");
+	Zenith_Assert(s_bInitialised, "SquadManager::GetSquadByName called before Initialise()");
 
-	Zenith_Vector<Zenith_Squad*>& axSquads = State().m_axSquads;
-	for (uint32_t u = 0; u < axSquads.GetSize(); ++u)
+	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{
-		if (axSquads.Get(u)->GetName() == strName)
+		if (s_axSquads.Get(u)->GetName() == strName)
 		{
-			return axSquads.Get(u);
+			return s_axSquads.Get(u);
 		}
 	}
 	return nullptr;
@@ -966,14 +946,13 @@ Zenith_Squad* Zenith_SquadManager::GetSquadByName(const std::string& strName)
 
 Zenith_Squad* Zenith_SquadManager::GetSquadForEntity(Zenith_EntityID xEntity)
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::GetSquadForEntity called before Initialise()");
+	Zenith_Assert(s_bInitialised, "SquadManager::GetSquadForEntity called before Initialise()");
 
-	Zenith_Vector<Zenith_Squad*>& axSquads = State().m_axSquads;
-	for (uint32_t u = 0; u < axSquads.GetSize(); ++u)
+	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{
-		if (axSquads.Get(u)->HasMember(xEntity))
+		if (s_axSquads.Get(u)->HasMember(xEntity))
 		{
-			return axSquads.Get(u);
+			return s_axSquads.Get(u);
 		}
 	}
 	return nullptr;
@@ -981,25 +960,24 @@ Zenith_Squad* Zenith_SquadManager::GetSquadForEntity(Zenith_EntityID xEntity)
 
 uint32_t Zenith_SquadManager::GetSquadCount()
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::GetSquadCount called before Initialise()");
-	return State().m_axSquads.GetSize();
+	Zenith_Assert(s_bInitialised, "SquadManager::GetSquadCount called before Initialise()");
+	return s_axSquads.GetSize();
 }
 
 const Zenith_Vector<Zenith_Squad*>& Zenith_SquadManager::GetAllSquads()
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::GetAllSquads called before Initialise()");
-	return State().m_axSquads;
+	Zenith_Assert(s_bInitialised, "SquadManager::GetAllSquads called before Initialise()");
+	return s_axSquads;
 }
 
 #ifdef ZENITH_TOOLS
 void Zenith_SquadManager::DebugDrawAllSquads()
 {
-	Zenith_Assert(g_pxState != nullptr, "SquadManager::DebugDrawAllSquads called before Initialise()");
+	Zenith_Assert(s_bInitialised, "SquadManager::DebugDrawAllSquads called before Initialise()");
 
-	Zenith_Vector<Zenith_Squad*>& axSquads = State().m_axSquads;
-	for (uint32_t u = 0; u < axSquads.GetSize(); ++u)
+	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{
-		axSquads.Get(u)->DebugDraw();
+		s_axSquads.Get(u)->DebugDraw();
 	}
 }
 #endif

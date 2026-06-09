@@ -182,10 +182,6 @@ public:
 #endif
 
 private:
-	// All mutable system state lives in the file-scope PerceptionState struct in
-	// Zenith_PerceptionSystem.cpp; friendship lets it hold the private types below.
-	friend struct PerceptionState;
-
 	// Per-agent perception data
 	struct AgentPerceptionData
 	{
@@ -200,6 +196,10 @@ private:
 	{
 		bool m_bHostile = true;
 	};
+
+	static Zenith_HashMap<uint64_t, AgentPerceptionData> s_xAgentData;
+	static Zenith_HashMap<uint64_t, TargetInfo> s_xTargets;
+	static Zenith_Vector<Zenith_SoundStimulus> s_axActiveSounds;
 
 	// Update helpers. Audit §3.18: each agent/target resolves its own scene via
 	// GetSceneDataForEntity internally, so these helpers no longer take a scene
