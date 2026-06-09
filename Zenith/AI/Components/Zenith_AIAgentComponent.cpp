@@ -93,15 +93,11 @@ void Zenith_AIAgentComponent::OnAwake()
 
 void Zenith_AIAgentComponent::OnStart()
 {
-	// Load behavior tree asset if specified
+	// Behavior trees are built in code; there is no asset loader.
 	if (!m_strBehaviorTreeAsset.empty() && m_pxBehaviorTree == nullptr)
 	{
-		m_pxBehaviorTree = Zenith_BehaviorTree::LoadFromFile(m_strBehaviorTreeAsset);
-		if (m_pxBehaviorTree == nullptr)
-		{
-			Zenith_Log(LOG_CATEGORY_AI, "Failed to load behavior tree asset: %s. Disabling AI agent.", m_strBehaviorTreeAsset.c_str());
-			m_bEnabled = false;
-		}
+		Zenith_Log(LOG_CATEGORY_AI, "Behavior tree asset '%s' requested but trees are built in code. Disabling AI agent.", m_strBehaviorTreeAsset.c_str());
+		m_bEnabled = false;
 	}
 }
 

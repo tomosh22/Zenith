@@ -81,18 +81,6 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
-	// ========== Factory ==========
-
-	/**
-	 * Load a behavior tree from a .zbtree asset file
-	 */
-	static Zenith_BehaviorTree* LoadFromFile(const std::string& strPath);
-
-	/**
-	 * Save a behavior tree to a .zbtree asset file
-	 */
-	static bool SaveToFile(const Zenith_BehaviorTree& xTree, const std::string& strPath);
-
 private:
 	Zenith_BTNode* m_pxRootNode = nullptr;
 	BTNodeStatus m_eLastStatus = BTNodeStatus::FAILURE;

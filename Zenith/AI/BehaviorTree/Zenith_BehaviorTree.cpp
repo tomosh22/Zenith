@@ -160,31 +160,6 @@ void Zenith_BehaviorTree::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_bFirstTick = true;
 }
 
-Zenith_BehaviorTree* Zenith_BehaviorTree::LoadFromFile(const std::string& strPath)
-{
-	// BT file serialization is not implemented yet.
-	// Behavior trees must be created in code using the builder pattern.
-	// Example:
-	//   auto* pxTree = new Zenith_BehaviorTree();
-	//   auto* pxRoot = new Zenith_BTSequence();
-	//   pxRoot->AddChild(new Zenith_BTAction_Wait(1.0f));
-	//   pxTree->SetRootNode(pxRoot);
-	//
-	// To use this feature, a Zenith_BTNodeFactory must be implemented to create
-	// nodes by type name from serialized data.
-	Zenith_Log(LOG_CATEGORY_AI, "WARNING: BehaviorTree::LoadFromFile not implemented. "
-		"Behavior trees must be created in code. Path: %s", strPath.c_str());
-	return nullptr;
-}
-
-bool Zenith_BehaviorTree::SaveToFile(const Zenith_BehaviorTree&, const std::string& strPath)
-{
-	// BT file serialization is not implemented yet.
-	// WriteToDataStream can serialize tree structure, but loading requires a node factory.
-	Zenith_Log(LOG_CATEGORY_AI, "WARNING: BehaviorTree::SaveToFile not implemented. Path: %s", strPath.c_str());
-	return false;
-}
-
 #ifdef ZENITH_TESTING
 #include "AI/BehaviorTree/Zenith_BehaviorTree.Tests.inl"
 #endif

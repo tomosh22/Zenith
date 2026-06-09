@@ -222,7 +222,11 @@ void Zenith_UIElement::Update(float fDt)
 
 void Zenith_UIElement::TweenAlpha(float fTo, float fDuration, TweenEasing eEasing, float fDelay)
 {
-    if (m_uActiveTweenCount >= uMAX_TWEENS) return;
+    if (m_uActiveTweenCount >= uMAX_TWEENS)
+    {
+        Zenith_Assert(false, "Tween capacity exceeded");
+        return;
+    }
     Zenith_UITween& xTween = m_axTweens[m_uActiveTweenCount++];
     xTween.m_eProperty = TweenProperty::ALPHA;
     xTween.m_fFrom = m_fGroupAlpha;
@@ -236,7 +240,11 @@ void Zenith_UIElement::TweenAlpha(float fTo, float fDuration, TweenEasing eEasin
 
 void Zenith_UIElement::TweenPosition(const Zenith_Maths::Vector2& xTo, float fDuration, TweenEasing eEasing, float fDelay)
 {
-    if (m_uActiveTweenCount + 1 >= uMAX_TWEENS) return;
+    if (m_uActiveTweenCount + 1 >= uMAX_TWEENS)
+    {
+        Zenith_Assert(false, "Tween capacity exceeded");
+        return;
+    }
 
     Zenith_UITween& xTweenX = m_axTweens[m_uActiveTweenCount++];
     xTweenX.m_eProperty = TweenProperty::POSITION_X;
@@ -261,7 +269,11 @@ void Zenith_UIElement::TweenPosition(const Zenith_Maths::Vector2& xTo, float fDu
 
 void Zenith_UIElement::TweenColor(const Zenith_Maths::Vector4& xTo, float fDuration, TweenEasing eEasing, float fDelay)
 {
-    if (m_uActiveTweenCount + 3 >= uMAX_TWEENS) return;
+    if (m_uActiveTweenCount + 3 >= uMAX_TWEENS)
+    {
+        Zenith_Assert(false, "Tween capacity exceeded");
+        return;
+    }
 
     TweenProperty aeProps[] = { TweenProperty::COLOR_R, TweenProperty::COLOR_G, TweenProperty::COLOR_B, TweenProperty::COLOR_A };
     float afFrom[] = { m_xColor.x, m_xColor.y, m_xColor.z, m_xColor.w };
@@ -283,7 +295,11 @@ void Zenith_UIElement::TweenColor(const Zenith_Maths::Vector4& xTo, float fDurat
 
 void Zenith_UIElement::TweenSize(const Zenith_Maths::Vector2& xTo, float fDuration, TweenEasing eEasing, float fDelay)
 {
-    if (m_uActiveTweenCount + 1 >= uMAX_TWEENS) return;
+    if (m_uActiveTweenCount + 1 >= uMAX_TWEENS)
+    {
+        Zenith_Assert(false, "Tween capacity exceeded");
+        return;
+    }
 
     Zenith_UITween& xTweenX = m_axTweens[m_uActiveTweenCount++];
     xTweenX.m_eProperty = TweenProperty::SIZE_X;

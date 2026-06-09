@@ -208,8 +208,4 @@ public:
 #ifdef ZENITH_TOOLS
 	static void DebugDrawAllSquads();
 #endif
-
-private:
-	static Zenith_Vector<Zenith_Squad*> s_axSquads;
-	static bool s_bInitialised;
 };
