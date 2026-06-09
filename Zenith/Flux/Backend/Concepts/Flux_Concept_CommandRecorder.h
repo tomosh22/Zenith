@@ -32,19 +32,12 @@ template <typename T>
 concept FluxBackendRecordingLifecycle = requires(
 	T& xRec,
 	bool bEndPass,
-	bool bClearColour,
-	bool bClearDepth,
-	bool bClearStencil,
-	bool bDepthReadOnly,
-	uint32_t uNumColour,
-	const Flux_RenderGraph_AttachmentRef* paxColour,
-	const Flux_RenderGraph_AttachmentRef& xDepth)
+	const Flux_RenderingBeginInfo& xBeginInfo)
 {
 	{ xRec.BeginRecording()                                                                    } -> std::same_as<void>;
 	{ xRec.EndRecording(bEndPass)                                                              } -> std::same_as<void>;
-	{ xRec.EndRenderPass()                                                                     } -> std::same_as<void>;
-	{ xRec.BeginRenderPass(paxColour, uNumColour, xDepth,
-	                       bClearColour, bClearDepth, bClearStencil, bDepthReadOnly)           } -> std::same_as<void>;
+	{ xRec.EndRendering()                                                                      } -> std::same_as<void>;
+	{ xRec.BeginRendering(xBeginInfo)                                                          } -> std::same_as<void>;
 };
 
 template <typename T>

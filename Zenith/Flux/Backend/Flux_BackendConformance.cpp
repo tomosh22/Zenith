@@ -49,6 +49,14 @@ static_assert(FluxBackendMemoryAlloc           <Zenith_Vulkan_MemoryManager>,
 static_assert(FluxBackendMemoryDelete          <Zenith_Vulkan_MemoryManager>,
 	"Zenith_Vulkan_MemoryManager does not satisfy FluxBackendMemoryDelete");
 
+// Optional transient-aliasing slice (split out of FluxBackendMemoryAlloc in P10).
+// Asserted as a dual positive: every shipping backend provides the methods (the
+// null backend as false-returning / invalid-handle stubs). A future backend that
+// omits aliasing would drop this assert and have render-graph call sites gate on
+// SupportsTransientAliasing() (already the runtime contract).
+static_assert(FluxBackendTransientAliasing     <Zenith_Vulkan_MemoryManager>,
+	"Zenith_Vulkan_MemoryManager does not satisfy FluxBackendTransientAliasing");
+
 // Check the umbrella concept AND each sub-concept individually. A failure on
 // a sub-concept names the specific capability that regressed, which is much
 // more actionable than "backend does not satisfy FluxBackendCommandRecorder"

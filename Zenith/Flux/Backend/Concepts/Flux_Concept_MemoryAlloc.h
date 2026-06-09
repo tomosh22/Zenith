@@ -24,11 +24,6 @@ concept FluxBackendMemoryAlloc = requires(
 	size_t sz,
 	size_t uDestOffset,
 	u_int uInt32Size,
-	u_int64 ulPoolSize,
-	u_int64 ulPoolAlignment,
-	u_int64 ulPoolOffset,
-	u_int64& ulOutProbeSize,
-	u_int64& ulOutProbeAlignment,
 	u_int uMemoryFlags,
 	const Flux_SurfaceInfo& xInfo,
 	Flux_VRAMHandle xVRAMHandle,
@@ -87,20 +82,33 @@ concept FluxBackendMemoryAlloc = requires(
 	// a reviewer reading this file will now see the intent immediately.
 	{ t.UploadBufferData(xVRAMHandle, pData, sz)                                      } -> std::same_as<void>;
 	{ t.UploadBufferDataAtOffset(xVRAMHandle, pData, sz, uDestOffset)                 } -> std::same_as<void>;
+};
 
-	// Transient memory aliasing. Backends that don't support aliasing return
-	// false from SupportsTransientAliasing() and may leave CreateAliasPoolVRAM
-	// / CreateAliasedImageVRAM as stubs returning invalid handles — the
-	// render graph treats an invalid pool handle as "fall back to standalone
-	// allocation" and the frame proceeds unchanged (just without VRAM savings).
-	//
-	// Distinct slots for size / alignment / offset / output-probe-size /
-	// output-probe-alignment prevent a backend author from accidentally swapping
-	// semantically-different same-typed parameters (size vs offset, input vs
-	// output). Output-reference slots (ulOutProbeSize / ulOutProbeAlignment)
-	// are declared as `u_int64&` in the requires-clause header so
-	// ProbeImageMemoryRequirements's non-const-reference signature is exercised
-	// rather than accepting any lvalue.
+// OPTIONAL concept: transient-memory aliasing. Split out of FluxBackendMemoryAlloc
+// so a backend that doesn't implement real aliasing can opt out of this slice
+// while still satisfying the core allocator. Such a backend (e.g. the D3D12 null
+// stub) ships these as stubs — SupportsTransientAliasing() returns false and the
+// Create*/Probe methods return invalid handles / no-op — and the render graph,
+// gated on SupportsTransientAliasing() (Flux_RenderGraph.h), falls back to
+// standalone allocation, so the frame proceeds unchanged (just without VRAM
+// savings). Today every shipping backend provides the stubs, so conformance
+// asserts this as a dual positive (static_assert per backend), not an absence.
+//
+// Distinct slots for size / alignment / offset / output-probe-size /
+// output-probe-alignment prevent accidentally swapping semantically-different
+// same-typed parameters; the output-reference slots are `u_int64&` so the
+// non-const-reference signature of ProbeImageMemoryRequirements is exercised.
+template <typename T>
+concept FluxBackendTransientAliasing = requires(
+	T t,
+	u_int64 ulPoolSize,
+	u_int64 ulPoolAlignment,
+	u_int64 ulPoolOffset,
+	u_int64& ulOutProbeSize,
+	u_int64& ulOutProbeAlignment,
+	const Flux_SurfaceInfo& xInfo,
+	Flux_VRAMHandle xVRAMHandle)
+{
 	{ t.SupportsTransientAliasing()                                                   } -> std::same_as<bool>;
 	{ t.CreateAliasPoolVRAM(ulPoolSize, ulPoolAlignment)                              } -> std::same_as<Flux_VRAMHandle>;
 	{ t.CreateAliasedImageVRAM(xInfo, xVRAMHandle, ulPoolOffset)                      } -> std::same_as<Flux_VRAMHandle>;

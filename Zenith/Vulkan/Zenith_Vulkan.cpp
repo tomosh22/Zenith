@@ -335,7 +335,7 @@ static void ProcessComputePass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rend
 {
 	if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 	{
-		xCommandBuffer.EndRenderPass();
+		xCommandBuffer.EndRendering();
 		ResetRenderPassState(xState);
 	}
 	EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
@@ -390,14 +390,14 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 	{
 		if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 		{
-			xCommandBuffer.EndRenderPass();
+			xCommandBuffer.EndRendering();
 		}
 		// Graph-driven prologue barriers put every declared subresource into the
 		// layout the upcoming render pass expects (matching the render-pass
 		// attachment initialLayout set by TargetSetupToRenderPass).
 		EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
 
-		xCommandBuffer.BeginRenderPass(axColourAttachments, uNumColour, rxDepthStencil, bClear, bClear, bClear, bDepthIsReadOnly);
+		xCommandBuffer.BeginRendering(Flux_RenderingBeginInfo{ axColourAttachments, uNumColour, rxDepthStencil, bClear, bClear, bClear, bDepthIsReadOnly });
 		xState.m_uNumColour = uNumColour;
 		xState.m_xDepthStencil = rxDepthStencil;
 		xState.m_bDepthIsReadOnly = bDepthIsReadOnly;
@@ -422,9 +422,9 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 		xEntry.m_pxPass->m_xAliasingBarriers.GetSize() > 0);
 	if (bHasBarriers)
 	{
-		xCommandBuffer.EndRenderPass();
+		xCommandBuffer.EndRendering();
 		EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
-		xCommandBuffer.BeginRenderPass(axColourAttachments, uNumColour, rxDepthStencil, false /*bClear*/, false, false, bDepthIsReadOnly);
+		xCommandBuffer.BeginRendering(Flux_RenderingBeginInfo{ axColourAttachments, uNumColour, rxDepthStencil, false, false, false, bDepthIsReadOnly });
 	}
 	xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
 }
@@ -464,7 +464,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 
 	if (xState.m_uNumColour > 0 || xState.m_xDepthStencil.IsValid())
 	{
-		xCommandBuffer.EndRenderPass();
+		xCommandBuffer.EndRendering();
 		// No after-pass transition — the resource sits in its render-pass
 		// finalLayout (COLOR_ATTACHMENT for colour, DEPTH_*_ATTACHMENT for
 		// depth). The next pass that touches it (in this frame or the next)

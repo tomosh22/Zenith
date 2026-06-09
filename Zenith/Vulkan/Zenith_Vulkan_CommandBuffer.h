@@ -28,6 +28,7 @@ struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 struct Flux_RenderAttachment;
 struct Flux_RenderGraph_AttachmentRef;
+struct Flux_RenderingBeginInfo;
 class Flux_GraphResource;
 
 // Translate the engine-facing ResourceAccess enum into the Vulkan (layout,
@@ -80,7 +81,7 @@ public:
 	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
 	void InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, u_int uWorkerIndex, CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
-	void EndRenderPass();
+	void EndRendering();
 	void EndRecording(bool bEndPass = true);
 	void EndAndCpuWait(bool bEndPass);
 	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
@@ -90,7 +91,7 @@ public:
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
 	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20);
-	void BeginRenderPass(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour, const Flux_RenderGraph_AttachmentRef& rxDepthStencil, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false, bool bDepthIsReadOnly = false);
+	void BeginRendering(const Flux_RenderingBeginInfo& xInfo);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
 	void BindSRV(const Flux_ShaderResourceView* pxSRV, const Flux_BindingSlot& xSlot, Zenith_Vulkan_Sampler* pxSampler = nullptr);

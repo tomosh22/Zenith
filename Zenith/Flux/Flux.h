@@ -268,6 +268,22 @@ struct Flux_RenderGraph_AttachmentRef
 	bool IsValid() const { return m_xResource.IsValid(); }
 };
 
+// Parameters for beginning a render-pass / dynamic-rendering scope. Bundles the
+// colour attachment refs, the depth-stencil ref, and the per-aspect clear +
+// depth-read-only flags that the old 7-arg BeginRenderPass took loosely. Lives
+// here (not Flux_Types.h) because it stores a Flux_RenderGraph_AttachmentRef by
+// value, which is defined just above.
+struct Flux_RenderingBeginInfo
+{
+	const Flux_RenderGraph_AttachmentRef* m_paxColour = nullptr;
+	u_int                                 m_uNumColour = 0;
+	Flux_RenderGraph_AttachmentRef        m_xDepthStencil;
+	bool m_bClearColour   = false;
+	bool m_bClearDepth    = false;
+	bool m_bClearStencil  = false;
+	bool m_bDepthReadOnly = false;
+};
+
 
 class Flux_RenderAttachmentBuilder {
 public:

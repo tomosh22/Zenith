@@ -84,7 +84,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::EndRenderPass()
+void Zenith_Vulkan_CommandBuffer::EndRendering()
 {
 	m_xCurrentCmdBuffer.endRenderPass();
 	m_xCurrentRenderPass = VK_NULL_HANDLE;
@@ -431,8 +431,18 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& rxDepthStencil, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/, bool bDepthIsReadOnly /*= false*/)
+void Zenith_Vulkan_CommandBuffer::BeginRendering(const Flux_RenderingBeginInfo& xInfo)
 {
+	// Unpack the begin-info into the locals the body uses (the old 7-arg
+	// signature's names) so the render-pass build below is unchanged. The
+	// stencil-clear flag was always ignored here (depth+stencil share a clear).
+	const Flux_RenderGraph_AttachmentRef* axColourAttachments = xInfo.m_paxColour;
+	const uint32_t uNumColourAttachments = xInfo.m_uNumColour;
+	const Flux_RenderGraph_AttachmentRef& rxDepthStencil = xInfo.m_xDepthStencil;
+	const bool bClearColour = xInfo.m_bClearColour;
+	const bool bClearDepth = xInfo.m_bClearDepth;
+	const bool bDepthIsReadOnly = xInfo.m_bDepthReadOnly;
+
 	// #TODO: expose DONT_CARE LoadOp as a third option. Today a pass that
 	// fully overwrites its target (e.g. HDR_ToneMapping, Apply Lighting,
 	// SSR RayMarch, SSAO Upsample) has to ClearTargets() because the
