@@ -6,7 +6,7 @@ A resource gathering and crafting survival game demonstrating advanced Zenith en
 
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
-| **Task System** | `Zenith_Task`, `Zenith_TaskArray` | Background world updates, parallel node processing |
+| **Task System** | `Zenith_Task`, `Zenith_DataParallelTask` | Background world updates, parallel node processing |
 | **Event System** | `Zenith_EventDispatcher` | Custom game events with deferred queue |
 | **Query System** | `Zenith_Query` | Multi-component entity queries |
 | **Entity-Component System** | `Zenith_Entity`, `Zenith_Scene` | Entity creation, component attachment |
@@ -46,9 +46,9 @@ Games/Survival/
 
 ### Task System Integration (Survival_TaskProcessor.h)
 
-Demonstrates `Zenith_Task` and `Zenith_TaskArray`:
+Demonstrates `Zenith_Task` and `Zenith_DataParallelTask`:
 
-Submit single operations via `Zenith_Task` with `Zenith_TaskSystem::SubmitTask()`, or parallel work via `Zenith_TaskArray` with invocation count and optional submitting-thread-joins flag.
+Submit single operations via `Zenith_Task` with `SubmitTask()`, or parallel work via `Zenith_DataParallelTask` with invocation count and optional calling-thread-participates flag (both via `g_xEngine.Tasks()`).
 
 Key patterns:
 - Use atomic counters for thread-safe result aggregation
@@ -83,7 +83,7 @@ Use `scene.Query<ComponentA, ComponentB>()` with `.Count()`, `.First()`, `.Any()
 
 ### Survival_TaskProcessor.h - Background Tasks
 - `Zenith_Task` for single operations
-- `Zenith_TaskArray` for parallel processing
+- `Zenith_DataParallelTask` for parallel processing
 - Thread-safe event queuing
 - Atomic result counters
 
@@ -202,7 +202,7 @@ survival.exe
 - Resource node data modified only from background tasks (no scene graph changes)
 
 ### Performance Considerations
-- Task array distributes work across all worker threads
+- The data-parallel task distributes work across all worker threads
 - Main thread can join work with `bCallingThreadParticipates = true` (the legacy name `bSubmittingThreadJoins` still works as a constructor argument since it's positional)
 - Queries iterate only valid entities (not max entity ID range)
 - Resource manager uses fixed array to avoid allocations

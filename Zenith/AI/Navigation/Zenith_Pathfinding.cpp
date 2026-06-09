@@ -496,7 +496,7 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 		return;
 	}
 
-	// Single request - just do it directly (no TaskArray overhead)
+	// Single request - just do it directly (no task-system overhead)
 	if (uNumRequests == 1)
 	{
 		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PATHFINDING);
@@ -514,9 +514,7 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 		return;
 	}
 
-	// Multiple requests - use TaskArray for parallel processing
-	// The TaskArray distributes work across worker threads
-	Zenith_TaskArray xPathTask(
+	Zenith_DataParallelTask xPathTask(
 		ZENITH_PROFILE_INDEX__AI_PATHFINDING,
 		PathfindingTaskFunc,
 		pxRequests,
@@ -524,7 +522,7 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 		true  // Submitting thread joins - main thread helps process tasks
 	);
 
-	g_xEngine.Tasks().SubmitTaskArray(&xPathTask);
+	g_xEngine.Tasks().SubmitDataParallelTask(&xPathTask);
 	xPathTask.WaitUntilComplete();
 }
 

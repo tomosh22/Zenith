@@ -95,7 +95,7 @@ public:
 	};
 
 	/**
-	 * Find multiple paths in parallel using TaskArray
+	 * Find multiple paths in parallel using Zenith_DataParallelTask
 	 * Blocks until all paths are computed
 	 * @param pxRequests Array of path requests (results written to m_xResult)
 	 * @param uNumRequests Number of requests in array
@@ -108,6 +108,6 @@ private:
 		const Zenith_Maths::Vector3& xStart,
 		const Zenith_Maths::Vector3& xEnd);
 
-	// TaskArray callback for parallel pathfinding
+	// Zenith_DataParallelTaskFunction for parallel pathfinding
 	static void PathfindingTaskFunc(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 };

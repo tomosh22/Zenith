@@ -14,9 +14,9 @@
  * Each generation attempt randomly selects parameter values from unified ranges.
  * All parameters are configurable static constexpr constants.
  *
- * Level generation is parallelized via Zenith_TaskArray. Each worker thread
- * gets its own RNG and result storage. The best result (highest solver move
- * count) is chosen as the final level.
+ * Level generation is parallelized via Zenith_DataParallelTask. Each worker
+ * thread gets its own RNG and result storage. The best result (highest solver
+ * move count) is chosen as the final level.
  */
 
 #include <random>
@@ -292,7 +292,7 @@ public:
 	/**
 	 * GenerateLevel - Generate a solvable level using parallel reverse scramble
 	 *
-	 * Distributes generation attempts across worker threads via Zenith_TaskArray.
+	 * Distributes generation attempts across worker threads via Zenith_DataParallelTask.
 	 * Each worker gets its own RNG seed and result storage. After all workers
 	 * finish, the result with the highest solver move count is selected.
 	 *
@@ -318,15 +318,15 @@ public:
 		xData.uTotalAttempts = xParams.uMaxAttempts;
 		xData.uSeedOffset = uSeedOffset;
 
-		Zenith_TaskArray xTaskArray(
+		Zenith_DataParallelTask xGenTask(
 			ZENITH_PROFILE_INDEX__SCENE_UPDATE,
 			&ParallelGenerateTask,
 			&xData,
 			static_cast<u_int>(uNumWorkers),
 			true);
 
-		g_xEngine.Tasks().SubmitTaskArray(&xTaskArray);
-		xTaskArray.WaitUntilComplete();
+		g_xEngine.Tasks().SubmitDataParallelTask(&xGenTask);
+		xGenTask.WaitUntilComplete();
 
 		// Find the best result across all workers
 		int32_t iBestSolverResult = -1;

@@ -9,10 +9,10 @@
 
 // TaskSystem is a FLAT task pool, NOT a dependency graph (no DependsOn API). To
 // order work, block on a task's WaitUntilComplete() before submitting its
-// successor. Use Zenith_TaskArray for data-parallel work (independent invocations).
+// successor. Use Zenith_DataParallelTask for independent parallel invocations.
 
 using Zenith_TaskFunction = void(*)(void* pData);
-using Zenith_TaskArrayFunction = void(*)(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
+using Zenith_DataParallelTaskFunction = void(*)(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 
 class Zenith_Task
 {
@@ -26,22 +26,7 @@ public:
 		, m_uCompletedThreadID(UINT32_MAX)
 		, m_bSubmitted(false)
 	{
-		// Note: pfnFunc can be nullptr for Zenith_TaskArray which uses m_pfnArrayFunc instead
 	}
-
-protected:
-	// Protected constructor for derived classes that don't use m_pfnFunc
-	Zenith_Task(Zenith_ProfileIndex eProfileIndex, void* pData)
-		: m_eProfileIndex(eProfileIndex)
-		, m_pfnFunc(nullptr)
-		, m_xSemaphore(0, 1)
-		, m_pData(pData)
-		, m_uCompletedThreadID(UINT32_MAX)
-		, m_bSubmitted(false)
-	{
-	}
-
-public:
 
 	virtual ~Zenith_Task() = default;
 
@@ -61,16 +46,7 @@ public:
 		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		m_xSemaphore.Wait();
 		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
-		m_bSubmitted.store(false, std::memory_order_release);
-	}
-
-	// Reset for task reuse.
-	// Simple tasks have no per-invocation counters, so this base implementation
-	// is empty. The m_bSubmitted flag IS cleared, but by WaitUntilComplete()
-	// (see line ~57) — not here. Zenith_TaskArray::Reset() overrides this to
-	// also clear its invocation/completion counters.
-	void Reset()
-	{
+		MarkRecycled();
 	}
 
 	const Zenith_ProfileIndex GetProfileIndex() const
@@ -84,6 +60,16 @@ public:
 	}
 
 protected:
+	// For derived tasks that dispatch through their own function pointer.
+	Zenith_Task(Zenith_ProfileIndex eProfileIndex, void* pData)
+		: m_eProfileIndex(eProfileIndex)
+		, m_pfnFunc(nullptr)
+		, m_xSemaphore(0, 1)
+		, m_pData(pData)
+		, m_uCompletedThreadID(UINT32_MAX)
+		, m_bSubmitted(false)
+	{
+	}
 
 	Zenith_ProfileIndex m_eProfileIndex;
 	Zenith_TaskFunction m_pfnFunc;
@@ -91,24 +77,43 @@ protected:
 	void* m_pData;
 	u_int m_uCompletedThreadID;
 
+private:
+	// m_bSubmitted lifecycle: a submit claims the task exactly once via
+	// TryMarkSubmitted; it becomes resubmittable again via MarkRecycled —
+	// either by WaitUntilComplete observing completion, or by a failed
+	// submit handing the task back to the caller.
+	bool TryMarkSubmitted()
+	{
+		bool bExpected = false;
+		return m_bSubmitted.compare_exchange_strong(bExpected, true, std::memory_order_acq_rel);
+	}
+
+	void MarkRecycled()
+	{
+		m_bSubmitted.store(false, std::memory_order_release);
+	}
+
+	std::atomic<bool> m_bSubmitted;
+
 	friend class Zenith_TaskSystem;
-	std::atomic<bool> m_bSubmitted;  // Thread-safe submitted flag
 };
 
-class Zenith_TaskArray : public Zenith_Task
+// ONE task executed uNumInvocations times: worker threads (and optionally the
+// submitting thread) claim invocation indices via atomic fetch-add.
+class Zenith_DataParallelTask : public Zenith_Task
 {
 public:
-	Zenith_TaskArray() = delete;
-	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations, bool bCallingThreadParticipates = false)
-		: Zenith_Task(eProfileIndex, pData)  // Use protected constructor (no pfnFunc)
-		, m_pfnArrayFunc(pfnFunc)
+	Zenith_DataParallelTask() = delete;
+	Zenith_DataParallelTask(Zenith_ProfileIndex eProfileIndex, Zenith_DataParallelTaskFunction pfnFunc, void* pData, u_int uNumInvocations, bool bCallingThreadParticipates = false)
+		: Zenith_Task(eProfileIndex, pData)
+		, m_pfnInvocationFunc(pfnFunc)
 		, m_uNumInvocations(uNumInvocations)
 		, m_bCallingThreadParticipates(bCallingThreadParticipates)
 		, m_uInvocationCounter(0)
 		, m_uCompletionCounter(0)
 	{
-		Zenith_Assert(pfnFunc != nullptr, "TaskArray function pointer cannot be null");
-		Zenith_Assert(uNumInvocations > 0, "TaskArray must have at least 1 invocation");
+		Zenith_Assert(pfnFunc != nullptr, "DataParallelTask function pointer cannot be null");
+		Zenith_Assert(uNumInvocations > 0, "DataParallelTask must have at least 1 invocation");
 	}
 
 	virtual void DoTask() override
@@ -116,10 +121,9 @@ public:
 		u_int uInvocationIndex = m_uInvocationCounter.fetch_add(1);
 
 		g_xEngine.Profiling().BeginProfile(m_eProfileIndex);
-		m_pfnArrayFunc(m_pData, uInvocationIndex, m_uNumInvocations);
+		m_pfnInvocationFunc(m_pData, uInvocationIndex, m_uNumInvocations);
 		g_xEngine.Profiling().EndProfile(m_eProfileIndex);
 
-		// Signal completion when ALL threads have finished their work
 		Zenith_Assert(uInvocationIndex < m_uNumInvocations, "We have done this task too many times");
 		u_int uCompletedCount = m_uCompletionCounter.fetch_add(1) + 1;
 		if (uCompletedCount == m_uNumInvocations)
@@ -129,35 +133,33 @@ public:
 		}
 	}
 
-	// Reset counters for task reuse
-	// NOTE: Called by TaskSystem after successfully claiming m_bSubmitted flag
-	// The assertion on m_bSubmitted is now handled by TaskSystem's compare_exchange
-	void Reset()
-	{
-		m_uInvocationCounter.store(0, std::memory_order_release);
-		m_uCompletionCounter.store(0, std::memory_order_release);
-	}
-
 	const u_int GetNumInvocations() const
 	{
 		return m_uNumInvocations;
 	}
 
-	// If true, the thread that calls SubmitTaskArray() participates as a worker
-	// on this array (instead of returning immediately). Useful when the calling
-	// thread would otherwise idle waiting for completion.
+	// If true, the thread that calls SubmitDataParallelTask() runs invocations
+	// itself instead of returning immediately — useful when it would otherwise
+	// idle waiting for completion.
 	const bool GetCallingThreadParticipates() const
 	{
 		return m_bCallingThreadParticipates;
 	}
 
 private:
+	void ResetCounters()
+	{
+		m_uInvocationCounter.store(0, std::memory_order_release);
+		m_uCompletionCounter.store(0, std::memory_order_release);
+	}
 
-	Zenith_TaskArrayFunction m_pfnArrayFunc;
+	Zenith_DataParallelTaskFunction m_pfnInvocationFunc;
 	u_int m_uNumInvocations;
 	bool m_bCallingThreadParticipates;
 	std::atomic<u_int> m_uInvocationCounter;
 	std::atomic<u_int> m_uCompletionCounter;
+
+	friend class Zenith_TaskSystem;
 };
 
 // Per-Engine task-system state. Owns the worker-thread pool + the
@@ -179,12 +181,12 @@ public:
 	void Shutdown();
 
 	void SubmitTask(Zenith_Task* pxTask);
-	void SubmitTaskArray(Zenith_TaskArray* pxTaskArray);
+	void SubmitDataParallelTask(Zenith_DataParallelTask* pxTask);
 
 	// Number of worker threads created at Initialise (min(hw_concurrency-1, 16)).
-	// Used by data-parallel callers to size a Zenith_TaskArray's invocation
-	// count. May be 0 before Initialise / on a single-core box; callers must
-	// clamp to at least 1.
+	// Used by data-parallel callers to size a Zenith_DataParallelTask's
+	// invocation count. May be 0 before Initialise / on a single-core box;
+	// callers must clamp to at least 1.
 	u_int GetNumWorkerThreads() const { return m_uNumWorkerThreads; }
 
 	// Called by the static worker thread function. Public so the
@@ -192,14 +194,15 @@ public:
 	void RunWorkerLoop();
 
 private:
-	// Atomic CAS to claim a task for submission. Returns false if
-	// already submitted.
+	// CAS-claims the task for submission; false if already submitted.
 	bool TryClaimTask(Zenith_Task* pxTask, const char* szCallerName);
 
-	// Enqueue a task pointer uCount times under the queue lock, then
-	// signal workers. Returns the number of tasks successfully
-	// enqueued.
+	// Enqueue a task pointer uCount times under the queue lock, then signal
+	// workers. Returns how many were actually enqueued (the queue may fill).
 	u_int EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount);
+
+	void RecoverFromShortEnqueue(Zenith_Task* pxTask);
+	void RunInvocationsOnCallingThread(Zenith_DataParallelTask* pxTask, u_int uCount);
 
 	Zenith_CircularQueue<Zenith_Task*, uMAX_TASKS> m_xTaskQueue;
 	Zenith_Semaphore* m_pxWorkAvailableSem    = nullptr;

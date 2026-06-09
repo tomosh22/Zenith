@@ -3,12 +3,12 @@
 /**
  * Survival_TaskProcessor.h - Background task processing using Zenith_TaskSystem
  *
- * Demonstrates the Zenith_Task and Zenith_TaskArray systems for
+ * Demonstrates the Zenith_Task and Zenith_DataParallelTask systems for
  * parallel background processing.
  *
  * Key features:
  * - Zenith_Task for single background operations
- * - Zenith_TaskArray for parallel processing across multiple items
+ * - Zenith_DataParallelTask for parallel processing across multiple items
  * - Thread-safe event queuing from background tasks
  * - Integration with game systems
  *
@@ -41,7 +41,7 @@ struct WorldUpdateTaskData
 };
 
 /**
- * NodeUpdateTaskData - Data for parallel node update task array
+ * NodeUpdateTaskData - Data for the parallel node update task
  */
 struct NodeUpdateTaskData
 {
@@ -79,11 +79,11 @@ public:
 			s_pxWorldUpdateTask = nullptr;
 		}
 
-		if (s_pxNodeUpdateTaskArray)
+		if (s_pxNodeUpdateTask)
 		{
-			s_pxNodeUpdateTaskArray->WaitUntilComplete();
-			delete s_pxNodeUpdateTaskArray;
-			s_pxNodeUpdateTaskArray = nullptr;
+			s_pxNodeUpdateTask->WaitUntilComplete();
+			delete s_pxNodeUpdateTask;
+			s_pxNodeUpdateTask = nullptr;
 		}
 
 		s_bInitialized = false;
@@ -148,14 +148,14 @@ public:
 	}
 
 	// ========================================================================
-	// Task Array: Parallel Node Update
-	// Demonstrates Zenith_TaskArray for parallel processing
+	// Data-Parallel Task: Parallel Node Update
+	// Demonstrates Zenith_DataParallelTask for parallel processing
 	// ========================================================================
 
 	/**
-	 * SubmitParallelNodeUpdate - Update nodes in parallel using TaskArray
+	 * SubmitParallelNodeUpdate - Update nodes in parallel using Zenith_DataParallelTask
 	 *
-	 * This demonstrates using Zenith_TaskArray for distributing work
+	 * This demonstrates using Zenith_DataParallelTask for distributing work
 	 * across multiple worker threads.
 	 *
 	 * @param fDeltaTime Time step for respawn timer updates
@@ -167,19 +167,19 @@ public:
 			return;
 
 		// Wait for previous task if still running
-		if (s_pxNodeUpdateTaskArray)
+		if (s_pxNodeUpdateTask)
 		{
-			s_pxNodeUpdateTaskArray->WaitUntilComplete();
-			delete s_pxNodeUpdateTaskArray;
+			s_pxNodeUpdateTask->WaitUntilComplete();
+			delete s_pxNodeUpdateTask;
 		}
 
 		// Reset data
 		s_xNodeUpdateData.m_fDeltaTime = fDeltaTime;
 		s_xNodeUpdateData.m_uNodesRespawned.store(0);
 
-		// Create task array with one invocation per node
+		// Create data-parallel task with one invocation per node
 		// Worker threads will each grab work items atomically
-		s_pxNodeUpdateTaskArray = new Zenith_TaskArray(
+		s_pxNodeUpdateTask = new Zenith_DataParallelTask(
 			ZENITH_PROFILE_INDEX__SCENE_UPDATE,
 			ParallelNodeUpdateFunction,
 			&s_xNodeUpdateData,
@@ -187,7 +187,7 @@ public:
 			true  // Calling thread participates (main thread helps with work)
 		);
 
-		g_xEngine.Tasks().SubmitTaskArray(s_pxNodeUpdateTaskArray);
+		g_xEngine.Tasks().SubmitDataParallelTask(s_pxNodeUpdateTask);
 	}
 
 	/**
@@ -195,9 +195,9 @@ public:
 	 */
 	static void WaitForParallelNodeUpdate()
 	{
-		if (s_pxNodeUpdateTaskArray)
+		if (s_pxNodeUpdateTask)
 		{
-			s_pxNodeUpdateTaskArray->WaitUntilComplete();
+			s_pxNodeUpdateTask->WaitUntilComplete();
 		}
 	}
 
@@ -275,7 +275,7 @@ private:
 	}
 
 	/**
-	 * ParallelNodeUpdateFunction - Task array function for parallel node updates
+	 * ParallelNodeUpdateFunction - Data-parallel task function for node updates
 	 *
 	 * Each invocation processes one node. Multiple worker threads call this
 	 * with different invocation indices.
@@ -326,7 +326,7 @@ private:
 	inline static Zenith_Task* s_pxWorldUpdateTask = nullptr;
 	inline static WorldUpdateTaskData s_xWorldUpdateData;
 
-	// Parallel node update (task array)
-	inline static Zenith_TaskArray* s_pxNodeUpdateTaskArray = nullptr;
+	// Parallel node update (data-parallel task)
+	inline static Zenith_DataParallelTask* s_pxNodeUpdateTask = nullptr;
 	inline static NodeUpdateTaskData s_xNodeUpdateData;
 };

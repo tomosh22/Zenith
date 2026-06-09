@@ -7,7 +7,7 @@
  *
  * Engine Features Demonstrated:
  * - Zenith_ScriptBehaviour lifecycle (OnAwake, OnStart, OnUpdate)
- * - Zenith_Task / Zenith_TaskArray for background processing
+ * - Zenith_Task / Zenith_DataParallelTask for background processing
  * - Zenith_EventDispatcher for custom game events
  * - Zenith_Query for multi-component entity queries
  * - Custom components and systems
@@ -545,7 +545,7 @@ private:
 		uint32_t uNodeCount = m_xResourceManager.GetCount();
 		if (uNodeCount > 0)
 		{
-			// For demonstration, use TaskArray for parallel processing
+			// For demonstration, use Zenith_DataParallelTask for parallel processing
 			Survival_TaskProcessor::SubmitParallelNodeUpdate(fDt, uNodeCount);
 
 			// Wait for completion (in production, might let it run async)

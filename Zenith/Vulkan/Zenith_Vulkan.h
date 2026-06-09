@@ -183,7 +183,7 @@ public:
 	void WaitForGPUIdle();
 
 	// Task-system entry point. Stays static so it can be passed as a
-	// Zenith_TaskArrayFunction; the body resolves the engine singleton.
+	// Zenith_DataParallelTaskFunction; the body resolves the engine singleton.
 	static void RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 
 	const vk::Instance& GetInstance();

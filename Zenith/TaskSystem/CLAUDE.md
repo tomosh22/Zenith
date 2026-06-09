@@ -2,7 +2,7 @@
 
 ## Files
 
-- `Zenith_TaskSystem.h` - Task and TaskArray declarations
+- `Zenith_TaskSystem.h` - Task and data-parallel task declarations
 - `Zenith_TaskSystem.cpp` - Implementation
 
 ## Overview
@@ -14,11 +14,11 @@ Work-stealing task system for parallelizing CPU work across worker threads. Uses
 ### Zenith_Task
 Executes a single function on a worker thread. Constructor takes profile index, function pointer, and user data. Provides `WaitUntilComplete()` for synchronization.
 
-### Zenith_TaskArray
-Data-parallel work distribution. Extends Zenith_Task. Work items distributed atomically via fetch-add across worker threads. Optional "submitting thread joins" allows main thread to participate in work.
+### Zenith_DataParallelTask
+ONE task executed N times. Extends Zenith_Task. Invocation indices claimed atomically via fetch-add across worker threads. Optional "calling thread participates" allows the submitting thread to run invocations too.
 
 ### Zenith_TaskSystem
-Static submission API. Call `SubmitTask()` or `SubmitTaskArray()` to queue work.
+Submission API on the engine instance. Call `g_xEngine.Tasks().SubmitTask()` or `SubmitDataParallelTask()` to queue work. A task is recycled (resubmittable) by `WaitUntilComplete()` or by a failed submit (queue full).
 
 ## Configuration
 
@@ -39,4 +39,4 @@ Task system dynamically creates `min(hardware_concurrency - 1, 16)` threads at i
 
 **Reusable Tasks:** Command lists and other systems reuse task objects across frames to avoid allocation overhead.
 
-**Submitting Thread Joining:** TaskArray can optionally have submitting thread participate in work execution, useful when main thread would otherwise idle.
+**Calling Thread Participation:** Zenith_DataParallelTask can optionally have the submitting thread run invocations itself, useful when the main thread would otherwise idle.

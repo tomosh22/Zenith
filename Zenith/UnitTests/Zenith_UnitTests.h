@@ -249,7 +249,7 @@ public:
 	// Regression: RebuildCollider must rebuild at the body's current transform,
 	// not a stale cached one (Engine change 1 of the prefab-instantiate work).
 	static void TestColliderRebuildKeepsMovedTransform();
-	static void TestTaskArrayCallingThreadParticipates();
+	static void TestDataParallelTaskCallingThreadParticipates();
 	static void TestTaskReuseAfterWait();
 
 	// Wave 8.3 - release-survivable check tier + task-queue overflow grace

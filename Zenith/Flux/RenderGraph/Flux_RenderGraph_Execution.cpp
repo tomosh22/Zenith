@@ -157,8 +157,8 @@ void Flux_RenderGraph::RecordCommandLists()
 		pxTaskData[i].m_uPassIndex = i;
 	}
 
-	Zenith_TaskArray xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordPassTask, pxTaskData, uNumPasses, true);
-	g_xEngine.Tasks().SubmitTaskArray(&xTasks);
+	Zenith_DataParallelTask xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordPassTask, pxTaskData, uNumPasses, true);
+	g_xEngine.Tasks().SubmitDataParallelTask(&xTasks);
 	xTasks.WaitUntilComplete();
 	Zenith_MemoryManagement::Deallocate(pxTaskData);
 }

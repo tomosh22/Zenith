@@ -9133,28 +9133,26 @@ static void CallingThreadTestFunc(void* pData, u_int /*uIdx*/, u_int /*uTotal*/)
 	}
 }
 
-ZENITH_TEST(Core, TaskArrayCallingThreadParticipates) { Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(); }
+ZENITH_TEST(Core, DataParallelTaskCallingThreadParticipates) { Zenith_UnitTests::TestDataParallelTaskCallingThreadParticipates(); }
 
-void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
+void Zenith_UnitTests::TestDataParallelTaskCallingThreadParticipates(){
 
-	// Verifies the rename's semantics: when bCallingThreadParticipates=true, the
-	// calling thread (main) runs at least one of the array's invocations.
 	CallingThreadTestData xData;
 	xData.m_uMainThreadID = g_xEngine.Threading().GetCurrentThreadID();
 
 	constexpr u_int uNumInvocations = 8;
-	Zenith_TaskArray xArray(
+	Zenith_DataParallelTask xTask(
 		ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES,
 		CallingThreadTestFunc,
 		&xData,
 		uNumInvocations,
 		/* bCallingThreadParticipates = */ true
 	);
-	g_xEngine.Tasks().SubmitTaskArray(&xArray);
-	xArray.WaitUntilComplete();
+	g_xEngine.Tasks().SubmitDataParallelTask(&xTask);
+	xTask.WaitUntilComplete();
 
 	ZENITH_ASSERT_TRUE(xData.m_uMainThreadInvocations.load() >= 1,
-		"TestTaskArrayCallingThreadParticipates: calling thread should run at least one invocation when flag is true");
+		"TestDataParallelTaskCallingThreadParticipates: calling thread should run at least one invocation when flag is true");
 }
 
 //==============================================================================
@@ -9836,10 +9834,8 @@ ZENITH_TEST(Core, TaskReuseAfterWait) { Zenith_UnitTests::TestTaskReuseAfterWait
 
 void Zenith_UnitTests::TestTaskReuseAfterWait(){
 
-	// A Zenith_Task can be submitted, waited on, then submitted again. The plan
-	// for Phase 1.2 / 1.3 documents that WaitUntilComplete clears m_bSubmitted,
-	// which is what makes the second submit valid (TryClaimTask's CAS succeeds).
-	// This test exercises the contract end-to-end across two cycles.
+	// WaitUntilComplete recycles the task (MarkRecycled), which is what makes
+	// the second submit valid (TryMarkSubmitted succeeds again).
 	ReuseTestData xData;
 
 	Zenith_Task xTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, ReuseTaskFunc, &xData);
@@ -9847,10 +9843,6 @@ void Zenith_UnitTests::TestTaskReuseAfterWait(){
 	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
 	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 1u, "TestTaskReuseAfterWait: first submit should run task once");
-
-	// Reset is documented as a no-op for simple tasks (the m_bSubmitted flag is
-	// cleared by WaitUntilComplete) — call it to exercise the path anyway.
-	xTask.Reset();
 
 	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
@@ -16714,7 +16706,7 @@ void Zenith_UnitTests::TestQueueFullSurfacesError(){
 	// draining between submits, so the bounded circular queue can overflow.
 	// The old code asserted (and Zenith_DebugBreak'd) on overflow; the Wave 8.3
 	// change downgraded that to a Zenith_Check that logs QUEUE_FULL and lets the
-	// enqueue come up short. SubmitTask resets m_bSubmitted on a zero-enqueue, so
+	// enqueue come up short. SubmitTask recycles the task on a zero-enqueue, so
 	// any task that failed to enqueue is NOT marked submitted and its
 	// WaitUntilComplete() is a no-op — meaning this loop is deadlock-free
 	// regardless of how many tasks the queue refused.

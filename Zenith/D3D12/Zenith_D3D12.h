@@ -79,7 +79,7 @@ public:
 	// Wait for GPU idle — no-op (nothing is in flight in the null backend).
 	void WaitForGPUIdle() { }
 
-	// Task-system entry point (static so it can be a Zenith_TaskArrayFunction).
+	// Task-system entry point (static so it can be a Zenith_DataParallelTaskFunction).
 	static void RecordCommandBuffersTask(void* /*pData*/, u_int /*uInvocationIndex*/, u_int /*uNumInvocations*/) { }
 
 	const uint32_t GetQueueIndex(CommandType /*eType*/) { return 0; }

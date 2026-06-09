@@ -429,7 +429,7 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 	xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
 }
 
-// Task array function to record command buffers in parallel.
+// Data-parallel task function to record command buffers in parallel.
 //
 // W15/W20/W21: consumes the render-graph-produced Flux_CommandListEntry layout.
 // The clear flag and target setup come directly from the entry (populated from
@@ -521,17 +521,15 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		return; // No work to do this frame
 	}
 	
-	// Create and submit task array for parallel command buffer recording
-	// Enable submitting thread joining to utilize the main thread
-	Zenith_TaskArray xRecordingTask(
+	Zenith_DataParallelTask xRecordingTask(
 		ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS,
 		RecordCommandBuffersTask,
 		&xWorkDistribution,
 		FLUX_NUM_WORKER_THREADS,
 		true
 	);
-	
-	m_pxTasks->SubmitTaskArray(&xRecordingTask);
+
+	m_pxTasks->SubmitDataParallelTask(&xRecordingTask);
 	xRecordingTask.WaitUntilComplete();
 
 	// Clear all pending command lists now that recording is complete
