@@ -155,14 +155,18 @@ This generates:
 
 ### Build Configurations
 
-Each project supports these configurations:
+Each project supports these configurations. Every win64 config is prefixed by the
+render backend (`Vulkan_` = the real renderer; `D3D12_` = the no-op null backend
+that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
+`D3D12_` rows are identical with the prefix swapped. agde is Vulkan-only (no prefix).
 
 | Configuration | Platform | Tools | Description |
 |--------------|----------|-------|-------------|
-| `vs2022_Debug_Win64_True` | Windows | Yes | Debug build with editor/tools |
-| `vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
-| `vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
-| `vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
+| `Vulkan_vs2022_Debug_Win64_True` | Windows | Yes | Debug build with editor/tools |
+| `Vulkan_vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
+| `Vulkan_vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
+| `Vulkan_vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
+| `D3D12_vs2022_Debug_Win64_False` | Windows | No | Null-backend link/neutrality proof (+ _True / Release variants) |
 | `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
 | `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
 
@@ -180,15 +184,21 @@ Each project supports these configurations:
 **Windows (with editor):**
 ```batch
 cd Build
-msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
-cd ..\Games\Sokoban\Build\output\win64\vs2022_debug_win64_true
+msbuild zenith_win64.sln /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+cd ..\Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true
 sokoban.exe
 ```
+
+> **Config-name prefix (RenderBackend fragment):** every win64 config is prefixed
+> with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer)
+> or `D3D12_vs2022_Debug_Win64_False` (a no-op null backend that proves the Flux
+> surface is backend-neutral; see `Zenith/D3D12/CLAUDE.md`). The output dir is the
+> lowercased config name. agde is Vulkan-only (no prefix change there).
 
 **Using Visual Studio:**
 1. Open `Build\zenith_win64.sln`
 2. Set Sokoban as startup project
-3. Select configuration (e.g., `vs2022_Debug_Win64_True|x64`)
+3. Select configuration (e.g., `Vulkan_vs2022_Debug_Win64_True|x64`)
 4. Build and run (F5)
 
 ### Build Troubleshooting

@@ -177,8 +177,10 @@ Each project supports these configurations:
 **Windows (with editor):**
 ```batch
 cd Build
-msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
-cd ..\Games\Sokoban\Build\output\win64\vs2022_debug_win64_true
+REM win64 configs are prefixed by render backend: Vulkan_ (real) or D3D12_ (null
+REM backend; backend-neutrality proof). Output dir is the lowercased config name.
+msbuild zenith_win64.sln /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+cd ..\Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true
 sokoban.exe
 ```
 
