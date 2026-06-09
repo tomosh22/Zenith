@@ -254,6 +254,26 @@ public:
 	}
 	void SetSparseQueryReads(bool b) { m_bUseSparseQueryReads.store(b, std::memory_order_release); }
 
+	//==========================================================================
+	// Entity creation — the ONLY public entity-construction entry points.
+	// CreateEntity runs the engine-installed default-components hook after the
+	// slot is set up (the everyday creation API); CreateEntityBare never runs
+	// the hook (loaders/prefabs add their own components). Overloads target
+	// the current creation scope / a scene handle / a SceneData*.
+	// LEAF INVARIANT: none of these name a concrete component type.
+	//==========================================================================
+
+	Zenith_Entity CreateEntity(const std::string& strName);
+	Zenith_Entity CreateEntity(Zenith_Scene xScene, const std::string& strName);
+	Zenith_Entity CreateEntity(Zenith_SceneData* pxSceneData, const std::string& strName);
+
+	Zenith_Entity CreateEntityBare(const std::string& strName);
+	Zenith_Entity CreateEntityBare(Zenith_Scene xScene, const std::string& strName);
+	Zenith_Entity CreateEntityBare(Zenith_SceneData* pxSceneData, const std::string& strName);
+
+	// Lifecycle-deferral guard accessor (engine bootstrap + Zenith_LifecycleDeferralGuard).
+	bool& MutableLifecycleLoadingFlagForGuard();
+
 private:
 	// Zenith_Entity is the PUBLIC entity-lifecycle API (Destroy / DestroyImmediate /
 	// DontDestroyOnLoad / MoveToScene). Its methods forward to the now-PRIVATE
@@ -368,48 +388,6 @@ private:
 	// Engine-only: drained by Zenith_Engine::Initialise + internal update paths.
 	void DrainPendingLoadIfAny();
 
-public:
-
-	//==========================================================================
-	// Entity creation (Phase 3, ECS leaf-extraction). These are the ONLY public
-	// entity-construction entry points; the former creating ctor
-	// Zenith_Entity(Zenith_SceneData*, const std::string&) is gone.
-	//
-	// CreateEntity      — allocates the slot, sets the name/enabled/transient
-	//                     flags, then runs the engine-installed default-components
-	//                     hook (m_pfnAddDefaultComponents), which adds the engine's
-	//                     default component(s). This is the everyday creation API and matches
-	//                     the old creating ctor's behaviour byte-for-byte.
-	// CreateEntityBare  — identical allocation, but NEVER runs the hook (no
-	//                     default components). For callers/loaders
-	//                     that add their own components explicitly.
-	//
-	// Overloads:
-	//   (strName)                    — creates into the current creation-target
-	//                                  scope / active scene (GetDefaultCreationScene).
-	//   (xScene, strName)            — creates into the given scene handle.
-	//   (pxSceneData, strName)       — creates into the given SceneData* (for
-	//                                  callers/loader that already hold one).
-	//
-	// LEAF INVARIANT: none of these name a concrete component type. The engine's
-	// default component(s) are added only through the engine-installed hook.
-	//==========================================================================
-
-	Zenith_Entity CreateEntity(const std::string& strName);
-	Zenith_Entity CreateEntity(Zenith_Scene xScene, const std::string& strName);
-	Zenith_Entity CreateEntity(Zenith_SceneData* pxSceneData, const std::string& strName);
-
-	Zenith_Entity CreateEntityBare(const std::string& strName);
-	Zenith_Entity CreateEntityBare(Zenith_Scene xScene, const std::string& strName);
-	Zenith_Entity CreateEntityBare(Zenith_SceneData* pxSceneData, const std::string& strName);
-
-	//==========================================================================
-	// Lifecycle-deferral guard accessor (used by the engine bootstrap).
-	//==========================================================================
-
-	bool& MutableLifecycleLoadingFlagForGuard();
-
-private:
 	//==========================================================================
 	// Cross-scene entity ownership (was Zenith_SceneEntityOwnership). These are
 	// the implementation bodies behind the PUBLIC Zenith_Entity lifecycle API
