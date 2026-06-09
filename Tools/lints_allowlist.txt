@@ -29,7 +29,6 @@ static:Zenith/Physics/Zenith_Physics.cpp => s_xObjectVsBroadPhaseLayerFilter
 static:Zenith/Vulkan/Zenith_Vulkan.cpp => s_ulImGuiAllocationCount
 static:Zenith/Vulkan/Zenith_Vulkan.cpp => s_ulImGuiMemoryAllocated
 static:Zenith/Vulkan/Zenith_Vulkan.cpp => s_xValidationLayers
-static:Zenith/Vulkan/Zenith_Vulkan_MemoryManager.cpp => s_xProbeCache
 static:Zenith/Windows/Zenith_Windows_Window.cpp => s_ulGLFWAllocationCount
 static:Zenith/Windows/Zenith_Windows_Window.cpp => s_ulGLFWMemoryAllocated
 token:Zenith/AI/Navigation/Zenith_Pathfinding.cpp => std::vector
