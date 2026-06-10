@@ -42,11 +42,7 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_FeatureRegistry.h"
 
-// Phase 6a-1: Flux namespace state moved off Flux class onto
-// Flux_RendererImpl held by Zenith_Engine. Static facade methods below
-// forward through g_xEngine.FluxRenderer().m_xXxx.
-
-const uint32_t Flux_RendererImpl::GetFrameCounter() { return g_xEngine.FluxRenderer().m_uFrameCounter; }
+const uint32_t Flux_RendererImpl::GetFrameCounter() { return m_uFrameCounter; }
 
 void Flux_RendererImpl::SubmitCommandList(const Flux_CommandList* pxCmdList,
 	const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
@@ -64,36 +60,35 @@ void Flux_RendererImpl::SubmitCommandList(const Flux_CommandList* pxCmdList,
 	xEntry.m_pxPass = pxPass;
 	xEntry.m_bClearTargets = bClearTargets;
 	xEntry.m_bDepthIsReadOnly = bDepthIsReadOnly;
-	g_xEngine.FluxRenderer().m_xPendingCommandLists.PushBack(xEntry);
+	m_xPendingCommandLists.PushBack(xEntry);
 }
 
 void Flux_RendererImpl::AddResChangeCallback(void(*pfnCallback)())
 {
-	g_xEngine.FluxRenderer().m_xResChangeCallbacks.PushBack(pfnCallback);
+	m_xResChangeCallbacks.PushBack(pfnCallback);
 }
 
 void Flux_RendererImpl::ClearPendingCommandLists()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"ClearPendingCommandLists: main-thread only");
-	g_xEngine.FluxRenderer().m_xPendingCommandLists.Clear();
+	m_xPendingCommandLists.Clear();
 }
 
-Flux_RenderGraph& Flux_RendererImpl::GetRenderGraph()    { return *g_xEngine.FluxRenderer().m_pxRenderGraph; }
-bool              Flux_RendererImpl::IsRenderGraphValid(){ return g_xEngine.FluxRenderer().m_pxRenderGraph != nullptr; }
+Flux_RenderGraph& Flux_RendererImpl::GetRenderGraph()    { return *m_pxRenderGraph; }
+bool              Flux_RendererImpl::IsRenderGraphValid(){ return m_pxRenderGraph != nullptr; }
 
-void Flux_RendererImpl::RequestGraphRebuild() { g_xEngine.FluxRenderer().m_bGraphRebuildRequested = true; }
+void Flux_RendererImpl::RequestGraphRebuild() { m_bGraphRebuildRequested = true; }
 bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 {
-	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
-	bool b = xRenderer.m_bGraphRebuildRequested;
-	xRenderer.m_bGraphRebuildRequested = false;
+	bool b = m_bGraphRebuildRequested;
+	m_bGraphRebuildRequested = false;
 	return b;
 }
 
 Zenith_Vector<Flux_CommandListEntry>& Flux_RendererImpl::GetPendingCommandLists()
 {
-	return g_xEngine.FluxRenderer().m_xPendingCommandLists;
+	return m_xPendingCommandLists;
 }
 
 // Debug-variable backing store for the transient-aliasing runtime toggle.
@@ -254,7 +249,7 @@ void Flux_RendererImpl::LateInitialise()
 	g_xEngine.FluxMemory().EndFrame(false);
 
 	// Create and compile the render graph
-	g_xEngine.FluxRenderer().m_pxRenderGraph = new Flux_RenderGraph();
+	m_pxRenderGraph = new Flux_RenderGraph();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Debug-variable tree-path convention: most renderer variables live under
@@ -344,7 +339,7 @@ void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 
 void Flux_RendererImpl::SyncRenderGraphDebugToggles()
 {
-	if (g_xEngine.FluxRenderer().m_pxRenderGraph == nullptr)
+	if (m_pxRenderGraph == nullptr)
 		return;
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Transient aliasing toggle — SetAliasingEnabled is a no-op when the
@@ -355,7 +350,7 @@ void Flux_RendererImpl::SyncRenderGraphDebugToggles()
 	// AddTextureCallback registrations above — the macros imply one another
 	// (enforced in Zenith.h) so the choice is purely for reader clarity:
 	// anything touching a debug variable guards on ZENITH_DEBUG_VARIABLES.
-	g_xEngine.FluxRenderer().m_pxRenderGraph->SetAliasingEnabled(dbg_bTransientAliasing);
+	m_pxRenderGraph->SetAliasingEnabled(dbg_bTransientAliasing);
 #endif
 }
 

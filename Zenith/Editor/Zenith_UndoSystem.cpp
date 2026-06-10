@@ -4,16 +4,12 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_UndoSystem.h"
-#include "Zenith_UndoSystem.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Editor/Zenith_EditorSceneAccess.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DataStream/Zenith_DataStream.h"
-
-// Phase 5.5d: undo / redo stacks live on Zenith_UndoSystem held by
-// Zenith_Engine.
 
 u_int Zenith_UndoSystem::GetUndoStackSize() { return Zenith_UndoSystem::m_xUndoStack.GetSize(); }
 u_int Zenith_UndoSystem::GetRedoStackSize() { return Zenith_UndoSystem::m_xRedoStack.GetSize(); }
@@ -38,22 +34,22 @@ void Zenith_UndoSystem::Execute(Zenith_UndoCommand* pCommand)
 	pCommand->Execute();
 
 	// Add to undo stack (take ownership)
-	g_xEngine.UndoSystem().m_xUndoStack.PushBack(pCommand);
+	m_xUndoStack.PushBack(pCommand);
 
 	// Clear redo stack (branching timeline) - delete all commands first
-	for (u_int u = 0; u < g_xEngine.UndoSystem().m_xRedoStack.GetSize(); u++)
+	for (u_int u = 0; u < m_xRedoStack.GetSize(); u++)
 	{
-		delete g_xEngine.UndoSystem().m_xRedoStack.Get(u);
+		delete m_xRedoStack.Get(u);
 	}
-	g_xEngine.UndoSystem().m_xRedoStack.Clear();
+	m_xRedoStack.Clear();
 
 	// Enforce stack size limit
 	EnforceStackLimit();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Executed: %s (Undo stack: %u, Redo stack: %u)",
 		pCommand->GetDescription(),
-		g_xEngine.UndoSystem().m_xUndoStack.GetSize(),
-		g_xEngine.UndoSystem().m_xRedoStack.GetSize());
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
 }
 
 void Zenith_UndoSystem::Undo()
@@ -65,19 +61,19 @@ void Zenith_UndoSystem::Undo()
 	}
 
 	// Pop from undo stack
-	Zenith_UndoCommand* pCommand = g_xEngine.UndoSystem().m_xUndoStack.GetBack();
-	g_xEngine.UndoSystem().m_xUndoStack.PopBack();
+	Zenith_UndoCommand* pCommand = m_xUndoStack.GetBack();
+	m_xUndoStack.PopBack();
 
 	// Undo the command
 	pCommand->Undo();
 
 	// Move to redo stack
-	g_xEngine.UndoSystem().m_xRedoStack.PushBack(pCommand);
+	m_xRedoStack.PushBack(pCommand);
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Undone: %s (Undo stack: %u, Redo stack: %u)",
-		g_xEngine.UndoSystem().m_xRedoStack.GetBack()->GetDescription(),
-		g_xEngine.UndoSystem().m_xUndoStack.GetSize(),
-		g_xEngine.UndoSystem().m_xRedoStack.GetSize());
+		m_xRedoStack.GetBack()->GetDescription(),
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
 }
 
 void Zenith_UndoSystem::Redo()
@@ -89,29 +85,29 @@ void Zenith_UndoSystem::Redo()
 	}
 
 	// Pop from redo stack
-	Zenith_UndoCommand* pCommand = g_xEngine.UndoSystem().m_xRedoStack.GetBack();
-	g_xEngine.UndoSystem().m_xRedoStack.PopBack();
+	Zenith_UndoCommand* pCommand = m_xRedoStack.GetBack();
+	m_xRedoStack.PopBack();
 
 	// Re-execute the command
 	pCommand->Execute();
 
 	// Move to undo stack
-	g_xEngine.UndoSystem().m_xUndoStack.PushBack(pCommand);
+	m_xUndoStack.PushBack(pCommand);
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Redone: %s (Undo stack: %u, Redo stack: %u)",
-		g_xEngine.UndoSystem().m_xUndoStack.GetBack()->GetDescription(),
-		g_xEngine.UndoSystem().m_xUndoStack.GetSize(),
-		g_xEngine.UndoSystem().m_xRedoStack.GetSize());
+		m_xUndoStack.GetBack()->GetDescription(),
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
 }
 
 bool Zenith_UndoSystem::CanUndo()
 {
-	return g_xEngine.UndoSystem().m_xUndoStack.GetSize() > 0;
+	return m_xUndoStack.GetSize() > 0;
 }
 
 bool Zenith_UndoSystem::CanRedo()
 {
-	return g_xEngine.UndoSystem().m_xRedoStack.GetSize() > 0;
+	return m_xRedoStack.GetSize() > 0;
 }
 
 const char* Zenith_UndoSystem::GetUndoDescription()
@@ -119,7 +115,7 @@ const char* Zenith_UndoSystem::GetUndoDescription()
 	if (!CanUndo())
 		return "";
 
-	return g_xEngine.UndoSystem().m_xUndoStack.GetBack()->GetDescription();
+	return m_xUndoStack.GetBack()->GetDescription();
 }
 
 const char* Zenith_UndoSystem::GetRedoDescription()
@@ -127,22 +123,22 @@ const char* Zenith_UndoSystem::GetRedoDescription()
 	if (!CanRedo())
 		return "";
 
-	return g_xEngine.UndoSystem().m_xRedoStack.GetBack()->GetDescription();
+	return m_xRedoStack.GetBack()->GetDescription();
 }
 
 void Zenith_UndoSystem::Clear()
 {
-	for (u_int u = 0; u < g_xEngine.UndoSystem().m_xUndoStack.GetSize(); u++)
+	for (u_int u = 0; u < m_xUndoStack.GetSize(); u++)
 	{
-		delete g_xEngine.UndoSystem().m_xUndoStack.Get(u);
+		delete m_xUndoStack.Get(u);
 	}
-	g_xEngine.UndoSystem().m_xUndoStack.Clear();
+	m_xUndoStack.Clear();
 
-	for (u_int u = 0; u < g_xEngine.UndoSystem().m_xRedoStack.GetSize(); u++)
+	for (u_int u = 0; u < m_xRedoStack.GetSize(); u++)
 	{
-		delete g_xEngine.UndoSystem().m_xRedoStack.Get(u);
+		delete m_xRedoStack.Get(u);
 	}
-	g_xEngine.UndoSystem().m_xRedoStack.Clear();
+	m_xRedoStack.Clear();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Cleared all undo/redo history");
 }
@@ -150,10 +146,10 @@ void Zenith_UndoSystem::Clear()
 void Zenith_UndoSystem::EnforceStackLimit()
 {
 	// Remove oldest commands if stack exceeds limit
-	while (g_xEngine.UndoSystem().m_xUndoStack.GetSize() > MAX_UNDO_STACK_SIZE)
+	while (m_xUndoStack.GetSize() > MAX_UNDO_STACK_SIZE)
 	{
-		delete g_xEngine.UndoSystem().m_xUndoStack.GetFront();
-		g_xEngine.UndoSystem().m_xUndoStack.Remove(0);
+		delete m_xUndoStack.GetFront();
+		m_xUndoStack.Remove(0);
 	}
 }
 

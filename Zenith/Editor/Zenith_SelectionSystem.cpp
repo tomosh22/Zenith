@@ -4,7 +4,6 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_SelectionSystem.h"
-#include "Zenith_SelectionSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Query.h"
@@ -79,9 +78,6 @@ void BoundingBox::Transform(const Zenith_Maths::Matrix4& transform)
 		ExpandToInclude(transformedPos);
 	}
 }
-
-// Phase 5.5d: AABB cache lives on Zenith_SelectionSystem held by
-// Zenith_Engine; reach it via g_xEngine.Selection().m_xEntityBoundingBoxes.
 
 // Helper: Ray-triangle intersection using Möller–Trumbore algorithm
 // Returns true if ray intersects triangle, with distance in outT
@@ -195,17 +191,17 @@ static bool RaycastPhysicsMesh(
 
 void Zenith_SelectionSystem::Initialise()
 {
-	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
+	m_xEntityBoundingBoxes.Clear();
 }
 
 void Zenith_SelectionSystem::Shutdown()
 {
-	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
+	m_xEntityBoundingBoxes.Clear();
 }
 
 void Zenith_SelectionSystem::UpdateBoundingBoxes()
 {
-	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
+	m_xEntityBoundingBoxes.Clear();
 
 	// Iterate every entity in every loaded scene via TransformComponent (every
 	// entity is guaranteed to have one — see EntityComponent/CLAUDE.md). This
@@ -223,7 +219,7 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 		Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 		BoundingBox xBoundingBox = CalculateBoundingBox(&xEntity);
-		g_xEngine.Selection().m_xEntityBoundingBoxes[uEntityID] = xBoundingBox;
+		m_xEntityBoundingBoxes[uEntityID] = xBoundingBox;
 	}
 	
 	// PERFORMANCE NOTE:
@@ -246,7 +242,7 @@ BoundingBox Zenith_SelectionSystem::GetEntityBoundingBox(Zenith_Entity* pxEntity
 	}
 	
 	Zenith_EntityID uEntityID = pxEntity->GetEntityID();
-	const BoundingBox* pxCached = g_xEngine.Selection().m_xEntityBoundingBoxes.TryGet(uEntityID);
+	const BoundingBox* pxCached = m_xEntityBoundingBoxes.TryGet(uEntityID);
 	if (pxCached)
 	{
 		return *pxCached;
@@ -266,7 +262,7 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 	const Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// AABB cull: reject before touching mesh data.
-	const BoundingBox* pxBox = g_xEngine.Selection().m_xEntityBoundingBoxes.TryGet(uEntityID);
+	const BoundingBox* pxBox = m_xEntityBoundingBoxes.TryGet(uEntityID);
 	if (pxBox)
 	{
 		float fBBoxDistance;

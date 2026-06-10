@@ -6,7 +6,6 @@
 #include "Editor/Zenith_Editor.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -24,9 +23,6 @@
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
 
-// Phase 5.5d: automation state lives on Zenith_EditorAutomation
-// held by Zenith_Engine.
-
 bool Zenith_EditorAutomation::IsRunning()  { return Zenith_EditorAutomation::m_bRunning; }
 bool Zenith_EditorAutomation::IsComplete() { return Zenith_EditorAutomation::m_bComplete; }
 
@@ -36,48 +32,48 @@ bool Zenith_EditorAutomation::IsComplete() { return Zenith_EditorAutomation::m_b
 
 void Zenith_EditorAutomation::Begin()
 {
-	g_xEngine.EditorAutomation().m_uCurrentAction = 0;
-	g_xEngine.EditorAutomation().m_bRunning = true;
-	g_xEngine.EditorAutomation().m_bComplete = false;
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Begin: %u steps queued", g_xEngine.EditorAutomation().m_axActions.GetSize());
+	m_uCurrentAction = 0;
+	m_bRunning = true;
+	m_bComplete = false;
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Begin: %u steps queued", m_axActions.GetSize());
 }
 
 void Zenith_EditorAutomation::ExecuteNextStep()
 {
-	if (!g_xEngine.EditorAutomation().m_bRunning || g_xEngine.EditorAutomation().m_bComplete)
+	if (!m_bRunning || m_bComplete)
 		return;
 
-	if (g_xEngine.EditorAutomation().m_uCurrentAction >= g_xEngine.EditorAutomation().m_axActions.GetSize())
+	if (m_uCurrentAction >= m_axActions.GetSize())
 	{
-		g_xEngine.EditorAutomation().m_bRunning = false;
-		g_xEngine.EditorAutomation().m_bComplete = true;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", g_xEngine.EditorAutomation().m_axActions.GetSize());
-		g_xEngine.EditorAutomation().m_axActions.Clear();
+		m_bRunning = false;
+		m_bComplete = true;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", m_axActions.GetSize());
+		m_axActions.Clear();
 		return;
 	}
 
-	const Zenith_EditorAction& xAction = g_xEngine.EditorAutomation().m_axActions.Get(g_xEngine.EditorAutomation().m_uCurrentAction);
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Step %u/%u", g_xEngine.EditorAutomation().m_uCurrentAction + 1, g_xEngine.EditorAutomation().m_axActions.GetSize());
+	const Zenith_EditorAction& xAction = m_axActions.Get(m_uCurrentAction);
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Step %u/%u", m_uCurrentAction + 1, m_axActions.GetSize());
 
 	ExecuteAction(xAction);
-	g_xEngine.EditorAutomation().m_uCurrentAction++;
+	m_uCurrentAction++;
 
 	// Detect completion immediately after executing the last step
-	if (g_xEngine.EditorAutomation().m_uCurrentAction >= g_xEngine.EditorAutomation().m_axActions.GetSize())
+	if (m_uCurrentAction >= m_axActions.GetSize())
 	{
-		g_xEngine.EditorAutomation().m_bRunning = false;
-		g_xEngine.EditorAutomation().m_bComplete = true;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", g_xEngine.EditorAutomation().m_axActions.GetSize());
-		g_xEngine.EditorAutomation().m_axActions.Clear();
+		m_bRunning = false;
+		m_bComplete = true;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", m_axActions.GetSize());
+		m_axActions.Clear();
 	}
 }
 
 void Zenith_EditorAutomation::Reset()
 {
-	g_xEngine.EditorAutomation().m_axActions.Clear();
-	g_xEngine.EditorAutomation().m_uCurrentAction = 0;
-	g_xEngine.EditorAutomation().m_bRunning = false;
-	g_xEngine.EditorAutomation().m_bComplete = false;
+	m_axActions.Clear();
+	m_uCurrentAction = 0;
+	m_bRunning = false;
+	m_bComplete = false;
 }
 
 //=============================================================================
@@ -346,7 +342,7 @@ void Zenith_EditorAutomation::AddStep_SetUINavigation(const char* szElement, con
 	xAction.m_pArg = const_cast<void*>(static_cast<const void*>(szDown));
 	xAction.m_pArg2 = const_cast<void*>(static_cast<const void*>(szLeft));
 	xAction.m_pfnFunc = reinterpret_cast<void(*)()>(const_cast<char*>(szRight));
-	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
+	m_axActions.PushBack(xAction);
 }
 
 // -- UI ScrollView --
@@ -426,7 +422,7 @@ void Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath(const char* szPath)
 
 void Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath)
 {
-	Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_PREFAB_FROM_SELECTED, szPrefabName, szSavePath);
+	Push(m_axActions, ActionType::CREATE_PREFAB_FROM_SELECTED, szPrefabName, szSavePath);
 }
 
 void Zenith_EditorAutomation::AddStep_CreatePrefabVariant(
@@ -444,7 +440,7 @@ void Zenith_EditorAutomation::AddStep_CreatePrefabVariant(
 	xAction.m_szArg1 = szVariantName;
 	xAction.m_szArg2 = szBasePath;
 	xAction.m_pArg   = const_cast<char*>(szSavePath);
-	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
+	m_axActions.PushBack(xAction);
 }
 
 void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
@@ -463,7 +459,7 @@ void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
 	xAction.m_afArgs[0] = fX;
 	xAction.m_afArgs[1] = fY;
 	xAction.m_afArgs[2] = fZ;
-	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
+	m_axActions.PushBack(xAction);
 }
 
 void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName,
@@ -479,7 +475,7 @@ void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath
 	xAction.m_afArgs[0] = fPosX;   xAction.m_afArgs[1] = fPosY;   xAction.m_afArgs[2] = fPosZ;
 	xAction.m_afArgs[3] = fRotW;   xAction.m_afArgs[4] = fRotX;   xAction.m_afArgs[5] = fRotY;   xAction.m_afArgs[6] = fRotZ;
 	xAction.m_afArgs[7] = fScaleX; xAction.m_afArgs[8] = fScaleY; xAction.m_afArgs[9] = fScaleZ;
-	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
+	m_axActions.PushBack(xAction);
 }
 
 // -- Scene Loading --
@@ -489,7 +485,7 @@ void Zenith_EditorAutomation::AddStep_LoadInitialScene(void (*pfnCallback)())
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::LOAD_INITIAL_SCENE;
 	xAction.m_pfnFunc = pfnCallback;
-	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
+	m_axActions.PushBack(xAction);
 }
 
 // -- Custom --
@@ -499,7 +495,7 @@ void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)())
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::CUSTOM_STEP;
 	xAction.m_pfnFunc = pfnFunc;
-	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
+	m_axActions.PushBack(xAction);
 }
 
 //=============================================================================

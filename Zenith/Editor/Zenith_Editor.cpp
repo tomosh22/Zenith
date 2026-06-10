@@ -133,8 +133,8 @@ std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaultExt, c
 
 // Phase 5.5c: editor state lives on Zenith_Editor held by Zenith_Engine.
 // The static definitions that used to live here -- 31 Zenith_Editor::s_* class
-// statics + the file-static g_xEngine.Editor().m_xEditorState + g_xEngine.Editor().m_xCachedGameTextureHandle +
-// g_xEngine.Editor().m_xCachedImageViewHandle + g_xEngine.Editor().m_xPendingDeletions -- moved onto the Impl
+// statics + the file-static m_xEditorState + m_xCachedGameTextureHandle +
+// m_xCachedImageViewHandle + m_xPendingDeletions -- moved onto the Impl
 // (m_xXxx members). Inline getter forwarders below.
 
 EditorMode Zenith_Editor::GetEditorMode() { return m_xEditorState.m_eEditorMode; }
@@ -282,13 +282,13 @@ void Zenith_Editor::Initialise()
 	ApplyEditorTheme();
 
 	// Initialize content browser to game assets directory
-	g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_strCurrentDirectory = Project_GetGameAssetsDirectory();
+	m_xEditorState.m_xContentBrowser.m_strCurrentDirectory = Project_GetGameAssetsDirectory();
 
-	g_xEngine.Editor().m_xEditorState.m_eEditorMode = EditorMode::Stopped;
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID = INVALID_ENTITY_ID;
-	g_xEngine.Editor().m_xEditorState.m_eGizmoMode = EditorGizmoMode::Translate;
+	m_xEditorState.m_eEditorMode = EditorMode::Stopped;
+	m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
+	m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
+	m_xEditorState.m_xSelection.m_uLastClickedEntityID = INVALID_ENTITY_ID;
+	m_xEditorState.m_eGizmoMode = EditorGizmoMode::Translate;
 
 	// Material system is now managed by Zenith_AssetRegistry
 
@@ -305,25 +305,25 @@ void Zenith_Editor::Shutdown()
 {
 	// Process all pending deletions immediately on shutdown
 	// At shutdown, we can safely assume all GPU work is done or will be waited for
-	for (auto& pending : g_xEngine.Editor().m_xPendingDeletions)
+	for (auto& pending : m_xPendingDeletions)
 	{
 		Flux_ImGuiIntegration::UnregisterTexture(pending.xHandle, 0); // Immediate deletion at shutdown
 	}
-	g_xEngine.Editor().m_xPendingDeletions.Clear();
+	m_xPendingDeletions.Clear();
 
 	// Free the cached ImGui texture handle
-	if (g_xEngine.Editor().m_xCachedGameTextureHandle.IsValid())
+	if (m_xCachedGameTextureHandle.IsValid())
 	{
-		Flux_ImGuiIntegration::UnregisterTexture(g_xEngine.Editor().m_xCachedGameTextureHandle, 0); // Immediate deletion at shutdown
-		g_xEngine.Editor().m_xCachedGameTextureHandle.Invalidate();
-		g_xEngine.Editor().m_xCachedImageViewHandle = Flux_ImageViewHandle();
+		Flux_ImGuiIntegration::UnregisterTexture(m_xCachedGameTextureHandle, 0); // Immediate deletion at shutdown
+		m_xCachedGameTextureHandle.Invalidate();
+		m_xCachedImageViewHandle = Flux_ImageViewHandle();
 	}
 
 	// Reset editor camera state
-	g_xEngine.Editor().m_xEditorState.m_xCamera.m_bInitialized = false;
+	m_xEditorState.m_xCamera.m_bInitialized = false;
 	
 	// Clear material selection (material system managed by Zenith_AssetRegistry)
-	g_xEngine.Editor().m_xEditorState.m_xMaterial.m_xSelectedMaterial.Clear();
+	m_xEditorState.m_xMaterial.m_xSelectedMaterial.Clear();
 
 	// Shutdown editor subsystems
 	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
@@ -352,7 +352,7 @@ bool Zenith_Editor::Update()
 	// Zenith_Vector has no iterator-erase, so walk by index and Remove() in place
 	// (order-preserving); don't advance the index when an element is removed.
 	{
-		Zenith_Vector<PendingImGuiTextureDeletion>& xPendingDeletions = g_xEngine.Editor().m_xPendingDeletions;
+		Zenith_Vector<PendingImGuiTextureDeletion>& xPendingDeletions = m_xPendingDeletions;
 		for (u_int i = 0; i < xPendingDeletions.GetSize(); )
 		{
 			PendingImGuiTextureDeletion& xPending = xPendingDeletions.Get(i);
@@ -386,7 +386,7 @@ bool Zenith_Editor::Update()
 	// This happens after the game's OnEnter has set up the scene camera.
 	// Placed after automation check so the sync only fires once automation is done.
 	static bool s_bFirstFrameAfterInit = true;
-	if (s_bFirstFrameAfterInit && g_xEngine.Editor().m_xEditorState.m_eEditorMode == EditorMode::Stopped)
+	if (s_bFirstFrameAfterInit && m_xEditorState.m_eEditorMode == EditorMode::Stopped)
 	{
 		s_bFirstFrameAfterInit = false;
 
@@ -399,15 +399,15 @@ bool Zenith_Editor::Update()
 			if (xCameraEntity.IsValid() && xCameraEntity.HasComponent<Zenith_CameraComponent>())
 			{
 				Zenith_CameraComponent& xGameCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
-				xGameCamera.GetPosition(g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition);
-				g_xEngine.Editor().m_xEditorState.m_xCamera.m_fPitch = xGameCamera.GetPitch();
-				g_xEngine.Editor().m_xEditorState.m_xCamera.m_fYaw = xGameCamera.GetYaw();
+				xGameCamera.GetPosition(m_xEditorState.m_xCamera.m_xPosition);
+				m_xEditorState.m_xCamera.m_fPitch = xGameCamera.GetPitch();
+				m_xEditorState.m_xCamera.m_fYaw = xGameCamera.GetYaw();
 
 				// Save reference to game camera for later
-				g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
+				m_xEditorState.m_xCamera.m_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
 
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera synced from game camera at (%.1f, %.1f, %.1f)",
-					g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.x, g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.y, g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.z);
+					m_xEditorState.m_xCamera.m_xPosition.x, m_xEditorState.m_xCamera.m_xPosition.y, m_xEditorState.m_xCamera.m_xPosition.z);
 			}
 			else
 			{
@@ -422,7 +422,7 @@ bool Zenith_Editor::Update()
 	// Update editor camera controls (when not playing)
 	UpdateEditorCamera(1.0f / 60.0f);  // Assume 60fps for now, could use actual delta time
 
-	if (g_xEngine.Editor().m_xEditorState.m_eEditorMode == EditorMode::Playing)
+	if (m_xEditorState.m_eEditorMode == EditorMode::Playing)
 	{
 		return true;
 	}
@@ -444,9 +444,9 @@ bool Zenith_Editor::Update()
 bool Zenith_Editor::ProcessDeferredSceneOperations()
 {
 	// Handle pending scene reset
-	if (g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneReset)
+	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneReset)
 	{
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
+		m_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
 
 		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
 		// This matches the synchronization used for scene loading
@@ -479,7 +479,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		ClearSelection();
 
 		// Clear game camera reference as it now points to deleted memory
-		g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+		m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 
 		// Reset editor camera to initial state
 		ResetEditorCameraToDefaults();
@@ -491,9 +491,9 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	}
 
 	// Handle pending scene save
-	if (g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneSave)
+	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneSave)
 	{
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
+		m_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
 
 		try
 		{
@@ -502,8 +502,8 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 			if (pxSceneData)
 			{
-				Zenith_EditorSceneAccess::SaveToFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
-				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
+				Zenith_EditorSceneAccess::SaveToFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
 			}
 		}
 		catch (const std::exception& e)
@@ -511,19 +511,19 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Failed to save scene: %s", e.what());
 		}
 
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
+		m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
 	}
 
 	// Handle pending scene load (with backup-restore detection)
-	if (g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad)
+	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad)
 	{
 		return HandlePendingSceneLoad();
 	}
 
 	// Handle pending registered scene load (from toolbar dropdown)
-	if (g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad)
+	if (m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad)
 	{
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = false;
+		m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = false;
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
 		g_xEngine.FluxBackend().WaitForGPUIdle();
@@ -537,20 +537,20 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
 		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
-		g_xEngine.Scenes().LoadSceneByIndex(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex);
+		g_xEngine.Scenes().LoadSceneByIndex(m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex);
 
 		ClearSelection();
 		g_xEngine.UndoSystem().Clear();
-		g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+		m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 
 		return false;
 	}
 
 	// Handle pending scene load from file path (content browser double-click)
-	if (g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile)
+	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile)
 	{
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = false;
+		m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = false;
 
 		g_xEngine.FluxBackend().WaitForGPUIdle();
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
@@ -559,13 +559,13 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		}
 		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
-		g_xEngine.Scenes().LoadScene(g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.c_str());
+		g_xEngine.Scenes().LoadScene(m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.c_str());
 
 		ClearSelection();
 		g_xEngine.UndoSystem().Clear();
-		g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.clear();
+		m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+		m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.clear();
 
 		return false;
 	}
@@ -575,7 +575,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 
 bool Zenith_Editor::HandlePendingSceneLoad()
 {
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
+	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
 
 	// W14: Render graph Execute() is now synchronous on the main thread, so only GPU idle is needed.
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
@@ -597,7 +597,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 
 	// Safe to load now - no render tasks active, GPU idle, old resources deleted
 
-	bool bIsBackupRestore = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup && g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
+	bool bIsBackupRestore = m_xEditorState.m_xPlayBackup.m_bHasBackup && m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
 
 	// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
 	// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
@@ -638,14 +638,14 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		}
 
 		// 4. Create fresh scene with the original name and restore metadata
-		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(xRestoredScene);
 
 		Zenith_SceneData* pxRestoredData = g_xEngine.Scenes().GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
-			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
+			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
+			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
 		}
 	}
 
@@ -654,9 +654,9 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
-		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
+		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
 	// Clear selection as entity pointers are now invalid
 	ClearSelection();
@@ -665,27 +665,27 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	g_xEngine.UndoSystem().Clear();
 
 	// Clear game camera entity pointer as it's now invalid (entity from old scene)
-	g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 
 	if (bIsBackupRestore)
 	{
 		// Delete the temporary backup file
-		std::filesystem::remove(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath);
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup = false;
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
+		std::filesystem::remove(m_xEditorState.m_xPlayBackup.m_strBackupScenePath);
+		m_xEditorState.m_xPlayBackup.m_bHasBackup = false;
+		m_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
+		m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
+		m_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
+		m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
+		m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
 	}
 
-	if (g_xEngine.Editor().m_xEditorState.m_xCamera.m_bInitialized)
+	if (m_xEditorState.m_xCamera.m_bInitialized)
 	{
 		SwitchToEditorCamera();
 	}
 
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
+	m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
 
 	return false;
 }
@@ -693,7 +693,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 void Zenith_Editor::UpdateEditorInput()
 {
 	// Handle gizmo mode keyboard shortcuts (when viewport is focused)
-	if (g_xEngine.Editor().m_xEditorState.m_xViewport.m_bFocused)
+	if (m_xEditorState.m_xViewport.m_bFocused)
 	{
 		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{
@@ -763,11 +763,11 @@ void Zenith_Editor::Render()
 	
 	// Render editor panels
 	RenderToolbar();
-	if (g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowHierarchy) RenderHierarchyPanel();
-	if (g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowProperties) RenderPropertiesPanel();
+	if (m_xEditorState.m_xPanels.m_bShowHierarchy) RenderHierarchyPanel();
+	if (m_xEditorState.m_xPanels.m_bShowProperties) RenderPropertiesPanel();
 	RenderViewport();
 	RenderContentBrowser();
-	if (g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowConsole) RenderConsolePanel();
+	if (m_xEditorState.m_xPanels.m_bShowConsole) RenderConsolePanel();
 	RenderMaterialEditorPanel();
 
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
@@ -789,29 +789,29 @@ void Zenith_Editor::Render()
 
 void Zenith_Editor::RenderToolbar()
 {
-	Zenith_EditorPanelToolbar::Render(g_xEngine.Editor().m_xEditorState.m_eEditorMode, g_xEngine.Editor().m_xEditorState.m_eGizmoMode);
+	Zenith_EditorPanelToolbar::Render(m_xEditorState.m_eEditorMode, m_xEditorState.m_eGizmoMode);
 }
 
 void Zenith_Editor::RenderHierarchyPanel()
 {
-	Zenith_EditorPanelHierarchy::Render(g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity);
+	Zenith_EditorPanelHierarchy::Render(m_xEditorState.m_xCamera.m_uGameCameraEntity);
 }
 
 void Zenith_Editor::RenderPropertiesPanel()
 {
-	Zenith_EditorPanelProperties::Render(GetSelectedEntity(), g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+	Zenith_EditorPanelProperties::Render(GetSelectedEntity(), m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
 }
 
 void Zenith_Editor::RenderViewport()
 {
 	ViewportState xState = {
-		g_xEngine.Editor().m_xEditorState.m_xViewport.m_xSize,
-		g_xEngine.Editor().m_xEditorState.m_xViewport.m_xPosition,
-		g_xEngine.Editor().m_xEditorState.m_xViewport.m_bHovered,
-		g_xEngine.Editor().m_xEditorState.m_xViewport.m_bFocused,
-		g_xEngine.Editor().m_xCachedGameTextureHandle,
-		g_xEngine.Editor().m_xCachedImageViewHandle,
-		g_xEngine.Editor().m_xPendingDeletions
+		m_xEditorState.m_xViewport.m_xSize,
+		m_xEditorState.m_xViewport.m_xPosition,
+		m_xEditorState.m_xViewport.m_bHovered,
+		m_xEditorState.m_xViewport.m_bFocused,
+		m_xCachedGameTextureHandle,
+		m_xCachedImageViewHandle,
+		m_xPendingDeletions
 	};
 	Zenith_EditorPanelViewport::Render(xState);
 }
@@ -819,7 +819,7 @@ void Zenith_Editor::RenderViewport()
 void Zenith_Editor::HandleObjectPicking()
 {
 	// Only pick when viewport is hovered
-	if (!g_xEngine.Editor().m_xEditorState.m_xViewport.m_bHovered)
+	if (!m_xEditorState.m_xViewport.m_bHovered)
 		return;
 
 	// Only pick on left mouse button press (not held)
@@ -832,13 +832,13 @@ void Zenith_Editor::HandleObjectPicking()
 
 	// Convert to viewport-relative coordinates
 	Zenith_Maths::Vector2 xViewportMousePos = {
-		static_cast<float>(xGlobalMousePos.x - g_xEngine.Editor().m_xEditorState.m_xViewport.m_xPosition.x),
-		static_cast<float>(xGlobalMousePos.y - g_xEngine.Editor().m_xEditorState.m_xViewport.m_xPosition.y)
+		static_cast<float>(xGlobalMousePos.x - m_xEditorState.m_xViewport.m_xPosition.x),
+		static_cast<float>(xGlobalMousePos.y - m_xEditorState.m_xViewport.m_xPosition.y)
 	};
 
 	// Check if mouse is within viewport bounds
-	if (xViewportMousePos.x < 0 || xViewportMousePos.x > g_xEngine.Editor().m_xEditorState.m_xViewport.m_xSize.x ||
-		xViewportMousePos.y < 0 || xViewportMousePos.y > g_xEngine.Editor().m_xEditorState.m_xViewport.m_xSize.y)
+	if (xViewportMousePos.x < 0 || xViewportMousePos.x > m_xEditorState.m_xViewport.m_xSize.x ||
+		xViewportMousePos.y < 0 || xViewportMousePos.y > m_xEditorState.m_xViewport.m_xSize.y)
 		return;
 
 	// Get camera matrices for ray casting
@@ -850,7 +850,7 @@ void Zenith_Editor::HandleObjectPicking()
 	Zenith_Maths::Vector3 xRayDir = g_xEngine.Gizmo().ScreenToWorldRay(
 		xViewportMousePos,
 		{ 0, 0 },  // Viewport relative, so offset is 0
-		g_xEngine.Editor().m_xEditorState.m_xViewport.m_xSize,
+		m_xEditorState.m_xViewport.m_xSize,
 		xViewMatrix,
 		xProjMatrix
 	);
@@ -880,7 +880,7 @@ void Zenith_Editor::RenderGizmos()
 	Zenith_Entity* pxSelectedEntity = nullptr;
 
 	// Only render gizmos in Stopped or Paused mode (not during active play)
-	if (g_xEngine.Editor().m_xEditorState.m_eEditorMode != EditorMode::Playing)
+	if (m_xEditorState.m_eEditorMode != EditorMode::Playing)
 	{
 		pxSelectedEntity = GetSelectedEntity();
 	}
@@ -891,7 +891,7 @@ void Zenith_Editor::RenderGizmos()
 	if (!g_xEngine.Gizmos().IsInteracting())
 	{
 		g_xEngine.Gizmos().SetTargetEntity(pxSelectedEntity);
-		g_xEngine.Gizmos().SetGizmoMode(static_cast<GizmoMode>(g_xEngine.Editor().m_xEditorState.m_eGizmoMode));
+		g_xEngine.Gizmos().SetGizmoMode(static_cast<GizmoMode>(m_xEditorState.m_eGizmoMode));
 	}
 
 	// Gizmos are now part of the render graph - no separate task submission needed
@@ -903,11 +903,11 @@ void Zenith_Editor::RenderGizmos()
 void Zenith_Editor::HandleGizmoInteraction()
 {
 	// Only handle gizmo interaction when viewport is hovered and entity selected
-	if (!g_xEngine.Editor().m_xEditorState.m_xViewport.m_bHovered || !HasSelection())
+	if (!m_xEditorState.m_xViewport.m_bHovered || !HasSelection())
 		return;
 
 	// Only handle in Stopped or Paused mode
-	if (g_xEngine.Editor().m_xEditorState.m_eEditorMode == EditorMode::Playing)
+	if (m_xEditorState.m_eEditorMode == EditorMode::Playing)
 		return;
 
 	// Get camera matrices for ray casting
@@ -920,8 +920,8 @@ void Zenith_Editor::HandleGizmoInteraction()
 	g_xEngine.Input().GetMousePosition(xGlobalMousePos);
 
 	Zenith_Maths::Vector2 xViewportMousePos = {
-		static_cast<float>(xGlobalMousePos.x - g_xEngine.Editor().m_xEditorState.m_xViewport.m_xPosition.x),
-		static_cast<float>(xGlobalMousePos.y - g_xEngine.Editor().m_xEditorState.m_xViewport.m_xPosition.y)
+		static_cast<float>(xGlobalMousePos.x - m_xEditorState.m_xViewport.m_xPosition.x),
+		static_cast<float>(xGlobalMousePos.y - m_xEditorState.m_xViewport.m_xPosition.y)
 	};
 
 	// Debug: Log mouse position every frame during interaction
@@ -944,7 +944,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	Zenith_Maths::Vector3 xRayDir = g_xEngine.Gizmo().ScreenToWorldRay(
 		xViewportMousePos,
 		{ 0, 0 },
-		g_xEngine.Editor().m_xEditorState.m_xViewport.m_xSize,
+		m_xEditorState.m_xViewport.m_xSize,
 		xViewMatrix,
 		xProjMatrix
 	);
@@ -957,7 +957,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	// Handle mouse input for gizmo interaction
 	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse left pressed - viewport hovered=%d, selected=%zu", g_xEngine.Editor().m_xEditorState.m_xViewport.m_bHovered, g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse left pressed - viewport hovered=%d, selected=%zu", m_xEditorState.m_xViewport.m_bHovered, m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
 		g_xEngine.Gizmos().BeginInteraction(xRayOrigin, xRayDir);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "After BeginInteraction: IsInteracting=%d", g_xEngine.Gizmos().IsInteracting());
 	}
@@ -996,7 +996,7 @@ bool Zenith_Editor::EnterPlayMode()
 {
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Entering Play Mode");
 
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup" ZENITH_SCENE_EXT;
+	m_xEditorState.m_xPlayBackup.m_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup" ZENITH_SCENE_EXT;
 
 	// Persistent entities only — transient entities have runtime-only resources
 	// (procedural meshes) that can't serialise, and behaviour scripts will
@@ -1010,18 +1010,18 @@ bool Zenith_Editor::EnterPlayMode()
 		return false;
 	}
 
-	Zenith_EditorSceneAccess::SaveToFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath, false);
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup = true;
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = xActiveScene.GetHandle();
+	Zenith_EditorSceneAccess::SaveToFile(pxSceneData, m_xEditorState.m_xPlayBackup.m_strBackupScenePath, false);
+	m_xEditorState.m_xPlayBackup.m_bHasBackup = true;
+	m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = xActiveScene.GetHandle();
 	const Zenith_SceneInfo xSceneInfo = g_xEngine.Scenes().GetSceneInfo(xActiveScene);
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName = xSceneInfo.m_strName;
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = xSceneInfo.m_strPath;
-	g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = xSceneInfo.m_iBuildIndex;
+	m_xEditorState.m_xPlayBackup.m_strBackupSceneName = xSceneInfo.m_strName;
+	m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = xSceneInfo.m_strPath;
+	m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = xSceneInfo.m_iBuildIndex;
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", m_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
 
-	g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
-	if (g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity == INVALID_ENTITY_ID)
+	m_xEditorState.m_xCamera.m_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
+	if (m_xEditorState.m_xCamera.m_uGameCameraEntity == INVALID_ENTITY_ID)
 	{
 		Zenith_Vector<Zenith_CameraComponent*> xCameras;
 		Zenith_EditorSceneAccess::GetAllOfComponentType<Zenith_CameraComponent>(pxSceneData, xCameras);
@@ -1030,8 +1030,8 @@ bool Zenith_Editor::EnterPlayMode()
 		{
 			Zenith_CameraComponent* pxCam = xIt.GetData();
 			Zenith_Entity* pxEntity = &pxCam->GetParentEntity();
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = pxEntity->GetEntityID();
-			Zenith_EditorSceneAccess::SetMainCameraEntity(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity);
+			m_xEditorState.m_xCamera.m_uGameCameraEntity = pxEntity->GetEntityID();
+			Zenith_EditorSceneAccess::SetMainCameraEntity(pxSceneData, m_xEditorState.m_xCamera.m_uGameCameraEntity);
 			break;
 		}
 	}
@@ -1092,12 +1092,12 @@ void Zenith_Editor::EnterStopMode()
 {
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Stopping Play Mode");
 
-	if (g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup && !g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath.empty())
+	if (m_xEditorState.m_xPlayBackup.m_bHasBackup && !m_xEditorState.m_xPlayBackup.m_strBackupScenePath.empty())
 	{
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = true;
-		g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene restore queued for next frame: %s", g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
-		// g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup / g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath cleared in Update() after the load completes.
+		m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = true;
+		m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath = m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene restore queued for next frame: %s", m_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
+		// m_xEditorState.m_xPlayBackup.m_bHasBackup / m_xEditorState.m_xPlayBackup.m_strBackupScenePath cleared in Update() after the load completes.
 	}
 	else
 	{
@@ -1105,15 +1105,15 @@ void Zenith_Editor::EnterStopMode()
 	}
 
 	// Clear the game camera reference since scene will be reloaded.
-	g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 }
 
 void Zenith_Editor::SetEditorMode(EditorMode eMode)
 {
-	if (g_xEngine.Editor().m_xEditorState.m_eEditorMode == eMode) return;
+	if (m_xEditorState.m_eEditorMode == eMode) return;
 
-	EditorMode oldMode = g_xEngine.Editor().m_xEditorState.m_eEditorMode;
-	g_xEngine.Editor().m_xEditorState.m_eEditorMode = eMode;
+	EditorMode oldMode = m_xEditorState.m_eEditorMode;
+	m_xEditorState.m_eEditorMode = eMode;
 
 	if (oldMode == EditorMode::Stopped && eMode == EditorMode::Playing)
 	{
@@ -1121,7 +1121,7 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		// pure transition routine — single source of truth for mode state.
 		if (!EnterPlayMode())
 		{
-			g_xEngine.Editor().m_xEditorState.m_eEditorMode = oldMode;
+			m_xEditorState.m_eEditorMode = oldMode;
 			return;
 		}
 	}
@@ -1142,14 +1142,14 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 
 void Zenith_Editor::RequestLoadRegisteredScene(int iBuildIndex)
 {
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = true;
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex = iBuildIndex;
+	m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = true;
+	m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex = iBuildIndex;
 }
 
 void Zenith_Editor::RequestLoadSceneFromFile(const std::string& strPath)
 {
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = true;
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath = strPath;
+	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = true;
+	m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath = strPath;
 }
 
 // Synchronously flush the staging buffer, wait for GPU idle, drain deferred
@@ -1184,8 +1184,8 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 // selection and undo history (entity IDs become invalid after Reset).
 void Zenith_Editor::HandlePendingSceneReset()
 {
-	if (!g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneReset) return;
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
+	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneReset) return;
+	m_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
 
 	WaitForGPUAndFlushDeferred("scene reset");
 
@@ -1198,7 +1198,7 @@ void Zenith_Editor::HandlePendingSceneReset()
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene reset complete");
 
 	ClearSelection();
-	g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 	ResetEditorCameraToDefaults();
 	g_xEngine.UndoSystem().Clear();
 }
@@ -1206,8 +1206,8 @@ void Zenith_Editor::HandlePendingSceneReset()
 // Pending scene save: write the active scene's contents to disk.
 void Zenith_Editor::HandlePendingSceneSave()
 {
-	if (!g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneSave) return;
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
+	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneSave) return;
+	m_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
 
 	try
 	{
@@ -1215,8 +1215,8 @@ void Zenith_Editor::HandlePendingSceneSave()
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		if (pxSceneData)
 		{
-			Zenith_EditorSceneAccess::SaveToFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
-			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
+			Zenith_EditorSceneAccess::SaveToFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
 		}
 	}
 	catch (const std::exception& e)
@@ -1224,7 +1224,7 @@ void Zenith_Editor::HandlePendingSceneSave()
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Failed to save scene: %s", e.what());
 	}
 
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
+	m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
 }
 
 // Pending scene load: flush GPU; if this is the editor's stop-mode backup
@@ -1234,12 +1234,12 @@ void Zenith_Editor::HandlePendingSceneSave()
 // scene and load the file into it. Also handles plain (non-backup) loads.
 void Zenith_Editor::HandlePendingSceneLoadDeferred()
 {
-	if (!g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad) return;
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
+	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad) return;
+	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
 
 	WaitForGPUAndFlushDeferred("scene load");
 
-	const bool bIsBackupRestore = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup && g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
+	const bool bIsBackupRestore = m_xEditorState.m_xPlayBackup.m_bHasBackup && m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
 
 	if (bIsBackupRestore)
 	{
@@ -1274,14 +1274,14 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		}
 
 		// 4. Create a fresh scene with the original name and restore metadata.
-		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 		g_xEngine.Scenes().SetActiveScene(xRestoredScene);
 
 		Zenith_SceneData* pxRestoredData = g_xEngine.Scenes().GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
-			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
+			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
+			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
 		}
 	}
 
@@ -1289,32 +1289,32 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
-		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
+		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
 	ClearSelection();
 	g_xEngine.UndoSystem().Clear();
-	g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
 
 	if (bIsBackupRestore)
 	{
-		std::filesystem::remove(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath);
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_bHasBackup = false;
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
-		g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
+		std::filesystem::remove(m_xEditorState.m_xPlayBackup.m_strBackupScenePath);
+		m_xEditorState.m_xPlayBackup.m_bHasBackup = false;
+		m_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
+		m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
+		m_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
+		m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
+		m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Backup scene file cleaned up");
 	}
 
-	if (g_xEngine.Editor().m_xEditorState.m_xCamera.m_bInitialized)
+	if (m_xEditorState.m_xCamera.m_bInitialized)
 	{
 		SwitchToEditorCamera();
 	}
 
-	g_xEngine.Editor().m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
+	m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
 }
 
 void Zenith_Editor::FlushPendingSceneOperations()
@@ -1338,20 +1338,20 @@ void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection
 	if (bAddToSelection)
 	{
 		// Add to existing selection
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(uEntityID);
+		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(uEntityID);
 	}
 	else
 	{
 		// Replace selection
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(uEntityID);
+		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
+		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(uEntityID);
 	}
 
 	// Update primary selection and last clicked
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEntityID;
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID = uEntityID;
+	m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEntityID;
+	m_xEditorState.m_xSelection.m_uLastClickedEntityID = uEntityID;
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Selected entity %u (total: %zu)", uEntityID, g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Selected entity %u (total: %zu)", uEntityID, m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
 
 	// Update Flux_Gizmos target entity (primary selection)
 	Zenith_Entity* pxEntity = GetSelectedEntity();
@@ -1363,7 +1363,7 @@ void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection
 
 void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 {
-	if (g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID == INVALID_ENTITY_ID || uEndEntityID == INVALID_ENTITY_ID)
+	if (m_xEditorState.m_xSelection.m_uLastClickedEntityID == INVALID_ENTITY_ID || uEndEntityID == INVALID_ENTITY_ID)
 	{
 		// No start point for range, just select the end entity
 		SelectEntity(uEndEntityID, false);
@@ -1373,11 +1373,11 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 	// For range selection, we need to select all entities "between" start and end
 	// Since entity IDs may not be contiguous, we iterate through the active entities
 	// and select all entities with indices in the range [min(start,end), max(start,end)]
-	uint32_t uStartIndex = std::min(g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID.m_uIndex, uEndEntityID.m_uIndex);
-	uint32_t uEndIndex = std::max(g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID.m_uIndex, uEndEntityID.m_uIndex);
+	uint32_t uStartIndex = std::min(m_xEditorState.m_xSelection.m_uLastClickedEntityID.m_uIndex, uEndEntityID.m_uIndex);
+	uint32_t uEndIndex = std::max(m_xEditorState.m_xSelection.m_uLastClickedEntityID.m_uIndex, uEndEntityID.m_uIndex);
 
 	// Clear existing selection for shift+click (standard behavior)
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
+	m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
 
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
@@ -1393,15 +1393,15 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 		Zenith_EntityID xEntityID = xActiveEntities.Get(u);
 		if (xEntityID.m_uIndex >= uStartIndex && xEntityID.m_uIndex <= uEndIndex)
 		{
-			g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(xEntityID);
+			m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(xEntityID);
 		}
 	}
 
 	// Update primary selection to the end entity
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEndEntityID;
-	// Keep g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID unchanged for further range selections
+	m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEndEntityID;
+	// Keep m_xEditorState.m_xSelection.m_uLastClickedEntityID unchanged for further range selections
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Range selected %zu entities", g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Range selected %zu entities", m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
 
 	// Update Flux_Gizmos target entity
 	Zenith_Entity* pxEntity = GetSelectedEntity();
@@ -1418,32 +1418,32 @@ void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
 		return;
 	}
 
-	auto it = g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.find(uEntityID);
-	if (it != g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.end())
+	auto it = m_xEditorState.m_xSelection.m_xSelectedEntityIDs.find(uEntityID);
+	if (it != m_xEditorState.m_xSelection.m_xSelectedEntityIDs.end())
 	{
 		// Already selected - deselect
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(it);
+		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(it);
 
 		// Update primary selection if we just removed it
-		if (g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID == uEntityID)
+		if (m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID == uEntityID)
 		{
-			g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.empty() ?
-				INVALID_ENTITY_ID : *g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.begin();
+			m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = m_xEditorState.m_xSelection.m_xSelectedEntityIDs.empty() ?
+				INVALID_ENTITY_ID : *m_xEditorState.m_xSelection.m_xSelectedEntityIDs.begin();
 		}
 
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Deselected entity %u (total: %zu)", uEntityID, g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Deselected entity %u (total: %zu)", uEntityID, m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
 	}
 	else
 	{
 		// Not selected - add to selection
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(uEntityID);
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEntityID;
+		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.insert(uEntityID);
+		m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEntityID;
 
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Added entity %u to selection (total: %zu)", uEntityID, g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Added entity %u to selection (total: %zu)", uEntityID, m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
 	}
 
 	// Update last clicked for range selection
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID = uEntityID;
+	m_xEditorState.m_xSelection.m_uLastClickedEntityID = uEntityID;
 
 	// Update Flux_Gizmos target entity
 	Zenith_Entity* pxEntity = GetSelectedEntity();
@@ -1452,21 +1452,21 @@ void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
 
 void Zenith_Editor::ClearSelection()
 {
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_uLastClickedEntityID = INVALID_ENTITY_ID;
+	m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
+	m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
+	m_xEditorState.m_xSelection.m_uLastClickedEntityID = INVALID_ENTITY_ID;
 	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 }
 
 void Zenith_Editor::DeselectEntity(Zenith_EntityID uEntityID)
 {
-	g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(uEntityID);
+	m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(uEntityID);
 
 	// Update primary selection if we deselected it
-	if (g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID == uEntityID)
+	if (m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID == uEntityID)
 	{
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.empty() ?
-			INVALID_ENTITY_ID : *g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.begin();
+		m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = m_xEditorState.m_xSelection.m_xSelectedEntityIDs.empty() ?
+			INVALID_ENTITY_ID : *m_xEditorState.m_xSelection.m_xSelectedEntityIDs.begin();
 	}
 
 	// Update gizmo target
@@ -1476,28 +1476,28 @@ void Zenith_Editor::DeselectEntity(Zenith_EntityID uEntityID)
 
 bool Zenith_Editor::IsSelected(Zenith_EntityID uEntityID)
 {
-	return g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.find(uEntityID) != g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.end();
+	return m_xEditorState.m_xSelection.m_xSelectedEntityIDs.find(uEntityID) != m_xEditorState.m_xSelection.m_xSelectedEntityIDs.end();
 }
 
 Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 {
-	if (g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID == INVALID_ENTITY_ID)
+	if (m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID == INVALID_ENTITY_ID)
 		return nullptr;
 
 	// Search all loaded scenes for the entity (not just active scene)
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
 	if (!pxSceneData)
 	{
 		// Entity no longer exists in any scene - remove from selection
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
-		g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.empty() ?
-			INVALID_ENTITY_ID : *g_xEngine.Editor().m_xEditorState.m_xSelection.m_xSelectedEntityIDs.begin();
+		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+		m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = m_xEditorState.m_xSelection.m_xSelectedEntityIDs.empty() ?
+			INVALID_ENTITY_ID : *m_xEditorState.m_xSelection.m_xSelectedEntityIDs.begin();
 		return nullptr;
 	}
 
 	// Return pointer to static entity handle (valid until next call)
 	static Zenith_Entity s_xSelectedEntity;
-	s_xSelectedEntity = pxSceneData->GetEntity(g_xEngine.Editor().m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+	s_xSelectedEntity = pxSceneData->GetEntity(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
 	return &s_xSelectedEntity;
 }
 
@@ -1660,18 +1660,18 @@ void Zenith_Editor::UnloadActiveScene()
 void Zenith_Editor::RenderContentBrowser()
 {
 	ContentBrowserState xState = {
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_strCurrentDirectory,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_xDirectoryContents,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_xFilteredContents,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_bDirectoryNeedsRefresh,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_szSearchBuffer,
-		sizeof(g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_szSearchBuffer),
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_iAssetTypeFilter,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_iSelectedContentIndex,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_fThumbnailSize,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_axNavigationHistory,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_iHistoryIndex,
-		g_xEngine.Editor().m_xEditorState.m_xContentBrowser.m_eViewMode
+		m_xEditorState.m_xContentBrowser.m_strCurrentDirectory,
+		m_xEditorState.m_xContentBrowser.m_xDirectoryContents,
+		m_xEditorState.m_xContentBrowser.m_xFilteredContents,
+		m_xEditorState.m_xContentBrowser.m_bDirectoryNeedsRefresh,
+		m_xEditorState.m_xContentBrowser.m_szSearchBuffer,
+		sizeof(m_xEditorState.m_xContentBrowser.m_szSearchBuffer),
+		m_xEditorState.m_xContentBrowser.m_iAssetTypeFilter,
+		m_xEditorState.m_xContentBrowser.m_iSelectedContentIndex,
+		m_xEditorState.m_xContentBrowser.m_fThumbnailSize,
+		m_xEditorState.m_xContentBrowser.m_axNavigationHistory,
+		m_xEditorState.m_xContentBrowser.m_iHistoryIndex,
+		m_xEditorState.m_xContentBrowser.m_eViewMode
 	};
 	Zenith_EditorPanelContentBrowser::Render(xState);
 }
@@ -1712,29 +1712,29 @@ void Zenith_Editor::AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLev
 	static Zenith_Mutex_NoProfiling s_xLogMutex;
 	Zenith_ScopedMutexLock_T xLock(s_xLogMutex);
 
-	g_xEngine.Editor().m_xEditorState.m_xConsole.m_xLogs.PushBack(xEntry);
+	m_xEditorState.m_xConsole.m_xLogs.PushBack(xEntry);
 
 	// Limit console entries
-	if (g_xEngine.Editor().m_xEditorState.m_xConsole.m_xLogs.GetSize() > Zenith_EditorConsoleState::MAX_ENTRIES)
+	if (m_xEditorState.m_xConsole.m_xLogs.GetSize() > Zenith_EditorConsoleState::MAX_ENTRIES)
 	{
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_xLogs.Remove(0);
+		m_xEditorState.m_xConsole.m_xLogs.Remove(0);
 	}
 }
 
 void Zenith_Editor::ClearConsole()
 {
-	g_xEngine.Editor().m_xEditorState.m_xConsole.m_xLogs.Clear();
+	m_xEditorState.m_xConsole.m_xLogs.Clear();
 }
 
 void Zenith_Editor::RenderConsolePanel()
 {
 	Zenith_EditorPanelConsole::Render(
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_xLogs,
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_bAutoScroll,
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_bShowInfo,
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_bShowWarnings,
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_bShowErrors,
-		g_xEngine.Editor().m_xEditorState.m_xConsole.m_xCategoryFilters);
+		m_xEditorState.m_xConsole.m_xLogs,
+		m_xEditorState.m_xConsole.m_bAutoScroll,
+		m_xEditorState.m_xConsole.m_bShowInfo,
+		m_xEditorState.m_xConsole.m_bShowWarnings,
+		m_xEditorState.m_xConsole.m_bShowErrors,
+		m_xEditorState.m_xConsole.m_xCategoryFilters);
 }
 
 //------------------------------------------------------------------------------
@@ -1747,8 +1747,8 @@ void Zenith_Editor::SelectMaterial(Zenith_MaterialAsset* pMaterial)
 	// editor has it selected; the handle's dtor (and Clear() below)
 	// Releases. Replaces an earlier raw-pointer assignment that would
 	// dangle the moment a scene-load cycle freed the registry entry.
-	g_xEngine.Editor().m_xEditorState.m_xMaterial.m_xSelectedMaterial.Set(pMaterial);
-	g_xEngine.Editor().m_xEditorState.m_xMaterial.m_bShowEditor = true;
+	m_xEditorState.m_xMaterial.m_xSelectedMaterial.Set(pMaterial);
+	m_xEditorState.m_xMaterial.m_bShowEditor = true;
 	if (pMaterial)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Selected material: %s", pMaterial->GetName().c_str());
@@ -1757,14 +1757,14 @@ void Zenith_Editor::SelectMaterial(Zenith_MaterialAsset* pMaterial)
 
 void Zenith_Editor::ClearMaterialSelection()
 {
-	g_xEngine.Editor().m_xEditorState.m_xMaterial.m_xSelectedMaterial.Clear();
+	m_xEditorState.m_xMaterial.m_xSelectedMaterial.Clear();
 }
 
 void Zenith_Editor::RenderMaterialEditorPanel()
 {
 	MaterialEditorState xState = {
-		g_xEngine.Editor().m_xEditorState.m_xMaterial.m_xSelectedMaterial.GetDirect(),
-		g_xEngine.Editor().m_xEditorState.m_xMaterial.m_bShowEditor
+		m_xEditorState.m_xMaterial.m_xSelectedMaterial.GetDirect(),
+		m_xEditorState.m_xMaterial.m_bShowEditor
 	};
 	Zenith_EditorPanelMaterialEditor::Render(xState);
 }
