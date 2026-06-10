@@ -76,58 +76,6 @@ private:
 };
 
 //------------------------------------------------------------------------------
-// Entity Creation Command
-//------------------------------------------------------------------------------
-// Records entity creation for undo/redo
-// Execute: Creates entity with saved state
-// Undo: Removes entity from scene
-//------------------------------------------------------------------------------
-
-class Zenith_UndoCommand_CreateEntity : public Zenith_UndoCommand
-{
-public:
-	Zenith_UndoCommand_CreateEntity(
-		Zenith_EntityID uEntityID,
-		const std::string& strName
-	);
-
-	void Execute() override;
-	void Undo() override;
-	const char* GetDescription() const override;
-
-private:
-	Zenith_EntityID m_uEntityID;
-	std::string m_strName;
-	bool m_bCreated; // Track if entity currently exists
-};
-
-//------------------------------------------------------------------------------
-// Entity Deletion Command
-//------------------------------------------------------------------------------
-// Records entity deletion for undo/redo
-// CRITICAL: Must serialize entity state before deletion
-// Execute: Removes entity from scene
-// Undo: Recreates entity from serialized state
-//------------------------------------------------------------------------------
-
-class Zenith_UndoCommand_DeleteEntity : public Zenith_UndoCommand
-{
-public:
-	// Constructor captures entity state before deletion
-	explicit Zenith_UndoCommand_DeleteEntity(Zenith_EntityID uEntityID);
-
-	void Execute() override;
-	void Undo() override;
-	const char* GetDescription() const override;
-
-private:
-	Zenith_EntityID m_uEntityID;
-	std::string m_strName;
-	std::string m_strSerializedState; // Full entity serialization (for complex undo)
-	bool m_bDeleted; // Track if entity currently deleted
-};
-
-//------------------------------------------------------------------------------
 // Undo System
 //------------------------------------------------------------------------------
 // Command pattern-based undo/redo system with limited history

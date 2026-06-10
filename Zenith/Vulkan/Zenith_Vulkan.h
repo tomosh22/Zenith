@@ -169,11 +169,11 @@ public:
 	uint64_t CreateImGuiTextureID(const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
 #endif
 
-	// Per-frame callback registered with Flux_RendererImpl at Initialise time.
+	// Per-frame begin work, called directly each frame by
+	// Flux_RendererImpl::BeginFrame via the neutral Flux_PlatformAPI alias.
 	// Wraps the wait-fence / reset-pools / drain-typed-deletion-queues logic.
-	// The first parameter is the ring index from the per-frame ring; the
-	// second is the user data pointer supplied to RegisterBeginFrameCallback.
-	static void OnFluxPerFrameBegin(u_int uRingIndex, void* pUserData);
+	// uRingIndex is the current slot from the per-frame ring.
+	void PerFrameBegin(u_int uRingIndex);
 
 	void EndFrame(bool bSubmitRenderWork);
 
@@ -272,9 +272,9 @@ public:
 
 	// Injected cross-subsystem dependencies (wired in Initialise). Stored as
 	// member pointers so instance methods route through them rather than
-	// reaching back through g_xEngine. NOT used by the static callbacks
-	// (OnFluxPerFrameBegin / RecordCommandBuffersTask) — those have no 'this'
-	// and recover the singleton directly.
+	// reaching back through g_xEngine. NOT used by the static
+	// RecordCommandBuffersTask callback — it has no 'this' and recovers the
+	// singleton directly.
 	Flux_RendererImpl*            m_pxFluxRenderer    = nullptr;
 	Zenith_TaskSystem*            m_pxTasks           = nullptr;
 	Zenith_Vulkan_Swapchain*      m_pxVulkanSwapchain = nullptr;

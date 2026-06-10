@@ -723,7 +723,6 @@ void Zenith_Engine::InitialiseProject()
 #else
 	// Non-tools: load pre-generated scene files
 	// Run a tools build first to generate .zscen files
-	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
 		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();

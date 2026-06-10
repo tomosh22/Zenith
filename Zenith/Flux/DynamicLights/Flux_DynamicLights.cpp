@@ -155,18 +155,15 @@ static float CalculateLightPriority(const Flux_GraphicsImpl& xFluxGraphics,
 
 // ========== PUBLIC API ==========
 
-void Flux_DynamicLightsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics)
+void Flux_DynamicLightsImpl::Initialise()
 {
-	m_pxVulkanMemory = &xVulkanMemory;
-	m_pxFluxGraphics = &xFluxGraphics;
-
 	// One flat GPU buffer for all lights (point + spot + directional).
 	const u_int64 ulLightBufferSize = uMAX_LIGHTS * sizeof(LightInstance);
 
 	// Zero-initialize so frame-0 reads don't see garbage.
 	Zenith_Vector<LightInstance> xZeroed(uMAX_LIGHTS);
 	for (u_int u = 0; u < uMAX_LIGHTS; ++u) xZeroed.EmplaceBack();
-	m_pxVulkanMemory->InitialiseDynamicReadWriteBuffer(xZeroed.GetDataPointer(), ulLightBufferSize, m_xLightBuffer);
+	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(xZeroed.GetDataPointer(), ulLightBufferSize, m_xLightBuffer);
 
 	// Pre-allocate priority sort buffer to avoid per-frame allocs.
 	m_xSortBuffer.Reserve(uMAX_LIGHTS * 2);
@@ -184,12 +181,9 @@ void Flux_DynamicLightsImpl::Shutdown()
 		return;
 	}
 
-	m_pxVulkanMemory->DestroyDynamicReadWriteBuffer(m_xLightBuffer);
+	g_xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(m_xLightBuffer);
 	m_uLightCount = 0;
 	m_bInitialised = false;
-
-	m_pxVulkanMemory = nullptr;
-	m_pxFluxGraphics = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DynamicLights shut down");
 }
@@ -465,7 +459,7 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 		return;
 	}
 
-	m_xCameraFrustum.ExtractFromViewProjection(m_pxFluxGraphics->GetViewProjMatrix());
+	m_xCameraFrustum.ExtractFromViewProjection(g_xEngine.FluxGraphics().GetViewProjMatrix());
 
 	const Zenith_Frustum& xFrustum = m_xCameraFrustum;
 
@@ -495,7 +489,7 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 		if (xCandidate.has_value()) xPending.PushBack(*xCandidate);
 	}
 
-	StageLightsWithPriority(*this, *m_pxFluxGraphics, m_uLightCount, xPending, xPending.GetSize());
+	StageLightsWithPriority(*this, g_xEngine.FluxGraphics(), m_uLightCount, xPending, xPending.GetSize());
 
 #ifdef ZENITH_ASSERT
 	AssertDirectionalFirstInvariant(*this, m_uLightCount);
@@ -506,7 +500,7 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 	// compute reads the buffer.
 	if (m_uLightCount > 0)
 	{
-		m_pxVulkanMemory->UploadBufferData(
+		g_xEngine.FluxMemory().UploadBufferData(
 			m_xLightBuffer.GetBuffer().m_xVRAMHandle,
 			m_axLightStaging,
 			m_uLightCount * sizeof(LightInstance));

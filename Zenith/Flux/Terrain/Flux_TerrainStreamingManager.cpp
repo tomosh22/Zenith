@@ -333,7 +333,13 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Flux_TerrainStream
 	// New terrain GPU buffers are about to feed into the render graph; the
 	// next graph compile must rebuild SetupRenderGraph so the per-component
 	// Read/Write declarations pick up this terrain's buffers.
-	m_pxFluxRenderer->RequestGraphRebuild();
+	// m_pxFluxRenderer is only wired while the manager is initialized —
+	// headless runs register/unregister components without ever initializing
+	// the manager, and there is no graph to rebuild there.
+	if (m_pxFluxRenderer != nullptr)
+	{
+		m_pxFluxRenderer->RequestGraphRebuild();
+	}
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOW LOD resident for all %u chunks (zero redundant file reads)", TOTAL_CHUNKS);
 }
@@ -369,7 +375,12 @@ void Flux_TerrainStreamingManagerImpl::UnregisterTerrainBuffers(Flux_TerrainStre
 
 	// Terrain GPU buffers are about to be queued for deferred deletion; the
 	// next graph compile must drop their references from SetupRenderGraph.
-	m_pxFluxRenderer->RequestGraphRebuild();
+	// Null when the manager was never initialized (headless / unit tests) —
+	// see the matching guard in RegisterTerrainBuffers.
+	if (m_pxFluxRenderer != nullptr)
+	{
+		m_pxFluxRenderer->RequestGraphRebuild();
+	}
 }
 
 // --- Component-aware GPU-data overloads ---------------------------------

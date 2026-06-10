@@ -109,7 +109,6 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	// pointers here is safe.
 	m_pxVulkan          = &g_xEngine.FluxBackend();
 	m_pxVulkanSwapchain = &g_xEngine.FluxSwapchain();
-	m_pxFluxRenderer    = &g_xEngine.FluxRenderer();
 	m_pxFluxGraphics    = &g_xEngine.FluxGraphics();
 
 	VmaAllocatorCreateInfo xCreateInfo = {};
@@ -161,29 +160,9 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	}
 	#endif
 
-	// Register the deferred-VRAM-deletion countdown as an end-frame callback.
-	// Fires unconditionally each main loop iteration (skipped frames included)
-	// so the deletion clock ticks every iteration the GPU could retire work
-	// on. Registered AFTER Zenith_Vulkan's begin callback so
-	// the natural begin-then-end ordering is preserved. Counted in
-	// FLUX_PERFRAME_END_SUBSCRIBER_TALLY (Flux_PerFrame.cpp): bump that tally
-	// if you add another end callback.
-	m_pxFluxRenderer->RegisterEndFrameCallback(&Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd, nullptr);
-
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager initialised");
 }
 
-
-void Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd(u_int /*uRingIndex*/, void* /*pUserData*/)
-{
-	// Decrement the per-resource frames-remaining counter on every queued
-	// deletion; destroy resources whose counter has reached 0. Lives here as
-	// the Flux_PerFrame end-frame callback rather than inside EndFrame()
-	// because the per-frame ring is the natural owner of "advance the
-	// deferred-deletion clock by one tick." Resolves the engine singleton
-	// because this is a static callback (no implicit this).
-	g_xEngine.FluxMemory().ProcessDeferredDeletions();
-}
 
 Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
 {
@@ -332,11 +311,11 @@ void Zenith_Vulkan_MemoryManager::SubmitFrameMemoryWork()
 		return;
 	}
 
-	// ProcessDeferredDeletions is driven by Flux_PerFrame::EndFrame's
-	// end-frame callback (registered in Initialise), not here. The +1 buffer
-	// in MAX_FRAMES_IN_FLIGHT + 1 keeps deletion safe — the per-resource
-	// counter only reaches zero after the GPU has fully drained any in-flight
-	// frame that could have referenced it.
+	// ProcessDeferredDeletions is driven directly from Flux_PerFrame's
+	// end-of-frame work, not here. The +1 buffer in MAX_FRAMES_IN_FLIGHT + 1
+	// keeps deletion safe — the per-resource counter only reaches zero after
+	// the GPU has fully drained any in-flight frame that could have
+	// referenced it.
 
 	FlushStagingBuffer();
 	VkCheck(m_xCommandBuffer.GetCurrentCmdBuffer().end());

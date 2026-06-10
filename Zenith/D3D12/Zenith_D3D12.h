@@ -67,12 +67,17 @@ public:
 	Zenith_D3D12& operator=(const Zenith_D3D12&) = delete;
 
 	// ===== Bootstrap =====
-	// The Vulkan device registers a begin-frame callback here (fence wait,
+	// The Vulkan device does real per-frame begin work (fence wait,
 	// descriptor-pool reset, deferred-deletion drain, scratch reset). The null
 	// backend has none of that state, so Initialise is a pure no-op -- the
 	// engine's per-frame ring still advances via Flux_RendererImpl independently.
 	void Initialise() { }
 	void InitialisePerFrameResources() { }
+
+	// Per-frame begin work, called directly each frame by
+	// Flux_RendererImpl::BeginFrame via the neutral Flux_PlatformAPI alias.
+	// No-op: the null backend has no per-frame GPU state to advance.
+	void PerFrameBegin(u_int /*uRingIndex*/) { }
 
 	void EndFrame(bool /*bSubmitRenderWork*/) { }
 

@@ -10,7 +10,6 @@ class Flux_InstanceGroup;
 class Flux_MeshInstance;
 class Flux_ShaderBinder;
 class Flux_CommandList;
-class Flux_GraphicsImpl;
 
 // Phase 9: state + behaviour for InstancedMeshes subsystem.
 class Flux_InstancedMeshesImpl
@@ -22,7 +21,7 @@ public:
 	Flux_InstancedMeshesImpl(const Flux_InstancedMeshesImpl&) = delete;
 	Flux_InstancedMeshesImpl& operator=(const Flux_InstancedMeshesImpl&) = delete;
 
-	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics);
+	void Initialise();
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -47,7 +46,7 @@ public:
 
 	// Promoted from a file-static helper so the ExecuteInstancedGBuffer trampoline
 	// can route material/instance-buffer binding through this subsystem's members
-	// (m_xGBufferShader) and the injected graphics singleton.
+	// (m_xGBufferShader) and g_xEngine's graphics state.
 	void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup);
 
 	uint32_t GetTotalInstanceCount() const   { return m_uTotalInstances; }
@@ -70,8 +69,4 @@ public:
 
 	uint32_t                   m_uTotalInstances     = 0;
 	uint32_t                   m_uVisibleInstances   = 0;
-
-	// Injected engine-infra singletons (de-globalization pass).
-	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
-	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 };

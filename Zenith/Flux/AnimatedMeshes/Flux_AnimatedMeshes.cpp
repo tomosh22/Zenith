@@ -25,20 +25,12 @@
 
 // Phase 7b: state on Flux_AnimatedMeshesImpl held by Zenith_Engine.
 //
-// Wave-15 DI seam (twin of Flux_StaticMeshesImpl; mirrors Flux_QuadsImpl): the
-// lone render dep (Flux_GraphicsImpl) is injected into Initialise and stored in
-// m_pxGraphics; instance methods route FluxGraphics reach-ins through
-// m_pxGraphics, and every other former g_xEngine.AnimatedMeshes() self-lookup in
-// an instance method (BuildPipelines / Shutdown / GatherDrawPacket /
-// RenderToShadowMap) is now plain direct member access. g_xEngine.AnimatedMeshes()
-// survives ONLY in the non-capturing fn-pointer trampolines below — the
-// ExecuteGBuffer graph callback (which acquires the instance once into xZZ and
-// routes its members + the injected FluxGraphics member through it), the
-// SetupRenderGraph Prepare lambda, and the ZENITH_TOOLS hot-reload lambda — since
-// those cannot capture and must re-enter to recover the singleton. The WS7
-// Prepare-gather's g_xEngine.Scenes() reach is an ECS lookup and stays
-// self-routed (NOT injected); bone buffers come from the gathered
-// Flux_SkeletonInstance (sourced from Zenith_AnimatorComponent), not a render dep.
+// Cross-subsystem deps (FluxGraphics) are reached via g_xEngine at point of
+// use. The non-capturing fn-pointer trampolines below (the ExecuteGBuffer graph
+// callback, the SetupRenderGraph Prepare lambda, and the ZENITH_TOOLS
+// hot-reload lambda) re-enter via g_xEngine.AnimatedMeshes() since they cannot
+// capture. Bone buffers come from the gathered Flux_SkeletonInstance (sourced
+// from Zenith_AnimatorComponent), not a render dep.
 
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
@@ -104,13 +96,8 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 	}
 }
 
-void Flux_AnimatedMeshesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
+void Flux_AnimatedMeshesImpl::Initialise()
 {
-	// Wave-15 DI seam: store the injected render dep. The FluxGraphics reach-ins
-	// (in ExecuteGBuffer / SetupRenderGraph) route through this instead of
-	// g_xEngine.FluxGraphics().
-	m_pxGraphics = &xGraphics;
-
 	BuildPipelines();
 
 #ifdef ZENITH_TOOLS
@@ -133,9 +120,6 @@ void Flux_AnimatedMeshesImpl::Shutdown()
 	m_xShadowPipeline.Reset();
 	m_xGBufferShader.Reset();
 	m_xShadowShader.Reset();
-
-	// Drop the injected dep so the instance returns to a clean default state.
-	m_pxGraphics = nullptr;
 }
 
 void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -150,10 +134,10 @@ void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// unchanged so the resolved pass order stays byte-identical.
 	xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer)
 		.Prepare([](void* p){ g_xEngine.AnimatedMeshes().GatherDrawPacket(p); }) // ECS gather — self-routed, NOT injected.
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 // Prepare callback (main thread): consume the EC-side model gather (every model
@@ -216,7 +200,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	// Bind FrameConstants once per command list (set 0 - per-frame data). The
 	// lone FluxGraphics reach-in routes through the recovered instance's
 	// injected member.
-	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &xZZ.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
 	// access here — this runs on a worker thread; only heap-stable Flux objects

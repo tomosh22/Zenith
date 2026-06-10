@@ -74,8 +74,8 @@ void Flux_GrassImpl::CreateGrassBladeMesh()
 		1, 3, 2
 	};
 
-	m_pxVulkanMemory->InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
-	m_pxVulkanMemory->InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
 }
 
 static void ExecuteRender(Flux_CommandList* pxCmdList, void* pUserData);
@@ -106,21 +106,15 @@ void Flux_GrassImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xGrassPipeline, xPipelineSpec);
 }
 
-void Flux_GrassImpl::Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame,
-	Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR)
+void Flux_GrassImpl::Initialise()
 {
-	m_pxVulkanMemory = &xVulkanMemory;
-	m_pxFrame        = &xFrame;
-	m_pxGraphics     = &xGraphics;
-	m_pxHDR          = &xHDR;
-
 	CreateGrassBladeMesh();
 	CreateBuffers();
 
 	BuildPipelines();
 
 	// Initialize constants buffer
-	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), m_xGrassConstantsBuffer);
+	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), m_xGrassConstantsBuffer);
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
@@ -138,14 +132,10 @@ void Flux_GrassImpl::Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext&
 void Flux_GrassImpl::Shutdown()
 {
 	DestroyBuffers();
-	m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xGrassConstantsBuffer);
-	m_pxVulkanMemory->DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
-	m_pxVulkanMemory->DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
-
-	m_pxVulkanMemory = nullptr;
-	m_pxFrame        = nullptr;
-	m_pxGraphics     = nullptr;
-	m_pxHDR          = nullptr;
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	xVulkanMemory.DestroyDynamicConstantBuffer(m_xGrassConstantsBuffer);
+	xVulkanMemory.DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
+	xVulkanMemory.DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass shut down");
 }
@@ -163,7 +153,7 @@ void Flux_GrassImpl::CreateBuffers()
 	// Create instance buffer for grass blade data
 	u_int uBufferSize = GrassConfig::uMAX_TOTAL_INSTANCES * sizeof(GrassBladeInstance);
 
-	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, uBufferSize, m_xInstanceBuffer);
+	g_xEngine.FluxMemory().InitialiseReadWriteBuffer(nullptr, uBufferSize, m_xInstanceBuffer);
 	m_uAllocatedInstances = GrassConfig::uMAX_TOTAL_INSTANCES;
 }
 
@@ -171,7 +161,7 @@ void Flux_GrassImpl::DestroyBuffers()
 {
 	if (m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xInstanceBuffer);
+		g_xEngine.FluxMemory().DestroyReadWriteBuffer(m_xInstanceBuffer);
 	}
 }
 
@@ -184,15 +174,14 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// also shared with DeferredShading's no-depth setup, which DOES clear it,
 	// so the underlying image is already in a valid state when Grass runs.
 	xGraph.AddPass("Grass", ExecuteRender)
-		.Writes(m_pxHDR->GetHDRSceneTarget(),            RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (m_pxGraphics->GetDepthAttachment(),      RESOURCE_ACCESS_READ_DEPTH);
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),                 RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),       RESOURCE_ACCESS_READ_DEPTH);
 }
 
 static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 {
-	// Static graph trampoline: recover the subsystem once, then route every
-	// other engine reach (VulkanMemory / Frame / FluxGraphics) through the
-	// injected members it already holds.
+	// Static graph trampoline: recover the subsystem once; other engine reaches
+	// (VulkanMemory / Frame / FluxGraphics) go via g_xEngine at point of use.
 	Flux_GrassImpl& xGrass = g_xEngine.Grass();
 
 	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
@@ -218,7 +207,7 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 	// Float32 has 24-bit mantissa, giving ~7 decimal digits of precision
 	// Wind frequencies max at 4.1x, so after 10 hours (36000s) we have 147600 which is fine
 	// No need to wrap - doing so causes visible phase jumps in all sine waves
-	double dTime = xGrass.m_pxFrame->GetTimePassed();
+	double dTime = g_xEngine.Frame().GetTimePassed();
 	float fTime = static_cast<float>(dTime);
 
 	s_xGrassConstants.m_xWindParams = Zenith_Maths::Vector4(
@@ -239,7 +228,7 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 		GrassConfig::fLOD2_DISTANCE,
 		xGrass.m_fMaxDistance);
 
-	xGrass.m_pxVulkanMemory->UploadBufferData(xGrass.m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
+	g_xEngine.FluxMemory().UploadBufferData(xGrass.m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
 
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xGrass.m_xGrassPipeline);
 	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xGrassBladeMesh.m_xVertexBuffer);
@@ -247,7 +236,7 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(xGrass.m_xGrassShader, "FrameConstants", &xGrass.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(xGrass.m_xGrassShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(xGrass.m_xGrassShader, "GrassConstants", &xGrass.m_xGrassConstantsBuffer.GetCBV());
 		xBinder.BindUAV_Buffer(xGrass.m_xGrassShader, "InstanceBuffer", &xGrass.m_xInstanceBuffer.GetUAV());
 	}
@@ -315,8 +304,8 @@ void Flux_GrassImpl::UpdateVisibleChunks()
 		return;
 	}
 
-	const Zenith_Maths::Vector3& xCamPos = m_pxGraphics->GetCameraPosition();
-	const Zenith_Maths::Matrix4 xViewProj = m_pxGraphics->GetViewProjMatrix();
+	const Zenith_Maths::Vector3& xCamPos = g_xEngine.FluxGraphics().GetCameraPosition();
+	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
 	Zenith_Frustum xFrustum;
 	xFrustum.ExtractFromViewProjection(xViewProj);
 
@@ -378,7 +367,7 @@ void Flux_GrassImpl::UploadInstanceData()
 	}
 
 	// Upload to GPU
-	m_pxVulkanMemory->UploadBufferData(
+	g_xEngine.FluxMemory().UploadBufferData(
 		m_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
 		m_axAllInstances.GetDataPointer(),
 		static_cast<size_t>(uUploadSize));

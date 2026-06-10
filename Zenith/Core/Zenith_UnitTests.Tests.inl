@@ -15228,269 +15228,6 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 }
 
 // ============================================================================
-// Flux_HiZImpl dependency-injection seam test (Wave 9)
-// ============================================================================
-// Flux_HiZImpl's Initialise now takes its cross-subsystem deps (swapchain,
-// graphics, renderer) as explicit references and stores them in member
-// pointers — the reusable DI template for the other ~50 subsystems. The real
-// wiring happens in Flux.cpp's Flux_RendererImpl::LateInitialise, which only
-// runs in the non-headless boot path. Because the test runner may execute
-// headless (LateInitialise skipped, so the live g_xEngine.HiZ() pointers stay
-// nullptr), a post-init "==&g_xEngine.FluxSwapchain()" assertion would be
-// flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
-// (default-constructed Flux_HiZImpl is headless-safe, like Flux_RenderGraph):
-//   1. the three injected-dep member pointers default to nullptr, and
-//   2. assigning distinct non-null sentinel pointers stores into the right
-//      slots.
-// The sentinels are reinterpret_cast and NEVER dereferenced.
-
-#include "Flux/HiZ/Flux_HiZImpl.h"
-
-ZENITH_TEST(Flux, HiZInjectedDepsWired) { Zenith_UnitTests::TestHiZInjectedDepsWired(); }
-
-void Zenith_UnitTests::TestHiZInjectedDepsWired(){
-	Flux_HiZImpl xHiZ;
-
-	// 1. Fresh instance: all three injected-dep pointers default to nullptr.
-	ZENITH_ASSERT_NULL(xHiZ.m_pxSwapchain, "Fresh Flux_HiZImpl: m_pxSwapchain defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xHiZ.m_pxGraphics,  "Fresh Flux_HiZImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xHiZ.m_pxRenderer,  "Fresh Flux_HiZImpl: m_pxRenderer defaults nullptr (headless-safe)");
-
-	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
-	//    and are independent (the DI seam stores each ref into its own member).
-	Flux_Swapchain* pxSentinelSwapchain = reinterpret_cast<Flux_Swapchain*>(static_cast<uintptr_t>(0x1000));
-	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x2000));
-	Flux_RendererImpl*       pxSentinelRenderer  = reinterpret_cast<Flux_RendererImpl*>      (static_cast<uintptr_t>(0x3000));
-
-	xHiZ.m_pxSwapchain = pxSentinelSwapchain;
-	xHiZ.m_pxGraphics  = pxSentinelGraphics;
-	xHiZ.m_pxRenderer  = pxSentinelRenderer;
-
-	ZENITH_ASSERT_EQ(xHiZ.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
-	ZENITH_ASSERT_EQ(xHiZ.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
-	ZENITH_ASSERT_EQ(xHiZ.m_pxRenderer,  pxSentinelRenderer,  "m_pxRenderer stores the injected renderer pointer");
-}
-
-// ============================================================================
-// Flux_SSAOImpl dependency-injection seam test (Wave-11, 2nd leaf seam)
-// ============================================================================
-// Flux_SSAOImpl's Initialise now takes its cross-subsystem deps (graphics,
-// swapchain, HDR) as explicit references and stores them in member pointers —
-// the same reusable DI template as Flux_HiZImpl (WS9.2). The real wiring happens
-// in Flux.cpp's Flux_RendererImpl::LateInitialise, which only runs in the
-// non-headless boot path. Because the test runner may execute headless
-// (LateInitialise skipped, so the live g_xEngine.SSAO() pointers stay nullptr),
-// a post-init "==&g_xEngine.FluxGraphics()" assertion would be flaky. Instead
-// this is a pure-CPU seam test on a stack-constructed instance
-// (default-constructed Flux_SSAOImpl is headless-safe, like Flux_RenderGraph):
-//   1. the three injected-dep member pointers default to nullptr, and
-//   2. assigning distinct non-null sentinel pointers stores into the right
-//      slots.
-// The sentinels are reinterpret_cast and NEVER dereferenced.
-
-#include "Flux/SSAO/Flux_SSAOImpl.h"
-
-ZENITH_TEST(Flux, SSAOInjectedDepsWired) { Zenith_UnitTests::TestSSAOInjectedDepsWired(); }
-
-void Zenith_UnitTests::TestSSAOInjectedDepsWired(){
-	Flux_SSAOImpl xSSAO;
-
-	// 1. Fresh instance: all three injected-dep pointers default to nullptr.
-	ZENITH_ASSERT_NULL(xSSAO.m_pxGraphics,  "Fresh Flux_SSAOImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xSSAO.m_pxSwapchain, "Fresh Flux_SSAOImpl: m_pxSwapchain defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xSSAO.m_pxHDR,       "Fresh Flux_SSAOImpl: m_pxHDR defaults nullptr (headless-safe)");
-
-	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
-	//    and are independent (the DI seam stores each ref into its own member).
-	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
-	Flux_Swapchain* pxSentinelSwapchain = reinterpret_cast<Flux_Swapchain*>(static_cast<uintptr_t>(0x2000));
-	Flux_HDRImpl*            pxSentinelHDR       = reinterpret_cast<Flux_HDRImpl*>           (static_cast<uintptr_t>(0x3000));
-
-	xSSAO.m_pxGraphics  = pxSentinelGraphics;
-	xSSAO.m_pxSwapchain = pxSentinelSwapchain;
-	xSSAO.m_pxHDR       = pxSentinelHDR;
-
-	ZENITH_ASSERT_EQ(xSSAO.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
-	ZENITH_ASSERT_EQ(xSSAO.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
-	ZENITH_ASSERT_EQ(xSSAO.m_pxHDR,       pxSentinelHDR,       "m_pxHDR stores the injected HDR pointer");
-}
-
-// ============================================================================
-// Flux_QuadsImpl dependency-injection seam test (Wave-14)
-// ============================================================================
-// Flux_QuadsImpl's Initialise now takes its lone cross-subsystem dep (graphics)
-// as an explicit reference and stores it in a member pointer — the same reusable
-// DI template as Flux_HiZImpl (WS9.2) / Flux_SSAOImpl (Wave-11). The real wiring
-// happens in the Quads init trampoline (Flux_FeatureRegistry.cpp), driven by
-// Flux_RendererImpl::LateInitialise, which only runs in the non-headless boot
-// path — and Quads is not even wired in headless boot. Because the test runner
-// may execute headless (LateInitialise skipped, so the live g_xEngine.Quads()
-// pointer stays nullptr), a post-init "==&g_xEngine.FluxGraphics()" assertion
-// would be flaky. Instead this is a pure-CPU seam test on a stack-constructed
-// instance (default-constructed Flux_QuadsImpl is headless-safe):
-//   1. the injected-dep member pointer defaults to nullptr, and
-//   2. assigning a distinct non-null sentinel pointer stores into the right slot.
-// The sentinel is reinterpret_cast and NEVER dereferenced.
-
-#include "Flux/Quads/Flux_QuadsImpl.h"
-
-ZENITH_TEST(Flux, QuadsInjectedDepsWired) { Zenith_UnitTests::TestQuadsInjectedDepsWired(); }
-
-void Zenith_UnitTests::TestQuadsInjectedDepsWired(){
-	Flux_QuadsImpl xQuads;
-
-	// 1. Fresh instance: the injected-dep pointer defaults to nullptr.
-	ZENITH_ASSERT_NULL(xQuads.m_pxGraphics, "Fresh Flux_QuadsImpl: m_pxGraphics defaults nullptr (headless-safe)");
-
-	// 2. A distinct, never-dereferenced sentinel proves the storage slot exists
-	//    (the DI seam stores the injected ref into its member).
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-
-	xQuads.m_pxGraphics = pxSentinelGraphics;
-
-	ZENITH_ASSERT_EQ(xQuads.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-}
-
-// ============================================================================
-// Flux_SDFsImpl dependency-injection seam test (Wave-14, lowest-fan-in leaf)
-// ============================================================================
-// Flux_SDFsImpl's Initialise now takes its two cross-subsystem deps (graphics,
-// HDR) as explicit references and stores them in member pointers — the same
-// reusable DI template as Flux_HiZImpl (WS9.2) and Flux_SSAOImpl (Wave-11). The
-// real wiring happens through the Flux_FeatureRegistry SDFs init trampoline,
-// which only runs in the non-headless boot path. Because the test runner may
-// execute headless (init walk skipped, so the live g_xEngine.SDFs() pointers
-// stay nullptr), a post-init "==&g_xEngine.FluxGraphics()" assertion would be
-// flaky. Instead this is a pure-CPU seam test on a stack-constructed instance
-// (default-constructed Flux_SDFsImpl is headless-safe, like Flux_RenderGraph):
-//   1. the two injected-dep member pointers default to nullptr, and
-//   2. assigning distinct non-null sentinel pointers stores into the right
-//      slots.
-// The sentinels are reinterpret_cast and NEVER dereferenced.
-
-#include "Flux/SDFs/Flux_SDFsImpl.h"
-
-ZENITH_TEST(Flux, SDFsInjectedDepsWired) { Zenith_UnitTests::TestSDFsInjectedDepsWired(); }
-
-void Zenith_UnitTests::TestSDFsInjectedDepsWired(){
-	Flux_SDFsImpl xSDFs;
-
-	// 1. Fresh instance: both injected-dep pointers default to nullptr.
-	ZENITH_ASSERT_NULL(xSDFs.m_pxGraphics, "Fresh Flux_SDFsImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xSDFs.m_pxHDR,      "Fresh Flux_SDFsImpl: m_pxHDR defaults nullptr (headless-safe)");
-
-	// 2. Distinct, never-dereferenced sentinels prove the storage slots exist
-	//    and are independent (the DI seam stores each ref into its own member).
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-	Flux_HDRImpl*      pxSentinelHDR      = reinterpret_cast<Flux_HDRImpl*>     (static_cast<uintptr_t>(0x2000));
-
-	xSDFs.m_pxGraphics = pxSentinelGraphics;
-	xSDFs.m_pxHDR      = pxSentinelHDR;
-
-	ZENITH_ASSERT_EQ(xSDFs.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-	ZENITH_ASSERT_EQ(xSDFs.m_pxHDR,      pxSentinelHDR,      "m_pxHDR stores the injected HDR pointer");
-}
-
-// ============================================================================
-// Wave-15 DI-seam sentinel tests (Text / Skybox / Primitives / StaticMeshes /
-// AnimatedMeshes). Same pure-CPU headless-safe pattern as Quads/SDFs: each
-// injected-dep member pointer defaults nullptr, then stores an assigned sentinel
-// (never dereferenced). Orchestrator batch-added (impl agents produced code only,
-// to avoid a 5-way merge in this shared file).
-// ============================================================================
-
-#include "Flux/Text/Flux_TextImpl.h"
-ZENITH_TEST(Flux, TextInjectedDepsWired) { Zenith_UnitTests::TestTextInjectedDepsWired(); }
-void Zenith_UnitTests::TestTextInjectedDepsWired(){
-	Flux_TextImpl xText;
-	ZENITH_ASSERT_NULL(xText.m_pxGraphics, "Fresh Flux_TextImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-	xText.m_pxGraphics = pxSentinelGraphics;
-	ZENITH_ASSERT_EQ(xText.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-}
-
-#include "Flux/Skybox/Flux_SkyboxImpl.h"
-ZENITH_TEST(Flux, SkyboxInjectedDepsWired) { Zenith_UnitTests::TestSkyboxInjectedDepsWired(); }
-void Zenith_UnitTests::TestSkyboxInjectedDepsWired(){
-	Flux_SkyboxImpl xSkybox;
-	ZENITH_ASSERT_NULL(xSkybox.m_pxGraphics, "Fresh Flux_SkyboxImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xSkybox.m_pxHDR,      "Fresh Flux_SkyboxImpl: m_pxHDR defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-	Flux_HDRImpl*      pxSentinelHDR      = reinterpret_cast<Flux_HDRImpl*>     (static_cast<uintptr_t>(0x2000));
-	xSkybox.m_pxGraphics = pxSentinelGraphics;
-	xSkybox.m_pxHDR      = pxSentinelHDR;
-	ZENITH_ASSERT_EQ(xSkybox.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-	ZENITH_ASSERT_EQ(xSkybox.m_pxHDR,      pxSentinelHDR,      "m_pxHDR stores the injected HDR pointer");
-}
-
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
-ZENITH_TEST(Flux, PrimitivesInjectedDepsWired) { Zenith_UnitTests::TestPrimitivesInjectedDepsWired(); }
-void Zenith_UnitTests::TestPrimitivesInjectedDepsWired(){
-	Flux_PrimitivesImpl xPrimitives;
-	ZENITH_ASSERT_NULL(xPrimitives.m_pxGraphics, "Fresh Flux_PrimitivesImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-	xPrimitives.m_pxGraphics = pxSentinelGraphics;
-	ZENITH_ASSERT_EQ(xPrimitives.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-}
-
-#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
-ZENITH_TEST(Flux, StaticMeshesInjectedDepsWired) { Zenith_UnitTests::TestStaticMeshesInjectedDepsWired(); }
-void Zenith_UnitTests::TestStaticMeshesInjectedDepsWired(){
-	Flux_StaticMeshesImpl xStaticMeshes;
-	ZENITH_ASSERT_NULL(xStaticMeshes.m_pxGraphics, "Fresh Flux_StaticMeshesImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-	xStaticMeshes.m_pxGraphics = pxSentinelGraphics;
-	ZENITH_ASSERT_EQ(xStaticMeshes.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-}
-
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
-ZENITH_TEST(Flux, AnimatedMeshesInjectedDepsWired) { Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(); }
-void Zenith_UnitTests::TestAnimatedMeshesInjectedDepsWired(){
-	Flux_AnimatedMeshesImpl xAnimatedMeshes;
-	ZENITH_ASSERT_NULL(xAnimatedMeshes.m_pxGraphics, "Fresh Flux_AnimatedMeshesImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl* pxSentinelGraphics = reinterpret_cast<Flux_GraphicsImpl*>(static_cast<uintptr_t>(0x1000));
-	xAnimatedMeshes.m_pxGraphics = pxSentinelGraphics;
-	ZENITH_ASSERT_EQ(xAnimatedMeshes.m_pxGraphics, pxSentinelGraphics, "m_pxGraphics stores the injected graphics pointer");
-}
-
-// ============================================================================
-// Wave-17 DI-seam sentinel tests (Decals: Graphics+Swapchain; Particles: Graphics+HDR+ParticleGPU).
-// Same pure-CPU headless-safe pattern; orchestrator batch-added (impl agents were code-only).
-// ============================================================================
-
-#include "Flux/Decals/Flux_DecalsImpl.h"
-ZENITH_TEST(Flux, DecalsInjectedDepsWired) { Zenith_UnitTests::TestDecalsInjectedDepsWired(); }
-void Zenith_UnitTests::TestDecalsInjectedDepsWired(){
-	Flux_DecalsImpl xDecals;
-	ZENITH_ASSERT_NULL(xDecals.m_pxGraphics,  "Fresh Flux_DecalsImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xDecals.m_pxSwapchain, "Fresh Flux_DecalsImpl: m_pxSwapchain defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl*       pxSentinelGraphics  = reinterpret_cast<Flux_GraphicsImpl*>      (static_cast<uintptr_t>(0x1000));
-	Flux_Swapchain* pxSentinelSwapchain = reinterpret_cast<Flux_Swapchain*>(static_cast<uintptr_t>(0x2000));
-	xDecals.m_pxGraphics  = pxSentinelGraphics;
-	xDecals.m_pxSwapchain = pxSentinelSwapchain;
-	ZENITH_ASSERT_EQ(xDecals.m_pxGraphics,  pxSentinelGraphics,  "m_pxGraphics stores the injected graphics pointer");
-	ZENITH_ASSERT_EQ(xDecals.m_pxSwapchain, pxSentinelSwapchain, "m_pxSwapchain stores the injected swapchain pointer");
-}
-
-#include "Flux/Particles/Flux_ParticlesImpl.h"
-ZENITH_TEST(Flux, ParticlesInjectedDepsWired) { Zenith_UnitTests::TestParticlesInjectedDepsWired(); }
-void Zenith_UnitTests::TestParticlesInjectedDepsWired(){
-	Flux_ParticlesImpl xParticles;
-	ZENITH_ASSERT_NULL(xParticles.m_pxGraphics,    "Fresh Flux_ParticlesImpl: m_pxGraphics defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xParticles.m_pxHDR,         "Fresh Flux_ParticlesImpl: m_pxHDR defaults nullptr (headless-safe)");
-	ZENITH_ASSERT_NULL(xParticles.m_pxParticleGPU, "Fresh Flux_ParticlesImpl: m_pxParticleGPU defaults nullptr (headless-safe)");
-	Flux_GraphicsImpl*    pxSentinelGraphics    = reinterpret_cast<Flux_GraphicsImpl*>   (static_cast<uintptr_t>(0x1000));
-	Flux_HDRImpl*         pxSentinelHDR         = reinterpret_cast<Flux_HDRImpl*>        (static_cast<uintptr_t>(0x2000));
-	Flux_ParticleGPUImpl* pxSentinelParticleGPU = reinterpret_cast<Flux_ParticleGPUImpl*>(static_cast<uintptr_t>(0x3000));
-	xParticles.m_pxGraphics    = pxSentinelGraphics;
-	xParticles.m_pxHDR         = pxSentinelHDR;
-	xParticles.m_pxParticleGPU = pxSentinelParticleGPU;
-	ZENITH_ASSERT_EQ(xParticles.m_pxGraphics,    pxSentinelGraphics,    "m_pxGraphics stores the injected graphics pointer");
-	ZENITH_ASSERT_EQ(xParticles.m_pxHDR,         pxSentinelHDR,         "m_pxHDR stores the injected HDR pointer");
-	ZENITH_ASSERT_EQ(xParticles.m_pxParticleGPU, pxSentinelParticleGPU, "m_pxParticleGPU stores the injected ParticleGPU pointer");
-}
-
-// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.
@@ -15729,64 +15466,36 @@ void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
 }
 
 // ============================================================================
-// Flux_PerFrame ring-scheduler tests
+// Flux_RendererImpl per-frame ring-scheduler tests
 // ============================================================================
 // These tests run inside the live engine's main loop (RunAllTests is invoked
-// from Zenith_Main.cpp after Flux::EarlyInitialise has already registered the
-// real Vulkan begin and MemoryManager end callbacks). Each test saves the
-// live state (counter + callback arrays) at entry and restores it at exit so
-// the surrounding frame loop is unaffected by the temporary scratch state
-// the test installs.
+// from Zenith_Main.cpp). They drive the frame counter directly via
+// AdvanceCounter and save/restore the live counter at entry/exit so the
+// surrounding frame loop is unaffected. They deliberately do NOT call
+// BeginFrame/EndFrame, which would issue real backend per-frame work (fence
+// waits) outside a real frame.
 
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
 
-// Snapshot of Flux_PerFrame's internal state used by the §5.2 tests to save
-// the live engine state before installing scratch callbacks, then restore it
-// at end-of-test. Defined here so it can hold the callback array sizes from
-// FLUX_MAX_PERFRAME_CALLBACKS without exposing them in the public header.
+// Snapshot of Flux_RendererImpl's frame counter used by the ring-scheduler
+// tests to save the live engine state before driving the counter, then restore
+// it at end-of-test.
 struct Zenith_UnitTests::PerFrameSnapshot
 {
-	u_int                            m_uFrameCounter;
-	u_int                            m_uNumBegin;
-	u_int                            m_uNumEnd;
-	Flux_RendererImpl::OnFrameBeginFunc  m_apfnBegin[FLUX_MAX_PERFRAME_CALLBACKS];
-	void*                            m_apBeginUser[FLUX_MAX_PERFRAME_CALLBACKS];
-	Flux_RendererImpl::OnFrameEndFunc    m_apfnEnd[FLUX_MAX_PERFRAME_CALLBACKS];
-	void*                            m_apEndUser[FLUX_MAX_PERFRAME_CALLBACKS];
+	u_int m_uFrameCounter;
 };
 
 void Zenith_UnitTests::SnapshotPerFrameAndReset(PerFrameSnapshot& xOut)
 {
 	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
 	xOut.m_uFrameCounter = xR.m_uFrameCounter;
-	xOut.m_uNumBegin     = xR.m_uNumBeginCallbacks;
-	xOut.m_uNumEnd       = xR.m_uNumEndCallbacks;
-	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
-	{
-		xOut.m_apfnBegin[u]   = xR.m_apfnBeginCallbacks[u];
-		xOut.m_apBeginUser[u] = xR.m_apBeginUserData[u];
-		xOut.m_apfnEnd[u]     = xR.m_apfnEndCallbacks[u];
-		xOut.m_apEndUser[u]   = xR.m_apEndUserData[u];
-	}
-	xR.m_uFrameCounter      = 0;
-	xR.m_uNumBeginCallbacks = 0;
-	xR.m_uNumEndCallbacks   = 0;
+	xR.m_uFrameCounter   = 0;
 }
 
 void Zenith_UnitTests::RestorePerFrame(const PerFrameSnapshot& xIn)
 {
-	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
-	xR.m_uFrameCounter      = xIn.m_uFrameCounter;
-	xR.m_uNumBeginCallbacks = xIn.m_uNumBegin;
-	xR.m_uNumEndCallbacks   = xIn.m_uNumEnd;
-	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
-	{
-		xR.m_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
-		xR.m_apBeginUserData[u]    = xIn.m_apBeginUser[u];
-		xR.m_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
-		xR.m_apEndUserData[u]      = xIn.m_apEndUser[u];
-	}
+	g_xEngine.FluxRenderer().m_uFrameCounter = xIn.m_uFrameCounter;
 }
 
 namespace
@@ -15800,49 +15509,6 @@ namespace
 		PerFrameScopedReset() { Zenith_UnitTests::SnapshotPerFrameAndReset(m_xSnap); }
 		~PerFrameScopedReset() { Zenith_UnitTests::RestorePerFrame(m_xSnap); }
 	};
-
-	// Mutable counters used by callback bodies in the tests.
-	u_int g_uTestBeginCallCount = 0;
-	u_int g_uTestEndCallCount   = 0;
-	u_int g_uTestLastBeginRing  = UINT32_MAX;
-	u_int g_uTestLastEndRing    = UINT32_MAX;
-	void* g_pTestLastUserData   = nullptr;
-
-	// Track callback firing order: each callback pushes its tag here.
-	u_int g_auTestCallOrder[16];
-	u_int g_uTestCallOrderCount = 0;
-
-	void TestBeginCallback_IncCount(u_int uRingIndex, void* pUserData)
-	{
-		g_uTestBeginCallCount++;
-		g_uTestLastBeginRing = uRingIndex;
-		g_pTestLastUserData  = pUserData;
-	}
-
-	void TestEndCallback_IncCount(u_int uRingIndex, void* pUserData)
-	{
-		g_uTestEndCallCount++;
-		g_uTestLastEndRing  = uRingIndex;
-		g_pTestLastUserData = pUserData;
-	}
-
-	void TestBeginCallback_OrderTagA(u_int /*uRingIndex*/, void* /*pUserData*/)
-	{
-		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
-		g_auTestCallOrder[g_uTestCallOrderCount++] = 'A';
-	}
-
-	void TestBeginCallback_OrderTagB(u_int /*uRingIndex*/, void* /*pUserData*/)
-	{
-		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
-		g_auTestCallOrder[g_uTestCallOrderCount++] = 'B';
-	}
-
-	void TestBeginCallback_OrderTagC(u_int /*uRingIndex*/, void* /*pUserData*/)
-	{
-		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
-		g_auTestCallOrder[g_uTestCallOrderCount++] = 'C';
-	}
 }
 
 ZENITH_TEST(Core, FluxPerFrameFrameCounterAdvances) { Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(); }
@@ -15853,22 +15519,17 @@ void Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(){
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 0, "Counter starts at 0");
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index starts at 0");
 
-	// BeginFrame does NOT advance the counter — only EndFrame does. This
-	// matches the pre-extraction behaviour where the swapchain bumped its
-	// index inside EndFrame, so the same slot is used by Begin and End of
-	// the same frame.
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 0, "BeginFrame does not advance the counter");
-
-	g_xEngine.FluxRenderer().EndFrame();
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 1, "EndFrame advances the counter by 1");
+	// AdvanceCounter bumps the monotonic frame counter by one (EndFrame calls it
+	// once per frame, after the deferred-deletion work). Driven directly here so
+	// the test doesn't issue real backend per-frame work (fence waits).
+	g_xEngine.FluxRenderer().AdvanceCounter();
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 1, "AdvanceCounter advances the counter by 1");
 
 	for (u_int u = 0; u < 5; u++)
 	{
-		g_xEngine.FluxRenderer().BeginFrame();
-		g_xEngine.FluxRenderer().EndFrame();
+		g_xEngine.FluxRenderer().AdvanceCounter();
 	}
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 6, "Five Begin/End pairs advance the counter to 6");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 6, "Five more advances take the counter to 6");
 
 }
 
@@ -15880,122 +15541,20 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps(){
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
 		ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT, "Ring index at counter %u is %u, expected %u", u, g_xEngine.FluxRenderer().GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
-		g_xEngine.FluxRenderer().EndFrame();
+		g_xEngine.FluxRenderer().AdvanceCounter();
 	}
-	// After MAX_FRAMES_IN_FLIGHT EndFrames the counter is at MAX, ring index wraps to 0.
+	// After MAX_FRAMES_IN_FLIGHT advances the counter is at MAX, ring index wraps to 0.
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT advances");
 
 	// Drive several full cycles and confirm the modulo continues to hold.
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 3 + 1; u++)
 	{
-		g_xEngine.FluxRenderer().EndFrame();
+		g_xEngine.FluxRenderer().AdvanceCounter();
 	}
 	const u_int uExpectedCounter = MAX_FRAMES_IN_FLIGHT + (MAX_FRAMES_IN_FLIGHT * 3 + 1);
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), uExpectedCounter, "Counter total tracks correctly");
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), uExpectedCounter % MAX_FRAMES_IN_FLIGHT, "Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameBeginCallbackFires) { Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(); }
-
-void Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(){
-	PerFrameScopedReset xReset;
-
-	g_uTestBeginCallCount = 0;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
-
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 1, "Begin callback fires once per BeginFrame");
-
-	g_xEngine.FluxRenderer().BeginFrame();
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 3, "Begin callback fires every BeginFrame");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameEndCallbackFires) { Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(); }
-
-void Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(){
-	PerFrameScopedReset xReset;
-
-	g_uTestEndCallCount = 0;
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&TestEndCallback_IncCount, nullptr);
-
-	g_xEngine.FluxRenderer().EndFrame();
-	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 1, "End callback fires once per EndFrame");
-
-	g_xEngine.FluxRenderer().EndFrame();
-	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 2, "End callback fires every EndFrame");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameCallbackOrderPreserved) { Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(); }
-
-void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(){
-	PerFrameScopedReset xReset;
-
-	g_uTestCallOrderCount = 0;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagA, nullptr);
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagB, nullptr);
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagC, nullptr);
-
-	g_xEngine.FluxRenderer().BeginFrame();
-
-	ZENITH_ASSERT_EQ(g_uTestCallOrderCount, 3, "All three begin callbacks fired");
-	ZENITH_ASSERT_EQ(g_auTestCallOrder[0], 'A', "First registered (A) fires first");
-	ZENITH_ASSERT_EQ(g_auTestCallOrder[1], 'B', "Second registered (B) fires second");
-	ZENITH_ASSERT_EQ(g_auTestCallOrder[2], 'C', "Third registered (C) fires third");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameCallbackUserDataPassed) { Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(); }
-
-void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(){
-	PerFrameScopedReset xReset;
-
-	int iSentinelOnStack = 0xC0DE;
-	g_pTestLastUserData = nullptr;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, &iSentinelOnStack);
-
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelOnStack, "Begin callback receives the user-data pointer it was registered with");
-
-	int iSentinelTwo = 0xBEEF;
-	g_pTestLastUserData = nullptr;
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&TestEndCallback_IncCount, &iSentinelTwo);
-
-	g_xEngine.FluxRenderer().EndFrame();
-	// Both callbacks fired; last one to run wrote g_pTestLastUserData.
-	// Begin fires first inside EndFrame? No — begin callbacks only fire in
-	// BeginFrame. So only the end callback fired here, and it wrote the
-	// end-callback's user-data pointer.
-	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelTwo, "End callback receives the user-data pointer it was registered with");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameRingIndexInsideCallback) { Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(); }
-
-void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(){
-	PerFrameScopedReset xReset;
-
-	g_uTestLastBeginRing = UINT32_MAX;
-	g_uTestLastEndRing   = UINT32_MAX;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback  (&TestEndCallback_IncCount,   nullptr);
-
-	// Drive a few iterations; callbacks should always observe the same ring
-	// index that GetRingIndex() returns at call time.
-	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 2; u++)
-	{
-		const u_int uExpectedRing = u % MAX_FRAMES_IN_FLIGHT;
-
-		g_xEngine.FluxRenderer().BeginFrame();
-		ZENITH_ASSERT_EQ(g_uTestLastBeginRing, uExpectedRing, "Begin callback at frame %u observed ring %u, expected %u", u, g_uTestLastBeginRing, uExpectedRing);
-
-		g_xEngine.FluxRenderer().EndFrame();
-		ZENITH_ASSERT_EQ(g_uTestLastEndRing, uExpectedRing, "End callback at frame %u observed ring %u, expected %u", u, g_uTestLastEndRing, uExpectedRing);
-	}
 
 }
 

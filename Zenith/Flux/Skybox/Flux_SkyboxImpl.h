@@ -6,14 +6,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 
-// Cross-subsystem dependencies injected into Initialise (Wave-15 DI seam, same
-// reusable template as the Wave-14 Flux_SDFsImpl / Wave-11 Flux_SSAOImpl leaf
-// seams). Forward-declared here; full headers are pulled in by Flux_Skybox.cpp.
-// The engine-infra singletons VulkanMemory + Vulkan are ALSO injected (per the
-// aggressive g_xEngine-shrink directive) — previously direct g_xEngine lookups.
-class Flux_GraphicsImpl;
-class Flux_HDRImpl;
-
 namespace AtmosphereConfig
 {
 	constexpr float fEARTH_RADIUS = 6360000.0f;
@@ -91,20 +83,13 @@ enum Skybox_DebugMode : u_int
 
 // Phase 9: state + behaviour for Skybox subsystem.
 //
-// Wave-15 DI seam (mirrors Flux_SDFsImpl/Flux_SSAOImpl): the cross-subsystem
-// dependencies (FluxGraphics for the fullscreen quad + frame constants + MRT and
-// final-RT attachments, HDR for the scene render target in the aerial-perspective
-// path) plus the engine-infra singletons (VulkanMemory for the constant-buffer +
-// upload paths, Vulkan for VRAM lookup in DestroyRenderTargets) are INJECTED
-// through Initialise as explicit references and stored as member pointers, rather
-// than reached for via g_xEngine.X() inside every instance method.
-// The only places g_xEngine self-lookup survives are: (1) the non-capturing
-// fn-pointer trampolines (the Execute*/PreExecuteSkybox graph callbacks and the
-// ZENITH_TOOLS hot-reload callback) — those cannot capture state, so they re-enter
-// via g_xEngine.Skybox() to reach this singleton instance and then route their
-// other reach-ins through the injected members; and (2) the ZENITH_TOOLS-only
-// g_xEngine.DebugVariables() in RegisterDebugVariables (injecting a conditionally-
-// compiled dep would force #ifdef into the Initialise signature).
+// Cross-subsystem dependencies (FluxGraphics for the fullscreen quad + frame
+// constants + MRT and final-RT attachments, HDR for the scene render target in
+// the aerial-perspective path, VulkanMemory for the constant-buffer + upload
+// paths) are reached via g_xEngine at point of use. The non-capturing
+// fn-pointer trampolines (the Execute*/PreExecuteSkybox graph callbacks and
+// the ZENITH_TOOLS hot-reload callback) cannot capture state, so they re-enter
+// via g_xEngine.Skybox() to reach this singleton instance.
 class Flux_SkyboxImpl
 {
 public:
@@ -114,10 +99,7 @@ public:
 	Flux_SkyboxImpl(const Flux_SkyboxImpl&) = delete;
 	Flux_SkyboxImpl& operator=(const Flux_SkyboxImpl&) = delete;
 
-	// Cross-subsystem deps are injected here and stored into the member pointers
-	// below. This is the WS9.2 DI template: explicit ref params -> stored member
-	// pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR, Flux_MemoryManager& xVulkanMemory, Flux_PlatformAPI& xVulkan);
+	void Initialise();
 	void ReleaseAssetReferences();
 	void Shutdown();
 	void Reset();
@@ -177,12 +159,4 @@ public:
 	float                      m_fMieScale                  = 1.0f;
 	float                      m_fMieG                      = AtmosphereConfig::fMIE_G;
 	float                      m_fAerialPerspectiveStrength = 1.0f;
-
-	// Injected cross-subsystem dependencies (stored by Initialise). Default
-	// nullptr so a default-constructed instance is headless-safe; the real boot
-	// path wires them through the Flux_FeatureRegistry Skybox init trampoline.
-	Flux_GraphicsImpl*           m_pxGraphics      = nullptr;
-	Flux_HDRImpl*                m_pxHDR           = nullptr;
-	Flux_MemoryManager* m_pxVulkanMemory  = nullptr;
-	Flux_PlatformAPI*               m_pxVulkan        = nullptr;
 };

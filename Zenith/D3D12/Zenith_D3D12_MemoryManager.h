@@ -35,10 +35,10 @@ public:
 	Zenith_D3D12_MemoryManager& operator=(const Zenith_D3D12_MemoryManager&) = delete;
 
 	// ===== Lifecycle (FluxBackendMemoryAlloc) =====
-	// The Vulkan MemoryManager registers OnFluxPerFrameEnd with Flux_RendererImpl
-	// inside Initialise (Zenith_Vulkan_MemoryManager.cpp ~line 179). The null
-	// backend has no per-frame deferred-deletion work to drive, so Initialise()
-	// is a pure no-op and the callback registration is intentionally omitted.
+	// The Vulkan MemoryManager drives a deferred-VRAM-deletion countdown each
+	// frame (ProcessDeferredDeletions, called directly from
+	// Flux_RendererImpl::ProcessFrameEnd). The null backend has no such work, so
+	// Initialise() is a pure no-op and ProcessDeferredDeletions() below is empty.
 	void Initialise() { }
 	void Shutdown() { }
 
@@ -82,9 +82,6 @@ public:
 		(void)xInfo; (void)xPoolHandle; (void)ulOffsetInPool;
 		return Flux_VRAMHandle{}; // default = invalid
 	}
-
-	// Per-frame end callback (neutral signature: u_int + void*). No-op.
-	static void OnFluxPerFrameEnd(u_int uRingIndex, void* pUserData) { (void)uRingIndex; (void)pUserData; }
 
 	// ===== Wrapped buffer initialisers (FluxBackendMemoryAlloc) =====
 	// Engine code asserts the wrapped buffer's m_xVRAMHandle (and views) are valid

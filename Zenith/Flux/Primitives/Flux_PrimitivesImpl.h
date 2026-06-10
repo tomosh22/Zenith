@@ -5,15 +5,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Maths/Zenith_Maths.h"
 
-// Cross-subsystem dependencies injected into Initialise (aggressive de-globalization
-// pass — supersedes the earlier Wave-15 carve-out comment). BOTH Flux_GraphicsImpl
-// (FluxGraphics) AND Zenith_Vulkan_MemoryManager (VulkanMemory) are now injected as
-// explicit refs and stored as member pointers instead of being reached for via
-// g_xEngine inside instance/helper methods. Forward-declared here; the full headers
-// are pulled in by Flux_Primitives.cpp. The only g_xEngine self-lookups that survive
-// are the non-capturing fn-pointer trampolines (the ExecuteGBuffer graph callback and
-// the ZENITH_TOOLS hot-reload lambda), which cannot capture state.
-class Flux_GraphicsImpl;
 class Flux_CommandList;
 class Flux_ShaderBinder;
 
@@ -68,16 +59,12 @@ struct Flux_PrimitivesTriangleInstance
 
 // Phase 9: state + behaviour for Primitives subsystem.
 //
-// Aggressive de-globalization: BOTH cross-subsystem deps (Flux_GraphicsImpl and
-// Zenith_Vulkan_MemoryManager) are INJECTED through Initialise as explicit references
-// and stored as member pointers, rather than reached for via g_xEngine.FluxGraphics()
-// / g_xEngine.FluxMemory() inside the instance/helper methods. The former file-static
-// render helpers (RenderSpherePrimitives/...) are now private members so their reaches
-// resolve through `this`/the injected members. The only places g_xEngine self-lookup
-// survives are the non-capturing fn-pointer trampolines (the ExecuteGBuffer graph
-// callback and the ZENITH_TOOLS hot-reload callback) — those cannot capture state, so
-// they re-enter via g_xEngine.Primitives() to reach this singleton instance and then
-// route their reach-ins through the injected members.
+// Cross-subsystem deps (Flux_GraphicsImpl and the memory manager) are reached via
+// g_xEngine at point of use. The former file-static render helpers
+// (RenderSpherePrimitives/...) are members so their reaches resolve through `this`.
+// The non-capturing fn-pointer trampolines (the ExecuteGBuffer graph callback and
+// the ZENITH_TOOLS hot-reload callback) cannot capture state, so they re-enter via
+// g_xEngine.Primitives() to reach this singleton instance.
 class Flux_PrimitivesImpl
 {
 public:
@@ -87,9 +74,7 @@ public:
 	Flux_PrimitivesImpl(const Flux_PrimitivesImpl&) = delete;
 	Flux_PrimitivesImpl& operator=(const Flux_PrimitivesImpl&) = delete;
 
-	// Cross-subsystem deps are injected here and stored into m_pxGraphics /
-	// m_pxVulkanMemory below. Explicit ref params -> stored member pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory);
+	void Initialise();
 	void BuildPipelines();
 	void Shutdown();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -122,9 +107,9 @@ public:
 	void AddAxes(const Zenith_Maths::Vector3& xOrigin, float fSize);
 
 	// Render helpers — promoted from .cpp file-static free functions so their
-	// reaches resolve through `this` + the injected members. PUBLIC because the
-	// non-capturing ExecuteGBuffer graph trampoline (a free function) calls them
-	// on the singleton instance it recovers via g_xEngine.Primitives().
+	// reaches resolve through `this`. PUBLIC because the non-capturing
+	// ExecuteGBuffer graph trampoline (a free function) calls them on the
+	// singleton instance it recovers via g_xEngine.Primitives().
 	void EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Maths::Matrix4& xModelMatrix,
 		const Zenith_Maths::Vector3& xColor,
@@ -179,10 +164,4 @@ public:
 	bool                     m_bTriangleBuffersInitialised = false;
 
 	Zenith_Mutex m_xInstanceMutex;
-
-	// Injected cross-subsystem dependencies (stored by Initialise). Default nullptr
-	// so a default-constructed instance is headless-safe; the real boot path wires
-	// them in via the Primitives init trampoline (Flux_FeatureRegistry.cpp).
-	Flux_GraphicsImpl* m_pxGraphics = nullptr;
-	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 };

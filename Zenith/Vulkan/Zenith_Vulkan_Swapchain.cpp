@@ -737,6 +737,15 @@ uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
 	// and the ring index. The swapchain's previous s_uFrameIndex member has
 	// been removed; backends and engine code that need the current ring slot
 	// all derive it from here.
+	// m_pxFluxRenderer is wired in Initialise(), but boot-time GPU asset
+	// uploads (Zenith_Engine::InitialiseGPUAssets -> MemoryManager::BeginFrame
+	// -> CommandBuffer::BeginRecording) ask for the ring slot before the
+	// swapchain initialises. The frame counter is still 0 there, so ring
+	// slot 0 is the correct answer.
+	if (m_pxFluxRenderer == nullptr)
+	{
+		return 0;
+	}
 	return m_pxFluxRenderer->GetRingIndex();
 }
 

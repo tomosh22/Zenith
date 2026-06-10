@@ -17,14 +17,11 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-// Wave-15 DI seam (Wave-4 extension): the deps (Flux_GraphicsImpl + VulkanMemory)
-// are injected into Initialise and stored in m_pxGraphics / m_pxVulkanMemory;
-// instance methods route their reach-ins through those pointers. g_xEngine.Text()
-// self-lookup survives only in the non-capturing ExecuteText / hot-reload
-// fn-pointer trampolines below (they re-enter to recover the singleton instance).
-// DebugVariables() stays a direct g_xEngine lookup (ZENITH_TOOLS-only, reached once
-// under #ifdef ZENITH_DEBUG_VARIABLES). The Flux::Flux_TextQueue statics + the
-// FontHandle asset are not g_xEngine subsystems (out of scope for this seam).
+// Cross-subsystem deps (FluxGraphics + VulkanMemory) are reached via g_xEngine
+// at point of use. The non-capturing ExecuteText / hot-reload fn-pointer
+// trampolines below re-enter via g_xEngine.Text() to recover the singleton
+// instance. The Flux::Flux_TextQueue statics + the FontHandle asset are not
+// g_xEngine subsystems.
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 
@@ -63,17 +60,12 @@ void Flux_TextImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(this->m_xPipeline, xPipelineSpec);
 }
 
-void Flux_TextImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory)
+void Flux_TextImpl::Initialise()
 {
-	// Wave-15 DI seam (Wave-4 extension): store the injected deps. FluxGraphics +
-	// VulkanMemory reach-ins route through these instead of g_xEngine.
-	this->m_pxGraphics     = &xGraphics;
-	this->m_pxVulkanMemory = &xVulkanMemory;
-
 	BuildPipelines();
 
 	constexpr bool bDeviceLocal = false;
-	this->m_pxVulkanMemory->InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), this->m_xInstanceBuffer, bDeviceLocal);
+	g_xEngine.FluxMemory().InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), this->m_xInstanceBuffer, bDeviceLocal);
 
 	// Load the MSDF font asset. Path resolved via Zenith_AssetRegistry; the
 	// asset itself reads the .zfont header and constructs a procedural texture
@@ -112,10 +104,7 @@ void Flux_TextImpl::ReleaseAssetReferences()
 
 void Flux_TextImpl::Shutdown()
 {
-	this->m_pxVulkanMemory->DestroyDynamicVertexBuffer(this->m_xInstanceBuffer);
-	// Drop the injected deps so the instance returns to a clean default state.
-	this->m_pxGraphics     = nullptr;
-	this->m_pxVulkanMemory = nullptr;
+	g_xEngine.FluxMemory().DestroyDynamicVertexBuffer(this->m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text shut down");
 }
 
@@ -262,7 +251,7 @@ uint32_t Flux_TextImpl::UploadChars()
 
 	if (xVertices.GetSize() > 0)
 	{
-		this->m_pxVulkanMemory->UploadBufferData(this->m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
+		g_xEngine.FluxMemory().UploadBufferData(this->m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
 	}
 
 	this->m_uTotalCharCount = uCharCount;
@@ -289,7 +278,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Text() to reach the singleton
-	// instance, then routes its FluxGraphics reach-ins through the injected member
+	// instance; FluxGraphics is reached via g_xEngine at point of use
 	// (mirrors ExecuteQuads).
 	Flux_TextImpl& xText = g_xEngine.Text();
 
@@ -318,11 +307,12 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xText.m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xText.m_pxGraphics->m_xQuadMesh.GetVertexBuffer(), 0);
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xText.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xText.m_xInstanceBuffer, 1);
 
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xText.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 	// Explicit clamp sampler at the bind site — MSDF AA assumes no wrap.
 	pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxAtlas->m_xSRV, 1);
 
@@ -362,5 +352,5 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_TextImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Text", ExecuteText)
-		.Writes(this->m_pxGraphics->GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
