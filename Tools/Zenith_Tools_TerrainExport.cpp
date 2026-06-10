@@ -13,11 +13,12 @@ static std::string GetGameAssetsDirectory()
 {
 	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
 }
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
+#include "AssetHandling/Zenith_Image.h"
+// stb_image declarations only — the single STB_IMAGE_IMPLEMENTATION lives in
+// Zenith_Tools_TextureExport.cpp; these calls resolve to it at link time.
 #pragma warning(push, 0)
-#include <opencv2/opencv.hpp>
+#include "stb/stb_image.h"
 #pragma warning(pop)
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include <cstring>
 #include <cmath>
@@ -131,16 +132,16 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 }
 
 //-----------------------------------------------------------------------------
-// Load heightmap from .ztxtr file and return as cv::Mat in CV_32FC1 format
+// Load heightmap from .ztxtr file and return as a single-channel float image
 //-----------------------------------------------------------------------------
-static cv::Mat LoadHeightmapFromZtxtr(const std::string& strPath)
+static Zenith_Image LoadHeightmapFromZtxtr(const std::string& strPath)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strPath.c_str());
 	if (!xStream.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load .ztxtr file: %s", strPath.c_str());
-		return cv::Mat();
+		return Zenith_Image();
 	}
 
 	int32_t iWidth, iHeight, iDepth;
@@ -160,33 +161,42 @@ static cv::Mat LoadHeightmapFromZtxtr(const std::string& strPath)
 	void* pData = Zenith_MemoryManagement::Allocate(ulDataSize);
 	xStream.ReadData(pData, ulDataSize);
 
-	// Create cv::Mat based on format
-	cv::Mat xResult;
+	// Build a float image based on the source format
+	Zenith_Image xResult;
+	const u_int uCount = static_cast<u_int>(iWidth) * static_cast<u_int>(iHeight);
 	if (eFormat == TEXTURE_FORMAT_R32_SFLOAT)
 	{
-		// 32-bit float single channel - use directly
-		cv::Mat xTemp(iHeight, iWidth, CV_32FC1, pData);
-		xResult = xTemp.clone();
+		// 32-bit float single channel - copy directly
+		xResult = Zenith_Image(iWidth, iHeight);
+		memcpy(xResult.Row(0), pData, static_cast<size_t>(uCount) * sizeof(float));
 	}
 	else if (eFormat == TEXTURE_FORMAT_R16_UNORM)
 	{
-		// 16-bit unsigned single channel - convert to float normalized [0,1]
-		cv::Mat xTemp(iHeight, iWidth, CV_16UC1, pData);
-		xTemp.convertTo(xResult, CV_32FC1, 1.0 / 65535.0);
+		// 16-bit unsigned single channel - normalize to float [0,1]
+		xResult = Zenith_Image(iWidth, iHeight);
+		const uint16_t* pu16 = static_cast<const uint16_t*>(pData);
+		float* pfDst = xResult.Row(0);
+		for (u_int u = 0; u < uCount; u++)
+		{
+			pfDst[u] = pu16[u] / 65535.0f;
+		}
 	}
 	else if (eFormat == TEXTURE_FORMAT_RGBA8_UNORM)
 	{
-		// RGBA8 - use red channel, convert to float
-		cv::Mat xTemp(iHeight, iWidth, CV_8UC4, pData);
-		std::vector<cv::Mat> xChannels;
-		cv::split(xTemp, xChannels);
-		xChannels[0].convertTo(xResult, CV_32FC1, 1.0 / 255.0);
+		// RGBA8 - use the red channel (byte 0), normalize to float [0,1]
+		xResult = Zenith_Image(iWidth, iHeight);
+		const uint8_t* pu8 = static_cast<const uint8_t*>(pData);
+		float* pfDst = xResult.Row(0);
+		for (u_int u = 0; u < uCount; u++)
+		{
+			pfDst[u] = pu8[u * 4 + 0] / 255.0f;
+		}
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_TOOLS, "Unsupported texture format for heightmap: %d", static_cast<int>(eFormat));
 		Zenith_MemoryManagement::Deallocate(pData);
-		return cv::Mat();
+		return Zenith_Image();
 	}
 
 	Zenith_MemoryManagement::Deallocate(pData);
@@ -194,9 +204,9 @@ static cv::Mat LoadHeightmapFromZtxtr(const std::string& strPath)
 }
 
 //-----------------------------------------------------------------------------
-// Load heightmap from either .ztxtr or .tif based on file extension
+// Load heightmap from either .ztxtr or a common image format (PNG/etc.)
 //-----------------------------------------------------------------------------
-static cv::Mat LoadHeightmapAuto(const std::string& strPath)
+static Zenith_Image LoadHeightmapAuto(const std::string& strPath)
 {
 	// Get file extension
 	std::string strExt = strPath.substr(strPath.rfind('.'));
@@ -205,36 +215,64 @@ static cv::Mat LoadHeightmapAuto(const std::string& strPath)
 	{
 		return LoadHeightmapFromZtxtr(strPath);
 	}
-	else
+
+	// Decode common image formats via stb (TIFF was dropped with OpenCV). Force a
+	// single channel and reproduce the old depth-based normalization exactly.
+	int iWidth = 0, iHeight = 0, iChannels = 0;
+	Zenith_Image xResult;
+
+	if (stbi_is_hdr(strPath.c_str()))
 	{
-		// Use OpenCV for .tif and other formats
-		cv::Mat xImage = cv::imread(strPath, cv::IMREAD_ANYDEPTH);
-		if (xImage.empty())
+		// 32-bit float - use values as-is (old 32-bit-float passthrough)
+		float* pfData = stbi_loadf(strPath.c_str(), &iWidth, &iHeight, &iChannels, 1);
+		if (!pfData)
 		{
 			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load heightmap: %s", strPath.c_str());
-			return cv::Mat();
+			return Zenith_Image();
 		}
-
-		// Convert to 32-bit float if needed
-		if (xImage.depth() != CV_32F)
-		{
-			cv::Mat xConverted;
-			if (xImage.depth() == CV_16U)
-			{
-				xImage.convertTo(xConverted, CV_32FC1, 1.0 / 65535.0);
-			}
-			else if (xImage.depth() == CV_8U)
-			{
-				xImage.convertTo(xConverted, CV_32FC1, 1.0 / 255.0);
-			}
-			else
-			{
-				xImage.convertTo(xConverted, CV_32FC1);
-			}
-			return xConverted;
-		}
-		return xImage;
+		xResult = Zenith_Image(iWidth, iHeight);
+		memcpy(xResult.Row(0), pfData, static_cast<size_t>(iWidth) * iHeight * sizeof(float));
+		stbi_image_free(pfData);
 	}
+	else if (stbi_is_16_bit(strPath.c_str()))
+	{
+		// 16-bit unsigned - normalize to float [0,1] (old 16-bit path)
+		uint16_t* pu16 = stbi_load_16(strPath.c_str(), &iWidth, &iHeight, &iChannels, 1);
+		if (!pu16)
+		{
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load heightmap: %s", strPath.c_str());
+			return Zenith_Image();
+		}
+		xResult = Zenith_Image(iWidth, iHeight);
+		float* pfDst = xResult.Row(0);
+		const u_int uCount = static_cast<u_int>(iWidth) * static_cast<u_int>(iHeight);
+		for (u_int u = 0; u < uCount; u++)
+		{
+			pfDst[u] = pu16[u] / 65535.0f;
+		}
+		stbi_image_free(pu16);
+	}
+	else
+	{
+		// 8-bit LDR - normalize to float [0,1] (old 8-bit path). Use the byte loader
+		// + manual divide rather than stbi_loadf, which would sRGB-decode the heights.
+		uint8_t* pu8 = stbi_load(strPath.c_str(), &iWidth, &iHeight, &iChannels, 1);
+		if (!pu8)
+		{
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load heightmap (use .ztxtr or PNG): %s", strPath.c_str());
+			return Zenith_Image();
+		}
+		xResult = Zenith_Image(iWidth, iHeight);
+		float* pfDst = xResult.Row(0);
+		const u_int uCount = static_cast<u_int>(iWidth) * static_cast<u_int>(iHeight);
+		for (u_int u = 0; u < uCount; u++)
+		{
+			pfDst[u] = pu8[u] / 255.0f;
+		}
+		stbi_image_free(pu8);
+	}
+
+	return xResult;
 }
 
 //#TO width/height that heightmap is divided into
@@ -245,14 +283,14 @@ static cv::Mat LoadHeightmapAuto(const std::string& strPath)
 // bug that produced a 409.6-unit terrain mismatched with the config/LOD/docs.
 #define TERRAIN_SCALE 1.0f
 
-void GenerateFullTerrain(const cv::Mat& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
+void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor - 1)) == 0, "Density divisor must be a power of 2");
 
 	float fDensity = 1.f / uDensityDivisor;
 
-	u_int uWidth = xHeightmapImage.cols;
-	u_int uHeight = xHeightmapImage.rows;
+	u_int uWidth = xHeightmapImage.GetWidth();
+	u_int uHeight = xHeightmapImage.GetHeight();
 
 	xMesh.m_uNumVerts = static_cast<u_int>(uWidth * uHeight * fDensity * fDensity);
 	xMesh.m_uNumIndices = static_cast<u_int>(((uWidth * fDensity) - 1) * ((uHeight * fDensity) - 1) * 6);
@@ -285,10 +323,10 @@ void GenerateFullTerrain(const cv::Mat& xHeightmapImage, Flux_MeshGeometry& xMes
 
 			double dHeight;
 			{
-				float fTopLeft = xHeightmapImage.at<cv::Vec<float, 1>>(y0, x0).val[0];
-				float fTopRight = xHeightmapImage.at<cv::Vec<float, 1>>(y0, x1).val[0];
-				float fBottomLeft = xHeightmapImage.at<cv::Vec<float, 1>>(y1, x0).val[0];
-				float fBottomRight = xHeightmapImage.at<cv::Vec<float, 1>>(y1, x1).val[0];
+				float fTopLeft = xHeightmapImage.At(y0, x0);
+				float fTopRight = xHeightmapImage.At(y0, x1);
+				float fBottomLeft = xHeightmapImage.At(y1, x0);
+				float fBottomRight = xHeightmapImage.At(y1, x1);
 
 				double dWeightX = xUV.x - x0;
 				double dWeightY = xUV.y - y0;
@@ -607,16 +645,16 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	} // end for uChunkIndex
 }
 
-void ExportMesh(u_int uDensityDivisor, std::string strName, const cv::Mat& xHeightmap, const std::string& strOutputDir)
+void ExportMesh(u_int uDensityDivisor, std::string strName, const Zenith_Image& xHeightmap, const std::string& strOutputDir)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor-1)) == 0, "Density divisor must be a power of 2");
 
 	float fDensity = 1.f / uDensityDivisor;
 
-	Zenith_Assert(!xHeightmap.empty(), "Invalid heightmap image");
+	Zenith_Assert(!xHeightmap.IsEmpty(), "Invalid heightmap image");
 
-	u_int uImageWidth = xHeightmap.cols;
-	u_int uImageHeight = xHeightmap.rows;
+	u_int uImageWidth = xHeightmap.GetWidth();
+	u_int uImageHeight = xHeightmap.GetHeight();
 
 	Zenith_Assert(static_cast<u_int>(uImageWidth * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain width");
 	Zenith_Assert(static_cast<u_int>(uImageHeight * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain height");
@@ -645,9 +683,9 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const cv::Mat& xHeig
 	xChunkTask.WaitUntilComplete();
 }
 
-static void ExportHeightmapInternal(const cv::Mat& xHeightmap, const std::string& strOutputDir)
+static void ExportHeightmapInternal(const Zenith_Image& xHeightmap, const std::string& strOutputDir)
 {
-	Zenith_Assert(!xHeightmap.empty(), "Invalid heightmap");
+	Zenith_Assert(!xHeightmap.IsEmpty(), "Invalid heightmap");
 
 	// Export HIGH detail render meshes (density divisor 1, streamed dynamically)
 	ExportMesh(1, "Render", xHeightmap, strOutputDir);
@@ -664,13 +702,13 @@ void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::st
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Output=%s",
 		strHeightmapPath.c_str(), strOutputDir.c_str());
 
-	cv::Mat xHeightmap = LoadHeightmapAuto(strHeightmapPath);
+	Zenith_Image xHeightmap = LoadHeightmapAuto(strHeightmapPath);
 	ExportHeightmapInternal(xHeightmap, strOutputDir);
 
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Export complete");
 }
 
-void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir)
+void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir)
 {
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Output=%s", strOutputDir.c_str());
 	ExportHeightmapInternal(xHeightmap, strOutputDir);
@@ -681,7 +719,7 @@ void ExportHeightmap()
 {
 	// Use default paths for backward compatibility
 	std::string strAssetsDir = GetGameAssetsDirectory();
-	std::string strHeightmapPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaHeight.tif";
+	std::string strHeightmapPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaHeight" ZENITH_TEXTURE_EXT;
 	std::string strOutputDir = strAssetsDir + "Terrain/";
 
 	ExportHeightmapFromPaths(strHeightmapPath, strOutputDir);

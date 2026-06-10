@@ -21,13 +21,9 @@
 #include "UI/Zenith_UIButton.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
-#pragma warning(push, 0)
-#include <opencv2/opencv.hpp>
-#pragma warning(pop)
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
+#include "AssetHandling/Zenith_Image.h"
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
-extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir);
+extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
 #endif
 
 #include <filesystem>
@@ -105,7 +101,7 @@ static void ExportMaterialTextures(
 
 struct SplatmapSlopeData
 {
-	const cv::Mat* pxHeightmap;
+	const Zenith_Image* pxHeightmap;
 	float* pfSlopes;
 	float* pfPerInvocationMaxSlope;
 	int iSize;
@@ -114,7 +110,7 @@ struct SplatmapSlopeData
 static void ComputeSlopesTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
 {
 	SplatmapSlopeData* pxData = static_cast<SplatmapSlopeData*>(pData);
-	const cv::Mat& xHeightmap = *pxData->pxHeightmap;
+	const Zenith_Image& xHeightmap = *pxData->pxHeightmap;
 	const int iSize = pxData->iSize;
 
 	u_int uRowsPerInvocation = (iSize + uNumInvocations - 1) / uNumInvocations;
@@ -124,9 +120,9 @@ static void ComputeSlopesTask(void* pData, u_int uInvocationIndex, u_int uNumInv
 	float fLocalMaxSlope = 0.0f;
 	for (u_int y = uStartRow; y < uEndRow; ++y)
 	{
-		const float* pfRow = xHeightmap.ptr<float>(y);
-		const float* pfRowUp = (y > 0) ? xHeightmap.ptr<float>(y - 1) : pfRow;
-		const float* pfRowDown = (y < static_cast<u_int>(iSize - 1)) ? xHeightmap.ptr<float>(y + 1) : pfRow;
+		const float* pfRow = xHeightmap.Row(y);
+		const float* pfRowUp = (y > 0) ? xHeightmap.Row(y - 1) : pfRow;
+		const float* pfRowDown = (y < static_cast<u_int>(iSize - 1)) ? xHeightmap.Row(y + 1) : pfRow;
 
 		for (int x = 0; x < iSize; ++x)
 		{
@@ -145,7 +141,7 @@ static void ComputeSlopesTask(void* pData, u_int uInvocationIndex, u_int uNumInv
 
 struct SplatmapWeightData
 {
-	const cv::Mat* pxHeightmap;
+	const Zenith_Image* pxHeightmap;
 	const float* pfSlopes;
 	uint8_t* puPixelData;
 	int iSize;
@@ -157,7 +153,7 @@ struct SplatmapWeightData
 static void GenerateWeightsTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
 {
 	SplatmapWeightData* pxData = static_cast<SplatmapWeightData*>(pData);
-	const cv::Mat& xHeightmap = *pxData->pxHeightmap;
+	const Zenith_Image& xHeightmap = *pxData->pxHeightmap;
 	const int iSize = pxData->iSize;
 	const float fMaxSlope = pxData->fMaxSlope;
 	const double dMin = pxData->dMin;
@@ -169,7 +165,7 @@ static void GenerateWeightsTask(void* pData, u_int uInvocationIndex, u_int uNumI
 
 	for (u_int y = uStartRow; y < uEndRow; ++y)
 	{
-		const float* pfRow = xHeightmap.ptr<float>(y);
+		const float* pfRow = xHeightmap.Row(y);
 		for (int x = 0; x < iSize; ++x)
 		{
 			float fElev = static_cast<float>((pfRow[x] - dMin) / dRange);
@@ -206,13 +202,14 @@ static void GenerateWeightsTask(void* pData, u_int uInvocationIndex, u_int uNumI
  * Generate procedural splatmap (RGBA8) from heightmap
  * R=grass, G=rock, B=dirt, A=sand
  */
-static void GenerateProceduralSplatmap(const cv::Mat& xHeightmap, const std::string& strOutputPath)
+static void GenerateProceduralSplatmap(const Zenith_Image& xHeightmap, const std::string& strOutputPath)
 {
-	int iSize = xHeightmap.rows;
+	int iSize = static_cast<int>(xHeightmap.GetHeight());
 	std::vector<uint8_t> xPixelData(iSize * iSize * 4);
 
-	double dMin, dMax;
-	cv::minMaxLoc(xHeightmap, &dMin, &dMax);
+	float fMin, fMax;
+	xHeightmap.MinMax(fMin, fMax);
+	double dMin = fMin, dMax = fMax;
 	double dRange = (dMax - dMin > 0.0001) ? (dMax - dMin) : 1.0;
 
 	u_int uNumInvocations = std::min(static_cast<u_int>(64), static_cast<u_int>(iSize));
@@ -271,11 +268,11 @@ static void GenerateProceduralSplatmap(const cv::Mat& xHeightmap, const std::str
  *
  * @param uSize Image size (must be 4096 for terrain system)
  * @param fTerrainWorldSize World size the heightmap covers
- * @return 32-bit float cv::Mat heightmap (values 0.0-1.0)
+ * @return 32-bit float Zenith_Image heightmap (values 0.0-1.0)
  */
 struct HeightmapGenData
 {
-	cv::Mat* pxHeightmap;
+	Zenith_Image* pxHeightmap;
 	uint32_t uSize;
 	float fTerrainWorldSize;
 };
@@ -294,7 +291,7 @@ static void GenerateHeightmapRowsTask(void* pData, u_int uInvocationIndex, u_int
 
 	for (uint32_t y = uStartRow; y < uEndRow; ++y)
 	{
-		float* pfRow = pxData->pxHeightmap->ptr<float>(y);
+		float* pfRow = pxData->pxHeightmap->Row(y);
 		float fWorldZ = (static_cast<float>(y) / fSizeMinusOne) * fTerrainWorldSize - fTerrainWorldSize * 0.5f;
 
 		for (uint32_t x = 0; x < uSize; ++x)
@@ -313,9 +310,9 @@ static void GenerateHeightmapRowsTask(void* pData, u_int uInvocationIndex, u_int
 	}
 }
 
-static cv::Mat GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWorldSize)
+static Zenith_Image GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWorldSize)
 {
-	cv::Mat xHeightmap(uSize, uSize, CV_32FC1);
+	Zenith_Image xHeightmap(uSize, uSize);
 
 	HeightmapGenData xData;
 	xData.pxHeightmap = &xHeightmap;
@@ -327,7 +324,7 @@ static cv::Mat GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWorldSi
 	g_xEngine.Tasks().SubmitDataParallelTask(&xTask);
 	xTask.WaitUntilComplete();
 
-	cv::flip(xHeightmap, xHeightmap, 0);
+	xHeightmap.FlipVertical();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Generated procedural heightmap: %ux%u", uSize, uSize);
 	return xHeightmap;
@@ -341,7 +338,6 @@ static bool GenerateAndExportTerrain()
 	using namespace Flux_TerrainConfig;
 
 	std::string strTerrainDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
-	std::string strHeightmapPath = strTerrainDir + "ExplorationHeightmap.tif";
 	std::string strTexturesDir = strTerrainDir + "Textures/";
 
 	// Create directories
@@ -351,15 +347,7 @@ static bool GenerateAndExportTerrain()
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Generating procedural terrain...");
 
 	// Generate 4096x4096 heightmap (required size for terrain system)
-	cv::Mat xHeightmap = GenerateProceduralHeightmap(4096, TERRAIN_SIZE);
-
-	// Save heightmap as .tif file
-	if (!cv::imwrite(strHeightmapPath, xHeightmap))
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] ERROR: Failed to save heightmap to %s", strHeightmapPath.c_str());
-		return false;
-	}
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Saved heightmap: %s", strHeightmapPath.c_str());
+	Zenith_Image xHeightmap = GenerateProceduralHeightmap(4096, TERRAIN_SIZE);
 
 	// Export terrain meshes (HIGH, LOW, and physics for all chunks)
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Exporting terrain meshes (this may take a while)...");

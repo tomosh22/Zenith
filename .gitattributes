@@ -68,8 +68,7 @@
 # All binary asset types route through Git LFS instead of being stored inline
 # in pack files. Reasons:
 #   - GitHub has a 100 MB per-file commit limit (already bit us on
-#     opencv_world4100d.dll = 120 MB and slang-llvm.dll = 105 MB; both
-#     are fetched per-CI-run today rather than tracked).
+#     slang-llvm.dll = 105 MB, fetched per-CI-run today rather than tracked).
 #   - Repo clones stay small for new contributors who don't need every
 #     historical asset revision.
 #   - Binary diffs are unreadable anyway -- LFS hashing them is a strict

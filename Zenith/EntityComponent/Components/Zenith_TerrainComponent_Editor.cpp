@@ -41,16 +41,16 @@ static std::string s_strTerrainExportStatus = "";
 
 //-----------------------------------------------------------------------------
 // Helper function to show Windows Open File dialog for terrain textures
-// Supports .ztxtr (preferred) and .tif files
+// Supports .ztxtr (preferred) and PNG files
 //-----------------------------------------------------------------------------
-static std::string ShowTifOpenFileDialog()
+static std::string ShowHeightmapOpenFileDialog()
 {
 	char szFilePath[MAX_PATH] = { 0 };
 
 	OPENFILENAMEA ofn = {};
 	ofn.lStructSize = sizeof(OPENFILENAMEA);
 	ofn.hwndOwner = nullptr;
-	ofn.lpstrFilter = "Zenith Texture (*.ztxtr)\0*.ztxtr\0TIF Files (*.tif)\0*.tif\0All Files (*.*)\0*.*\0";
+	ofn.lpstrFilter = "Zenith Texture (*.ztxtr)\0*.ztxtr\0PNG Files (*.png)\0*.png\0All Files (*.*)\0*.*\0";
 	ofn.lpstrFile = szFilePath;
 	ofn.nMaxFile = MAX_PATH;
 	ofn.lpstrDefExt = "ztxtr";
@@ -92,7 +92,7 @@ static void RenderHeightmapPathInput(const char* szImGuiId)
 	snprintf(szBrowseId, sizeof(szBrowseId), "Browse...##%s", szImGuiId);
 	if (ImGui::Button(szBrowseId))
 	{
-		std::string strPath = ShowTifOpenFileDialog();
+		std::string strPath = ShowHeightmapOpenFileDialog();
 		if (!strPath.empty())
 		{
 			strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
@@ -210,7 +210,7 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 	if (!ImGui::TreeNode("Create Terrain From Heightmap"))
 		return;
 
-	ImGui::TextWrapped("Specify a heightmap texture to generate terrain geometry. Use .ztxtr files (exported from .tif via content browser) or .tif files directly. Textures should be 4096x4096 single-channel (grayscale).");
+	ImGui::TextWrapped("Specify a heightmap texture to generate terrain geometry. Use .ztxtr files (preferred) or 16-bit PNG. Textures should be 4096x4096 single-channel (grayscale).");
 	ImGui::Separator();
 
 	RenderHeightmapPathInput("HeightmapPath");
