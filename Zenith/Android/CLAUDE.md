@@ -106,7 +106,7 @@ Code that is Windows-only or unavailable on Android uses these guards:
 | Guard | Purpose |
 |-------|---------|
 | `#ifdef ZENITH_WINDOWS` | Slang shader compiler, `Zenith_Main()` loop, `_aligned_malloc`, MSVC intrinsics |
-| `#ifdef ZENITH_TOOLS` | Assimp import, editor, hot reload, OpenCV (never defined on Android) |
+| `#ifdef ZENITH_TOOLS` | Assimp import, editor, hot reload, asset export (never defined on Android) |
 | `#ifdef _MSC_VER` | MSVC-specific intrinsics like `__popcnt` (use `__builtin_popcount` on Clang) |
 
 Key files with Android guards:

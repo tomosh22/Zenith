@@ -1,8 +1,7 @@
 #include "Zenith.h"
 #include "Zenith_Tools_TextureExport.h"
 // Wave-13 PCH slim round 2: <filesystem> was demoted out of Zenith.h. This TU
-// uses std::filesystem (directory iteration in ExportAllTextures below) and was
-// relying on the transitive PCH include (opencv does not provide it), so it now
+// uses std::filesystem (directory iteration in ExportAllTextures below), so it
 // carries the explicit include.
 #include <filesystem>
 
@@ -27,7 +26,6 @@ static std::string GetEngineAssetsDirectory()
 #include "stb/stb_image.h"
 #define STB_DXT_IMPLEMENTATION
 #include "stb/stb_dxt.h"
-#include <opencv2/opencv.hpp>
 #pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
@@ -292,21 +290,21 @@ void Zenith_Tools_TextureExport::ExportFromDataWithFormat(const void* pData, con
 		strFilename.c_str(), iWidth, iHeight, static_cast<int>(eFormat), ulDataSize);
 }
 
-void Zenith_Tools_TextureExport::ExportFromTifFile(const std::string& strFilename, TextureCompressionMode eCompression)
+// Dispatch an RGBA8 buffer to the (un)compressed exporter based on eCompression.
+static void ExportRGBA8Buffer(const uint8_t* puRGBA, const std::string& strOutputFilename, int32_t iWidth, int32_t iHeight, TextureCompressionMode eCompression)
 {
-	// Load TIF with full bit depth preservation
-	cv::Mat xImage = cv::imread(strFilename, cv::IMREAD_ANYDEPTH | cv::IMREAD_ANYCOLOR);
-	if (xImage.empty())
+	if (eCompression == TextureCompressionMode::Uncompressed)
 	{
-		Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load TIF file: %s", strFilename.c_str());
-		return;
+		Zenith_Tools_TextureExport::ExportFromData(puRGBA, strOutputFilename, iWidth, iHeight, TEXTURE_FORMAT_RGBA8_UNORM);
 	}
+	else
+	{
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(puRGBA, strOutputFilename, iWidth, iHeight, eCompression);
+	}
+}
 
-	int32_t iWidth = xImage.cols;
-	int32_t iHeight = xImage.rows;
-	int iDepth = xImage.depth();
-	int iChannels = xImage.channels();
-
+void Zenith_Tools_TextureExport::ExportFromHeightmapImageFile(const std::string& strFilename, TextureCompressionMode eCompression)
+{
 	// Generate output filename (replace extension with .ztxtr)
 	std::string strOutputFilename = strFilename;
 	size_t ulDotPos = strOutputFilename.rfind('.');
@@ -319,88 +317,96 @@ void Zenith_Tools_TextureExport::ExportFromTifFile(const std::string& strFilenam
 		strOutputFilename += ZENITH_TEXTURE_EXT;
 	}
 
-	Zenith_Log(LOG_CATEGORY_TOOLS, "Exporting TIF %s: %dx%d, depth=%d, channels=%d",
-		strFilename.c_str(), iWidth, iHeight, iDepth, iChannels);
+	int32_t iWidth = 0, iHeight = 0, iChannels = 0;
 
-	// Determine format and export based on bit depth and channel count
-	if (iChannels == 1)
+	// Decode by source bit depth, preserving single-channel heightmap precision.
+	// stb returns RGB(A) natively (unlike OpenCV's BGR), so no channel swap is needed.
+	if (stbi_is_hdr(strFilename.c_str()))
 	{
-		// Single-channel (heightmap) - preserve bit depth
-		if (iDepth == CV_32F)
+		float* pfData = stbi_loadf(strFilename.c_str(), &iWidth, &iHeight, &iChannels, 0);
+		if (!pfData)
 		{
-			// 32-bit float single channel
-			ExportFromDataWithFormat(xImage.data, strOutputFilename, iWidth, iHeight,
-				TEXTURE_FORMAT_R32_SFLOAT, sizeof(float));
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load image: %s", strFilename.c_str());
+			return;
 		}
-		else if (iDepth == CV_16U)
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Exporting image %s: %dx%d, 32-bit float, channels=%d",
+			strFilename.c_str(), iWidth, iHeight, iChannels);
+
+		if (iChannels == 1)
 		{
-			// 16-bit unsigned single channel
-			ExportFromDataWithFormat(xImage.data, strOutputFilename, iWidth, iHeight,
-				TEXTURE_FORMAT_R16_UNORM, sizeof(uint16_t));
+			// 32-bit float single channel (heightmap)
+			ExportFromDataWithFormat(pfData, strOutputFilename, iWidth, iHeight, TEXTURE_FORMAT_R32_SFLOAT, sizeof(float));
 		}
 		else
 		{
-			// 8-bit - convert to RGBA8 for compatibility
-			cv::Mat xRGBA;
-			cv::cvtColor(xImage, xRGBA, cv::COLOR_GRAY2RGBA);
-			if (eCompression == TextureCompressionMode::Uncompressed)
+			const size_t ulCount = static_cast<size_t>(iWidth) * iHeight;
+			uint8_t* puRGBA = new uint8_t[ulCount * 4];
+			for (size_t i = 0; i < ulCount; i++)
 			{
-				ExportFromData(xRGBA.data, strOutputFilename, iWidth, iHeight, TEXTURE_FORMAT_RGBA8_UNORM);
+				for (int c = 0; c < 4; c++)
+				{
+					float fVal = (c < iChannels) ? pfData[i * iChannels + c] : (c == 3 ? 1.0f : 0.0f);
+					int iVal = static_cast<int>(fVal * 255.0f + 0.5f);
+					puRGBA[i * 4 + c] = static_cast<uint8_t>(iVal < 0 ? 0 : (iVal > 255 ? 255 : iVal));
+				}
 			}
-			else
-			{
-				ExportFromDataCompressed(xRGBA.data, strOutputFilename, iWidth, iHeight, eCompression);
-			}
+			ExportRGBA8Buffer(puRGBA, strOutputFilename, iWidth, iHeight, eCompression);
+			delete[] puRGBA;
 		}
+		stbi_image_free(pfData);
 	}
-	else if (iChannels == 3 || iChannels == 4)
+	else if (stbi_is_16_bit(strFilename.c_str()))
 	{
-		// RGB/RGBA image - convert to RGBA8
-		cv::Mat xRGBA;
-		if (iChannels == 3)
+		uint16_t* pu16 = stbi_load_16(strFilename.c_str(), &iWidth, &iHeight, &iChannels, 0);
+		if (!pu16)
 		{
-			cv::cvtColor(xImage, xRGBA, cv::COLOR_BGR2RGBA);
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load image: %s", strFilename.c_str());
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Exporting image %s: %dx%d, 16-bit, channels=%d",
+			strFilename.c_str(), iWidth, iHeight, iChannels);
+
+		if (iChannels == 1)
+		{
+			// 16-bit unsigned single channel (heightmap)
+			ExportFromDataWithFormat(pu16, strOutputFilename, iWidth, iHeight, TEXTURE_FORMAT_R16_UNORM, sizeof(uint16_t));
 		}
 		else
 		{
-			cv::cvtColor(xImage, xRGBA, cv::COLOR_BGRA2RGBA);
-		}
-
-		// Handle higher bit depths by converting to 8-bit
-		if (iDepth != CV_8U)
-		{
-			cv::Mat xConverted;
-			if (iDepth == CV_16U)
+			const size_t ulCount = static_cast<size_t>(iWidth) * iHeight;
+			uint8_t* puRGBA = new uint8_t[ulCount * 4];
+			for (size_t i = 0; i < ulCount; i++)
 			{
-				xRGBA.convertTo(xConverted, CV_8UC4, 1.0 / 256.0);
+				for (int c = 0; c < 4; c++)
+				{
+					if (c < iChannels)
+						puRGBA[i * 4 + c] = static_cast<uint8_t>(pu16[i * iChannels + c] >> 8);
+					else
+						puRGBA[i * 4 + c] = (c == 3) ? 255 : 0;
+				}
 			}
-			else if (iDepth == CV_32F)
-			{
-				xRGBA.convertTo(xConverted, CV_8UC4, 255.0);
-			}
-			else
-			{
-				xRGBA.convertTo(xConverted, CV_8UC4);
-			}
-			xRGBA = xConverted;
+			ExportRGBA8Buffer(puRGBA, strOutputFilename, iWidth, iHeight, eCompression);
+			delete[] puRGBA;
 		}
-
-		if (eCompression == TextureCompressionMode::Uncompressed)
-		{
-			ExportFromData(xRGBA.data, strOutputFilename, iWidth, iHeight, TEXTURE_FORMAT_RGBA8_UNORM);
-		}
-		else
-		{
-			ExportFromDataCompressed(xRGBA.data, strOutputFilename, iWidth, iHeight, eCompression);
-		}
+		stbi_image_free(pu16);
 	}
 	else
 	{
-		Zenith_Log(LOG_CATEGORY_TOOLS, "Unsupported TIF channel count: %d", iChannels);
-		return;
+		// 8-bit: force RGBA8 (covers gray/RGB/RGBA), matching the old GRAY2RGBA / RGB(A)2RGBA paths.
+		uint8_t* puData = stbi_load(strFilename.c_str(), &iWidth, &iHeight, &iChannels, STBI_rgb_alpha);
+		if (!puData)
+		{
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load image: %s", strFilename.c_str());
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Exporting image %s: %dx%d, 8-bit, channels=%d",
+			strFilename.c_str(), iWidth, iHeight, iChannels);
+
+		ExportRGBA8Buffer(puData, strOutputFilename, iWidth, iHeight, eCompression);
+		stbi_image_free(puData);
 	}
 
-	Zenith_Log(LOG_CATEGORY_TOOLS, "TIF export complete: %s -> %s", strFilename.c_str(), strOutputFilename.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Image export complete: %s -> %s", strFilename.c_str(), strOutputFilename.c_str());
 }
 
 void ExportTexture(const std::filesystem::directory_entry& xFile)

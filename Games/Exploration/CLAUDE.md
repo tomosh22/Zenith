@@ -202,8 +202,6 @@ On the very first launch, the game will generate terrain mesh data:
 ```
 [Exploration] Generating procedural terrain...
 [Exploration] Generated procedural heightmap: 4096x4096
-[Exploration] Generated material map: 4096x4096
-[Exploration] Saved heightmap: .../Terrain/ExplorationHeightmap.tif
 [Exploration] Exporting terrain meshes (this may take a while)...
 [Exploration] Terrain mesh export complete!
 ```
@@ -288,7 +286,7 @@ This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may 
 | T1.1 | Delete Assets/Terrain folder | Terrain folder removed |
 | T1.2 | Launch exploration.exe | Heightmap generation begins |
 | T1.3 | Wait for terrain export | All LOD meshes generated (check console) |
-| T1.4 | Verify Terrain folder | Contains .tif files and .zmesh files |
+| T1.4 | Verify Terrain folder | Contains .ztxtr and .zmesh files |
 | T1.5 | Relaunch exploration.exe | "Terrain mesh files already exist" message |
 
 ### T2: First-Person Controls

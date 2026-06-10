@@ -153,8 +153,6 @@ public class ZenithECSLibProject : ZenithBaseProject
 			// identically in True. Include paths only (no tool libs linked).
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/assimp/include");
-			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include");
-			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include/opencv2");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/freetype/include");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen");
