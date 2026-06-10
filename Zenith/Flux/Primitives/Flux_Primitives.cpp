@@ -18,15 +18,11 @@
 
 // Phase 7g: subsystem state moved to Flux_PrimitivesImpl held by Zenith_Engine.
 //
-// Aggressive de-globalization: BOTH cross-subsystem deps (Flux_GraphicsImpl and
-// Zenith_Vulkan_MemoryManager) are injected into Initialise and stored in
-// m_pxGraphics / m_pxVulkanMemory. SetupRenderGraph routes FluxGraphics through
-// m_pxGraphics; the buffer (de)allocation in Initialise/Shutdown and the dynamic
-// upload in RenderTrianglePrimitives route VulkanMemory through m_pxVulkanMemory.
-// The former file-static render helpers are now Flux_PrimitivesImpl members so their
-// self-reaches resolve through `this`. g_xEngine.Primitives() self-lookup survives
-// only in the non-capturing ExecuteGBuffer / hot-reload fn-pointer trampolines below
-// (which recover the singleton and then route reach-ins through the injected members).
+// Cross-subsystem deps (FluxGraphics / VulkanMemory) are reached via g_xEngine at
+// point of use. The former file-static render helpers are now Flux_PrimitivesImpl
+// members so their self-reaches resolve through `this`. The non-capturing
+// ExecuteGBuffer / hot-reload fn-pointer trampolines below recover the singleton
+// via g_xEngine.Primitives().
 //
 // The per-primitive instance structs are also there (named Flux_PrimitivesXxxInstance);
 // these aliases preserve the original short names used throughout this file.
@@ -424,14 +420,9 @@ void Flux_PrimitivesImpl::BuildPipelines()
 
 static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 
-void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory)
+void Flux_PrimitivesImpl::Initialise()
 {
-	// Store the injected cross-subsystem deps. The FluxGraphics reach-ins (in
-	// ExecuteGBuffer / SetupRenderGraph) route through m_pxGraphics; the buffer
-	// (de)allocation + dynamic upload route through m_pxVulkanMemory instead of
-	// g_xEngine.FluxGraphics() / g_xEngine.FluxMemory().
-	m_pxGraphics = &xGraphics;
-	m_pxVulkanMemory = &xVulkanMemory;
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 
 	// Generate procedural meshes
 	Zenith_Vector<PrimitiveVertex> xVertices;
@@ -440,32 +431,32 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryMa
 	// Unit sphere
 	GenerateUnitSphere(xVertices, xIndices);
 	m_uSphereIndexCount = xIndices.GetSize();
-	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xSphereVertexBuffer);
-	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xSphereIndexBuffer);
+	xVulkanMemory.InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xSphereVertexBuffer);
+	xVulkanMemory.InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xSphereIndexBuffer);
 
 	// Unit cube
 	GenerateUnitCube(xVertices, xIndices);
 	m_uCubeIndexCount = xIndices.GetSize();
-	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCubeVertexBuffer);
-	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCubeIndexBuffer);
+	xVulkanMemory.InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCubeVertexBuffer);
+	xVulkanMemory.InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCubeIndexBuffer);
 
 	// Unit capsule
 	GenerateUnitCapsule(xVertices, xIndices);
 	m_uCapsuleIndexCount = xIndices.GetSize();
-	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCapsuleVertexBuffer);
-	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCapsuleIndexBuffer);
+	xVulkanMemory.InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCapsuleVertexBuffer);
+	xVulkanMemory.InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCapsuleIndexBuffer);
 
 	// Unit cylinder
 	GenerateUnitCylinder(xVertices, xIndices);
 	m_uCylinderIndexCount = xIndices.GetSize();
-	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCylinderVertexBuffer);
-	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCylinderIndexBuffer);
+	xVulkanMemory.InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xCylinderVertexBuffer);
+	xVulkanMemory.InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xCylinderIndexBuffer);
 
 	// Unit line
 	GenerateUnitLine(xVertices, xIndices);
 	m_uLineIndexCount = xIndices.GetSize();
-	m_pxVulkanMemory->InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xLineVertexBuffer);
-	m_pxVulkanMemory->InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xLineIndexBuffer);
+	xVulkanMemory.InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), m_xLineVertexBuffer);
+	xVulkanMemory.InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), m_xLineIndexBuffer);
 
 	BuildPipelines();
 
@@ -475,8 +466,8 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryMa
 		const size_t uVertexBufferSize = s_uMaxTriangles * 3 * sizeof(PrimitiveVertex);
 		const size_t uIndexBufferSize = s_uMaxTriangles * 3 * sizeof(u_int);
 
-		m_pxVulkanMemory->InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, m_xTriangleDynamicVertexBuffer, false);
-		m_pxVulkanMemory->InitialiseIndexBuffer(nullptr, uIndexBufferSize, m_xTriangleIndexBuffer);
+		xVulkanMemory.InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, m_xTriangleDynamicVertexBuffer, false);
+		xVulkanMemory.InitialiseIndexBuffer(nullptr, uIndexBufferSize, m_xTriangleIndexBuffer);
 		m_bTriangleBuffersInitialised = true;
 	}
 
@@ -497,42 +488,41 @@ void Flux_PrimitivesImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryMa
 void Flux_PrimitivesImpl::Shutdown()
 {
 	// Destroy all vertex and index buffers
-	m_pxVulkanMemory->DestroyVertexBuffer(m_xSphereVertexBuffer);
-	m_pxVulkanMemory->DestroyIndexBuffer(m_xSphereIndexBuffer);
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	xVulkanMemory.DestroyVertexBuffer(m_xSphereVertexBuffer);
+	xVulkanMemory.DestroyIndexBuffer(m_xSphereIndexBuffer);
 
-	m_pxVulkanMemory->DestroyVertexBuffer(m_xCubeVertexBuffer);
-	m_pxVulkanMemory->DestroyIndexBuffer(m_xCubeIndexBuffer);
+	xVulkanMemory.DestroyVertexBuffer(m_xCubeVertexBuffer);
+	xVulkanMemory.DestroyIndexBuffer(m_xCubeIndexBuffer);
 
-	m_pxVulkanMemory->DestroyVertexBuffer(m_xCapsuleVertexBuffer);
-	m_pxVulkanMemory->DestroyIndexBuffer(m_xCapsuleIndexBuffer);
+	xVulkanMemory.DestroyVertexBuffer(m_xCapsuleVertexBuffer);
+	xVulkanMemory.DestroyIndexBuffer(m_xCapsuleIndexBuffer);
 
-	m_pxVulkanMemory->DestroyVertexBuffer(m_xCylinderVertexBuffer);
-	m_pxVulkanMemory->DestroyIndexBuffer(m_xCylinderIndexBuffer);
+	xVulkanMemory.DestroyVertexBuffer(m_xCylinderVertexBuffer);
+	xVulkanMemory.DestroyIndexBuffer(m_xCylinderIndexBuffer);
 
-	m_pxVulkanMemory->DestroyVertexBuffer(m_xLineVertexBuffer);
-	m_pxVulkanMemory->DestroyIndexBuffer(m_xLineIndexBuffer);
+	xVulkanMemory.DestroyVertexBuffer(m_xLineVertexBuffer);
+	xVulkanMemory.DestroyIndexBuffer(m_xLineIndexBuffer);
 
 	// Destroy pre-allocated triangle buffers
 	if (m_bTriangleBuffersInitialised)
 	{
-		m_pxVulkanMemory->DestroyDynamicVertexBuffer(m_xTriangleDynamicVertexBuffer);
-		m_pxVulkanMemory->DestroyIndexBuffer(m_xTriangleIndexBuffer);
+		xVulkanMemory.DestroyDynamicVertexBuffer(m_xTriangleDynamicVertexBuffer);
+		xVulkanMemory.DestroyIndexBuffer(m_xTriangleIndexBuffer);
 		m_bTriangleBuffersInitialised = false;
 	}
 
-	// Drop the injected deps so the instance returns to a clean default state.
-	m_pxGraphics = nullptr;
-	m_pxVulkanMemory = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives shut down");
 }
 
 void Flux_PrimitivesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_PrimitivesImpl::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)
@@ -842,9 +832,9 @@ void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandList* pxCmdList, 
 		xIndices.PushBack(uBaseVertex + 2);
 	}
 
-	m_pxVulkanMemory->UploadBufferData(m_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
+	g_xEngine.FluxMemory().UploadBufferData(m_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
 		xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex));
-	m_pxVulkanMemory->UploadBufferData(m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
+	g_xEngine.FluxMemory().UploadBufferData(m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
 		xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int));
 
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
@@ -863,8 +853,8 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 
 	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Primitives() to reach the singleton
-	// instance FIRST, then routes ALL further reach-ins (instance queues, FluxGraphics,
-	// VulkanMemory) through xPrimitives' members (mirrors ExecuteSSAOGenerate).
+	// instance FIRST; cross-subsystem deps (FluxGraphics / VulkanMemory) are
+	// reached via g_xEngine at point of use (mirrors ExecuteSSAOGenerate).
 	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
 
 	// Drain the instance queues under lock — Add*() runs on game-thread workers while
@@ -899,7 +889,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(xPrimitives.m_xPrimitivesShader, "FrameConstants", &xPrimitives.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xPrimitives.m_xPrimitivesShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
 	xPrimitives.RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);

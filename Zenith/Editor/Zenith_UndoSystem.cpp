@@ -4,16 +4,12 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_UndoSystem.h"
-#include "Zenith_UndoSystem.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Editor/Zenith_EditorSceneAccess.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DataStream/Zenith_DataStream.h"
-
-// Phase 5.5d: undo / redo stacks live on Zenith_UndoSystem held by
-// Zenith_Engine.
 
 u_int Zenith_UndoSystem::GetUndoStackSize() { return Zenith_UndoSystem::m_xUndoStack.GetSize(); }
 u_int Zenith_UndoSystem::GetRedoStackSize() { return Zenith_UndoSystem::m_xRedoStack.GetSize(); }
@@ -38,22 +34,22 @@ void Zenith_UndoSystem::Execute(Zenith_UndoCommand* pCommand)
 	pCommand->Execute();
 
 	// Add to undo stack (take ownership)
-	g_xEngine.UndoSystem().m_xUndoStack.PushBack(pCommand);
+	m_xUndoStack.PushBack(pCommand);
 
 	// Clear redo stack (branching timeline) - delete all commands first
-	for (u_int u = 0; u < g_xEngine.UndoSystem().m_xRedoStack.GetSize(); u++)
+	for (u_int u = 0; u < m_xRedoStack.GetSize(); u++)
 	{
-		delete g_xEngine.UndoSystem().m_xRedoStack.Get(u);
+		delete m_xRedoStack.Get(u);
 	}
-	g_xEngine.UndoSystem().m_xRedoStack.Clear();
+	m_xRedoStack.Clear();
 
 	// Enforce stack size limit
 	EnforceStackLimit();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Executed: %s (Undo stack: %u, Redo stack: %u)",
 		pCommand->GetDescription(),
-		g_xEngine.UndoSystem().m_xUndoStack.GetSize(),
-		g_xEngine.UndoSystem().m_xRedoStack.GetSize());
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
 }
 
 void Zenith_UndoSystem::Undo()
@@ -65,19 +61,19 @@ void Zenith_UndoSystem::Undo()
 	}
 
 	// Pop from undo stack
-	Zenith_UndoCommand* pCommand = g_xEngine.UndoSystem().m_xUndoStack.GetBack();
-	g_xEngine.UndoSystem().m_xUndoStack.PopBack();
+	Zenith_UndoCommand* pCommand = m_xUndoStack.GetBack();
+	m_xUndoStack.PopBack();
 
 	// Undo the command
 	pCommand->Undo();
 
 	// Move to redo stack
-	g_xEngine.UndoSystem().m_xRedoStack.PushBack(pCommand);
+	m_xRedoStack.PushBack(pCommand);
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Undone: %s (Undo stack: %u, Redo stack: %u)",
-		g_xEngine.UndoSystem().m_xRedoStack.GetBack()->GetDescription(),
-		g_xEngine.UndoSystem().m_xUndoStack.GetSize(),
-		g_xEngine.UndoSystem().m_xRedoStack.GetSize());
+		m_xRedoStack.GetBack()->GetDescription(),
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
 }
 
 void Zenith_UndoSystem::Redo()
@@ -89,29 +85,29 @@ void Zenith_UndoSystem::Redo()
 	}
 
 	// Pop from redo stack
-	Zenith_UndoCommand* pCommand = g_xEngine.UndoSystem().m_xRedoStack.GetBack();
-	g_xEngine.UndoSystem().m_xRedoStack.PopBack();
+	Zenith_UndoCommand* pCommand = m_xRedoStack.GetBack();
+	m_xRedoStack.PopBack();
 
 	// Re-execute the command
 	pCommand->Execute();
 
 	// Move to undo stack
-	g_xEngine.UndoSystem().m_xUndoStack.PushBack(pCommand);
+	m_xUndoStack.PushBack(pCommand);
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Redone: %s (Undo stack: %u, Redo stack: %u)",
-		g_xEngine.UndoSystem().m_xUndoStack.GetBack()->GetDescription(),
-		g_xEngine.UndoSystem().m_xUndoStack.GetSize(),
-		g_xEngine.UndoSystem().m_xRedoStack.GetSize());
+		m_xUndoStack.GetBack()->GetDescription(),
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
 }
 
 bool Zenith_UndoSystem::CanUndo()
 {
-	return g_xEngine.UndoSystem().m_xUndoStack.GetSize() > 0;
+	return m_xUndoStack.GetSize() > 0;
 }
 
 bool Zenith_UndoSystem::CanRedo()
 {
-	return g_xEngine.UndoSystem().m_xRedoStack.GetSize() > 0;
+	return m_xRedoStack.GetSize() > 0;
 }
 
 const char* Zenith_UndoSystem::GetUndoDescription()
@@ -119,7 +115,7 @@ const char* Zenith_UndoSystem::GetUndoDescription()
 	if (!CanUndo())
 		return "";
 
-	return g_xEngine.UndoSystem().m_xUndoStack.GetBack()->GetDescription();
+	return m_xUndoStack.GetBack()->GetDescription();
 }
 
 const char* Zenith_UndoSystem::GetRedoDescription()
@@ -127,22 +123,22 @@ const char* Zenith_UndoSystem::GetRedoDescription()
 	if (!CanRedo())
 		return "";
 
-	return g_xEngine.UndoSystem().m_xRedoStack.GetBack()->GetDescription();
+	return m_xRedoStack.GetBack()->GetDescription();
 }
 
 void Zenith_UndoSystem::Clear()
 {
-	for (u_int u = 0; u < g_xEngine.UndoSystem().m_xUndoStack.GetSize(); u++)
+	for (u_int u = 0; u < m_xUndoStack.GetSize(); u++)
 	{
-		delete g_xEngine.UndoSystem().m_xUndoStack.Get(u);
+		delete m_xUndoStack.Get(u);
 	}
-	g_xEngine.UndoSystem().m_xUndoStack.Clear();
+	m_xUndoStack.Clear();
 
-	for (u_int u = 0; u < g_xEngine.UndoSystem().m_xRedoStack.GetSize(); u++)
+	for (u_int u = 0; u < m_xRedoStack.GetSize(); u++)
 	{
-		delete g_xEngine.UndoSystem().m_xRedoStack.Get(u);
+		delete m_xRedoStack.Get(u);
 	}
-	g_xEngine.UndoSystem().m_xRedoStack.Clear();
+	m_xRedoStack.Clear();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Cleared all undo/redo history");
 }
@@ -150,10 +146,10 @@ void Zenith_UndoSystem::Clear()
 void Zenith_UndoSystem::EnforceStackLimit()
 {
 	// Remove oldest commands if stack exceeds limit
-	while (g_xEngine.UndoSystem().m_xUndoStack.GetSize() > MAX_UNDO_STACK_SIZE)
+	while (m_xUndoStack.GetSize() > MAX_UNDO_STACK_SIZE)
 	{
-		delete g_xEngine.UndoSystem().m_xUndoStack.GetFront();
-		g_xEngine.UndoSystem().m_xUndoStack.Remove(0);
+		delete m_xUndoStack.GetFront();
+		m_xUndoStack.Remove(0);
 	}
 }
 
@@ -247,176 +243,6 @@ void Zenith_UndoCommand_TransformEdit::Undo()
 const char* Zenith_UndoCommand_TransformEdit::GetDescription() const
 {
 	return "Edit Transform";
-}
-
-//------------------------------------------------------------------------------
-// Zenith_UndoCommand_CreateEntity Implementation
-//------------------------------------------------------------------------------
-
-Zenith_UndoCommand_CreateEntity::Zenith_UndoCommand_CreateEntity(
-	Zenith_EntityID uEntityID,
-	const std::string& strName
-)
-	: m_uEntityID(uEntityID)
-	, m_strName(strName)
-	, m_bCreated(false)
-{
-}
-
-void Zenith_UndoCommand_CreateEntity::Execute()
-{
-	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
-	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
-	if (!pxSceneData)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot execute create entity");
-		return;
-	}
-
-	// Check if entity already exists (redo case)
-	if (pxSceneData->EntityExists(m_uEntityID))
-	{
-		// Entity already exists, nothing to do
-		m_bCreated = true;
-		return;
-	}
-
-	// Create entity with stored ID and name
-	// NOTE: This is a simplified implementation
-	// In practice, you'd need to properly recreate the entity with all components
-	// For now, we just track the creation/deletion state
-	// A full implementation would serialize/deserialize all components
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: CreateEntity command execute() - entity recreation not fully implemented");
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Entity %u (%s) marked as created", m_uEntityID, m_strName.c_str());
-
-	m_bCreated = true;
-}
-
-void Zenith_UndoCommand_CreateEntity::Undo()
-{
-	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
-	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
-	if (!pxSceneData)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot undo create entity");
-		return;
-	}
-
-	// Verify entity exists
-	if (!pxSceneData->EntityExists(m_uEntityID))
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u does not exist, cannot undo creation", m_uEntityID);
-		return;
-	}
-
-	// Remove entity from scene
-	Zenith_EditorSceneAccess::RemoveEntity(pxSceneData, m_uEntityID);
-	m_bCreated = false;
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Removed entity %u (%s)", m_uEntityID, m_strName.c_str());
-}
-
-const char* Zenith_UndoCommand_CreateEntity::GetDescription() const
-{
-	return "Create Entity";
-}
-
-//------------------------------------------------------------------------------
-// Zenith_UndoCommand_DeleteEntity Implementation
-//------------------------------------------------------------------------------
-
-Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID uEntityID)
-	: m_uEntityID(uEntityID)
-	, m_bDeleted(false)
-{
-	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
-	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
-	if (!pxSceneData)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot capture state for deletion");
-		m_strName = "Unknown";
-		return;
-	}
-
-	// Verify entity exists
-	if (!pxSceneData->EntityExists(m_uEntityID))
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u does not exist, cannot capture state for deletion", m_uEntityID);
-		m_strName = "Unknown";
-		return;
-	}
-
-	// Capture entity state before deletion
-	Zenith_Entity xEntity = pxSceneData->GetEntity(m_uEntityID);
-	m_strName = xEntity.GetName();
-
-	// TODO: Serialize full entity state (all components)
-	// For now, we just capture the name
-	// A full implementation would use Zenith_DataStream to serialize the entity
-	m_strSerializedState = "";
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Captured state for entity %u (%s) before deletion", m_uEntityID, m_strName.c_str());
-}
-
-void Zenith_UndoCommand_DeleteEntity::Execute()
-{
-	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
-	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
-	if (!pxSceneData)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot delete entity");
-		return;
-	}
-
-	// Verify entity exists
-	if (!pxSceneData->EntityExists(m_uEntityID))
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u does not exist, cannot delete", m_uEntityID);
-		return;
-	}
-
-	// Remove entity from scene
-	Zenith_EditorSceneAccess::RemoveEntity(pxSceneData, m_uEntityID);
-	m_bDeleted = true;
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Deleted entity %u (%s)", m_uEntityID, m_strName.c_str());
-}
-
-void Zenith_UndoCommand_DeleteEntity::Undo()
-{
-	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
-	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
-	if (!pxSceneData)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot undo delete entity");
-		return;
-	}
-
-	// Check if entity already exists (shouldn't happen)
-	if (pxSceneData->EntityExists(m_uEntityID))
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u already exists, cannot undo deletion", m_uEntityID);
-		return;
-	}
-
-	// Recreate entity from serialized state
-	// TODO: Deserialize full entity state
-	// For now, we just log a warning
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: DeleteEntity undo() - entity recreation not fully implemented");
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Entity %u (%s) would be recreated here", m_uEntityID, m_strName.c_str());
-
-	m_bDeleted = false;
-}
-
-const char* Zenith_UndoCommand_DeleteEntity::GetDescription() const
-{
-	return "Delete Entity";
 }
 
 #endif // ZENITH_TOOLS

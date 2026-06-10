@@ -56,9 +56,20 @@ public:
 	void Initialise(); // no-arg per FluxBackendMemoryAlloc concept; self-wires deps from g_xEngine
 	void Shutdown();
 
+	// Synchronously drain pending memory work: record staged uploads into the
+	// internal command buffer, submit to the copy queue, CPU-wait, reset.
+	// No-op when nothing is staged or recorded. MUST NOT take m_xMutex —
+	// reached from HandleStagingBufferFull with the non-recursive mutex held,
+	// possibly on a worker thread.
+	void Flush();
 
-	void BeginFrame();
-	void EndFrame(bool bDefer = true);
+	// Renderer-only once-per-frame drain: record staged uploads, end the
+	// command buffer, and hand it to the backend (submitted ahead of render
+	// work against the memory semaphore in Zenith_Vulkan::EndFrame). No-op
+	// when no memory work exists this frame. No memory operation may run
+	// between this call and Zenith_Vulkan::EndFrame — recording then would
+	// reset a command buffer that is pending submission.
+	void SubmitFrameMemoryWork();
 
 	// Transient memory aliasing capability query. Backends that can bind
 	// multiple images to disjoint offsets inside one allocation return true;
@@ -116,14 +127,6 @@ public:
 	Flux_VRAMHandle CreateAliasedImageVRAM(const Flux_SurfaceInfo& xInfo,
 	                                              Flux_VRAMHandle xPoolHandle,
 	                                              u_int64 ulOffsetInPool);
-
-	// Per-frame end callback registered with Flux_RendererImpl at Initialise time.
-	// Drives the deferred-VRAM-deletion countdown that used to live inside
-	// EndFrame. Registered AFTER the Vulkan begin-frame callback so it runs
-	// at end-of-frame after any in-flight render submission has been queued.
-	// Kept static so it can be passed as a Flux_RendererImpl::OnFrameEndFunc
-	// callback pointer; the body resolves g_xEngine.FluxMemory().
-	static void OnFluxPerFrameEnd(u_int uRingIndex, void* pUserData);
 
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
 
@@ -191,8 +194,6 @@ public:
 	vk::DescriptorBufferInfo GetBufferDescriptor(Flux_BufferDescriptorHandle xHandle);
 	void ReleaseBufferDescriptorHandle(Flux_BufferDescriptorHandle xHandle);
 
-	Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
-
 	// Deferred deletion system - accepts abstract handles to keep Vulkan types internal.
 	// NOTE: xHandle is taken by reference and auto-invalidated after queuing to prevent double-free.
 	// uExtraFrameDelay is added on top of the standard MAX_FRAMES_IN_FLIGHT + 1 grace period.
@@ -206,8 +207,6 @@ public:
 		u_int uExtraFrameDelay = 0);
 	void QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle);
 	void ProcessDeferredDeletions();
-
-	void FlushStagingBuffer();
 
 	void IncreaseImageMemoryUsage(u_int64 ulSize);
 	void DecreaseImageMemoryUsage(u_int64 ulSize);
@@ -336,6 +335,10 @@ private:
 	// same slot, so a single accessor centralises the lookup.
 	PerFrameStaging& CurrentStaging();
 
+	// Record the current frame slot's pending staged uploads into the command
+	// buffer (does not submit — Flush / SubmitFrameMemoryWork own submission).
+	void FlushStagingBuffer();
+
 	// Staging flush helpers (split by allocation type for readability)
 	void FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc);
 	void FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc);
@@ -364,13 +367,21 @@ private:
 	// different class with no Initialise seam) still route through g_xEngine.
 	Zenith_Vulkan*           m_pxVulkan          = nullptr;
 	Zenith_Vulkan_Swapchain* m_pxVulkanSwapchain = nullptr;
-	Flux_RendererImpl*       m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*       m_pxFluxGraphics    = nullptr;
+
+	// Lazily opens the internal command buffer. Every path that records into
+	// m_xCommandBuffer calls this first, so memory operations are legal at any
+	// time — no frame bracket required. MUST NOT take m_xMutex (reached from
+	// HandleStagingBufferFull with the non-recursive mutex held).
+	void EnsureRecording();
+	bool m_bRecording = false;
+
+	// Internal command buffer for staging flushes and layout transitions.
+	// Lifecycle is driven lazily by EnsureRecording and drained by Flush
+	// (synchronous) or SubmitFrameMemoryWork (deferred per-frame handoff).
+	Zenith_Vulkan_CommandBuffer m_xCommandBuffer;
 public:
 	// ===== Data members (was Zenith_Vulkan_MemoryManager) =====
-
-	// Single-buffer-spanning command buffer used to flush staging uploads.
-	Zenith_Vulkan_CommandBuffer m_xCommandBuffer;
 
 	// VMA allocator instance.
 	VmaAllocator                m_xAllocator = nullptr;

@@ -54,10 +54,6 @@ BoundingBox GetEntityBoundingBox(Zenith_Entity* pxEntity);
 	
 	// Raycast to select entities - returns EntityID to avoid memory management issues
 Zenith_EntityID RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
-	
-	// Debug rendering
-void RenderBoundingBoxes();
-void RenderSelectedBoundingBox(Zenith_Entity* pxEntity);
 
 private:
 BoundingBox CalculateBoundingBox(Zenith_Entity* pxEntity);

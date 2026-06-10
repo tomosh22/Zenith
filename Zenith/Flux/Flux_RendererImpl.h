@@ -10,7 +10,7 @@ class Flux_RenderGraph;
 // public static-facade classes that used to live in Flux.h / Flux_PerFrame.h:
 //   - `class Flux`         (render graph pointer, pending command-list queue,
 //                           resolution-change callback list, graph rebuild flag)
-//   - `class Flux_PerFrame` (per-frame begin/end callback arrays)
+//   - `class Flux_PerFrame` (per-frame begin/end work dispatch)
 //
 // The monotonic frame counter that used to live here moved to FrameContext
 // (g_xEngine.Frame()) — the single frame-index variable engine-wide, advanced
@@ -18,9 +18,9 @@ class Flux_RenderGraph;
 //
 // Accessed via g_xEngine.FluxRenderer(). The historical separation between
 // `Flux::Initialise` (renderer bootstrap) and `Flux_PerFrame::Initialise`
-// (per-frame callback bootstrap) is preserved via paired method names —
+// (per-frame ring bootstrap) is preserved via paired method names —
 // `Initialise`/`Shutdown` for the main renderer, `PerFrameInitialise`/
-// `PerFrameShutdown` for the per-frame callback subsystem.
+// `PerFrameShutdown` for the per-frame ring scheduler.
 class Flux_RendererImpl
 {
 public:
@@ -29,14 +29,6 @@ public:
 
 	Flux_RendererImpl(const Flux_RendererImpl&) = delete;
 	Flux_RendererImpl& operator=(const Flux_RendererImpl&) = delete;
-
-	// Per-frame callback signatures. uRingIndex == g_xEngine.Frame().GetRingIndex()
-	// at call time.
-	// pUserData is the pointer supplied to Register*FrameCallback — kept typed
-	// as void* rather than templated so the registration API stays non-templated
-	// and backend-agnostic.
-	using OnFrameBeginFunc = void(*)(u_int uRingIndex, void* pUserData);
-	using OnFrameEndFunc   = void(*)(u_int uRingIndex, void* pUserData);
 
 	// ===== Main renderer lifecycle (was class Flux) =====
 	void EarlyInitialise();
@@ -96,23 +88,20 @@ public:
 	// Public access to pending command lists for platform layer.
 	Zenith_Vector<Flux_CommandListEntry>& GetPendingCommandLists();
 
-	// ===== Per-frame callback subsystem (was class Flux_PerFrame) =====
+	// ===== Per-frame ring scheduler (was class Flux_PerFrame) =====
 	// Names are prefixed `PerFrame` where they would otherwise collide with
 	// the main renderer's own Initialise/Shutdown.
 	void PerFrameInitialise();
 	void PerFrameShutdown();
 
-	void RegisterBeginFrameCallback(OnFrameBeginFunc pfn, void* pUserData);
-	void RegisterEndFrameCallback  (OnFrameEndFunc   pfn, void* pUserData);
-
-	// Fires registered callbacks in registration order with the current ring
-	// index (read from g_xEngine.Frame()). BeginFrame fires the begin set,
-	// FireEndCallbacks the end set. The frame index itself is owned and
-	// advanced by FrameContext via Zenith_MainLoop — never here, so a skipped
-	// frame can drive the deferred-VRAM-deletion clock (FireEndCallbacks)
-	// without moving the ring.
+	// BeginFrame issues the backend's per-frame begin work (fence wait, pool
+	// reset, deletion-queue drain, scratch reset) for the current ring slot
+	// (read from g_xEngine.Frame()). ProcessFrameEnd drives the deferred-VRAM-
+	// deletion clock. Both are no-ops in headless (no backend). The frame index
+	// itself is owned and advanced by FrameContext via Zenith_MainLoop — never
+	// here, so a skipped frame can run ProcessFrameEnd without moving the ring.
 	void BeginFrame();
-	void FireEndCallbacks();
+	void ProcessFrameEnd();
 
 	// ===== Data members =====
 
@@ -129,16 +118,6 @@ public:
 	// Graph rebuild request flag — consumed by next Compile().
 	bool                                  m_bGraphRebuildRequested = false;
 
-	// Per-frame begin/end callback arrays (max FLUX_MAX_PERFRAME_CALLBACKS
-	// = 4 entries per side). Populated by backend Initialise().
-	OnFrameBeginFunc                      m_apfnBeginCallbacks[FLUX_MAX_PERFRAME_CALLBACKS] = {};
-	void*                                 m_apBeginUserData   [FLUX_MAX_PERFRAME_CALLBACKS] = {};
-	u_int                                 m_uNumBeginCallbacks = 0;
-
-	OnFrameEndFunc                        m_apfnEndCallbacks  [FLUX_MAX_PERFRAME_CALLBACKS] = {};
-	void*                                 m_apEndUserData     [FLUX_MAX_PERFRAME_CALLBACKS] = {};
-	u_int                                 m_uNumEndCallbacks   = 0;
-
-	// Unit tests reset state and inspect counters / callback arrays directly.
+	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;
 };

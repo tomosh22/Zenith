@@ -4,7 +4,6 @@
 #include "Maths/Zenith_Maths.h"
 
 class Flux_CommandList;
-class Flux_GraphicsImpl;
 
 // God rays specific parameters
 struct Flux_GodRaysConstants
@@ -27,7 +26,7 @@ public:
 	Flux_GodRaysFogImpl(const Flux_GodRaysFogImpl&) = delete;
 	Flux_GodRaysFogImpl& operator=(const Flux_GodRaysFogImpl&) = delete;
 
-	void Initialise(Flux_GraphicsImpl& xFluxGraphics);
+	void Initialise();
 	void BuildPipelines();
 	void Reset();
 	void Render(Flux_CommandList* pxCommandList);
@@ -36,8 +35,6 @@ public:
 	Flux_Pipeline m_xPipeline;
 
 private:
-	Flux_GraphicsImpl* m_pxFluxGraphics = nullptr;
-
 	// Cached constants for push constant (per-frame transient).
 	Flux_GodRaysConstants m_xConstants = {};
 };

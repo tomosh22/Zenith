@@ -693,7 +693,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 	// --screenshot: capture the freshly-rendered swapchain image on the
 	// requested frame, before present (the helper restores the PresentSrc
-	// layout so present stays valid). Fires exactly once — the frame counter
+	// layout so present stays valid). Fires exactly once — the frame index
 	// equals the target on a single EndFrame.
 	{
 		const char* szScreenshotPath = Zenith_CommandLine::GetScreenshotPath();
@@ -744,8 +744,8 @@ uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
 	// BeginFrame → CommandBuffer::BeginRecording) ask for the ring slot while
 	// the swapchain's dep pointers are still null. FrameContext is allocated
 	// up-front in Zenith_Engine::Initialise, so g_xEngine.Frame() is valid
-	// throughout that window (the pre-relocation code survived the same
-	// window only because GetRingIndex()'s body never dereferenced `this`).
+	// throughout that window (and the index is still 0 there, so the answer
+	// matches the old unwired-seam ring-slot-0 guard).
 	return g_xEngine.Frame().GetRingIndex();
 }
 

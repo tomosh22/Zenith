@@ -971,6 +971,7 @@
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
+    <ClCompile Include="..\Tests\Test_EditorSceneCycle.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_GameplaySystems.cpp" />

@@ -9,25 +9,15 @@
 class Flux_CommandList;
 class Flux_RenderGraph;
 
-// Dependencies injected into Initialise (Wave-14 DI seam, built on the WS9.2
-// Flux_HiZImpl / Wave-11 Flux_SSAOImpl template; Wave-4 extends it to ALSO inject
-// the engine-infra singleton VulkanMemory that was previously a direct g_xEngine
-// lookup, per the aggressive g_xEngine-shrink directive). Forward-declared here;
-// full headers are pulled in by Flux_Quads.cpp.
-class Flux_GraphicsImpl;
-
 // Phase 9: state + behaviour for Quads subsystem -- shader/pipeline/instance
 // buffer + per-frame quad upload ring. The nested Quad struct is the on-wire
 // per-quad vertex format used by UI and game-side overlay drawing.
 //
-// Wave-14 DI seam (mirrors Flux_SSAOImpl): the lone cross-subsystem dependency
-// (Flux_GraphicsImpl) is INJECTED through Initialise as an explicit reference and
-// stored as a member pointer, rather than reached for via g_xEngine.FluxGraphics()
-// inside the instance methods. The only place g_xEngine self-lookup survives is
-// the non-capturing fn-pointer trampoline (the ExecuteQuads graph callback, and
-// the ZENITH_TOOLS hot-reload callback) — those cannot capture state, so they
-// re-enter via g_xEngine.Quads() to reach this singleton instance and then route
-// their FluxGraphics reach-ins through the injected member.
+// Cross-subsystem deps (FluxGraphics / VulkanMemory) are reached via g_xEngine
+// at point of use. The non-capturing fn-pointer trampolines (the ExecuteQuads
+// graph callback, and the ZENITH_TOOLS hot-reload callback) cannot capture
+// state, so they re-enter via g_xEngine.Quads() to reach this singleton
+// instance.
 class Flux_QuadsImpl
 {
 public:
@@ -60,9 +50,7 @@ public:
 	Flux_QuadsImpl(const Flux_QuadsImpl&) = delete;
 	Flux_QuadsImpl& operator=(const Flux_QuadsImpl&) = delete;
 
-	// Cross-subsystem dep is injected here and stored into m_pxGraphics below.
-	// This is the WS9.2 DI template: explicit ref param -> stored member pointer.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory);
+	void Initialise();
 	void BuildPipelines();
 	void Shutdown();
 
@@ -79,10 +67,4 @@ public:
 
 	Quad                     m_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
 	uint32_t                 m_uQuadRenderIndex = 0;
-
-	// Injected cross-subsystem dependency (stored by Initialise). Default nullptr
-	// so a default-constructed instance is headless-safe; the real boot path wires
-	// it in via the Quads init trampoline (Flux_FeatureRegistry.cpp).
-	Flux_GraphicsImpl*       m_pxGraphics = nullptr;
-	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
 };

@@ -66,6 +66,8 @@ xInfo.m_uMemoryFlags = (1 << MEMORY_FLAGS__SHADER_READ) | (1 << MEMORY_FLAGS__UN
 
 Large uploads use a staging buffer pool (`g_uStagingPoolSize`). Uploads larger than the pool are chunked automatically.
 
+Memory operations are ad-hoc — callable at any time with no frame bracket. The manager opens its internal command buffer lazily on first use; pending work is drained once per frame by `SubmitFrameMemoryWork()` (renderer-only, submitted ahead of render work) or on demand by `Flush()` (synchronous, CPU-waits).
+
 ### Compressed Texture Handling
 
 Compressed formats (BC1, BC3, BC5, BC7) require special handling:

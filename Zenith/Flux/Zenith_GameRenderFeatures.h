@@ -83,8 +83,7 @@ namespace Zenith_GameRenderFeatures
 
 #ifdef ZENITH_RUNTIME_CHECKS
 	// Assert every feature's m_szRunAfter resolves to a real engine setup step.
-	// Analogue of Flux_FeatureRegistry::VerifyInitDependencies; called once at the
-	// top of RunSetup.
+	// Called once at the top of Flux_FeatureRegistry::RunSetup.
 	void VerifyGameFeatureAnchors();
 #endif
 }

@@ -59,11 +59,6 @@ struct Zenith_EditorDeferredOpsState
 	bool m_bPendingSceneLoad = false;
 	std::string m_strPendingSceneLoadPath;
 
-	bool m_bPendingSceneSave = false;
-	std::string m_strPendingSceneSavePath;
-
-	bool m_bPendingSceneReset = false;
-
 	// Loading a registered scene by build index
 	bool m_bPendingRegisteredSceneLoad = false;
 	int m_iPendingRegisteredSceneBuildIndex = -1;
@@ -76,9 +71,6 @@ struct Zenith_EditorDeferredOpsState
 	{
 		m_bPendingSceneLoad = false;
 		m_strPendingSceneLoadPath.clear();
-		m_bPendingSceneSave = false;
-		m_strPendingSceneSavePath.clear();
-		m_bPendingSceneReset = false;
 		m_bPendingRegisteredSceneLoad = false;
 		m_iPendingRegisteredSceneBuildIndex = -1;
 		m_bPendingSceneLoadFromFile = false;
@@ -172,16 +164,6 @@ struct Zenith_EditorCameraState
 	// State
 	bool m_bInitialized = false;
 	Zenith_EntityID m_uGameCameraEntity = INVALID_ENTITY_ID;
-
-	void ResetToDefaults()
-	{
-		m_xPosition = { 0, 100, 0 };
-		m_fPitch = 0.0;
-		m_fYaw = 0.0;
-		m_fFOV = 45.0f;
-		m_fNear = 1.0f;
-		m_fFar = 2000.0f;
-	}
 };
 
 //-----------------------------------------------------------------------------

@@ -629,7 +629,6 @@ void Zenith_Engine::InitialiseGPUAssets()
 	//#TO_TODO: move somewhere sensible
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().BeginFrame();
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
 		// Load cubemap texture (pinned)
@@ -652,7 +651,7 @@ void Zenith_Engine::InitialiseGPUAssets()
 			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
 		}
 
-		g_xEngine.FluxMemory().EndFrame(false);
+		g_xEngine.FluxMemory().Flush();
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	if (!Zenith_CommandLine::IsHeadless())
@@ -709,16 +708,13 @@ void Zenith_Engine::InitialiseProject()
 #endif
 
 #ifdef ZENITH_TOOLS
-	// Initialize game-specific resources (geometry, materials, prefabs, particle configs)
-	// Must be inside BeginFrame/EndFrame for GPU resource allocation
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxMemory().BeginFrame();
-	}
+	// Initialize game-specific resources (geometry, materials, prefabs, particle configs).
+	// GPU allocations record into the memory command buffer lazily; Flush drains
+	// them synchronously before automation begins.
 	Project_InitializeResources();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().EndFrame(false);
+		g_xEngine.FluxMemory().Flush();
 	}
 
 	// Register automation steps and begin execution (one step per frame in main loop)
@@ -727,11 +723,6 @@ void Zenith_Engine::InitialiseProject()
 #else
 	// Non-tools: load pre-generated scene files
 	// Run a tools build first to generate .zscen files
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxMemory().BeginFrame();
-	}
-	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
 		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();
@@ -747,7 +738,7 @@ void Zenith_Engine::InitialiseProject()
 	g_xEngine.Scenes().DrainPendingLoadIfAny();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().EndFrame(false);
+		g_xEngine.FluxMemory().Flush();
 	}
 	Zenith_Assert(g_xEngine.Scenes().GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");

@@ -2,7 +2,9 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Fog/Flux_FogImpl.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
@@ -69,31 +71,17 @@ void Flux_FogImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImpl& xGodRaysFog,
-	Flux_RaymarchFogImpl& xRaymarchFog, Flux_FroxelFogImpl& xFroxelFog,
-	Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics,
-	Flux_ShadowsImpl& xShadows, FrameContext& xFrame)
+void Flux_FogImpl::Initialise()
 {
-	m_pxVolumeFog    = &xVolumeFog;
-	m_pxGodRaysFog   = &xGodRaysFog;
-	m_pxRaymarchFog  = &xRaymarchFog;
-	m_pxFroxelFog    = &xFroxelFog;
-	m_pxHDR          = &xHDR;
-	m_pxFluxGraphics = &xFluxGraphics;
-	m_pxShadows      = &xShadows;
-	m_pxFrame        = &xFrame;
-
 	BuildPipelines();
 
 	// Initialize shared volumetric fog infrastructure
-	m_pxVolumeFog->Initialise();
+	g_xEngine.VolumeFog().Initialise();
 
-	// Initialize all volumetric fog techniques (spatial-only, no temporal). Each
-	// technique's cross-subsystem deps are threaded through from Fog's own injected
-	// members (Wave-4 de-globalization) so the techniques carry no g_xEngine reach.
-	m_pxGodRaysFog->Initialise(*m_pxFluxGraphics);
-	m_pxRaymarchFog->Initialise(*m_pxVolumeFog, *m_pxFrame, *m_pxFluxGraphics, *m_pxShadows);
-	m_pxFroxelFog->Initialise(*m_pxVolumeFog, *m_pxFrame, *m_pxFluxGraphics, *m_pxShadows);
+	// Initialize all volumetric fog techniques (spatial-only, no temporal).
+	g_xEngine.GodRaysFog().Initialise();
+	g_xEngine.RaymarchFog().Initialise();
+	g_xEngine.FroxelFog().Initialise();
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -118,10 +106,10 @@ void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImp
 void Flux_FogImpl::Reset()
 {
 	// Reset all volumetric fog techniques (spatial-only, no temporal)
-	m_pxVolumeFog->Reset();
-	m_pxGodRaysFog->Reset();
-	m_pxRaymarchFog->Reset();
-	m_pxFroxelFog->Reset();
+	g_xEngine.VolumeFog().Reset();
+	g_xEngine.GodRaysFog().Reset();
+	g_xEngine.RaymarchFog().Reset();
+	g_xEngine.FroxelFog().Reset();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FogImpl::Reset() - Reset all fog systems");
 }
@@ -172,9 +160,9 @@ static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	// Trampoline: recover the subsystem singleton, then route through its members.
+	// Trampoline: recover the subsystem singleton; sibling deps via g_xEngine.
 	Flux_FogImpl& xFog = g_xEngine.Fog();
-	Flux_GraphicsImpl& xGfx = *xFog.m_pxFluxGraphics;
+	Flux_GraphicsImpl& xGfx = g_xEngine.FluxGraphics();
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xFog.m_xPipeline);
 
@@ -196,7 +184,7 @@ static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData
 	{
 		return;
 	}
-	g_xEngine.Fog().m_pxFroxelFog->RenderInject(pxCommandList);
+	g_xEngine.FroxelFog().RenderInject(pxCommandList);
 }
 
 static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
@@ -206,7 +194,7 @@ static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	g_xEngine.Fog().m_pxFroxelFog->RenderLight(pxCommandList);
+	g_xEngine.FroxelFog().RenderLight(pxCommandList);
 }
 
 static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
@@ -216,7 +204,7 @@ static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	g_xEngine.Fog().m_pxFroxelFog->RenderApply(pxCommandList);
+	g_xEngine.FroxelFog().RenderApply(pxCommandList);
 }
 
 static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
@@ -226,7 +214,7 @@ static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	g_xEngine.Fog().m_pxRaymarchFog->Render(pxCommandList);
+	g_xEngine.RaymarchFog().Render(pxCommandList);
 }
 
 static void ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
@@ -236,7 +224,7 @@ static void ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	g_xEngine.Fog().m_pxGodRaysFog->Render(pxCommandList);
+	g_xEngine.GodRaysFog().Render(pxCommandList);
 }
 
 void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -251,8 +239,12 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// would never run again and the user could never switch back.
 	m_uLastFogTechnique = UINT32_MAX; // Force initial enable/disable
 
+	Flux_FroxelFogImpl& xFroxelFog = g_xEngine.FroxelFog();
+	Flux_HDRImpl&       xHDR       = g_xEngine.HDR();
+	Flux_GraphicsImpl&  xGraphics  = g_xEngine.FluxGraphics();
+
 	// Let FroxelFog create its transient resources (must happen before pass registration)
-	m_pxFroxelFog->SetupTransients(xGraph);
+	xFroxelFog.SetupTransients(xGraph);
 
 	// All technique passes are registered up front; ApplyTechniqueSelectionToGraph
 	// toggles their enable bits each frame based on dbg_uVolFogTechnique and the
@@ -260,35 +252,35 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Flux_PassHandle conversion.
 
 	m_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
-		.Writes(m_pxHDR->GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (m_pxFluxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Writes(xHDR.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
-		.WritesTransient(m_pxFroxelFog->GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
+		.WritesTransient(xFroxelFog.GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
 
 	// Light shader writes both lighting and scattering grids (see the two
 	// UAV binding points in Flux_FroxelFog.cpp).
 	m_xFroxelLightPass = xGraph.AddPass("Fog_FroxelLight", ExecuteFroxelLight)
-		.ReadsTransient (m_pxFroxelFog->GetDensityGridHandle(),    RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_pxFroxelFog->GetLightingGridHandle(),   RESOURCE_ACCESS_WRITE_UAV)
-		.WritesTransient(m_pxFroxelFog->GetScatteringGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
+		.ReadsTransient (xFroxelFog.GetDensityGridHandle(),    RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(xFroxelFog.GetLightingGridHandle(),   RESOURCE_ACCESS_WRITE_UAV)
+		.WritesTransient(xFroxelFog.GetScatteringGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
 
 	// Apply shader samples both lighting and scattering grids — both must
 	// be declared so the graph transitions them out of GENERAL before the
 	// SRV bind.
 	m_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
-		.Writes        (m_pxHDR->GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
-		.Reads         (m_pxFluxGraphics->GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(m_pxFroxelFog->GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(m_pxFroxelFog->GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
+		.Writes        (xHDR.GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
+		.Reads         (xGraphics.GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient(xFroxelFog.GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient(xFroxelFog.GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
 
 	m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
-		.Writes(m_pxHDR->GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (m_pxFluxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Writes(xHDR.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
-		.Writes(m_pxHDR->GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (m_pxFluxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Writes(xHDR.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// A game that overrides fog force-disables owner "Fog" on the graph; that
 	// overlay persists across graph rebuilds (it is NOT cleared by Clear()), so a

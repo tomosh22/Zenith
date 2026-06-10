@@ -6,10 +6,6 @@
 
 class Flux_CommandList;
 class Flux_RenderGraph;
-class Flux_VolumeFogImpl;
-class FrameContext;
-class Flux_GraphicsImpl;
-class Flux_ShadowsImpl;
 
 // Push constant structures (must match shader)
 struct InjectConstants
@@ -63,9 +59,7 @@ public:
 	Flux_FroxelFogImpl(const Flux_FroxelFogImpl&) = delete;
 	Flux_FroxelFogImpl& operator=(const Flux_FroxelFogImpl&) = delete;
 
-	// Injected engine-subsystem dependencies (de-globalization pass): the Fog
-	// orchestrator passes these from Flux_FogImpl::Initialise.
-	void Initialise(Flux_VolumeFogImpl& xVolumeFog, FrameContext& xFrame, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows);
+	void Initialise();
 	void BuildPipelines();
 	void Reset();
 
@@ -111,12 +105,6 @@ private:
 	Flux_RenderAttachment& GetDensityGridInternal();
 	Flux_RenderAttachment& GetLightingGridInternal();
 	Flux_RenderAttachment& GetScatteringGridInternal();
-
-	// Injected engine-subsystem dependencies (de-globalization pass).
-	Flux_VolumeFogImpl* m_pxVolumeFog    = nullptr;
-	FrameContext*       m_pxFrame        = nullptr;
-	Flux_GraphicsImpl*  m_pxFluxGraphics = nullptr;
-	Flux_ShadowsImpl*   m_pxShadows      = nullptr;
 
 	// Per-frame push-constant scratch PODs (relocated from module-scope statics).
 	InjectConstants m_xInjectConstants;

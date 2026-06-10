@@ -57,10 +57,8 @@ void Flux_GodRaysFogImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_GodRaysFogImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics)
+void Flux_GodRaysFogImpl::Initialise()
 {
-	m_pxFluxGraphics = &xFluxGraphics;
-
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -90,9 +88,10 @@ void Flux_GodRaysFogImpl::Reset()
 void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 {
 	// Get sun direction from frame constants and project to screen space
-	const Zenith_Maths::Vector3& xSunDir = m_pxFluxGraphics->m_xFrameConstants.m_xSunDir_Pad;
-	const Zenith_Maths::Matrix4& xViewProj = m_pxFluxGraphics->m_xFrameConstants.m_xViewProjMat;
-	const Zenith_Maths::Vector3& xCamPos = m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad;
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	const Zenith_Maths::Vector3& xSunDir = xGraphics.m_xFrameConstants.m_xSunDir_Pad;
+	const Zenith_Maths::Matrix4& xViewProj = xGraphics.m_xFrameConstants.m_xViewProjMat;
+	const Zenith_Maths::Vector3& xCamPos = xGraphics.m_xFrameConstants.m_xCamPos_Pad;
 
 	// Calculate sun position far along sun direction from camera
 	// Distance to place virtual sun position for screen-space projection
@@ -130,12 +129,12 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&m_pxFluxGraphics->m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&m_pxFluxGraphics->m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(m_xShader, "FrameConstants", &m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(m_xShader, "g_xDepthTex", m_pxFluxGraphics->GetDepthStencilSRV());
+	xBinder.BindCBV(m_xShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(m_xShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
 
 	xBinder.BindDrawConstants(m_xShader, "GodRaysConstants", &m_xConstants, sizeof(Flux_GodRaysConstants));
 

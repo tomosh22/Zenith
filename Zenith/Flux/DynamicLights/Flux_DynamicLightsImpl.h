@@ -4,8 +4,6 @@
 #include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
-class Flux_GraphicsImpl;
-
 // 64 bytes — sized to spot's worst-case footprint so all light types
 // share one struct. Padding fields stay zero on CPU staging.
 // Mirrors Common.Lighting.slang LightInstance.
@@ -42,7 +40,7 @@ public:
 	Flux_DynamicLightsImpl(const Flux_DynamicLightsImpl&) = delete;
 	Flux_DynamicLightsImpl& operator=(const Flux_DynamicLightsImpl&) = delete;
 
-	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics);
+	void Initialise();
 	void Shutdown();
 	void Reset();
 
@@ -66,7 +64,4 @@ public:
 
 	// Priority sort scratch — used when total lights exceed uMAX_LIGHTS.
 	Zenith_Vector<LightSortKey> m_xSortBuffer;
-
-	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
-	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
 };

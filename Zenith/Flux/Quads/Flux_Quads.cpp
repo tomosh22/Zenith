@@ -18,12 +18,10 @@
 
 // Phase 7b: state on Flux_QuadsImpl held by Zenith_Engine.
 //
-// Wave-14 DI seam (Wave-4 extension): the deps (Flux_GraphicsImpl + VulkanMemory)
-// are injected into Initialise and stored in m_pxGraphics / m_pxVulkanMemory;
-// instance methods read their own members via this-> and route reach-ins through
-// those pointers. g_xEngine.Quads() self-lookup survives only in the non-capturing
-// ExecuteQuads / hot-reload fn-pointer trampolines below (they cannot capture, so
-// they re-enter via g_xEngine.Quads() to recover the singleton instance).
+// Cross-subsystem deps (FluxGraphics + VulkanMemory) are reached via g_xEngine
+// at point of use. The non-capturing ExecuteQuads / hot-reload fn-pointer
+// trampolines below cannot capture, so they re-enter via g_xEngine.Quads() to
+// recover the singleton instance.
 
 
 
@@ -61,16 +59,11 @@ void Flux_QuadsImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory)
+void Flux_QuadsImpl::Initialise()
 {
-	// Wave-14 DI seam (Wave-4 extension): store the injected deps. The FluxGraphics
-	// + VulkanMemory reach-ins route through these instead of g_xEngine.
-	m_pxGraphics     = &xGraphics;
-	m_pxVulkanMemory = &xVulkanMemory;
-
 	BuildPipelines();
 
-	m_pxVulkanMemory->InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), m_xInstanceBuffer, false);
+	g_xEngine.FluxMemory().InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), m_xInstanceBuffer, false);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -85,16 +78,13 @@ void Flux_QuadsImpl::Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager
 
 void Flux_QuadsImpl::Shutdown()
 {
-	m_pxVulkanMemory->DestroyDynamicVertexBuffer(m_xInstanceBuffer);
-	// Drop the injected deps so the instance returns to a clean default state.
-	m_pxGraphics     = nullptr;
-	m_pxVulkanMemory = nullptr;
+	g_xEngine.FluxMemory().DestroyDynamicVertexBuffer(m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads shut down");
 }
 
 void Flux_QuadsImpl::UploadInstanceData()
 {
-	m_pxVulkanMemory->UploadBufferData(m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, m_axQuadsToRender, sizeof(Quad) * m_uQuadRenderIndex);
+	g_xEngine.FluxMemory().UploadBufferData(m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, m_axQuadsToRender, sizeof(Quad) * m_uQuadRenderIndex);
 }
 
 void Flux_QuadsImpl::Render(void*)
@@ -112,7 +102,7 @@ static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 	(void)pUserData;
 	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Quads() to reach the singleton
-	// instance, then routes its FluxGraphics reach-ins through the injected member
+	// instance; FluxGraphics is reached via g_xEngine at point of use
 	// (mirrors ExecuteSSAOGenerate).
 	Flux_QuadsImpl& xQuads = g_xEngine.Quads();
 
@@ -125,11 +115,12 @@ static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xQuads.m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xQuads.m_pxGraphics->m_xQuadMesh.GetVertexBuffer(), 0);
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xQuads.m_pxGraphics->m_xQuadMesh.GetIndexBuffer());
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xQuads.m_xInstanceBuffer, 1);
 
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xQuads.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 
 	pxCommandList->AddCommand<Flux_CommandUseUnboundedTextures>(1);
 
@@ -141,7 +132,7 @@ static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_QuadsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Quads", ExecuteQuads)
-		.Writes(m_pxGraphics->GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_QuadsImpl::UploadQuad(const Quad& xQuad)

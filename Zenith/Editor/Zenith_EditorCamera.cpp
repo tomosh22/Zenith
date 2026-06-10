@@ -1,10 +1,8 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
-#pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
 
-#include "Zenith_Editor.h"
 #include "Zenith_Editor.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -48,36 +46,51 @@ void Zenith_Editor::ResetEditorCameraToDefaults()
 //------------------------------------------------------------------------------
 // InitializeEditorCamera
 //------------------------------------------------------------------------------
+namespace
+{
+	// Copy the game camera's position/orientation onto the editor camera
+	// state. Returns false if the entity is missing or has no camera.
+	bool CopyGameCameraToEditorCamera(Zenith_SceneData* pxSceneData, Zenith_EntityID uCameraEntity)
+	{
+		Zenith_Entity xCameraEntity = pxSceneData->TryGetEntity(uCameraEntity);
+		if (!xCameraEntity.IsValid() || !xCameraEntity.HasComponent<Zenith_CameraComponent>())
+			return false;
+
+		Zenith_CameraComponent& xGameCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
+		xGameCamera.GetPosition(g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition);
+		g_xEngine.Editor().m_xEditorState.m_xCamera.m_fPitch = xGameCamera.GetPitch();
+		g_xEngine.Editor().m_xEditorState.m_xCamera.m_fYaw = xGameCamera.GetYaw();
+		return true;
+	}
+}
+
 void Zenith_Editor::InitializeEditorCamera()
 {
 	if (g_xEngine.Editor().m_xEditorState.m_xCamera.m_bInitialized)
 		return;
 
-	// Initialize editor camera from scene's main camera if available
-	// Otherwise use default values
+	// Initialise from the scene's main camera if available, otherwise keep the
+	// defaults. One-shot per camera-state reset: m_bInitialized is set
+	// regardless, so a scene with no main camera doesn't retry every frame.
 	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 	if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 	{
-		try
+		if (CopyGameCameraToEditorCamera(pxSceneData, pxSceneData->GetMainCameraEntity()))
 		{
-			Zenith_CameraComponent& xSceneCamera = Zenith_GetMainCamera(pxSceneData);
-			xSceneCamera.GetPosition(g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition);
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fPitch = xSceneCamera.GetPitch();
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fYaw = xSceneCamera.GetYaw();
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fFOV = xSceneCamera.GetFOV();
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fNear = xSceneCamera.GetNearPlane();
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fFar = xSceneCamera.GetFarPlane();
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera initialized from scene camera position");
+			// Save reference to game camera for later
+			g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
+
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera synced from game camera at (%.1f, %.1f, %.1f)",
+				g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.x, g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.y, g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.z);
 		}
-		catch (...)
+		else
 		{
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Scene camera not available, using default position");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Could not sync editor camera from game camera");
 		}
 	}
 
 	g_xEngine.Editor().m_xEditorState.m_xCamera.m_bInitialized = true;
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera initialized at position (%.1f, %.1f, %.1f)", g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.x, g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.y, g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition.z);
 }
 
 //------------------------------------------------------------------------------
@@ -204,15 +217,7 @@ void Zenith_Editor::SwitchToEditorCamera()
 	// Copy game camera state to editor camera
 	if (g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_Entity xEntity = pxSceneData->TryGetEntity(g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity);
-		if (xEntity.IsValid() && xEntity.HasComponent<Zenith_CameraComponent>())
-		{
-			Zenith_CameraComponent& xGameCamera = xEntity.GetComponent<Zenith_CameraComponent>();
-			xGameCamera.GetPosition(g_xEngine.Editor().m_xEditorState.m_xCamera.m_xPosition);
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fPitch = xGameCamera.GetPitch();
-			g_xEngine.Editor().m_xEditorState.m_xCamera.m_fYaw = xGameCamera.GetYaw();
-		}
-		else
+		if (!CopyGameCameraToEditorCamera(pxSceneData, g_xEngine.Editor().m_xEditorState.m_xCamera.m_uGameCameraEntity))
 		{
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Could not copy game camera state to editor camera");
 		}

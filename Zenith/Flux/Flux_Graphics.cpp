@@ -45,12 +45,8 @@ void Flux_GraphicsImpl::InitialiseSamplers()
 	Flux_Sampler::InitialiseClamp(m_xClampSampler);
 }
 
-void Flux_GraphicsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_Swapchain& xVulkanSwapchain, Flux_ShadowsImpl& xShadows)
+void Flux_GraphicsImpl::Initialise()
 {
-	m_pxVulkanMemory    = &xVulkanMemory;
-	m_pxVulkanSwapchain = &xVulkanSwapchain;
-	m_pxShadows         = &xShadows;
-
 	// MRT format defaults -- previously a static-init initialiser list,
 	// now set at engine-init time on the engine-owned Impl.
 	m_aeMRTFormats[MRT_INDEX_DIFFUSE]        = TEXTURE_FORMAT_RGBA8_UNORM;
@@ -135,9 +131,10 @@ void Flux_GraphicsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_Swapc
 	}
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(m_xQuadMesh);
-	m_pxVulkanMemory->InitialiseVertexBuffer(m_xQuadMesh.GetVertexData(), m_xQuadMesh.GetVertexDataSize(), m_xQuadMesh.GetVertexBuffer());
-	m_pxVulkanMemory->InitialiseIndexBuffer(m_xQuadMesh.GetIndexData(), m_xQuadMesh.GetIndexDataSize(), m_xQuadMesh.GetIndexBuffer());
-	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), m_xFrameConstantsBuffer);
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	xVulkanMemory.InitialiseVertexBuffer(m_xQuadMesh.GetVertexData(), m_xQuadMesh.GetVertexDataSize(), m_xQuadMesh.GetVertexBuffer());
+	xVulkanMemory.InitialiseIndexBuffer(m_xQuadMesh.GetIndexData(), m_xQuadMesh.GetIndexDataSize(), m_xQuadMesh.GetIndexBuffer());
+	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), m_xFrameConstantsBuffer);
 
 	// Render targets are graph-owned transients, created in SetupTransients.
 	// No resize callback needed — the graph re-creates them on every
@@ -191,7 +188,7 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	{
 		if (dbg_bOverrideViewProjMat)
 		{
-			m_xFrameConstants.m_xViewProjMat = m_pxShadows->GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
+			m_xFrameConstants.m_xViewProjMat = g_xEngine.Shadows().GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
 		}
 		else
 		{
@@ -217,7 +214,7 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	m_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
 #endif
 	m_xFrameConstants.m_xCameraNearFar = { GetNearPlane(), GetFarPlane() };
-	m_pxVulkanMemory->UploadBufferData(m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xFrameConstants, sizeof(FrameConstants));
+	g_xEngine.FluxMemory().UploadBufferData(m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xFrameConstants, sizeof(FrameConstants));
 }
 
 TextureFormat Flux_GraphicsImpl::GetMRTFormat(MRTIndex eIndex)
@@ -302,8 +299,8 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
 
-	const u_int uWidth  = m_pxVulkanSwapchain->GetWidth();
-	const u_int uHeight = m_pxVulkanSwapchain->GetHeight();
+	const u_int uWidth  = g_xEngine.FluxSwapchain().GetWidth();
+	const u_int uHeight = g_xEngine.FluxSwapchain().GetHeight();
 	Zenith_Assert(uWidth > 0 && uHeight > 0,
 		"Flux_Graphics::SetupTransients: swapchain dimensions are %ux%u — window minimised or swapchain not yet created",
 		uWidth, uHeight);
@@ -411,15 +408,12 @@ void Flux_GraphicsImpl::Shutdown()
 	m_pxGraph = nullptr;
 
 	// Destroy quad mesh buffers
-	m_pxVulkanMemory->DestroyVertexBuffer(m_xQuadMesh.GetVertexBuffer());
-	m_pxVulkanMemory->DestroyIndexBuffer(m_xQuadMesh.GetIndexBuffer());
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	xVulkanMemory.DestroyVertexBuffer(m_xQuadMesh.GetVertexBuffer());
+	xVulkanMemory.DestroyIndexBuffer(m_xQuadMesh.GetIndexBuffer());
 
 	// Destroy frame constants buffer
-	m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xFrameConstantsBuffer);
-
-	m_pxVulkanMemory    = nullptr;
-	m_pxVulkanSwapchain = nullptr;
-	m_pxShadows         = nullptr;
+	xVulkanMemory.DestroyDynamicConstantBuffer(m_xFrameConstantsBuffer);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shut down");
 }

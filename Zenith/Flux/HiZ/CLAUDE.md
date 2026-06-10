@@ -19,7 +19,7 @@ There is no explicit ordering enum — the dependency declarations alone produce
 
 | File | Purpose |
 |------|---------|
-| [Flux_HiZImpl.h](Flux_HiZImpl.h) | `Flux_HiZImpl` class declaration, constants, injected-dep member pointers |
+| [Flux_HiZImpl.h](Flux_HiZImpl.h) | `Flux_HiZImpl` class declaration, constants |
 | [Flux_HiZ.cpp](Flux_HiZ.cpp) | Implementation, pipeline setup |
 | [../Shaders/HiZ/Flux_HiZ_Generate.comp](../Shaders/HiZ/Flux_HiZ_Generate.comp) | Compute shader for mip generation |
 
@@ -100,11 +100,7 @@ removed in Phase 9.)
 class Flux_HiZImpl
 {
 public:
-    // Wave 9 DI seam: cross-subsystem deps are injected as explicit references
-    // and stored in member pointers (see "Dependency-Injection Seam" below).
-    void Initialise(Zenith_Vulkan_Swapchain& xSwapchain,
-                    Flux_GraphicsImpl&       xGraphics,
-                    Flux_RendererImpl&       xRenderer);
+    void Initialise();
     void Shutdown();
     void BuildPipelines();
 
@@ -120,50 +116,17 @@ public:
 };
 ```
 
-## Dependency-Injection Seam (Wave 9 template)
+## Cross-Subsystem Dependencies
 
-`Flux_HiZImpl` is the first subsystem migrated to the reusable g_xEngine
-dependency-injection pattern, intended as the template for the other ~50
-subsystems:
-
-- **Cross-subsystem deps are injected through `Initialise`** as explicit
-  references (`Zenith_Vulkan_Swapchain&`, `Flux_GraphicsImpl&`,
-  `Flux_RendererImpl&`) and stored into member pointers
-  (`m_pxSwapchain`, `m_pxGraphics`, `m_pxRenderer`, defaulted `nullptr`).
-  Every later **instance-method** reach-in routes through those members rather
-  than `g_xEngine.X()`. The wiring lives at exactly one call site —
-  `Flux_RendererImpl::LateInitialise` in `Flux/Flux.cpp`:
-
-  ```cpp
-  g_xEngine.HiZ().Initialise(g_xEngine.VulkanSwapchain(),
-                             g_xEngine.FluxGraphics(),
-                             g_xEngine.FluxRenderer());
-  ```
-
-  (Boot order guarantees the swapchain + graphics are already initialised; the
-  renderer is `*this`.)
-
-- **`g_xEngine.HiZ()` self-lookup survives ONLY in the non-capturing
-  fn-pointer trampolines** — the resolution-change callback, the
-  `ZENITH_TOOLS` hot-reload callback, and the `ExecuteHiZMip` graph callback
-  (`void(*)(Flux_CommandList*, void*)`). These cannot capture `this`, so they
-  re-enter via `g_xEngine.HiZ()` to reach the singleton instance and then route
-  their *other* reach-ins through that instance's injected members
-  (`xHiZ.m_pxSwapchain->`, `xHiZ.m_pxGraphics->`).
-
-This split — inject cross-subsystem deps, keep singleton self-lookup for
-trampolines — is the pattern the remaining subsystems should follow.
-
-A pure-CPU seam test (`Flux/HiZInjectedDepsWired` in
-`Core/Zenith_UnitTests.Tests.inl`) pins the contract: a default-constructed
-`Flux_HiZImpl` leaves the three injected-dep pointers `nullptr`, and assigning
-sentinel pointers stores into the right slots. (A post-init wiring assertion was
-avoided because `LateInitialise` is skipped in headless boot.)
-
-### External interface unchanged
-
-This was an internal seam only: external callers and the `g_xEngine.HiZ()`
-accessor are unchanged.
+`Initialise()` takes no parameters. Cross-subsystem deps (the swapchain,
+`Flux_GraphicsImpl`, `Flux_RendererImpl`) are engine-owned singletons reached
+via `g_xEngine.X()` at point of use — this is the Flux-wide pattern (the
+earlier injected-member-pointer DI seam was reverted in favour of direct
+reaches). Non-capturing fn-pointer trampolines — the resolution-change
+callback, the `ZENITH_TOOLS` hot-reload callback, and the `ExecuteHiZMip`
+graph callback (`void(*)(Flux_CommandList*, void*)`) — cannot capture `this`,
+so they likewise re-enter via `g_xEngine.HiZ()` to reach the singleton
+instance.
 
 ## Debug Variables
 
