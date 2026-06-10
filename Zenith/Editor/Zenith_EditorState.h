@@ -172,16 +172,6 @@ struct Zenith_EditorCameraState
 	// State
 	bool m_bInitialized = false;
 	Zenith_EntityID m_uGameCameraEntity = INVALID_ENTITY_ID;
-
-	void ResetToDefaults()
-	{
-		m_xPosition = { 0, 100, 0 };
-		m_fPitch = 0.0;
-		m_fYaw = 0.0;
-		m_fFOV = 45.0f;
-		m_fNear = 1.0f;
-		m_fFar = 2000.0f;
-	}
 };
 
 //-----------------------------------------------------------------------------
