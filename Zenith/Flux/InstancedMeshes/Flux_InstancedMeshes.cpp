@@ -134,15 +134,12 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 	}
 }
 
-void Flux_InstancedMeshesImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics)
+void Flux_InstancedMeshesImpl::Initialise()
 {
-	m_pxVulkanMemory = &xVulkanMemory;
-	m_pxFluxGraphics = &xFluxGraphics;
-
 	BuildPipelines();
 
 	// One-time setup that hot-reload must NOT repeat (would leak VRAM).
-	m_pxVulkanMemory->InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), m_xCullingConstantsBuffer);
+	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), m_xCullingConstantsBuffer);
 	m_bCullingInitialized = true;
 
 #ifdef ZENITH_TOOLS
@@ -164,9 +161,7 @@ void Flux_InstancedMeshesImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flu
 void Flux_InstancedMeshesImpl::Shutdown()
 {
 	ClearAllGroups();
-	m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xCullingConstantsBuffer);
-	m_pxVulkanMemory = nullptr;
-	m_pxFluxGraphics = nullptr;
+	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xCullingConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes shutdown");
 }
 
@@ -246,11 +241,12 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Prepare([](void* p){ g_xEngine.InstancedMeshes().GatherInstancedPacket(p); });
 
 	// Pass 2: GBuffer render
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteInstancedGBuffer)
-		.Writes(m_pxFluxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxFluxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxFluxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxFluxGraphics->GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 }
 
@@ -294,8 +290,8 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 	Zenith_Maths::Vector3 xCameraPos(0.0f);
 	if (bUseGPUCulling)
 	{
-		xViewProjMatrix = m_pxFluxGraphics->GetViewProjMatrix();
-		xCameraPos = m_pxFluxGraphics->GetCameraPosition();
+		xViewProjMatrix = g_xEngine.FluxGraphics().GetViewProjMatrix();
+		xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	}
 
 	for (u_int uGroup = 0; uGroup < xSelf.m_apxInstanceGroups.GetSize(); ++uGroup)
@@ -334,7 +330,7 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 			xCullingConstants.m_fBoundingSphereRadius = pxGroup->GetBounds().m_fRadius;
 			xCullingConstants.m_fPadding = 0.0f;
 
-			m_pxVulkanMemory->UploadBufferData(
+			g_xEngine.FluxMemory().UploadBufferData(
 				xSelf.m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle,
 				&xCullingConstants,
 				sizeof(xCullingConstants));
@@ -412,7 +408,7 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 	Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
 	if (!pxMaterial)
 	{
-		pxMaterial = m_pxFluxGraphics->m_xBlankMaterial.GetDirect();
+		pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 	}
 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
@@ -462,7 +458,7 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 	}
 	else
 	{
-		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &m_pxFluxGraphics->m_xWhiteTexture.GetDirect()->m_xSRV);
+		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV);
 	}
 
 	// Bind instance buffers
@@ -524,7 +520,7 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &xZZ.m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	const bool bUseGPUCulling = xZZ.m_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && xZZ.m_bCullingInitialized;
 

@@ -42,7 +42,8 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_FeatureRegistry.h"
 
-const uint32_t Flux_RendererImpl::GetFrameCounter() { return m_uFrameCounter; }
+// (The frame counter that used to be read from here moved to FrameContext —
+// g_xEngine.Frame().GetFrameIndex().)
 
 void Flux_RendererImpl::SubmitCommandList(const Flux_CommandList* pxCmdList,
 	const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
@@ -193,8 +194,6 @@ void Flux_RendererImpl::LateInitialise()
 	//
 	// Independent (no ordering constraint): SSAO, Fog, SDFs, Particles, Quads, Text
 
-	g_xEngine.FluxMemory().BeginFrame();
-
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 	// Initialize Slang compiler before any shader loading. Slang is the Vulkan
 	// SPIR-V toolchain; the D3D12 null backend loads pre-baked reflection only.
@@ -217,7 +216,7 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_ShaderHotReload::Initialise();
 #endif
 
-	g_xEngine.FluxGraphics().Initialise(g_xEngine.FluxMemory(), g_xEngine.FluxSwapchain(), g_xEngine.Shadows());
+	g_xEngine.FluxGraphics().Initialise();
 
 #ifdef ZENITH_TOOLS
 	// ImGui is the tail of the inline prologue. It depends only on the Vulkan
@@ -228,15 +227,12 @@ void Flux_RendererImpl::LateInitialise()
 	g_xEngine.FluxBackend().InitialiseImGui();
 #endif
 
-	// Wave-13.B: the per-subsystem Initialise() ladder that used to live inline
-	// here now walks the Flux_FeatureRegistry. RegisterDefaultFeatures() emits
-	// the features in the SAME init order (FluxGraphics is brought up inline
-	// above; the walk starts at HDR — FluxGraphics' registry init trampoline is
-	// null) and a debug golden-order assert backs the sequence. The DI seams
-	// (HiZ / SSAO) gather their dependency params from g_xEngine inside their
-	// init trampolines — see Flux_FeatureRegistry.cpp. The dependency rationale
-	// documented at the top of this function still holds; the registry preserves
-	// that order rather than replacing it.
+	// The per-subsystem Initialise() ladder walks the Flux_FeatureRegistry in
+	// registration order (FluxGraphics is brought up inline above — its registry
+	// init trampoline is null, so the walk effectively starts at HDR). The
+	// dependency rationale documented at the top of this function still holds;
+	// it is encoded as the registration order in
+	// Flux_FeatureRegistry.cpp::RegisterDefaultFeatures().
 	Flux_FeatureRegistry::RegisterDefaultFeatures();
 	const Flux_FeatureRegistry& xRegistry = Flux_FeatureRegistry::Get();
 	for (u_int uFeature = 0; uFeature < xRegistry.GetNumFeatures(); uFeature++)
@@ -246,7 +242,8 @@ void Flux_RendererImpl::LateInitialise()
 			xDesc.m_pfnInitialise();
 	}
 
-	g_xEngine.FluxMemory().EndFrame(false);
+	// Drain the GPU uploads staged by swapchain init + the feature walk above.
+	g_xEngine.FluxMemory().Flush();
 
 	// Create and compile the render graph
 	m_pxRenderGraph = new Flux_RenderGraph();
@@ -421,16 +418,13 @@ void Flux_RendererImpl::Shutdown()
 	xRenderer.m_xResChangeCallbacks.Clear();
 
 	// Shutdown Flux subsystems in REVERSE order of initialization. This ensures
-	// dependencies are destroyed after their dependents.
-	//
-	// Wave-13.B: the explicit reverse-order .Shutdown() ladder (Text -> ... ->
-	// Shadows) now walks the Flux_FeatureRegistry's explicit shutdown order
-	// (transcribed exactly from the former ladder, NOT a mechanical reverse of
-	// init; backed by the registry's debug golden-order assert). Features with
-	// no Shutdown() trampoline (Fog — RAII / stateless) are skipped. The
-	// non-feature teardown below (Slang / HotReload / ImGui) and the three
-	// inline-shutdown features (Gizmos, HDR, FluxGraphics — each kept inline
-	// here, deliberately absent from the registry shutdown walk) follow.
+	// dependencies are destroyed after their dependents. The walk follows the
+	// Flux_FeatureRegistry's explicit shutdown order (transcribed, NOT a
+	// mechanical reverse of init). Features with no Shutdown() trampoline (Fog —
+	// RAII / stateless) are skipped. The non-feature teardown below (Slang /
+	// HotReload / ImGui) and the three inline-shutdown features (Gizmos, HDR,
+	// FluxGraphics — each kept inline here, deliberately absent from the
+	// registry shutdown walk) follow.
 	Flux_FeatureRegistry::Get().RunShutdown();
 
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)

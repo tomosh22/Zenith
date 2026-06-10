@@ -6,9 +6,6 @@
 #include "Maths/Zenith_Maths.h"
 
 class Flux_MeshGeometry;
-class Flux_GraphicsImpl;
-class Flux_HDRImpl;
-class FrameContext;
 
 enum Grass_DebugMode : u_int
 {
@@ -70,12 +67,7 @@ public:
 	Flux_GrassImpl(const Flux_GrassImpl&) = delete;
 	Flux_GrassImpl& operator=(const Flux_GrassImpl&) = delete;
 
-	// Injected engine-infra deps (de-globalisation, aggressive pass):
-	//   xVulkanMemory owns the grass instance/constants/blade-mesh GPU buffers,
-	//   xFrame supplies the wind animation time, xGraphics provides the camera /
-	//   frame-constants / depth attachment, xHDR provides the HDR scene target.
-	void Initialise(Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame,
-		Flux_GraphicsImpl& xGraphics, Flux_HDRImpl& xHDR);
+	void Initialise();
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
@@ -110,8 +102,8 @@ public:
 	void UploadInstanceData();
 	void CreateBuffers();
 	void DestroyBuffers();
-	// Promoted from a file-static free function so its VulkanMemory reach-in
-	// routes through the injected member instead of g_xEngine.
+	// Promoted from a file-static free function; VulkanMemory is reached via
+	// g_xEngine at point of use.
 	void CreateGrassBladeMesh();
 
 public:
@@ -135,12 +127,4 @@ public:
 	Zenith_Maths::Vector2             m_xWindDirection = glm::normalize(Zenith_Maths::Vector2(1.0f, 0.2f));
 
 	Flux_DynamicConstantBuffer        m_xGrassConstantsBuffer;
-
-	// Injected engine-infra deps (stored in Initialise, nulled in Shutdown).
-	// Public so the static graph trampoline can route through them after it
-	// recovers the subsystem via g_xEngine.Grass().
-	Flux_MemoryManager*               m_pxVulkanMemory = nullptr;
-	FrameContext*                     m_pxFrame        = nullptr;
-	Flux_GraphicsImpl*                m_pxGraphics     = nullptr;
-	Flux_HDRImpl*                     m_pxHDR          = nullptr;
 };

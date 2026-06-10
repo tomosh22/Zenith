@@ -40,7 +40,7 @@ public:
 	// Instance entries called from the main loop via g_xEngine.FluxSwapchain().
 	// BeginFrame returns false on swapchain-out-of-date so the main loop can
 	// short-circuit the frame; in that case the caller must NOT advance the
-	// frame counter.
+	// frame index.
 	bool BeginFrame();
 	void EndFrame();
 
@@ -51,10 +51,11 @@ public:
 
 	vk::Semaphore& GetCurrentImageAvailableSemaphore();
 
-	// Ring index in [0, MAX_FRAMES_IN_FLIGHT). Owned by FluxRenderer as the
-	// engine's single source of truth for frame counting; this accessor is
-	// retained for compatibility but defined out-of-line so the header can
-	// stay free of the Flux_RendererImpl include.
+	// Ring index in [0, MAX_FRAMES_IN_FLIGHT). FrameContext owns the engine's
+	// single frame-index variable; this accessor reads g_xEngine.Frame() at
+	// the point of use because it is callable BEFORE Initialise() wires the
+	// self-wired dep pointers (boot-time GPU asset uploads ask for the ring
+	// slot) — see the definition for the call chain.
 	uint32_t GetCurrentFrameIndex();
 
 	vk::Format GetFormat();

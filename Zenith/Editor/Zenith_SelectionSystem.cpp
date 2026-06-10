@@ -439,14 +439,4 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	return xBoundingBox;
 }
 
-void Zenith_SelectionSystem::RenderBoundingBoxes()
-{
-	// STUB: Requires implementation for debug rendering of all bounding boxes
-}
-
-void Zenith_SelectionSystem::RenderSelectedBoundingBox(Zenith_Entity*)
-{
-	// STUB: Requires implementation for debug rendering of selected entity bounding box
-}
-
 #endif // ZENITH_TOOLS

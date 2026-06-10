@@ -15,24 +15,20 @@
 //
 // Required initialisation sequence (not expressible as a concept — document
 // here so a new backend author doesn't discover it via crash):
-//   1. g_xEngine.FluxRenderer().PerFrameInitialise()              (resets counter + callback arrays)
-//   2. Backend Initialise()                     (backend may register callbacks here)
-//   3. MemoryManager Initialise()               (registers OnFluxPerFrameEnd
-//                                                AFTER the backend's begin-frame
-//                                                callback, so deferred-deletion
-//                                                drains at end-of-frame after any
-//                                                in-flight submission is queued)
+//   1. g_xEngine.FluxRenderer().PerFrameInitialise()              (no-op; the frame index
+//                                                lives on FrameContext)
+//   2. Backend Initialise()                     (sets up per-frame GPU state)
+//   3. MemoryManager Initialise()               (sets up the deferred-deletion queue)
 // And at shutdown, the reverse order:
 //   1. MemoryManager Shutdown()                 (drains deferred deletions)
 //   2. Backend Shutdown()
-//   3. g_xEngine.FluxRenderer().PerFrameShutdown()                (clears callback arrays)
+//   3. g_xEngine.FluxRenderer().PerFrameShutdown()
 //
-// Callback-registration ordering inside Initialise is load-bearing: the
-// Vulkan begin-frame callback (fence wait, descriptor pool reset, typed
-// deletion drain, scratch reset) MUST run before any other begin-frame
-// subscriber, so backends register that callback first. See
-// Flux_PerFrame.cpp for the subscriber-tally static_assert that catches
-// new subscribers being added without updating the cap in ZenithConfig.h.
+// Per-frame dispatch is direct, not callback-based: Flux_RendererImpl::BeginFrame
+// calls the backend's PerFrameBegin() (fence wait, descriptor pool reset, typed
+// deletion drain, scratch reset) via the neutral Flux_PlatformAPI alias, and
+// Flux_RendererImpl::ProcessFrameEnd calls FluxMemory().ProcessDeferredDeletions()
+// via the neutral Flux_MemoryManager alias. The null backend's forms are no-ops.
 
 #include "Flux/Flux_Backend.h"
 

@@ -156,8 +156,6 @@ public class ZenithBaseLibProject : ZenithBaseProject
 			// identically in True. Include paths only (no tool libs linked).
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/assimp/include");
-			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include");
-			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include/opencv2");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/freetype/include");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen");
@@ -245,7 +243,6 @@ public class ZenithProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*puff\\.*");
 		SourceFilesExcludeRegex.Add(@".*testzlib\\.*");
 		SourceFilesExcludeRegex.Add(@".*untgz\\.*");
-		SourceFilesExcludeRegex.Add(@".*opencv.*");
 		SourceFilesExcludeRegex.Add(@".*stb_vorbis\.c.*");
 
 		// MSDF font deps: source-vendored but built externally via build_msdf_deps.bat;
@@ -422,8 +419,6 @@ public class ZenithProject : ZenithBaseProject
 			// Tools include paths
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/assimp/include");
-			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include");
-			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include/opencv2");
 
 			// MSDF font dep includes. Libs built as separate Sharpmake static-lib
 			// projects (Sharpmake_FreeType.cs, Sharpmake_Msdfgen.cs, Sharpmake_MsdfAtlasGen.cs)
@@ -436,7 +431,6 @@ public class ZenithProject : ZenithBaseProject
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen/Config");
 
 			// Tools library paths and dependencies
-			conf.LibraryPaths.Add(RootPath + "/Tools/Middleware/opencv/build/x64/vc16/lib");
 			conf.LibraryPaths.Add(RootPath + "/Tools/Middleware/assimp/lib");
 
 			// Exclude Tools from precompiled header
@@ -444,12 +438,10 @@ public class ZenithProject : ZenithBaseProject
 
 			if (target.Optimization == Optimization.Debug)
 			{
-				conf.LibraryFiles.Add("opencv_world4100d.lib");
 				conf.LibraryFiles.Add("assimp-vc143-mtd.lib");
 			}
 			else
 			{
-				conf.LibraryFiles.Add("opencv_world4100.lib");
 				conf.LibraryFiles.Add("assimp-vc143-mt.lib");
 			}
 

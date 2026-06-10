@@ -4,7 +4,7 @@
 
 ImGui-based scene editor for creating, editing, and testing game content. Active only in tools builds (`#ifdef ZENITH_TOOLS`). Features dockable panels, entity manipulation, play/pause/stop modes, undo/redo, and 3D gizmo integration.
 
-**Core Design:** Deferred operations pattern prevents concurrent access to scene data during active render tasks. All scene modifications (load/save/reset, play/stop transitions) queued and executed at safe synchronization points.
+**Core Design:** Deferred operations pattern prevents concurrent access to scene data during active render tasks. Scene loads (open/registered/play-stop restore) are queued and executed at safe synchronization points; New Scene and Save Scene run directly from the menu callback (Zenith_Editor::RenderImGuiFrame runs after render tasks complete, so direct execution is safe there).
 
 ## Files
 
@@ -41,7 +41,7 @@ Scene::Update (conditional)
 UploadFrameConstants
   ↓
 SubmitRenderTasks
-  ├─ RenderImGui() calls Zenith_Editor::Render()
+  ├─ Zenith_Editor::RenderImGuiFrame() (composes the ImGui frame, calls Render())
   └─ Flux_Gizmos::SubmitRenderTask()
   ↓
 WaitForRenderTasks
@@ -57,14 +57,16 @@ EndFrame (recording + present)
 
 ### Deferred Operations Pattern
 
-Three operations use deferred execution:
+Three operations use deferred execution, all scene loads:
 
-1. **Scene Load** - User clicks "Open Scene" sets flag, actual load next frame
-2. **Scene Save** - File dialog sets flag, write happens in Update()
-3. **Scene Reset** - New scene request sets flag, reset next frame
+1. **Scene Load from file** - User picks a file in "Open Scene" / content browser, actual load next frame
+2. **Registered Scene Load** - Toolbar dropdown sets the build index, load next frame
+3. **Play→Stop Restore** - EnterStopMode queues the backup-scene load, restore next frame
+
+New Scene and Save Scene execute directly in the menu callback (no render tasks are active during RenderImGuiFrame).
 
 **Synchronization Sequence:**
-- Menu items rendered during `RenderImGui()` (render tasks active)
+- Menu items rendered during `Zenith_Editor::RenderImGuiFrame()` (render tasks active)
 - Flags set, no immediate action
 - Next frame: `Update()` checks flags BEFORE any rendering starts
 - Safe to modify scene data (no concurrent access)
@@ -105,7 +107,7 @@ Three execution states control editor behavior:
 
 **Playing/Paused → Stopped:**
 1. Set deferred scene load flag with backup file path
-2. Next frame: Wait for GPU idle + process deferred deletions
+2. Next frame: process the deferred load before render tasks start (no GPU wait — teardown frees GPU resources via the deferred-deletion grace period)
 3. Load backup scene (calls Reset() then deserialize)
 4. Restore editor camera from saved state
 5. Delete backup file
@@ -142,9 +144,9 @@ ImGui docking branch provides central dock space with persistent layout. Panels 
 ### Main Menu Bar
 
 **File Menu:**
-- New Scene - Deferred reset, clears all entities
+- New Scene - Force-unloads the active scene, creates a fresh empty scene (direct, not deferred)
 - Open Scene - File dialog, deferred load
-- Save Scene - Deferred save to current path
+- Save Scene - File dialog, direct save via Zenith_EditorSceneAccess::SaveToFile
 - Exit - Closes application
 
 **Edit Menu:**
@@ -300,10 +302,10 @@ Editor integrates with Flux_Gizmos for 3D transform manipulation. Architecture s
 
 ### Zenith_Gizmo (Utilities)
 
-Located in `Editor/Zenith_Gizmo.h/cpp`, provides helper functions:
-- `ScreenToWorldRay()` - Converts 2D viewport coords to 3D world ray
-- Ray-plane intersection for rotation calculations
-- Coordinate space conversions (screen → viewport → clip → world)
+Located in `Editor/Zenith_Gizmo.h/cpp`, provides one helper:
+- `ScreenToWorldRay()` - Converts 2D viewport coords to 3D world ray (screen → viewport → clip → world)
+
+(The legacy ImGui-drawlist translate gizmo that used to live here was superseded by Flux_Gizmos and has been deleted.)
 
 **Coordinate System Considerations:**
 - Vulkan depth range [0, 1] not OpenGL [-1, 1]
@@ -372,21 +374,13 @@ Base class `Zenith_UndoCommand` requires:
 
 ### Command Types
 
-**1. TransformEdit:**
+**TransformEdit** (the only command type):
 - Stores: EntityID, before/after position, rotation, scale
 - Execute: Apply "after" transform
 - Undo: Restore "before" transform
 - Created automatically by gizmo interactions
 
-**2. CreateEntity:**
-- Stores: EntityID, creation state
-- Execute: Create entity
-- Undo: Delete entity (currently simplified, full serialization planned)
-
-**3. DeleteEntity:**
-- Stores: Serialized entity state (components + properties)
-- Execute: Delete entity from scene
-- Undo: Deserialize entity back into scene
+(The never-instantiated CreateEntity/DeleteEntity command stubs were deleted; entity deletion from the hierarchy panel is not undoable.)
 
 ### Stack Management
 
@@ -478,11 +472,9 @@ All editor operations execute on main thread only:
 ### Synchronization Points
 
 **Scene Load/Reset:**
-1. Wait for all CPU render tasks to complete
-2. Wait for GPU idle (vkDeviceWaitIdle)
-3. Process deferred resource deletions (descriptor sets)
-4. Clear pending command lists
-5. Safe to Reset() scene (no concurrent access)
+1. Runs in Update(), before render-task submission — no CPU render tasks are active (asserted in Reset())
+2. No GPU wait: every GPU resource the teardown frees is queued through `QueueVRAMDeletion`'s MAX_FRAMES_IN_FLIGHT+1 grace period, the same contract runtime `LoadScene` relies on mid-play
+3. The unit-test entry point `FlushPendingSceneOperations()` still waits for GPU idle (`WaitForGPUAndFlushDeferred`) because it runs outside the frame loop where the per-frame deletion tick isn't running
 
 **GPU Resource Lifecycle:**
 - Descriptor sets deleted immediately from application state
@@ -493,7 +485,7 @@ All editor operations execute on main thread only:
 ### Race Condition Prevention
 
 **Why Deferred Operations:**
-- Menu bar rendered during `RenderImGui()` → active render tasks
+- Menu bar rendered during `Zenith_Editor::RenderImGuiFrame()` → active render tasks
 - Immediate scene load would race with workers reading component data
 - Deferred to next frame's `Update()` → executes BEFORE render tasks start
 
@@ -591,7 +583,6 @@ Gizmo mode keys (W/E/R) only active when:
 - Bounding boxes rebuilt per-frame (acceptable for editor workload)
 
 **Undo/Redo:**
-- Full entity serialization for delete commands (heavyweight)
 - Transform edits lightweight (just 3 vectors)
 - 100 command limit prevents unbounded memory growth
 

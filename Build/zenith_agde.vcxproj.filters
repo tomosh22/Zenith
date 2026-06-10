@@ -538,6 +538,9 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FontAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_Image.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
@@ -734,6 +737,9 @@
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
@@ -3297,6 +3303,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FontAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_Image.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -3556,6 +3565,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">

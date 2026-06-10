@@ -49,7 +49,8 @@ public:
 	uint32_t GetHeight() { return 720; }
 
 	// Ring index in [0, MAX_FRAMES_IN_FLIGHT). Concept contract: matches
-	// g_xEngine.FluxRenderer().GetRingIndex(); a no-op backend just returns 0.
+	// g_xEngine.Frame().GetRingIndex() (FrameContext owns the frame index);
+	// a no-op backend just returns 0.
 	uint32_t GetCurrentFrameIndex() { return 0; }
 
 	bool ShouldWaitOnImageAvailableSemaphore() { return false; }

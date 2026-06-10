@@ -244,8 +244,8 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		PerFrameStaging& xStaging = CurrentStaging();
 		if (xStaging.m_uNextFreeOffset + ulDataSize > g_uStagingPoolSize)
 		{
-			// HandleStagingBufferFull does an EndFrame(false) -> EndAndCpuWait
-			// which blocks for multi-second GPU work. Holding m_xMutex across
+			// HandleStagingBufferFull does a Flush() -> EndAndCpuWait which
+			// blocks for multi-second GPU work. Holding m_xMutex across
 			// that wait stalls every other thread doing uploads (smoke runs
 			// showed 20-second "Wait for Mutex" events from worker threads
 			// piling up here). Release the mutex during the GPU wait.
@@ -328,6 +328,8 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 
 void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed)
 {
+	EnsureRecording();
+
 	// Mip 0 is already in TRANSFER_DST_OPTIMAL from the copy. Transition to TRANSFER_SRC for blit source.
 	m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 

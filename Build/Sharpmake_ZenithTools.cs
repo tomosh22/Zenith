@@ -41,31 +41,6 @@ public class ZenithToolsProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
 
-		// OpenCV excludes
-		SourceFilesExcludeRegex.Add(@".*opencv\\samples.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\cmake.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\calib3d.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\core.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\dnn.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\gapi.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\highgui.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\features2d.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\flann.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\imgproc.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\objdetect.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\ml.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\python.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\stitching.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\java.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\video.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\ts.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\js.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\photo.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\imgcodecs\\test.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\3rdparty.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\samples.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\apps.*");
-		SourceFilesExcludeRegex.Add(@".*opencv.*");
 
 		// Jolt Physics excludes
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
@@ -97,16 +72,6 @@ public class ZenithToolsProject : ZenithBaseProject
 		conf.IncludePaths.Add(RootPath + "/Middleware/glm-master");
 		conf.IncludePaths.Add(RootPath + "/Tools/Middleware");
 		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/assimp/include");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include/opencv2");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/include");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/modules/core/include/");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/modules/ts/include/");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/cmake/templates/");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/3rdparty/libtiff/");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/3rdparty/openjpeg/openjp2/");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/3rdparty/libjpeg");
-		conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/sources/3rdparty/libpng");
 		conf.IncludePaths.Add(RootPath + "/Middleware/stb");
 		conf.IncludePaths.Add(RootPath + "/Middleware");
 		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
@@ -117,7 +82,6 @@ public class ZenithToolsProject : ZenithBaseProject
 
 		conf.Defines.Add("ZENITH_TOOLS");
 		conf.Defines.Add("OPENDDLPARSER_BUILD");
-		conf.Defines.Add("__OPENCV_BUILD");
 
 		// Compute actual paths using SharpmakeCsPath (Build directory)
 		string zenithRoot = new DirectoryInfo(SharpmakeCsPath).Parent.FullName;
@@ -132,17 +96,14 @@ public class ZenithToolsProject : ZenithBaseProject
 		conf.Output = Configuration.OutputType.Lib;
 
 		// Library paths
-		conf.LibraryPaths.Add(RootPath + "/Tools/Middleware/opencv/build/x64/vc16/lib");
 		conf.LibraryPaths.Add(RootPath + "/Tools/Middleware/assimp/lib");
 
 		if (target.Optimization == Optimization.Debug)
 		{
-			conf.LibraryFiles.Add("opencv_world4100d.lib");
 			conf.LibraryFiles.Add("assimp-vc143-mtd.lib");
 		}
 		else
 		{
-			conf.LibraryFiles.Add("opencv_world4100.lib");
 			conf.LibraryFiles.Add("assimp-vc143-mt.lib");
 		}
 	}

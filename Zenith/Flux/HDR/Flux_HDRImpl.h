@@ -4,19 +4,6 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-// Cross-subsystem dependencies injected into Initialise (aggressive
-// de-globalization pass): the engine-infra singletons VulkanMemory / Frame /
-// VulkanSwapchain and the sibling FluxGraphics are passed by reference and
-// stored as member pointers, rather than reached via g_xEngine.X() inside the
-// instance methods. Forward-declared here; full headers are pulled in by
-// Flux_HDR.cpp. The only g_xEngine survivors are the non-capturing fn-pointer
-// trampolines (the Execute*/PreExecute* graph callbacks + the hot-reload
-// lambda) which recover this singleton via g_xEngine.HDR() and then route
-// their reach-ins through these members, plus the ZENITH_TOOLS DebugVariables
-// reaches (conditional accessor).
-class Flux_GraphicsImpl;
-class FrameContext;
-
 enum ToneMappingOperator : u_int
 {
 	TONEMAPPING_ACES,
@@ -53,14 +40,7 @@ public:
 	Flux_HDRImpl(const Flux_HDRImpl&) = delete;
 	Flux_HDRImpl& operator=(const Flux_HDRImpl&) = delete;
 
-	// Cross-subsystem deps are injected here and stored into the member pointers
-	// below. xVulkanMemory owns the auto-exposure VRAM buffer lifetime + staging
-	// uploads; xSwapchain supplies the back-buffer dims for the histogram/
-	// adaptation dispatch sizing and transient creation; xFrame supplies the
-	// delta-time for exposure adaptation; xGraphics owns the fullscreen quad mesh
-	// + the final/depth render targets the bloom/tonemap passes draw into.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory,
-	                Flux_Swapchain& xSwapchain, FrameContext& xFrame);
+	void Initialise();
 	void Shutdown();
 	void Reset();
 	void BuildPipelines();
@@ -149,12 +129,4 @@ public:
 	float                     m_fMaxExposure       = 10.0f;
 	float                     m_fMinLogLuminance   = -10.0f;
 	float                     m_fLogLuminanceRange = 12.0f;
-
-	// Injected cross-subsystem deps (stored from Initialise; nulled in Shutdown).
-	// Public so the non-capturing graph trampolines can route through them after
-	// recovering this instance via g_xEngine.HDR().
-	Flux_GraphicsImpl*           m_pxGraphics      = nullptr;
-	Flux_MemoryManager*          m_pxVulkanMemory  = nullptr;
-	Flux_Swapchain*              m_pxSwapchain     = nullptr;
-	FrameContext*                m_pxFrame         = nullptr;
 };

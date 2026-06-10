@@ -5,22 +5,13 @@
 
 class Flux_RenderGraph;
 
-// Cross-subsystem dependencies injected into Initialise (Wave-11 DI seam, the
-// 2nd leaf seam built on the WS9.2 Flux_HiZImpl template). Forward-declared
-// here; full headers are pulled in by Flux_SSAO.cpp.
-class Flux_GraphicsImpl;
-class Flux_HDRImpl;
-
 // Phase 9: state + behaviour for SSAO subsystem.
 //
-// Wave-11 DI seam (mirrors Flux_HiZImpl): cross-subsystem dependencies are
-// INJECTED through Initialise as explicit references and stored as member
-// pointers, rather than reached for via g_xEngine.X() inside every method. The
-// only place g_xEngine self-lookup survives is the non-capturing fn-pointer
-// trampolines (the Execute* graph callbacks, the DebugGet* texture callbacks,
-// and the ZENITH_TOOLS hot-reload callback) — those cannot capture state, so
-// they re-enter via g_xEngine.SSAO() to reach this singleton instance and then
-// route their other reach-ins through the injected members.
+// Cross-subsystem dependencies (FluxGraphics/Swapchain/HDR) are reached via
+// g_xEngine at point of use. The non-capturing fn-pointer trampolines (the
+// Execute* graph callbacks, the DebugGet* texture callbacks, and the
+// ZENITH_TOOLS hot-reload callback) cannot capture state, so they re-enter via
+// g_xEngine.SSAO() to reach this singleton instance.
 class Flux_SSAOImpl
 {
 public:
@@ -30,10 +21,7 @@ public:
 	Flux_SSAOImpl(const Flux_SSAOImpl&) = delete;
 	Flux_SSAOImpl& operator=(const Flux_SSAOImpl&) = delete;
 
-	// Cross-subsystem deps are injected here and stored into the member pointers
-	// below. This is the WS9.2 DI template: explicit ref params -> stored member
-	// pointers.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_Swapchain& xSwapchain, Flux_HDRImpl& xHDR);
+	void Initialise();
 	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -57,11 +45,4 @@ public:
 	Flux_TransientHandle m_xRawOcclusionHandle;
 	Flux_TransientHandle m_xBlurredHandle;
 	Flux_RenderGraph*    m_pxGraph = nullptr;
-
-	// Injected cross-subsystem dependencies (stored by Initialise). Default
-	// nullptr so a default-constructed instance is headless-safe; the real boot
-	// path wires them in Flux.cpp.
-	Flux_GraphicsImpl*       m_pxGraphics  = nullptr;
-	Flux_Swapchain* m_pxSwapchain = nullptr;
-	Flux_HDRImpl*            m_pxHDR       = nullptr;
 };

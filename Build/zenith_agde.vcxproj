@@ -860,6 +860,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FontAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_Image.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h" />
@@ -947,6 +948,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
@@ -1827,6 +1829,7 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FontAsset.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_Image.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.cpp" />
@@ -1980,6 +1983,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>

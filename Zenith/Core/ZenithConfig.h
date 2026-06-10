@@ -104,11 +104,6 @@ static constexpr uint32_t FLUX_MAX_LAYERS = 256;
 static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
 static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 5;
 
-// Maximum number of begin/end-frame callbacks any backend can register with
-// Flux_PerFrame. Realistic subscribers: Vulkan PerFrame (begin), MemoryManager
-// (end), plus headroom for future hot-reload / profiler hooks.
-static constexpr uint32_t FLUX_MAX_PERFRAME_CALLBACKS = 4;
-
 // Static mesh vertex stride. The engine does not use this constant directly;
 // the authoritative layout (pos12 + uv8 + normal12 + tangent12 + bitangent12 +
 // colour4 = 60 bytes) lives in the mesh converter tool's source. Changing the
@@ -184,8 +179,4 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 
 #ifndef FLUX_MAX_LAYERS
 #define FLUX_MAX_LAYERS ZenithConfig::FLUX_MAX_LAYERS
-#endif
-
-#ifndef FLUX_MAX_PERFRAME_CALLBACKS
-#define FLUX_MAX_PERFRAME_CALLBACKS ZenithConfig::FLUX_MAX_PERFRAME_CALLBACKS
 #endif

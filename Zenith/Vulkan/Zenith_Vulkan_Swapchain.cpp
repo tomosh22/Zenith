@@ -22,7 +22,6 @@
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-void RenderImGui();
 #endif
 
 // Phase 6b: swapchain state moved to Zenith_Vulkan_Swapchain held by
@@ -693,12 +692,12 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 	// --screenshot: capture the freshly-rendered swapchain image on the
 	// requested frame, before present (the helper restores the PresentSrc
-	// layout so present stays valid). Fires exactly once — the frame counter
+	// layout so present stays valid). Fires exactly once — the frame index
 	// equals the target on a single EndFrame.
 	{
 		const char* szScreenshotPath = Zenith_CommandLine::GetScreenshotPath();
 		if (szScreenshotPath != nullptr &&
-			g_xEngine.FluxRenderer().GetFrameCounter() == Zenith_CommandLine::GetScreenshotFrame())
+			g_xEngine.Frame().GetFrameIndex() == Zenith_CommandLine::GetScreenshotFrame())
 		{
 			WriteSwapchainScreenshotTGA(*this, szScreenshotPath);
 		}
@@ -721,8 +720,8 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR || eResult == vk::Result::eSuboptimalKHR, "Failed to present");
 
 	}
-	// Frame counter advance is now owned by Flux_PerFrame::EndFrame, called
-	// once at the bottom of Zenith_MainLoop. Removed the local counter bump
+	// Frame index advance is owned by Zenith_MainLoop (FrameContext), which
+	// bumps it once at the bottom of the loop. Removed the local counter bump
 	// here to keep one source of truth.
 }
 
@@ -733,20 +732,20 @@ vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore()
 
 uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
 {
-	// Single source of truth — Flux_PerFrame owns the monotonic frame counter
+	// Single source of truth — FrameContext owns the monotonic frame index
 	// and the ring index. The swapchain's previous s_uFrameIndex member has
 	// been removed; backends and engine code that need the current ring slot
 	// all derive it from here.
-	// m_pxFluxRenderer is wired in Initialise(), but boot-time GPU asset
-	// uploads (Zenith_Engine::InitialiseGPUAssets -> MemoryManager::BeginFrame
-	// -> CommandBuffer::BeginRecording) ask for the ring slot before the
-	// swapchain initialises. The frame counter is still 0 there, so ring
-	// slot 0 is the correct answer.
-	if (m_pxFluxRenderer == nullptr)
-	{
-		return 0;
-	}
-	return m_pxFluxRenderer->GetRingIndex();
+	//
+	// Deliberately a point-of-use g_xEngine reach, NOT a self-wired member
+	// pointer: this accessor is called BEFORE Initialise() runs — boot-time
+	// GPU asset uploads (Zenith_Engine::InitialiseGPUAssets → MemoryManager::
+	// BeginFrame → CommandBuffer::BeginRecording) ask for the ring slot while
+	// the swapchain's dep pointers are still null. FrameContext is allocated
+	// up-front in Zenith_Engine::Initialise, so g_xEngine.Frame() is valid
+	// throughout that window (and the index is still 0 there, so the answer
+	// matches the old unwired-seam ring-slot-0 guard).
+	return g_xEngine.Frame().GetRingIndex();
 }
 
 Flux_RenderAttachment* Zenith_Vulkan_Swapchain::GetCurrentSwapchainTarget(uint32_t& uNumColourAttachments, Flux_RenderAttachment*& pxDepthStencil)

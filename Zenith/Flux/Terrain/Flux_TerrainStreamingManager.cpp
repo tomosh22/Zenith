@@ -173,7 +173,7 @@ void Flux_TerrainStreamingState::Initialize()
 	m_xLastCameraPos    = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
 	m_iLastCameraChunkX = INT32_MIN;
 	m_iLastCameraChunkY = INT32_MIN;
-	m_uCurrentFrame     = 0;
+	m_bFirstHeartbeatLogged = false;
 	m_bChunkDataDirty.store(true, std::memory_order_release);
 
 	m_uCachedHighLODVertexCount = 0;
@@ -232,6 +232,7 @@ void Flux_TerrainStreamingManagerImpl::Initialize()
 	// in Zenith_Engine::Initialise, so storing the pointer here is safe even if
 	// FluxRenderer hasn't finished its own init yet.
 	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
+	m_pxFrame        = &g_xEngine.Frame();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManagerImpl::Initialize()");
 
@@ -262,6 +263,7 @@ void Flux_TerrainStreamingManagerImpl::Shutdown()
 	m_xRegistryMutex.Unlock();
 
 	m_pxFluxRenderer = nullptr;
+	m_pxFrame        = nullptr;
 	m_bInitialized = false;
 }
 
@@ -541,7 +543,6 @@ void Flux_TerrainStreamingManagerImpl::UpdateStreamingForTerrain(Flux_TerrainStr
 	// Wave 3: the old "state's owner == passed component" consistency check is gone —
 	// the caller now passes the state directly, so an owner/component mismatch is impossible.
 
-	xState.m_uCurrentFrame++;
 	xState.m_xStats.m_uStreamsThisFrame   = 0;
 	xState.m_xStats.m_uEvictionsThisFrame = 0;
 	xState.m_xLastCameraPos = xCameraPos;
@@ -567,20 +568,25 @@ void Flux_TerrainStreamingManagerImpl::UpdateStreamingForTerrain(Flux_TerrainStr
 	xDiagnostics.m_uLowZeroCount = CountLowZeroChunks(xState);
 	xDiagnostics.m_uHighResidentCount = CountHighResidentChunks(xState);
 
-	if (xState.m_uCurrentFrame % 30 == 0)
+	// Stats/heartbeat cadence runs off the engine frame index (the single
+	// frame-index variable, owned by FrameContext) — the per-state clock this
+	// used to tick was a duplicate. Phase relative to state-init shifts, but
+	// the every-30/60-frames cadence is what matters here.
+	if (m_pxFrame->GetFrameIndex() % 30 == 0)
 	{
 		UpdateStreamingStats(xState);
 	}
 
 #pragma warning ( push )
 #pragma warning (disable : 4127)
-	if (dbg_bLogTerrainStreaming && (xState.m_uCurrentFrame == 1 || (xState.m_uCurrentFrame % 60) == 0))
+	if (dbg_bLogTerrainStreaming && (!xState.m_bFirstHeartbeatLogged || (m_pxFrame->GetFrameIndex() % 60) == 0))
 	{
 		LogStreamingHeartbeat(xState, xCameraPos, iCameraChunkX, iCameraChunkY, xDiagnostics);
 		if (xDiagnostics.m_uLowZeroCount > 0)
 			LogLowZeroChunkCoordinates(xState);
 	}
 #pragma warning ( pop )
+	xState.m_bFirstHeartbeatLogged = true;
 }
 
 void Flux_TerrainStreamingManagerImpl::UpdateStreamingStats(Flux_TerrainStreamingState& xState)

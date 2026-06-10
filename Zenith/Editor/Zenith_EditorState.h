@@ -59,11 +59,6 @@ struct Zenith_EditorDeferredOpsState
 	bool m_bPendingSceneLoad = false;
 	std::string m_strPendingSceneLoadPath;
 
-	bool m_bPendingSceneSave = false;
-	std::string m_strPendingSceneSavePath;
-
-	bool m_bPendingSceneReset = false;
-
 	// Loading a registered scene by build index
 	bool m_bPendingRegisteredSceneLoad = false;
 	int m_iPendingRegisteredSceneBuildIndex = -1;
@@ -76,9 +71,6 @@ struct Zenith_EditorDeferredOpsState
 	{
 		m_bPendingSceneLoad = false;
 		m_strPendingSceneLoadPath.clear();
-		m_bPendingSceneSave = false;
-		m_strPendingSceneSavePath.clear();
-		m_bPendingSceneReset = false;
 		m_bPendingRegisteredSceneLoad = false;
 		m_iPendingRegisteredSceneBuildIndex = -1;
 		m_bPendingSceneLoadFromFile = false;

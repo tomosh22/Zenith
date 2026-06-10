@@ -8,17 +8,6 @@
 class Flux_RenderGraph;
 class Zenith_FontAsset;
 
-// Dependencies injected into Initialise (Wave-15 DI seam, built on the WS9.2
-// Flux_HiZImpl / Wave-11 Flux_SSAOImpl / Wave-14 Flux_QuadsImpl template; Wave-4
-// extends it to ALSO inject VulkanMemory per the aggressive g_xEngine-shrink
-// directive). Forward-declared here; full headers are pulled in by Flux_Text.cpp.
-// (DebugVariables() stays a direct g_xEngine lookup — it is a ZENITH_TOOLS-only
-// accessor reached once under #ifdef ZENITH_DEBUG_VARIABLES, so injecting it would
-// force conditional compilation into the Initialise signature. The
-// Zenith_UI::Zenith_UICanvas statics + the FontHandle asset are not g_xEngine
-// subsystems, so they are out of scope.)
-class Flux_GraphicsImpl;
-
 // Per-glyph instance vertex pushed to the GPU. One per visible glyph quad.
 // Layout matches the vertex input description in Flux_TextImpl::BuildPipelines.
 //
@@ -61,9 +50,7 @@ public:
 	Flux_TextImpl(const Flux_TextImpl&) = delete;
 	Flux_TextImpl& operator=(const Flux_TextImpl&) = delete;
 
-	// Cross-subsystem dep is injected here and stored into m_pxGraphics below.
-	// This is the WS9.2 DI template: explicit ref param -> stored member pointer.
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_MemoryManager& xVulkanMemory);
+	void Initialise();
 	void BuildPipelines();
 	void ReleaseAssetReferences();
 	void Shutdown();
@@ -92,10 +79,4 @@ public:
 	uint32_t                 m_uBgCharCount          = 0;
 	uint32_t                 m_uFgCharCount          = 0;
 	uint32_t                 m_uTotalCharCount       = 0;
-
-	// Injected cross-subsystem dependency (stored by Initialise). Default nullptr
-	// so a default-constructed instance is headless-safe; the real boot path wires
-	// it in via the Text init trampoline (Flux_FeatureRegistry.cpp).
-	Flux_GraphicsImpl*       m_pxGraphics            = nullptr;
-	Flux_MemoryManager* m_pxVulkanMemory    = nullptr;
 };

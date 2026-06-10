@@ -15,6 +15,7 @@
 // type definitions.
 #include "Editor/Panels/Zenith_EditorPanel_Viewport.h"   // PendingImGuiTextureDeletion
 #include "Flux/Flux_Types.h"                              // Flux_ImGuiTextureHandle, Flux_ImageViewHandle
+#include "Flux/Flux_Fwd.h"                                // Flux_PlatformAPI alias (Initialise dep param)
 #include "AssetHandling/Zenith_AssetHandle.h"             // MaterialHandle
 #include "Collections/Zenith_Vector.h"
 #include "Core/Zenith_DragDropPayloads.h"   // DRAGDROP_PAYLOAD_* + DragDropFilePayload (L0, no deps)
@@ -24,6 +25,10 @@
 
 // Forward declarations
 class Zenith_MaterialAsset;
+class Flux_GraphicsImpl;
+class FrameContext;
+class Zenith_DebugVariables;
+class Zenith_Profiling;
 
 // Content browser view mode
 enum class ContentBrowserViewMode
@@ -102,16 +107,26 @@ public:
 	Zenith_Editor(const Zenith_Editor&) = delete;
 	Zenith_Editor& operator=(const Zenith_Editor&) = delete;
 
-	void Initialise();
+	// Frame deps are injected and cached as members (m_px* below) so the
+	// per-frame ImGui composition never reaches for g_xEngine from this TU
+	// (engine-singleton ratchet: Zenith_Editor.cpp is a counted file).
+	void Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl& xFluxGraphics, FrameContext& xFrame,
+		Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling);
 	void Shutdown();
 	bool Update();
 	void Render();
+
+	// Composes the whole per-frame ImGui pass: backend ImGuiBeginFrame ->
+	// editor panels (Render) -> legacy "Zenith Tools" debug window ->
+	// profiling window -> ImGui::Render(). Called from the main loop's
+	// render-work block; only reachable windowed in tools builds.
+	void RenderImGuiFrame();
 
 	// Editor state
 	EditorMode GetEditorMode();
 	void SetEditorMode(EditorMode eMode);
 
-	// Synchronously process pending scene operations (load/save/reset)
+	// Synchronously process the pending deferred scene load (mode-transition restore)
 	// Used by unit tests to ensure scene state is consistent after mode transitions
 	void FlushPendingSceneOperations();
 
@@ -191,8 +206,6 @@ public:
 	bool HandlePendingSceneLoad();
 
 	void WaitForGPUAndFlushDeferred(const char* szReason);
-	void HandlePendingSceneReset();
-	void HandlePendingSceneSave();
 	void HandlePendingSceneLoadDeferred();
 
 	void UpdateEditorInput();
@@ -243,6 +256,13 @@ public:
 
 	// Deferred-deletion queue for ImGui textures (GPU must finish before freeing).
 	Zenith_Vector<PendingImGuiTextureDeletion> m_xPendingDeletions;
+
+	// Frame deps injected via Initialise() — see the comment on Initialise.
+	Flux_PlatformAPI*      m_pxFluxBackend    = nullptr;
+	Flux_GraphicsImpl*     m_pxFluxGraphics   = nullptr;
+	FrameContext*          m_pxFrame          = nullptr;
+	Zenith_DebugVariables* m_pxDebugVariables = nullptr;
+	Zenith_Profiling*      m_pxProfiling      = nullptr;
 };
 
 #endif // ZENITH_TOOLS

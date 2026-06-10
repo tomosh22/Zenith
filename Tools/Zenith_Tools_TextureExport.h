@@ -15,9 +15,10 @@ namespace Zenith_Tools_TextureExport
 	// Export texture with specified compression mode (PNG, JPG, JPEG)
 	void ExportFromFile(std::string strFilename, const char* szExtension, TextureCompressionMode eCompression = TextureCompressionMode::Uncompressed);
 
-	// Export TIF texture with bit depth preservation (uses OpenCV)
-	// Preserves 16-bit and 32-bit depth for heightmaps
-	void ExportFromTifFile(const std::string& strFilename, TextureCompressionMode eCompression = TextureCompressionMode::Uncompressed);
+	// Export an image preserving bit depth (16-bit/32-bit float, via stb).
+	// Single-channel sources stay single-channel (R16_UNORM / R32_SFLOAT) for
+	// heightmaps; multi-channel sources export as RGBA8.
+	void ExportFromHeightmapImageFile(const std::string& strFilename, TextureCompressionMode eCompression = TextureCompressionMode::Uncompressed);
 
 	// Export raw texture data (uncompressed only - for procedural textures)
 	void ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat);

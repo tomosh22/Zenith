@@ -8,9 +8,6 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h" // Wave 3: Flux_TerrainRenderRecord (by-value in the render list)
 
 class Flux_DynamicConstantBuffer;
-class Flux_GraphicsImpl;
-class Zenith_Profiling;
-class Flux_TerrainStreamingManagerImpl;
 
 // Phase 9: state + behaviour for Terrain subsystem.
 class Flux_TerrainImpl
@@ -22,7 +19,7 @@ public:
 	Flux_TerrainImpl(const Flux_TerrainImpl&) = delete;
 	Flux_TerrainImpl& operator=(const Flux_TerrainImpl&) = delete;
 
-	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling, Flux_TerrainStreamingManagerImpl& xTerrainStreaming);
+	void Initialise();
 	void BuildPipelines();
 
 	void ReleaseAssetReferences();
@@ -79,20 +76,10 @@ public:
 	Flux_RootSig  m_xResetCountersRootSig;
 
 	// Per-frame stats.
-	uint32_t m_uFrameCounter       = 0;
 	uint32_t m_uLastVisibleChunks  = 0;
 	float    m_fCullingTimeMs      = 0.0f;
 	float    m_fStreamingTimeMs    = 0.0f;
 
 	// Terrain constants buffer (TerrainConstants GPU struct is .cpp-local).
 	Flux_DynamicConstantBuffer m_xTerrainConstantsBuffer;
-
-	// Injected cross-subsystem deps (de-globalisation DI seam). Stored in
-	// Initialise, nulled in Shutdown. Instance methods + the static graph
-	// trampolines (which re-acquire the singleton via g_xEngine.Terrain())
-	// route their reaches through these instead of g_xEngine.<Accessor>().
-	Flux_MemoryManager*      m_pxVulkanMemory     = nullptr;
-	Flux_GraphicsImpl*                m_pxFluxGraphics     = nullptr;
-	Zenith_Profiling*                 m_pxProfiling        = nullptr;
-	Flux_TerrainStreamingManagerImpl* m_pxTerrainStreaming = nullptr;
 };

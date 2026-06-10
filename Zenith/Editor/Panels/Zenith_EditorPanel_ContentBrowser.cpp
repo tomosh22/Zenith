@@ -281,7 +281,7 @@ void Zenith_EditorPanelContentBrowser::RenderFileContextMenu(const ContentBrowse
 	}
 
 	// Export image files to .ztxtr
-	static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
+	static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg" };
 	bool bCanExport = false;
 	for (const char* szExt : aszExportableExtensions)
 	{
@@ -294,13 +294,14 @@ void Zenith_EditorPanelContentBrowser::RenderFileContextMenu(const ContentBrowse
 
 	if (bCanExport && ImGui::MenuItem("Export to .ztxtr"))
 	{
-		if (xEntry.m_strExtension == ".tif" || xEntry.m_strExtension == ".tiff")
+		if (xEntry.m_strExtension == ".png")
 		{
-			Zenith_Tools_TextureExport::ExportFromTifFile(xEntry.m_strFullPath);
+			// PNG - preserve bit depth (16-bit heightmaps -> R16_UNORM, etc.)
+			Zenith_Tools_TextureExport::ExportFromHeightmapImageFile(xEntry.m_strFullPath);
 		}
 		else
 		{
-			// PNG/JPG - use existing export (extension without dot)
+			// JPG/JPEG - use existing export (extension without dot)
 			Zenith_Tools_TextureExport::ExportFromFile(
 				xEntry.m_strFullPath,
 				xEntry.m_strExtension.c_str() + 1,

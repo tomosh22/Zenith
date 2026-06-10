@@ -43,17 +43,10 @@
 #include "RenderTest/Components/RenderTest_FollowCamera.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
-#pragma warning(push, 0)
-#include <opencv2/opencv.hpp>
-#pragma warning(pop)
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
-
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
-extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir);
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
 #endif
 

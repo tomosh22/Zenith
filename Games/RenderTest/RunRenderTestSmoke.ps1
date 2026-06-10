@@ -65,21 +65,6 @@ foreach ($runtimeDir in $SiblingRuntimeDirs) {
 	}
 }
 
-$OpenCVDll = Join-Path $OutputDir "opencv_world4100d.dll"
-if (-not (Test-Path $OpenCVDll)) {
-	$OpenCVCandidate = Get-ChildItem $Root -Recurse -Filter "opencv_world4100d.dll" -ErrorAction SilentlyContinue |
-		Where-Object { $_.FullName -ne $OpenCVDll } |
-		Select-Object -First 1
-
-	if ($OpenCVCandidate) {
-		Copy-Item -Force $OpenCVCandidate.FullName $OpenCVDll
-		Write-Host "[RenderTestSmoke] Copied OpenCV runtime from $($OpenCVCandidate.FullName)"
-	}
-	else {
-		throw "opencv_world4100d.dll is missing from $OutputDir and no sibling copy was found."
-	}
-}
-
 $DebugCrtDir = Get-ChildItem "$env:ProgramFiles\Microsoft Visual Studio\2022" -Recurse -Filter "msvcp140d.dll" -ErrorAction SilentlyContinue |
 	Where-Object { $_.FullName -match "debug_nonredist\\x64\\Microsoft\.VC143\.DebugCRT" } |
 	Select-Object -First 1 |

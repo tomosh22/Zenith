@@ -11,10 +11,13 @@
 // (Flux_VRAMHandle, Flux_ShaderResourceView, Flux_VertexBuffer, ...);
 // nothing in this concept should require a vk::* parameter or return.
 //
-// Lifecycle methods (Initialise / Shutdown / BeginFrame / EndFrame) are
-// included because EndFrame still does staging-buffer flush + memory
-// command-buffer end (deferred deletion has been hoisted to a separate
-// Flux_PerFrame end-frame callback).
+// Lifecycle methods: Initialise / Shutdown, plus two drain points. Memory
+// operations are ad-hoc — callable at any time with no frame bracket; the
+// backend opens its internal command machinery lazily. Flush() is the
+// synchronous ad-hoc drain (submit pending uploads, CPU-wait);
+// SubmitFrameMemoryWork() is the renderer's once-per-frame deferred handoff
+// (pending memory work submitted ahead of render work). Deferred deletion is
+// driven by a separate Flux_PerFrame end-frame callback.
 
 template <typename T>
 concept FluxBackendMemoryAlloc = requires(
@@ -44,8 +47,8 @@ concept FluxBackendMemoryAlloc = requires(
 	// Lifecycle
 	{ t.Initialise()                                                          } -> std::same_as<void>;
 	{ t.Shutdown()                                                            } -> std::same_as<void>;
-	{ t.BeginFrame()                                                          } -> std::same_as<void>;
-	{ t.EndFrame(b)                                                           } -> std::same_as<void>;
+	{ t.Flush()                                                               } -> std::same_as<void>;
+	{ t.SubmitFrameMemoryWork()                                               } -> std::same_as<void>;
 
 	// VRAM allocation. Size parameters are explicitly typed (u_int for the
 	// 32-bit buffer path, u_int64 for the aliasing pool path) so the concept

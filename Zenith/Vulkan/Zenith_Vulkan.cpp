@@ -219,14 +219,6 @@ void Zenith_Vulkan::Initialise()
 #endif
 
 	m_pxCurrentFrame = &m_axPerFrame[0];
-
-	// Register the per-frame begin callback with Flux_PerFrame. This is the
-	// load-bearing begin callback (waits for the slot's fence, resets descriptor
-	// pools, drains typed deletion queues, resets scratch offsets) — register
-	// it FIRST so it runs before any other backend's begin callback that might
-	// touch the slot. Counted in FLUX_PERFRAME_BEGIN_SUBSCRIBER_TALLY
-	// (Flux_PerFrame.cpp): bump that tally if you add another begin callback.
-	m_pxFluxRenderer->RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
 }
 
 void Zenith_Vulkan::InitialisePerFrameResources()
@@ -237,17 +229,14 @@ void Zenith_Vulkan::InitialisePerFrameResources()
 	}
 }
 
-void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
+void Zenith_Vulkan::PerFrameBegin(u_int uRingIndex)
 {
-	// Frame counter / ring index is owned by Flux_PerFrame; this callback
-	// receives the current ring index directly (no longer pulled from the
-	// swapchain). The swapchain itself will read GetCurrentFrameIndex()
-	// which is now a thin wrapper over g_xEngine.FluxRenderer().GetRingIndex().
-	// Static callback (no 'this'): recover the Vulkan singleton once and route
-	// all member reaches through xSelf.
-	Zenith_Vulkan& xSelf = g_xEngine.FluxBackend();
-	xSelf.m_pxCurrentFrame = &xSelf.m_axPerFrame[uRingIndex];
-	xSelf.m_pxCurrentFrame->BeginFrame();
+	// Frame index / ring index is owned by FrameContext (g_xEngine.Frame());
+	// this method receives the current ring index directly (no longer pulled
+	// from the swapchain). The swapchain itself reads GetCurrentFrameIndex()
+	// which is a thin wrapper over g_xEngine.Frame().GetRingIndex().
+	m_pxCurrentFrame = &m_axPerFrame[uRingIndex];
+	m_pxCurrentFrame->BeginFrame();
 
 #ifdef ZENITH_TOOLS
 	// Update shader hot reload system (checks for file changes)

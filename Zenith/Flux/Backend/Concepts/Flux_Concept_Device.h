@@ -23,10 +23,10 @@
 //     record (Flux_VRAM*). Engine code holds handles and frees them through
 //     the FluxBackendMemoryDelete concept (QueueVRAMDeletion), never the raw
 //     record, so GetVRAM stays backend-private.
-//   - BeginFrame() — no longer called from engine code; the Vulkan begin
-//     sequence runs via FluxRenderer's RegisterBeginFrameCallback registered
-//     during Initialise. The contract is therefore "Initialise registers a
-//     begin-frame callback," not "BeginFrame exists."
+//   - BeginFrame() — the device exposes no such method. Per-frame begin work
+//     (fence wait, pool reset, deletion drain, scratch reset) is the
+//     PerFrameBegin() method (in this concept), called directly each frame by
+//     Flux_RendererImpl::BeginFrame.
 //   - InitialiseImGui / ShutdownImGui / ImGuiBeginFrame — tools-only;
 //     conformance-asserted only in tools builds.
 
@@ -41,6 +41,7 @@ concept FluxBackendDevice = requires(
 	{ t.Initialise()                                                 } -> std::same_as<void>;
 	{ t.InitialisePerFrameResources()                                } -> std::same_as<void>;
 	{ t.WaitForGPUIdle()                                             } -> std::same_as<void>;
+	{ t.PerFrameBegin(u)                                             } -> std::same_as<void>;
 	{ t.EndFrame(b)                                                  } -> std::same_as<void>;
 	{ t.WriteBindlessTextureSlot(u, xView, xSampler)                 } -> std::same_as<void>;
 };

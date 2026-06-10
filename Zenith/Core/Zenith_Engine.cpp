@@ -24,6 +24,7 @@
 // AddComponent<> template. Keeping this name on the engine side is exactly how
 // the ECS core stays Transform-free.
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Zenith_UISystem.h"
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_TouchInput.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -203,6 +204,15 @@ Zenith_SceneSystem& Zenith_Engine::Scenes()
 	return *m_pxScenes;
 }
 
+Zenith_UISystem& Zenith_Engine::UI()
+{
+	// Per-frame UI orchestrator (walks all scenes' Zenith_UIComponents).
+	// Allocated right after the scene system in AllocateCoreState; only
+	// called from the main loop's render-work block, so no null assert
+	// (same steady-state rationale as Scenes() above).
+	return *m_pxUISystem;
+}
+
 Zenith_Input& Zenith_Engine::Input()
 {
 	// No assert: input is read every frame and from GLFW callbacks (mouse
@@ -328,6 +338,13 @@ void Zenith_Engine::AllocateCoreState()
 	// (and before Physics::Initialise / the first scene load) creates entities.
 	Zenith_Assert(m_pxScenes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxScenes = new Zenith_SceneSystem();
+
+	// per-frame UI orchestrator (walks all scenes' Zenith_UIComponents from
+	// the main loop's render-work block). The scene system is injected here
+	// so the UI system's TU never names the engine singleton.
+	Zenith_Assert(m_pxUISystem == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxUISystem = new Zenith_UISystem();
+	m_pxUISystem->Initialise(*m_pxScenes);
 
 	// per-frame input state (key presses, mouse delta + wheel,
 	// gamepad ring buffers). Allocate EARLY so GLFW callbacks fired by
@@ -629,7 +646,6 @@ void Zenith_Engine::InitialiseGPUAssets()
 	//#TO_TODO: move somewhere sensible
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().BeginFrame();
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
 		// Load cubemap texture (pinned)
@@ -652,7 +668,7 @@ void Zenith_Engine::InitialiseGPUAssets()
 			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
 		}
 
-		g_xEngine.FluxMemory().EndFrame(false);
+		g_xEngine.FluxMemory().Flush();
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	if (!Zenith_CommandLine::IsHeadless())
@@ -668,7 +684,10 @@ void Zenith_Engine::InitialiseEditor()
 	Zenith_GraphicsOptions::RegisterDebugVariables();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.Editor().Initialise();
+		// Frame deps passed by member (not read back via g_xEngine inside the
+		// editor) so the relocated RenderImGuiFrame stays off the engine-
+		// singleton ratchet for Zenith_Editor.cpp.
+		m_pxEditor->Initialise(*m_pxVulkan, *m_pxFluxGraphics, *m_pxFrame, *m_pxDebugVariables, *m_pxProfiling);
 		g_xEngine.DebugVariables().AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 		g_xEngine.DebugVariables().AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
 		g_xEngine.DebugVariables().AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
@@ -709,16 +728,13 @@ void Zenith_Engine::InitialiseProject()
 #endif
 
 #ifdef ZENITH_TOOLS
-	// Initialize game-specific resources (geometry, materials, prefabs, particle configs)
-	// Must be inside BeginFrame/EndFrame for GPU resource allocation
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxMemory().BeginFrame();
-	}
+	// Initialize game-specific resources (geometry, materials, prefabs, particle configs).
+	// GPU allocations record into the memory command buffer lazily; Flush drains
+	// them synchronously before automation begins.
 	Project_InitializeResources();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().EndFrame(false);
+		g_xEngine.FluxMemory().Flush();
 	}
 
 	// Register automation steps and begin execution (one step per frame in main loop)
@@ -727,11 +743,6 @@ void Zenith_Engine::InitialiseProject()
 #else
 	// Non-tools: load pre-generated scene files
 	// Run a tools build first to generate .zscen files
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxMemory().BeginFrame();
-	}
-	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
 		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();
@@ -747,7 +758,7 @@ void Zenith_Engine::InitialiseProject()
 	g_xEngine.Scenes().DrainPendingLoadIfAny();
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().EndFrame(false);
+		g_xEngine.FluxMemory().Flush();
 	}
 	Zenith_Assert(g_xEngine.Scenes().GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
@@ -862,6 +873,11 @@ void Zenith_Engine::ShutdownRuntimeServices()
 // Scene system (frees the entity store), input, touch.
 void Zenith_Engine::DeleteSceneAndInputState()
 {
+	// Free the UI orchestrator first -- it holds a pointer into the scene
+	// system freed just below.
+	delete m_pxUISystem;
+	m_pxUISystem = nullptr;
+
 	// Free the scene system. ShutdownSubsystems above already drained
 	// the slot table, cleared callback lists, terminated the animation task,
 	// etc.; this just reclaims the holder + its internal members.
