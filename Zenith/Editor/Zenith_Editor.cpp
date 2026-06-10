@@ -422,18 +422,6 @@ bool Zenith_Editor::Update()
 	// Update editor camera controls (when not playing)
 	UpdateEditorCamera(1.0f / 60.0f);  // Assume 60fps for now, could use actual delta time
 
-	// Handle editor mode changes
-	if (g_xEngine.Editor().m_xEditorState.m_eEditorMode == EditorMode::Playing)
-	{
-		// Game is running normally
-	}
-	else if (g_xEngine.Editor().m_xEditorState.m_eEditorMode == EditorMode::Paused)
-	{
-		// Game is paused - don't update game logic
-	}
-
-	// Handle editor input (gizmo shortcuts, undo/redo, object picking)
-	// Returns true to continue, or returns true early if in Playing mode
 	if (g_xEngine.Editor().m_xEditorState.m_eEditorMode == EditorMode::Playing)
 	{
 		return true;
