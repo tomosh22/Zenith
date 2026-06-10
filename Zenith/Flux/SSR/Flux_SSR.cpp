@@ -636,11 +636,13 @@ void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 
 Flux_ShaderResourceView& Flux_SSRImpl::GetReflectionSRV()
 {
-	// Must match GetReflectionHandle so bind-time-declared-access assertions
-	// see the same resource the graph has a Read declared on.
-	if (Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
-		return GetDenoiseVAttachment().SRV();
-	return GetUpsampledAttachment().SRV();
+	// Resolve from the committed handle — the value GetReflectionHandle()
+	// returned when Flux_DeferredShading declared its Read — NOT the live
+	// graphics option. Between a runtime toggle and the requested rebuild
+	// landing (next frame), the live option diverges from the graph for one
+	// frame; resolving from the option trips AssertBoundResourceDeclared.
+	Zenith_Assert(m_pxGraph, "GetReflectionSRV: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return m_pxGraph->GetTransientAttachment(GetReflectionHandle()).SRV();
 }
 
 bool Flux_SSRImpl::IsEnabled() const

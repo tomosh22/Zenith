@@ -466,11 +466,13 @@ void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 
 Flux_ShaderResourceView& Flux_SSGIImpl::GetSSGISRV()
 {
-	// Must match GetSSGIHandle so bind-time-declared-access assertions see the
-	// same resource the graph has a Read declared on.
-	if (Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled)
-		return GetDenoisedAttachment().SRV();
-	return GetResolvedAttachment().SRV();
+	// Resolve from the committed handle — the value GetSSGIHandle() returned
+	// when Flux_DeferredShading declared its Read — NOT the live graphics
+	// option. Between a runtime toggle and the requested rebuild landing
+	// (next frame), the live option diverges from the graph for one frame;
+	// resolving from the option trips AssertBoundResourceDeclared.
+	Zenith_Assert(m_pxGraph, "GetSSGISRV: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return m_pxGraph->GetTransientAttachment(GetSSGIHandle()).SRV();
 }
 
 bool Flux_SSGIImpl::IsEnabled() const
