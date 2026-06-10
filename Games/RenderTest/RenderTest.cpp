@@ -555,26 +555,26 @@ public:
 		}
 
 		// IK foot-placement validation via teleport.
-		// Frame 60: warp the player above IKPlatform_NW (top Y=48.55) so it
+		// Frame 60: warp the player above IKPlatform_NW (top Y=49.05) so it
 		// settles on the cube. Frame 90+: validate foot Y is on the cube top.
-		// Frame 150: warp back over the platform (top Y=48.25) and validate.
+		// Frame 150: warp back over the platform (top Y=48.75) and validate.
 		if (m_uFrame == 60)
 		{
-			TeleportPlayerTo(Zenith_Maths::Vector3(244.0f, 49.0f, 268.0f));
+			TeleportPlayerTo(Zenith_Maths::Vector3(244.0f, 49.5f, 268.0f));
 		}
 		if (m_uFrame == 120)
 		{
 			// On the NW cube. Add ankle height (0.05m) to expected surface Y.
-			m_bPassed = RenderTest_LogIKOnSurfaceState(m_uFrame, 48.55f + 0.05f, 0.20f) && m_bPassed;
+			m_bPassed = RenderTest_LogIKOnSurfaceState(m_uFrame, 49.05f + 0.05f, 0.20f) && m_bPassed;
 		}
 		if (m_uFrame == 150)
 		{
-			TeleportPlayerTo(Zenith_Maths::Vector3(256.0f, 49.0f, 256.0f));
+			TeleportPlayerTo(Zenith_Maths::Vector3(256.0f, 49.5f, 256.0f));
 		}
 		if (m_uFrame == 200)
 		{
-			// On the central platform. Top Y=48.25 plus ankle height.
-			m_bPassed = RenderTest_LogIKOnSurfaceState(m_uFrame, 48.25f + 0.05f, 0.20f) && m_bPassed;
+			// On the central platform. Top Y=48.75 plus ankle height.
+			m_bPassed = RenderTest_LogIKOnSurfaceState(m_uFrame, 48.75f + 0.05f, 0.20f) && m_bPassed;
 		}
 
 		// Decal smoke: fire several shots straight down at the platform between
@@ -919,7 +919,9 @@ static void InitializeRenderTestResources()
 // and bake the chunk meshes from them. No pre-made source textures on disk.
 // The marker gates a one-time generation; bump the version (or pass
 // --rendertest-force-regenerate) to regenerate.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v1.marker";
+// v2: spawn meadow painted as a ring around the CenterPlatform footprint
+// (was one dab over it — blades poked through the platform deck).
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v2.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {
@@ -1264,7 +1266,13 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_TerrainRunAutoSplat();
 
 		// Grass meadows painted in around the gameplay plateau + the dome foot.
-		xAuto.AddStep_TerrainBrushStroke(iGrass, 256.0f, 256.0f, 120.0f, 1.0f, 0.6f);
+		// The spawn meadow is a RING of four dabs around the CenterPlatform
+		// footprint (X/Z 241-271) rather than one dab over it — blades root in
+		// the terrain under the platform and would poke up through its deck.
+		xAuto.AddStep_TerrainBrushStroke(iGrass, 256.0f, 330.0f, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, 256.0f, 182.0f, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, 330.0f, 256.0f, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, 182.0f, 256.0f, 60.0f, 1.0f, 0.6f);
 		xAuto.AddStep_TerrainBrushStroke(iGrass, 420.0f, 360.0f, 80.0f, 1.0f, 0.5f);
 
 		// Persist the textures + bake every chunk mesh, then write the marker.
@@ -1285,7 +1293,10 @@ void Project_RegisterEditorAutomationSteps()
 	// first OnLateUpdate to track the player at the over-the-shoulder offset.
 	// Pitch starts at the shooter angle so the editor preview matches the
 	// in-play view rather than the old top-down -0.7rad framing.
-	const float fInitialPlayerY = 50.0f;
+	// 50.5 puts the CenterPlatform (centre = this - 2, half-height 0.25) with
+	// its BASE exactly on the generated spawn plateau at 48.25m — the whole
+	// platform assembly sits proud of the terrain instead of buried in it.
+	const float fInitialPlayerY = 50.5f;
 	const float fCamOffsetY = 2.0f;
 	const float fCamOffsetZ = -4.0f;
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
@@ -1326,7 +1337,8 @@ void Project_RegisterEditorAutomationSteps()
 	// center platform. As the player walks across them with feet on different
 	// surfaces, the asymmetric knee bend demonstrates real IK foot placement.
 	// Top-Y values are designed so the dynamic capsule can step up without jumping
-	// (max +0.30m above the platform top at Y=48.25).
+	// (max +0.30m above the platform top at Y=48.75). Bases sit on the main
+	// platform top, which itself sits base-down on the 48.25m terrain plateau.
 	auto AddIKPlatform = [](const char* szName, float fX, float fY, float fZ,
 		float fSX, float fSY, float fSZ)
 	{
@@ -1341,14 +1353,14 @@ void Project_RegisterEditorAutomationSteps()
 		g_xEngine.EditorAutomation().AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 	};
 
-	AddIKPlatform("IKPlatform_N",  256.0f, 48.30f, 269.0f, 1.0f, 0.10f, 1.0f);  // top Y=48.35
-	AddIKPlatform("IKPlatform_E",  269.0f, 48.35f, 256.0f, 1.0f, 0.20f, 1.0f);  // top Y=48.45
-	AddIKPlatform("IKPlatform_S",  256.0f, 48.30f, 243.0f, 1.0f, 0.10f, 1.0f);  // top Y=48.35
-	AddIKPlatform("IKPlatform_W",  243.0f, 48.40f, 256.0f, 1.0f, 0.30f, 1.0f);  // top Y=48.55
-	AddIKPlatform("IKPlatform_NE", 268.0f, 48.30f, 268.0f, 1.2f, 0.10f, 1.2f);  // top Y=48.35
-	AddIKPlatform("IKPlatform_SE", 268.0f, 48.40f, 244.0f, 1.2f, 0.30f, 1.2f);  // top Y=48.55
-	AddIKPlatform("IKPlatform_SW", 244.0f, 48.35f, 244.0f, 1.2f, 0.20f, 1.2f);  // top Y=48.45
-	AddIKPlatform("IKPlatform_NW", 244.0f, 48.40f, 268.0f, 1.5f, 0.30f, 1.5f);  // top Y=48.55 — the showpiece step
+	AddIKPlatform("IKPlatform_N",  256.0f, 48.80f, 269.0f, 1.0f, 0.10f, 1.0f);  // top Y=48.85
+	AddIKPlatform("IKPlatform_E",  269.0f, 48.85f, 256.0f, 1.0f, 0.20f, 1.0f);  // top Y=48.95
+	AddIKPlatform("IKPlatform_S",  256.0f, 48.80f, 243.0f, 1.0f, 0.10f, 1.0f);  // top Y=48.85
+	AddIKPlatform("IKPlatform_W",  243.0f, 48.90f, 256.0f, 1.0f, 0.30f, 1.0f);  // top Y=49.05
+	AddIKPlatform("IKPlatform_NE", 268.0f, 48.80f, 268.0f, 1.2f, 0.10f, 1.2f);  // top Y=48.85
+	AddIKPlatform("IKPlatform_SE", 268.0f, 48.90f, 244.0f, 1.2f, 0.30f, 1.2f);  // top Y=49.05
+	AddIKPlatform("IKPlatform_SW", 244.0f, 48.85f, 244.0f, 1.2f, 0.20f, 1.2f);  // top Y=48.95
+	AddIKPlatform("IKPlatform_NW", 244.0f, 48.90f, 268.0f, 1.5f, 0.30f, 1.5f);  // top Y=49.05 — the showpiece step
 
 	// Spawn step: a 30cm-tall block placed under the player's LEFT foot at
 	// spawn, dimensioned so it sits ENTIRELY OUTSIDE the player's capsule
@@ -1357,16 +1369,16 @@ void Project_RegisterEditorAutomationSteps()
 	// -0.105 from the player center (256), 5mm clear of the capsule's left
 	// edge at offset -0.10. This margin is critical: if the cube edge touches
 	// or penetrates the capsule, the capsule rests on the cube top instead of
-	// the main platform, and BOTH feet end up at bind level (48.60) with the
+	// the main platform, and BOTH feet end up at bind level (49.10) with the
 	// right foot's main-platform target unreachable — making both legs straight
 	// and the IK demo invisible. With the cube outside the capsule, the capsule
-	// rests cleanly on the main platform (playerY=49.30), and only the left
+	// rests cleanly on the main platform (playerY=49.80), and only the left
 	// foot's downward raycast hits the cube top.
 	//
 	// Result at spawn:
-	//   Left foot at X=255.85 (over step) → IK lifts to 48.60 (knee bends 36cm forward)
-	//   Right foot at X=256.15 (over main) → IK at 48.30 (leg nearly straight)
-	AddIKPlatform("IKStep_Spawn", 255.7975f, 48.40f, 256.0f, 0.195f, 0.30f, 0.40f);  // top Y=48.55, X-range [255.70, 255.895]
+	//   Left foot at X=255.85 (over step) → IK lifts to 49.10 (knee bends 36cm forward)
+	//   Right foot at X=256.15 (over main) → IK at 48.80 (leg nearly straight)
+	AddIKPlatform("IKStep_Spawn", 255.7975f, 48.90f, 256.0f, 0.195f, 0.30f, 0.40f);  // top Y=49.05, X-range [255.70, 255.895]
 
 	// Player — .zmodel with skeleton; AnimatorComponent discovers skeleton on OnStart.
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("Player");
