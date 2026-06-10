@@ -146,15 +146,13 @@ static void ExecuteRenderGraph()
 
 void Zenith_Core::Zenith_MainLoop()
 {
-	// BeginFrame fires registered begin-frame callbacks (which includes the
-	// Vulkan backend's wait-fence + reset-pools logic that used to live
-	// behind Flux_PlatformAPI::BeginFrame). The PROFILE index name is kept
-	// the same so the profiler timeline is comparable to pre-extraction
-	// runs. BeginFrame is a NOP when no backend callbacks are registered
-	// (i.e. in --headless where g_xEngine.FluxRenderer().EarlyInitialise
-	// was skipped). Manual begin/end (rather than FUNCTION_WRAPPER macro)
-	// because BeginFrame is now a member function and can't be passed as a
-	// free-function-style callable to the macro.
+	// BeginFrame issues the Vulkan backend's wait-fence + reset-pools per-frame
+	// begin work (PerFrameBegin), called directly through the neutral
+	// Flux_PlatformAPI alias. The PROFILE index name is kept the same so the
+	// profiler timeline is comparable to pre-extraction runs. BeginFrame is a
+	// NOP in --headless (the backend is never initialised). Manual scope
+	// (rather than FUNCTION_WRAPPER macro) because BeginFrame is a member
+	// function and can't be passed as a free-function-style callable.
 	{
 		Zenith_Profiling::Scope xBeginFrameProfile(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
 		g_xEngine.FluxRenderer().BeginFrame();
@@ -171,12 +169,12 @@ void Zenith_Core::Zenith_MainLoop()
 		if (!g_xEngine.FluxSwapchain().BeginFrame())
 		{
 			g_xEngine.FluxMemory().EndFrame(false);
-			// Skipped frame still fires end-frame callbacks so the deferred VRAM
+			// Skipped frame still runs end-of-frame work so the deferred VRAM
 			// deletion clock ticks, but we deliberately DON'T advance the ring
 			// counter — a rapid-resize sequence of consecutive skips would
 			// otherwise wrap the counter past valid fences and shorten the
 			// effective MAX_FRAMES_IN_FLIGHT+1 deferred-deletion grace period.
-			g_xEngine.FluxRenderer().FireEndCallbacks();
+			g_xEngine.FluxRenderer().ProcessFrameEnd();
 			return;
 		}
 	}
@@ -323,14 +321,14 @@ void Zenith_Core::Zenith_MainLoop()
 		}
 	}
 
-	// Final action of the main loop: fires registered end-frame callbacks
-	// (deferred-deletion countdown lives here now) and advances the
-	// Flux_PerFrame counter. Counter advance happens AFTER Swapchain::EndFrame
+	// Final action of the main loop: runs end-of-frame work (the deferred-
+	// deletion countdown, ProcessDeferredDeletions) and advances the
+	// Flux_RendererImpl counter. Counter advance happens AFTER Swapchain::EndFrame
 	// so the present uses the slot for frame N before the ring index moves to
-	// N+1 for the next iteration — matches the old in-swapchain bump.
-	// Flux_PerFrame::EndFrame is a NOP when no backend callbacks are registered.
-	// The ring counter advance is harmless in headless and keeps frame-counting
-	// consistent for any downstream code that reads g_xEngine.FluxRenderer().GetFrameIndex().
+	// N+1 for the next iteration — matches the old in-swapchain bump. The
+	// deferred-deletion call is a NOP in headless (no memory manager); the ring
+	// counter advance is harmless in headless and keeps frame-counting consistent
+	// for any downstream code that reads g_xEngine.FluxRenderer().GetFrameIndex().
 	g_xEngine.FluxRenderer().EndFrame();
 }
 

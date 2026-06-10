@@ -117,14 +117,6 @@ public:
 	                                              Flux_VRAMHandle xPoolHandle,
 	                                              u_int64 ulOffsetInPool);
 
-	// Per-frame end callback registered with Flux_RendererImpl at Initialise time.
-	// Drives the deferred-VRAM-deletion countdown that used to live inside
-	// EndFrame. Registered AFTER the Vulkan begin-frame callback so it runs
-	// at end-of-frame after any in-flight render submission has been queued.
-	// Kept static so it can be passed as a Flux_RendererImpl::OnFrameEndFunc
-	// callback pointer; the body resolves g_xEngine.FluxMemory().
-	static void OnFluxPerFrameEnd(u_int uRingIndex, void* pUserData);
-
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
 
 	void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true);
@@ -364,7 +356,6 @@ private:
 	// different class with no Initialise seam) still route through g_xEngine.
 	Zenith_Vulkan*           m_pxVulkan          = nullptr;
 	Zenith_Vulkan_Swapchain* m_pxVulkanSwapchain = nullptr;
-	Flux_RendererImpl*       m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*       m_pxFluxGraphics    = nullptr;
 public:
 	// ===== Data members (was Zenith_Vulkan_MemoryManager) =====

@@ -15729,64 +15729,36 @@ void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
 }
 
 // ============================================================================
-// Flux_PerFrame ring-scheduler tests
+// Flux_RendererImpl per-frame ring-scheduler tests
 // ============================================================================
 // These tests run inside the live engine's main loop (RunAllTests is invoked
-// from Zenith_Main.cpp after Flux::EarlyInitialise has already registered the
-// real Vulkan begin and MemoryManager end callbacks). Each test saves the
-// live state (counter + callback arrays) at entry and restores it at exit so
-// the surrounding frame loop is unaffected by the temporary scratch state
-// the test installs.
+// from Zenith_Main.cpp). They drive the frame counter directly via
+// AdvanceCounter and save/restore the live counter at entry/exit so the
+// surrounding frame loop is unaffected. They deliberately do NOT call
+// BeginFrame/EndFrame, which would issue real backend per-frame work (fence
+// waits) outside a real frame.
 
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
 
-// Snapshot of Flux_PerFrame's internal state used by the §5.2 tests to save
-// the live engine state before installing scratch callbacks, then restore it
-// at end-of-test. Defined here so it can hold the callback array sizes from
-// FLUX_MAX_PERFRAME_CALLBACKS without exposing them in the public header.
+// Snapshot of Flux_RendererImpl's frame counter used by the ring-scheduler
+// tests to save the live engine state before driving the counter, then restore
+// it at end-of-test.
 struct Zenith_UnitTests::PerFrameSnapshot
 {
-	u_int                            m_uFrameCounter;
-	u_int                            m_uNumBegin;
-	u_int                            m_uNumEnd;
-	Flux_RendererImpl::OnFrameBeginFunc  m_apfnBegin[FLUX_MAX_PERFRAME_CALLBACKS];
-	void*                            m_apBeginUser[FLUX_MAX_PERFRAME_CALLBACKS];
-	Flux_RendererImpl::OnFrameEndFunc    m_apfnEnd[FLUX_MAX_PERFRAME_CALLBACKS];
-	void*                            m_apEndUser[FLUX_MAX_PERFRAME_CALLBACKS];
+	u_int m_uFrameCounter;
 };
 
 void Zenith_UnitTests::SnapshotPerFrameAndReset(PerFrameSnapshot& xOut)
 {
 	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
 	xOut.m_uFrameCounter = xR.m_uFrameCounter;
-	xOut.m_uNumBegin     = xR.m_uNumBeginCallbacks;
-	xOut.m_uNumEnd       = xR.m_uNumEndCallbacks;
-	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
-	{
-		xOut.m_apfnBegin[u]   = xR.m_apfnBeginCallbacks[u];
-		xOut.m_apBeginUser[u] = xR.m_apBeginUserData[u];
-		xOut.m_apfnEnd[u]     = xR.m_apfnEndCallbacks[u];
-		xOut.m_apEndUser[u]   = xR.m_apEndUserData[u];
-	}
-	xR.m_uFrameCounter      = 0;
-	xR.m_uNumBeginCallbacks = 0;
-	xR.m_uNumEndCallbacks   = 0;
+	xR.m_uFrameCounter   = 0;
 }
 
 void Zenith_UnitTests::RestorePerFrame(const PerFrameSnapshot& xIn)
 {
-	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
-	xR.m_uFrameCounter      = xIn.m_uFrameCounter;
-	xR.m_uNumBeginCallbacks = xIn.m_uNumBegin;
-	xR.m_uNumEndCallbacks   = xIn.m_uNumEnd;
-	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
-	{
-		xR.m_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
-		xR.m_apBeginUserData[u]    = xIn.m_apBeginUser[u];
-		xR.m_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
-		xR.m_apEndUserData[u]      = xIn.m_apEndUser[u];
-	}
+	g_xEngine.FluxRenderer().m_uFrameCounter = xIn.m_uFrameCounter;
 }
 
 namespace
@@ -15800,49 +15772,6 @@ namespace
 		PerFrameScopedReset() { Zenith_UnitTests::SnapshotPerFrameAndReset(m_xSnap); }
 		~PerFrameScopedReset() { Zenith_UnitTests::RestorePerFrame(m_xSnap); }
 	};
-
-	// Mutable counters used by callback bodies in the tests.
-	u_int g_uTestBeginCallCount = 0;
-	u_int g_uTestEndCallCount   = 0;
-	u_int g_uTestLastBeginRing  = UINT32_MAX;
-	u_int g_uTestLastEndRing    = UINT32_MAX;
-	void* g_pTestLastUserData   = nullptr;
-
-	// Track callback firing order: each callback pushes its tag here.
-	u_int g_auTestCallOrder[16];
-	u_int g_uTestCallOrderCount = 0;
-
-	void TestBeginCallback_IncCount(u_int uRingIndex, void* pUserData)
-	{
-		g_uTestBeginCallCount++;
-		g_uTestLastBeginRing = uRingIndex;
-		g_pTestLastUserData  = pUserData;
-	}
-
-	void TestEndCallback_IncCount(u_int uRingIndex, void* pUserData)
-	{
-		g_uTestEndCallCount++;
-		g_uTestLastEndRing  = uRingIndex;
-		g_pTestLastUserData = pUserData;
-	}
-
-	void TestBeginCallback_OrderTagA(u_int /*uRingIndex*/, void* /*pUserData*/)
-	{
-		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
-		g_auTestCallOrder[g_uTestCallOrderCount++] = 'A';
-	}
-
-	void TestBeginCallback_OrderTagB(u_int /*uRingIndex*/, void* /*pUserData*/)
-	{
-		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
-		g_auTestCallOrder[g_uTestCallOrderCount++] = 'B';
-	}
-
-	void TestBeginCallback_OrderTagC(u_int /*uRingIndex*/, void* /*pUserData*/)
-	{
-		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
-		g_auTestCallOrder[g_uTestCallOrderCount++] = 'C';
-	}
 }
 
 ZENITH_TEST(Core, FluxPerFrameFrameCounterAdvances) { Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(); }
@@ -15853,22 +15782,17 @@ void Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(){
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 0, "Counter starts at 0");
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index starts at 0");
 
-	// BeginFrame does NOT advance the counter — only EndFrame does. This
-	// matches the pre-extraction behaviour where the swapchain bumped its
-	// index inside EndFrame, so the same slot is used by Begin and End of
-	// the same frame.
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 0, "BeginFrame does not advance the counter");
-
-	g_xEngine.FluxRenderer().EndFrame();
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 1, "EndFrame advances the counter by 1");
+	// AdvanceCounter bumps the monotonic frame counter by one (EndFrame calls it
+	// once per frame, after the deferred-deletion work). Driven directly here so
+	// the test doesn't issue real backend per-frame work (fence waits).
+	g_xEngine.FluxRenderer().AdvanceCounter();
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 1, "AdvanceCounter advances the counter by 1");
 
 	for (u_int u = 0; u < 5; u++)
 	{
-		g_xEngine.FluxRenderer().BeginFrame();
-		g_xEngine.FluxRenderer().EndFrame();
+		g_xEngine.FluxRenderer().AdvanceCounter();
 	}
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 6, "Five Begin/End pairs advance the counter to 6");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), 6, "Five more advances take the counter to 6");
 
 }
 
@@ -15880,122 +15804,20 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps(){
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
 		ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT, "Ring index at counter %u is %u, expected %u", u, g_xEngine.FluxRenderer().GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
-		g_xEngine.FluxRenderer().EndFrame();
+		g_xEngine.FluxRenderer().AdvanceCounter();
 	}
-	// After MAX_FRAMES_IN_FLIGHT EndFrames the counter is at MAX, ring index wraps to 0.
+	// After MAX_FRAMES_IN_FLIGHT advances the counter is at MAX, ring index wraps to 0.
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
-	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
+	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT advances");
 
 	// Drive several full cycles and confirm the modulo continues to hold.
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 3 + 1; u++)
 	{
-		g_xEngine.FluxRenderer().EndFrame();
+		g_xEngine.FluxRenderer().AdvanceCounter();
 	}
 	const u_int uExpectedCounter = MAX_FRAMES_IN_FLIGHT + (MAX_FRAMES_IN_FLIGHT * 3 + 1);
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetFrameCounter(), uExpectedCounter, "Counter total tracks correctly");
 	ZENITH_ASSERT_EQ(g_xEngine.FluxRenderer().GetRingIndex(), uExpectedCounter % MAX_FRAMES_IN_FLIGHT, "Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameBeginCallbackFires) { Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(); }
-
-void Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(){
-	PerFrameScopedReset xReset;
-
-	g_uTestBeginCallCount = 0;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
-
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 1, "Begin callback fires once per BeginFrame");
-
-	g_xEngine.FluxRenderer().BeginFrame();
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 3, "Begin callback fires every BeginFrame");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameEndCallbackFires) { Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(); }
-
-void Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(){
-	PerFrameScopedReset xReset;
-
-	g_uTestEndCallCount = 0;
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&TestEndCallback_IncCount, nullptr);
-
-	g_xEngine.FluxRenderer().EndFrame();
-	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 1, "End callback fires once per EndFrame");
-
-	g_xEngine.FluxRenderer().EndFrame();
-	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 2, "End callback fires every EndFrame");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameCallbackOrderPreserved) { Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(); }
-
-void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(){
-	PerFrameScopedReset xReset;
-
-	g_uTestCallOrderCount = 0;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagA, nullptr);
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagB, nullptr);
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_OrderTagC, nullptr);
-
-	g_xEngine.FluxRenderer().BeginFrame();
-
-	ZENITH_ASSERT_EQ(g_uTestCallOrderCount, 3, "All three begin callbacks fired");
-	ZENITH_ASSERT_EQ(g_auTestCallOrder[0], 'A', "First registered (A) fires first");
-	ZENITH_ASSERT_EQ(g_auTestCallOrder[1], 'B', "Second registered (B) fires second");
-	ZENITH_ASSERT_EQ(g_auTestCallOrder[2], 'C', "Third registered (C) fires third");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameCallbackUserDataPassed) { Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(); }
-
-void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(){
-	PerFrameScopedReset xReset;
-
-	int iSentinelOnStack = 0xC0DE;
-	g_pTestLastUserData = nullptr;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, &iSentinelOnStack);
-
-	g_xEngine.FluxRenderer().BeginFrame();
-	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelOnStack, "Begin callback receives the user-data pointer it was registered with");
-
-	int iSentinelTwo = 0xBEEF;
-	g_pTestLastUserData = nullptr;
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback(&TestEndCallback_IncCount, &iSentinelTwo);
-
-	g_xEngine.FluxRenderer().EndFrame();
-	// Both callbacks fired; last one to run wrote g_pTestLastUserData.
-	// Begin fires first inside EndFrame? No — begin callbacks only fire in
-	// BeginFrame. So only the end callback fired here, and it wrote the
-	// end-callback's user-data pointer.
-	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelTwo, "End callback receives the user-data pointer it was registered with");
-
-}
-
-ZENITH_TEST(Core, FluxPerFrameRingIndexInsideCallback) { Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(); }
-
-void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(){
-	PerFrameScopedReset xReset;
-
-	g_uTestLastBeginRing = UINT32_MAX;
-	g_uTestLastEndRing   = UINT32_MAX;
-	g_xEngine.FluxRenderer().RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
-	g_xEngine.FluxRenderer().RegisterEndFrameCallback  (&TestEndCallback_IncCount,   nullptr);
-
-	// Drive a few iterations; callbacks should always observe the same ring
-	// index that GetRingIndex() returns at call time.
-	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 2; u++)
-	{
-		const u_int uExpectedRing = u % MAX_FRAMES_IN_FLIGHT;
-
-		g_xEngine.FluxRenderer().BeginFrame();
-		ZENITH_ASSERT_EQ(g_uTestLastBeginRing, uExpectedRing, "Begin callback at frame %u observed ring %u, expected %u", u, g_uTestLastBeginRing, uExpectedRing);
-
-		g_xEngine.FluxRenderer().EndFrame();
-		ZENITH_ASSERT_EQ(g_uTestLastEndRing, uExpectedRing, "End callback at frame %u observed ring %u, expected %u", u, g_uTestLastEndRing, uExpectedRing);
-	}
 
 }
 

@@ -700,17 +700,12 @@ public:
 	static void TestBinderNameCacheRoundRobinReplacement();
 	static void TestBinderNameCacheTypeStoredCorrectly();
 
-	// Flux_PerFrame ring-scheduler tests. Exercise the frame counter,
-	// ring-index modulo, and the begin/end callback dispatch logic. Tests
-	// save/restore live engine state so they don't disturb the running
-	// frame loop that hosts them.
+	// Flux_RendererImpl per-frame ring-scheduler tests. Exercise the frame
+	// counter and ring-index modulo via AdvanceCounter. Tests save/restore the
+	// live frame counter so they don't disturb the running frame loop that
+	// hosts them.
 	static void TestFluxPerFrameFrameCounterAdvances();
 	static void TestFluxPerFrameRingIndexWraps();
-	static void TestFluxPerFrameBeginCallbackFires();
-	static void TestFluxPerFrameEndCallbackFires();
-	static void TestFluxPerFrameCallbackOrderPreserved();
-	static void TestFluxPerFrameCallbackUserDataPassed();
-	static void TestFluxPerFrameRingIndexInsideCallback();
 
 	// AssetRegistry path-normalization tests (verify SetGameAssetsDir /
 	// SetEngineAssetsDir → NormalizeAssetDirPath pipeline)
