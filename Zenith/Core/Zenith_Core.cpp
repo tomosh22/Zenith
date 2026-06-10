@@ -167,10 +167,10 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().BeginFrame();
 		if (!g_xEngine.FluxSwapchain().BeginFrame())
 		{
-			g_xEngine.FluxMemory().EndFrame(false);
+			// Drain any memory work staged before the failed acquire.
+			g_xEngine.FluxMemory().Flush();
 			// Skipped frame still fires end-frame callbacks so the deferred VRAM
 			// deletion clock ticks, but we deliberately DON'T advance the ring
 			// counter — a rapid-resize sequence of consecutive skips would
@@ -292,14 +292,14 @@ void Zenith_Core::Zenith_MainLoop()
 		g_xEngine.Scenes().SetRenderTasksActive(false);
 	}
 
-	// EndFrame prepares memory command buffer for submission and processes deferred deletions.
-	// Deferred deletions use a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished
-	// using resources before they are deleted. Manual scope (rather than
-	// FUNCTION_WRAPPER macro) because EndFrame is now an instance method.
+	// Hand this frame's lazily-recorded memory work to the backend; it is
+	// submitted ahead of the render command buffers against the memory
+	// semaphore in Zenith_Vulkan::EndFrame. No memory operation may run
+	// between here and that submit.
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		Zenith_Profiling::Scope xMemMgrProfile(ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
-		g_xEngine.FluxMemory().EndFrame();
+		g_xEngine.FluxMemory().SubmitFrameMemoryWork();
 	}
 
 	Zenith_MemoryManagement::EndFrame();

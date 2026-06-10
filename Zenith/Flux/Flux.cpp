@@ -193,8 +193,6 @@ void Flux_RendererImpl::LateInitialise()
 	//
 	// Independent (no ordering constraint): SSAO, Fog, SDFs, Particles, Quads, Text
 
-	g_xEngine.FluxMemory().BeginFrame();
-
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 	// Initialize Slang compiler before any shader loading. Slang is the Vulkan
 	// SPIR-V toolchain; the D3D12 null backend loads pre-baked reflection only.
@@ -246,7 +244,8 @@ void Flux_RendererImpl::LateInitialise()
 			xDesc.m_pfnInitialise();
 	}
 
-	g_xEngine.FluxMemory().EndFrame(false);
+	// Drain the GPU uploads staged by swapchain init + the feature walk above.
+	g_xEngine.FluxMemory().Flush();
 
 	// Create and compile the render graph
 	m_pxRenderGraph = new Flux_RenderGraph();

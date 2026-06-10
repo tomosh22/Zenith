@@ -132,6 +132,7 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	Zenith_VulkanMemory_ProbeCache().Clear();
 
 	m_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
+	m_bRecording = false; // in-process re-init: recording state must not leak across Initialise
 
 	InitialiseStagingBuffer();
 
@@ -162,8 +163,8 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 
 	// Register the deferred-VRAM-deletion countdown as an end-frame callback.
 	// Fires unconditionally each main loop iteration (skipped frames included)
-	// to match the pre-extraction behaviour where MemoryManager::EndFrame ran
-	// on every iteration. Registered AFTER Zenith_Vulkan's begin callback so
+	// so the deletion clock ticks every iteration the GPU could retire work
+	// on. Registered AFTER Zenith_Vulkan's begin callback so
 	// the natural begin-then-end ordering is preserved. Counted in
 	// FLUX_PERFRAME_END_SUBSCRIBER_TALLY (Flux_PerFrame.cpp): bump that tally
 	// if you add another end callback.
@@ -206,6 +207,10 @@ Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
 
 void Zenith_Vulkan_MemoryManager::Shutdown()
 {
+	// Drain any straggler staged uploads / open recording while the copy
+	// queue is still alive (the memory manager shuts down before the backend).
+	Flush();
+
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	// Drain all pending deletions. Each iteration decrements every entry's
@@ -287,45 +292,61 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager shut down");
 }
 
-Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_MemoryManager::GetCommandBuffer() {
-	return m_xCommandBuffer;
+void Zenith_Vulkan_MemoryManager::EnsureRecording()
+{
+	if (!m_bRecording)
+	{
+		m_xCommandBuffer.BeginRecording();
+		m_bRecording = true;
+	}
 }
 
-// ImageView handle registry implementation
-
-void Zenith_Vulkan_MemoryManager::BeginFrame()
+void Zenith_Vulkan_MemoryManager::Flush()
 {
-	m_xCommandBuffer.BeginRecording();
+	if (m_xAllocator == VK_NULL_HANDLE)
+	{
+		// Headless / pre-Initialise: there is no GPU work to drain.
+		return;
+	}
+	if (!m_bRecording && CurrentStaging().m_xAllocations.GetSize() == 0)
+	{
+		return;
+	}
 
-	//#TO_TODO: asset handler
-	//AssetHandler* pxAssetHandler = pxApp->m_pxAssetHandler;
-	//pxAssetHandler->ProcessPendingDeletes();
-}
-
-void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
-{
 	FlushStagingBuffer();
+	m_xCommandBuffer.EndAndCpuWait(false);
+	m_bRecording = false;
+}
 
-	// ProcessDeferredDeletions used to be called here; it is now driven by
-	// Flux_PerFrame::EndFrame's end-frame callback (registered in Initialise).
-	// The relative timing shifts later in the frame but the +1 buffer in
-	// MAX_FRAMES_IN_FLIGHT + 1 keeps the deletion safe — the per-resource
+void Zenith_Vulkan_MemoryManager::SubmitFrameMemoryWork()
+{
+	if (m_xAllocator == VK_NULL_HANDLE)
+	{
+		return;
+	}
+	if (!m_bRecording && CurrentStaging().m_xAllocations.GetSize() == 0)
+	{
+		// Nothing recorded this frame. Zenith_Vulkan::EndFrame null-guards
+		// m_pxMemoryUpdateCmdBuf and still submits the memory SubmitInfo with
+		// zero command buffers, so the memory-semaphore chain is unaffected.
+		return;
+	}
+
+	// ProcessDeferredDeletions is driven by Flux_PerFrame::EndFrame's
+	// end-frame callback (registered in Initialise), not here. The +1 buffer
+	// in MAX_FRAMES_IN_FLIGHT + 1 keeps deletion safe — the per-resource
 	// counter only reaches zero after the GPU has fully drained any in-flight
 	// frame that could have referenced it.
 
-	if (bDefer)
-	{
-		VkCheck(m_xCommandBuffer.GetCurrentCmdBuffer().end());
-		m_pxVulkan->m_pxMemoryUpdateCmdBuf = &m_xCommandBuffer;
-	}
-	else
-	{
-		m_xCommandBuffer.EndAndCpuWait(false);
-	}
+	FlushStagingBuffer();
+	VkCheck(m_xCommandBuffer.GetCurrentCmdBuffer().end());
+	m_bRecording = false;
+	m_pxVulkan->m_pxMemoryUpdateCmdBuf = &m_xCommandBuffer;
 }
 
 void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel, uint32_t uLayer)
 {
+	EnsureRecording();
 	m_xCommandBuffer.ImageTransitionBarrier(xImage, eOldLayout, eNewLayout, eAspect, eSrcStage, eDstStage, uMipLevel, uLayer);
 }
 
@@ -408,6 +429,8 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH);
 
+	EnsureRecording();
+
 	// Flush only the current frame slot's pending allocations. Other slots
 	// own their own allocation lists and offsets — they get flushed when the
 	// ring index lands on them in a future frame's EndFrame.
@@ -429,19 +452,20 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 	xStaging.m_uNextFreeOffset = 0;
 }
 
-// Callers MUST hold g_xEngine.FluxMemory().m_xMutex and this function MUST NOT take it — EndFrame()
-// and BeginFrame() below are the only callees and neither reacquires the
-// mutex (FlushStagingBuffer and BeginRecording do GPU work lock-free). Adding
-// a lock here, or to any function reached from here, will deadlock every
-// staging upload path because Zenith_Mutex is non-recursive.
+// Callers MUST hold g_xEngine.FluxMemory().m_xMutex and this function MUST NOT take it — Flush()
+// is the only callee and it does not reacquire the mutex (FlushStagingBuffer
+// and EndAndCpuWait do GPU work lock-free). Adding a lock here, or to any
+// function reached from here, will deadlock every staging upload path because
+// Zenith_Mutex is non-recursive.
 //
-// EndFrame(false) flushes the *current slot's* pending allocations and ends
-// the wrapper's command buffer; BeginFrame restarts recording. The slot
-// identity (the chosen index in g_xEngine.FluxMemory().m_axStaging) does not change across this —
-// the swapchain's current frame index only advances on a real frame
-// boundary, not when we mid-frame-flush. So callers that re-resolve
-// CurrentStaging() after this returns get the same slot back, just with
-// m_uNextFreeOffset reset to 0.
+// Flush() drains the *current slot's* pending allocations synchronously and
+// closes the wrapper's command buffer; recording restarts lazily on the next
+// memory operation. The slot identity (the chosen index in
+// g_xEngine.FluxMemory().m_axStaging) does not change across this — the
+// swapchain's current frame index only advances on a real frame boundary,
+// not when we mid-frame-flush. So callers that re-resolve CurrentStaging()
+// after this returns get the same slot back, just with m_uNextFreeOffset
+// reset to 0.
 void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 {
 	const u_int uFrameSlot = m_pxVulkanSwapchain->GetCurrentFrameIndex();
@@ -453,8 +477,7 @@ void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 		static_cast<unsigned long long>(xSlot.m_uNextFreeOffset),
 		static_cast<unsigned long long>(g_uStagingPoolSize),
 		xSlot.m_uMidFrameFlushCount);
-	EndFrame(false);
-	BeginFrame();
+	Flush();
 }
 
 
@@ -499,12 +522,14 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(xStaging.m_xMemory);
 
+		EnsureRecording();
 		EmitTransferWriteBarrier(m_xCommandBuffer.GetCurrentCmdBuffer(), xDestBuffer, uCurrentOffset, uChunkSize);
 
 		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);
 		m_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(xStaging.m_xBuffer, xDestBuffer, xCopyRegion);
 
 		m_xCommandBuffer.EndAndCpuWait(false);
+		m_bRecording = false; // recording restarts lazily on the next chunk / operation
 
 		// Clear staging allocations after flush
 		xStaging.m_xAllocations.Clear();
@@ -513,9 +538,6 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		// Move to next chunk
 		uCurrentOffset += uChunkSize;
 		uRemainingSize -= uChunkSize;
-
-		// Restart command buffer for next chunk
-		m_xCommandBuffer.BeginRecording();
 
 		m_xMutex.Unlock();
 	}
@@ -541,7 +563,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	uint32_t uCurrentRow = 0;
 
 	// Transition entire image to transfer dst layout first
-	m_xCommandBuffer.BeginRecording();
+	EnsureRecording();
 	for (uint32_t uLayer = 0; uLayer < uNumLayers; uLayer++)
 	{
 		for (uint32_t uMip = 0; uMip < uNumMips; uMip++)
@@ -591,6 +613,9 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 			.setImageOffset({ 0, static_cast<int32_t>(uRowInLayer), 0 })
 			.setImageExtent({ uWidth, uRemainingRows, 1 });
 
+		// A staging-full Flush above may have closed the command buffer —
+		// reopen before recording this chunk's copy.
+		EnsureRecording();
 		m_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(xStaging.m_xBuffer, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 		uCurrentOffset += uChunkSize;
@@ -605,6 +630,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 
 	// Execute and wait
 	m_xCommandBuffer.EndAndCpuWait(false);
+	m_bRecording = false; // recording restarts lazily on the next operation
 
 	// Clean up the current slot
 	{
@@ -612,9 +638,6 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 		xStaging.m_xAllocations.Clear();
 		xStaging.m_uNextFreeOffset = 0;
 	}
-
-	// Restart command buffer for next operations
-	m_xCommandBuffer.BeginRecording();
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked texture upload complete");
 }

@@ -1145,8 +1145,7 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 	}
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
-	g_xEngine.FluxMemory().BeginFrame();
-	g_xEngine.FluxMemory().EndFrame(false);  // synchronous, do not defer
+	g_xEngine.FluxMemory().Flush();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for GPU idle before %s...", szReason);
 	g_xEngine.FluxBackend().WaitForGPUIdle();

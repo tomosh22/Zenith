@@ -23,8 +23,7 @@
 // here (see summary):
 //   ImageTransitionBarrier, CreatePersistentlyMappedBuffer (+PersistentBuffer),
 //   RegisterImageView, GetImageView, RegisterBufferDescriptor,
-//   GetBufferDescriptor, GetVMAAllocator, DetermineImageViewType,
-//   GetCommandBuffer.
+//   GetBufferDescriptor, GetVMAAllocator, DetermineImageViewType.
 // ============================================================================
 class Zenith_D3D12_MemoryManager
 {
@@ -43,8 +42,11 @@ public:
 	void Initialise() { }
 	void Shutdown() { }
 
-	void BeginFrame() { }
-	void EndFrame(bool bDefer = true) { (void)bDefer; }
+	// Drain points (memory operations are ad-hoc; the Vulkan backend drains
+	// its lazily-recorded command buffer here). Nothing to drain in the null
+	// backend.
+	void Flush() { }
+	void SubmitFrameMemoryWork() { }
 
 	// ===== Transient aliasing (FluxBackendTransientAliasing) =====
 	// Null backend does NOT support real aliasing; the render graph falls back
