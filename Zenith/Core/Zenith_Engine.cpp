@@ -731,7 +731,6 @@ void Zenith_Engine::InitialiseProject()
 	{
 		g_xEngine.FluxMemory().BeginFrame();
 	}
-	g_xEngine.Scenes().SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
 		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();

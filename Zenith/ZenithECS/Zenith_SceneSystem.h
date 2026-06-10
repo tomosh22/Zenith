@@ -82,8 +82,6 @@ struct Zenith_SceneInfo
 class Zenith_SceneSystem
 {
 public:
-	using InitialSceneLoadFn = void(*)();
-
 	// Phase 2.1: ctor allocates the owned Zenith_EntityStore and publishes the
 	// process-wide instance pointer; dtor frees the store and clears it. Bodies
 	// live in Internal/Zenith_SceneSystem_Registry.cpp alongside the s_pxInstance
@@ -226,8 +224,6 @@ public:
 	// Zenith_Core.cpp) — a namespace cannot be befriended, so this cannot be
 	// privatised without breaking the main loop.
 	void Update(float fDt);
-
-	void SetInitialSceneLoadCallback(InitialSceneLoadFn pfn);
 
 	void SetMainLoopRunning(bool bRunning);
 
@@ -477,7 +473,6 @@ private:
 	Zenith_Vector<Zenith_Scene>   m_axCreationTargetStack;
 
 	bool                          m_bIsMainLoopRunning       = false;
-	InitialSceneLoadFn            m_pfnInitialSceneLoad      = nullptr;
 
 	// Deferred LoadScene slot — populated by LoadScene/LoadSceneByIndex when
 	// called while m_bIsUpdating or m_bIsLoadingScene is true. Drained by

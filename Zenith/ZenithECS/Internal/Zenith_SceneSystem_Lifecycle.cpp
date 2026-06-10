@@ -127,7 +127,6 @@ void Zenith_SceneSystem::Shutdown()
 	m_iPendingBuildIndex = -1;
 	m_axCreationTargetStack.Clear();
 	m_bIsMainLoopRunning = false;
-	m_pfnInitialSceneLoad = nullptr;
 	// Drop any deferred LoadScene/LoadSceneByIndex request — if Shutdown or
 	// ResetForNextTest runs while a load is stashed, executing it later would
 	// fire the stale request inside the next session/test against scrubbed
@@ -273,16 +272,6 @@ bool Zenith_SceneSystem::IsCircularLoadDependency(const std::string& strCanonica
 		if (m_axLifecycleLoadStack.Get(i) == strCanonicalPath) return true;
 	}
 	return false;
-}
-
-//=============================================================================
-// Initial-scene-load callback
-//=============================================================================
-
-void Zenith_SceneSystem::SetInitialSceneLoadCallback(InitialSceneLoadFn pfn)
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread(), "SetInitialSceneLoadCallback must be called from main thread");
-	m_pfnInitialSceneLoad = pfn;
 }
 
 //=============================================================================

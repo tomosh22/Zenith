@@ -1569,10 +1569,8 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	case Zenith_EditorActionType::LOAD_INITIAL_SCENE:
 	{
 		Zenith_Assert(xAction.m_pfnFunc, "Null function pointer for LOAD_INITIAL_SCENE");
-		// Register the initial-scene-load callback so the editor's Play/Stop
-		// cycle can re-run it later. Then invoke it once under a lifecycle
-		// deferral guard so DispatchFullLifecycleInit owns Awake/OnEnable order.
-		g_xEngine.Scenes().SetInitialSceneLoadCallback(xAction.m_pfnFunc);
+		// Invoke the load callback under a lifecycle deferral guard so
+		// DispatchFullLifecycleInit owns Awake/OnEnable order.
 		{
 			Zenith_LifecycleDeferralGuard xGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 			xAction.m_pfnFunc();

@@ -483,12 +483,9 @@ void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityNam
 	// Scene Loading Step Helpers
 	//--------------------------------------------------------------------------
 
-	// Combined initial-scene-load step. Registers pfnCallback as the
-	// initial-scene-load callback (used by editor restart), then invokes the
-	// callback under a lifecycle-deferral guard so entity creation during the
-	// load defers OnAwake/OnEnable until DispatchFullLifecycleInit fires.
-	// Replaces the SetInitialSceneLoadCallback + SetLoadingScene(true) +
-	// Custom + SetLoadingScene(false) sequence.
+	// Initial-scene-load step. Invokes pfnCallback under a lifecycle-deferral
+	// guard so entity creation during the load defers OnAwake/OnEnable until
+	// DispatchFullLifecycleInit fires.
 void AddStep_LoadInitialScene(void (*pfnCallback)());
 
 	//--------------------------------------------------------------------------
