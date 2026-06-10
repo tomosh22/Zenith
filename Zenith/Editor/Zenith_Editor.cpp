@@ -294,7 +294,6 @@ void Zenith_Editor::Initialise()
 
 	// Initialize editor subsystems
 	g_xEngine.Selection().Initialise();
-	g_xEngine.Gizmo().Initialise();
 	// Zenith_AnimationStateMachineEditor::Initialize();  // TEMPORARILY DISABLED
 
 	// Editor camera initialisation is deferred to Update() - Initialise() runs
@@ -328,7 +327,6 @@ void Zenith_Editor::Shutdown()
 	// Shutdown editor subsystems
 	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
 	g_xEngine.Gizmos().Shutdown();
-	g_xEngine.Gizmo().Shutdown();
 	g_xEngine.Selection().Shutdown();
 }
 
@@ -338,10 +336,8 @@ bool Zenith_Editor::Update()
 	// This must happen here (not during RenderMainMenuBar) to avoid concurrent access
 	// to scene data while render tasks are active.
 	//
-	// Both save and load operations iterate through scene data structures.
-	// If render tasks are active while these operations occur, we risk:
-	// - Reading corrupted data during save (render tasks modifying while we read)
-	// - Crashes during load (destroying pools while render tasks access them)
+	// Scene loads destroy and rebuild scene data structures; if render tasks
+	// were active while that happens, they would read destroyed pools.
 	if (!ProcessDeferredSceneOperations())
 	{
 		return false;
@@ -411,7 +407,7 @@ bool Zenith_Editor::Update()
 	HandleGizmoInteraction();
 
 	// Handle object picking (only when not manipulating gizmo)
-	if (!g_xEngine.Gizmos().IsInteracting() && !g_xEngine.Gizmo().IsManipulating())
+	if (!g_xEngine.Gizmos().IsInteracting())
 	{
 		HandleObjectPicking();
 	}
@@ -421,76 +417,11 @@ bool Zenith_Editor::Update()
 
 bool Zenith_Editor::ProcessDeferredSceneOperations()
 {
-	// Handle pending scene reset
-	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneReset)
-	{
-		m_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
-
-		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
-		// This matches the synchronization used for scene loading
-		// W14: Render graph now synchronously completes recording during Execute(),
-		// so no CPU-side wait is needed — go straight to GPU idle.
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
-		g_xEngine.FluxBackend().WaitForGPUIdle();
-
-		// Force process any pending deferred deletions
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			g_xEngine.FluxMemory().ProcessDeferredDeletions();
-		}
-
-		// CRITICAL: Clear any pending command lists before resetting scene
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		g_xEngine.FluxRenderer().ClearPendingCommandLists();
-
-		// Safe to reset now - no render tasks active, GPU idle, old resources deleted
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-		if (pxSceneData)
-		{
-			pxSceneData->Reset();
-		}
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene reset complete");
-
-		// Clear selection as entity pointers are now invalid
-		ClearSelection();
-
-		// Clear game camera reference as it now points to deleted memory
-		m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
-
-		// Reset editor camera to initial state
-		ResetEditorCameraToDefaults();
-
-		// Clear undo/redo history as entity IDs are now invalid
-		g_xEngine.UndoSystem().Clear();
-
-		return false;
-	}
-
-	// Handle pending scene save
-	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneSave)
-	{
-		m_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
-
-		try
-		{
-			// Safe to save now - no render tasks are accessing scene data
-			Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-			if (pxSceneData)
-			{
-				Zenith_EditorSceneAccess::SaveToFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
-				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
-			}
-		}
-		catch (const std::exception& e)
-		{
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Failed to save scene: %s", e.what());
-		}
-
-		m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
-	}
+	// No GPU sync needed for any of these: Update() runs before render-task
+	// submission so no render tasks are active, and every GPU resource the
+	// scene teardown frees is queued through QueueVRAMDeletion's
+	// MAX_FRAMES_IN_FLIGHT+1 grace period — the same contract the runtime
+	// LoadScene teardown relies on mid-play.
 
 	// Handle pending scene load (with backup-restore detection)
 	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad)
@@ -502,18 +433,6 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	if (m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad)
 	{
 		m_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = false;
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
-		g_xEngine.FluxBackend().WaitForGPUIdle();
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			g_xEngine.FluxMemory().ProcessDeferredDeletions();
-		}
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
 		g_xEngine.Scenes().LoadSceneByIndex(m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", m_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex);
@@ -529,13 +448,6 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	if (m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile)
 	{
 		m_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = false;
-
-		g_xEngine.FluxBackend().WaitForGPUIdle();
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			g_xEngine.FluxMemory().ProcessDeferredDeletions();
-		}
-		g_xEngine.FluxRenderer().ClearPendingCommandLists();
 
 		g_xEngine.Scenes().LoadScene(m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.c_str());
@@ -555,25 +467,10 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 {
 	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
 
-	// W14: Render graph Execute() is now synchronous on the main thread, so only GPU idle is needed.
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
-	g_xEngine.FluxBackend().WaitForGPUIdle();  // GPU synchronization
-
-	// Force process any pending deferred deletions to ensure old descriptors are destroyed
-	// Without this, descriptor handles might collide between old/new scenes
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
-	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-	{
-		g_xEngine.FluxMemory().ProcessDeferredDeletions();
-	}
-
-	// CRITICAL: Clear any pending command lists before loading scene
-	// This prevents stale command list entries from previous frames that may
-	// contain pointers to resources that are about to be destroyed
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-	g_xEngine.FluxRenderer().ClearPendingCommandLists();
-
-	// Safe to load now - no render tasks active, GPU idle, old resources deleted
+	// No GPU sync needed: Update() runs before render-task submission so no
+	// render tasks are active, and the teardown below frees its GPU resources
+	// through QueueVRAMDeletion's MAX_FRAMES_IN_FLIGHT+1 grace period — the
+	// same contract the runtime LoadScene teardown relies on mid-play.
 
 	bool bIsBackupRestore = m_xEditorState.m_xPlayBackup.m_bHasBackup && m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
 
@@ -873,9 +770,6 @@ void Zenith_Editor::RenderGizmos()
 	}
 
 	// Gizmos are now part of the render graph - no separate task submission needed
-
-	// Optionally render selection bounding box for visual feedback
-	// g_xEngine.Selection().RenderSelectedBoundingBox(pxSelectedEntity);
 }
 
 void Zenith_Editor::HandleGizmoInteraction()
@@ -1158,53 +1052,6 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 	g_xEngine.FluxRenderer().ClearPendingCommandLists();
 }
 
-// Pending scene reset: flush GPU, reset the active scene's entities, clear
-// selection and undo history (entity IDs become invalid after Reset).
-void Zenith_Editor::HandlePendingSceneReset()
-{
-	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneReset) return;
-	m_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
-
-	WaitForGPUAndFlushDeferred("scene reset");
-
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-	if (pxSceneData)
-	{
-		pxSceneData->Reset();
-	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene reset complete");
-
-	ClearSelection();
-	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
-	ResetEditorCameraToDefaults();
-	g_xEngine.UndoSystem().Clear();
-}
-
-// Pending scene save: write the active scene's contents to disk.
-void Zenith_Editor::HandlePendingSceneSave()
-{
-	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneSave) return;
-	m_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
-
-	try
-	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-		if (pxSceneData)
-		{
-			Zenith_EditorSceneAccess::SaveToFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
-			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
-		}
-	}
-	catch (const std::exception& e)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Failed to save scene: %s", e.what());
-	}
-
-	m_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
-}
-
 // Pending scene load: flush GPU; if this is the editor's stop-mode backup
 // restore, force-unload every non-persistent scene and reset the persistent
 // scene's entities (game's SCENE_LOAD_SINGLE may have destroyed the original
@@ -1297,8 +1144,6 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 
 void Zenith_Editor::FlushPendingSceneOperations()
 {
-	HandlePendingSceneReset();
-	HandlePendingSceneSave();
 	HandlePendingSceneLoadDeferred();
 }
 

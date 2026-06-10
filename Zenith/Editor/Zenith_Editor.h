@@ -111,7 +111,7 @@ public:
 	EditorMode GetEditorMode();
 	void SetEditorMode(EditorMode eMode);
 
-	// Synchronously process pending scene operations (load/save/reset)
+	// Synchronously process the pending deferred scene load (mode-transition restore)
 	// Used by unit tests to ensure scene state is consistent after mode transitions
 	void FlushPendingSceneOperations();
 
@@ -191,8 +191,6 @@ public:
 	bool HandlePendingSceneLoad();
 
 	void WaitForGPUAndFlushDeferred(const char* szReason);
-	void HandlePendingSceneReset();
-	void HandlePendingSceneSave();
 	void HandlePendingSceneLoadDeferred();
 
 	void UpdateEditorInput();
