@@ -22,7 +22,6 @@
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-void RenderImGui();
 #endif
 
 // Phase 6b: swapchain state moved to Zenith_Vulkan_Swapchain held by

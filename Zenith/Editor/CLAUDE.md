@@ -4,7 +4,7 @@
 
 ImGui-based scene editor for creating, editing, and testing game content. Active only in tools builds (`#ifdef ZENITH_TOOLS`). Features dockable panels, entity manipulation, play/pause/stop modes, undo/redo, and 3D gizmo integration.
 
-**Core Design:** Deferred operations pattern prevents concurrent access to scene data during active render tasks. Scene loads (open/registered/play-stop restore) are queued and executed at safe synchronization points; New Scene and Save Scene run directly from the menu callback (RenderImGui runs after render tasks complete, so direct execution is safe there).
+**Core Design:** Deferred operations pattern prevents concurrent access to scene data during active render tasks. Scene loads (open/registered/play-stop restore) are queued and executed at safe synchronization points; New Scene and Save Scene run directly from the menu callback (Zenith_Editor::RenderImGuiFrame runs after render tasks complete, so direct execution is safe there).
 
 ## Files
 
@@ -63,7 +63,7 @@ Three operations use deferred execution, all scene loads:
 2. **Registered Scene Load** - Toolbar dropdown sets the build index, load next frame
 3. **Play→Stop Restore** - EnterStopMode queues the backup-scene load, restore next frame
 
-New Scene and Save Scene execute directly in the menu callback (no render tasks are active during RenderImGui).
+New Scene and Save Scene execute directly in the menu callback (no render tasks are active during RenderImGuiFrame).
 
 **Synchronization Sequence:**
 - Menu items rendered during `Zenith_Editor::RenderImGuiFrame()` (render tasks active)
