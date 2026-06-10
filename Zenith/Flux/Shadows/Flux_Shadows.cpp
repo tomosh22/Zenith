@@ -84,15 +84,11 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 	return xRet;
 }
 
-void Flux_ShadowsImpl::Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling)
+void Flux_ShadowsImpl::Initialise()
 {
-	m_pxVulkanMemory = &xVulkanMemory;
-	m_pxFluxGraphics = &xFluxGraphics;
-	m_pxProfiling = &xProfiling;
-
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		m_pxVulkanMemory->InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), m_xShadowMatrixBuffers[u]);
+		g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), m_xShadowMatrixBuffers[u]);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -104,14 +100,10 @@ void Flux_ShadowsImpl::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		m_pxVulkanMemory->DestroyDynamicConstantBuffer(m_xShadowMatrixBuffers[u]);
+		g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowMatrixBuffers[u]);
 	}
 
 	m_pxGraph = nullptr;
-
-	m_pxVulkanMemory = nullptr;
-	m_pxFluxGraphics = nullptr;
-	m_pxProfiling = nullptr;
 }
 
 // Persistent pass names (W1: prevents dangling stack-buffer pointers passed to AddPass).
@@ -223,27 +215,28 @@ Flux_RenderAttachment* Flux_ShadowsImpl::GetCSMTargetSetup(const uint32_t uIndex
 
 Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 {
-	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : m_pxFluxGraphics->m_xWhiteTexture.GetDirect()->m_xSRV;
+	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
 }
 
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
-	m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
-	const Zenith_Maths::Matrix4& xViewMat = m_pxFluxGraphics->GetViewMatrix();
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	const Zenith_Maths::Matrix4& xViewMat = xGraphics.GetViewMatrix();
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		const float fNearPlane = m_pxFluxGraphics->GetFarPlane() / s_afCSMLevels[u];
-		const float fFarPlane = m_pxFluxGraphics->GetFarPlane() / s_afCSMLevels[u + 1];
+		const float fNearPlane = xGraphics.GetFarPlane() / s_afCSMLevels[u];
+		const float fFarPlane = xGraphics.GetFarPlane() / s_afCSMLevels[u + 1];
 
-		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(m_pxFluxGraphics->GetFOV(), m_pxFluxGraphics->GetAspectRatio(), fNearPlane, fFarPlane);
+		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(xGraphics.GetFOV(), xGraphics.GetAspectRatio(), fNearPlane, fFarPlane);
 		const Zenith_Maths::Matrix4 xInvViewProjMat = glm::inverse(xProjMat * xViewMat);
 
 		const FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
 		const Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
 
-		const Zenith_Maths::Vector3& xSunDir = m_pxFluxGraphics->GetSunDir();
+		const Zenith_Maths::Vector3& xSunDir = xGraphics.GetSunDir();
 		const Zenith_Maths::Vector3 xUp(0, 1, 0);
 
 		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir, xFrustumCenter, xUp);
@@ -256,8 +249,8 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 
 		m_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
 
-		m_pxVulkanMemory->UploadBufferData(m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &m_axSunViewProjMats[u], sizeof(m_axSunViewProjMats[u]));
+		g_xEngine.FluxMemory().UploadBufferData(m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &m_axSunViewProjMats[u], sizeof(m_axSunViewProjMats[u]));
 	}
 
-	m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 }

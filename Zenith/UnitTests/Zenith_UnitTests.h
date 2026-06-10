@@ -647,48 +647,6 @@ public:
 	static void TestRenderGraphLifetimeRecomputeIdempotent();
 	static void TestRenderGraphAliasingBarrierUsesTopologicalLastUse();
 
-	// Wave 9 DI-seam test for Flux_HiZImpl. A default-constructed instance is
-	// headless-safe (like Flux_RenderGraph), so this is a pure CPU seam test:
-	// the three injected-dep member pointers default nullptr, and assigning
-	// sentinel pointers proves the storage slots exist. The sentinels are never
-	// dereferenced. (HiZ's real Initialise wiring only runs in non-headless
-	// boot, which the test runner may skip, so a post-init assertion would be
-	// flaky here.)
-	static void TestHiZInjectedDepsWired();
-
-	// Wave-11 DI-seam test for Flux_SSAOImpl (2nd leaf seam, same WS9.2 template
-	// as HiZ). A default-constructed instance is headless-safe, so this is a
-	// pure-CPU seam test: the three injected-dep member pointers (graphics,
-	// swapchain, HDR) default nullptr, and assigning distinct sentinel pointers
-	// proves the storage slots exist and are independent. Sentinels never
-	// dereferenced (SSAO's real Initialise wiring runs only in non-headless boot).
-	static void TestSSAOInjectedDepsWired();
-
-	// Wave-14 DI-seam test for Flux_QuadsImpl (cleanest next leaf seam, same WS9.2
-	// template as HiZ/SSAO). Quads has a single cross-subsystem dep (Flux_GraphicsImpl)
-	// and is NOT wired in the headless boot path, so this is a pure-CPU seam test on
-	// a stack-constructed instance: the lone injected-dep member pointer (graphics)
-	// defaults nullptr, and assigning a sentinel pointer proves the storage slot
-	// exists. Sentinel never dereferenced (Quads' real Initialise wiring runs only
-	// in non-headless boot).
-	static void TestQuadsInjectedDepsWired();
-	// Wave-14 DI-seam test for Flux_SDFsImpl (same WS9.2 template as HiZ/SSAO,
-	// lowest raw fan-in leaf). A default-constructed instance is headless-safe,
-	// so this is a pure-CPU seam test: the two injected-dep member pointers
-	// (graphics, HDR) default nullptr, and assigning distinct sentinel pointers
-	// proves the storage slots exist and are independent. Sentinels never
-	// dereferenced (SDFs' real Initialise wiring runs only in non-headless boot).
-	static void TestSDFsInjectedDepsWired();
-	// Wave-15 DI-seam sentinel tests (same pure-CPU headless-safe template).
-	static void TestTextInjectedDepsWired();
-	static void TestSkyboxInjectedDepsWired();
-	static void TestPrimitivesInjectedDepsWired();
-	static void TestStaticMeshesInjectedDepsWired();
-	static void TestAnimatedMeshesInjectedDepsWired();
-	// Wave-17 DI-seam sentinel tests.
-	static void TestDecalsInjectedDepsWired();
-	static void TestParticlesInjectedDepsWired();
-
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
 	// Vulkan device required — the resolver path takes a reflection pointer

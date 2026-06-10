@@ -42,22 +42,13 @@ struct CpuDecalSlot
 	DecalInstance         m_xInstance{};
 };
 
-// Cross-subsystem dependencies injected into Initialise (Wave-17 DI seam, the
-// SSAO leaf-seam shape: explicit ref params -> stored member pointers).
-// Forward-declared here; full headers are pulled in by Flux_Decals.cpp.
-class Flux_GraphicsImpl;
-class FrameContext;
-
 // Phase 9: state + behaviour for Decals subsystem.
 //
-// Wave-17 DI seam (mirrors Flux_SSAOImpl): cross-subsystem dependencies are
-// INJECTED through Initialise as explicit references and stored as member
-// pointers, rather than reached for via g_xEngine.X() inside SetupRenderGraph.
-// The only place g_xEngine self-lookup survives is the non-capturing fn-pointer
-// trampolines (the Execute* graph callbacks and the ZENITH_DEBUG_VARIABLES-gated
-// Prepare callback) — those cannot capture state, so they re-enter via
-// g_xEngine.Decals() to reach this singleton instance and then route their
-// FluxGraphics reach-ins through the injected member.
+// Cross-subsystem dependencies (FluxGraphics / Swapchain / VulkanMemory / Frame)
+// are reached via g_xEngine at point of use. The non-capturing fn-pointer
+// trampolines (the Execute* graph callbacks and the Prepare callback) cannot
+// capture state, so they re-enter via g_xEngine.Decals() to reach this
+// singleton instance.
 class Flux_DecalsImpl
 {
 public:
@@ -67,22 +58,14 @@ public:
 	Flux_DecalsImpl(const Flux_DecalsImpl&) = delete;
 	Flux_DecalsImpl& operator=(const Flux_DecalsImpl&) = delete;
 
-	// Cross-subsystem deps are injected here and stored into the member pointers
-	// below. This is the SSAO DI template: explicit ref params -> stored member
-	// pointers. xVulkanMemory owns the GPU buffer/index-buffer lifetime and the
-	// per-frame staging upload; xFrame supplies the delta-time for the lifetime
-	// tick. Both are reached through the stored member pointers (incl. from the
-	// non-capturing Prepare trampoline, which recovers this instance first).
-	void Initialise(Flux_GraphicsImpl& xGraphics, Flux_Swapchain& xSwapchain,
-	                Flux_MemoryManager& xVulkanMemory, FrameContext& xFrame);
+	void Initialise();
 	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// Promoted from a file-static helper so its VulkanMemory reach-in routes
-	// through the injected member. Public because the (former free-function)
-	// call site sits in Initialise; kept callable for symmetry with the rest of
-	// the init path.
+	// Promoted from a file-static helper; VulkanMemory is reached via g_xEngine
+	// at point of use. Public because the (former free-function) call site sits
+	// in Initialise; kept callable for symmetry with the rest of the init path.
 	void InitialiseDecalIndexBuffer();
 
 	void SpawnDecal(const Zenith_Maths::Vector3& xPosition,
@@ -143,12 +126,4 @@ public:
 	// 0..uActiveDecalCount-1 contiguously regardless of CPU ring layout.
 	// (Relocated from a module-scope static.)
 	DecalInstance               m_axDecalStaging[uMAX_DECALS];
-
-	// Injected cross-subsystem dependencies (stored by Initialise). Default
-	// nullptr so a default-constructed instance is headless-safe; the real boot
-	// path wires them in Flux_FeatureRegistry's Decals init trampoline.
-	Flux_GraphicsImpl*           m_pxGraphics     = nullptr;
-	Flux_Swapchain*              m_pxSwapchain    = nullptr;
-	Flux_MemoryManager*          m_pxVulkanMemory = nullptr;
-	FrameContext*                m_pxFrame        = nullptr;
 };

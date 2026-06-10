@@ -5,10 +5,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_RenderGraph;
-class Flux_HiZImpl;
-class Flux_GraphicsImpl;
-class Flux_VolumeFogImpl;
-class Flux_RendererImpl;
 
 enum SSGI_DebugMode : u_int
 {
@@ -42,7 +38,7 @@ public:
 	Flux_SSGIImpl(const Flux_SSGIImpl&) = delete;
 	Flux_SSGIImpl& operator=(const Flux_SSGIImpl&) = delete;
 
-	void Initialise(Flux_Swapchain& xSwapchain, Flux_HiZImpl& xHiZ, Flux_GraphicsImpl& xGraphics, Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer);
+	void Initialise();
 	void BuildPipelines();
 
 	// CRTP hook called by Flux_ScreenSpaceEffectBase::Shutdown(). SSGI owns no
@@ -52,8 +48,8 @@ public:
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 	void ApplyDenoiseSelectionToGraph(Flux_RenderGraph& xGraph);
 
-	// Promoted from file-static free functions so the per-frame snapshot logic
-	// routes its injected-dep reaches through the members rather than g_xEngine.
+	// Promoted from file-static free functions; cross-subsystem deps are reached
+	// via g_xEngine at point of use.
 	// Public because the static graph-execute trampolines call them.
 	u_int ComputeEffectiveBinarySearchIterations() const;
 	void UpdateSSGIConstants();
@@ -86,12 +82,4 @@ public:
 	// denoise toggle or the resolution divisor diverges from the committed
 	// selection.
 	Flux_CommittedHandleSelector<Flux_SSGISelection> m_xSSGISelector;
-
-	// Injected engine-infra / sibling-subsystem dependencies (de-globalization).
-	// Stored in Initialise, nulled in ShutdownImpl.
-	Flux_Swapchain* m_pxSwapchain = nullptr;
-	Flux_HiZImpl*            m_pxHiZ        = nullptr;
-	Flux_GraphicsImpl*       m_pxGraphics   = nullptr;
-	Flux_VolumeFogImpl*      m_pxVolumeFog  = nullptr;
-	Flux_RendererImpl*       m_pxRenderer   = nullptr;
 };

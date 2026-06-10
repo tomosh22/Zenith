@@ -7,16 +7,6 @@
 
 class Flux_RenderGraph;
 
-// Cross-subsystem dependencies injected into Initialise (aggressive DI pass:
-// the engine-infra singletons VulkanMemory/VulkanSwapchain and the sibling
-// Flux subsystems FluxGraphics/HiZ/VolumeFog/FluxRenderer are now stored member
-// pointers instead of reached for via g_xEngine.X() inside instance methods).
-// Forward-declared here; full headers are pulled in by Flux_SSR.cpp.
-class Flux_GraphicsImpl;
-class Flux_HiZImpl;
-class Flux_VolumeFogImpl;
-class Flux_RendererImpl;
-
 enum SSR_DebugMode : u_int
 {
 	SSR_DEBUG_NONE = 0,
@@ -45,13 +35,10 @@ public:
 	Flux_SSRImpl(const Flux_SSRImpl&) = delete;
 	Flux_SSRImpl& operator=(const Flux_SSRImpl&) = delete;
 
-	// Cross-subsystem deps injected here and stored into the member pointers
-	// below (aggressive DI seam). Reached through the stored member pointers from
-	// the instance methods; the non-capturing Execute* / hot-reload trampolines
-	// recover this instance via g_xEngine.SSR() first, then route through these.
-	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_Swapchain& xSwapchain,
-	                Flux_GraphicsImpl& xGraphics, Flux_HiZImpl& xHiZ,
-	                Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xRenderer);
+	// Cross-subsystem deps (VulkanMemory/Swapchain/FluxGraphics/HiZ/VolumeFog/
+	// FluxRenderer) are reached via g_xEngine at point of use; the non-capturing
+	// Execute* / hot-reload trampolines recover this instance via g_xEngine.SSR().
+	void Initialise();
 	void BuildPipelines();
 
 	// CRTP hook called by Flux_ScreenSpaceEffectBase::Shutdown() — destroys the
@@ -61,10 +48,10 @@ public:
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 	void ApplyBlurSelectionToGraph(Flux_RenderGraph& xGraph);
 
-	// Promoted from a file-static helper so its HiZ + VulkanSwapchain reach-ins
-	// route through the injected members. Public because the (former
-	// free-function) call site sits inside the non-capturing ExecuteSSRRayMarch
-	// trampoline, which recovers this instance via g_xEngine.SSR() first.
+	// Promoted from a file-static helper; reaches HiZ + the swapchain via
+	// g_xEngine at point of use. Public because the (former free-function) call
+	// site sits inside the non-capturing ExecuteSSRRayMarch trampoline, which
+	// recovers this instance via g_xEngine.SSR() first.
 	void UpdateSSRConstants();
 
 	Flux_TransientHandle GetReflectionHandle() const { return m_xReflectionSelector.GetCommittedHandle(); }
@@ -98,14 +85,4 @@ public:
 	// Upsampled otherwise) and triggers a graph rebuild when the live toggle
 	// diverges from the committed selection.
 	Flux_CommittedHandleSelector<bool> m_xReflectionSelector;
-
-	// Injected cross-subsystem dependencies (stored by Initialise). Default
-	// nullptr so a default-constructed instance is headless-safe; the real boot
-	// path wires them in Flux_FeatureRegistry's SSR init trampoline.
-	Flux_MemoryManager* m_pxVulkanMemory  = nullptr;
-	Flux_Swapchain*     m_pxSwapchain     = nullptr;
-	Flux_GraphicsImpl*           m_pxGraphics      = nullptr;
-	Flux_HiZImpl*                m_pxHiZ           = nullptr;
-	Flux_VolumeFogImpl*          m_pxVolumeFog     = nullptr;
-	Flux_RendererImpl*           m_pxRenderer      = nullptr;
 };

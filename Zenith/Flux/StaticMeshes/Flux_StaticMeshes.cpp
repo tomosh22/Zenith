@@ -84,13 +84,8 @@ void Flux_StaticMeshesImpl::BuildPipelines()
 	}
 }
 
-void Flux_StaticMeshesImpl::Initialise(Flux_GraphicsImpl& xGraphics)
+void Flux_StaticMeshesImpl::Initialise()
 {
-	// Wave-15 DI seam: store the injected cross-subsystem dep. The FluxGraphics
-	// reach-ins (in SetupRenderGraph, ExecuteGBuffer and RenderModelInstanceMeshes)
-	// route through this instead of g_xEngine.FluxGraphics().
-	m_pxGraphics = &xGraphics;
-
 	BuildPipelines();
 
 #ifdef ZENITH_TOOLS
@@ -115,9 +110,6 @@ void Flux_StaticMeshesImpl::Shutdown()
 	m_xShadowPipeline.Reset();
 	m_xGBufferShader.Reset();
 	m_xShadowShader.Reset();
-
-	// Drop the injected dep so the instance returns to a clean default state.
-	m_pxGraphics = nullptr;
 }
 
 void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -130,10 +122,10 @@ void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// pass's Prepare before RecordCommandLists dispatches any record task.
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)
 		.Prepare([](void* p){ g_xEngine.StaticMeshes().GatherDrawPacket(p); })
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(m_pxGraphics->GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 // Prepare callback (main thread): walk every Zenith_ModelComponent in all
@@ -180,8 +172,7 @@ static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance)
 }
 
 // Per-mesh draw helper. Binds material constants + SRVs, then emits the
-// indexed draw. Promoted to a member (g_xEngine de-globalization) so the GBuffer
-// shader is reached as a plain member instead of via g_xEngine.StaticMeshes().
+// indexed draw.
 void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	Zenith_MaterialAsset* pxMaterial,
@@ -200,9 +191,7 @@ void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_Sha
 	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
 }
 
-// Promoted to a member (g_xEngine de-globalization) so the blank-material fallback
-// reaches the injected FluxGraphics (m_pxGraphics) directly instead of via
-// g_xEngine.StaticMeshes(). Called from the recovered instance in ExecuteGBuffer.
+// Called from the recovered instance in ExecuteGBuffer.
 void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix)
 {
@@ -239,7 +228,7 @@ void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandList* pxCmdLis
 		Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
 		// Member method (promoted): route the FluxGraphics reach-in (blank-material
 		// fallback) through the injected member directly.
-		if (!pxMaterial) pxMaterial = m_pxGraphics->m_xBlankMaterial.GetDirect();
+		if (!pxMaterial) pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 		Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());
@@ -258,7 +247,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xGBufferPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &xZZ.m_pxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
 	// access here — this runs on a worker thread.
