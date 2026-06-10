@@ -7,7 +7,7 @@
 class Flux_CommandList;
 class Flux_RenderGraph;
 class Flux_VolumeFogImpl;
-class Flux_RendererImpl;
+class FrameContext;
 class Flux_GraphicsImpl;
 class Flux_ShadowsImpl;
 
@@ -65,7 +65,7 @@ public:
 
 	// Injected engine-subsystem dependencies (de-globalization pass): the Fog
 	// orchestrator passes these from Flux_FogImpl::Initialise.
-	void Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xFluxRenderer, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows);
+	void Initialise(Flux_VolumeFogImpl& xVolumeFog, FrameContext& xFrame, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows);
 	void BuildPipelines();
 	void Reset();
 
@@ -114,7 +114,7 @@ private:
 
 	// Injected engine-subsystem dependencies (de-globalization pass).
 	Flux_VolumeFogImpl* m_pxVolumeFog    = nullptr;
-	Flux_RendererImpl*  m_pxFluxRenderer = nullptr;
+	FrameContext*       m_pxFrame        = nullptr;
 	Flux_GraphicsImpl*  m_pxFluxGraphics = nullptr;
 	Flux_ShadowsImpl*   m_pxShadows      = nullptr;
 

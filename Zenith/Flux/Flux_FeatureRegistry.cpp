@@ -390,7 +390,7 @@ static DefaultFeatureIndices RegisterDefaultFeatureSet(Flux_FeatureRegistry& xRe
 		+[](Flux_RenderGraph& g){ g_xEngine.SSAO().SetupRenderGraph(g); },
 		+[](){ g_xEngine.SSAO().Shutdown(); });
 	xIdx.uFog = xReg.Register(szFLUX_FEATURE_FOG,
-		+[](){ g_xEngine.Fog().Initialise(g_xEngine.VolumeFog(), g_xEngine.GodRaysFog(), g_xEngine.RaymarchFog(), g_xEngine.FroxelFog(), g_xEngine.HDR(), g_xEngine.FluxGraphics(), g_xEngine.FluxRenderer(), g_xEngine.Shadows(), g_xEngine.Frame()); },
+		+[](){ g_xEngine.Fog().Initialise(g_xEngine.VolumeFog(), g_xEngine.GodRaysFog(), g_xEngine.RaymarchFog(), g_xEngine.FroxelFog(), g_xEngine.HDR(), g_xEngine.FluxGraphics(), g_xEngine.Shadows(), g_xEngine.Frame()); },
 		+[](Flux_RenderGraph& g){ g_xEngine.Fog().SetupRenderGraph(g); },
 		nullptr); // Fog has no Shutdown() — RAII / stateless.
 	xIdx.uSDFs = xReg.Register(szFLUX_FEATURE_SDFS,

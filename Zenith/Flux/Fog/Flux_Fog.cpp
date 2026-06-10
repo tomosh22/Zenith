@@ -2,9 +2,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Fog/Flux_FogImpl.h"
-#include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Flux.h"
-#include "Flux/Flux_RendererImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
@@ -73,7 +71,7 @@ void Flux_FogImpl::BuildPipelines()
 
 void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImpl& xGodRaysFog,
 	Flux_RaymarchFogImpl& xRaymarchFog, Flux_FroxelFogImpl& xFroxelFog,
-	Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics, Flux_RendererImpl& xFluxRenderer,
+	Flux_HDRImpl& xHDR, Flux_GraphicsImpl& xFluxGraphics,
 	Flux_ShadowsImpl& xShadows, FrameContext& xFrame)
 {
 	m_pxVolumeFog    = &xVolumeFog;
@@ -82,7 +80,6 @@ void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImp
 	m_pxFroxelFog    = &xFroxelFog;
 	m_pxHDR          = &xHDR;
 	m_pxFluxGraphics = &xFluxGraphics;
-	m_pxFluxRenderer = &xFluxRenderer;
 	m_pxShadows      = &xShadows;
 	m_pxFrame        = &xFrame;
 
@@ -95,8 +92,8 @@ void Flux_FogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_GodRaysFogImp
 	// technique's cross-subsystem deps are threaded through from Fog's own injected
 	// members (Wave-4 de-globalization) so the techniques carry no g_xEngine reach.
 	m_pxGodRaysFog->Initialise(*m_pxFluxGraphics);
-	m_pxRaymarchFog->Initialise(*m_pxVolumeFog, *m_pxFrame, *m_pxFluxRenderer, *m_pxFluxGraphics, *m_pxShadows);
-	m_pxFroxelFog->Initialise(*m_pxVolumeFog, *m_pxFluxRenderer, *m_pxFluxGraphics, *m_pxShadows);
+	m_pxRaymarchFog->Initialise(*m_pxVolumeFog, *m_pxFrame, *m_pxFluxGraphics, *m_pxShadows);
+	m_pxFroxelFog->Initialise(*m_pxVolumeFog, *m_pxFrame, *m_pxFluxGraphics, *m_pxShadows);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {

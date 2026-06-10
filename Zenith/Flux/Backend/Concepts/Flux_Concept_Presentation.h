@@ -9,10 +9,11 @@
 // bool indicating "frame is ready to render" (false on transient acquire
 // failures like resize).
 //
-// GetCurrentFrameIndex now reads from g_xEngine.FluxRenderer().GetRingIndex() so the
-// engine has one source of truth for the per-frame ring slot — backends
-// must mirror this contract: GetCurrentFrameIndex returns the value that
-// matches g_xEngine.FluxRenderer().GetRingIndex() at call time.
+// GetCurrentFrameIndex reads from g_xEngine.Frame().GetRingIndex() so the
+// engine has one source of truth for the per-frame ring slot (FrameContext
+// owns the single frame-index variable) — backends must mirror this contract:
+// GetCurrentFrameIndex returns the value that matches
+// g_xEngine.Frame().GetRingIndex() at call time.
 
 template <typename T>
 concept FluxBackendPresentation = requires(T t)

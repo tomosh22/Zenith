@@ -172,9 +172,10 @@ void Zenith_Core::Zenith_MainLoop()
 		{
 			g_xEngine.FluxMemory().EndFrame(false);
 			// Skipped frame still fires end-frame callbacks so the deferred VRAM
-			// deletion clock ticks, but we deliberately DON'T advance the ring
-			// counter — a rapid-resize sequence of consecutive skips would
-			// otherwise wrap the counter past valid fences and shorten the
+			// deletion clock ticks, but we deliberately DON'T advance the frame
+			// index (early return skips the AdvanceFrameIndex at the bottom of
+			// the loop) — a rapid-resize sequence of consecutive skips would
+			// otherwise wrap the ring index past valid fences and shorten the
 			// effective MAX_FRAMES_IN_FLIGHT+1 deferred-deletion grace period.
 			g_xEngine.FluxRenderer().FireEndCallbacks();
 			return;
@@ -323,15 +324,17 @@ void Zenith_Core::Zenith_MainLoop()
 		}
 	}
 
-	// Final action of the main loop: fires registered end-frame callbacks
-	// (deferred-deletion countdown lives here now) and advances the
-	// Flux_PerFrame counter. Counter advance happens AFTER Swapchain::EndFrame
-	// so the present uses the slot for frame N before the ring index moves to
-	// N+1 for the next iteration — matches the old in-swapchain bump.
-	// Flux_PerFrame::EndFrame is a NOP when no backend callbacks are registered.
-	// The ring counter advance is harmless in headless and keeps frame-counting
-	// consistent for any downstream code that reads g_xEngine.FluxRenderer().GetFrameIndex().
-	g_xEngine.FluxRenderer().EndFrame();
+	// Final action of the main loop: fire registered end-frame callbacks
+	// (deferred-deletion countdown lives here now), then advance the engine
+	// frame index. Core owns the frame clock — FrameContext holds the single
+	// frame-index variable engine-wide. The advance happens AFTER
+	// Swapchain::EndFrame so the present uses the slot for frame N before the
+	// ring index moves to N+1 for the next iteration. FireEndCallbacks is a
+	// NOP when no backend callbacks are registered; the advance is harmless in
+	// headless and keeps frame-counting consistent for any downstream code
+	// that reads g_xEngine.Frame().GetFrameIndex().
+	g_xEngine.FluxRenderer().FireEndCallbacks();
+	g_xEngine.Frame().AdvanceFrameIndex();
 }
 
 #ifdef ZENITH_TESTING

@@ -1,9 +1,7 @@
 #include "Zenith.h"
-#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/FrameContext.h"
 
-#include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 
@@ -60,11 +58,10 @@ void Flux_RaymarchFogImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_RaymarchFogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, FrameContext& xFrame, Flux_RendererImpl& xFluxRenderer, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows)
+void Flux_RaymarchFogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, FrameContext& xFrame, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows)
 {
 	m_pxVolumeFog = &xVolumeFog;
 	m_pxFrame = &xFrame;
-	m_pxFluxRenderer = &xFluxRenderer;
 	m_pxFluxGraphics = &xFluxGraphics;
 	m_pxShadows = &xShadows;
 
@@ -138,7 +135,7 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 	// Check current debug mode
 	extern u_int dbg_uVolFogDebugMode;
 	m_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
-	m_xConstants.m_uFrameIndex = m_pxFluxRenderer->GetFrameCounter();
+	m_xConstants.m_uFrameIndex = m_pxFrame->GetFrameIndex();
 	m_xConstants.m_fPhaseG = dbg_fRaymarchPhaseG;
 
 	// Volumetric shadow parameters (unified with Froxel fog for consistent shadow softness)

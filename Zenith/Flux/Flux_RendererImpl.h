@@ -8,11 +8,13 @@ class Flux_RenderGraph;
 
 // Per-Engine state + behaviour for the Flux renderer. Replaces the two
 // public static-facade classes that used to live in Flux.h / Flux_PerFrame.h:
-//   - `class Flux`         (frame counter, render graph pointer, pending
-//                           command-list queue, resolution-change callback
-//                           list, graph rebuild flag)
-//   - `class Flux_PerFrame` (per-frame begin/end callback arrays + the
-//                            monotonic frame counter — folded with Flux's)
+//   - `class Flux`         (render graph pointer, pending command-list queue,
+//                           resolution-change callback list, graph rebuild flag)
+//   - `class Flux_PerFrame` (per-frame begin/end callback arrays)
+//
+// The monotonic frame counter that used to live here moved to FrameContext
+// (g_xEngine.Frame()) — the single frame-index variable engine-wide, advanced
+// only by Zenith_MainLoop.
 //
 // Accessed via g_xEngine.FluxRenderer(). The historical separation between
 // `Flux::Initialise` (renderer bootstrap) and `Flux_PerFrame::Initialise`
@@ -28,7 +30,8 @@ public:
 	Flux_RendererImpl(const Flux_RendererImpl&) = delete;
 	Flux_RendererImpl& operator=(const Flux_RendererImpl&) = delete;
 
-	// Per-frame callback signatures. uRingIndex == GetRingIndex() at call time.
+	// Per-frame callback signatures. uRingIndex == g_xEngine.Frame().GetRingIndex()
+	// at call time.
 	// pUserData is the pointer supplied to Register*FrameCallback — kept typed
 	// as void* rather than templated so the registration API stays non-templated
 	// and backend-agnostic.
@@ -47,8 +50,6 @@ public:
 	void ReleaseAssetReferences();
 
 	void Shutdown();
-
-	const uint32_t GetFrameCounter();
 
 	// Submit a command list for Vulkan recording. Only called from
 	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread.
@@ -105,18 +106,13 @@ public:
 	void RegisterEndFrameCallback  (OnFrameEndFunc   pfn, void* pUserData);
 
 	// Fires registered callbacks in registration order with the current ring
-	// index. BeginFrame fires the begin set. EndFrame fires the end set AND
-	// advances the counter.
+	// index (read from g_xEngine.Frame()). BeginFrame fires the begin set,
+	// FireEndCallbacks the end set. The frame index itself is owned and
+	// advanced by FrameContext via Zenith_MainLoop — never here, so a skipped
+	// frame can drive the deferred-VRAM-deletion clock (FireEndCallbacks)
+	// without moving the ring.
 	void BeginFrame();
-	void EndFrame();
-
-	// Skipped-frame helpers — FireEndCallbacks drives the deferred-VRAM-deletion
-	// clock without advancing the ring counter.
 	void FireEndCallbacks();
-	void AdvanceCounter();
-
-	// Current ring slot in [0, MAX_FRAMES_IN_FLIGHT).
-	u_int GetRingIndex();
 
 	// ===== Data members =====
 
@@ -132,12 +128,6 @@ public:
 
 	// Graph rebuild request flag — consumed by next Compile().
 	bool                                  m_bGraphRebuildRequested = false;
-
-	// Consolidated monotonic frame counter. Was two separate statics
-	// (Flux::s_uFrameCounter — never incremented, returned zero — and
-	// Flux_PerFrame::s_uFrameCounter). Single source of truth now;
-	// AdvanceCounter increments it.
-	u_int                                 m_uFrameCounter = 0;
 
 	// Per-frame begin/end callback arrays (max FLUX_MAX_PERFRAME_CALLBACKS
 	// = 4 entries per side). Populated by backend Initialise().

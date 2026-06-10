@@ -924,20 +924,17 @@ void Zenith_Editor::HandleGizmoInteraction()
 		static_cast<float>(xGlobalMousePos.y - g_xEngine.Editor().m_xEditorState.m_xViewport.m_xPosition.y)
 	};
 
-	// Debug: Log mouse position every frame during interaction
-	static int s_iFrameCounter = 0;
+	// Debug: log the mouse position roughly once a second while interacting.
+	// Throttled off the engine frame index (FrameContext) rather than a local
+	// counter — one frame-index variable engine-wide.
 	if (g_xEngine.Gizmos().IsInteracting())
 	{
-		if (++s_iFrameCounter % 60 == 0) // Log every 60 frames
+		if (g_xEngine.Frame().GetFrameIndex() % 60 == 0)
 		{
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse: Global=(%.1f,%.1f), Viewport=(%.1f,%.1f)",
 				xGlobalMousePos.x, xGlobalMousePos.y,
 				xViewportMousePos.x, xViewportMousePos.y);
 		}
-	}
-	else
-	{
-		s_iFrameCounter = 0;
 	}
 
 	// Convert screen position to world-space ray

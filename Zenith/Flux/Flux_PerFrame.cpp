@@ -31,18 +31,19 @@ static_assert(FLUX_MAX_PERFRAME_CALLBACKS >= FLUX_PERFRAME_END_SUBSCRIBER_TALLY,
 
 void Flux_RendererImpl::PerFrameInitialise()
 {
+	// The frame index is NOT touched here — it lives on FrameContext
+	// (g_xEngine.Frame()), freshly zeroed when Zenith_Engine::Initialise
+	// allocates it, and advanced only by Zenith_MainLoop.
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
-	xRenderer.m_uFrameCounter = 0;
 	xRenderer.m_uNumBeginCallbacks = 0;
 	xRenderer.m_uNumEndCallbacks = 0;
 }
 
 void Flux_RendererImpl::PerFrameShutdown()
 {
-	// Frame counter is intentionally NOT reset — by the time Shutdown runs the
-	// per-resource deferred-deletion ring has already drained. Resetting the
-	// counter here would do nothing useful. Just clear the callback arrays so
-	// a subsequent Initialise() starts from a known empty state.
+	// Just clear the callback arrays so a subsequent Initialise() starts from
+	// a known empty state. (The frame index lives on FrameContext and is not
+	// this subsystem's to reset.)
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
 	xRenderer.m_uNumBeginCallbacks = 0;
 	xRenderer.m_uNumEndCallbacks = 0;
@@ -122,17 +123,11 @@ void Flux_RendererImpl::BeginFrame()
 #ifdef ZENITH_DEBUG
 	AssertSubscriberTalliesMatch(xRenderer.m_uNumBeginCallbacks, xRenderer.m_uNumEndCallbacks);
 #endif
-	const u_int uRingIndex = GetRingIndex();
+	const u_int uRingIndex = g_xEngine.Frame().GetRingIndex();
 	for (u_int u = 0; u < xRenderer.m_uNumBeginCallbacks; u++)
 	{
 		xRenderer.m_apfnBeginCallbacks[u](uRingIndex, xRenderer.m_apBeginUserData[u]);
 	}
-}
-
-void Flux_RendererImpl::EndFrame()
-{
-	FireEndCallbacks();
-	AdvanceCounter();
 }
 
 void Flux_RendererImpl::FireEndCallbacks()
@@ -141,23 +136,14 @@ void Flux_RendererImpl::FireEndCallbacks()
 #ifdef ZENITH_DEBUG
 	AssertSubscriberTalliesMatch(xRenderer.m_uNumBeginCallbacks, xRenderer.m_uNumEndCallbacks);
 #endif
-	const u_int uRingIndex = GetRingIndex();
+	const u_int uRingIndex = g_xEngine.Frame().GetRingIndex();
 	for (u_int u = 0; u < xRenderer.m_uNumEndCallbacks; u++)
 	{
 		xRenderer.m_apfnEndCallbacks[u](uRingIndex, xRenderer.m_apEndUserData[u]);
 	}
 }
 
-void Flux_RendererImpl::AdvanceCounter()
-{
-	g_xEngine.FluxRenderer().m_uFrameCounter++;
-}
-
-u_int Flux_RendererImpl::GetRingIndex()
-{
-	return g_xEngine.FluxRenderer().m_uFrameCounter % MAX_FRAMES_IN_FLIGHT;
-}
-
-// Note: GetFrameCounter() is defined in Flux.cpp (was Flux::GetFrameCounter
-// before the collapse). Its return type signature in the header (uint32_t)
-// matches that definition; this file no longer defines a duplicate.
+// Note: the monotonic frame counter that used to live here (and the
+// EndFrame/AdvanceCounter/GetRingIndex trio around it) moved to FrameContext —
+// g_xEngine.Frame() owns the single frame-index variable engine-wide and
+// Zenith_MainLoop advances it after firing the end callbacks above.

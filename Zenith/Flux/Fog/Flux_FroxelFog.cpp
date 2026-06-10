@@ -1,8 +1,7 @@
 #include "Zenith.h"
-#include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/FrameContext.h"
 
-#include "Flux/Fog/Flux_FroxelFogImpl.h"
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 
@@ -131,10 +130,10 @@ void Flux_FroxelFogImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xApplyPipeline, xApplySpec);
 }
 
-void Flux_FroxelFogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, Flux_RendererImpl& xFluxRenderer, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows)
+void Flux_FroxelFogImpl::Initialise(Flux_VolumeFogImpl& xVolumeFog, FrameContext& xFrame, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows)
 {
 	m_pxVolumeFog = &xVolumeFog;
-	m_pxFluxRenderer = &xFluxRenderer;
+	m_pxFrame = &xFrame;
 	m_pxFluxGraphics = &xFluxGraphics;
 	m_pxShadows = &xShadows;
 
@@ -229,7 +228,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog constants
 	const Flux_VolumeFogConstants& xShared = m_pxVolumeFog->GetSharedConstants();
-	float fTime = static_cast<float>(m_pxFluxRenderer->GetFrameCounter()) * 0.016f;
+	float fTime = static_cast<float>(m_pxFrame->GetFrameIndex()) * 0.016f;
 
 	m_xInjectConstants.m_xFogParams = Zenith_Maths::Vector4(
 		xShared.m_fDensity,
@@ -257,7 +256,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 	);
 	m_xInjectConstants.m_fNearZ = dbg_fFroxelNearZ;
 	m_xInjectConstants.m_fFarZ = dbg_fFroxelFarZ;
-	m_xInjectConstants.m_uFrameIndex = m_pxFluxRenderer->GetFrameCounter();
+	m_xInjectConstants.m_uFrameIndex = m_pxFrame->GetFrameIndex();
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&m_xInjectPipeline);
 

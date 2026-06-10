@@ -79,7 +79,6 @@ public:
 	Flux_RootSig  m_xResetCountersRootSig;
 
 	// Per-frame stats.
-	uint32_t m_uFrameCounter       = 0;
 	uint32_t m_uLastVisibleChunks  = 0;
 	float    m_fCullingTimeMs      = 0.0f;
 	float    m_fStreamingTimeMs    = 0.0f;

@@ -239,10 +239,10 @@ void Zenith_Vulkan::InitialisePerFrameResources()
 
 void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
 {
-	// Frame counter / ring index is owned by Flux_PerFrame; this callback
-	// receives the current ring index directly (no longer pulled from the
-	// swapchain). The swapchain itself will read GetCurrentFrameIndex()
-	// which is now a thin wrapper over g_xEngine.FluxRenderer().GetRingIndex().
+	// Frame index / ring index is owned by FrameContext (g_xEngine.Frame());
+	// this callback receives the current ring index directly (no longer pulled
+	// from the swapchain). The swapchain itself will read
+	// GetCurrentFrameIndex(), a thin wrapper over g_xEngine.Frame().GetRingIndex().
 	// Static callback (no 'this'): recover the Vulkan singleton once and route
 	// all member reaches through xSelf.
 	Zenith_Vulkan& xSelf = g_xEngine.FluxBackend();

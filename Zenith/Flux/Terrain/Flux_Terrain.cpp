@@ -399,8 +399,6 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 {
-	m_uFrameCounter++;
-
 	// Get all terrain components
 	m_xTerrainRenderRecords.Clear();
 	// Wave 3: gather neutral render records EC-side (no Flux<-EntityComponent edge).

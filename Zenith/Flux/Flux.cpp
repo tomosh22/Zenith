@@ -45,8 +45,8 @@
 // Phase 6a-1: Flux namespace state moved off Flux class onto
 // Flux_RendererImpl held by Zenith_Engine. Static facade methods below
 // forward through g_xEngine.FluxRenderer().m_xXxx.
-
-const uint32_t Flux_RendererImpl::GetFrameCounter() { return g_xEngine.FluxRenderer().m_uFrameCounter; }
+// (The frame counter that used to be read from here moved to FrameContext —
+// g_xEngine.Frame().GetFrameIndex().)
 
 void Flux_RendererImpl::SubmitCommandList(const Flux_CommandList* pxCmdList,
 	const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,

@@ -17,6 +17,7 @@ using namespace Flux_TerrainConfig;
 class Flux_MeshGeometry;
 class Flux_RendererImpl;
 class Flux_CommandList;
+class FrameContext;
 
 // ========== Residency State ==========
 enum class Flux_TerrainLODResidencyState : uint8_t
@@ -125,7 +126,11 @@ struct Flux_TerrainStreamingState
 	uint32_t                    m_uActiveChunkRadius = 16;
 
 	Flux_TerrainStreamingStats  m_xStats;
-	uint32_t                    m_uCurrentFrame      = 0;
+
+	// First-UpdateStreaming heartbeat log gate (a flag, not a clock — the
+	// periodic heartbeat cadence reads the engine frame index from
+	// g_xEngine.Frame(), the single frame-index variable engine-wide).
+	bool                        m_bFirstHeartbeatLogged = false;
 
 	// Wave 3: replaces the old Zenith_TerrainComponent* m_pxOwner. That pointer was
 	// never dereferenced — it was used purely as a live/registered flag (set on
@@ -279,6 +284,7 @@ public:
 	// the signature can't take params without breaking those out-of-scope call
 	// sites. One boundary reach per dep, zero call-site change.
 	Flux_RendererImpl*                         m_pxFluxRenderer = nullptr;
+	FrameContext*                              m_pxFrame        = nullptr;
 
 	// ========== Internal pure helpers (still static -- operate on State, not the manager) ==========
 	struct StreamingAllocation

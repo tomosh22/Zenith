@@ -15,7 +15,8 @@
 //
 // Required initialisation sequence (not expressible as a concept — document
 // here so a new backend author doesn't discover it via crash):
-//   1. g_xEngine.FluxRenderer().PerFrameInitialise()              (resets counter + callback arrays)
+//   1. g_xEngine.FluxRenderer().PerFrameInitialise()              (resets callback arrays; the
+//                                                frame index lives on FrameContext)
 //   2. Backend Initialise()                     (backend may register callbacks here)
 //   3. MemoryManager Initialise()               (registers OnFluxPerFrameEnd
 //                                                AFTER the backend's begin-frame
