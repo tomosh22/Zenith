@@ -4,11 +4,6 @@
 #include "Maths/Zenith_Maths.h"
 
 class Flux_CommandList;
-class Flux_VolumeFogImpl;
-class FrameContext;
-class Flux_RendererImpl;
-class Flux_GraphicsImpl;
-class Flux_ShadowsImpl;
 
 // Ray march specific parameters
 struct Flux_RaymarchConstants
@@ -37,7 +32,7 @@ public:
 	Flux_RaymarchFogImpl(const Flux_RaymarchFogImpl&) = delete;
 	Flux_RaymarchFogImpl& operator=(const Flux_RaymarchFogImpl&) = delete;
 
-	void Initialise(Flux_VolumeFogImpl& xVolumeFog, FrameContext& xFrame, Flux_RendererImpl& xFluxRenderer, Flux_GraphicsImpl& xFluxGraphics, Flux_ShadowsImpl& xShadows);
+	void Initialise();
 	void BuildPipelines();
 	void Reset();
 	void Render(Flux_CommandList* pxCommandList);
@@ -46,12 +41,6 @@ public:
 	Flux_Pipeline m_xPipeline;
 
 private:
-	Flux_VolumeFogImpl* m_pxVolumeFog = nullptr;
-	FrameContext* m_pxFrame = nullptr;
-	Flux_RendererImpl* m_pxFluxRenderer = nullptr;
-	Flux_GraphicsImpl* m_pxFluxGraphics = nullptr;
-	Flux_ShadowsImpl* m_pxShadows = nullptr;
-
 	// Cached constants for push constant (per-frame transient).
 	Flux_RaymarchConstants m_xConstants;
 };

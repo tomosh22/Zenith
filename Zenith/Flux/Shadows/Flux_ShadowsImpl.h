@@ -4,10 +4,6 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-// Injected engine-infra deps (forward-declared; full types pulled in the .cpp).
-class Flux_GraphicsImpl;
-class Zenith_Profiling;
-
 #define ZENITH_FLUX_NUM_CSMS 4
 #define ZENITH_FLUX_CSM_RESOLUTION 2048
 
@@ -26,7 +22,7 @@ public:
 	Flux_ShadowsImpl(const Flux_ShadowsImpl&) = delete;
 	Flux_ShadowsImpl& operator=(const Flux_ShadowsImpl&) = delete;
 
-	void Initialise(Flux_MemoryManager& xVulkanMemory, Flux_GraphicsImpl& xFluxGraphics, Zenith_Profiling& xProfiling);
+	void Initialise();
 	void Shutdown();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
@@ -49,9 +45,4 @@ public:
 
 private:
 	Flux_RenderAttachment& GetCSM(u_int uIndex);
-
-	// Injected engine-infra deps (stored in Initialise, nulled in Shutdown).
-	Flux_MemoryManager* m_pxVulkanMemory = nullptr;
-	Flux_GraphicsImpl*           m_pxFluxGraphics = nullptr;
-	Zenith_Profiling*            m_pxProfiling = nullptr;
 };

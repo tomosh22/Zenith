@@ -8,8 +8,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-// Injected dep: GetWidth/GetHeight on the stored swapchain pointer need the
-// full type (only transitively available before this seam).
+// GetWidth/GetHeight on the swapchain need the full type.
 #include "Flux/Flux_BackendTypes.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -37,15 +36,14 @@ Flux_RenderAttachment& Flux_HiZImpl::GetHiZBuffer()
 	return m_pxGraph->GetTransientAttachment(m_xHiZBufferHandle);
 }
 
-// Compute the mip count from the injected swapchain resolution. Shared by
-// Initialise (for pipeline building) and SetupRenderGraph (for the transient
-// desc + per-mip pass loop); reading it from the swapchain each time keeps
-// it consistent with the current framebuffer size. Now a private member so it
-// uses m_pxSwapchain rather than g_xEngine.
+// Compute the mip count from the swapchain resolution. Shared by Initialise
+// (for pipeline building) and SetupRenderGraph (for the transient desc +
+// per-mip pass loop); reading it from the swapchain each time keeps it
+// consistent with the current framebuffer size.
 void Flux_HiZImpl::UpdateMipCountFromSwapchain()
 {
-	const u_int uWidth  = m_pxSwapchain->GetWidth();
-	const u_int uHeight = m_pxSwapchain->GetHeight();
+	const u_int uWidth  = g_xEngine.FluxSwapchain().GetWidth();
+	const u_int uHeight = g_xEngine.FluxSwapchain().GetHeight();
 	m_uMipCount = static_cast<u_int>(floor(log2(static_cast<float>(std::max(uWidth, uHeight))))) + 1;
 	m_uMipCount = std::min(m_uMipCount, uHIZ_MAX_MIPS);
 }
@@ -58,14 +56,8 @@ void Flux_HiZImpl::BuildPipelines()
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_HiZImpl::Initialise(Flux_Swapchain& xSwapchain, Flux_GraphicsImpl& xGraphics, Flux_RendererImpl& xRenderer)
+void Flux_HiZImpl::Initialise()
 {
-	// Wave 9 DI seam: store the injected cross-subsystem deps. Every later
-	// instance-method reach-in routes through these instead of g_xEngine.
-	m_pxSwapchain = &xSwapchain;
-	m_pxGraphics  = &xGraphics;
-	m_pxRenderer  = &xRenderer;
-
 	UpdateMipCountFromSwapchain();
 
 	static_assert(FLUX_MAX_MIPS >= uHIZ_MAX_MIPS,
@@ -87,8 +79,8 @@ void Flux_HiZImpl::Initialise(Flux_Swapchain& xSwapchain, Flux_GraphicsImpl& xGr
 	// Resize callback: recompute mip count. The graph owns the transient
 	// image and re-creates it with new dimensions on the next SetupRenderGraph.
 	// Non-capturing fn-pointer trampoline: re-enters via g_xEngine.HiZ() to
-	// reach the singleton instance, then calls the injected-dep-routed member.
-	m_pxRenderer->AddResChangeCallback([]()
+	// reach the singleton instance (it cannot capture `this`).
+	g_xEngine.FluxRenderer().AddResChangeCallback([]()
 	{
 		g_xEngine.HiZ().UpdateMipCountFromSwapchain();
 	});
@@ -103,10 +95,6 @@ void Flux_HiZImpl::Shutdown()
 		return;
 
 	m_pxGraph = nullptr;
-	// Drop the injected deps so the instance returns to a clean default state.
-	m_pxSwapchain = nullptr;
-	m_pxGraphics  = nullptr;
-	m_pxRenderer  = nullptr;
 	m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ shut down");
 }
@@ -115,8 +103,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
 	// cannot capture, so it re-enters via g_xEngine.HiZ() to reach the
-	// singleton instance, then routes its other reach-ins (swapchain, graphics)
-	// through that instance's injected members.
+	// singleton instance.
 	Flux_HiZImpl& xHiZ = g_xEngine.HiZ();
 	if (!xHiZ.IsEnabled())
 		return;
@@ -131,8 +118,8 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xHiZ.m_xComputePipeline);
 
-	u_int uWidth = xHiZ.m_pxSwapchain->GetWidth();
-	u_int uHeight = xHiZ.m_pxSwapchain->GetHeight();
+	u_int uWidth = g_xEngine.FluxSwapchain().GetWidth();
+	u_int uHeight = g_xEngine.FluxSwapchain().GetHeight();
 
 	// Calculate output dimensions for this mip
 	u_int uMipWidth = std::max(1u, uWidth >> uMip);
@@ -151,7 +138,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	// For mip 0, read from depth buffer; for other mips, read from previous mip
 	if (uMip == 0)
 	{
-		xBinder.BindSRV(xHiZ.m_xComputeShader, "g_xInputTex", xHiZ.m_pxGraphics->GetDepthStencilSRV());
+		xBinder.BindSRV(xHiZ.m_xComputeShader, "g_xInputTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	}
 	else
 	{
@@ -183,8 +170,8 @@ void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	UpdateMipCountFromSwapchain();
 
 	Flux_TransientTextureDesc xHiZDesc;
-	xHiZDesc.m_uWidth       = m_pxSwapchain->GetWidth();
-	xHiZDesc.m_uHeight      = m_pxSwapchain->GetHeight();
+	xHiZDesc.m_uWidth       = g_xEngine.FluxSwapchain().GetWidth();
+	xHiZDesc.m_uHeight      = g_xEngine.FluxSwapchain().GetHeight();
 	xHiZDesc.m_eFormat      = HIZ_FORMAT;
 	xHiZDesc.m_uNumMips     = m_uMipCount;
 	xHiZDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__UNORDERED_ACCESS) | (1u << MEMORY_FLAGS__SHADER_READ);
@@ -211,7 +198,7 @@ void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			.WritesTransient(m_xHiZBufferHandle, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 
 		if (uMip == 0)
-			xGraph.Read(xPass, m_pxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+			xGraph.Read(xPass, g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 		else
 			xGraph.ReadTransient(xPass, m_xHiZBufferHandle, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 	}

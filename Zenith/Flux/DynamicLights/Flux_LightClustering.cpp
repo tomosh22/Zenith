@@ -52,10 +52,8 @@ void Flux_LightClusteringImpl::BuildPipelines()
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }
 
-void Flux_LightClusteringImpl::Initialise(Flux_MemoryManager& xVulkanMemory)
+void Flux_LightClusteringImpl::Initialise()
 {
-	m_pxVulkanMemory = &xVulkanMemory;
-
 	// Cluster light counts: 3456 * 4 bytes ≈ 14 KB.
 	const u_int64 ulCountBufferSize = uCLUSTER_COUNT * sizeof(u_int);
 	// Cluster light indices: 3456 * 64 * 4 bytes ≈ 884 KB.
@@ -63,13 +61,15 @@ void Flux_LightClusteringImpl::Initialise(Flux_MemoryManager& xVulkanMemory)
 
 	// Zero-initialise both. Frame 0 reads will see counts = 0 and the
 	// cluster loop in the fragment shader will run zero iterations.
+	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+
 	Zenith_Vector<u_int> xZeroedCounts(uCLUSTER_COUNT);
 	for (u_int u = 0; u < uCLUSTER_COUNT; ++u) xZeroedCounts.PushBack(0);
-	m_pxVulkanMemory->InitialiseReadWriteBuffer(xZeroedCounts.GetDataPointer(), ulCountBufferSize, m_xClusterLightCounts);
+	xVulkanMemory.InitialiseReadWriteBuffer(xZeroedCounts.GetDataPointer(), ulCountBufferSize, m_xClusterLightCounts);
 
 	Zenith_Vector<u_int> xZeroedIndices(uCLUSTER_COUNT * uMAX_LIGHTS_PER_CLUSTER);
 	for (u_int u = 0; u < uCLUSTER_COUNT * uMAX_LIGHTS_PER_CLUSTER; ++u) xZeroedIndices.PushBack(0);
-	m_pxVulkanMemory->InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, m_xClusterLightIndices);
+	xVulkanMemory.InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, m_xClusterLightIndices);
 
 	BuildPipelines();
 
@@ -90,10 +90,9 @@ void Flux_LightClusteringImpl::Shutdown()
 {
 	if (!m_bInitialised) return;
 
-	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xClusterLightCounts);
-	m_pxVulkanMemory->DestroyReadWriteBuffer(m_xClusterLightIndices);
+	g_xEngine.FluxMemory().DestroyReadWriteBuffer(m_xClusterLightCounts);
+	g_xEngine.FluxMemory().DestroyReadWriteBuffer(m_xClusterLightIndices);
 
-	m_pxVulkanMemory = nullptr;
 	m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering shut down");
 }

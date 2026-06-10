@@ -81,12 +81,8 @@ void Flux_GizmosImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xSpec);
 }
 
-void Flux_GizmosImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_PrimitivesImpl& xPrimitives, Flux_MemoryManager& xVulkanMemory)
+void Flux_GizmosImpl::Initialise()
 {
-	m_pxFluxGraphics = &xFluxGraphics;
-	m_pxPrimitives   = &xPrimitives;
-	m_pxVulkanMemory = &xVulkanMemory;
-
 	BuildPipelines();
 
 	// Generate gizmo geometry
@@ -110,13 +106,13 @@ void Flux_GizmosImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_Primitiv
 void Flux_GizmosImpl::Shutdown()
 {
 	// Destroy GPU buffers for all gizmo geometry
-	Flux_MemoryManager* pxVulkanMemory = m_pxVulkanMemory;
-	auto DestroyGeometryBuffers = [pxVulkanMemory](Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometry)
+	auto DestroyGeometryBuffers = [](Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometry)
 	{
+		Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 		for (uint32_t i = 0; i < xGeometry.GetSize(); ++i)
 		{
-			pxVulkanMemory->DestroyVertexBuffer(xGeometry.Get(i).m_xVertexBuffer);
-			pxVulkanMemory->DestroyIndexBuffer(xGeometry.Get(i).m_xIndexBuffer);
+			xVulkanMemory.DestroyVertexBuffer(xGeometry.Get(i).m_xVertexBuffer);
+			xVulkanMemory.DestroyIndexBuffer(xGeometry.Get(i).m_xIndexBuffer);
 		}
 		xGeometry.Clear();
 	};
@@ -124,10 +120,6 @@ void Flux_GizmosImpl::Shutdown()
 	DestroyGeometryBuffers(m_xTranslateGeometry);
 	DestroyGeometryBuffers(m_xRotateGeometry);
 	DestroyGeometryBuffers(m_xScaleGeometry);
-
-	m_pxFluxGraphics = nullptr;
-	m_pxPrimitives   = nullptr;
-	m_pxVulkanMemory = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos shut down");
 }
@@ -185,13 +177,13 @@ void Flux_GizmosImpl::UploadGizmoGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGe
 	xGeom.m_xColor = xColor;
 	xGeom.m_uIndexCount = xIndices.GetSize();
 
-	m_pxVulkanMemory->InitialiseVertexBuffer(
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xVertexData.GetDataPointer(),
 		xVertexData.GetSize() * sizeof(float),
 		xGeom.m_xVertexBuffer
 	);
 
-	m_pxVulkanMemory->InitialiseIndexBuffer(
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(
 		xIndices.GetDataPointer(),
 		xIndices.GetSize() * sizeof(uint32_t),
 		xGeom.m_xIndexBuffer
@@ -262,7 +254,7 @@ void Flux_GizmosImpl::GatherGizmoPacket(void*)
 	// Calculate gizmo scale based on camera distance for consistent screen size
 	Zenith_Maths::Vector3 xEntityPos;
 	g_xGizmoTransformAccess.m_pfnGetPosition(pxEntity, xEntityPos);
-	Zenith_Maths::Vector3 xCameraPos = m_pxFluxGraphics->GetCameraPosition();
+	Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	float fDistance = glm::length(xEntityPos - xCameraPos);
 	// Keep the live member in sync — the interaction raycast path (RaycastGizmo /
 	// ApplyTranslation / ApplyScale) reads m_fGizmoScale outside the packet.
@@ -271,13 +263,14 @@ void Flux_GizmosImpl::GatherGizmoPacket(void*)
 #ifdef ZENITH_DEBUG
 	// Visualize gizmo interaction bounding boxes for debugging. Now issued on the
 	// main thread from Prepare (was previously a worker-thread shared-state write).
-	m_pxPrimitives->AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+	xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale),
 		Zenith_Maths::Vector3(1, 0, 0));
-	m_pxPrimitives->AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
+	xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale),
 		Zenith_Maths::Vector3(0, 1, 0));
-	m_pxPrimitives->AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
+	xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f),
 		Zenith_Maths::Vector3(0, 0, 1));
 #endif
@@ -335,7 +328,7 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 
 	// Create binder once - bind frame constants once (same for all gizmo components)
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(xGizmos.m_xShader, "FrameConstants", &xGizmos.m_pxFluxGraphics->m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(xGizmos.m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)
@@ -378,7 +371,7 @@ void Flux_GizmosImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// then reads only the gathered packet.
 	xGraph.AddPass("Gizmos", ExecuteGizmos)
 		.Prepare([](void* p){ g_xEngine.Gizmos().GatherGizmoPacket(p); })
-		.Writes(m_pxFluxGraphics->GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_GizmosImpl::SetTargetEntity(Zenith_Entity* pxEntity)
@@ -865,7 +858,7 @@ void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Z
 	// For uniform scale, use the camera view direction as the constraint axis
 	if (bUniformScale)
 	{
-		Zenith_Maths::Vector3 xCameraPos = m_pxFluxGraphics->GetCameraPosition();
+		Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 		axis = glm::normalize(m_xInitialEntityPosition - xCameraPos);
 	}
 

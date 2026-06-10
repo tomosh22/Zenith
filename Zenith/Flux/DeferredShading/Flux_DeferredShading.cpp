@@ -53,19 +53,8 @@ void Flux_DeferredShadingImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
 }
 
-void Flux_DeferredShadingImpl::Initialise(Flux_GraphicsImpl& xFluxGraphics, Flux_HDRImpl& xHDR, Flux_ShadowsImpl& xShadows,
-	Flux_IBLImpl& xIBL, Flux_SSRImpl& xSSR, Flux_SSGIImpl& xSSGI,
-	Flux_DynamicLightsImpl& xDynamicLights, Flux_LightClusteringImpl& xLightClustering)
+void Flux_DeferredShadingImpl::Initialise()
 {
-	m_pxFluxGraphics = &xFluxGraphics;
-	m_pxHDR = &xHDR;
-	m_pxShadows = &xShadows;
-	m_pxIBL = &xIBL;
-	m_pxSSR = &xSSR;
-	m_pxSSGI = &xSSGI;
-	m_pxDynamicLights = &xDynamicLights;
-	m_pxLightClustering = &xLightClustering;
-
 	BuildPipelines();
 
 	#ifdef ZENITH_DEBUG_VARIABLES
@@ -90,27 +79,18 @@ void Flux_DeferredShadingImpl::Shutdown()
 	// Pipeline references its shader, so destroy pipeline first.
 	m_xPipeline.Reset();
 	m_xShader.Reset();
-
-	m_pxFluxGraphics = nullptr;
-	m_pxHDR = nullptr;
-	m_pxShadows = nullptr;
-	m_pxIBL = nullptr;
-	m_pxSSR = nullptr;
-	m_pxSSGI = nullptr;
-	m_pxDynamicLights = nullptr;
-	m_pxLightClustering = nullptr;
 }
 
 static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 {
 	Flux_DeferredShadingImpl& xDS = g_xEngine.DeferredShading();
-	Flux_GraphicsImpl& xFluxGraphics = *xDS.m_pxFluxGraphics;
-	Flux_ShadowsImpl& xShadows = *xDS.m_pxShadows;
-	Flux_IBLImpl& xIBL = *xDS.m_pxIBL;
-	Flux_SSRImpl& xSSR = *xDS.m_pxSSR;
-	Flux_SSGIImpl& xSSGI = *xDS.m_pxSSGI;
-	Flux_DynamicLightsImpl& xDynamicLights = *xDS.m_pxDynamicLights;
-	Flux_LightClusteringImpl& xLightClustering = *xDS.m_pxLightClustering;
+	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
+	Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
+	Flux_IBLImpl& xIBL = g_xEngine.IBL();
+	Flux_SSRImpl& xSSR = g_xEngine.SSR();
+	Flux_SSGIImpl& xSSGI = g_xEngine.SSGI();
+	Flux_DynamicLightsImpl& xDynamicLights = g_xEngine.DynamicLights();
+	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xDS.m_xPipeline);
 
@@ -226,20 +206,22 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// at the semicolon. All loop/conditional declarations below go through
 	// the graph's Read/ReadTransient helpers with the captured handle.
 	const Flux_PassHandle xPass = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting)
-		.Writes(m_pxHDR->GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.ClearTargets();
 
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-		xGraph.Read(xPass, m_pxFluxGraphics->GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
+	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
-	xGraph.Read(xPass, m_pxFluxGraphics->GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+		xGraph.Read(xPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
+
+	xGraph.Read(xPass, xFluxGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// Shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		uint32_t uNumColour;
 		Flux_RenderAttachment* pxDepthStencil;
-		m_pxShadows->GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
+		g_xEngine.Shadows().GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
 		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
@@ -252,11 +234,12 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// here would be stale on subsequent frames. Visibility of its
 	// host-side upload is covered by vkQueueSubmit's implicit host-write
 	// barrier instead.
-	if (m_pxLightClustering->IsInitialised())
+	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
+	if (xLightClustering.IsInitialised())
 	{
-		xGraph.ReadBuffer(xPass, m_pxLightClustering->GetClusterLightCountsBuffer().GetBuffer(),
+		xGraph.ReadBuffer(xPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
 			RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadBuffer(xPass, m_pxLightClustering->GetClusterLightIndicesBuffer().GetBuffer(),
+		xGraph.ReadBuffer(xPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
 			RESOURCE_ACCESS_READ_SRV);
 	}
 
@@ -265,14 +248,15 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// at SetupRenderGraph time. Runtime toggles trigger g_xEngine.FluxRenderer().RequestGraphRebuild()
 	// via ApplyBlurSelectionToGraph / ApplyDenoiseSelectionToGraph, which re-runs
 	// this SetupRenderGraph and re-resolves the handle.
-	if (m_pxSSR->IsInitialised())
-		xGraph.ReadTransient(xPass, m_pxSSR->GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
-	if (m_pxSSGI->IsInitialised())
-		xGraph.ReadTransient(xPass, m_pxSSGI->GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
+	if (g_xEngine.SSR().IsInitialised())
+		xGraph.ReadTransient(xPass, g_xEngine.SSR().GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
+	if (g_xEngine.SSGI().IsInitialised())
+		xGraph.ReadTransient(xPass, g_xEngine.SSGI().GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
 
 	// IBL textures — BRDF LUT, irradiance cubemap, prefiltered cubemap. Cubemap
 	// reads default to FLUX_RG_ALL_MIPS / FLUX_RG_ALL_LAYERS.
-	xGraph.Read(xPass, m_pxIBL->m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, m_pxIBL->m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, m_pxIBL->m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	Flux_IBLImpl& xIBL = g_xEngine.IBL();
+	xGraph.Read(xPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
 }
