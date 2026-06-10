@@ -737,17 +737,15 @@ uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
 	// and the ring index. The swapchain's previous s_uFrameIndex member has
 	// been removed; backends and engine code that need the current ring slot
 	// all derive it from here.
-	//
-	// Null seam guard: boot-time uploads (Zenith_Engine::InitialiseGPUAssets
-	// and the top of Flux_RendererImpl::LateInitialise) run
-	// FluxMemory().BeginFrame() -> BeginRecording() -> here BEFORE Initialise()
-	// wires m_pxFluxRenderer. The ring index is 0 by definition then — the
-	// frame counter cannot have advanced before the first EndFrame. Same
-	// hazard class as the terrain streaming manager's guarded seam (532b06fb):
-	// the call was null-this-safe while GetRingIndex re-fetched the singleton;
-	// 037bc84d made it real member access.
+	// m_pxFluxRenderer is wired in Initialise(), but boot-time GPU asset
+	// uploads (Zenith_Engine::InitialiseGPUAssets -> MemoryManager::BeginFrame
+	// -> CommandBuffer::BeginRecording) ask for the ring slot before the
+	// swapchain initialises. The frame counter is still 0 there, so ring
+	// slot 0 is the correct answer.
 	if (m_pxFluxRenderer == nullptr)
+	{
 		return 0;
+	}
 	return m_pxFluxRenderer->GetRingIndex();
 }
 
