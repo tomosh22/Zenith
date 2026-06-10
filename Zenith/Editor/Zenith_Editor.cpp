@@ -7,7 +7,6 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Zenith_Editor.h"
 #include "Zenith_EditorState.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Core/Zenith_CommandLine.h"
@@ -47,6 +46,10 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Core/FrameContext.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
+#include "Profiling/Zenith_Profiling.h"
+#include "Flux/Flux_BackendTypes.h"   // complete Flux_PlatformAPI type for ImGuiBeginFrame
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
@@ -277,8 +280,16 @@ void Zenith_Editor::ApplyEditorTheme()
 	}
 }
 
-void Zenith_Editor::Initialise()
+void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl& xFluxGraphics, FrameContext& xFrame,
+	Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling)
 {
+	// Cache the injected frame deps for RenderImGuiFrame (see header).
+	m_pxFluxBackend    = &xFluxBackend;
+	m_pxFluxGraphics   = &xFluxGraphics;
+	m_pxFrame          = &xFrame;
+	m_pxDebugVariables = &xDebugVariables;
+	m_pxProfiling      = &xProfiling;
+
 	ApplyEditorTheme();
 
 	// Initialize content browser to game assets directory
@@ -298,6 +309,72 @@ void Zenith_Editor::Initialise()
 
 	// Editor camera initialisation is deferred to Update() - Initialise() runs
 	// before InitialiseProject(), so the scene's main camera doesn't exist yet.
+}
+
+// File-local helper for RenderImGuiFrame: recursively draws the debug-variable
+// tree into the legacy "Zenith Tools" window. (Relocated from Zenith_Core.cpp,
+// where it leaked external linkage.)
+static void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth)
+{
+	ImGui::PushID(pxNode);
+
+	if (!ImGui::CollapsingHeader(pxNode->m_xName.Get(uCurrentDepth).c_str()))
+	{
+		ImGui::PopID();
+		return;
+	}
+
+	ImGui::Indent();
+
+	for (Zenith_DebugVariableTree::LeafNodeBase* pxLeaf : pxNode->m_xLeaves)
+	{
+		pxLeaf->ImGuiDisplay();
+	}
+	for (Zenith_DebugVariableTree::Node* pxChild : pxNode->m_xChildren)
+	{
+		TraverseTree(pxChild, uCurrentDepth + 1);
+	}
+
+	ImGui::Unindent();
+	ImGui::PopID();
+}
+
+void Zenith_Editor::RenderImGuiFrame()
+{
+	// Deps are wired in Initialise(), which the engine only runs windowed --
+	// the same condition under which the main loop reaches this call.
+	Zenith_Assert(m_pxFluxBackend != nullptr, "RenderImGuiFrame called before Initialise");
+
+	m_pxFluxBackend->ImGuiBeginFrame();
+
+	// Render the editor UI (includes docking, viewport, hierarchy, etc.)
+	Render();
+
+	// Also render the old debug tools window for backwards compatibility
+	ImGui::Begin("Zenith Tools");
+
+	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad.z));
+	ImGui::Text(strCamPosText.c_str());
+
+	std::string strFpsText = "FPS: " + std::to_string(1.f / m_pxFrame->GetDt());
+	ImGui::Text(strFpsText.c_str());
+
+	Zenith_DebugVariableTree& xTree = m_pxDebugVariables->m_xTree;
+	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
+	TraverseTree(pxRoot, 0);
+
+	ImGui::End();
+
+	// Render profiling window. Manual begin/end (rather than the
+	// FUNCTION_WRAPPER macro) because RenderToImGui is a member
+	// function and can't be passed as a free-function-style callable.
+	{
+		Zenith_Profiling::Scope xRenderProfileScope(ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
+		m_pxProfiling->RenderToImGui();
+	}
+
+	// Finalize ImGui rendering data - this MUST be called before submitting the render task
+	ImGui::Render();
 }
 
 void Zenith_Editor::Shutdown()

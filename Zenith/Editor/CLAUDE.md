@@ -41,7 +41,7 @@ Scene::Update (conditional)
 UploadFrameConstants
   ↓
 SubmitRenderTasks
-  ├─ RenderImGui() calls Zenith_Editor::Render()
+  ├─ Zenith_Editor::RenderImGuiFrame() (composes the ImGui frame, calls Render())
   └─ Flux_Gizmos::SubmitRenderTask()
   ↓
 WaitForRenderTasks
@@ -66,7 +66,7 @@ Three operations use deferred execution, all scene loads:
 New Scene and Save Scene execute directly in the menu callback (no render tasks are active during RenderImGui).
 
 **Synchronization Sequence:**
-- Menu items rendered during `RenderImGui()` (render tasks active)
+- Menu items rendered during `Zenith_Editor::RenderImGuiFrame()` (render tasks active)
 - Flags set, no immediate action
 - Next frame: `Update()` checks flags BEFORE any rendering starts
 - Safe to modify scene data (no concurrent access)
@@ -485,7 +485,7 @@ All editor operations execute on main thread only:
 ### Race Condition Prevention
 
 **Why Deferred Operations:**
-- Menu bar rendered during `RenderImGui()` → active render tasks
+- Menu bar rendered during `Zenith_Editor::RenderImGuiFrame()` → active render tasks
 - Immediate scene load would race with workers reading component data
 - Deferred to next frame's `Update()` → executes BEFORE render tasks start
 

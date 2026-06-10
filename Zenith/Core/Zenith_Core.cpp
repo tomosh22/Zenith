@@ -11,16 +11,13 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Core/Zenith_AutomatedTest.h"
 #endif
-#include "DebugVariables/Zenith_DebugVariables.h"
-#include "DebugVariables/Zenith_DebugVariables.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "ZenithECS/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
+#include "EntityComponent/Zenith_UISystem.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RendererImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Fog/Flux_FogImpl.h"
@@ -55,69 +52,6 @@ void Zenith_Core::UpdateTimers()
 
 	xFrame.AddTimePassed(xFrame.GetDt());
 }
-
-#ifdef ZENITH_TOOLS
-
-void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth)
-{
-	ImGui::PushID(pxNode);
-	
-	if (!ImGui::CollapsingHeader(pxNode->m_xName.Get(uCurrentDepth).c_str()))
-	{
-		ImGui::PopID();
-		return;
-	}
-	
-	ImGui::Indent();
-	
-	for (Zenith_DebugVariableTree::LeafNodeBase* pxLeaf : pxNode->m_xLeaves)
-	{
-		pxLeaf->ImGuiDisplay();
-	}
-	for (Zenith_DebugVariableTree::Node* pxChild : pxNode->m_xChildren)
-	{
-		TraverseTree(pxChild, uCurrentDepth + 1);
-	}
-	
-	ImGui::Unindent();
-	ImGui::PopID();
-}
-
-void RenderImGui()
-{
-	g_xEngine.FluxBackend().ImGuiBeginFrame();
-	
-	// Render the editor UI (includes docking, viewport, hierarchy, etc.)
-	g_xEngine.Editor().Render();
-	
-	// Also render the old debug tools window for backwards compatibility
-	ImGui::Begin("Zenith Tools");
-
-	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.z));
-	ImGui::Text(strCamPosText.c_str());
-
-	std::string strFpsText = "FPS: " + std::to_string(1.f / g_xEngine.Frame().GetDt());
-	ImGui::Text(strFpsText.c_str());
-
-	Zenith_DebugVariableTree& xTree = g_xEngine.DebugVariables().m_xTree;
-	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
-	TraverseTree(pxRoot, 0);
-
-	ImGui::End();
-	
-	// Render profiling window. Manual begin/end (rather than the
-	// FUNCTION_WRAPPER macro) because RenderToImGui is now a member
-	// function and can't be passed as a free-function-style callable.
-	{
-		Zenith_Profiling::Scope xRenderProfileScope(ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
-		g_xEngine.Profiling().RenderToImGui();
-	}
-	
-	// Finalize ImGui rendering data - this MUST be called before submitting the render task
-	ImGui::Render();
-}
-
-#endif
 
 static void ExecuteRenderGraph()
 {
@@ -246,41 +180,16 @@ void Zenith_Core::Zenith_MainLoop()
 		}
 		#endif
 
-		// Render UI components - submits to Flux_Quads and Flux_Text
-		// Must happen before SubmitRenderTasks() which submits those systems
-		// Collects from ALL loaded scenes (persistent entity UI + game scene UI).
-		//
-		// Two-pass: all Updates first (button clicks queue scene loads), then
-		// the guard scope closes which drains any pending load, then we
-		// re-collect components and Render. Without the split the click's
-		// canvas would paint once more before the deferred load tears it
-		// down — the "buttons persist for a frame" symptom.
-		{
-			Zenith_SceneUpdateDeferralGuard xUpdateGuard;
-			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-			xUIComponents.Clear();
-			g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach([&xUIComponents](Zenith_EntityID, Zenith_UIComponent& xComp) { xUIComponents.PushBack(&xComp); });
-			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
-			{
-				xIt.GetData()->Update(g_xEngine.Frame().GetDt());
-			}
-		}
-		// Guard destructor above drained any deferred LoadScene — scene may
-		// have swapped here. Re-collect post-drain so we render the new
-		// scene's UI, not the destroyed one.
-		{
-			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-			xUIComponents.Clear();
-			g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach([&xUIComponents](Zenith_EntityID, Zenith_UIComponent& xComp) { xUIComponents.PushBack(&xComp); });
-			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
-			{
-				xIt.GetData()->Render();
-			}
-		}
+		// UI component frame (update + quad/text submission to Flux_Quads /
+		// Flux_Text). Must happen before ExecuteRenderGraph() below, which
+		// consumes those submissions. The two-pass structure (and the
+		// deferred-LoadScene drain between the passes) lives inside
+		// Zenith_UISystem::Update.
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.UI().Update, ZENITH_PROFILE_INDEX__UI_UPDATE, g_xEngine.Frame().GetDt());
 
 		// W22: ordering constraint documented on Flux_RenderGraph::Execute.
 		#ifdef ZENITH_TOOLS
-		ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Editor().RenderImGuiFrame, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
 		#endif
 
 		// Render-phase boundary. Compiled in ALL configs (the signal is a real

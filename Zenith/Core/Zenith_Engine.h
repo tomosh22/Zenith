@@ -59,6 +59,7 @@ class Zenith_Physics;
 class Zenith_Profiling;
 class Zenith_SceneSystem;
 class Zenith_TaskSystem;
+class Zenith_UISystem;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
 // state. Phase 0 introduces the class and moves the bootstrap ordering
@@ -112,6 +113,7 @@ public:
 	Zenith_Physics& Physics();
 	Zenith_EntityStore& EntityStore();
 	Zenith_SceneSystem& Scenes();
+	Zenith_UISystem& UI();
 	Zenith_Input& Input();
 	Zenith_TouchInput& Touch();
 	Flux_RendererImpl& FluxRenderer();
@@ -214,6 +216,7 @@ private:
 	// m_pxScenes->GetEntityStore(). (The Zenith_EntityStore forward-decl above is
 	// still needed for the EntityStore() accessor return type.)
 	Zenith_SceneSystem*             m_pxScenes          = nullptr;
+	Zenith_UISystem*                m_pxUISystem        = nullptr;
 	Zenith_Input*                   m_pxInput           = nullptr;
 	Zenith_TouchInput*              m_pxTouch           = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;

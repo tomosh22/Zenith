@@ -66,8 +66,9 @@ void Zenith_Editor::RenderFileMenu()
 			// create a fresh empty scene, and make it active. All four callbacks fire in
 			// the documented order; the handle recycles; the new scene has a clean identity.
 			//
-			// Safe to call directly from the menu callback because RenderImGui runs after
-			// all render tasks have completed (see Zenith_Editor.cpp's main-loop comment).
+			// Safe to call directly from the menu callback because RenderImGuiFrame runs
+			// after all render tasks have completed (see the main-loop ordering in
+			// Zenith_Core.cpp).
 			Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 			if (xActiveScene.IsValid())
 			{

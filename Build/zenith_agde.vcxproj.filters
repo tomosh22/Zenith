@@ -736,6 +736,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>FileAccess</Filter>
     </ClCompile>
@@ -3556,6 +3559,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
