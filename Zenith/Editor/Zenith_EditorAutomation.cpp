@@ -14,6 +14,7 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -418,6 +419,101 @@ void Zenith_EditorAutomation::AddStep_SetModelMaterial(int iIndex, Zenith_Materi
 void Zenith_EditorAutomation::AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TERRAIN_MATERIAL, iSlot, pxMaterial); }
 void Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath(const char* szPath)                      { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TERRAIN_SPLATMAP_PATH, szPath); }
 
+// -- Terrain-Editor Authoring --
+
+void Zenith_EditorAutomation::AddStep_TerrainResetSession()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_RESET;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainGenerateProcedural(int iSeed, float fBaseHeight, float fAmplitude,
+	float fFrequency, int iOctaves, float fLacunarity, float fGain, float fRidgedBlend)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_GENERATE_PROCEDURAL;
+	xAction.m_aiArgs[0] = iSeed;
+	xAction.m_aiArgs[1] = iOctaves;
+	xAction.m_afArgs[0] = fBaseHeight;
+	xAction.m_afArgs[1] = fAmplitude;
+	xAction.m_afArgs[2] = fFrequency;
+	xAction.m_afArgs[3] = fLacunarity;
+	xAction.m_afArgs[4] = fGain;
+	xAction.m_afArgs[5] = fRidgedBlend;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainBrushStroke(int iTool, float fWorldX, float fWorldZ,
+	float fRadius, float fStrength, float fToolValue)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_BRUSH_STROKE;
+	xAction.m_aiArgs[0] = iTool;
+	xAction.m_afArgs[0] = fWorldX;
+	xAction.m_afArgs[1] = fWorldZ;
+	xAction.m_afArgs[2] = fRadius;
+	xAction.m_afArgs[3] = fStrength;
+	xAction.m_afArgs[4] = fToolValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainSampleStamp(float fWorldX, float fWorldZ, float fRadius)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_SAMPLE_STAMP;
+	xAction.m_afArgs[0] = fWorldX;
+	xAction.m_afArgs[1] = fWorldZ;
+	xAction.m_afArgs[2] = fRadius;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainAutoSplatRule(int iSlot, float fHeightMin, float fHeightMax,
+	float fSlopeMinDeg, float fSlopeMaxDeg, float fWeight, float fJitter)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_AUTO_SPLAT_RULE;
+	xAction.m_aiArgs[0] = iSlot;
+	xAction.m_afArgs[0] = fHeightMin;
+	xAction.m_afArgs[1] = fHeightMax;
+	xAction.m_afArgs[2] = fSlopeMinDeg;
+	xAction.m_afArgs[3] = fSlopeMaxDeg;
+	xAction.m_afArgs[4] = fWeight;
+	xAction.m_afArgs[5] = fJitter;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainRunAutoSplat()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_RUN_AUTO_SPLAT;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainErode(int iHydraulicDroplets, int iThermalIterations, int iSeed)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_ERODE;
+	xAction.m_aiArgs[0] = iHydraulicDroplets;
+	xAction.m_aiArgs[1] = iThermalIterations;
+	xAction.m_afArgs[0] = static_cast<float>(iSeed);
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainSaveTextures()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_SAVE_TEXTURES;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_TerrainExportChunks()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_EXPORT_CHUNKS;
+	m_axActions.PushBack(xAction);
+}
+
 // -- Prefab Variant Authoring --
 
 void Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath)
@@ -502,8 +598,101 @@ void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)())
 // Action Execution
 //=============================================================================
 
+// Terrain-editor authoring actions (TERRAIN_EDITOR_*). Split out of
+// ExecuteAction: they share standalone-session bootstrapping and would push
+// the main switch over the complexity gate. Relies on the TERRAIN_EDITOR_*
+// enum values being contiguous (they are declared as one block).
+static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+	if (!xTerrainEditor.IsActive())
+	{
+		xTerrainEditor.OpenStandalone();
+	}
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::TERRAIN_EDITOR_RESET:
+		xTerrainEditor.ResetImagesToDefaults();
+		break;
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_GENERATE_PROCEDURAL:
+	{
+		Zenith_TerrainProceduralParams xParams;
+		xParams.m_uSeed = static_cast<u_int>(xAction.m_aiArgs[0]);
+		xParams.m_uOctaves = static_cast<u_int>(xAction.m_aiArgs[1]);
+		xParams.m_fBaseHeight = xAction.m_afArgs[0];
+		xParams.m_fAmplitude = xAction.m_afArgs[1];
+		xParams.m_fFrequency = xAction.m_afArgs[2];
+		xParams.m_fLacunarity = xAction.m_afArgs[3];
+		xParams.m_fGain = xAction.m_afArgs[4];
+		xParams.m_fRidgedBlend = xAction.m_afArgs[5];
+		xTerrainEditor.GenerateProcedural(xParams);
+		break;
+	}
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_BRUSH_STROKE:
+		// Direct dab (no stroke bracketing): automation needs no undo capture.
+		xTerrainEditor.ApplyBrushDab(static_cast<Zenith_TerrainBrushTool>(xAction.m_aiArgs[0]),
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3], xAction.m_afArgs[4]);
+		break;
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_SAMPLE_STAMP:
+		xTerrainEditor.SampleStamp(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
+		break;
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_AUTO_SPLAT_RULE:
+	{
+		Zenith_TerrainAutoSplatRule xRule;
+		xRule.m_bEnabled = true;
+		xRule.m_fHeightMin = xAction.m_afArgs[0];
+		xRule.m_fHeightMax = xAction.m_afArgs[1];
+		xRule.m_fSlopeMinDeg = xAction.m_afArgs[2];
+		xRule.m_fSlopeMaxDeg = xAction.m_afArgs[3];
+		xRule.m_fWeight = xAction.m_afArgs[4];
+		xRule.m_fNoiseJitter = xAction.m_afArgs[5];
+		xTerrainEditor.SetAutoSplatRule(static_cast<u_int>(xAction.m_aiArgs[0]), xRule);
+		break;
+	}
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_RUN_AUTO_SPLAT:
+		xTerrainEditor.RunAutoSplat();
+		break;
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_ERODE:
+	{
+		Zenith_TerrainErosionParams xParams;
+		xParams.m_uHydraulicDroplets = static_cast<u_int>(xAction.m_aiArgs[0]);
+		xParams.m_uThermalIterations = static_cast<u_int>(xAction.m_aiArgs[1]);
+		xParams.m_uSeed = static_cast<u_int>(xAction.m_afArgs[0]);
+		xTerrainEditor.RunErosion(xParams, true /* synchronous */);
+		break;
+	}
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_SAVE_TEXTURES:
+		xTerrainEditor.SaveTextures();
+		break;
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS:
+		xTerrainEditor.BakeMeshes();
+		break;
+
+	default:
+		Zenith_Assert(false, "Non-terrain action routed to ExecuteTerrainEditorAction");
+		break;
+	}
+}
+
 void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 {
+	// Terrain-editor authoring actions have their own executor (see above).
+	if (xAction.m_eType >= Zenith_EditorActionType::TERRAIN_EDITOR_RESET &&
+		xAction.m_eType <= Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS)
+	{
+		ExecuteTerrainEditorAction(xAction);
+		return;
+	}
+
 	switch (xAction.m_eType)
 	{
 	//--------------------------------------------------------------------------

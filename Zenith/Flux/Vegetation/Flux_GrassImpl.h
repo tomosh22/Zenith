@@ -92,6 +92,16 @@ public:
 
 	void GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh);
 
+	// Painted grass-density map [0,1], row-major over the terrain's world
+	// footprint (fWorldSize metres square, origin at world 0,0). Sampled
+	// bilinearly at each triangle centroid (and per blade) inside
+	// GenerateFromTerrain and multiplied into the placement density. Pass
+	// nullptr / 0 to clear. The data is COPIED.
+	void SetDensityMap(const float* pfData, u_int uWidth, u_int uHeight, float fWorldSize);
+	bool HasDensityMap() const { return m_uDensityMapWidth > 0 && m_uDensityMapHeight > 0; }
+	// Bilinear density sample at world XZ; 1.0 when no map is set.
+	float SampleDensityMap(float fWorldX, float fWorldZ) const;
+
 #ifdef ZENITH_TOOLS
 	void RegisterDebugVariables();
 #endif
@@ -125,6 +135,12 @@ public:
 	float                             m_fMaxDistance   = GrassConfig::fMAX_DISTANCE;
 	float                             m_fWindStrength  = 1.0f;
 	Zenith_Maths::Vector2             m_xWindDirection = glm::normalize(Zenith_Maths::Vector2(1.0f, 0.2f));
+
+	// Optional painted density map (terrain editor / GrassDensity.ztxtr).
+	Zenith_Vector<float>              m_xDensityMap;
+	u_int                             m_uDensityMapWidth  = 0;
+	u_int                             m_uDensityMapHeight = 0;
+	float                             m_fDensityMapWorldSize = 4096.0f;
 
 	Flux_DynamicConstantBuffer        m_xGrassConstantsBuffer;
 };

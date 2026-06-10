@@ -29,6 +29,7 @@ class Flux_GraphicsImpl;
 class FrameContext;
 class Zenith_DebugVariables;
 class Zenith_Profiling;
+class Zenith_TerrainEditor;
 
 // Content browser view mode
 enum class ContentBrowserViewMode
@@ -111,10 +112,17 @@ public:
 	// per-frame ImGui composition never reaches for g_xEngine from this TU
 	// (engine-singleton ratchet: Zenith_Editor.cpp is a counted file).
 	void Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl& xFluxGraphics, FrameContext& xFrame,
-		Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling);
+		Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling, Zenith_TerrainEditor& xTerrainEditor);
 	void Shutdown();
 	bool Update();
 	void Render();
+
+	// Redirects ImGui layout persistence to %LOCALAPPDATA%/Zenith/<GameName>/
+	// imgui.ini for interactive runs, and DISABLES it (nullptr ini) for
+	// headless/automated/--no-imgui-ini runs so tests always get the
+	// deterministic code-built dock layout. Called from Initialise — must run
+	// between ImGui::CreateContext and the first NewFrame.
+	void ConfigureImGuiIniPath();
 
 	// Composes the whole per-frame ImGui pass: backend ImGuiBeginFrame ->
 	// editor panels (Render) -> legacy "Zenith Tools" debug window ->
@@ -188,6 +196,11 @@ public:
 
 	bool EnterPlayMode();
 	void EnterStopMode();
+
+	// Open a terrain-editing session on a terrain entity and show the panel.
+	// Forwarder so component editors (EntityComponent layer) can launch the
+	// terrain editor without including Editor/TerrainEditor headers.
+	void OpenTerrainEditor(Zenith_EntityID uTerrainEntity);
 
 	void RenderConsolePanel();
 	void RenderMainMenuBar();
@@ -263,6 +276,12 @@ public:
 	FrameContext*          m_pxFrame          = nullptr;
 	Zenith_DebugVariables* m_pxDebugVariables = nullptr;
 	Zenith_Profiling*      m_pxProfiling      = nullptr;
+	Zenith_TerrainEditor*  m_pxTerrainEditor  = nullptr;
+
+	// Counts down after a default-dock-layout build; on hitting 0 the
+	// intended front tabs are re-selected (late-created windows steal tab
+	// selection during the build frame — see Render()).
+	u_int m_uFrontDefaultTabsCountdown = 0;
 };
 
 #endif // ZENITH_TOOLS

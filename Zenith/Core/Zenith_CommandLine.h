@@ -43,6 +43,18 @@ namespace Zenith_CommandLine
     // device, no GPU resources, no window visible".
     bool IsHeadless();
 
+    // True iff `--automated-test` or `--all-automated-tests` was on the
+    // command line. Parsed HERE (not just by Zenith_AutomatedTestRunner,
+    // whose ParseCommandLine deliberately runs after Zenith_Init) because
+    // ImGui ini gating needs the answer during editor init — tests must get
+    // the deterministic code-built dock layout, never a stale imgui.ini.
+    bool IsAutomatedTestRun();
+
+    // True iff `--no-imgui-ini` was on the command line. Forces the editor
+    // to skip ImGui ini load/save even for interactive runs (used by capture
+    // harnesses / smoke scripts that want the code-built default layout).
+    bool IsImGuiIniDisabled();
+
     // Screenshot capture: `--screenshot <path>` [`--screenshot-frame <N>`].
     // The render backend dumps the swapchain image to <path> (an uncompressed
     // 32-bit TGA) on the EndFrame whose FluxRenderer frame counter equals N,

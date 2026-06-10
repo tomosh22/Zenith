@@ -900,6 +900,8 @@
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp" />
+    <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp" />
+    <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

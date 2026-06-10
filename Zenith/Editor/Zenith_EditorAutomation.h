@@ -165,6 +165,21 @@ enum class Zenith_EditorActionType
 	SET_TERRAIN_MATERIAL,
 	SET_TERRAIN_SPLATMAP_PATH,
 
+	// Terrain-editor authoring (Zenith_TerrainEditor). All operate on the
+	// engine terrain editor's CPU images + disk — opening a standalone
+	// (component-less) session on demand, so they can run BEFORE any terrain
+	// entity exists and are headless-safe. NOTE: this block must stay
+	// CONTIGUOUS (ExecuteAction routes the whole range to a sub-executor).
+	TERRAIN_EDITOR_RESET,
+	TERRAIN_EDITOR_GENERATE_PROCEDURAL,
+	TERRAIN_EDITOR_BRUSH_STROKE,
+	TERRAIN_EDITOR_SAMPLE_STAMP,
+	TERRAIN_EDITOR_AUTO_SPLAT_RULE,
+	TERRAIN_EDITOR_RUN_AUTO_SPLAT,
+	TERRAIN_EDITOR_ERODE,
+	TERRAIN_EDITOR_SAVE_TEXTURES,
+	TERRAIN_EDITOR_EXPORT_CHUNKS,
+
 	// Prefab variant authoring (Phase 3 of the readability plan).
 	// CREATE_PREFAB_FROM_SELECTED captures the currently-selected entity into a
 	// new Zenith_Prefab and writes it to disk. CREATE_PREFAB_VARIANT loads a base
@@ -427,6 +442,50 @@ void AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial);
 	// Set the splatmap texture path on the selected entity's Zenith_TerrainComponent.
 	// szPath must point to static storage.
 void AddStep_SetTerrainSplatmapPath(const char* szPath);
+
+	//--------------------------------------------------------------------------
+	// Terrain-Editor Authoring Step Helpers
+	//
+	// Drive the engine terrain editor (Zenith_TerrainEditor) — the same code
+	// path the Terrain Editor panel uses. A standalone (component-less)
+	// session is opened on demand, so these can run before the terrain entity
+	// exists; they touch only CPU images + disk (headless-safe). Determinism:
+	// fixed seeds + integer-hash noise => byte-identical outputs per run.
+	//--------------------------------------------------------------------------
+	// Reset the session's CPU maps to defaults. From-scratch recipes run this
+	// FIRST so regeneration is byte-identical even when a previous bake's
+	// textures exist on disk (the session seeds from them on open).
+void AddStep_TerrainResetSession();
+
+	// Whole-field seeded procedural generation (FBM/ridged blend).
+void AddStep_TerrainGenerateProcedural(int iSeed, float fBaseHeight, float fAmplitude,
+	float fFrequency, int iOctaves, float fLacunarity, float fGain, float fRidgedBlend);
+
+	// One brush dab. iTool casts to Zenith_TerrainBrushTool; fToolValue is the
+	// tool's parameter (target height for Flatten/SetHeight, displacement for
+	// Noise, step for Terrace, splat layer for SplatPaint, density for
+	// GrassDensity).
+void AddStep_TerrainBrushStroke(int iTool, float fWorldX, float fWorldZ,
+	float fRadius, float fStrength, float fToolValue);
+
+	// Capture the copy/stamp buffer from a heightfield disc (the Stamp tool
+	// then stamps it via AddStep_TerrainBrushStroke).
+void AddStep_TerrainSampleStamp(float fWorldX, float fWorldZ, float fRadius);
+
+	// Configure one auto-splat slope/height rule slot, then run the classifier.
+void AddStep_TerrainAutoSplatRule(int iSlot, float fHeightMin, float fHeightMax,
+	float fSlopeMinDeg, float fSlopeMaxDeg, float fWeight, float fJitter);
+void AddStep_TerrainRunAutoSplat();
+
+	// Synchronous hydraulic + thermal erosion.
+void AddStep_TerrainErode(int iHydraulicDroplets, int iThermalIterations, int iSeed);
+
+	// Persist Height/Splatmap_RGBA/GrassDensity .ztxtr to the game assets dir.
+void AddStep_TerrainSaveTextures();
+
+	// Export every terrain chunk mesh from the live heightfield
+	// (ExportHeightmapFromMat into <GAME_ASSETS>/Terrain/). Takes minutes.
+void AddStep_TerrainExportChunks();
 
 	//--------------------------------------------------------------------------
 	// Prefab Variant Step Helpers

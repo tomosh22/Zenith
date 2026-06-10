@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Hierarchy.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorSceneAccess.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
@@ -711,7 +712,7 @@ void RenderCreateEntityFooter()
 //-----------------------------------------------------------------------------
 void Render(Zenith_EntityID& uGameCameraEntityID)
 {
-	ImGui::Begin("Hierarchy");
+	ImGui::Begin(szEDITOR_WINDOW_HIERARCHY);
 
 	// Track entity to delete and drag/drop targets
 	Zenith_EntityID uEntityToDelete = INVALID_ENTITY_ID;

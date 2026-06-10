@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_VariantEditor.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #include "Editor/Zenith_Editor.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -258,7 +259,7 @@ void Zenith_EditorPanelVariantEditor::Render()
 {
 	if (!s_bVisible) return;
 
-	if (!ImGui::Begin("Variant Editor", &s_bVisible))
+	if (!ImGui::Begin(szEDITOR_WINDOW_VARIANT_EDITOR, &s_bVisible))
 	{
 		ImGui::End();
 		return;

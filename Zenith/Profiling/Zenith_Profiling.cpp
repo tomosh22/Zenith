@@ -2,6 +2,8 @@
 
 #include "Profiling/Zenith_Profiling.h"
 
+#include "Core/Zenith_EditorWindowNames.h"
+
 #include "Core/Zenith_Engine.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -126,7 +128,7 @@ static Zenith_Maths::Vector3 IntToColour(u_int u)
 
 void Zenith_Profiling::RenderToImGui()
 {
-	ImGui::Begin("Profiling");
+	ImGui::Begin(szEDITOR_WINDOW_PROFILING);
 
 	static TimelineViewState ls_xTimelineState;
 	static bool ls_bShowStats = true;

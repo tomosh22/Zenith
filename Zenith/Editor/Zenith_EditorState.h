@@ -185,6 +185,7 @@ struct Zenith_EditorPanelVisibility
 	bool m_bShowHierarchy = true;
 	bool m_bShowProperties = true;
 	bool m_bShowConsole = true;
+	bool m_bShowTerrainEditor = false;
 };
 
 //-----------------------------------------------------------------------------
@@ -207,6 +208,10 @@ struct Zenith_EditorState
 	Zenith_EditorCameraState m_xCamera;
 	Zenith_EditorMaterialState m_xMaterial;
 	Zenith_EditorPanelVisibility m_xPanels;
+
+	// View > Reset Layout: consumed by the next Render(), which rebuilds the
+	// code-defined default dock layout (also recaptures floating windows).
+	bool m_bResetDockLayout = false;
 };
 
 #endif // ZENITH_TOOLS

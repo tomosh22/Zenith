@@ -15,7 +15,22 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_Editor_MaterialUI.h/cpp` - Material editing UI
 - `Zenith_EditorState.h` - Editor state management
 - `Zenith_EditorCamera.cpp` - Editor camera implementation
-- `Panels/` - Panel implementations (Console, ContentBrowser, Hierarchy, MaterialEditor, Memory, Properties, Toolbar, Viewport)
+- `TerrainEditor/` - Terrain sculpting/painting subsystem (`Zenith_TerrainEditor`):
+  height brushes (raise/lower/smooth/flatten/set-height/noise/terrace/ramp/
+  copy-stamp with radius/strength/falloff), splatmap layer painting (4 material
+  slots, weights kept normalized), grass-density painting (Flux_Grass density
+  map), seeded procedural generation (deterministic integer-hash FBM/ridged),
+  hydraulic+thermal erosion (main-thread sliced or synchronous), auto-splat by
+  slope/height rules, region-delta undo, save (.ztxtr to game assets) + full
+  bake (chunk re-export + physics + render re-init). Live height edits go ONLY
+  through the terrain streaming hook + EvictLOD re-stream (race-free; never an
+  in-place write to a resident chunk); live splat paints re-upload via the
+  staged `UpdateTextureVRAM` path. `ServiceUpdate` runs every editor frame
+  (edits stay visible in Play); interactive brush input is Stopped-only and
+  claims viewport clicks ahead of gizmo/picking. Editor automation drives the
+  same API via `AddStep_Terrain*` (RenderTest generates its terrain this way,
+  seed 1337).
+- `Panels/` - Panel implementations (Console, ContentBrowser, Hierarchy, MaterialEditor, Memory, Properties, TerrainEditor, Toolbar, Viewport)
 
 ## Related Systems
 

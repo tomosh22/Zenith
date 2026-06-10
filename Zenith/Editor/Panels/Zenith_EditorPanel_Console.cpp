@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Console.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #include "Editor/Zenith_Editor.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -131,7 +132,7 @@ void Render(
 	bool& bShowErrors,
 	std::bitset<LOG_CATEGORY_COUNT>& xCategoryFilters)
 {
-	ImGui::Begin("Console");
+	ImGui::Begin(szEDITOR_WINDOW_CONSOLE);
 	RenderToolbar(xLogs, bAutoScroll, bShowInfo, bShowWarnings, bShowErrors, xCategoryFilters);
 	ImGui::Separator();
 	RenderLogList(xLogs, bAutoScroll, bShowInfo, bShowWarnings, bShowErrors, xCategoryFilters);

@@ -37,3 +37,11 @@ void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& s
  *       GAME_ASSETS_DIR/Terrain/
  */
 void ExportHeightmap();
+
+/**
+ * Load a heightmap from .ztxtr or a common image format (PNG etc.) into a
+ * single-channel float image normalized to [0,1]. Returns an empty image on
+ * failure. Exposed for the terrain editor, which seeds its live heightfield
+ * through the same loader the export pipeline uses.
+ */
+Zenith_Image Zenith_Tools_LoadHeightmapAuto(const std::string& strPath);

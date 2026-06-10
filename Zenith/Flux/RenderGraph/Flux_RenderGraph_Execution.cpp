@@ -224,6 +224,31 @@ void Flux_RenderGraph::InferPassAttachments()
 					Flux_RenderGraph_AttachmentRef(rxUsage.m_xResource, rxUsage.m_uMipLevel, rxUsage.m_uLayer);
 			}
 		}
+
+		// READ_DEPTH binds the resource as a READ-ONLY depth attachment (the
+		// access's documented meaning — depth-tested passes that never write
+		// depth, e.g. forward vegetation over the lit scene). Only WRITE_DSV
+		// was inferred above historically, which left READ_DEPTH passes with
+		// no depth attachment at all — an attachment-count mismatch with any
+		// depth-tested pipeline (latent until Grass, the access's only user,
+		// first rendered). SubmitRecordedLists sees the resource in m_xReads
+		// and flags the render pass bDepthReadOnly.
+		if (!pxPass->m_xDepthStencil.IsValid())
+		{
+			for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
+			{
+				const Flux_RenderGraph_ResourceUsage& rxUsage = it.GetData();
+				if (rxUsage.m_eAccess != RESOURCE_ACCESS_READ_DEPTH || !rxUsage.m_xResource.IsImageLike())
+				{
+					continue;
+				}
+				Zenith_Assert(rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Image,
+					"Flux_RenderGraph: depth attachment reads require a 2D Flux_RenderAttachment (pass '%s')", pxPass->DebugName());
+				pxPass->m_xDepthStencil =
+					Flux_RenderGraph_AttachmentRef(rxUsage.m_xResource, rxUsage.m_uMipLevel, rxUsage.m_uLayer);
+				break;
+			}
+		}
 	}
 }
 

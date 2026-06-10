@@ -654,7 +654,13 @@ static vk::AccessFlags AccessMaskForLayout(vk::ImageLayout eLayout)
 	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
 		return vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead;
 	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eShaderRead;
+		// Include the attachment-WRITE bit: a render pass that bound this image
+		// as a read-only depth attachment still performed a storeOp write in
+		// sync terms, and a transition OUT of this layout must make that write
+		// visible to the next consumer.
+		return vk::AccessFlagBits::eDepthStencilAttachmentRead
+		     | vk::AccessFlagBits::eDepthStencilAttachmentWrite
+		     | vk::AccessFlagBits::eShaderRead;
 	case vk::ImageLayout::eShaderReadOnlyOptimal:
 		return vk::AccessFlagBits::eShaderRead;
 	case vk::ImageLayout::eGeneral:
@@ -728,7 +734,14 @@ void Flux_ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
 		break;
 	case RESOURCE_ACCESS_READ_DEPTH:
 		eOutLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-		eOutAccess = vk::AccessFlagBits::eDepthStencilAttachmentRead;
+		// Bound as a READ-ONLY depth attachment — but the render pass's
+		// storeOp=STORE still counts as an attachment WRITE at late-fragment-
+		// tests in sync-validation terms (same rationale as WRITE_RTV's
+		// load/store note above). Without the write bit the validator reports
+		// a WAW hazard between the layout-transition barrier and
+		// vkCmdEndRenderPass.
+		eOutAccess = vk::AccessFlagBits::eDepthStencilAttachmentRead
+		           | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 		eOutStage  = vk::PipelineStageFlagBits::eEarlyFragmentTests
 		           | vk::PipelineStageFlagBits::eLateFragmentTests;
 		break;

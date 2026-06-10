@@ -154,6 +154,17 @@ public:
 
 	Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
 	Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	// Full-image in-place re-upload of an existing texture created via
+	// CreateTextureVRAM (terrain-editor live splatmap painting). xInfo MUST be
+	// the surface info the texture was created with (same extents / format /
+	// mip count — the staging flush copies mip 0 over the whole extent and
+	// regenerates the mip chain). Race-free even while the texture is sampled
+	// by in-flight frames: the data is staged into the current frame's slot and
+	// the memory command buffer is submitted on the graphics queue AHEAD of
+	// render work (which waits on the memory semaphore); the flush's
+	// eUndefined -> TRANSFER_DST transition discards prior contents, which is
+	// safe only because the whole image is overwritten.
+	void UpdateTextureVRAM(Flux_VRAMHandle xHandle, const void* pData, const Flux_SurfaceInfo& xInfo);
 	Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
 
 	// Create a persistently mapped host-visible buffer (for scratch buffers, etc.)

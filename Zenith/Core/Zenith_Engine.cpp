@@ -71,6 +71,7 @@
 #include "Editor/Zenith_Gizmo.h"
 #include "Editor/Zenith_SelectionSystem.h"
 #include "Editor/Zenith_UndoSystem.h"
+#include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 #include "Physics/Zenith_Physics.h"
@@ -311,6 +312,7 @@ Zenith_SelectionSystem&  Zenith_Engine::Selection()          { return *m_pxSelec
 Zenith_UndoSystem&       Zenith_Engine::UndoSystem()         { return *m_pxUndoSystem; }
 Zenith_EditorAutomation& Zenith_Engine::EditorAutomation()   { return *m_pxEditorAutomation; }
 Zenith_EditorMaterialUI& Zenith_Engine::EditorMaterialUI()   { return *m_pxEditorMaterialUI; }
+Zenith_TerrainEditor&    Zenith_Engine::TerrainEditor()      { return *m_pxTerrainEditor; }
 Zenith_DebugVariables&   Zenith_Engine::DebugVariables()     { return *m_pxDebugVariables; }
 #endif
 
@@ -468,6 +470,8 @@ void Zenith_Engine::AllocateEditorSubsystems()
 	m_pxEditorAutomation = new Zenith_EditorAutomation();
 	Zenith_Assert(m_pxEditorMaterialUI == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxEditorMaterialUI = new Zenith_EditorMaterialUI();
+	Zenith_Assert(m_pxTerrainEditor == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxTerrainEditor = new Zenith_TerrainEditor();
 
 	// debug-variable tree. Allocate alongside editor; many
 	// subsystems register vars during their own Initialise.
@@ -687,7 +691,7 @@ void Zenith_Engine::InitialiseEditor()
 		// Frame deps passed by member (not read back via g_xEngine inside the
 		// editor) so the relocated RenderImGuiFrame stays off the engine-
 		// singleton ratchet for Zenith_Editor.cpp.
-		m_pxEditor->Initialise(*m_pxVulkan, *m_pxFluxGraphics, *m_pxFrame, *m_pxDebugVariables, *m_pxProfiling);
+		m_pxEditor->Initialise(*m_pxVulkan, *m_pxFluxGraphics, *m_pxFrame, *m_pxDebugVariables, *m_pxProfiling, *m_pxTerrainEditor);
 		g_xEngine.DebugVariables().AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 		g_xEngine.DebugVariables().AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
 		g_xEngine.DebugVariables().AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
@@ -989,6 +993,8 @@ void Zenith_Engine::DeleteEditorState()
 	m_pxEditorAutomation = nullptr;
 	delete m_pxEditorMaterialUI;
 	m_pxEditorMaterialUI = nullptr;
+	delete m_pxTerrainEditor;
+	m_pxTerrainEditor = nullptr;
 	delete m_pxDebugVariables;
 	m_pxDebugVariables = nullptr;
 #endif

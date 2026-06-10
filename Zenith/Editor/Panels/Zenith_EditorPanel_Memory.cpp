@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_EditorWindowNames.h"
 
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
@@ -677,7 +678,7 @@ namespace Zenith_EditorPanelMemory
 		}
 
 		ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
-		if (ImGui::Begin("Memory Profiler", &s_bVisible))
+		if (ImGui::Begin(szEDITOR_WINDOW_MEMORY_PROFILER, &s_bVisible))
 		{
 			if (ImGui::BeginTabBar("MemoryTabs"))
 			{

@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
@@ -788,7 +789,7 @@ void Zenith_EditorPanelContentBrowser::RenderFileGrid(ContentBrowserState& xStat
 //-----------------------------------------------------------------------------
 void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 {
-	ImGui::Begin("Content Browser");
+	ImGui::Begin(szEDITOR_WINDOW_CONTENT_BROWSER);
 
 	// Refresh directory contents if needed
 	if (xState.m_bDirectoryNeedsRefresh)

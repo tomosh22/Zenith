@@ -195,6 +195,11 @@ void Zenith_Editor::RenderViewMenu()
 			g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowConsole = !g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowConsole;
 		}
 
+		if (ImGui::MenuItem("Terrain Editor", nullptr, g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowTerrainEditor))
+		{
+			g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowTerrainEditor = !g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowTerrainEditor;
+		}
+
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 		if (ImGui::MenuItem("Memory Profiler", nullptr, Zenith_EditorPanelMemory::IsVisible()))
 		{
@@ -210,6 +215,15 @@ void Zenith_Editor::RenderViewMenu()
 		if (ImGui::MenuItem("Variant Editor", nullptr, Zenith_EditorPanelVariantEditor::IsVisible()))
 		{
 			Zenith_EditorPanelVariantEditor::SetVisible(!Zenith_EditorPanelVariantEditor::IsVisible());
+		}
+
+		ImGui::Separator();
+
+		if (ImGui::MenuItem("Reset Layout"))
+		{
+			// Consumed by the next Render(): rebuilds the code-defined
+			// default dock layout and recaptures floating windows.
+			g_xEngine.Editor().m_xEditorState.m_bResetDockLayout = true;
 		}
 
 		ImGui::Separator();

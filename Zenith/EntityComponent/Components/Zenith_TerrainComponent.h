@@ -24,6 +24,7 @@ class Flux_ReadWriteBuffer;
 struct Flux_TerrainChunkInitData;
 struct Flux_TerrainStreamingState;
 struct Zenith_FrustumPlaneGPU;
+class Zenith_Image;
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
@@ -235,6 +236,12 @@ public:
 	// Editor UI — main entry point; section helpers below.
 	void RenderPropertiesPanel();
 
+	// End-to-end regeneration from an in-memory heightfield (the terrain
+	// editor's bake): cleanup -> delete terrain files -> ExportHeightmapFromMat
+	// -> reload physics -> re-init render. Same sequence as the panel's
+	// Regenerate button with the in-memory image as the export source.
+	void RegenerateFromHeightfield(const Zenith_Image& xHeightfield);
+
 private:
 	void RenderTerrainCreationSection();
 	void RenderTerrainRegenerationSection();
@@ -251,6 +258,9 @@ private:
 	// Terrain" button. Owns the cleanup → delete-files → export → reload-physics
 	// → re-init-render sequence and updates s_strTerrainExportStatus throughout.
 	void RunTerrainRegeneration(const std::string& strOutputDir);
+	// Shared regeneration body. Non-null pxHeightfield exports from the
+	// in-memory image; null falls back to the panel's heightmap path field.
+	void RunTerrainRegenerationInternal(const std::string& strOutputDir, const Zenith_Image* pxHeightfield);
 	// Allocate fresh material asset into any empty slot in m_axMaterials, named
 	// after the owning entity. Called pre-render-init during regeneration.
 	void EnsureMaterialSlotsPopulated();

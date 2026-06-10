@@ -4,6 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Toolbar.h"
+#include "Core/Zenith_EditorWindowNames.h"
 
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -18,7 +19,7 @@
 //-----------------------------------------------------------------------------
 void Zenith_EditorPanelToolbar::Render(EditorMode& eEditorMode, EditorGizmoMode& eGizmoMode)
 {
-	ImGui::Begin("Toolbar");
+	ImGui::Begin(szEDITOR_WINDOW_TOOLBAR);
 
 	ImVec2 xButtonSize(80.0f, 32.0f);
 	float fSpacing = ImGui::GetStyle().ItemSpacing.x;

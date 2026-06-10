@@ -275,6 +275,11 @@ static Zenith_Image LoadHeightmapAuto(const std::string& strPath)
 	return xResult;
 }
 
+Zenith_Image Zenith_Tools_LoadHeightmapAuto(const std::string& strPath)
+{
+	return LoadHeightmapAuto(strPath);
+}
+
 //#TO width/height that heightmap is divided into
 #define TERRAIN_SIZE 64
 //#TO world units per heightmap pixel. 1.0 => a 4096px heightmap bakes a

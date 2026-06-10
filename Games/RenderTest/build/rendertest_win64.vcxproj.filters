@@ -5,6 +5,12 @@
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\RenderTest_FollowCamera.h">

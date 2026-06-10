@@ -4,6 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Properties.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #include "Editor/Zenith_Editor.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -115,7 +116,7 @@ namespace Zenith_EditorPanelProperties
 
 void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEntityID)
 {
-	ImGui::Begin("Properties");
+	ImGui::Begin(szEDITOR_WINDOW_PROPERTIES);
 
 	if (!pxSelectedEntity)
 	{

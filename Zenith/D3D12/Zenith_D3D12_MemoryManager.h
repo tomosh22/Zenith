@@ -125,6 +125,7 @@ public:
 		(void)pData; (void)xInfo; (void)bCreateMips;
 		Flux_VRAMHandle x; x.SetValue(ms_uDummyHandle++); return x;
 	}
+	void UpdateTextureVRAM(Flux_VRAMHandle xHandle, const void* pData, const Flux_SurfaceInfo& xInfo) { (void)xHandle; (void)pData; (void)xInfo; }
 	Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
 	{
 		(void)xInfo;

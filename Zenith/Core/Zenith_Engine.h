@@ -52,6 +52,7 @@ class Zenith_EditorMaterialUI;
 class Zenith_Gizmo;
 class Zenith_Input;
 class Zenith_SelectionSystem;
+class Zenith_TerrainEditor;
 class Zenith_TouchInput;
 class Zenith_UndoSystem;
 class Zenith_Multithreading;
@@ -173,6 +174,7 @@ public:
 	Zenith_UndoSystem& UndoSystem();
 	Zenith_EditorAutomation& EditorAutomation();
 	Zenith_EditorMaterialUI& EditorMaterialUI();
+	Zenith_TerrainEditor& TerrainEditor();
 	Zenith_DebugVariables& DebugVariables();
 #endif
 
@@ -264,6 +266,7 @@ private:
 	Zenith_UndoSystem*              m_pxUndoSystem         = nullptr;
 	Zenith_EditorAutomation*        m_pxEditorAutomation   = nullptr;
 	Zenith_EditorMaterialUI*        m_pxEditorMaterialUI   = nullptr;
+	Zenith_TerrainEditor*           m_pxTerrainEditor      = nullptr;
 	Zenith_DebugVariables*          m_pxDebugVariables     = nullptr;
 #endif
 };

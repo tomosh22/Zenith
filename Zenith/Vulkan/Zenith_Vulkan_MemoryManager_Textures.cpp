@@ -325,6 +325,44 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	return xHandle;
 }
 
+void Zenith_Vulkan_MemoryManager::UpdateTextureVRAM(Flux_VRAMHandle xHandle, const void* pData, const Flux_SurfaceInfo& xInfo)
+{
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (m_xAllocator == VK_NULL_HANDLE)
+	{
+		return;
+	}
+	if (!xHandle.IsValid() || pData == nullptr)
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
+	Zenith_Check(pxVRAM != nullptr, "UpdateTextureVRAM: GetVRAM returned null - skipping upload");
+	if (pxVRAM == nullptr)
+	{
+		return;
+	}
+
+	// Defensive clamps mirroring NormalizeTextureInfo so the byte-size math
+	// can't silently zero out on uninitialised depth/layer fields.
+	Flux_SurfaceInfo xInfoCopy = xInfo;
+	xInfoCopy.m_uDepth = std::max(1u, xInfoCopy.m_uDepth);
+	xInfoCopy.m_uNumLayers = std::max(1u, xInfoCopy.m_uNumLayers);
+	xInfoCopy.m_uNumMips = std::max(1u, xInfoCopy.m_uNumMips);
+
+	size_t ulDataSize;
+	if (IsCompressedFormat(xInfoCopy.m_eFormat))
+	{
+		ulDataSize = CalculateCompressedTextureSize(xInfoCopy.m_eFormat, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight) * xInfoCopy.m_uNumLayers;
+	}
+	else
+	{
+		ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
+	}
+
+	UploadTextureData(static_cast<VkImage>(pxVRAM->GetImage()), pxVRAM->GetAllocation(), pData, xInfoCopy, ulDataSize);
+}
 
 void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed)
 {

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_android.cpp">
@@ -648,6 +648,27 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.cpp">
       <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_TerrainEditor.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditorUndo.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Bake.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Brushes.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Erosion.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Procedural.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
       <Filter>Editor\Panels</Filter>
@@ -3387,6 +3408,9 @@
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_EditorWindowNames.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -3482,6 +3506,21 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.h">
       <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_TerrainEditor.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor.h">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor.Tests.inl">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditorUndo.h">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Noise.h">
+      <Filter>Editor\TerrainEditor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h">
       <Filter>Editor\Panels</Filter>
@@ -4378,6 +4417,9 @@
     </Filter>
     <Filter Include="Editor\Panels">
       <UniqueIdentifier>{e444eb57-a0ac-2092-cd72-a3862bab4b59}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Editor\TerrainEditor">
+      <UniqueIdentifier>{8f3c2a51-7b1e-4d96-a2c4-5e9d10f47b21}</UniqueIdentifier>
     </Filter>
     <Filter Include="EntityComponent">
       <UniqueIdentifier>{fb074e82-fc50-1734-a1f4-c2d75046a32e}</UniqueIdentifier>

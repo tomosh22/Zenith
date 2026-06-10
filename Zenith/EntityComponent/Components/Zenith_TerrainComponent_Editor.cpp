@@ -11,6 +11,7 @@
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_Image.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
@@ -24,8 +25,9 @@
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
 
-// Terrain export functionality (extern declaration to avoid include path issues)
+// Terrain export functionality (extern declarations to avoid include path issues)
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
+extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
 
 //=============================================================================
 // TerrainComponent Editor UI
@@ -135,6 +137,18 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 		return;
 
 	const bool bTerrainInitialized = m_pxStreamingState->m_ulUnifiedVertexBufferSize > 0;
+
+	// Sculpting / painting lives in the dedicated terrain editor. Routed
+	// through Zenith_Editor (not the terrain-editor header) — this TU sits in
+	// the EntityComponent layer, which may not include Editor/TerrainEditor.
+	if (bTerrainInitialized)
+	{
+		if (ImGui::Button("Open Terrain Editor", ImVec2(200, 28)))
+		{
+			g_xEngine.Editor().OpenTerrainEditor(m_xParentEntity.GetEntityID());
+		}
+		ImGui::Separator();
+	}
 
 	if (!bTerrainInitialized)
 	{
@@ -333,6 +347,19 @@ void Zenith_TerrainComponent::EnsureMaterialSlotsPopulated()
 // status string so the editor footer reflects progress.
 void Zenith_TerrainComponent::RunTerrainRegeneration(const std::string& strOutputDir)
 {
+	RunTerrainRegenerationInternal(strOutputDir, nullptr);
+}
+
+// Terrain-editor bake entry point: identical pipeline, but the export source
+// is the editor's live in-memory heightfield instead of a heightmap file.
+void Zenith_TerrainComponent::RegenerateFromHeightfield(const Zenith_Image& xHeightfield)
+{
+	const std::string strOutputDir = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+	RunTerrainRegenerationInternal(strOutputDir, &xHeightfield);
+}
+
+void Zenith_TerrainComponent::RunTerrainRegenerationInternal(const std::string& strOutputDir, const Zenith_Image* pxHeightfield)
+{
 	s_bTerrainExportInProgress = true;
 	s_strTerrainExportStatus = "Cleaning up existing terrain...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
@@ -344,9 +371,16 @@ void Zenith_TerrainComponent::RunTerrainRegeneration(const std::string& strOutpu
 
 	s_strTerrainExportStatus = "Exporting new terrain meshes...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
-	ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
+	if (pxHeightfield != nullptr)
+	{
+		ExportHeightmapFromMat(*pxHeightfield, strOutputDir);
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
+		ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
+	}
 
 	s_strTerrainExportStatus = "Loading physics geometry...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");

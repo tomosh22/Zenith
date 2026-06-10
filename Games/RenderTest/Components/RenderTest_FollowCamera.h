@@ -107,6 +107,24 @@ public:
 		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_TransformComponent>())
 			return;
 
+		// --- Photo mode (visual tests / capture harnesses) ---
+		// Same camera-component view path as normal play; just a scripted
+		// world-space offset + pitch instead of mouse-look. Yaw stays 0
+		// (the spawn-facing direction).
+		if (RenderTest_GameplayState::s_bPhotoModeActive)
+		{
+			Zenith_Maths::Vector3 xPhotoPlayerPos;
+			xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPhotoPlayerPos);
+			Zenith_CameraComponent& xPhotoCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			xPhotoCamera.SetPosition(xPhotoPlayerPos + Zenith_Maths::Vector3(
+				RenderTest_GameplayState::s_fPhotoOffsetX,
+				RenderTest_GameplayState::s_fPhotoOffsetY,
+				RenderTest_GameplayState::s_fPhotoOffsetZ));
+			xPhotoCamera.SetYaw(0.0f);
+			xPhotoCamera.SetPitch(RenderTest_GameplayState::s_fPhotoPitch);
+			return;
+		}
+
 		// --- Mouse-look ---
 		// Skip the first frame's delta to avoid a camera jump caused by the
 		// large delta between (0,0) and the cursor's actual screen position

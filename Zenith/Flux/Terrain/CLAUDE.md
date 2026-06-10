@@ -143,6 +143,17 @@ Uses same distance thresholds as CPU (from config header). Critical that these m
 
 ## Integration Points
 
+### In-Editor Terrain Editing (ZENITH_TOOLS)
+
+`Zenith_TerrainEditor` (`Editor/TerrainEditor/`) sculpts and paints this terrain
+live. Its CPU/GPU sync contract rides this system's streaming path exclusively:
+it registers `Flux_TerrainStreamingState::m_pfnChunkVertexHook` (re-shapes
+chunk verts from its live heightfield on stream-in, before the GPU upload) and
+force-evicts edited resident chunks via `EvictLOD` so they re-stream through
+the hook. It NEVER writes a resident chunk of the unified vertex buffer in
+place. The always-resident LOW LOD stays stale during live editing; the
+explicit bake (full re-export + render re-init) refreshes it.
+
 ### Scene Component
 `Zenith_TerrainComponent` in EntityComponent system:
 - Owns unified vertex/index buffers
@@ -184,7 +195,7 @@ All constants in `Flux_TerrainConfig.h`:
 - `MAX_EVICTIONS_PER_FRAME = 16`
 
 **Vertex Format (28 bytes, packed):**
-- `VERTEX_STRIDE_BYTES = 28` (FLOAT3 Position + HALF2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign + FLOAT MaterialLerp)
+- `VERTEX_STRIDE_BYTES = 28` (FLOAT3 Position + FLOAT2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign). UV is FLOAT2 (not HALF2) holding GLOBAL heightmap pixel coordinates [0, 4096) — HALF loses sub-integer precision above 1024. There is no per-vertex material lerp; material blending comes from the RGBA8 splatmap.
 
 ## Important Constraints
 

@@ -85,6 +85,12 @@ concept FluxBackendMemoryAlloc = requires(
 	// a reviewer reading this file will now see the intent immediately.
 	{ t.UploadBufferData(xVRAMHandle, pData, sz)                                      } -> std::same_as<void>;
 	{ t.UploadBufferDataAtOffset(xVRAMHandle, pData, sz, uDestOffset)                 } -> std::same_as<void>;
+
+	// Full-image in-place texture re-upload (live texture editing, e.g. the
+	// terrain editor's splatmap painting). xInfo must match the creation-time
+	// surface info; the backend re-copies mip 0 and regenerates the mip chain,
+	// ordered ahead of the frame's render work.
+	{ t.UpdateTextureVRAM(xVRAMHandle, pData, xInfo)                                  } -> std::same_as<void>;
 };
 
 // OPTIONAL concept: transient-memory aliasing. Split out of FluxBackendMemoryAlloc

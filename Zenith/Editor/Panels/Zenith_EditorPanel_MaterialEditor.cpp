@@ -4,6 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_MaterialEditor.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #include "../Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -80,7 +81,7 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 	if (!xState.m_bShowMaterialEditor)
 		return;
 
-	ImGui::Begin("Material Editor", &xState.m_bShowMaterialEditor);
+	ImGui::Begin(szEDITOR_WINDOW_MATERIAL_EDITOR, &xState.m_bShowMaterialEditor);
 
 	RenderToolbarSection();
 

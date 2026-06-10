@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $Project = Join-Path $Root "Games\RenderTest\build\rendertest_win64.vcxproj"
-$Exe = Join-Path $Root "Games\RenderTest\build\output\win64\vs2022_debug_win64_true\rendertest.exe"
+$Exe = Join-Path $Root "Games\RenderTest\build\output\win64\vulkan_vs2022_debug_win64_true\rendertest.exe"
 $LogDir = Join-Path $Root "Games\RenderTest\build\obj\smoke"
 $StdoutLog = Join-Path $LogDir "rendertest_smoke_stdout.log"
 $StderrLog = Join-Path $LogDir "rendertest_smoke_stderr.log"
@@ -37,7 +37,7 @@ function Find-MSBuild {
 
 if (-not $NoBuild) {
 	$msbuild = Find-MSBuild
-	& $msbuild $Project /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
+	& $msbuild $Project /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 	if ($LASTEXITCODE -ne 0) {
 		throw "RenderTest build failed with exit code $LASTEXITCODE"
 	}
@@ -82,7 +82,10 @@ if ($DebugUcrtDir) {
 	$env:PATH = "$DebugUcrtDir;$env:PATH"
 }
 
-$args = @("--rendertest-smoke", "--rendertest-smoke-frames=$Frames", "--skip-unit-tests", "--skip-tool-exports")
+# --no-imgui-ini: the smoke is windowed but passes none of the automated-test
+# flags, so it must explicitly opt out of ini load to get the deterministic
+# code-built dock layout.
+$args = @("--rendertest-smoke", "--rendertest-smoke-frames=$Frames", "--skip-unit-tests", "--skip-tool-exports", "--no-imgui-ini")
 if ($ForceRegenerate) {
 	$args += "--rendertest-force-regenerate"
 }

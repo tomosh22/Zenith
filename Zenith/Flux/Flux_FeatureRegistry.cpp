@@ -266,13 +266,19 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToSetupWalk("Primitives");
 	xReg.AddToSetupWalk("AnimatedMeshes");
 	xReg.AddToSetupWalk("InstancedMeshes");
-	xReg.AddToSetupWalk("Grass");
 	xReg.AddToSetupWalk("Decals");
 	xReg.AddToSetupWalk("HiZ");
 	xReg.AddToSetupWalk("SSR");
 	xReg.AddToSetupWalk("SSGI");
 	xReg.AddToSetupWalk("LightClustering");
 	xReg.AddToSetupWalk("DeferredShading");
+	// Grass is a FORWARD pass over the lit HDR scene (depth-tested, read-only
+	// depth attachment) — it must register AFTER DeferredShading: the HDR
+	// writer chain follows registration order and DeferredShading's pass
+	// CLEARS the target, so registering Grass earlier put its output before
+	// the clear (wiped every frame — latent from when grass was unwired).
+	// Before Fog/Particles so atmosphere + effects composite over the blades.
+	xReg.AddToSetupWalk("Grass");
 	xReg.AddSetupStep("@Skybox:AerialPerspective", +[](Flux_RenderGraph& xGraph){ g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(xGraph); });
 	xReg.AddToSetupWalk("SSAO");
 	xReg.AddToSetupWalk("Fog");

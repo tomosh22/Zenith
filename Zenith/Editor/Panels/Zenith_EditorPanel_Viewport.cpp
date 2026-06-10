@@ -4,6 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Viewport.h"
+#include "Core/Zenith_EditorWindowNames.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 
@@ -13,7 +14,7 @@
 
 void Zenith_EditorPanelViewport::Render(ViewportState& xState)
 {
-	ImGui::Begin("Viewport");
+	ImGui::Begin(szEDITOR_WINDOW_VIEWPORT);
 
 	// Track viewport position for mouse picking
 	ImVec2 xViewportPanelPos = ImGui::GetCursorScreenPos();

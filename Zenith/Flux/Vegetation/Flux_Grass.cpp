@@ -98,7 +98,11 @@ void Flux_GrassImpl::BuildPipelines()
 	xPipelineSpec.m_pxShader = &m_xGrassShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 	xPipelineSpec.m_bDepthTestEnabled = true;
-	xPipelineSpec.m_bDepthWriteEnabled = true;
+	// Depth WRITE must stay off: the graph binds the scene depth as a
+	// READ-ONLY attachment for this pass (WRITE_DSV + READ_DEPTH declaration
+	// => bDepthReadOnly render pass) — blades depth-test against the opaque
+	// scene but never write it.
+	xPipelineSpec.m_bDepthWriteEnabled = false;
 	xPipelineSpec.m_eCullMode = CULL_MODE_NONE;  // Grass is double-sided
 
 	m_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
@@ -167,12 +171,11 @@ void Flux_GrassImpl::DestroyBuffers()
 
 void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Do NOT clear: the with-depth target setup shares the main scene depth
-	// buffer, and clearing here would wipe the depth that the geometry passes
-	// just wrote — causing deferred lighting to sample garbage depth and
-	// producing fully unlit / flat-shaded output. The HDR colour attachment is
-	// also shared with DeferredShading's no-depth setup, which DOES clear it,
-	// so the underlying image is already in a valid state when Grass runs.
+	// Forward pass over the lit HDR scene (the setup walk runs this AFTER
+	// DeferredShading, so the HDR clear + lighting have already happened).
+	// READ_DEPTH binds the scene depth as a READ-ONLY depth attachment: the
+	// blades depth-test against the opaque scene without writing depth.
+	// Do NOT clear: both attachments carry live scene contents.
 	xGraph.AddPass("Grass", ExecuteRender)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),                 RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),       RESOURCE_ACCESS_READ_DEPTH);
@@ -551,7 +554,19 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 			continue;
 
 		// Density falls off linearly as fAvgLerp approaches the threshold.
-		const float fDensityMultiplier = 1.0f - (fAvgLerp / fGRASS_THRESHOLD);
+		float fDensityMultiplier = 1.0f - (fAvgLerp / fGRASS_THRESHOLD);
+
+		// Painted density map (terrain editor): sampled at the triangle
+		// centroid and multiplied into the placement density.
+		if (HasDensityMap())
+		{
+			const Zenith_Maths::Vector3 xCentroid = (xTri.xPos0 + xTri.xPos1 + xTri.xPos2) / 3.0f;
+			fDensityMultiplier *= SampleDensityMap(xCentroid.x, xCentroid.z);
+		}
+
+		if (fDensityMultiplier <= 0.0f)
+			continue;
+
 		u_int uNumBlades = static_cast<u_int>(fArea * fBladesPerSqm * fDensityMultiplier);
 		uNumBlades = std::min(uNumBlades, 100u);
 
@@ -600,6 +615,48 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 
 	UploadInstanceData();
 	UpdateVisibleChunks();
+}
+
+void Flux_GrassImpl::SetDensityMap(const float* pfData, u_int uWidth, u_int uHeight, float fWorldSize)
+{
+	m_xDensityMap.Clear();
+	m_uDensityMapWidth = 0;
+	m_uDensityMapHeight = 0;
+	if (pfData == nullptr || uWidth == 0 || uHeight == 0 || fWorldSize <= 0.0f)
+	{
+		return;
+	}
+	const u_int uCount = uWidth * uHeight;
+	m_xDensityMap.Reserve(uCount);
+	for (u_int u = 0; u < uCount; u++)
+	{
+		m_xDensityMap.PushBack(pfData[u]);
+	}
+	m_uDensityMapWidth = uWidth;
+	m_uDensityMapHeight = uHeight;
+	m_fDensityMapWorldSize = fWorldSize;
+}
+
+float Flux_GrassImpl::SampleDensityMap(float fWorldX, float fWorldZ) const
+{
+	if (!HasDensityMap())
+	{
+		return 1.0f;
+	}
+	const float fScaleX = static_cast<float>(m_uDensityMapWidth) / m_fDensityMapWorldSize;
+	const float fScaleZ = static_cast<float>(m_uDensityMapHeight) / m_fDensityMapWorldSize;
+	float fPX = std::clamp(fWorldX * fScaleX, 0.0f, static_cast<float>(m_uDensityMapWidth - 1));
+	float fPZ = std::clamp(fWorldZ * fScaleZ, 0.0f, static_cast<float>(m_uDensityMapHeight - 1));
+	const u_int uX0 = static_cast<u_int>(fPX);
+	const u_int uZ0 = static_cast<u_int>(fPZ);
+	const u_int uX1 = std::min(uX0 + 1, m_uDensityMapWidth - 1);
+	const u_int uZ1 = std::min(uZ0 + 1, m_uDensityMapHeight - 1);
+	const float fTX = fPX - static_cast<float>(uX0);
+	const float fTZ = fPZ - static_cast<float>(uZ0);
+	const float* pfMap = m_xDensityMap.GetDataPointer();
+	const float fTop = pfMap[uZ0 * m_uDensityMapWidth + uX0] * (1.0f - fTX) + pfMap[uZ0 * m_uDensityMapWidth + uX1] * fTX;
+	const float fBottom = pfMap[uZ1 * m_uDensityMapWidth + uX0] * (1.0f - fTX) + pfMap[uZ1 * m_uDensityMapWidth + uX1] * fTX;
+	return fTop * (1.0f - fTZ) + fBottom * fTZ;
 }
 
 // Setters with input validation (continuous parameters; on/off lives in Zenith_GraphicsOptions)

@@ -31,6 +31,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
 #include "Zenith_EditorSceneAccess.h"
+#include "TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -63,13 +64,20 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_Properties.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
+#include "Panels/Zenith_EditorPanel_TerrainEditor.h"
 #include "Panels/Zenith_EditorPanel_Toolbar.h"
 #include "Panels/Zenith_EditorPanel_VariantEditor.h"
 #include "Panels/Zenith_EditorPanel_Viewport.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+// DockBuilder API (code-built default dock layout) lives in the internal
+// header by design — see BuildDefaultDockLayout below.
+#include "imgui_internal.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+#include "Core/Zenith_CommandLine.h"
+#include "Core/Zenith_EditorWindowNames.h"
 
 #include <filesystem>
 #include <algorithm>
@@ -280,8 +288,142 @@ void Zenith_Editor::ApplyEditorTheme()
 	}
 }
 
+void Zenith_Editor::ConfigureImGuiIniPath()
+{
+	// D3D12 null backend: no ImGui context is ever created — nothing to do.
+	if (ImGui::GetCurrentContext() == nullptr)
+	{
+		return;
+	}
+
+	ImGuiIO& xIO = ImGui::GetIO();
+
+	// Automated runs must get the deterministic code-built dock layout: any
+	// imgui.ini load would make windowed test layouts depend on whatever ini
+	// the cwd or user profile happens to hold.
+	if (Zenith_CommandLine::IsHeadless()
+		|| Zenith_CommandLine::IsAutomatedTestRun()
+		|| Zenith_CommandLine::IsImGuiIniDisabled())
+	{
+		xIO.IniFilename = nullptr;
+		return;
+	}
+
+	// Interactive runs persist layout per-game OUTSIDE the repo:
+	// %LOCALAPPDATA%/Zenith/<GameName>/imgui.ini (same shape as
+	// Zenith_SaveData's %APPDATA%/Zenith/<GameName>/). ImGui stores the
+	// IniFilename POINTER without copying — the buffer must outlive
+	// DestroyContext, hence the file-scope static.
+#ifdef ZENITH_WINDOWS
+	extern const char* Project_GetName();
+	static char s_acImGuiIniPath[ZENITH_MAX_PATH_LENGTH] = {};
+
+	char acLocalAppData[ZENITH_MAX_PATH_LENGTH] = {};
+	const DWORD uLen = GetEnvironmentVariableA("LOCALAPPDATA", acLocalAppData, sizeof(acLocalAppData));
+	if (uLen == 0 || uLen >= sizeof(acLocalAppData))
+	{
+		xIO.IniFilename = nullptr;
+		return;
+	}
+
+	char acDir[ZENITH_MAX_PATH_LENGTH] = {};
+	snprintf(acDir, sizeof(acDir), "%s/Zenith/%s", acLocalAppData, Project_GetName());
+	std::error_code xError;
+	std::filesystem::create_directories(acDir, xError);
+	if (xError)
+	{
+		Zenith_Warning(LOG_CATEGORY_EDITOR, "Failed to create ImGui ini dir '%s' (%s) — layout persistence disabled", acDir, xError.message().c_str());
+		xIO.IniFilename = nullptr;
+		return;
+	}
+
+	snprintf(s_acImGuiIniPath, sizeof(s_acImGuiIniPath), "%s/imgui.ini", acDir);
+	xIO.IniFilename = s_acImGuiIniPath;
+#else
+	xIO.IniFilename = nullptr;
+#endif
+}
+
+// Code-built default dock layout. Runs when no saved layout exists (fresh
+// machine / ini disabled) or on View > Reset Layout. Split ratios are
+// resolution-independent; the node size seed just resolves them. Every
+// dockable window is docked — including default-hidden ones (Terrain Editor,
+// Memory Profiler) so toggling them on lands in a sensible slot instead of
+// floating. The desired FRONT tab of each group is docked LAST.
+static void BuildDefaultDockLayout(ImGuiID uDockspaceID, const ImGuiViewport* pxViewport)
+{
+	ImGui::DockBuilderRemoveNode(uDockspaceID);
+	// The DockSpace/NoTabBar enumerators live in the PRIVATE dock-node flag
+	// enum — explicit casts to the int typedef avoid C5054 (mixed-enum '|')
+	// under /WX.
+	ImGui::DockBuilderAddNode(uDockspaceID,
+		static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_DockSpace) | static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_PassthruCentralNode));
+	ImGui::DockBuilderSetNodeSize(uDockspaceID, pxViewport->WorkSize);
+
+	// Carve the outer columns first, then slice the centre.
+	ImGuiID uCentre = uDockspaceID;
+	const ImGuiID uLeft        = ImGui::DockBuilderSplitNode(uCentre, ImGuiDir_Left,  0.18f, nullptr, &uCentre);
+	ImGuiID uRight             = ImGui::DockBuilderSplitNode(uCentre, ImGuiDir_Right, 0.25f, nullptr, &uCentre);
+	const ImGuiID uRightBottom = ImGui::DockBuilderSplitNode(uRight,  ImGuiDir_Down,  0.45f, nullptr, &uRight);
+	ImGuiID uBottom            = ImGui::DockBuilderSplitNode(uCentre, ImGuiDir_Down,  0.28f, nullptr, &uCentre);
+	const ImGuiID uBottomRight = ImGui::DockBuilderSplitNode(uBottom, ImGuiDir_Right, 0.30f, nullptr, &uBottom);
+	const ImGuiID uToolbar     = ImGui::DockBuilderSplitNode(uCentre, ImGuiDir_Up,    0.08f, nullptr, &uCentre);
+
+	// Toolbar reads as a strip, not a tabbed window; Viewport hides its tab
+	// bar (matches the layout the team has been using from the old DP ini).
+	if (ImGuiDockNode* pxToolbarNode = ImGui::DockBuilderGetNode(uToolbar))
+	{
+		pxToolbarNode->SetLocalFlags(
+			static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoTabBar)
+			| static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoDockingSplit)
+			| static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoDockingOverMe));
+	}
+	if (ImGuiDockNode* pxCentreNode = ImGui::DockBuilderGetNode(uCentre))
+	{
+		pxCentreNode->SetLocalFlags(ImGuiDockNodeFlags_HiddenTabBar);
+	}
+
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_HIERARCHY,       uLeft);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_TOOLBAR,         uToolbar);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_VIEWPORT,        uCentre);
+
+	// Right column: Properties group (Terrain Editor tabs with Properties;
+	// Properties docked last so it fronts), tools group below.
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_TERRAIN_EDITOR,  uRight);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_PROPERTIES,      uRight);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_RENDER_GRAPH,    uRightBottom);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_ZENITH_TOOLS,    uRightBottom);
+
+	// Bottom strip: browser group (Content Browser fronts), Console right.
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_VARIANT_EDITOR,  uBottom);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_MEMORY_PROFILER, uBottom);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_PROFILING,       uBottom);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_MATERIAL_EDITOR, uBottom);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_CONTENT_BROWSER, uBottom);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_CONSOLE,         uBottomRight);
+
+	ImGui::DockBuilderFinish(uDockspaceID);
+
+	// Dock order alone doesn't decide which tab fronts — windows created
+	// LATER in the frame (Profiling begins after Render()) steal selection
+	// as they first dock in. Pin the front tab of each multi-tab group
+	// explicitly; a root window's tab id is the hash of its name.
+	if (ImGuiDockNode* pxBottomNode = ImGui::DockBuilderGetNode(uBottom))
+	{
+		pxBottomNode->SelectedTabId = ImHashStr(szEDITOR_WINDOW_CONTENT_BROWSER);
+	}
+	if (ImGuiDockNode* pxRightNode = ImGui::DockBuilderGetNode(uRight))
+	{
+		pxRightNode->SelectedTabId = ImHashStr(szEDITOR_WINDOW_PROPERTIES);
+	}
+	if (ImGuiDockNode* pxRightBottomNode = ImGui::DockBuilderGetNode(uRightBottom))
+	{
+		pxRightBottomNode->SelectedTabId = ImHashStr(szEDITOR_WINDOW_ZENITH_TOOLS);
+	}
+}
+
 void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl& xFluxGraphics, FrameContext& xFrame,
-	Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling)
+	Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling, Zenith_TerrainEditor& xTerrainEditor)
 {
 	// Cache the injected frame deps for RenderImGuiFrame (see header).
 	m_pxFluxBackend    = &xFluxBackend;
@@ -289,6 +431,11 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	m_pxFrame          = &xFrame;
 	m_pxDebugVariables = &xDebugVariables;
 	m_pxProfiling      = &xProfiling;
+	m_pxTerrainEditor  = &xTerrainEditor;
+
+	// Must run between ImGui::CreateContext (Zenith_Init) and the first
+	// NewFrame — ImGui reads io.IniFilename at first NewFrame.
+	ConfigureImGuiIniPath();
 
 	ApplyEditorTheme();
 
@@ -351,7 +498,7 @@ void Zenith_Editor::RenderImGuiFrame()
 	Render();
 
 	// Also render the old debug tools window for backwards compatibility
-	ImGui::Begin("Zenith Tools");
+	ImGui::Begin(szEDITOR_WINDOW_ZENITH_TOOLS);
 
 	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(m_pxFluxGraphics->m_xFrameConstants.m_xCamPos_Pad.z));
 	ImGui::Text(strCamPosText.c_str());
@@ -395,9 +542,15 @@ void Zenith_Editor::Shutdown()
 		m_xCachedImageViewHandle = Flux_ImageViewHandle();
 	}
 
+	// Close any live terrain-editing session (clears the stream-in hook).
+	if (m_pxTerrainEditor != nullptr)
+	{
+		m_pxTerrainEditor->Close();
+	}
+
 	// Reset editor camera state
 	m_xEditorState.m_xCamera.m_bInitialized = false;
-	
+
 	// Clear material selection (material system managed by Zenith_AssetRegistry)
 	m_xEditorState.m_xMaterial.m_xSelectedMaterial.Clear();
 
@@ -444,6 +597,18 @@ bool Zenith_Editor::Update()
 		}
 	}
 
+	// Terrain-editor service work (dirty-chunk evictions, paint-texture GPU
+	// flushes, sliced erosion) runs in EVERY mode — and BEFORE the automation
+	// early-return below, so automation-driven terrain editing (e.g. the
+	// RenderTest terrain showcase) gets its live preview pumped while the
+	// queue is still running. Unbaked edits also stay visible while
+	// playtesting. NULL headless: Initialise() (which injects the pointer)
+	// only runs windowed, but Update() still drives automation headless.
+	if (m_pxTerrainEditor != nullptr)
+	{
+		m_pxTerrainEditor->ServiceUpdate();
+	}
+
 	// Execute one automation step per frame during scene generation.
 	// Runs here (after pending ops, before rendering) so each step gets a full
 	// frame tick — matching real editor behaviour (one action = one mouse click).
@@ -479,6 +644,31 @@ bool Zenith_Editor::Update()
 	}
 
 	UpdateEditorInput();
+
+	// Terrain editor gets first claim on viewport input: while a terrain
+	// editing session is armed over the viewport (or mid-stroke), gizmo
+	// interaction and object picking are skipped for the frame. RMB camera
+	// look is unaffected (UpdateEditorCamera ran above). NULL headless — see
+	// the ServiceUpdate note above.
+	if (m_pxTerrainEditor != nullptr)
+	{
+		Zenith_TerrainEditorFrameContext xTerrainCtx;
+		xTerrainCtx.m_bViewportHovered = m_xEditorState.m_xViewport.m_bHovered;
+		xTerrainCtx.m_bViewportFocused = m_xEditorState.m_xViewport.m_bFocused;
+		xTerrainCtx.m_xViewportPos = m_xEditorState.m_xViewport.m_xPosition;
+		xTerrainCtx.m_xViewportSize = m_xEditorState.m_xViewport.m_xSize;
+		BuildViewMatrix(xTerrainCtx.m_xViewMatrix);
+		BuildProjectionMatrix(xTerrainCtx.m_xProjMatrix);
+		Zenith_Maths::Vector4 xCameraPos;
+		GetCameraPosition(xCameraPos);
+		xTerrainCtx.m_xCameraPos = { xCameraPos.x, xCameraPos.y, xCameraPos.z };
+		xTerrainCtx.m_bEditorStopped = (m_xEditorState.m_eEditorMode == EditorMode::Stopped);
+		m_pxTerrainEditor->UpdatePerFrame(xTerrainCtx);
+		if (m_pxTerrainEditor->ConsumedViewportInput())
+		{
+			return true;
+		}
+	}
 
 	// Handle gizmo interaction first (before object picking)
 	HandleGizmoInteraction();
@@ -642,6 +832,12 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	return false;
 }
 
+void Zenith_Editor::OpenTerrainEditor(Zenith_EntityID uTerrainEntity)
+{
+	m_pxTerrainEditor->Open(uTerrainEntity);
+	m_xEditorState.m_xPanels.m_bShowTerrainEditor = true;
+}
+
 void Zenith_Editor::UpdateEditorInput()
 {
 	// Handle gizmo mode keyboard shortcuts (when viewport is focused)
@@ -703,11 +899,28 @@ void Zenith_Editor::Render()
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 	
-	ImGui::Begin("DockSpace", nullptr, window_flags);
+	ImGui::Begin(szEDITOR_WINDOW_DOCKSPACE_HOST, nullptr, window_flags);
 	ImGui::PopStyleVar(3);
-	
-	// Create dockspace
-	ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
+
+	// Create dockspace. When no layout exists yet (fresh machine, ini load
+	// disabled for automated runs, or the user asked for a reset), build the
+	// code-defined default — ini settings materialize into dock nodes during
+	// the first NewFrame, so a missing root node here ⇔ "no saved layout".
+	ImGuiID dockspace_id = ImGui::GetID(szEDITOR_DOCKSPACE_ID);
+	if (ImGui::DockBuilderGetNode(dockspace_id) == nullptr || m_xEditorState.m_bResetDockLayout)
+	{
+		m_xEditorState.m_bResetDockLayout = false;
+		BuildDefaultDockLayout(dockspace_id, viewport);
+		// Windows created later in the build frame (Profiling begins after
+		// Render()) steal tab selection as they dock in, overriding the
+		// builder's SelectedTabId. Re-front the intended tab NEXT frame,
+		// once every window exists (SetWindowFocus is by-name lookup).
+		m_uFrontDefaultTabsCountdown = 2;
+	}
+	if (m_uFrontDefaultTabsCountdown > 0 && --m_uFrontDefaultTabsCountdown == 0)
+	{
+		ImGui::SetWindowFocus(szEDITOR_WINDOW_CONTENT_BROWSER);
+	}
 	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 	
 	RenderMainMenuBar();
@@ -728,6 +941,10 @@ void Zenith_Editor::Render()
 
 	Zenith_EditorPanelRenderGraph::Render();
 	Zenith_EditorPanelVariantEditor::Render();
+	if (m_pxTerrainEditor != nullptr)
+	{
+		Zenith_EditorPanelTerrainEditor::Render(*m_pxTerrainEditor, m_xEditorState.m_xPanels.m_bShowTerrainEditor);
+	}
 
 	// Animation state machine editor
 	// Zenith_AnimationStateMachineEditor::Render();  // TEMPORARILY DISABLED
