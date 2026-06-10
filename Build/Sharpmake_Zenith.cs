@@ -243,7 +243,6 @@ public class ZenithProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*puff\\.*");
 		SourceFilesExcludeRegex.Add(@".*testzlib\\.*");
 		SourceFilesExcludeRegex.Add(@".*untgz\\.*");
-		SourceFilesExcludeRegex.Add(@".*opencv.*");
 		SourceFilesExcludeRegex.Add(@".*stb_vorbis\.c.*");
 
 		// MSDF font deps: source-vendored but built externally via build_msdf_deps.bat;

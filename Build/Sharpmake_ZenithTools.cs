@@ -41,31 +41,6 @@ public class ZenithToolsProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
 
-		// OpenCV excludes
-		SourceFilesExcludeRegex.Add(@".*opencv\\samples.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\cmake.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\calib3d.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\core.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\dnn.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\gapi.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\highgui.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\features2d.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\flann.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\imgproc.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\objdetect.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\ml.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\python.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\stitching.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\java.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\video.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\ts.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\js.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\photo.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\imgcodecs\\test.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\3rdparty.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\samples.*");
-		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\apps.*");
-		SourceFilesExcludeRegex.Add(@".*opencv.*");
 
 		// Jolt Physics excludes
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");

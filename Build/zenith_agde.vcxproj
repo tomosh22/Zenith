@@ -860,6 +860,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FontAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_Image.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h" />
@@ -1828,6 +1829,7 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FontAsset.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_Image.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.cpp" />
