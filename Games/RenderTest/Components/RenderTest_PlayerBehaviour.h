@@ -349,8 +349,10 @@ public:
 		// Speed drives Idle <-> Walk <-> Run, IsSprinting elevates Walk -> Run,
 		// IsGrounded gates Jump -> Idle. The animator-component shortcuts
 		// SetFloat/SetBool target the controller-level SM which is bypassed
-		// once layers exist; route through the layer.
-		if (m_pxBaseLayer)
+		// once layers exist; route through the layer. Photo mode (capture
+		// harnesses / HumanShowcase) freezes these writes — the showcase owns
+		// the parameters and CrossFades the state machine itself.
+		if (m_pxBaseLayer && !RenderTest_GameplayState::s_bPhotoModeActive)
 		{
 			Flux_AnimationParameters& xParams = m_pxBaseLayer->GetStateMachine().GetParameters();
 			xParams.SetFloat("Speed", fSpeed);
@@ -824,6 +826,15 @@ private:
 	void UpdateFootIK()
 	{
 		if (!m_pxAnimator) return;
+		// Photo mode (capture harnesses / the HumanShowcase test) plays clips
+		// in place — ground IK would glue the feet mid-stride and distort the
+		// gait, so it stands down entirely.
+		if (RenderTest_GameplayState::s_bPhotoModeActive)
+		{
+			m_pxAnimator->ClearIKTarget("LeftLeg");
+			m_pxAnimator->ClearIKTarget("RightLeg");
+			return;
+		}
 		Zenith_ModelComponent* pxModel = m_xParentEntity.HasComponent<Zenith_ModelComponent>()
 			? &m_xParentEntity.GetComponent<Zenith_ModelComponent>() : nullptr;
 		if (!pxModel || !pxModel->HasSkeleton()) return;

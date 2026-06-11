@@ -141,8 +141,8 @@ void Zenith_UnitTests::TestStickFigureReloadClipFiveKeyframesOnLeftArm()
 	Flux_AnimationClip* pxClip = CreateReloadAnimation();
 	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("LeftUpperArm");
 	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Reload should have LeftUpperArm channel");
-	ZENITH_ASSERT_TRUE(pxCh->GetRotationKeyframes().GetSize() == 5,
-		"Reload LeftUpperArm should have 5 rotation keyframes (rest, drop, reach, lift, rest)");
+	ZENITH_ASSERT_TRUE(pxCh->GetRotationKeyframes().GetSize() == 8,
+		"Reload LeftUpperArm should have 8 rotation keyframes (rest, drop, reach, grab, lift, seat, slap, rest)");
 	delete pxClip;
 }
 
@@ -187,6 +187,97 @@ void Zenith_UnitTests::TestStickFigureJumpClipBothLegsHaveKeyframes()
 	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftLowerLeg"),  "Jump missing LeftLowerLeg channel");
 	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightLowerLeg"), "Jump missing RightLowerLeg channel");
 	delete pxClip;
+}
+
+// ----- Human body mesh -------------------------------------------------------
+
+ZENITH_TEST(StickFigureBody, BodyMeshInvariants) { Zenith_UnitTests::TestStickFigureBodyMeshInvariants(); }
+void Zenith_UnitTests::TestStickFigureBodyMeshInvariants()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+
+	// A lofted human body, not the old 128-vert cube figure.
+	ZENITH_ASSERT_TRUE(pxMesh->GetNumVerts() >= 1200, "Body mesh should have at least 1200 verts");
+	ZENITH_ASSERT_TRUE(pxMesh->GetNumIndices() >= 6000, "Body mesh should have at least 6000 indices");
+	ZENITH_ASSERT_TRUE(pxMesh->m_xBitangents.GetSize() == pxMesh->GetNumVerts(),
+		"Body mesh must author bitangents (normal mapping TBN)");
+	ZENITH_ASSERT_TRUE(pxMesh->m_xColors.GetSize() == pxMesh->GetNumVerts(),
+		"Body mesh must author vertex colors (baked AO)");
+
+	// Bounds: soles below the -1.0 foot bind (inside the 1.05 capsule), crown
+	// above the 1.4 head bind.
+	ZENITH_ASSERT_TRUE(pxMesh->GetBoundsMin().y < -1.0f && pxMesh->GetBoundsMin().y > -1.06f,
+		"Soles should sit just below the foot bind at -1.0");
+	ZENITH_ASSERT_TRUE(pxMesh->GetBoundsMax().y > 1.55f && pxMesh->GetBoundsMax().y < 1.65f,
+		"Crown should top out just above 1.55");
+
+	for (uint32_t v = 0; v < pxMesh->GetNumVerts(); v++)
+	{
+		// Weights normalized, bone indices valid.
+		const glm::vec4& xW = pxMesh->m_xBoneWeights.Get(v);
+		const float fSum = xW.x + xW.y + xW.z + xW.w;
+		ZENITH_ASSERT_TRUE(std::abs(fSum - 1.0f) < 0.001f, "Vertex weights must sum to 1");
+		const glm::uvec4& xI = pxMesh->m_xBoneIndices.Get(v);
+		ZENITH_ASSERT_TRUE(xI.x < STICK_BONE_COUNT && xI.y < STICK_BONE_COUNT,
+			"Bone indices must reference the 16-bone rig");
+
+		// UVs inside the atlas, tangent frame finite and unit-ish.
+		const Zenith_Maths::Vector2& xUV = pxMesh->m_xUVs.Get(v);
+		ZENITH_ASSERT_TRUE(xUV.x >= -0.001f && xUV.x <= 1.001f && xUV.y >= -0.001f && xUV.y <= 1.001f,
+			"UVs must stay inside the atlas");
+		const Zenith_Maths::Vector3& xT = pxMesh->m_xTangents.Get(v);
+		ZENITH_ASSERT_TRUE(std::isfinite(xT.x) && std::isfinite(xT.y) && std::isfinite(xT.z)
+			&& std::abs(glm::length(xT) - 1.0f) < 0.01f, "Tangents must be finite unit vectors");
+		const Zenith_Maths::Vector3& xN = pxMesh->m_xNormals.Get(v);
+		ZENITH_ASSERT_TRUE(std::abs(glm::length(xN) - 1.0f) < 0.01f, "Normals must be unit length");
+	}
+
+	delete pxMesh;
+	delete pxSkel;
+}
+
+ZENITH_TEST(StickFigureBody, BodySmoothSkinning) { Zenith_UnitTests::TestStickFigureBodySmoothSkinning(); }
+void Zenith_UnitTests::TestStickFigureBodySmoothSkinning()
+{
+	// The point of the body overhaul: joints carry BLENDED weights between the
+	// adjacent bones so elbows/knees bend smoothly instead of tearing. Verify a
+	// genuinely blended vertex exists at each major joint.
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+
+	struct JointCheck { float fY; float fXSign; uint32_t uBoneA; uint32_t uBoneB; const char* szName; };
+	const JointCheck axJoints[] = {
+		{ 0.715f, -1.0f, 4 /*LUA*/, 5 /*LLA*/,  "left elbow"  },
+		{ 0.715f,  1.0f, 7 /*RUA*/, 8 /*RLA*/,  "right elbow" },
+		{ -0.480f, -1.0f, 10 /*LUL*/, 11 /*LLL*/, "left knee"  },
+		{ -0.480f,  1.0f, 13 /*RUL*/, 14 /*RLL*/, "right knee" },
+	};
+
+	for (const JointCheck& xJoint : axJoints)
+	{
+		bool bFoundBlend = false;
+		for (uint32_t v = 0; v < pxMesh->GetNumVerts() && !bFoundBlend; v++)
+		{
+			const Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(v);
+			if (std::abs(xPos.y - xJoint.fY) > 0.05f || xPos.x * xJoint.fXSign < 0.05f)
+			{
+				continue;
+			}
+			const glm::uvec4& xI = pxMesh->m_xBoneIndices.Get(v);
+			const glm::vec4& xW = pxMesh->m_xBoneWeights.Get(v);
+			const bool bPair = (xI.x == xJoint.uBoneA && xI.y == xJoint.uBoneB)
+			                || (xI.x == xJoint.uBoneB && xI.y == xJoint.uBoneA);
+			if (bPair && xW.x > 0.25f && xW.x < 0.75f && xW.y > 0.25f && xW.y < 0.75f)
+			{
+				bFoundBlend = true;
+			}
+		}
+		ZENITH_ASSERT_TRUE(bFoundBlend, "Expected blended skin weights at the %s", xJoint.szName);
+	}
+
+	delete pxMesh;
+	delete pxSkel;
 }
 
 ZENITH_TEST(StickFigureProcAnim, JumpClipReturnsToIdentityAtEnd) { Zenith_UnitTests::TestStickFigureJumpClipReturnsToIdentityAtEnd(); }

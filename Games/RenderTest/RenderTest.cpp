@@ -77,7 +77,6 @@ namespace RenderTest
 		ModelHandle                 m_xStickFigureModelAsset;
 		std::string                 m_strStickFigureModelPath;
 		MaterialHandle              m_xCubeMaterial;
-		MaterialHandle              m_xPlayerMaterial;
 		Flux_ParticleEmitterConfig* m_pxMuzzleConfig = nullptr;
 	};
 
@@ -690,44 +689,9 @@ private:
 	Zenith_Vector<RenderTest_ResidencySnapshot> m_axSnapshotT2;
 };
 
-// Write a 1x1 colored .ztxtr file and return a TextureHandle pointing at it.
-// Mirrors Combat::ExportColoredTexture so the procedural diffuse texture survives
-// scene save/load via its disk path.
-static TextureHandle ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
-
-	Zenith_DataStream xStream;
-	xStream << (int32_t)1;
-	xStream << (int32_t)1;
-	xStream << (int32_t)1;
-	xStream << (TextureFormat)TEXTURE_FORMAT_RGBA8_UNORM;
-	xStream << (size_t)4;
-	xStream.WriteData(aucPixelData, 4);
-	xStream.WriteToFile(strPath.c_str());
-
-	std::string strRelativePath = Zenith_AssetRegistry::MakeRelativePath(strPath);
-	if (strRelativePath.empty())
-	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "[RenderTest] Failed to make relative path for texture: %s", strPath.c_str());
-		return TextureHandle();
-	}
-
-	return TextureHandle(strRelativePath);
-}
-
-static MaterialHandle CreateFlatColorMaterial(const std::string& strMaterialName,
-	const std::string& strTexturePath,
-	uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-	pxMaterial->SetName(strMaterialName);
-	pxMaterial->SetDiffuseTexture(ExportColoredTexture(strTexturePath, uR, uG, uB));
-
-	MaterialHandle xHandle;
-	xHandle.Set(pxMaterial);
-	return xHandle;
-}
+// (ExportColoredTexture/CreateFlatColorMaterial used to live here for the
+// flat-teal player material — the StickFigure .zmodel now bundles its own
+// painted-atlas body material, so the helpers are gone.)
 
 // Build a unit cube .zasset (mesh) + .zmodel (model bundle) on disk if they
 // don't already exist, and store their paths/handles in the RenderTest namespace.
@@ -799,14 +763,18 @@ static void EnsureStickFigureModelExists()
 		return;
 	}
 
+	// GenerateStickFigureAssets exports the canonical .zmodel (mesh + skeleton
+	// + painted-atlas body material) every boot, so this fallback only fires
+	// when the generator was skipped (--skip-tool-exports).
 	if (!std::filesystem::exists(strModelPath))
 	{
 		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
 		pxModel->SetName("StickFigure");
 		pxModel->SetSkeletonPath(strSkeletonPath);
 
-		Zenith_Vector<std::string> xEmptyMaterials;
-		pxModel->AddMeshByPath(strMeshAssetPath, xEmptyMaterials);
+		Zenith_Vector<std::string> xMaterials;
+		xMaterials.PushBack("engine:Meshes/StickFigure/StickFigure_Body.zmtrl");
+		pxModel->AddMeshByPath(strMeshAssetPath, xMaterials);
 		pxModel->Export(strModelPath.c_str());
 		RenderTest::Resources().m_xStickFigureModelAsset.Set(pxModel);
 	}
@@ -879,8 +847,8 @@ static void InitializeRenderTestResources()
 	RenderTest::Resources().m_xCubeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	RenderTest::Resources().m_xCubeMaterial.GetDirect()->SetName("RenderTestCubeMaterial");
 	RenderTest::Resources().m_xCubeMaterial.GetDirect()->SetDiffuseTexture(g_xEngine.FluxGraphics().m_xGridTexture);
-	RenderTest::Resources().m_xPlayerMaterial = CreateFlatColorMaterial("RenderTestPlayerMaterial",
-		strProceduralTexDir + "PlayerDiffuse" ZENITH_TEXTURE_EXT, 0, 200, 220);
+	// (The old flat-teal player material is gone — the StickFigure .zmodel now
+	// bundles its own painted-atlas body material.)
 
 	EnsureUnitCubeModelExists();
 	EnsureStickFigureModelExists();
@@ -1190,7 +1158,6 @@ void Project_Shutdown()
 	RenderTest::Resources().m_xCubeModelAsset        = ModelHandle{};
 	RenderTest::Resources().m_xStickFigureModelAsset = ModelHandle{};
 	RenderTest::Resources().m_xCubeMaterial          = MaterialHandle{};
-	RenderTest::Resources().m_xPlayerMaterial        = MaterialHandle{};
 }
 
 void Project_LoadInitialScene();
@@ -1444,8 +1411,8 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
 	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
 	g_xEngine.EditorAutomation().AddStep_AddModel();
+	// The .zmodel bundles the painted-atlas body material — no override step.
 	g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
-	g_xEngine.EditorAutomation().AddStep_SetModelMaterial(0, RenderTest::Resources().m_xPlayerMaterial.GetDirect());
 	g_xEngine.EditorAutomation().AddStep_AddAnimator();
 	// Muzzle flash emitter lives on the Player entity; the player behaviour
 	// overrides its emit position+direction per shot so we don't need a

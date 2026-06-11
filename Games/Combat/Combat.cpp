@@ -71,19 +71,29 @@ void Combat::TryInitializeStickFigureModel()
 			}
 		}
 
-		// Create model asset via registry
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
-		pxModel->SetName("StickFigure");
-		pxModel->SetSkeletonPath(strStickFigureSkeletonPath);
-
-		Zenith_Vector<std::string> xEmptyMaterials;
-		pxModel->AddMeshByPath(strStickFigureMeshAssetPath, xEmptyMaterials);
-
-		// Export model asset
+		// Use the canonical .zmodel exported by GenerateStickFigureAssets every
+		// boot (mesh + skeleton + painted-atlas body material). Only build a
+		// fallback bundle when the generator was skipped — re-exporting here
+		// unconditionally used to clobber the material binding.
 		Resources().m_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
-		pxModel->Export(Resources().m_strStickFigureModelPath.c_str());
-		Resources().m_xStickFigureModelAsset.Set(pxModel);
-		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", Resources().m_strStickFigureModelPath.c_str());
+		if (!std::filesystem::exists(Resources().m_strStickFigureModelPath))
+		{
+			Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+			pxModel->SetName("StickFigure");
+			pxModel->SetSkeletonPath(strStickFigureSkeletonPath);
+
+			Zenith_Vector<std::string> xMaterials;
+			xMaterials.PushBack("engine:Meshes/StickFigure/StickFigure_Body.zmtrl");
+			pxModel->AddMeshByPath(strStickFigureMeshAssetPath, xMaterials);
+
+			pxModel->Export(Resources().m_strStickFigureModelPath.c_str());
+			Resources().m_xStickFigureModelAsset.Set(pxModel);
+			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", Resources().m_strStickFigureModelPath.c_str());
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Using model asset at %s", Resources().m_strStickFigureModelPath.c_str());
+		}
 	}
 	else
 	{

@@ -109,8 +109,8 @@ public:
 
 		// --- Photo mode (visual tests / capture harnesses) ---
 		// Same camera-component view path as normal play; just a scripted
-		// world-space offset + pitch instead of mouse-look. Yaw stays 0
-		// (the spawn-facing direction).
+		// world-space offset + yaw/pitch instead of mouse-look (yaw 0 = the
+		// spawn-facing direction, pi = parked in front looking back).
 		if (RenderTest_GameplayState::s_bPhotoModeActive)
 		{
 			Zenith_Maths::Vector3 xPhotoPlayerPos;
@@ -120,7 +120,7 @@ public:
 				RenderTest_GameplayState::s_fPhotoOffsetX,
 				RenderTest_GameplayState::s_fPhotoOffsetY,
 				RenderTest_GameplayState::s_fPhotoOffsetZ));
-			xPhotoCamera.SetYaw(0.0f);
+			xPhotoCamera.SetYaw(RenderTest_GameplayState::s_fPhotoYaw);
 			xPhotoCamera.SetPitch(RenderTest_GameplayState::s_fPhotoPitch);
 			return;
 		}

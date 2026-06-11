@@ -24,6 +24,7 @@ namespace RenderTest_GameplayState
 	inline float s_fPhotoOffsetY = 0.0f;
 	inline float s_fPhotoOffsetZ = 0.0f;
 	inline float s_fPhotoPitch   = 0.0f;
+	inline float s_fPhotoYaw     = 0.0f;   // pi = parked in front, looking back at the player
 
 	inline float GetCameraYaw()        { return s_fCameraYaw; }
 	inline float GetCameraPitch()      { return s_fCameraPitch; }
@@ -41,5 +42,6 @@ namespace RenderTest_GameplayState
 		s_fPhotoOffsetY = 0.0f;
 		s_fPhotoOffsetZ = 0.0f;
 		s_fPhotoPitch = 0.0f;
+		s_fPhotoYaw = 0.0f;
 	}
 }

@@ -728,6 +728,11 @@ public:
 	static void TestStickFigureJumpClipBothLegsHaveKeyframes();
 	static void TestStickFigureJumpClipReturnsToIdentityAtEnd();
 
+	// StickFigure human body mesh contracts (the lofted, atlas-textured,
+	// smooth-skinned body in Tools/Zenith_Tools_TestAssetExport.cpp).
+	static void TestStickFigureBodyMeshInvariants();
+	static void TestStickFigureBodySmoothSkinning();
+
 	// Flux_BlendTreeNode_BlendSpace1D / 2D nearest-blend-point tests (verify
 	// the shared FindNearestBlendPoint templated helper).
 	static void TestBlendSpace1DEmptyReturnsZero();

@@ -3877,35 +3877,10 @@ static constexpr uint32_t STICK_BONE_RIGHT_LOWER_LEG = 14;
 static constexpr uint32_t STICK_BONE_RIGHT_FOOT = 15;
 static constexpr uint32_t STICK_BONE_COUNT = 16;
 
-// Cube geometry constants
-static const Zenith_Maths::Vector3 s_axCubeOffsets[8] = {
-	{-0.05f, -0.05f, -0.05f}, // 0: left-bottom-back
-	{ 0.05f, -0.05f, -0.05f}, // 1: right-bottom-back
-	{ 0.05f,  0.05f, -0.05f}, // 2: right-top-back
-	{-0.05f,  0.05f, -0.05f}, // 3: left-top-back
-	{-0.05f, -0.05f,  0.05f}, // 4: left-bottom-front
-	{ 0.05f, -0.05f,  0.05f}, // 5: right-bottom-front
-	{ 0.05f,  0.05f,  0.05f}, // 6: right-top-front
-	{-0.05f,  0.05f,  0.05f}, // 7: left-top-front
-};
-
-static const uint32_t s_auCubeIndices[36] = {
-	// Back face
-	0, 2, 1, 0, 3, 2,
-	// Front face
-	4, 5, 6, 4, 6, 7,
-	// Left face
-	0, 4, 7, 0, 7, 3,
-	// Right face
-	1, 2, 6, 1, 6, 5,
-	// Bottom face
-	0, 1, 5, 0, 5, 4,
-	// Top face
-	3, 7, 6, 3, 6, 2,
-};
-
 /**
- * Create a 16-bone humanoid stick figure skeleton
+ * Create a 16-bone humanoid stick figure skeleton (local fixture for the
+ * engine animation/IK machinery tests — mirrors the production rig, which is
+ * pinned never to change).
  */
 static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 {
@@ -3949,110 +3924,9 @@ static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 	return pxSkel;
 }
 
-/**
- * Create a cube mesh for the stick figure, with one cube per bone
- */
-// Per-bone scale factors for humanoid proportions (half-extents in X, Y, Z)
-// Bones: 0=Root, 1=Spine, 2=Neck, 3=Head, 4-6=LeftArm, 7-9=RightArm, 10-12=LeftLeg, 13-15=RightLeg
-// Skeleton positions: Root=Y:0, Spine=Y:0.5, Neck=Y:1.2, Head=Y:1.4, Arms=Y:1.1, Legs=Y:0/-0.5/-1.0
-static const Zenith_Maths::Vector3 s_axBoneScales[STICK_BONE_COUNT] = {
-	{0.10f, 0.06f, 0.06f},  // 0: Root (pelvis) - small hip joint at Y=0
-	{0.18f, 0.65f, 0.10f},  // 1: Spine (torso) - centered at Y=0.5, spans Y=-0.15 to Y=1.15 (reaches arms/neck)
-	{0.05f, 0.10f, 0.05f},  // 2: Neck - thin, at Y=1.2
-	{0.12f, 0.12f, 0.10f},  // 3: Head - round, large, at Y=1.4
-	{0.05f, 0.20f, 0.05f},  // 4: LeftUpperArm - at Y=1.1
-	{0.04f, 0.15f, 0.04f},  // 5: LeftLowerArm (Y matches bone-to-Hand 0.30)
-	{0.04f, 0.06f, 0.02f},  // 6: LeftHand
-	{0.05f, 0.20f, 0.05f},  // 7: RightUpperArm - at Y=1.1
-	{0.04f, 0.15f, 0.04f},  // 8: RightLowerArm
-	{0.04f, 0.06f, 0.02f},  // 9: RightHand
-	{0.07f, 0.25f, 0.07f},  // 10: LeftUpperLeg - at Y=0
-	{0.05f, 0.25f, 0.05f},  // 11: LeftLowerLeg - at Y=-0.5
-	{0.05f, 0.03f, 0.10f},  // 12: LeftFoot - at Y=-1.0
-	{0.07f, 0.25f, 0.07f},  // 13: RightUpperLeg
-	{0.05f, 0.25f, 0.05f},  // 14: RightLowerLeg
-	{0.05f, 0.03f, 0.10f},  // 15: RightFoot
-};
-
-// Per-bone cube center offsets — see Tools/Zenith_Tools_TestAssetExport.cpp
-// for the rationale (kept in sync with the production export so unit tests
-// build the same geometry).
-static const Zenith_Maths::Vector3 s_axBoneCenterOffsets[STICK_BONE_COUNT] = {
-	{ 0.0f,  0.0f,  0.0f},  // 0: Root
-	{ 0.0f,  0.0f,  0.0f},  // 1: Spine (junction — shift would intersect head)
-	{ 0.0f,  0.0f,  0.0f},  // 2: Neck (junction)
-	{ 0.0f,  0.0f,  0.0f},  // 3: Head
-	{ 0.0f, -0.20f, 0.0f},  // 4: LeftUpperArm
-	{ 0.0f, -0.15f, 0.0f},  // 5: LeftLowerArm
-	{ 0.0f,  0.0f,  0.0f},  // 6: LeftHand
-	{ 0.0f, -0.20f, 0.0f},  // 7: RightUpperArm
-	{ 0.0f, -0.15f, 0.0f},  // 8: RightLowerArm
-	{ 0.0f,  0.0f,  0.0f},  // 9: RightHand
-	{ 0.0f, -0.25f, 0.0f},  // 10: LeftUpperLeg
-	{ 0.0f, -0.25f, 0.0f},  // 11: LeftLowerLeg
-	{ 0.0f,  0.0f,  0.0f},  // 12: LeftFoot
-	{ 0.0f, -0.25f, 0.0f},  // 13: RightUpperLeg
-	{ 0.0f, -0.25f, 0.0f},  // 14: RightLowerLeg
-	{ 0.0f,  0.0f,  0.0f},  // 15: RightFoot
-};
-
-static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
-{
-	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
-	const uint32_t uVertsPerBone = 8;
-	const uint32_t uIndicesPerBone = 36;
-	pxMesh->Reserve(STICK_BONE_COUNT * uVertsPerBone, STICK_BONE_COUNT * uIndicesPerBone);
-
-	// Add a scaled cube at each bone position
-	for (uint32_t uBone = 0; uBone < STICK_BONE_COUNT; uBone++)
-	{
-		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(uBone);
-		// Get world position from bind pose model matrix
-		Zenith_Maths::Vector3 xBoneWorldPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
-
-		// Get per-bone scale
-		Zenith_Maths::Vector3 xScale = s_axBoneScales[uBone];
-
-		// Shift cube so its top face sits on the bone pivot, bottom on child pivot.
-		Zenith_Maths::Vector3 xCenterOffset = s_axBoneCenterOffsets[uBone];
-
-		uint32_t uBaseVertex = pxMesh->GetNumVerts();
-
-		// Add 8 cube vertices with per-bone scaling
-		for (int i = 0; i < 8; i++)
-		{
-			// Scale the cube offsets by the bone's scale factors
-			Zenith_Maths::Vector3 xScaledOffset = s_axCubeOffsets[i] * 2.0f; // Base offsets are ±0.05, so *2 = ±0.1 (unit cube from -0.1 to 0.1)
-			xScaledOffset.x *= xScale.x * 10.0f; // Scale to actual size
-			xScaledOffset.y *= xScale.y * 10.0f;
-			xScaledOffset.z *= xScale.z * 10.0f;
-
-			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xCenterOffset + xScaledOffset;
-
-			// Calculate proper face normal based on vertex position
-			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);
-
-			pxMesh->AddVertex(xPos, xNormal, Zenith_Maths::Vector2(0, 0));
-			pxMesh->SetVertexSkinning(
-				uBaseVertex + i,
-				glm::uvec4(uBone, 0, 0, 0),
-				glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
-		}
-
-		// Add 12 triangles (36 indices)
-		for (int i = 0; i < 36; i += 3)
-		{
-			pxMesh->AddTriangle(
-				uBaseVertex + s_auCubeIndices[i],
-				uBaseVertex + s_auCubeIndices[i + 1],
-				uBaseVertex + s_auCubeIndices[i + 2]);
-		}
-	}
-
-	pxMesh->AddSubmesh(0, STICK_BONE_COUNT * uIndicesPerBone, 0);
-	pxMesh->ComputeBounds();
-	return pxMesh;
-}
+// (The cube-per-bone mesh fixture that used to live here is gone — the
+// production StickFigure is now a lofted human body, and the mesh-contract
+// tests below load the exported .zasset instead of rebuilding a stale copy.)
 
 /**
  * Create a 2-second idle animation (subtle breathing motion)
@@ -5886,89 +5760,98 @@ void Zenith_UnitTests::TestStickFigureSkeletonCreation(){
 	delete pxSkel;
 }
 
+#ifndef ZENITH_ANDROID // Loads the exported asset via std::filesystem local paths
 ZENITH_TEST(Core, StickFigureMeshCreation) { Zenith_UnitTests::TestStickFigureMeshCreation(); }
+#endif
 
 void Zenith_UnitTests::TestStickFigureMeshCreation(){
 
-	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
-	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+	// The production StickFigure is a lofted human body generated by
+	// GenerateStickFigureAssets() (called earlier in main()); validate the
+	// EXPORTED mesh so the serialization round-trip is covered too.
+	std::string strMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_ASSET_EXT;
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strMeshAssetPath), "StickFigure mesh asset should exist");
 
-	// Verify vertex/index counts
-	const uint32_t uExpectedVerts = STICK_BONE_COUNT * 8;  // 128
-	const uint32_t uExpectedIndices = STICK_BONE_COUNT * 36;  // 576
+	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshAssetPath);
+	ZENITH_ASSERT_NOT_NULL(pxMesh, "Should be able to load the StickFigure mesh asset");
 
-	ZENITH_ASSERT_EQ(pxMesh->GetNumVerts(), uExpectedVerts, "Expected 128 vertices");
-	ZENITH_ASSERT_EQ(pxMesh->GetNumIndices(), uExpectedIndices, "Expected 576 indices");
+	// A real body, not the old 128-vert cube figure.
+	ZENITH_ASSERT_TRUE(pxMesh->GetNumVerts() >= 1200, "Body mesh should have at least 1200 verts");
+	ZENITH_ASSERT_TRUE(pxMesh->GetNumIndices() >= 6000, "Body mesh should have at least 6000 indices");
 
-	// Verify skinning weights
-	ZENITH_ASSERT_EQ(pxMesh->m_xBoneIndices.GetSize(), uExpectedVerts, "Bone indices count mismatch");
-	ZENITH_ASSERT_EQ(pxMesh->m_xBoneWeights.GetSize(), uExpectedVerts, "Bone weights count mismatch");
+	// Full attribute set survives the round-trip (UVs/tangents/bitangents
+	// drive the atlas + normal mapping; colors carry baked AO).
+	ZENITH_ASSERT_EQ(pxMesh->m_xUVs.GetSize(), pxMesh->GetNumVerts(), "UV count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xTangents.GetSize(), pxMesh->GetNumVerts(), "Tangent count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xBitangents.GetSize(), pxMesh->GetNumVerts(), "Bitangent count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xColors.GetSize(), pxMesh->GetNumVerts(), "Color count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xBoneIndices.GetSize(), pxMesh->GetNumVerts(), "Bone indices count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xBoneWeights.GetSize(), pxMesh->GetNumVerts(), "Bone weights count mismatch");
 
-	// Check that each vertex is 100% weighted to one bone
-	for (uint32_t v = 0; v < uExpectedVerts; v++)
+	// Weights normalized; bone indices stay on the 16-bone rig.
+	for (uint32_t v = 0; v < pxMesh->GetNumVerts(); v++)
 	{
 		const glm::vec4& xWeights = pxMesh->m_xBoneWeights.Get(v);
-		ZENITH_ASSERT_TRUE(FloatEquals(xWeights.x, 1.0f, 0.001f), "Vertex weight should be 1.0");
-		ZENITH_ASSERT_TRUE(FloatEquals(xWeights.y, 0.0f, 0.001f), "Secondary weight should be 0.0");
+		const float fSum = xWeights.x + xWeights.y + xWeights.z + xWeights.w;
+		ZENITH_ASSERT_TRUE(FloatEquals(fSum, 1.0f, 0.001f), "Vertex weights should sum to 1.0");
+		const glm::uvec4& xIndices = pxMesh->m_xBoneIndices.Get(v);
+		ZENITH_ASSERT_TRUE(xIndices.x < STICK_BONE_COUNT && xIndices.y < STICK_BONE_COUNT,
+			"Bone indices must reference the 16-bone rig");
 	}
 
-	// Verify bounds
+	// Verify bounds (same envelope contract as the original cube figure:
+	// soles below -0.9, crown above 1.3).
 	ZENITH_ASSERT_LT(pxMesh->GetBoundsMin().y, -0.9f, "Bounds min Y should be below -0.9");
 	ZENITH_ASSERT_GT(pxMesh->GetBoundsMax().y, 1.3f, "Bounds max Y should be above 1.3");
-
-	delete pxMesh;
-	delete pxSkel;
 }
 
+#ifndef ZENITH_ANDROID // Loads the exported asset via std::filesystem local paths
 ZENITH_TEST(Core, StickFigureMeshJointAlignment) { Zenith_UnitTests::TestStickFigureMeshJointAlignment(); }
+#endif
 
 void Zenith_UnitTests::TestStickFigureMeshJointAlignment()
 {
-	// Verify each leg/arm bone's cube is centered at the midpoint between the
-	// bone pivot and its child's pivot. With this invariant the cube's "top"
-	// stays planted at the joint when the bone rotates around its pivot, so
-	// adjacent cubes (parent and child) stay visually connected through rotation.
-	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
-	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+	// The smooth-skinning contract that keeps the body connected through
+	// rotation: every major joint carries vertices BLENDED between the two
+	// adjacent bones (the old cube figure relied on rigid cubes meeting at the
+	// pivot; the lofted body bends instead of tearing).
+	std::string strMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_ASSET_EXT;
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strMeshAssetPath), "StickFigure mesh asset should exist");
 
-	struct ChainCheck { uint32_t uBone; uint32_t uChild; const char* szName; };
-	const ChainCheck axChecks[] = {
-		{ STICK_BONE_LEFT_UPPER_LEG,  STICK_BONE_LEFT_LOWER_LEG,  "LeftUpperLeg"  },
-		{ STICK_BONE_LEFT_LOWER_LEG,  STICK_BONE_LEFT_FOOT,       "LeftLowerLeg"  },
-		{ STICK_BONE_RIGHT_UPPER_LEG, STICK_BONE_RIGHT_LOWER_LEG, "RightUpperLeg" },
-		{ STICK_BONE_RIGHT_LOWER_LEG, STICK_BONE_RIGHT_FOOT,      "RightLowerLeg" },
-		{ STICK_BONE_LEFT_UPPER_ARM,  STICK_BONE_LEFT_LOWER_ARM,  "LeftUpperArm"  },
-		{ STICK_BONE_LEFT_LOWER_ARM,  STICK_BONE_LEFT_HAND,       "LeftLowerArm"  },
-		{ STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, "RightUpperArm" },
-		{ STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND,      "RightLowerArm" },
+	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshAssetPath);
+	ZENITH_ASSERT_NOT_NULL(pxMesh, "Should be able to load the StickFigure mesh asset");
+
+	struct JointCheck { float fY; float fXSign; uint32_t uBoneA; uint32_t uBoneB; const char* szName; };
+	const JointCheck axChecks[] = {
+		{ 0.715f, -1.0f, STICK_BONE_LEFT_UPPER_ARM,  STICK_BONE_LEFT_LOWER_ARM,  "left elbow"  },
+		{ 0.715f,  1.0f, STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, "right elbow" },
+		{ -0.480f, -1.0f, STICK_BONE_LEFT_UPPER_LEG,  STICK_BONE_LEFT_LOWER_LEG,  "left knee"  },
+		{ -0.480f,  1.0f, STICK_BONE_RIGHT_UPPER_LEG, STICK_BONE_RIGHT_LOWER_LEG, "right knee" },
+		{ 0.435f, -1.0f, STICK_BONE_LEFT_LOWER_ARM,  STICK_BONE_LEFT_HAND,       "left wrist"  },
+		{ 0.435f,  1.0f, STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND,      "right wrist" },
 	};
 
-	for (const ChainCheck& xChk : axChecks)
+	for (const JointCheck& xChk : axChecks)
 	{
-		const float fBonePivotY  = pxSkel->GetBone(xChk.uBone).m_xBindPoseModel[3].y;
-		const float fChildPivotY = pxSkel->GetBone(xChk.uChild).m_xBindPoseModel[3].y;
-
-		float fMinY = FLT_MAX;
-		float fMaxY = -FLT_MAX;
-		for (uint32_t v = xChk.uBone * 8; v < (xChk.uBone + 1) * 8; ++v)
+		bool bFoundBlend = false;
+		for (uint32_t v = 0; v < pxMesh->GetNumVerts() && !bFoundBlend; v++)
 		{
 			const Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(v);
-			fMinY = std::min(fMinY, xPos.y);
-			fMaxY = std::max(fMaxY, xPos.y);
+			if (std::abs(xPos.y - xChk.fY) > 0.05f || xPos.x * xChk.fXSign < 0.05f)
+			{
+				continue;
+			}
+			const glm::uvec4& xIndices = pxMesh->m_xBoneIndices.Get(v);
+			const glm::vec4& xWeights = pxMesh->m_xBoneWeights.Get(v);
+			const bool bPair = (xIndices.x == xChk.uBoneA && xIndices.y == xChk.uBoneB)
+			                || (xIndices.x == xChk.uBoneB && xIndices.y == xChk.uBoneA);
+			if (bPair && xWeights.x > 0.2f && xWeights.x < 0.8f && xWeights.y > 0.2f && xWeights.y < 0.8f)
+			{
+				bFoundBlend = true;
+			}
 		}
-
-		// Cube should be centered on the midpoint between bone and child pivot.
-		// This is the invariant that makes joints stay connected through rotation:
-		// when a bone rotates around its pivot, a cube centered at the midpoint
-		// keeps its top face anchored at the joint.
-		const float fExpectedCenter = 0.5f * (fBonePivotY + fChildPivotY);
-		const float fActualCenter = 0.5f * (fMaxY + fMinY);
-		ZENITH_ASSERT_TRUE(FloatEquals(fActualCenter, fExpectedCenter, 0.001f),
-			"Cube center Y should be at midpoint between bone and child pivot");
+		ZENITH_ASSERT_TRUE(bFoundBlend, "Expected blended skin weights at the %s", xChk.szName);
 	}
-
-	delete pxMesh;
-	delete pxSkel;
 }
 
 ZENITH_TEST(Core, StickFigureIdleAnimation) { Zenith_UnitTests::TestStickFigureIdleAnimation(); }
@@ -6604,9 +6487,7 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 	// This test verifies the assets were created correctly and can be loaded
 
 	// Expected values for StickFigure assets
-	const uint32_t uExpectedBoneCount = STICK_BONE_COUNT;  // 16 bones
-	const uint32_t uExpectedVertCount = STICK_BONE_COUNT * 8;  // 8 verts per bone = 128
-	const uint32_t uExpectedIndexCount = STICK_BONE_COUNT * 36;  // 36 indices per bone = 576
+	const uint32_t uExpectedBoneCount = STICK_BONE_COUNT;  // 16 bones (rig layout is pinned)
 
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
 	std::string strSkelPath = strOutputDir + "StickFigure" ZENITH_SKELETON_EXT;
@@ -6622,24 +6503,36 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strWalkPath), "Walk animation file should exist");
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strRunPath), "Run animation file should exist");
 
+#ifdef ZENITH_TOOLS
+	// The texture atlas, body material and model bundle are tools-build
+	// exports (regenerated every boot alongside the mesh).
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strOutputDir + "StickFigure_Albedo" ZENITH_TEXTURE_EXT), "Albedo atlas should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strOutputDir + "StickFigure_Normal" ZENITH_TEXTURE_EXT), "Normal atlas should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strOutputDir + "StickFigure_RM" ZENITH_TEXTURE_EXT), "Roughness/metallic atlas should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strOutputDir + "StickFigure_Body.zmtrl"), "Body material should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strOutputDir + "StickFigure" ZENITH_MODEL_EXT), "Model bundle should exist");
+#endif
+
 	// Reload and verify skeleton
 	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
 	ZENITH_ASSERT_NOT_NULL(pxReloadedSkel, "Should be able to reload skeleton");
 	ZENITH_ASSERT_EQ(pxReloadedSkel->GetNumBones(), uExpectedBoneCount, "Reloaded skeleton should have 16 bones");
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
 
-	// Reload and verify mesh asset format
+	// Reload and verify mesh asset format (counts are structural — the lofted
+	// body, not the old 128-vert cube figure; exact counts live with the
+	// generator, see TestStickFigureMeshCreation)
 	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshAssetPath);
 	ZENITH_ASSERT_NOT_NULL(pxReloadedMesh, "Should be able to reload mesh asset");
-	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumVerts(), uExpectedVertCount, "Reloaded mesh vertex count mismatch");
-	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumIndices(), uExpectedIndexCount, "Reloaded mesh index count mismatch");
+	ZENITH_ASSERT_TRUE(pxReloadedMesh->GetNumVerts() >= 1200, "Reloaded mesh should be the lofted body (>=1200 verts)");
+	ZENITH_ASSERT_TRUE(pxReloadedMesh->GetNumIndices() >= 6000, "Reloaded mesh should be the lofted body (>=6000 indices)");
 
 #ifdef ZENITH_TOOLS
 	// Reload and verify Flux_MeshGeometry format
 	Flux_MeshGeometry xReloadedGeometry;
 	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure" ZENITH_MESH_EXT).c_str(), xReloadedGeometry, 0, false);
-	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), uExpectedVertCount, "Reloaded geometry vertex count mismatch");
-	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), uExpectedIndexCount, "Reloaded geometry index count mismatch");
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), pxReloadedMesh->GetNumVerts(), "Geometry/mesh vertex count mismatch");
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), pxReloadedMesh->GetNumIndices(), "Geometry/mesh index count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumBones(), uExpectedBoneCount, "Reloaded geometry bone count mismatch");
 #endif
 

@@ -4,8 +4,10 @@
 // Called from main() before unit tests to ensure assets exist
 extern void GenerateTestAssets();
 
-// Generate StickFigure humanoid test assets
-// Creates: skeleton, mesh, mesh geometry, static mesh, 9 animations
+// Generate StickFigure human test assets
+// Creates: skeleton (16-bone rig, unchanged layout), smooth lofted body mesh,
+// mesh geometry, static mesh, painted texture atlas (albedo/normal/RM),
+// body material, model bundle, and 13 animations
 // Output: ENGINE_ASSETS_DIR/Meshes/StickFigure/
 extern void GenerateStickFigureAssets();
 
