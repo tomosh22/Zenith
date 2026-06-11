@@ -2676,18 +2676,20 @@ static Flux_AnimationClip* CreateReloadAnimation()
 	const Zenith_Maths::Quat xSpineRest      = StickFigureAimHoldPose::Spine();
 	const Zenith_Maths::Quat xHeadRest       = StickFigureAimHoldPose::Head();
 
-	// Left hand: drop off the foregrip, reach to the belt for the magazine,
-	// bring it to the mag-well, seat it with a push, slap the release, return.
-	// 8 keyframes (pinned by ReloadClipKeyframesOnLeftArm).
+	// Left hand: drop off the foregrip toward the belt (POSITIVE X deltas — the
+	// rest pose is already raised at -65X, so dropping means rotating back),
+	// grab the magazine, bring it up to the mag-well, seat it with a push,
+	// slap the release, return. 8 keyframes (pinned by
+	// ReloadClipKeyframesOnLeftArm).
 	{
 		const HumanRotKey ax[] = {
 			{ 0.0f,  xLeftUpperRest },
-			{ 5.0f,  HumanRotX(-88.0f) * xLeftUpperRest },                       // drop off the grip
-			{ 12.0f, HumanRotX(-34.0f) * HumanRotY(58.0f) * xLeftUpperRest },    // reach across to the belt
-			{ 17.0f, HumanRotX(-42.0f) * HumanRotY(30.0f) * xLeftUpperRest },    // mag in hand
-			{ 23.0f, HumanRotX(-94.0f) * xLeftUpperRest },                       // up to the mag-well
-			{ 26.0f, HumanRotX(-86.0f) * xLeftUpperRest },                       // seat it
-			{ 29.0f, HumanRotX(-100.0f) * xLeftUpperRest },                      // slap the release
+			{ 5.0f,  HumanRotX(52.0f) * xLeftUpperRest },                        // drop off the grip
+			{ 12.0f, HumanRotX(44.0f) * HumanRotY(34.0f) * xLeftUpperRest },     // reach to the belt
+			{ 17.0f, HumanRotX(40.0f) * HumanRotY(22.0f) * xLeftUpperRest },     // mag in hand
+			{ 23.0f, HumanRotX(6.0f) * xLeftUpperRest },                         // up to the mag-well
+			{ 26.0f, HumanRotX(14.0f) * xLeftUpperRest },                        // seat it
+			{ 29.0f, HumanRotX(2.0f) * xLeftUpperRest },                         // slap the release
 			{ 36.0f, xLeftUpperRest },                                           // back on the grip
 		};
 		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
@@ -2695,12 +2697,12 @@ static Flux_AnimationClip* CreateReloadAnimation()
 	{
 		const HumanRotKey ax[] = {
 			{ 0.0f,  xLeftLowerRest },
-			{ 5.0f,  HumanRotX(-96.0f) * xLeftLowerRest },
-			{ 12.0f, HumanRotX(-54.0f) * xLeftLowerRest },
-			{ 17.0f, HumanRotX(-66.0f) * xLeftLowerRest },
-			{ 23.0f, HumanRotX(-44.0f) * xLeftLowerRest },
-			{ 26.0f, HumanRotX(-52.0f) * xLeftLowerRest },
-			{ 29.0f, HumanRotX(-38.0f) * xLeftLowerRest },
+			{ 5.0f,  HumanRotX(28.0f) * xLeftLowerRest },                        // forearm extends as the arm drops
+			{ 12.0f, HumanRotX(14.0f) * xLeftLowerRest },
+			{ 17.0f, HumanRotX(-6.0f) * xLeftLowerRest },
+			{ 23.0f, HumanRotX(-22.0f) * xLeftLowerRest },                       // curls up with the magazine
+			{ 26.0f, HumanRotX(-14.0f) * xLeftLowerRest },
+			{ 29.0f, HumanRotX(-26.0f) * xLeftLowerRest },
 			{ 36.0f, xLeftLowerRest },
 		};
 		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
