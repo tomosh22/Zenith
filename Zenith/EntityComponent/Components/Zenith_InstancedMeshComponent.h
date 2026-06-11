@@ -145,6 +145,13 @@ public:
 	// Call each frame to advance animations
 	void Update(float fDt);
 
+	// ECS lifecycle hook (detected by name through the component-meta system):
+	// advances VAT animation time every Playing-mode frame so wind-swayed
+	// instanced foliage animates without a game-side ticker. Editor Stopped
+	// mode doesn't dispatch component OnUpdate — the terrain editor services
+	// its tree components there instead.
+	void OnUpdate(float fDt) { Update(fDt); }
+
 	//-------------------------------------------------------------------------
 	// Accessors
 	//-------------------------------------------------------------------------

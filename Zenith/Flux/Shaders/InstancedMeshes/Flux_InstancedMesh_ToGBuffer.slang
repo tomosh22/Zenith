@@ -119,8 +119,13 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	bool   bUseVAT  = (DrawConstants.g_xEmissiveParams.z > 0.0) && ((xAnimData.w & 2u) != 0u);
 	if (bUseVAT)
 	{
-		uint  uAnimIndex  = (xAnimData.x >> 16u) & 0xFFFFu;
-		uint  uFrameCount = xAnimData.x & 0xFFFFu;
+		// Flux_InstanceAnimData packs m_uAnimationIndex in the LOW 16 bits of
+		// word 0 and m_uFrameCount in the HIGH bits (little-endian uint16
+		// pair). Decoding them swapped made uFrameCount read 0, so the
+		// fAnimTime * (uFrameCount - 1u) row computation underflowed and every
+		// instance clamp-sampled one frozen row — VAT animation never played.
+		uint  uAnimIndex  = xAnimData.x & 0xFFFFu;
+		uint  uFrameCount = (xAnimData.x >> 16u) & 0xFFFFu;
 		float fAnimTime   = asfloat(xAnimData.y);
 		uint  uTexWidth   = (uint)DrawConstants.g_xEmissiveParams.x;
 		uint  uTexHeight  = (uint)DrawConstants.g_xEmissiveParams.y;

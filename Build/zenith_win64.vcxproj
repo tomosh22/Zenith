@@ -3252,6 +3252,16 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
@@ -3486,6 +3496,7 @@
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditorUndo.cpp" />
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Bake.cpp" />
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Brushes.cpp" />
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Trees.cpp" />
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Erosion.cpp" />
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Procedural.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp" />

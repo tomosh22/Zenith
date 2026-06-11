@@ -176,6 +176,12 @@ void Flux_InstanceGroup::SetInstanceAnimation(uint32_t uInstanceID, uint32_t uAn
 	xData.m_uAnimationIndex = static_cast<uint16_t>(uAnimIndex);
 	xData.m_uFrameCount = static_cast<uint16_t>(uFrameCount);
 	xData.m_fAnimTime = fNormalizedTime;
+	// Bit 1 is the per-instance VAT-enable the G-buffer vertex shader tests
+	// ((xAnimData.w & 2u) != 0u) alongside the global texture toggle. Nothing
+	// ever set it, so every "animated" instance silently rendered its static
+	// bind pose. Assigning an animation is the opt-in. (The culling paths
+	// test bit 0 / flags!=0, so the extra bit doesn't affect visibility.)
+	xData.m_uFlags |= 2u;
 	MarkDirty(uInstanceID);
 	m_bAnimDataDirty = true;
 }
@@ -191,7 +197,11 @@ void Flux_InstanceGroup::SetInstanceColor(uint32_t uInstanceID, const Zenith_Mat
 void Flux_InstanceGroup::SetInstanceEnabled(uint32_t uInstanceID, bool bEnabled)
 {
 	Zenith_Assert(uInstanceID < m_uCapacity, "Invalid instance ID");
-	m_axAnimData.Get(uInstanceID).m_uFlags = bEnabled ? 1 : 0;
+	// Enable sets bit 0 while PRESERVING the VAT bit (bit 1); disable clears
+	// ALL bits (matching RemoveInstance) so a disabled slot can never read as
+	// live to the flags!=0 visibility bookkeeping.
+	Flux_InstanceAnimData& xData = m_axAnimData.Get(uInstanceID);
+	xData.m_uFlags = bEnabled ? (xData.m_uFlags | 1u) : 0u;
 	MarkDirty(uInstanceID);
 	m_bAnimDataDirty = true;
 }

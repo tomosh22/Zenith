@@ -19,7 +19,7 @@ namespace
 {
 	const char* aszToolNames[] = {
 		"Raise", "Lower", "Smooth", "Flatten", "Set Height", "Noise",
-		"Terrace", "Ramp", "Stamp", "Paint Layer", "Grass Density"
+		"Terrace", "Ramp", "Stamp", "Paint Layer", "Grass Density", "Trees"
 	};
 	static_assert(IM_ARRAYSIZE(aszToolNames) == static_cast<int>(Zenith_TerrainBrushTool::Count),
 		"Tool name table out of sync with Zenith_TerrainBrushTool");
@@ -140,6 +140,20 @@ namespace
 		case Zenith_TerrainBrushTool::GrassDensity:
 			ImGui::SliderFloat("Density", &xBrush.m_fGrassDensity, 0.0f, 1.0f);
 			break;
+		case Zenith_TerrainBrushTool::TreePaint:
+		{
+			int iTrees = static_cast<int>(xBrush.m_uTreesPerDab);
+			if (ImGui::SliderInt("Trees / Dab", &iTrees, 1, 12))
+			{
+				xBrush.m_uTreesPerDab = static_cast<u_int>(iTrees);
+			}
+			ImGui::SliderFloat("Scale Min", &xBrush.m_fTreeScaleMin, 0.4f, xBrush.m_fTreeScaleMax);
+			ImGui::SliderFloat("Scale Max", &xBrush.m_fTreeScaleMax, xBrush.m_fTreeScaleMin, 2.5f);
+			ImGui::SliderFloat("Spacing (m)", &xBrush.m_fTreeSpacing, 1.0f, 16.0f);
+			ImGui::SliderFloat("Max Slope (deg)", &xBrush.m_fTreeMaxSlopeDeg, 5.0f, 70.0f);
+			ImGui::TextDisabled("Drag to plant; SHIFT-drag to erase. Not undoable.");
+			break;
+		}
 		default:
 			ImGui::TextDisabled("Shift inverts Raise/Lower; [ ] resize the brush");
 			break;

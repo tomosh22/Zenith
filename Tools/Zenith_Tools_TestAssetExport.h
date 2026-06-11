@@ -17,3 +17,15 @@ extern void GenerateProceduralTreeAssets();
 // Generate RenderTest game-specific assets (bullet sphere mesh + model)
 // Output: GAME_ASSETS_DIR/Meshes/Bullet_Sphere.{zasset,zmodel}
 extern void GenerateRenderTestAssets();
+
+#ifdef ZENITH_TOOLS
+class Flux_MeshGeometry;
+class Zenith_MeshAsset;
+class Zenith_SkeletonAsset;
+
+// Mesh-asset -> Flux_MeshGeometry converters shared by the StickFigure and
+// ProceduralTree generators (defined in Zenith_Tools_TestAssetExport.cpp).
+// Caller owns the returned geometry.
+extern Flux_MeshGeometry* Zenith_Tools_CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset, const Zenith_SkeletonAsset* pxSkeleton);
+extern Flux_MeshGeometry* Zenith_Tools_CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset);
+#endif

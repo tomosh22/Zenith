@@ -1222,20 +1222,42 @@ static void RenderTest_OpenTerrainEditorForCursor()
 		return;
 	}
 	g_xEngine.Editor().OpenTerrainEditor(uTerrain);
-	g_xEngine.TerrainEditor().m_xBrush.m_eTool = Zenith_TerrainBrushTool::Raise;
-	g_xEngine.TerrainEditor().m_xBrush.m_fRadius = 15.0f;
+	Zenith_TerrainEditor& xTE = g_xEngine.TerrainEditor();
+	xTE.m_xBrush.m_eTool = Zenith_TerrainBrushTool::TreePaint;
+	xTE.m_xBrush.m_fRadius = 15.0f;
+
+	// Plant a demo grove around the plateau with the tree brush so the
+	// capture harness can photograph instanced wind-swayed trees without
+	// scripted mouse drags.
+	xTE.m_xBrush.m_uTreesPerDab = 6;
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 215.0f, 300.0f, 26.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 300.0f, 305.0f, 26.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 256.0f, 340.0f, 30.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 190.0f, 255.0f, 22.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 325.0f, 255.0f, 22.0f, 1.0f, 0.0f);
 
 	// Elevate the EDITOR camera (authoritative for the Stopped-mode view)
 	// so cursor rays spread across the plateau instead of clustering a few
 	// metres ahead of a near-ground vantage. Mark it initialized so the
 	// post-automation game-camera sync doesn't snap it back.
 	Zenith_EditorCameraState& xCamera = g_xEngine.Editor().m_xEditorState.m_xCamera;
-	xCamera.m_xPosition = { 256.0f, 95.0f, 215.0f };
-	xCamera.m_fPitch = -0.55;
-	xCamera.m_fYaw = 0.0;
+	if (RenderTest_HasCommandLineFlag("--rendertest-tree-closeup"))
+	{
+		// Eye-level vantage inside the grove for sway/foliage close-ups.
+		xCamera.m_xPosition = { 213.0f, 53.5f, 286.0f };
+		xCamera.m_fPitch = -0.06;
+		xCamera.m_fYaw = 0.0;
+	}
+	else
+	{
+		xCamera.m_xPosition = { 256.0f, 95.0f, 215.0f };
+		xCamera.m_fPitch = -0.55;
+		xCamera.m_fYaw = 0.0;
+	}
 	xCamera.m_bInitialized = true;
 
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] TERRAIN_EDITOR_CURSOR_READY");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] TERRAIN_EDITOR_CURSOR_READY (grove planted: %u trunks)",
+		g_xEngine.TerrainEditor().m_xBrush.m_uTreesPerDab);
 }
 
 // Final smoke automation step: flips the editor into Play mode (and applies

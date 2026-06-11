@@ -35,7 +35,8 @@ struct Flux_TerrainStreamingState;
 //=============================================================================
 
 // Tool selection. SplatPaint paints the active splat layer; GrassDensity
-// paints the grass-density map; everything else sculpts the heightfield.
+// paints the grass-density map; TreePaint scatters instanced trees (Shift
+// erases); everything else sculpts the heightfield.
 enum class Zenith_TerrainBrushTool
 {
 	Raise,
@@ -49,6 +50,7 @@ enum class Zenith_TerrainBrushTool
 	Stamp,
 	SplatPaint,
 	GrassDensity,
+	TreePaint,
 	Count
 };
 
@@ -82,6 +84,13 @@ struct Zenith_TerrainBrushSettings
 	float m_fRampHardness  = 1.0f;    // Ramp tool: blend sharpness
 	u_int m_uSplatLayer    = 0;       // 0..3 (active material layer)
 	float m_fGrassDensity  = 1.0f;    // GrassDensity tool paint target [0,1]
+
+	// TreePaint tool.
+	u_int m_uTreesPerDab   = 3;       // placement attempts per dab (scaled by strength)
+	float m_fTreeScaleMin  = 0.85f;   // uniform instance scale range
+	float m_fTreeScaleMax  = 1.35f;
+	float m_fTreeSpacing   = 4.0f;    // minimum metres between trunks
+	float m_fTreeMaxSlopeDeg = 38.0f; // skip placement on steeper ground
 };
 
 struct Zenith_TerrainProceduralParams
@@ -402,6 +411,17 @@ private:
 	void ApplySplatDab(float fPxX, float fPxZ, float fRadius, float fStrength, u_int uLayer);
 	void ApplyGrassDab(float fPxX, float fPxZ, float fRadius, float fStrength, float fTargetDensity);
 
+	// TreePaint: scatters (or erases, bErase) instanced trees on the terrain.
+	// Trees live as two scene entities ("TerrainTrees_Trunk"/"_Leaves", one
+	// Zenith_InstancedMeshComponent each — instance groups are single-material,
+	// so opaque bark + alpha-tested leaves need a pair) kept in strict
+	// LOCKSTEP: every spawn/remove hits both with identical arguments so
+	// instance IDs stay aligned. Windowed-only (instances need GPU buffers);
+	// NOT part of the terrain undo system.
+	void ApplyTreeDab(float fWorldX, float fWorldZ, float fRadius, float fStrength, bool bErase);
+	bool EnsureTreeEntities();
+	void TickTreeSway(float fDt);   // editor-mode VAT time advance (Playing uses OnUpdate)
+
 	//--------------------------------------------------------------------------
 	// Erosion slicing state — Zenith_TerrainEditor_Erosion.cpp
 	//--------------------------------------------------------------------------
@@ -427,6 +447,12 @@ private:
 	// (the file is regenerated at boot by RegenerateBrushTextures).
 	Zenith_TextureAsset* m_pxBrushIndicatorTexture = nullptr;
 	bool m_bBrushIndicatorLoadAttempted = false;
+
+	// TreePaint targets — EntityIDs only (revalidated every use, same contract
+	// as the terrain target). Created on first paint in the active scene.
+	Zenith_EntityID m_uTreeTrunkEntity = INVALID_ENTITY_ID;
+	Zenith_EntityID m_uTreeLeavesEntity = INVALID_ENTITY_ID;
+	u_int m_uTreeRngState = 0x51A7E5u;   // interactive scatter randomness
 
 	Zenith_Image m_xHeightfield;           // 4096x4096 float [0,1]
 	Zenith_Vector<u_int8> m_xSplatmap;     // 2048x2048x4 RGBA8

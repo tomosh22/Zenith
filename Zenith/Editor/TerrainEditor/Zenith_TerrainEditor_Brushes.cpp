@@ -69,6 +69,10 @@ void Zenith_TerrainEditor::ApplyBrushDab(Zenith_TerrainBrushTool eTool, float fW
 	case Zenith_TerrainBrushTool::GrassDensity:
 		ApplyGrassDab(fWorldX, fWorldZ, fRadius, fStrength, fToolValue);
 		break;
+	case Zenith_TerrainBrushTool::TreePaint:
+		// fToolValue > 0.5 selects erase (Shift while painting).
+		ApplyTreeDab(fWorldX, fWorldZ, fRadius, fStrength, fToolValue > 0.5f);
+		break;
 	default:
 		ApplyHeightDab(eTool, fWorldX, fWorldZ, fRadius, fStrength, fToolValue);
 		break;

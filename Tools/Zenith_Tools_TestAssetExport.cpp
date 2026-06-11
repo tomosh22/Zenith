@@ -8,6 +8,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "Zenith_Tools_GltfExport.h"
+#include "Zenith_Tools_TestAssetExport.h"
 #include <filesystem>
 
 //------------------------------------------------------------------------------
@@ -109,38 +110,10 @@ static const Zenith_Maths::Vector3 s_axBoneCenterOffsets[STICK_BONE_COUNT] = {
 };
 
 //------------------------------------------------------------------------------
-// Tree bone indices
-//------------------------------------------------------------------------------
-static constexpr uint32_t TREE_BONE_COUNT = 9;
-enum TreeBone
-{
-	TREE_BONE_ROOT = 0,          // Ground anchor
-	TREE_BONE_TRUNK_LOWER = 1,   // Lower trunk
-	TREE_BONE_TRUNK_UPPER = 2,   // Upper trunk
-	TREE_BONE_BRANCH_0 = 3,      // Branch at trunk lower
-	TREE_BONE_BRANCH_1 = 4,      // Branch at trunk upper (left)
-	TREE_BONE_BRANCH_2 = 5,      // Branch at trunk upper (right)
-	TREE_BONE_BRANCH_3 = 6,      // Branch at trunk top
-	TREE_BONE_LEAVES_0 = 7,      // Leaf cluster at branch 3
-	TREE_BONE_LEAVES_1 = 8,      // Leaf cluster at branch 1
-};
-
-// Tree bone scales (half-extents for box geometry)
-static const Zenith_Maths::Vector3 s_axTreeBoneScales[TREE_BONE_COUNT] = {
-	{0.05f, 0.05f, 0.05f},   // 0: Root (small anchor point)
-	{0.15f, 1.0f, 0.15f},    // 1: TrunkLower (thick lower trunk)
-	{0.12f, 1.0f, 0.12f},    // 2: TrunkUpper (slightly thinner upper trunk)
-	{0.06f, 0.6f, 0.06f},    // 3: Branch0 (branch from lower trunk)
-	{0.05f, 0.7f, 0.05f},    // 4: Branch1 (branch from upper trunk, left)
-	{0.05f, 0.7f, 0.05f},    // 5: Branch2 (branch from upper trunk, right)
-	{0.04f, 0.5f, 0.04f},    // 6: Branch3 (top branch)
-	{0.4f, 0.3f, 0.4f},      // 7: Leaves0 (leaf cluster at branch 3)
-	{0.35f, 0.25f, 0.35f},   // 8: Leaves1 (leaf cluster at branch 1)
-};
-
-//------------------------------------------------------------------------------
 // StickFigure Helper Functions
 //------------------------------------------------------------------------------
+// (The ProceduralTree generation moved to Zenith_Tools_TreeAssetExport.cpp —
+// the high-quality branching tree with bark/leaf textures and sway VATs.)
 
 static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 {
@@ -245,7 +218,8 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	return pxMesh;
 }
 
-static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset, const Zenith_SkeletonAsset* pxSkeleton)
+// Non-static: shared with Zenith_Tools_TreeAssetExport.cpp (declared in the header).
+Flux_MeshGeometry* Zenith_Tools_CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset, const Zenith_SkeletonAsset* pxSkeleton)
 {
 	Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
 
@@ -354,7 +328,8 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	return pxGeometry;
 }
 
-static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset)
+// Non-static: shared with Zenith_Tools_TreeAssetExport.cpp (declared in the header).
+Flux_MeshGeometry* Zenith_Tools_CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset)
 {
 	Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
 
@@ -869,166 +844,6 @@ static Flux_AnimationClip* CreateDeathAnimation()
 }
 
 //------------------------------------------------------------------------------
-// Tree Helper Functions
-//------------------------------------------------------------------------------
-
-static Zenith_SkeletonAsset* CreateTreeSkeleton()
-{
-	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
-	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
-	const Zenith_Maths::Vector3 xUnitScale(1.0f);
-
-	// Root at ground level
-	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
-
-	// Trunk segments (vertical along Y axis)
-	pxSkel->AddBone("TrunkLower", TREE_BONE_ROOT, Zenith_Maths::Vector3(0, 1.0f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("TrunkUpper", TREE_BONE_TRUNK_LOWER, Zenith_Maths::Vector3(0, 2.0f, 0), xIdentity, xUnitScale);
-
-	// Branches attached to trunk
-	pxSkel->AddBone("Branch0", TREE_BONE_TRUNK_LOWER, Zenith_Maths::Vector3(0.8f, 0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("Branch1", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(-1.0f, 0.5f, 0.3f), xIdentity, xUnitScale);
-	pxSkel->AddBone("Branch2", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(1.0f, 0.5f, -0.3f), xIdentity, xUnitScale);
-	pxSkel->AddBone("Branch3", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(0, 1.5f, 0), xIdentity, xUnitScale);
-
-	// Leaf clusters at branch tips
-	pxSkel->AddBone("Leaves0", TREE_BONE_BRANCH_3, Zenith_Maths::Vector3(0, 0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("Leaves1", TREE_BONE_BRANCH_1, Zenith_Maths::Vector3(-0.5f, 0.3f, 0), xIdentity, xUnitScale);
-
-	pxSkel->ComputeBindPoseMatrices();
-	return pxSkel;
-}
-
-static Zenith_MeshAsset* CreateTreeMesh(const Zenith_SkeletonAsset* pxSkeleton)
-{
-	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
-	const uint32_t uVertsPerBone = 8;
-	const uint32_t uIndicesPerBone = 36;
-	pxMesh->Reserve(TREE_BONE_COUNT * uVertsPerBone, TREE_BONE_COUNT * uIndicesPerBone);
-
-	// Add a scaled cube at each bone position
-	for (uint32_t uBone = 0; uBone < TREE_BONE_COUNT; uBone++)
-	{
-		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(uBone);
-		Zenith_Maths::Vector3 xBoneWorldPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
-
-		Zenith_Maths::Vector3 xScale = s_axTreeBoneScales[uBone];
-
-		uint32_t uBaseVertex = pxMesh->GetNumVerts();
-
-		for (int i = 0; i < 8; i++)
-		{
-			Zenith_Maths::Vector3 xScaledOffset = s_axCubeOffsets[i] * 2.0f;
-			xScaledOffset.x *= xScale.x * 10.0f;
-			xScaledOffset.y *= xScale.y * 10.0f;
-			xScaledOffset.z *= xScale.z * 10.0f;
-
-			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xScaledOffset;
-			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);
-
-			pxMesh->AddVertex(xPos, xNormal, Zenith_Maths::Vector2(0, 0));
-			pxMesh->SetVertexSkinning(
-				uBaseVertex + i,
-				glm::uvec4(uBone, 0, 0, 0),
-				glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
-		}
-
-		for (int i = 0; i < 36; i += 3)
-		{
-			pxMesh->AddTriangle(
-				uBaseVertex + s_auCubeIndices[i],
-				uBaseVertex + s_auCubeIndices[i + 1],
-				uBaseVertex + s_auCubeIndices[i + 2]);
-		}
-	}
-
-	pxMesh->AddSubmesh(0, TREE_BONE_COUNT * uIndicesPerBone, 0);
-	pxMesh->ComputeBounds();
-	return pxMesh;
-}
-
-static Flux_AnimationClip* CreateTreeSwayAnimation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Sway");
-	pxClip->SetDuration(2.0f);
-	pxClip->SetTicksPerSecond(30);
-	pxClip->SetLooping(true);
-
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-
-	// Root stays stationary
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Root", std::move(xChannel));
-	}
-
-	// TrunkLower sways gently
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(15.0f, glm::angleAxis(glm::radians(1.0f), xZAxis));
-		xChannel.AddRotationKeyframe(30.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(45.0f, glm::angleAxis(glm::radians(-1.0f), xZAxis));
-		xChannel.AddRotationKeyframe(60.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("TrunkLower", std::move(xChannel));
-	}
-
-	// TrunkUpper sways more
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(15.0f, glm::angleAxis(glm::radians(2.0f), xZAxis));
-		xChannel.AddRotationKeyframe(30.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(45.0f, glm::angleAxis(glm::radians(-2.0f), xZAxis));
-		xChannel.AddRotationKeyframe(60.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("TrunkUpper", std::move(xChannel));
-	}
-
-	// Branches sway with phase offsets
-	const char* aszBranchNames[] = {"Branch0", "Branch1", "Branch2", "Branch3"};
-	const float afPhaseOffsets[] = {0.0f, 7.5f, 3.75f, 11.25f};
-	for (int i = 0; i < 4; ++i)
-	{
-		Flux_BoneChannel xChannel;
-		float fPhase = afPhaseOffsets[i];
-		xChannel.AddRotationKeyframe(fmod(0.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(15.0f + fPhase, 60.0f), glm::angleAxis(glm::radians(5.0f), xZAxis));
-		xChannel.AddRotationKeyframe(fmod(30.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(45.0f + fPhase, 60.0f), glm::angleAxis(glm::radians(-5.0f), xZAxis));
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel(aszBranchNames[i], std::move(xChannel));
-	}
-
-	// Leaves sway most dramatically
-	const char* aszLeafNames[] = {"Leaves0", "Leaves1"};
-	const float afLeafPhaseOffsets[] = {5.0f, 12.0f};
-	for (int i = 0; i < 2; ++i)
-	{
-		Flux_BoneChannel xChannel;
-		float fPhase = afLeafPhaseOffsets[i];
-		Zenith_Maths::Quat xSwayPos = glm::angleAxis(glm::radians(8.0f), xZAxis) *
-			glm::angleAxis(glm::radians(3.0f), xXAxis);
-		Zenith_Maths::Quat xSwayNeg = glm::angleAxis(glm::radians(-8.0f), xZAxis) *
-			glm::angleAxis(glm::radians(-3.0f), xXAxis);
-
-		xChannel.AddRotationKeyframe(fmod(0.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(15.0f + fPhase, 60.0f), xSwayPos);
-		xChannel.AddRotationKeyframe(fmod(30.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(45.0f + fPhase, 60.0f), xSwayNeg);
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel(aszLeafNames[i], std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-//------------------------------------------------------------------------------
 // Aim Hold Pose
 //
 // Shared upper-body rest pose used by the Aim, Fire, and Reload clips. Each
@@ -1343,14 +1158,14 @@ void GenerateStickFigureAssets()
 
 #ifdef ZENITH_TOOLS
 	// Export mesh in Flux_MeshGeometry format
-	Flux_MeshGeometry* pxFluxGeometry = CreateFluxMeshGeometry(pxMesh, pxSkel);
+	Flux_MeshGeometry* pxFluxGeometry = Zenith_Tools_CreateFluxMeshGeometry(pxMesh, pxSkel);
 	std::string strMeshPath = strOutputDir + "StickFigure" ZENITH_MESH_EXT;
 	pxFluxGeometry->Export(strMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh geometry to: %s", strMeshPath.c_str());
 	delete pxFluxGeometry;
 
 	// Export static mesh
-	Flux_MeshGeometry* pxStaticGeometry = CreateStaticFluxMeshGeometry(pxMesh);
+	Flux_MeshGeometry* pxStaticGeometry = Zenith_Tools_CreateStaticFluxMeshGeometry(pxMesh);
 	std::string strStaticMeshPath = strOutputDir + "StickFigure_Static" ZENITH_MESH_EXT;
 	pxStaticGeometry->Export(strStaticMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
@@ -1442,86 +1257,6 @@ void GenerateStickFigureAssets()
 	delete pxSkel;
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "StickFigure assets generated at: %s", strOutputDir.c_str());
-}
-
-void GenerateProceduralTreeAssets()
-{
-	Zenith_Log(LOG_CATEGORY_ASSET, "Generating ProceduralTree test assets...");
-
-	// Create all assets
-	Zenith_SkeletonAsset* pxSkel = CreateTreeSkeleton();
-	Zenith_MeshAsset* pxMesh = CreateTreeMesh(pxSkel);
-	Flux_AnimationClip* pxSwayClip = CreateTreeSwayAnimation();
-
-	// Create output directory
-	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/ProceduralTree/";
-	std::filesystem::create_directories(strOutputDir);
-
-	// Export skeleton
-	std::string strSkelPath = strOutputDir + "Tree" ZENITH_SKELETON_EXT;
-	pxSkel->Export(strSkelPath.c_str());
-	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported skeleton to: %s", strSkelPath.c_str());
-
-	// Set skeleton path on mesh before export
-	pxMesh->SetSkeletonPath("Meshes/ProceduralTree/Tree" ZENITH_SKELETON_EXT);
-
-	// Export mesh in Zenith_MeshAsset format
-	std::string strMeshAssetPath = strOutputDir + "Tree" ZENITH_MESH_ASSET_EXT;
-	pxMesh->Export(strMeshAssetPath.c_str());
-	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh asset to: %s", strMeshAssetPath.c_str());
-
-#ifdef ZENITH_TOOLS
-	// Export mesh in Flux_MeshGeometry format
-	Flux_MeshGeometry* pxFluxGeometry = CreateFluxMeshGeometry(pxMesh, pxSkel);
-	std::string strMeshPath = strOutputDir + "Tree" ZENITH_MESH_EXT;
-	pxFluxGeometry->Export(strMeshPath.c_str());
-	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh geometry to: %s", strMeshPath.c_str());
-
-	// Export static mesh
-	Flux_MeshGeometry* pxStaticGeometry = CreateStaticFluxMeshGeometry(pxMesh);
-	std::string strStaticMeshPath = strOutputDir + "Tree_Static" ZENITH_MESH_EXT;
-	pxStaticGeometry->Export(strStaticMeshPath.c_str());
-	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
-
-	// Bake and export VAT
-	Flux_AnimationTexture* pxVAT = new Flux_AnimationTexture();
-	Zenith_Vector<Flux_AnimationClip*> axAnimations;
-	axAnimations.PushBack(pxSwayClip);
-	bool bBakeSuccess = pxVAT->BakeFromAnimations(pxFluxGeometry, pxSkel, axAnimations, 30);
-	if (bBakeSuccess)
-	{
-		std::string strVATPath = strOutputDir + "Tree_Sway.zanmt";
-		pxVAT->Export(strVATPath);
-		Zenith_Log(LOG_CATEGORY_ASSET, "  Exported VAT to: %s", strVATPath.c_str());
-		Zenith_Log(LOG_CATEGORY_ASSET, "    VAT dimensions: %u x %u (verts x frames)",
-			pxVAT->GetTextureWidth(), pxVAT->GetTextureHeight());
-	}
-	delete pxVAT;
-	delete pxStaticGeometry;
-	delete pxFluxGeometry;
-#endif
-
-	// Export animation
-	std::string strSwayPath = strOutputDir + "Tree_Sway" ZENITH_ANIMATION_EXT;
-	pxSwayClip->Export(strSwayPath);
-	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported sway animation to: %s", strSwayPath.c_str());
-
-	// Export to glTF format for editing in Blender
-	{
-		std::vector<const Flux_AnimationClip*> axClips = { pxSwayClip };
-		std::string strGltfPath = strOutputDir + "Tree.gltf";
-		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axClips))
-		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "  Exported glTF to: %s", strGltfPath.c_str());
-		}
-	}
-
-	// Cleanup
-	delete pxSwayClip;
-	delete pxMesh;
-	delete pxSkel;
-
-	Zenith_Log(LOG_CATEGORY_ASSET, "ProceduralTree assets generated at: %s", strOutputDir.c_str());
 }
 
 void GenerateRenderTestAssets()

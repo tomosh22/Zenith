@@ -1793,6 +1793,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1935,6 +1939,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Brushes.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Trees.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

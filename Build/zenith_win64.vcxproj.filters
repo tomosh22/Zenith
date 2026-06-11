@@ -445,6 +445,9 @@
     <ClCompile Include="..\Tools\Zenith_Tools_TestAssetExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
+      <Filter>Tools</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
@@ -662,6 +665,9 @@
       <Filter>Editor\TerrainEditor</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Brushes.cpp">
+      <Filter>Editor\TerrainEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Trees.cpp">
       <Filter>Editor\TerrainEditor</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Erosion.cpp">

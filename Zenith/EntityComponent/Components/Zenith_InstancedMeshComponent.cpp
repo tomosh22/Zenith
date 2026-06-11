@@ -461,18 +461,24 @@ void Zenith_InstancedMeshComponent::WriteToDataStream(Zenith_DataStream& xStream
 	xStream << m_fAnimationSpeed;
 	xStream << m_bAnimationsPaused;
 
-	// Instance data (version 4+)
-	uint32_t uInstanceCount = GetInstanceCount();
+	// Instance data (version 4+). Serialize the ENABLED slots, not the first
+	// N slots: RemoveInstance disables a slot in place and free-lists its ID,
+	// so after any removal the live instances are NOT contiguous — the old
+	// first-N loop wrote removed slots' transforms and dropped live ones.
+	Zenith_Vector<uint32_t> xEnabledSlots;
+	if (m_pxInstanceGroup != nullptr)
+	{
+		m_pxInstanceGroup->ComputeVisibleIndices(xEnabledSlots);
+	}
+	uint32_t uInstanceCount = xEnabledSlots.GetSize();
 	xStream << uInstanceCount;
 
-	// Serialize instance transforms
-	if (uInstanceCount > 0 && m_pxInstanceGroup != nullptr)
+	if (uInstanceCount > 0)
 	{
 		const Zenith_Vector<Zenith_Maths::Matrix4>& axTransforms = m_pxInstanceGroup->GetTransforms();
-		// Write all transform matrices
 		for (uint32_t i = 0; i < uInstanceCount; ++i)
 		{
-			const Zenith_Maths::Matrix4& xTransform = axTransforms.Get(i);
+			const Zenith_Maths::Matrix4& xTransform = axTransforms.Get(xEnabledSlots.Get(i));
 			// Write matrix as 16 floats
 			for (int col = 0; col < 4; ++col)
 			{
@@ -562,7 +568,18 @@ void Zenith_InstancedMeshComponent::ReadFromDataStream(Zenith_DataStream& xStrea
 					xStream >> xTransform[col][row];
 				}
 			}
-			SpawnInstanceWithMatrix(xTransform);
+			uint32_t uInstanceID = SpawnInstanceWithMatrix(xTransform);
+
+			// Per-instance animation state is not serialized (the VAT-enable
+			// flag, index and phase live in transient anim data) — re-derive
+			// it: when an animation texture is loaded, restart every instance
+			// on clip 0 with a deterministic per-instance phase so wind-swayed
+			// foliage doesn't reload as a frozen, synchronised block.
+			if (GetAnimationTexture() != nullptr)
+			{
+				const float fPhase = fmodf(static_cast<float>(uInstanceID) * 0.618034f, 1.0f);
+				SetInstanceAnimationByIndex(uInstanceID, 0, fPhase);
+			}
 		}
 	}
 }

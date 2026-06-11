@@ -8,8 +8,10 @@
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Core/FrameContext.h"
 #include "Core/Zenith_CommandLine.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Gizmo.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
@@ -336,6 +338,15 @@ void Zenith_TerrainEditor::LoadImagesFromAssets()
 
 void Zenith_TerrainEditor::ServiceUpdate()
 {
+	// Painted trees sway via VAT time that the component only advances through
+	// its OnUpdate hook — which the ECS dispatches in Playing mode only. Keep
+	// the wind alive in Stopped/Paused from here (runs every editor frame,
+	// independent of whether a terrain session is open).
+	if (g_xEngine.Editor().GetEditorMode() != EditorMode::Playing)
+	{
+		TickTreeSway(g_xEngine.Frame().GetDt());
+	}
+
 	if (!m_bActive || IsStandalone())
 	{
 		return;
@@ -487,7 +498,8 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 			BeginStroke();
 		}
 
-		// Shift inverts the raise/lower pair (standard sculpting convention).
+		// Shift inverts the raise/lower pair (standard sculpting convention)
+		// and switches TreePaint into erase.
 		Zenith_TerrainBrushTool eTool = m_xBrush.m_eTool;
 		if (bShift && eTool == Zenith_TerrainBrushTool::Raise) { eTool = Zenith_TerrainBrushTool::Lower; }
 		else if (bShift && eTool == Zenith_TerrainBrushTool::Lower) { eTool = Zenith_TerrainBrushTool::Raise; }
@@ -501,6 +513,7 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 		case Zenith_TerrainBrushTool::Terrace:      fToolValue = m_xBrush.m_fTerraceStep; break;
 		case Zenith_TerrainBrushTool::SplatPaint:   fToolValue = static_cast<float>(m_xBrush.m_uSplatLayer); break;
 		case Zenith_TerrainBrushTool::GrassDensity: fToolValue = m_xBrush.m_fGrassDensity; break;
+		case Zenith_TerrainBrushTool::TreePaint:    fToolValue = bShift ? 1.0f : 0.0f; break;
 		default: break;
 		}
 
@@ -553,6 +566,7 @@ Zenith_Maths::Vector3 Zenith_TerrainEditor::GetToolColour() const
 	case Zenith_TerrainBrushTool::Stamp:        return { 1.0f, 0.3f, 1.0f };
 	case Zenith_TerrainBrushTool::SplatPaint:   return { 0.3f, 0.4f, 1.0f };
 	case Zenith_TerrainBrushTool::GrassDensity: return { 0.5f, 1.0f, 0.4f };
+	case Zenith_TerrainBrushTool::TreePaint:    return { 0.15f, 0.75f, 0.3f };
 	default:                                    return { 1.0f, 1.0f, 1.0f };
 	}
 }
