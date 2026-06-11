@@ -9,6 +9,7 @@
 #include <string>
 
 class Zenith_TerrainComponent;
+class Zenith_TextureAsset;
 struct Flux_TerrainStreamingState;
 
 //=============================================================================
@@ -264,6 +265,12 @@ public:
 	// GrassDensity.ztxtr (R32) into <GAME_ASSETS>/Textures/Terrain/.
 	void SaveTextures();
 
+	// Regenerate the brush-indicator decal texture into
+	// <ENGINE_ASSETS>/Textures/Brushes/. A generated artifact (gitignored) —
+	// called at EVERY editor boot from Zenith_Engine::InitialiseProject so
+	// the file on disk always matches the current generator.
+	static void RegenerateBrushTextures();
+
 	// Component-less chunk-mesh export from the live heightfield
 	// (ExportHeightmapFromMat into <GAME_ASSETS>/Terrain/). Automation path.
 	void BakeMeshes();
@@ -372,6 +379,15 @@ private:
 	void HandleViewportInput(const Zenith_TerrainEditorFrameContext& xCtx);
 	void DrawBrushCursor() const;
 
+	// Per-tool indicator colour shared by the decal indicator + the line-ring
+	// fallback.
+	Zenith_Maths::Vector3 GetToolColour() const;
+
+	// Arms the Flux decal editor slot with the brush indicator for this frame
+	// (projected per-pixel onto the rendered terrain). Falls back to the line
+	// ring while the generated brush texture is unavailable.
+	void DrawBrushIndicatorDecal();
+
 	void UpdateChunkAABB(Flux_TerrainStreamingState& xState, u_int uChunkX, u_int uChunkZ);
 
 	// Stroke-undo accumulation (region union + before-capture).
@@ -406,6 +422,11 @@ private:
 	bool m_bConsumedViewportInput = false;
 	bool m_bSessionDirty = false;          // any unbaked edit this session
 	Zenith_EntityID m_uTargetEntity = INVALID_ENTITY_ID;
+
+	// Brush-indicator decal texture, lazily resolved on first cursor draw
+	// (the file is regenerated at boot by RegenerateBrushTextures).
+	Zenith_TextureAsset* m_pxBrushIndicatorTexture = nullptr;
+	bool m_bBrushIndicatorLoadAttempted = false;
 
 	Zenith_Image m_xHeightfield;           // 4096x4096 float [0,1]
 	Zenith_Vector<u_int8> m_xSplatmap;     // 2048x2048x4 RGBA8

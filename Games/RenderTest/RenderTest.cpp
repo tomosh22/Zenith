@@ -1201,6 +1201,43 @@ void Project_InitializeResources()
 	InitializeRenderTestResources();
 }
 
+// --rendertest-open-terrain-editor: queued as a final automation step (no
+// smoke mode, editor stays Stopped) so an external capture harness can park
+// the OS cursor over the viewport and screenshot the interactive brush
+// indicator decal following it across the terrain.
+static void RenderTest_OpenTerrainEditorForCursor()
+{
+	Zenith_EntityID uTerrain = INVALID_ENTITY_ID;
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(
+		[&uTerrain](Zenith_EntityID uEntity, Zenith_TerrainComponent&)
+		{
+			if (uTerrain == INVALID_ENTITY_ID)
+			{
+				uTerrain = uEntity;
+			}
+		});
+	if (uTerrain == INVALID_ENTITY_ID)
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN, "[RenderTest] open-terrain-editor: no terrain entity found");
+		return;
+	}
+	g_xEngine.Editor().OpenTerrainEditor(uTerrain);
+	g_xEngine.TerrainEditor().m_xBrush.m_eTool = Zenith_TerrainBrushTool::Raise;
+	g_xEngine.TerrainEditor().m_xBrush.m_fRadius = 15.0f;
+
+	// Elevate the EDITOR camera (authoritative for the Stopped-mode view)
+	// so cursor rays spread across the plateau instead of clustering a few
+	// metres ahead of a near-ground vantage. Mark it initialized so the
+	// post-automation game-camera sync doesn't snap it back.
+	Zenith_EditorCameraState& xCamera = g_xEngine.Editor().m_xEditorState.m_xCamera;
+	xCamera.m_xPosition = { 256.0f, 95.0f, 215.0f };
+	xCamera.m_fPitch = -0.55;
+	xCamera.m_fYaw = 0.0;
+	xCamera.m_bInitialized = true;
+
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] TERRAIN_EDITOR_CURSOR_READY");
+}
+
 // Final smoke automation step: flips the editor into Play mode (and applies
 // the terrain debug CLI flags) AFTER the deferred initial-scene load has
 // completed, so the smoke runner's first OnUpdate probes the real scene.
@@ -1462,6 +1499,13 @@ void Project_RegisterEditorAutomationSteps()
 	if (RenderTest_IsSmokeMode())
 	{
 		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_EnterSmokePlayMode);
+	}
+
+	// Interactive brush-indicator capture aid: open a terrain-editor session
+	// once the scene is loaded (editor stays Stopped — no smoke mode).
+	if (RenderTest_HasCommandLineFlag("--rendertest-open-terrain-editor"))
+	{
+		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_OpenTerrainEditorForCursor);
 	}
 }
 #endif

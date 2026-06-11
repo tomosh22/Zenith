@@ -133,6 +133,23 @@ The Apply fragment shader produces a procedural circular bullet hole:
 The `pxTexture` parameter on `SpawnDecal` is reserved for v1's procedural
 default and v2's texture-array support. Today the parameter is ignored.
 
+## Editor brush-indicator slot (mode 1)
+
+`SetEditorDecal(centre, diameter, verticalExtent, colour, texture)` arms ONE
+persistent slot outside the 64-slot gameplay ring (instance capacity is
+`uMAX_DECAL_INSTANCES = 65`). It projects straight down with a permissive
+normal-alignment threshold (0.05) and renders in a second shader mode
+(`m_xParams.y = 1`): samples the bound `g_xBrushTex` across the box's XY,
+tints it with the per-call `m_xColour`, and writes **diffuse only** (alpha 0
+on the normals/material MRTs — an indicator must not stamp a dent or
+roughness change). One-frame lifetime: the arm flag is consumed by the next
+Prepare/pack, so the caller re-arms every frame while its cursor is valid and
+a missed frame makes the indicator vanish instead of going stale. Used by
+`Zenith_TerrainEditor` for the terrain brush cursor; the brush mask itself is
+a generated artifact (`Zenith/Assets/Textures/Brushes/BrushIndicator.ztxtr`,
+rebuilt at every editor boot by
+`Zenith_TerrainEditor::RegenerateBrushTextures`).
+
 ## Future enhancements
 
 - **Atlas / texture-array support**: the `pxTexture` parameter is the API

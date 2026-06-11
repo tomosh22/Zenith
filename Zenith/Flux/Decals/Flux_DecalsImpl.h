@@ -24,9 +24,10 @@ struct DecalInstance
 	// xyz = unit-length projection axis (surface normal at hit); w = fade opacity.
 	// Packed into one float4 for std430 alignment, not because the two are one concept.
 	Zenith_Maths::Vector4 m_xAxisOpacity;    // 16
-	Zenith_Maths::Vector4 m_xParams;         // 16 — x = normal-alignment threshold; yzw reserved
+	Zenith_Maths::Vector4 m_xParams;         // 16 — x = normal-alignment threshold; y = mode (0 = procedural bullet hole, 1 = textured brush indicator); zw reserved
+	Zenith_Maths::Vector4 m_xColour;         // 16 — brush-indicator tint (rgb) + master alpha (w); unused by mode 0
 };
-static_assert(sizeof(DecalInstance) == 160, "DecalInstance must match Flux_Decals_Apply.slang");
+static_assert(sizeof(DecalInstance) == 176, "DecalInstance must match Flux_Decals_Apply.slang");
 
 // CPU-side pool slot. Ring buffer for slot recycling — m_uNextSlot tracks the
 // next slot to overwrite when SpawnDecal is called. Lives here (not in the
@@ -74,6 +75,21 @@ public:
 	                float                        fSize,
 	                float                        fLifetime);
 
+	// Editor brush indicator: ONE persistent slot outside the gameplay ring,
+	// projected straight down with a textured-brush shader mode (per-call
+	// tint, diffuse-only G-buffer write). One-frame lifetime: arming lasts
+	// for exactly the next Prepare/pack — the editor re-arms every frame
+	// while its cursor is valid, so a missed frame (mode change, session
+	// close, crash) makes the indicator vanish instead of going stale.
+	// fDiameter is the visible end-to-end size (matches SpawnDecal's fSize
+	// convention); fVerticalExtent is the projection-axis box depth and must
+	// cover the terrain relief under the brush.
+	void SetEditorDecal(const Zenith_Maths::Vector3& xCentre,
+	                    float                        fDiameter,
+	                    float                        fVerticalExtent,
+	                    const Zenith_Maths::Vector4& xColour,
+	                    Zenith_TextureAsset*         pxTexture);
+
 	// Build the dense GPU staging array from active CPU slots, ticking
 	// per-slot lifetimes by fDt and deactivating expired slots. Returns the
 	// number of active decals after the tick. Promoted from a file-static
@@ -86,6 +102,9 @@ public:
 	bool IsInitialised() const { return m_bInitialised; }
 
 	static constexpr u_int uMAX_DECALS = 64;
+
+	// Ring slots + the editor brush-indicator slot.
+	static constexpr u_int uMAX_DECAL_INSTANCES = uMAX_DECALS + 1;
 
 #ifdef ZENITH_TESTING
 	struct TestSlotView
@@ -124,6 +143,13 @@ public:
 
 	// Dense GPU staging — packed at upload time so SV_InstanceID indexes
 	// 0..uActiveDecalCount-1 contiguously regardless of CPU ring layout.
-	// (Relocated from a module-scope static.)
-	DecalInstance               m_axDecalStaging[uMAX_DECALS];
+	// (Relocated from a module-scope static.) Sized +1 for the editor slot.
+	DecalInstance               m_axDecalStaging[uMAX_DECAL_INSTANCES];
+
+	// Editor brush-indicator slot (see SetEditorDecal). The armed flag is
+	// consumed by the next TickAndPackDense; the texture pointer survives the
+	// disarm because the record callback binds it later the same frame.
+	DecalInstance               m_xEditorDecalInstance{};
+	Zenith_TextureAsset*        m_pxEditorDecalTexture = nullptr;
+	bool                        m_bEditorDecalArmed = false;
 };

@@ -712,6 +712,12 @@ void Zenith_Engine::InitialiseProject()
 	// Must run AFTER static-init / Project_RegisterScriptBehaviours and BEFORE the test runner
 	// (so tests can resolve .zscript assets via Zenith_AssetRegistry::Get) and before any scene load.
 	Zenith_ScriptAsset::SyncRegisteredTypesToDisk();
+
+	// Brush-indicator decal textures are generated artifacts — rebuilt at
+	// every editor boot so the files on disk always match the generator.
+	// Must run before anything resolves them via Zenith_AssetRegistry (the
+	// terrain editor lazy-loads on first cursor draw, long after boot).
+	Zenith_TerrainEditor::RegenerateBrushTextures();
 #endif
 
 	// Run unit tests BEFORE loading the game scene

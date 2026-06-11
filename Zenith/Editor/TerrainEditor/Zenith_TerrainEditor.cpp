@@ -14,6 +14,7 @@
 #include "Editor/Zenith_UndoSystem.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
@@ -406,7 +407,7 @@ void Zenith_TerrainEditor::UpdatePerFrame(const Zenith_TerrainEditorFrameContext
 
 	if (m_bCursorValid && !Zenith_CommandLine::IsHeadless())
 	{
-		DrawBrushCursor();
+		DrawBrushIndicatorDecal();
 	}
 }
 
@@ -537,27 +538,96 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 // LIT, so flat filled shapes wash out; line segments keep their colour).
 //-----------------------------------------------------------------------------
 
+Zenith_Maths::Vector3 Zenith_TerrainEditor::GetToolColour() const
+{
+	switch (m_xBrush.m_eTool)
+	{
+	case Zenith_TerrainBrushTool::Raise:        return { 0.2f, 1.0f, 0.2f };
+	case Zenith_TerrainBrushTool::Lower:        return { 1.0f, 0.25f, 0.2f };
+	case Zenith_TerrainBrushTool::Smooth:       return { 1.0f, 1.0f, 0.3f };
+	case Zenith_TerrainBrushTool::Flatten:
+	case Zenith_TerrainBrushTool::SetHeight:    return { 0.3f, 0.8f, 1.0f };
+	case Zenith_TerrainBrushTool::Noise:        return { 1.0f, 0.6f, 0.2f };
+	case Zenith_TerrainBrushTool::Terrace:      return { 0.8f, 0.5f, 1.0f };
+	case Zenith_TerrainBrushTool::Ramp:         return { 0.2f, 1.0f, 0.8f };
+	case Zenith_TerrainBrushTool::Stamp:        return { 1.0f, 0.3f, 1.0f };
+	case Zenith_TerrainBrushTool::SplatPaint:   return { 0.3f, 0.4f, 1.0f };
+	case Zenith_TerrainBrushTool::GrassDensity: return { 0.5f, 1.0f, 0.4f };
+	default:                                    return { 1.0f, 1.0f, 1.0f };
+	}
+}
+
+void Zenith_TerrainEditor::DrawBrushIndicatorDecal()
+{
+	// Lazy one-shot resolve: the file is regenerated at every editor boot
+	// (RegenerateBrushTextures) before anything reaches this path.
+	if (!m_bBrushIndicatorLoadAttempted)
+	{
+		m_bBrushIndicatorLoadAttempted = true;
+		m_pxBrushIndicatorTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(
+			ENGINE_ASSETS_DIR "Textures/Brushes/BrushIndicator" ZENITH_TEXTURE_EXT);
+		if (m_pxBrushIndicatorTexture == nullptr)
+		{
+			Zenith_Warning(LOG_CATEGORY_EDITOR,
+				"[TerrainEditor] Brush indicator texture missing — falling back to the line-ring cursor");
+		}
+	}
+
+	if (m_pxBrushIndicatorTexture == nullptr)
+	{
+		DrawBrushCursor();
+		return;
+	}
+
+	// Bound the decal box vertically to the TERRAIN'S height envelope inside
+	// the brush footprint (we own the authoritative heightfield, so the
+	// range is exact). On flat ground this makes the box a thin slab hugging
+	// the surface, so props resting ON the terrain (platform decks, cubes,
+	// the player) fall outside the volume and the shader's existing box test
+	// discards them; on slopes the envelope grows to cover the relief so the
+	// indicator never clips on legitimate terrain.
+	const float fRadius = m_xBrush.m_fRadius;
+	float fMinNorm = 1.0f;
+	float fMaxNorm = 0.0f;
+	{
+		const float fMaxPx = static_cast<float>(uHEIGHTFIELD_SIZE - 1);
+		const u_int uX0 = static_cast<u_int>(std::clamp(m_xCursorPos.x - fRadius, 0.0f, fMaxPx));
+		const u_int uX1 = static_cast<u_int>(std::clamp(m_xCursorPos.x + fRadius, 0.0f, fMaxPx));
+		const u_int uZ0 = static_cast<u_int>(std::clamp(m_xCursorPos.z - fRadius, 0.0f, fMaxPx));
+		const u_int uZ1 = static_cast<u_int>(std::clamp(m_xCursorPos.z + fRadius, 0.0f, fMaxPx));
+		// Cap the scan at ~64x64 samples — ample accuracy for a visual bound.
+		const u_int uStride = std::max(1u, (uX1 - uX0) / 64u);
+		for (u_int uZ = uZ0; uZ <= uZ1; uZ += uStride)
+		{
+			for (u_int uX = uX0; uX <= uX1; uX += uStride)
+			{
+				const float fH = m_xHeightfield.At(uZ, uX);
+				fMinNorm = std::min(fMinNorm, fH);
+				fMaxNorm = std::max(fMaxNorm, fH);
+			}
+		}
+	}
+	// Pad absorbs the inter-sample relief the strided scan can miss plus the
+	// baked-vertex epsilon; props sit >= ~0.5m proud so they stay excluded.
+	constexpr float fENVELOPE_PAD = 0.3f;
+	const float fMinH = fMinNorm * fTERRAIN_MAX_HEIGHT - fENVELOPE_PAD;
+	const float fMaxH = fMaxNorm * fTERRAIN_MAX_HEIGHT + fENVELOPE_PAD;
+
+	const Zenith_Maths::Vector3 xColour = GetToolColour();
+	g_xEngine.Decals().SetEditorDecal(
+		Zenith_Maths::Vector3(m_xCursorPos.x, (fMinH + fMaxH) * 0.5f, m_xCursorPos.z),
+		fRadius * 2.0f,              // SetEditorDecal takes the end-to-end diameter
+		fMaxH - fMinH,
+		Zenith_Maths::Vector4(xColour, 0.85f),
+		m_pxBrushIndicatorTexture);
+}
+
 void Zenith_TerrainEditor::DrawBrushCursor() const
 {
 	static constexpr u_int uSEGMENTS = 64;
 	static constexpr float fY_OFFSET = 0.4f;
 
-	Zenith_Maths::Vector3 xColor;
-	switch (m_xBrush.m_eTool)
-	{
-	case Zenith_TerrainBrushTool::Raise:        xColor = { 0.2f, 1.0f, 0.2f }; break;
-	case Zenith_TerrainBrushTool::Lower:        xColor = { 1.0f, 0.25f, 0.2f }; break;
-	case Zenith_TerrainBrushTool::Smooth:       xColor = { 1.0f, 1.0f, 0.3f }; break;
-	case Zenith_TerrainBrushTool::Flatten:
-	case Zenith_TerrainBrushTool::SetHeight:    xColor = { 0.3f, 0.8f, 1.0f }; break;
-	case Zenith_TerrainBrushTool::Noise:        xColor = { 1.0f, 0.6f, 0.2f }; break;
-	case Zenith_TerrainBrushTool::Terrace:      xColor = { 0.8f, 0.5f, 1.0f }; break;
-	case Zenith_TerrainBrushTool::Ramp:         xColor = { 0.2f, 1.0f, 0.8f }; break;
-	case Zenith_TerrainBrushTool::Stamp:        xColor = { 1.0f, 0.3f, 1.0f }; break;
-	case Zenith_TerrainBrushTool::SplatPaint:   xColor = { 0.3f, 0.4f, 1.0f }; break;
-	case Zenith_TerrainBrushTool::GrassDensity: xColor = { 0.5f, 1.0f, 0.4f }; break;
-	default:                                    xColor = { 1.0f, 1.0f, 1.0f }; break;
-	}
+	const Zenith_Maths::Vector3 xColor = GetToolColour();
 
 	const float fRadius = m_xBrush.m_fRadius;
 	Zenith_Maths::Vector3 xPrevOuter;

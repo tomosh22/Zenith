@@ -11,6 +11,8 @@
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 // Game-project hook + tools export entry points (extern declarations, same
@@ -39,6 +41,64 @@ namespace
 		xStream.WriteData(pPixels, ulDataSize);
 		xStream.WriteToFile(strPath.c_str());
 	}
+}
+
+void Zenith_TerrainEditor::RegenerateBrushTextures()
+{
+	// Brush indicator mask, sampled by the decal Apply shader's textured-
+	// brush mode across the brush's full diameter (UV [0,1]^2, brush circle
+	// inscribed). RGB stays white — the per-tool tint is applied per-decal —
+	// and ALPHA carries the mask: a bright rim ring at the brush radius, a
+	// soft interior falloff gradient, and a centre dot.
+	constexpr u_int uSIZE = 256;
+	static u_int8 s_aucPixels[uSIZE * uSIZE * 4];
+
+	auto SmoothStep = [](float fEdge0, float fEdge1, float fX) -> float
+	{
+		const float fT = std::clamp((fX - fEdge0) / (fEdge1 - fEdge0), 0.0f, 1.0f);
+		return fT * fT * (3.0f - 2.0f * fT);
+	};
+
+	for (u_int uY = 0; uY < uSIZE; uY++)
+	{
+		for (u_int uX = 0; uX < uSIZE; uX++)
+		{
+			const float fDX = ((static_cast<float>(uX) + 0.5f) / uSIZE) * 2.0f - 1.0f;
+			const float fDY = ((static_cast<float>(uY) + 0.5f) / uSIZE) * 2.0f - 1.0f;
+			const float fR = sqrtf(fDX * fDX + fDY * fDY);   // 1.0 == brush radius
+
+			// Bright rim ring just inside the radius.
+			const float fRing = SmoothStep(0.86f, 0.92f, fR) * (1.0f - SmoothStep(0.95f, 1.0f, fR));
+			// Soft interior gradient — strongest at the centre, reads as the
+			// falloff-weighted application area.
+			const float fDisc = (1.0f - SmoothStep(0.0f, 0.92f, fR)) * 0.40f;
+			// Centre dot marking the exact cursor position.
+			const float fDot = 1.0f - SmoothStep(0.025f, 0.055f, fR);
+
+			const float fMask = std::clamp(std::max(std::max(fRing, fDisc), fDot), 0.0f, 1.0f);
+
+			u_int8* pucPixel = &s_aucPixels[(uY * uSIZE + uX) * 4];
+			pucPixel[0] = 255;
+			pucPixel[1] = 255;
+			pucPixel[2] = 255;
+			pucPixel[3] = static_cast<u_int8>(fMask * 255.0f + 0.5f);
+		}
+	}
+
+	const std::string strDir = std::string(ENGINE_ASSETS_DIR) + "Textures/Brushes/";
+	std::error_code xError;
+	std::filesystem::create_directories(strDir, xError);
+	if (xError)
+	{
+		Zenith_Warning(LOG_CATEGORY_EDITOR, "[TerrainEditor] Failed to create brush texture dir '%s' (%s)", strDir.c_str(), xError.message().c_str());
+		return;
+	}
+
+	WriteZtxtr(strDir + "BrushIndicator" + ZENITH_TEXTURE_EXT,
+		static_cast<int32_t>(uSIZE), static_cast<int32_t>(uSIZE),
+		TEXTURE_FORMAT_RGBA8_UNORM, s_aucPixels, sizeof(s_aucPixels));
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Regenerated brush indicator texture (%ux%u) in %s", uSIZE, uSIZE, strDir.c_str());
 }
 
 void Zenith_TerrainEditor::SaveTextures()

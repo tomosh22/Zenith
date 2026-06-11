@@ -95,3 +95,7 @@ Games/TilePuzzle/Android/app/build/
 # ImGui layout persistence lives outside the repo (%LOCALAPPDATA%/Zenith/<GameName>/imgui.ini);
 # the in-repo default layout is code-built (Zenith_Editor's DockBuilder pass).
 imgui.ini
+
+# Brush-indicator decal textures are regenerated at every editor boot
+# (Zenith_TerrainEditor::RegenerateBrushTextures).
+Zenith/Assets/Textures/Brushes/

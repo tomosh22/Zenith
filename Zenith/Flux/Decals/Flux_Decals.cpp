@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Decals/Flux_DecalsImpl.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -111,6 +112,7 @@ static void BuildDecalInstance(const Zenith_Maths::Vector3& xPosition,
 	xOut.m_xWorldInverse = glm::inverse(xOut.m_xWorld);
 	xOut.m_xAxisOpacity  = Zenith_Maths::Vector4(xNormal.x, xNormal.y, xNormal.z, fOpacity);
 	xOut.m_xParams       = Zenith_Maths::Vector4(k_fDefaultNormalThreshold, 0.0f, 0.0f, 0.0f);
+	xOut.m_xColour       = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 // Build the dense GPU staging array from active CPU slots, ticking
@@ -158,6 +160,19 @@ u_int Flux_DecalsImpl::TickAndPackDense(float fDt)
 		m_axDecalStaging[uActive] = xSlot.m_xInstance;
 		++uActive;
 	}
+
+	// Editor brush indicator: one-frame lifetime — pack once, then disarm.
+	// The editor re-arms every frame while its cursor is valid, so a missed
+	// frame makes the indicator vanish rather than go stale. The texture
+	// pointer is deliberately NOT cleared here: the Apply record callback
+	// binds it later this same frame.
+	if (m_bEditorDecalArmed)
+	{
+		m_axDecalStaging[uActive] = m_xEditorDecalInstance;
+		++uActive;
+		m_bEditorDecalArmed = false;
+	}
+
 	return uActive;
 }
 
@@ -239,10 +254,10 @@ void Flux_DecalsImpl::Initialise()
 {
 	BuildPipelines();
 
-	// One frame-indexed structured buffer for all decals.
-	const u_int64 ulBufferSize = uMAX_DECALS * sizeof(DecalInstance);
-	Zenith_Vector<DecalInstance> xZeroed(uMAX_DECALS);
-	for (u_int u = 0; u < uMAX_DECALS; ++u) xZeroed.EmplaceBack();
+	// One frame-indexed structured buffer for all decals (+1 editor slot).
+	const u_int64 ulBufferSize = uMAX_DECAL_INSTANCES * sizeof(DecalInstance);
+	Zenith_Vector<DecalInstance> xZeroed(uMAX_DECAL_INSTANCES);
+	for (u_int u = 0; u < uMAX_DECAL_INSTANCES; ++u) xZeroed.EmplaceBack();
 	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(
 		xZeroed.GetDataPointer(), ulBufferSize, m_xDecalBuffer);
 
@@ -347,6 +362,47 @@ void Flux_DecalsImpl::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 		fSize, fLifetime, m_bInitialised ? 1 : 0);
 }
 
+void Flux_DecalsImpl::SetEditorDecal(const Zenith_Maths::Vector3& xCentre,
+                                     float                        fDiameter,
+                                     float                        fVerticalExtent,
+                                     const Zenith_Maths::Vector4& xColour,
+                                     Zenith_TextureAsset*         pxTexture)
+{
+	if (fDiameter <= 0.0f || fVerticalExtent <= 0.0f)
+	{
+		return;
+	}
+
+	// Project straight down: local Z = world up, local XY = the horizontal
+	// brush plane. Same basis construction as gameplay decals.
+	const Zenith_Maths::Vector3 xAxis(0.0f, 1.0f, 0.0f);
+	Zenith_Maths::Vector3 xTangent;
+	Zenith_Maths::Vector3 xBitangent;
+	BuildDecalBasis(xAxis, xTangent, xBitangent);
+
+	Zenith_Maths::Matrix4 xT = glm::translate(Zenith_Maths::Matrix4(1.0f), xCentre);
+	Zenith_Maths::Matrix4 xR(1.0f);
+	xR[0] = Zenith_Maths::Vector4(xTangent,   0.0f);
+	xR[1] = Zenith_Maths::Vector4(xBitangent, 0.0f);
+	xR[2] = Zenith_Maths::Vector4(xAxis,      0.0f);
+	xR[3] = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+	Zenith_Maths::Matrix4 xS = glm::scale(Zenith_Maths::Matrix4(1.0f),
+		Zenith_Maths::Vector3(fDiameter, fDiameter, fVerticalExtent));
+
+	DecalInstance& xInst = m_xEditorDecalInstance;
+	xInst.m_xWorld        = xT * xR * xS;
+	xInst.m_xWorldInverse = glm::inverse(xInst.m_xWorld);
+	xInst.m_xAxisOpacity  = Zenith_Maths::Vector4(xAxis.x, xAxis.y, xAxis.z, 1.0f);
+	// Permissive alignment threshold (0.05 ≈ 87°): the indicator must read
+	// on steep sculpted slopes; only near-vertical surfaces (prop sides,
+	// cliff walls) are rejected to avoid smearing.
+	xInst.m_xParams       = Zenith_Maths::Vector4(0.05f, 1.0f /* textured-brush mode */, 0.0f, 0.0f);
+	xInst.m_xColour       = xColour;
+
+	m_pxEditorDecalTexture = pxTexture;
+	m_bEditorDecalArmed    = true;
+}
+
 // ===== RECORD CALLBACKS =====
 
 static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
@@ -396,6 +452,14 @@ static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xDepthTex",       g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xNormalsCopyTex", &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
 	xBinder.BindSRV_Buffer(xDecals.m_xApplyShader, "DecalBuffer", xDecals.m_xDecalBuffer.GetSRV());
+
+	// Brush-indicator texture (textured-brush mode). The layout requires a
+	// bound SRV even on bullet-hole-only frames — fall back to the white
+	// texture, which mode 0 never samples.
+	Flux_ShaderResourceView* pxBrushSRV = (xDecals.m_pxEditorDecalTexture != nullptr)
+		? &xDecals.m_pxEditorDecalTexture->m_xSRV
+		: &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
+	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xBrushTex", pxBrushSRV);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(36, xDecals.m_uActiveDecalCount);
 }
@@ -503,7 +567,9 @@ void Flux_DecalsImpl::ResetForTest()
 {
 	for (u_int u = 0; u < uMAX_DECALS; ++u)
 		m_axDecalSlots[u].m_bActive = false;
-	m_uNextSlot         = 0;
-	m_uActiveDecalCount = 0;
+	m_uNextSlot            = 0;
+	m_uActiveDecalCount    = 0;
+	m_bEditorDecalArmed    = false;
+	m_pxEditorDecalTexture = nullptr;
 }
 #endif

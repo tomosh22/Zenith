@@ -330,4 +330,27 @@ ZENITH_TEST(TerrainEditor, GrassDensityPaint)
 	ZENITH_ASSERT_EQ_FLOAT(xDensity.At(100, 100), 0.0f, 0.001f, "Untouched density texels must stay at 0");
 }
 
+ZENITH_TEST(TerrainEditor, BrushIndicatorDecalArmsForOneFrame)
+{
+	// The editor brush indicator arms the decal editor slot for exactly one
+	// Prepare/pack: the cursor re-arms every frame while valid, so a missed
+	// frame must make the indicator vanish rather than go stale.
+	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
+	xDecals.ResetForTest();
+
+	xDecals.SetEditorDecal(Zenith_Maths::Vector3(100.0f, 50.0f, 100.0f),
+		30.0f, 60.0f, Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.85f), nullptr);
+	ZENITH_ASSERT_EQ(xDecals.TickAndPackDense(0.016f), 1u, "Armed editor decal must pack exactly one instance");
+	ZENITH_ASSERT_EQ(xDecals.TickAndPackDense(0.016f), 0u, "Editor decal must disarm after one pack");
+
+	// Re-arming works, and gameplay ring decals coexist with the editor slot.
+	xDecals.SpawnDecal(Zenith_Maths::Vector3(50.0f, 10.0f, 50.0f),
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), nullptr, 0.5f, 10.0f);
+	xDecals.SetEditorDecal(Zenith_Maths::Vector3(100.0f, 50.0f, 100.0f),
+		30.0f, 60.0f, Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.85f), nullptr);
+	ZENITH_ASSERT_EQ(xDecals.TickAndPackDense(0.016f), 2u, "Ring decal + editor decal must both pack");
+
+	xDecals.ResetForTest();
+}
+
 #endif // ZENITH_TESTING

@@ -29,12 +29,14 @@ struct DecalInstance
 	float4x4 m_xWorld;
 	float4x4 m_xWorldInverse;
 	float4   m_xAxisOpacity;   // xyz = unit-length world-space projection axis, w = fade opacity
-	float4   m_xParams;        // x = normal-alignment threshold, yzw reserved
+	float4   m_xParams;        // x = normal-alignment threshold, y = mode (0 = bullet hole, 1 = textured brush), zw reserved
+	float4   m_xColour;        // brush-indicator tint (rgb) + master alpha (w); unused by mode 0
 };
 
 [[vk::binding(1, 0)]] Sampler2D                          g_xDepthTex;
 [[vk::binding(2, 0)]] Sampler2D                          g_xNormalsCopyTex;  // pre-decal normalsAmbient clone
 [[vk::binding(3, 0)]] StructuredBuffer<DecalInstance>    DecalBuffer;
+[[vk::binding(4, 0)]] Sampler2D                          g_xBrushTex;        // textured-brush mode mask (alpha) + pattern (rgb)
 
 // 36-element cube-corner index table — 12 triangles, 3 verts each.
 // Front-face winding is CCW; combined with CULL_MODE_FRONT in the
@@ -118,6 +120,25 @@ ApplyOut fsMain(VsOut input)
 	// Soft cutoff at the box's XY edge (in decal-local space). 0.4..0.5
 	// gives a 0.1-wide fade band.
 	float fEdge = 1.0 - smoothstep(0.4, 0.5, max(abs(xLocal.x), abs(xLocal.y)));
+
+	// ===== Mode 1: textured brush indicator (editor terrain-brush cursor) =====
+	// Samples the bound brush mask, tints it per tool, and writes DIFFUSE
+	// ONLY — alpha 0 on the normal/material MRTs leaves surface shading
+	// untouched (an indicator must not stamp a dent or roughness change).
+	if (d.m_xParams.y > 0.5)
+	{
+		float2 xBrushUV = xLocal.xy + 0.5;
+		float4 xBrush = g_xBrushTex.Sample(xBrushUV);
+		float fBrushAlpha = xBrush.a * d.m_xColour.a * fEdge * d.m_xAxisOpacity.w;
+		if (fBrushAlpha <= 0.0)
+			discard;
+
+		ApplyOut oBrush;
+		oBrush.m_xDiffuse  = float4(xBrush.rgb * d.m_xColour.rgb, fBrushAlpha);
+		oBrush.m_xNormal   = float4(0.0, 0.0, 0.0, 0.0);
+		oBrush.m_xMaterial = float4(0.0, 0.0, 0.0, 0.0);
+		return oBrush;
+	}
 
 	// Procedural bullet-hole alpha — fades to 0 at the box's XY radius
 	// 0.5, so k_fDecalSize reads as the visible diameter end-to-end.
