@@ -8,8 +8,8 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "AssetHandling/Zenith_ScriptAsset.h"
 #include "AssetHandling/Zenith_FontAsset.h"
+#include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Collections/Zenith_Vector.h"
 #include <fstream>
@@ -169,21 +169,6 @@ Zenith_Result<Zenith_Asset*> LoadMeshGeometryAsset(const std::string& strPath)
 		return xStatus.Error();
 	}
 	return static_cast<Zenith_Asset*>(pxAsset);
-}
-
-Zenith_Result<Zenith_Asset*> LoadScriptAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty script asset for procedural use (rare - script assets are normally registered via macro)
-		return static_cast<Zenith_Asset*>(new Zenith_ScriptAsset());
-	}
-
-	// Script assets use the generic .zdata serialization pipeline.
-	// LoadSerializableAsset reads magic + version + type name, then calls the
-	// serializable factory (registered by ZENITH_REGISTER_ASSET_TYPE) and
-	// invokes ReadFromDataStream which binds the C++ factory pointer.
-	return LoadSerializableAsset(strPath);
 }
 
 // Static instance
@@ -353,8 +338,13 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_Prefab>(), LoadPrefabAsset);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), LoadAnimationAsset);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), LoadMeshGeometryAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_ScriptAsset>(), LoadScriptAsset);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_FontAsset>(), LoadFontAsset);
+
+	// Behaviour Graph assets (.bgraph). RegisterAssetType wires BOTH the
+	// serializable-type factory and the typed loader - the static-init
+	// ZENITH_REGISTER_ASSET_TYPE in Zenith_BehaviourGraphAsset.cpp runs before
+	// s_pxInstance is bound, so the loader half must be registered here.
+	RegisterAssetType<Zenith_BehaviourGraphAsset>();
 
 	// Note: Zenith_MaterialAsset::InitializeDefaults() must be called AFTER Vulkan/VMA
 	// is initialized (after Flux::EarlyInitialise). See InitializeGPUDependentAssets().

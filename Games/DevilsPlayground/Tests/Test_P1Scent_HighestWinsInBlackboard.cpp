@@ -14,8 +14,8 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -105,8 +105,8 @@ namespace
 	{
 		struct VPos { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<VPos> axVs;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axVs](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axVs](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				VPos xV; xV.xId = xId;
 				if (TryGetEntityPos(xId, xV.xPos)) axVs.PushBack(xV);
@@ -158,8 +158,8 @@ static bool Step_P1ScentHighest(int iFrame)
 	case kHW_WaitScene:
 	{
 		Zenith_EntityID xFoundPriest;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundPriest](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundPriest](Zenith_EntityID xId, Priest_Component&)
 			{ xFoundPriest = xId; });
 		PickClosestPair(g_xA, g_xB);
 		if (xFoundPriest.IsValid() && g_xA.IsValid() && g_xB.IsValid())

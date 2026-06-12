@@ -1,9 +1,9 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
-#include "Survival/Components/Survival_Behaviour.h"
+#include "Survival/Components/Survival_GameComponent.h"
 #include "Survival/Components/Survival_Config.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -26,6 +26,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 // ============================================================================
@@ -469,7 +470,7 @@ static void InitializeSurvivalResources()
 }
 
 // ============================================================================
-// World Content Creation (called from Survival_Behaviour::StartGame)
+// World Content Creation (called from Survival_GameComponent::StartGame)
 // ============================================================================
 void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 {
@@ -620,12 +621,19 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
 	// Initialize resources at startup
 	InitializeSurvivalResources();
 
-	// Survival_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME
+	// Register the Survival game component with the component-meta registry
+	// (serialization/lifecycle) and, in tools builds, the editor "Add Component"
+	// registry (display name used by AddStep_AddComponent / the editor menu).
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	xRegistry.RegisterComponent<Survival_GameComponent>("SurvivalGame", 100);
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Survival_GameComponent>("SurvivalGame");
+#endif
 }
 
 void Project_Shutdown()
@@ -653,7 +661,7 @@ void Project_LoadInitialScene(); // Forward declaration for automation steps
 #ifdef ZENITH_TOOLS
 void Project_InitializeResources()
 {
-	// All resources initialized in Project_RegisterScriptBehaviours
+	// All resources initialized in Project_RegisterGameComponents
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -676,7 +684,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Survival_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("SurvivalGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -819,7 +827,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIColor("Status", 0.2f, 1.f, 0.2f, 1.f);
 	g_xEngine.EditorAutomation().AddStep_SetUIVisible("Status", false);
 
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Survival_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("SurvivalGame");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();

@@ -93,6 +93,13 @@ using ComponentLifecycleFn = void(*)(Zenith_Entity&);
 // Called every frame with delta time
 using ComponentUpdateFn = void(*)(Zenith_Entity&, float);
 
+// Collision callbacks - dispatched on the MAIN thread by the physics system
+// through the meta registry (the physics dispatch path names no concrete
+// component). Enter/Stay carry the other entity; Exit carries only the ID
+// because the other body may already be destroyed.
+using ComponentCollisionFn = void(*)(Zenith_Entity&, Zenith_Entity&);
+using ComponentCollisionExitFn = void(*)(Zenith_Entity&, Zenith_EntityID);
+
 //------------------------------------------------------------------------------
 // C++20 Concepts for optional lifecycle hooks
 //------------------------------------------------------------------------------
@@ -120,6 +127,15 @@ concept HasOnFixedUpdate = requires(T& t, float fDt) { { t.OnFixedUpdate(fDt) } 
 
 template<typename T>
 concept HasOnDestroy = requires(T& t) { { t.OnDestroy() } -> std::same_as<void>; };
+
+template<typename T>
+concept HasOnCollisionEnter = requires(T& t, Zenith_Entity& xOther) { { t.OnCollisionEnter(xOther) } -> std::same_as<void>; };
+
+template<typename T>
+concept HasOnCollisionStay = requires(T& t, Zenith_Entity& xOther) { { t.OnCollisionStay(xOther) } -> std::same_as<void>; };
+
+template<typename T>
+concept HasOnCollisionExit = requires(T& t, Zenith_EntityID xOtherID) { { t.OnCollisionExit(xOtherID) } -> std::same_as<void>; };
 
 template<typename T>
 concept HasRegisterProperties = requires(Zenith_Vector<Zenith_PropertyDescriptor>& a) {
@@ -264,6 +280,24 @@ template<typename T>
 static void OnDestroyWrapper(Zenith_Entity& xEntity)
 {
 	xEntity.GetComponent<T>().OnDestroy();
+}
+
+template<typename T>
+static void OnCollisionEnterWrapper(Zenith_Entity& xEntity, Zenith_Entity& xOther)
+{
+	xEntity.GetComponent<T>().OnCollisionEnter(xOther);
+}
+
+template<typename T>
+static void OnCollisionStayWrapper(Zenith_Entity& xEntity, Zenith_Entity& xOther)
+{
+	xEntity.GetComponent<T>().OnCollisionStay(xOther);
+}
+
+template<typename T>
+static void OnCollisionExitWrapper(Zenith_Entity& xEntity, Zenith_EntityID xOtherID)
+{
+	xEntity.GetComponent<T>().OnCollisionExit(xOtherID);
 }
 
 template<typename T>

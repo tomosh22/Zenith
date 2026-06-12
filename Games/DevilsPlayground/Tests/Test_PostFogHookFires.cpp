@@ -15,7 +15,7 @@
 //   1. g_xEngine.FluxRenderer().LateInitialise()
 //        -> InitialiseAllPending() + SetupRenderGraph()
 //             (DP_Fog is not registered yet — DPFogPass::Init runs later)
-//   2. Project_RegisterScriptBehaviours()
+//   2. Project_RegisterGameComponents()
 //        -> DPFogPass::Init()
 //             -> Zenith_GameRenderFeatures::Register("DP_Fog", runAfter="Fog")
 //

@@ -28,6 +28,7 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"  // WS10 fuzz cross-check (Light is a headless-safe component)
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"  // WS19 forwarding-handle relocation tests
+#include "UI/Zenith_UI.h"  // UIStyle tests (was transitively included via the removed script component)
 #include "Flux/MeshAnimation/Flux_AnimationControllerStore.h"     // WS19 store
 #include "Core/Zenith_Engine.h"                                    // g_xEngine.AnimationControllers()
 #include "Core/Zenith_BenchECS.h"
@@ -4868,7 +4869,7 @@ void Zenith_UnitTests::TestIKSolveOnReloadedAsset()
 
 //------------------------------------------------------------------------------
 // Reproductions of the "feet dragging behind body" bug
-// Mirrors what RenderTest_PlayerBehaviour::UpdateFootIK does end-to-end:
+// Mirrors what RenderTest_PlayerComponent::UpdateFootIK does end-to-end:
 //   1. Player has a rotated world matrix (faces +X via yaw=π/2)
 //   2. Compute the foot's CURRENT world position via xWorld * footModel * (0,0,0,1)
 //   3. Simulate a "raycast hit" 1m below the foot
@@ -4936,7 +4937,7 @@ ZENITH_TEST(Animation, IKWithPlayerLikeWorldRotationAndPole) { Zenith_UnitTests:
 void Zenith_UnitTests::TestIKWithPlayerLikeWorldRotationAndPole()
 {
 	// Same as above but using CreateLegChain (with pole vector + hinge constraint
-	// configured) — this is the actual chain RenderTest_PlayerBehaviour adds.
+	// configured) — this is the actual chain RenderTest_PlayerComponent adds.
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_SkeletonPose xPose;
 	InitPoseAtBindForSkeleton(xPose, *pxSkel);

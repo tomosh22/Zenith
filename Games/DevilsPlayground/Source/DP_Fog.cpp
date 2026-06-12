@@ -11,23 +11,23 @@
 #include "ZenithECS/Zenith_SceneData.h"
 
 #include "DP_Query.h"
-#include "../Components/DPFogPass_Behaviour.h"
-#include "../Components/DPVillager_Behaviour.h"
+#include "../Components/DPFogPass_Component.h"
+#include "../Components/DPVillager_Component.h"
 
 #include <cmath>
 
 namespace DP_Fog
 {
 	// 2026-05-17 scene-ownership refactor: fog-hole + memory-fog
-	// tables moved onto DPFogPass_Behaviour. Forwarders below are
-	// no-ops when no fog-pass script is loaded (between-scenes /
+	// tables moved onto DPFogPass_Component. Forwarders below are
+	// no-ops when no fog-pass component is loaded (between-scenes /
 	// non-DP scenes).
 
 	void RegisterFogHole(Zenith_EntityID xId, float fRadius)
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Fog::RegisterFogHole must be called from main thread");
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->RegisterFogHole(xId, fRadius);
 	}
@@ -36,7 +36,7 @@ namespace DP_Fog
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Fog::UnregisterFogHole must be called from main thread");
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->UnregisterFogHole(xId);
 	}
@@ -45,14 +45,14 @@ namespace DP_Fog
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Fog::ClearAllFogHoles must be called from main thread");
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->ClearAllFogHoles();
 	}
 
 	uint32_t GetFogHoleCount()
 	{
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return 0;
 		return pxFog->GetFogHoleCount();
 	}
@@ -60,7 +60,7 @@ namespace DP_Fog
 	uint32_t GatherFogHolePositions(Vec4* pxOutHoles, uint32_t uMaxHoles)
 	{
 		if (pxOutHoles == nullptr || uMaxHoles == 0) return 0;
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return 0;
 		uint32_t uWritten = 0;
 		pxFog->ForEachFogHole(
@@ -82,7 +82,7 @@ namespace DP_Fog
 
 	// ========================================================================
 	// MVP-2.4.5: Memory fog implementation. State machine moved onto
-	// DPFogPass_Behaviour as part of the 2026-05-17 ownership refactor;
+	// DPFogPass_Component as part of the 2026-05-17 ownership refactor;
 	// these forwarders convert Vec3 positions to DPMemoryCellKey and
 	// delegate to the per-scene script.
 	// ========================================================================
@@ -105,7 +105,7 @@ namespace DP_Fog
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Fog::RecordMemoryReveal must be called from main thread");
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->RecordMemoryRevealCell(CellKeyForPosition(xPosition));
 	}
@@ -115,14 +115,14 @@ namespace DP_Fog
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Fog::TickMemoryFog must be called from main thread");
 		if (fDt <= 0.0f) return;
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->TickMemoryFog(fDt);
 	}
 
 	MemoryTileState GetMemoryStateAt(Vec3 xPosition)
 	{
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return MemoryTileState::NeverSeen;
 		const DPMemoryCellKey k = CellKeyForPosition(xPosition);
 		const float fAge = pxFog->GetMemoryCellAgeOrNeg1(k);
@@ -138,7 +138,7 @@ namespace DP_Fog
 
 	uint32_t GetMemoryRevealCount()
 	{
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return 0;
 		return pxFog->GetMemoryRevealCount();
 	}
@@ -147,15 +147,15 @@ namespace DP_Fog
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Fog::ClearAllMemoryReveals must be called from main thread");
-		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->ClearAllMemoryReveals();
 	}
 
-	// Cross-behaviour forwarder: every villager — possessed or idle — cuts a
+	// Cross-component forwarder: every villager — possessed or idle — cuts a
 	// fog hole and records a memory reveal. Moved here from
-	// DPFogPass_Behaviour::OnUpdate so the fog-pass header no longer includes
-	// DPVillager_Behaviour.h. fRadius replaces the script's m_fVillagerHoleRadius.
+	// DPFogPass_Component::OnUpdate so the fog-pass header no longer includes
+	// DPVillager_Component.h. fRadius replaces the component's m_fVillagerHoleRadius.
 	void RegisterAllVillagerFogHoles(float fRadius)
 	{
 		// Every villager — possessed or idle — cuts a fog hole. The
@@ -164,8 +164,8 @@ namespace DP_Fog
 		// can keep tabs on which idle villagers are getting close to the
 		// priest). Skeletal-grade: a fixed radius around the cube
 		// silhouette; Wave-4 polish could vary it by villager state.
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[fRadius](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[fRadius](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				RegisterFogHole(xId, fRadius);
 				// MVP-2.4.5: record memory reveals for each villager

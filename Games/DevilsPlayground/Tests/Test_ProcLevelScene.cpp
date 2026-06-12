@@ -6,16 +6,15 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPProcLevelBootstrap_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
+#include "Components/DPProcLevelBootstrap_Component.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPPentagram_Component.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPDoor_Component.h"
 
 #include <cstdio>
 
@@ -33,9 +32,9 @@
 //   - Bootstrap singleton registered.
 //   - Layout has >0 rooms / walls / elements / villager spawns / patrol /
 //     valid priest spawn.
-//   - At least 1 DPVillager_Behaviour script in the active scene.
-//   - Exactly 1 Priest_Behaviour script.
-//   - At least 1 DPPentagram_Behaviour + 1 DPForge_Behaviour.
+//   - At least 1 DPVillager_Component script in the active scene.
+//   - Exactly 1 Priest_Component script.
+//   - At least 1 DPPentagram_Component + 1 DPForge_Component.
 //   - At least 1 DPItemBase script (iron + objectives).
 // ============================================================================
 
@@ -50,10 +49,10 @@ namespace
 	const char* g_szFailureReason = "";
 
 	template<typename T>
-	int CountScripts()
+	int CountComponents()
 	{
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&iCount](Zenith_EntityID, T&) { ++iCount; });
 		return iCount;
 	}
@@ -85,8 +84,8 @@ static bool Step_ProcLevelScene(int /*iFrame*/)
 
 	case kVerify:
 	{
-		DPProcLevelBootstrap_Behaviour* pxBootstrap =
-			DPProcLevelBootstrap_Behaviour::Instance();
+		DPProcLevelBootstrap_Component* pxBootstrap =
+			DPProcLevelBootstrap_Component::Instance();
 		if (pxBootstrap == nullptr)
 		{
 			g_szFailureReason = "Bootstrap singleton not set after scene load";
@@ -128,17 +127,17 @@ static bool Step_ProcLevelScene(int /*iFrame*/)
 			return false;
 		}
 
-		// Cross-check the script-side query: the spawned entities have
-		// their behaviours actually attached + registered with the
-		// script component manager. Counting via DP_Query confirms the
-		// AddScript<T>(...) calls in the bootstrap actually produced
-		// queryable scripts (not just "entity exists with type name").
-		const int iVillagers = CountScripts<DPVillager_Behaviour>();
-		const int iPriests   = CountScripts<Priest_Behaviour>();
-		const int iItems     = CountScripts<DPItemBase_Behaviour>();
-		const int iPents     = CountScripts<DPPentagram_Behaviour>();
-		const int iForges    = CountScripts<DPForge_Behaviour>();
-		const int iDoors     = CountScripts<DPDoor_Behaviour>();
+		// Cross-check the component query: the spawned entities have
+		// their game components actually attached + live in the scene's
+		// pools. Counting via DP_Query confirms the AddComponent<T>(...)
+		// calls in the bootstrap actually produced queryable components
+		// (not just "entity exists with type name").
+		const int iVillagers = CountComponents<DPVillager_Component>();
+		const int iPriests   = CountComponents<Priest_Component>();
+		const int iItems     = CountComponents<DPItemBase_Component>();
+		const int iPents     = CountComponents<DPPentagram_Component>();
+		const int iForges    = CountComponents<DPForge_Component>();
+		const int iDoors     = CountComponents<DPDoor_Component>();
 
 		if (iVillagers < 1) { g_szFailureReason = "No villager scripts"; g_iPhase = kDone; return false; }
 		if (iPriests != 1)  { g_szFailureReason = "Priest script count != 1"; g_iPhase = kDone; return false; }

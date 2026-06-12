@@ -31,39 +31,74 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "UI/Zenith_UIRect.h"
 
-// Behaviour headers — including each here forces the
-// ZENITH_BEHAVIOUR_TYPE_NAME static-init registration to run, so the
-// scene-load path can resolve `game:Scripts/<TypeName>.zscript` to a valid
-// factory. Combat does the equivalent.
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPPlayerController_Behaviour.h"
-#include "Components/DPOrbitCamera_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPItemSpawn_Behaviour.h"
-#include "Components/DPItemManager_Behaviour.h"
-#include "Components/DPInteractable_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
-#include "Components/DPDoubleDoor_Behaviour.h"
-#include "Components/DPChest_Behaviour.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
+// Game component headers — included here so the file-scope
+// ZENITH_REGISTER_COMPONENT macros below can name the complete types.
+// This TU defines the Project_* entry points the engine references, so its
+// static initializers always run (dead-strip safe).
+#include "ZenithECS/Zenith_ComponentMeta.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPPlayerController_Component.h"
+#include "Components/DPOrbitCamera_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPItemSpawn_Component.h"
+#include "Components/DPItemManager_Component.h"
+#include "Components/DPInteractable_Base.h"
+#include "Components/DPDoor_Component.h"
+#include "Components/DPDoubleDoor_Component.h"
+#include "Components/DPChest_Component.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPPentagram_Component.h"
+#include "Components/Priest_Component.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
-#include "Components/DummyNoiseMachine_Behaviour.h"
-#include "Components/DPHUDController_Behaviour.h"
-#include "Components/DPMainMenuController_Behaviour.h"
-#include "Components/DPPauseMenuController_Behaviour.h"
-#include "Components/DPFogPass_Behaviour.h"
-#include "Components/DPProcLevelBootstrap_Behaviour.h"
+#include "Components/DummyNoiseMachine_Component.h"
+#include "Components/DPHUDController_Component.h"
+#include "Components/DPMainMenuController_Component.h"
+#include "Components/DPPauseMenuController_Component.h"
+#include "Components/DPFogPass_Component.h"
+#include "Components/DPProcLevelBootstrap_Component.h"
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
 #endif
+
+// ============================================================================
+// Component registration (meta registry: serialization + lifecycle dispatch
+// order, scene save/load). The macro enqueues a thunk at static init that the
+// registry's seal drains, so the components land in the sorted list (the
+// engine re-finalizes on post-seal registration too, so ordering is safe
+// either way). Orders 100-117, unique per game, above the engine built-ins
+// (Transform=0 .. AIAgent=90).
+//
+// 100-104 mirror the GameManager attach order of the old script slots
+// (player, item manager, fog pass, HUD, orbit camera) so per-entity hook
+// dispatch order is preserved. DPInteractable_Base is deliberately NOT
+// registered — it is a plain C++ base class; only the concrete leaves are
+// components.
+// ============================================================================
+ZENITH_REGISTER_COMPONENT(DPPlayerController_Component,  "DPPlayerController",  100u)
+ZENITH_REGISTER_COMPONENT(DPItemManager_Component,       "DPItemManager",       101u)
+ZENITH_REGISTER_COMPONENT(DPFogPass_Component,           "DPFogPass",           102u)
+ZENITH_REGISTER_COMPONENT(DPHUDController_Component,     "DPHUDController",     103u)
+ZENITH_REGISTER_COMPONENT(DPOrbitCamera_Component,       "DPOrbitCamera",       104u)
+ZENITH_REGISTER_COMPONENT(DPMainMenuController_Component, "DPMainMenuController", 105u)
+ZENITH_REGISTER_COMPONENT(DPPauseMenuController_Component, "DPPauseMenuController", 106u)
+ZENITH_REGISTER_COMPONENT(DPProcLevelBootstrap_Component, "DPProcLevelBootstrap", 107u)
+ZENITH_REGISTER_COMPONENT(DPVillager_Component,          "DPVillager",          108u)
+ZENITH_REGISTER_COMPONENT(Priest_Component,              "Priest",              109u)
+ZENITH_REGISTER_COMPONENT(DPItemBase_Component,          "DPItemBase",          110u)
+ZENITH_REGISTER_COMPONENT(DPItemSpawn_Component,         "DPItemSpawn",         111u)
+ZENITH_REGISTER_COMPONENT(DPDoor_Component,              "DPDoor",              112u)
+ZENITH_REGISTER_COMPONENT(DPDoubleDoor_Component,        "DPDoubleDoor",        113u)
+ZENITH_REGISTER_COMPONENT(DPChest_Component,             "DPChest",             114u)
+ZENITH_REGISTER_COMPONENT(DPForge_Component,             "DPForge",             115u)
+ZENITH_REGISTER_COMPONENT(DPPentagram_Component,         "DPPentagram",         116u)
+ZENITH_REGISTER_COMPONENT(DummyNoiseMachine_Component,   "DummyNoiseMachine",   117u)
 
 // ============================================================================
 // Forward decls — Project_LoadInitialScene is referenced by the editor
@@ -157,7 +192,7 @@ namespace DevilsPlayground
 		DP_Tuning::Initialize();
 
 		// MVP-0.2.1+2: Config/Archetypes.json into the archetype cache. Loaded
-		// right after Tuning so DPVillager_Behaviour::OnAwake can consult both.
+		// right after Tuning so DPVillager_Component::OnAwake can consult both.
 		// Idempotent.
 		DP_Archetypes::Initialize();
 
@@ -175,7 +210,7 @@ namespace DevilsPlayground
 		// pentagram ritual swirl, BellSoul ring, BogWater steam, priest
 		// "!" alert, etc). Initialize() registers the configs + subscribes
 		// to DP events; the per-scene emitter entities are created by
-		// DPProcLevelBootstrap_Behaviour::OnAwake via
+		// DPProcLevelBootstrap_Component::OnAwake via
 		// DP_Particles::EnsureEmittersInScene. Idempotent.
 		DP_Particles::Initialize();
 
@@ -202,17 +237,17 @@ namespace DevilsPlayground
 		//
 		// 2026-05-22 Phase 5.2: removed DP_Player::ResetForNewRun /
 		// DP_Win::Reset / DP_Night::Reset from this hook -- their state
-		// now lives on DPPlayerController_Behaviour::m_x*, destroyed via
+		// now lives on DPPlayerController_Component::m_x*, destroyed via
 		// the scene-reload OnDestroy. DP_Fog::ClearAll* are also entity-
-		// owned (DPFogPass_Behaviour) but kept here defensively so the
+		// owned (DPFogPass_Component) but kept here defensively so the
 		// hook is robust to any future code path that calls it on a scene
-		// where the fog-pass script never spun up.
+		// where the fog-pass component never spun up.
 		Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 		{
 			DP_Fog::ClearAllFogHoles();
 			DP_Fog::ClearAllMemoryReveals();
 			DP_AI::ResetLevelNavMesh();
-			DPPauseMenuController_Behaviour::ResetForTest();
+			DPPauseMenuController_Component::ResetForTest();
 			// Reset engine perception state (per-agent awareness, registered
 			// targets, active sounds) between tests. It has no entity owner and
 			// is never cleared on scene reload, so it would otherwise leak across
@@ -287,13 +322,37 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 	// (SetOwnerForceDisabled("Fog", true)) inside DPFogPass / SetupDPFog.
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
-	// Behaviour registration is automatic via the ZENITH_BEHAVIOUR_TYPE_NAME
-	// macro's static initializer (runs at program startup before main()).
-	// This hook remains as the per-game lifecycle entry point for early
-	// CPU-only resource initialization that must run in both TOOLS and
-	// non-TOOLS builds.
+	// Meta-registry registration happens via the ZENITH_REGISTER_COMPONENT
+	// macros at the top of this file. This hook remains as the per-game
+	// lifecycle entry point for early CPU-only resource initialization that
+	// must run in both TOOLS and non-TOOLS builds, plus (tools only) the
+	// editor "Add Component" registry mirror — the display names used by
+	// AddStep_AddComponent and the editor menu. That registry is
+	// append-anytime, not sealed.
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
+	xEditorRegistry.RegisterComponent<DPPlayerController_Component>("DPPlayerController");
+	xEditorRegistry.RegisterComponent<DPItemManager_Component>("DPItemManager");
+	xEditorRegistry.RegisterComponent<DPFogPass_Component>("DPFogPass");
+	xEditorRegistry.RegisterComponent<DPHUDController_Component>("DPHUDController");
+	xEditorRegistry.RegisterComponent<DPOrbitCamera_Component>("DPOrbitCamera");
+	xEditorRegistry.RegisterComponent<DPMainMenuController_Component>("DPMainMenuController");
+	xEditorRegistry.RegisterComponent<DPPauseMenuController_Component>("DPPauseMenuController");
+	xEditorRegistry.RegisterComponent<DPProcLevelBootstrap_Component>("DPProcLevelBootstrap");
+	xEditorRegistry.RegisterComponent<DPVillager_Component>("DPVillager");
+	xEditorRegistry.RegisterComponent<Priest_Component>("Priest");
+	xEditorRegistry.RegisterComponent<DPItemBase_Component>("DPItemBase");
+	xEditorRegistry.RegisterComponent<DPItemSpawn_Component>("DPItemSpawn");
+	xEditorRegistry.RegisterComponent<DPDoor_Component>("DPDoor");
+	xEditorRegistry.RegisterComponent<DPDoubleDoor_Component>("DPDoubleDoor");
+	xEditorRegistry.RegisterComponent<DPChest_Component>("DPChest");
+	xEditorRegistry.RegisterComponent<DPForge_Component>("DPForge");
+	xEditorRegistry.RegisterComponent<DPPentagram_Component>("DPPentagram");
+	xEditorRegistry.RegisterComponent<DummyNoiseMachine_Component>("DummyNoiseMachine");
+#endif
+
 	DevilsPlayground::InitializeResources();
 
 	// Register the game's fog render feature (anchored after the engine fog step)
@@ -314,7 +373,7 @@ void Project_Shutdown()
 void Project_InitializeResources()
 {
 	// All DevilsPlayground resources are initialised in
-	// Project_RegisterScriptBehaviours via DevilsPlayground::InitializeResources().
+	// Project_RegisterGameComponents via DevilsPlayground::InitializeResources().
 }
 
 namespace
@@ -520,7 +579,7 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuHowToBody", DPUI::fMENU_HOWTO_FONT);
 		g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuHowToBody", 0.9f, 0.9f, 0.85f, 1.0f);
 
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPMainMenuController_Behaviour");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPMainMenuController");
 
 		g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
 		g_xEngine.EditorAutomation().AddStep_UnloadScene();
@@ -539,7 +598,7 @@ namespace
 	//
 	// Camera defaults (50, 35, -15) + pitch -0.85 + FOV 55° are starting
 	// values; the procgen bootstrap overrides them at runtime via
-	// DPOrbitCamera_Behaviour's SetOrbitTarget / SetOrbitDistance setters
+	// DPOrbitCamera_Component's SetOrbitTarget / SetOrbitDistance setters
 	// once the layout bounds are known.
 	// ============================================================================
 	void AuthorDPGameSceneFrame()
@@ -881,11 +940,11 @@ namespace
 
 		// Attach the global coordinators. Each is independent — order doesn't
 		// matter, but the convention is to attach the player first.
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPPlayerController_Behaviour");
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPItemManager_Behaviour");
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPFogPass_Behaviour");
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPHUDController_Behaviour");
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPOrbitCamera_Behaviour");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPPlayerController");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPItemManager");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPFogPass");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPHUDController");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPOrbitCamera");
 
 		// ------ PauseManager: dedicated entity for the pause controller -------
 		// MVP-1.1: the pause controller migrates itself to the persistent
@@ -901,7 +960,7 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_SetUIFontSize("PauseOverlay", DPUI::fHUD_PAUSE_FONT);
 		g_xEngine.EditorAutomation().AddStep_SetUIColor("PauseOverlay", 1.0f, 1.0f, 1.0f, 1.0f);
 		g_xEngine.EditorAutomation().AddStep_SetUIVisible("PauseOverlay", false);
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPPauseMenuController_Behaviour");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPPauseMenuController");
 	}
 
 	// (AuthorGameLevelScene removed 2026-05-19 -- the UE-exported GameLevel
@@ -913,7 +972,7 @@ namespace
 	//
 	// Static authoring is intentionally lean: GameManager + UI scaffolding,
 	// PauseManager, GroundPlane, a handful of corner lights, plus a single
-	// "ProcLevelBootstrap" entity carrying DPProcLevelBootstrap_Behaviour.
+	// "ProcLevelBootstrap" entity carrying DPProcLevelBootstrap_Component.
 	//
 	// At runtime, the bootstrap's OnAwake calls DPProcLevel::Generate() with
 	// seed = m_uSeed (default 0) and then spawns the full level under the
@@ -976,12 +1035,12 @@ namespace
 		}
 
 		// ------ The bootstrap entity ------------------------------------------
-		// Attaching this script is the ENTIRE level-content authoring. Every
-		// wall, item, character is materialised by the script's OnAwake at
+		// Attaching this component is the ENTIRE level-content authoring. Every
+		// wall, item, character is materialised by the component's OnAwake at
 		// scene-load time. Changing m_uSeed (or the upcoming Tuning.json
 		// seed source) produces a different level without re-authoring.
 		g_xEngine.EditorAutomation().AddStep_CreateEntity("ProcLevelBootstrap");
-		g_xEngine.EditorAutomation().AddStep_AttachScript("DPProcLevelBootstrap_Behaviour");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPProcLevelBootstrap");
 
 		g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/ProcLevel" ZENITH_SCENE_EXT);
 		g_xEngine.EditorAutomation().AddStep_UnloadScene();

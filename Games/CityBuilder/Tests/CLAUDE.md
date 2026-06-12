@@ -34,7 +34,7 @@ pwsh ./Tools/run_cb_tests.ps1 -Filter CB_HumanSession
   re-enter `BeginFrame` → `vkWaitForFences` **deadlock** (windowed only). Call the picker / tools
   directly instead.
 - **Headless logic tests build local instances** in `Setup`/`Verify` and assert on them — they do not
-  need the live scene. Windowed tests drive the live `CB_CityManager_Behaviour` via the static accessors.
+  need the live scene. Windowed tests drive the live `CB_CityManagerComponent` via the static accessors.
 - **Determinism:** run with `--fixed-dt 0.01666`; the sim core has no RNG so a seeded city replays.
 - `static const Zenith_AutomatedTest g_xT` lands in read-only memory — never `const_cast` + write back.
 

@@ -107,6 +107,12 @@ struct Zenith_ComponentMeta
 	ComponentUpdateFn m_pfnOnFixedUpdate = nullptr; // Called at fixed timestep
 	ComponentLifecycleFn m_pfnOnDestroy = nullptr;  // Called before component is removed
 
+	// Collision hooks - dispatched main-thread by the physics system through
+	// DispatchOnCollision* below (no concrete component named physics-side).
+	ComponentCollisionFn m_pfnOnCollisionEnter = nullptr;
+	ComponentCollisionFn m_pfnOnCollisionStay = nullptr;
+	ComponentCollisionExitFn m_pfnOnCollisionExit = nullptr;
+
 	// On-disk schema version of this component's serialized payload. Written
 	// per-component into scene v6+ files OUTSIDE the size-prefixed payload, so it
 	// never disturbs the bounded/unknown-component skip path. Default 1; a component
@@ -200,6 +206,14 @@ public:
 	void DispatchOnLateUpdate(Zenith_Entity& xEntity, float fDt) const;
 	void DispatchOnFixedUpdate(Zenith_Entity& xEntity, float fDt) const;
 	void DispatchOnDestroy(Zenith_Entity& xEntity) const;
+
+	// Collision dispatch - the physics system routes its (main-thread,
+	// already-deferred) collision events through these so it never names a
+	// concrete component. Any component implementing OnCollisionEnter/Stay/Exit
+	// receives them (concept-detected at registration).
+	void DispatchOnCollisionEnter(Zenith_Entity& xEntity, Zenith_Entity& xOther) const;
+	void DispatchOnCollisionStay(Zenith_Entity& xEntity, Zenith_Entity& xOther) const;
+	void DispatchOnCollisionExit(Zenith_Entity& xEntity, Zenith_EntityID xOtherID) const;
 
 	// Populate + seal the registry if it has not been initialized yet. Public so
 	// Zenith_Engine::Initialise can force the one-time init eagerly (after
@@ -357,8 +371,31 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 	{
 		xMeta.m_pfnOnDestroy = &OnDestroyWrapper<T>;
 	}
+	if constexpr (HasOnCollisionEnter<T>)
+	{
+		xMeta.m_pfnOnCollisionEnter = &OnCollisionEnterWrapper<T>;
+	}
+	if constexpr (HasOnCollisionStay<T>)
+	{
+		xMeta.m_pfnOnCollisionStay = &OnCollisionStayWrapper<T>;
+	}
+	if constexpr (HasOnCollisionExit<T>)
+	{
+		xMeta.m_pfnOnCollisionExit = &OnCollisionExitWrapper<T>;
+	}
 
 	m_xMetaByName[strTypeName] = xMeta;
+
+	// Game components register from project hooks AFTER the engine boot already
+	// finalized the registry (built m_xMetasSorted). A post-seal registration
+	// must re-finalize: (a) so the new type enters the sorted dispatch +
+	// serialization list at all, and (b) because the map insert may have
+	// rehashed and invalidated every cached Zenith_ComponentMeta* in the sorted
+	// list. Finalize() rebuilds the pointers from the map, so it cures both.
+	if (m_bInitialized)
+	{
+		Finalize();
+	}
 
 	// NOTE (ECS leaf-extraction Phase 4): the editor "Add Component" registry
 	// population that used to live here (under #ifdef ZENITH_TOOLS) has moved

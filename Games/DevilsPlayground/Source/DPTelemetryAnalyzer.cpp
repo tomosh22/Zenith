@@ -87,7 +87,7 @@ namespace DPTelemetryAnalyzer
 		// Sum of horizontal step distances across every IsPriest-flagged
 		// entity, across every consecutive pair of frame samples. The
 		// IsPriest tag is stamped by the test's per-frame sampler when
-		// it iterates Priest_Behaviour instances (see
+		// it iterates Priest_Component instances (see
 		// Test_PersonalityPlaythrough's EmitPositionSample), so this
 		// only counts entities that the recording explicitly marks as
 		// the priest. A motionless priest returns 0.0; a priest that

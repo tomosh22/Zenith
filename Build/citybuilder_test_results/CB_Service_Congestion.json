@@ -2,7 +2,7 @@
   "name": "CB_Service_Congestion",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.603,
+  "durationMs": 0.529,
   "failures": [],
   "skipped": false
 }

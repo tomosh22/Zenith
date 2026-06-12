@@ -1,6 +1,6 @@
 # DevilsPlayground/Tests
 
-117 registered automated tests across 104 .cpp files (as of 2026-05-20).
+138 registered automated tests across 116 .cpp files (as of 2026-06-12).
 The full list is `devilsplayground.exe --list-automated-tests`. The DP
 suite is the primary quality gate; the bar for any new change is "the
 full headless batch stays green."
@@ -290,7 +290,7 @@ returns false or the test's `m_iMaxFrames` is hit.
 
 If your test needs the gameplay scene, call
 `Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE)` — that
-is ProcLevel. Use `DP_Query::ForEachScriptInActiveScene<T>` to find
+is ProcLevel. Use `DP_Query::ForEachComponentInActiveScene<T>` to find
 priest / villager / item entities by type; do **not** bake in entity
 names or world positions, because procgen reshuffles those per seed.
 
@@ -303,9 +303,13 @@ names or world positions, because procgen reshuffles those per seed.
 - **`SimulateClickOnUIElement` asserts on missing element**, killing
   the process. If you write a UI-click test, ensure the named element
   exists in the active scene's UICanvas at the moment of the click.
-- **`Zenith_ScriptComponent::GetScript<T>()` is a linear scan by
-  type-name string.** Cheap, but don't loop-call it inside hot paths;
-  cache the pointer once after OnStart.
+- **Game components added mid-frame are awoken by the next scene
+  Update (wave-drain), not synchronously at `AddComponent<T>()`.**
+  A test that registers into a component-owned side table immediately
+  after attaching must either wait a frame or call the component's
+  `OnAwake()` by hand (safe only when the scene is unloaded before any
+  Update — see Test_PublicInterfaces.cpp). `TryGetComponent<T>()` is
+  the null-safe lookup (returns nullptr when absent).
 - **Procgen geometry is not tuned for hand-tuned priest tests.** Tests
   that need a specific priest/villager spatial arrangement (e.g.
   teleport priest to 1.5 m east of villager) may fail on procgen

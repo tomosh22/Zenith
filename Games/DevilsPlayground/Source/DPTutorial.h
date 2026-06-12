@@ -14,7 +14,7 @@
 //   3. Auto-dismisses on timer expiry OR when a newer tip displaces it.
 //
 // The "shown" flags reset at run-start (called from
-// Project_RegisterScriptBehaviours' between-tests hook + when the
+// Project_RegisterGameComponents' between-tests hook + when the
 // player triggers Restart from the pause menu).
 //
 // Architecture: process-global flag table + the active-tip text +

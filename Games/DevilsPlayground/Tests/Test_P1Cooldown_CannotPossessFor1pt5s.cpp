@@ -12,7 +12,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Collections/Zenith_Vector.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
@@ -45,7 +45,7 @@
 // What this proves end-to-end:
 //   * TryVoluntaryPossessSwitch returns false during the cooldown
 //     window.
-//   * DPPlayerController_Behaviour's per-frame TickPossessionCooldown
+//   * DPPlayerController_Component's per-frame TickPossessionCooldown
 //     drains the timer at wall-clock rate.
 //   * The possession state stays on the LAST successfully-set villager
 //     while the cooldown is active (the rejected attempts don't
@@ -110,9 +110,9 @@ namespace
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return;
-		if (DPVillager_Behaviour* pxV =
-				xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>())
+		if (!xEnt.IsValid()) return;
+		if (DPVillager_Component* pxV =
+				xEnt.TryGetComponent<DPVillager_Component>())
 		{
 			pxV->ApplyArchetype("Farmhand");
 		}
@@ -139,9 +139,9 @@ namespace
 
 		struct Cand { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<Cand> axCands;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
 			[&axCands]
-			(Zenith_EntityID xId, DPVillager_Behaviour&)
+			(Zenith_EntityID xId, DPVillager_Component&)
 			{
 				Cand xV; xV.xId = xId;
 				if (TryGetEntityPos(xId, xV.xPos))

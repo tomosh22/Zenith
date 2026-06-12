@@ -892,10 +892,10 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\RenderTest_FollowCamera.h" />
+    <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h" />
     <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h" />
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.Tests.inl" />
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />

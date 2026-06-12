@@ -10,7 +10,7 @@
 #include "Collections/Zenith_Vector.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -30,7 +30,7 @@
 //   1. Subscribe to DP_OnVillagerDied + DP_OnRunLost in Setup so the
 //      per-death and run-end counts can be tallied without polling.
 //   2. Load GameLevel.
-//   3. Wait for the 17 DPVillager_Behaviour scripts to OnStart.
+//   3. Wait for the 17 DPVillager_Component scripts to OnStart.
 //   4. Iterate, collect every villager EntityID, then call Kill() on
 //      each in turn. Kill() is the new MVP-1.3.5 method that runs
 //      the same death-dispatch + NoVessels-scan that natural-cause
@@ -114,8 +114,8 @@ static bool Step_P1NoVessels(int iFrame)
 	case kNV_WaitScene:
 	{
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iCount](Zenith_EntityID, DPVillager_Behaviour&) { ++iCount; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iCount](Zenith_EntityID, DPVillager_Component&) { ++iCount; });
 		// GameLevel has 17 authored villagers (some scenes may pad);
 		// any count >= 2 is enough for the test to be meaningful (the
 		// NoVessels-fires-on-LAST-death vs ON-ANY-DEATH discrimination
@@ -140,8 +140,8 @@ static bool Step_P1NoVessels(int iFrame)
 		// doesn't matter for the assertions; the test only cares
 		// that NoVessels fires on the LAST death.
 		Zenith_Vector<Zenith_EntityID> axVillagers;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axVillagers](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axVillagers](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				axVillagers.PushBack(xId);
 			});
@@ -152,9 +152,8 @@ static bool Step_P1NoVessels(int iFrame)
 			if (pxScene == nullptr) continue;
 			Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 			if (!xEnt.IsValid()) continue;
-			if (!xEnt.HasComponent<Zenith_ScriptComponent>()) continue;
-			DPVillager_Behaviour* pxV =
-				xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+			DPVillager_Component* pxV =
+				xEnt.TryGetComponent<DPVillager_Component>();
 			if (pxV != nullptr) pxV->Kill();
 		}
 		g_iPhase = kNV_Verify;

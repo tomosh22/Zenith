@@ -11,9 +11,9 @@
 #include "UI/Zenith_UIText.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPHUDController_Behaviour.h"
-#include "Components/DPPauseMenuController_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPHUDController_Component.h"
+#include "Components/DPPauseMenuController_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -28,10 +28,10 @@
 //
 // Verifies the full chain:
 //   1. DP_OnVictory dispatches.
-//   2. DPHUDController_Behaviour's subscriber sets m_bRunOver = true.
-//   3. DPHUDController_Behaviour::OnUpdate makes the RestartPrompt UI
+//   2. DPHUDController_Component's subscriber sets m_bRunOver = true.
+//   3. DPHUDController_Component::OnUpdate makes the RestartPrompt UI
 //      element visible with the canonical hint text.
-//   4. DPPauseMenuController_Behaviour's subscriber sets its OWN
+//   4. DPPauseMenuController_Component's subscriber sets its OWN
 //      m_bRunOver = true (the two controllers track independently
 //      so neither needs the other's interface).
 //   5. PauseMenu::IsRunOverForTest() returns true -- so any R-key
@@ -80,7 +80,7 @@ namespace
 
 	int g_iPhase = kRP_Start;
 	Zenith_EntityID g_xVillager;
-	DPHUDController_Behaviour* g_pxHud = nullptr;
+	DPHUDController_Component* g_pxHud = nullptr;
 
 	// Pre-event snapshot (sanity: prompt is hidden before run ends).
 	bool g_bPromptVisiblePreA = false;
@@ -99,11 +99,11 @@ namespace
 	bool g_bPauseRunOverPostB = false;
 	char g_szPromptTextPostB[128] = "<unset>";
 
-	DPHUDController_Behaviour* FindHud()
+	DPHUDController_Component* FindHud()
 	{
-		DPHUDController_Behaviour* pxHud = nullptr;
-		DP_Query::ForEachScriptInActiveScene<DPHUDController_Behaviour>(
-			[&pxHud](Zenith_EntityID, DPHUDController_Behaviour& xH)
+		DPHUDController_Component* pxHud = nullptr;
+		DP_Query::ForEachComponentInActiveScene<DPHUDController_Component>(
+			[&pxHud](Zenith_EntityID, DPHUDController_Component& xH)
 			{
 				if (pxHud == nullptr) pxHud = &xH;
 			});
@@ -176,14 +176,14 @@ static bool Step_P4RestartPrompt(int iFrame)
 	case kRP_WaitScene:
 	{
 		Zenith_EntityID xFoundV;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundV](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundV](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFoundV.IsValid()) xFoundV = xId;
 			});
-		DPHUDController_Behaviour* pxHud = FindHud();
+		DPHUDController_Component* pxHud = FindHud();
 		const bool bHasPause =
-			DPPauseMenuController_Behaviour::GetPersistentInstanceForTest() != nullptr;
+			DPPauseMenuController_Component::GetPersistentInstanceForTest() != nullptr;
 		if (xFoundV.IsValid() && pxHud != nullptr && bHasPause)
 		{
 			g_xVillager = xFoundV;
@@ -201,7 +201,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 		// Reset both controllers' run-over flags so we observe a clean
 		// rising edge on dispatch.
 		g_pxHud->ResetRunLostForTest();
-		DPPauseMenuController_Behaviour::ResetForTest();
+		DPPauseMenuController_Component::ResetForTest();
 		// Re-pull the persistent instance after ResetForTest (it doesn't
 		// drop the singleton, just clears state).
 		g_iPhase = kRP_SnapshotPre_A;
@@ -210,7 +210,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 	case kRP_SnapshotPre_A:
 	{
 		g_bHudRunOverPreA = g_pxHud->IsRunOverForTest();
-		g_bPauseRunOverPreA = DPPauseMenuController_Behaviour::IsRunOverForTest();
+		g_bPauseRunOverPreA = DPPauseMenuController_Component::IsRunOverForTest();
 		Zenith_UI::Zenith_UIText* pxPrompt = FindRestartPromptText();
 		g_bPromptVisiblePreA = pxPrompt != nullptr ? pxPrompt->IsVisible() : false;
 		g_iPhase = kRP_DispatchVictory;
@@ -230,7 +230,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 
 	case kRP_SnapshotPost_A:
 		g_bHudRunOverPostA = g_pxHud->IsRunOverForTest();
-		g_bPauseRunOverPostA = DPPauseMenuController_Behaviour::IsRunOverForTest();
+		g_bPauseRunOverPostA = DPPauseMenuController_Component::IsRunOverForTest();
 		SnapshotPromptText(g_szPromptTextPostA, sizeof(g_szPromptTextPostA), g_bPromptVisiblePostA);
 		g_iPhase = kRP_ResetB;
 		return true;
@@ -238,7 +238,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 	case kRP_ResetB:
 		// Reset for the RunLost path.
 		g_pxHud->ResetRunLostForTest();
-		DPPauseMenuController_Behaviour::ResetForTest();
+		DPPauseMenuController_Component::ResetForTest();
 		g_iPhase = kRP_DispatchRunLost;
 		return true;
 
@@ -253,7 +253,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 
 	case kRP_SnapshotPost_B:
 		g_bHudRunOverPostB = g_pxHud->IsRunOverForTest();
-		g_bPauseRunOverPostB = DPPauseMenuController_Behaviour::IsRunOverForTest();
+		g_bPauseRunOverPostB = DPPauseMenuController_Component::IsRunOverForTest();
 		SnapshotPromptText(g_szPromptTextPostB, sizeof(g_szPromptTextPostB), g_bPromptVisiblePostB);
 		g_iPhase = kRP_Verify;
 		return true;
@@ -270,7 +270,7 @@ static bool Step_P4RestartPrompt(int iFrame)
 		std::fflush(stdout);
 		// Cleanup: leave both controllers reset for the next batched test.
 		g_pxHud->ResetRunLostForTest();
-		DPPauseMenuController_Behaviour::ResetForTest();
+		DPPauseMenuController_Component::ResetForTest();
 		g_iPhase = kRP_Done;
 		return false;
 
@@ -285,7 +285,7 @@ static bool Verify_P4RestartPrompt()
 	if (g_pxHud == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P4RestartPrompt: HUD controller not found in GameLevel after 120 frames -- scene authoring may have dropped the AttachScript step");
+			"P4RestartPrompt: HUD controller not found in GameLevel after 120 frames -- scene authoring may have dropped the HUD component step");
 		return false;
 	}
 	// Pre-event sanity: flags clear, prompt hidden. Establishes that the

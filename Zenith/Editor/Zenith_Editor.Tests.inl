@@ -1181,17 +1181,17 @@ ZENITH_TEST(Editor, ColliderGravityControl)
 }
 
 //------------------------------------------------------------------------------
-// ScriptComponent Tests (Stubs)
+// GraphComponent Tests (Stubs)
 //------------------------------------------------------------------------------
-ZENITH_TEST(Editor, ScriptBehaviourAttach)
+ZENITH_TEST(Editor, GraphAttach)
 {
-	EDITOR_TEST_BEGIN(TestScriptBehaviourAttach);
-	EDITOR_TEST_END(TestScriptBehaviourAttach);
+	EDITOR_TEST_BEGIN(TestGraphAttach);
+	EDITOR_TEST_END(TestGraphAttach);
 }
-ZENITH_TEST(Editor, ScriptBehaviourRetrieve)
+ZENITH_TEST(Editor, GraphRetrieve)
 {
-	EDITOR_TEST_BEGIN(TestScriptBehaviourRetrieve);
-	EDITOR_TEST_END(TestScriptBehaviourRetrieve);
+	EDITOR_TEST_BEGIN(TestGraphRetrieve);
+	EDITOR_TEST_END(TestGraphRetrieve);
 }
 
 //------------------------------------------------------------------------------

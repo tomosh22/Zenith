@@ -13,8 +13,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
@@ -23,7 +23,7 @@
 //
 // Verifies the data-path from DP_Player's scent table to the priest's
 // blackboard: after a successful possession, `WriteHighestScentToBlackboard`
-// (driven from DPPlayerController_Behaviour::OnUpdate) must push the
+// (driven from DPPlayerController_Component::OnUpdate) must push the
 // highest-scent villager's EntityID to BB_KEY_HIGH_SCENT_TARGET.
 //
 // In MVP no production behaviour CONSUMES this key (hounds are post-MVP);
@@ -87,8 +87,8 @@ namespace
 	{
 		struct Cand { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<Cand> axCands;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axCands](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axCands](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				Cand xV; xV.xId = xId;
 				if (TryGetEntityPos(xId, xV.xPos)) axCands.PushBack(xV);
@@ -147,9 +147,9 @@ static bool Step_P1ScentBB(int iFrame)
 	case kSN_WaitScene:
 	{
 		Zenith_EntityID xFoundPriest;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
 			[&xFoundPriest]
-			(Zenith_EntityID xId, Priest_Behaviour&) { xFoundPriest = xId; });
+			(Zenith_EntityID xId, Priest_Component&) { xFoundPriest = xId; });
 		PickClosestPair(g_xA, g_xB);
 		if (xFoundPriest.IsValid() && g_xA.IsValid() && g_xB.IsValid())
 		{

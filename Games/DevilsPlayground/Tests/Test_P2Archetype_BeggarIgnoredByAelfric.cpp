@@ -10,8 +10,8 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"
@@ -85,14 +85,13 @@ namespace
 		return xAg.GetBlackboard().GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 	}
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -118,12 +117,12 @@ static bool Step_P2BeggarIgnored(int iFrame)
 	case kBG_WaitScene:
 	{
 		Zenith_EntityID xFoundPriest;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundPriest](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundPriest](Zenith_EntityID xId, Priest_Component&)
 			{ xFoundPriest = xId; });
 		Zenith_EntityID xFoundVillager;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundVillager](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundVillager](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFoundVillager.IsValid()) xFoundVillager = xId;
 			});
@@ -142,7 +141,7 @@ static bool Step_P2BeggarIgnored(int iFrame)
 
 	case kBG_ApplyArchetype:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xBeggar);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xBeggar);
 		if (pxV != nullptr) pxV->ApplyArchetype("Beggar");
 		// MVP-1.9 cleanup: real perception only. Register the Beggar
 		// villager as a hostile target + teleport it 4 m IN FRONT of
@@ -193,7 +192,7 @@ static bool Step_P2BeggarIgnored(int iFrame)
 	case kBG_Verify:
 	{
 		g_xBBTargetFinal = ReadPriestBBTarget(g_xPriest);
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xBeggar);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xBeggar);
 		if (pxV != nullptr) g_strArchetypeFinal = pxV->GetArchetypeId();
 		std::printf("[P2BeggarIgnored] beggar=(%u/%u) priest=(%u/%u) archetype=%s bbTarget=(%u/%u) (expected INVALID)\n",
 			g_xBeggar.m_uIndex, g_xBeggar.m_uGeneration,

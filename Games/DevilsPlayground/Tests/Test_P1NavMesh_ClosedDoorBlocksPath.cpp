@@ -21,14 +21,14 @@
 //
 // Two-room scene separated by a wall with a single door-width gap. Asserts
 // that toggling the doorway polygon's BLOCKED flag via Zenith_NavMesh::
-// SetBlockedAtPoint (the runtime-blocking API DPDoor_Behaviour drives via
+// SetBlockedAtPoint (the runtime-blocking API DPDoor_Component drives via
 // SyncNavMeshBlock) actually changes Zenith_Pathfinding::FindPath's verdict:
 //
 //   * Door OPEN (no blocked polygons)    -> FindPath SUCCESS
 //   * Door CLOSED (gap polygon blocked)  -> FindPath FAILED / PARTIAL
 //   * Door reopened (gap unblocked)      -> FindPath SUCCESS again
 //
-// This is the engine-side contract DPDoor_Behaviour::SyncNavMeshBlock relies
+// This is the engine-side contract DPDoor_Component::SyncNavMeshBlock relies
 // on; it landed in earlier engine work (PR #28 et al.) and is exercised
 // indirectly by every GameLevel path-through-door scenario. The unit test
 // pins the contract so future navmesh refactors can't silently break it
@@ -180,7 +180,7 @@ static bool Step_P1NavMeshClosedDoorBlocksPath(int /*iFrame*/)
 		// cell size a 1 m × 0.6 m doorway contains multiple polygons. We
 		// sweep a 5×5 grid (x in [-0.4, +0.4], z in [-0.4, +0.4]) to
 		// guarantee every walkable polygon in the doorway and its
-		// immediate fringe is marked. DPDoor_Behaviour's production call
+		// immediate fringe is marked. DPDoor_Component's production call
 		// is a single point at the door's transform pos -- which works
 		// only when the doorway is exactly 1 polygon wide; the test
 		// geometry uses a wider gap so we have headroom to assert the

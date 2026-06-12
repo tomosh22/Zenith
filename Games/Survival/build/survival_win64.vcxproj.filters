@@ -4,9 +4,6 @@
     <ClCompile Include="..\Survival.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Survival_Behaviour.h">
-      <Filter>Components</Filter>
-    </ClInclude>
     <ClInclude Include="..\Components\Survival_Config.h">
       <Filter>Components</Filter>
     </ClInclude>
@@ -14,6 +11,9 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Survival_EventBus.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Survival_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Survival_Inventory.h">

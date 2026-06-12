@@ -892,10 +892,10 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Survival_Behaviour.h" />
     <ClInclude Include="..\Components\Survival_Config.h" />
     <ClInclude Include="..\Components\Survival_CraftingSystem.h" />
     <ClInclude Include="..\Components\Survival_EventBus.h" />
+    <ClInclude Include="..\Components\Survival_GameComponent.h" />
     <ClInclude Include="..\Components\Survival_Inventory.h" />
     <ClInclude Include="..\Components\Survival_PlayerController.h" />
     <ClInclude Include="..\Components\Survival_ResourceNode.h" />

@@ -17,7 +17,7 @@
  * difficulty levels, visual tweaks, etc.
  *
  * Usage:
- *   // In Sokoban_Behaviour::OnAwake():
+ *   // In Sokoban_GameComponent::OnAwake():
  *   m_pxConfig = Zenith_AssetRegistry::Get<Sokoban_Config>("game:Config/SokobanConfig.zdata");
  *
  *   // Or create programmatically:

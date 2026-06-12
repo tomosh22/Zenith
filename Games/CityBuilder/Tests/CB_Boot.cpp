@@ -5,7 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 
 // ============================================================================
 // CB_Boot — Phase-1 autonomous gate.
@@ -31,12 +31,12 @@ static bool Verify_CB_Boot()
 {
 	bool bOk = true;
 
-	if (!CB_CityManager_Behaviour::WasStarted())
+	if (!CB_CityManagerComponent::WasStarted())
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Boot: CityManager OnStart did not fire");
 		bOk = false;
 	}
-	if (CB_CityManager_Behaviour::GetUpdateCount() == 0)
+	if (CB_CityManagerComponent::GetUpdateCount() == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Boot: CityManager OnUpdate never ticked");
 		bOk = false;

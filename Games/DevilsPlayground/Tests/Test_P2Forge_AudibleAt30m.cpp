@@ -14,9 +14,9 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -71,7 +71,7 @@ namespace
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xForge;
 	Zenith_EntityID         g_xInput;
-	DPForge_Behaviour*      g_pxForge = nullptr;
+	DPForge_Component*      g_pxForge = nullptr;
 	Zenith_Maths::Vector3   g_xForgePos(0.0f);
 
 	uint32_t                g_uSoundCount = 0;
@@ -113,8 +113,8 @@ static bool Step_P2ForgeAudible(int iFrame)
 	case kFA_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -143,8 +143,7 @@ static bool Step_P2ForgeAudible(int iFrame)
 		{
 			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(g_xForgePos);
 		}
-		g_pxForge = xForge.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPForge_Behaviour>();
+		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 		// Default recipe Iron -> Key (no SetRecipe needed).
 		g_iPhase = kFA_BuildInput;
 		return true;
@@ -160,8 +159,7 @@ static bool Step_P2ForgeAudible(int iFrame)
 		g_xInput = xInput.GetEntityID();
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-		DPItemBase_Behaviour* pxIB = xInput.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPItemBase_Behaviour>();
+		DPItemBase_Component* pxIB = &xInput.AddComponent<DPItemBase_Component>();
 		if (pxIB != nullptr) pxIB->SetTag(DP_ItemTag::Iron);
 		g_iPhase = kFA_HandToVillager;
 		return true;

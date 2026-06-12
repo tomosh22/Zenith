@@ -7,14 +7,14 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Archetypes.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
 // ============================================================================
 // Test_P2Villager_ArchetypeStatsApplied (MVP-0.2.3)
 //
-// Verifies DPVillager_Behaviour's OnAwake reads archetype-specific stats
+// Verifies DPVillager_Component's OnAwake reads archetype-specific stats
 // from DP_Archetypes when SetArchetype is called before the Awake wave
 // drains, and that ApplyArchetype at runtime re-resolves the stats.
 //
@@ -31,7 +31,7 @@
 //
 // Uses the first authored villager from GameLevel and calls ApplyArchetype
 // directly on it (bypasses authoring API which is deferred per the roadmap
-// note: "AddStep_AttachScript takes archetype id as parameter" is the
+// note: "archetype id as an authoring-step parameter" is the
 // follow-up that wires archetype assignment through EditorAutomation).
 // ============================================================================
 
@@ -42,7 +42,7 @@ namespace
 
 	int  g_iPhase        = kA_Start;
 	bool g_bFoundVillager = false;
-	DPVillager_Behaviour* g_pxVillager = nullptr;
+	DPVillager_Component* g_pxVillager = nullptr;
 
 	float g_fDefaultLife  = -1.0f;
 	float g_fDefaultSpeed = -1.0f;
@@ -73,8 +73,8 @@ static bool Step_P2Villager_ArchetypeStatsApplied(int iFrame)
 	case kA_WaitVillager:
 	{
 		Zenith_EntityID xFoundId;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[](Zenith_EntityID xId, DPVillager_Behaviour& xV) {
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[](Zenith_EntityID xId, DPVillager_Component& xV) {
 				if (!g_bFoundVillager)
 				{
 					g_bFoundVillager = true;
@@ -145,7 +145,7 @@ static bool Verify_P2Villager_ArchetypeStatsApplied()
 	if (!g_bFoundVillager)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"Test_P2Villager_ArchetypeStatsApplied: no DPVillager_Behaviour in active scene");
+			"Test_P2Villager_ArchetypeStatsApplied: no DPVillager_Component in active scene");
 		return false;
 	}
 
@@ -179,7 +179,7 @@ static const Zenith_AutomatedTest g_xVillagerArchetypeTest = {
 	&Step_P2Villager_ArchetypeStatsApplied,
 	&Verify_P2Villager_ArchetypeStatsApplied,
 	180,
-	// m_bRequiresGraphics: this test depends on an authored DPVillager_Behaviour
+	// m_bRequiresGraphics: this test depends on an authored DPVillager_Component
 	// in GameLevel. CI checkouts without .zmodel assets may not spawn villagers
 	// reliably; tag so headless CI skips and we keep coverage on local windowed.
 	true

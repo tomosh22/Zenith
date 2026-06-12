@@ -20,7 +20,7 @@
 #include <cstdio>
 #include <cstdint>
 
-// Game state enum (shared with Marble_Behaviour.h)
+// Game state enum (shared with Marble_GameComponent.h)
 enum class MarbleGameState
 {
 	MAIN_MENU,

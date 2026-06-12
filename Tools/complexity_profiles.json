@@ -69,6 +69,7 @@
                 { "name": "Profiling", "layer": 0, "globs": ["Zenith/Profiling/**"] },
                 { "name": "DebugVariables", "layer": 0, "globs": ["Zenith/DebugVariables/**"] },
                 { "name": "ZenithECS", "layer": 1, "globs": ["Zenith/ZenithECS/**"], "public_headers": ["Zenith/ZenithECS/*.h"], "leaf": true },
+                { "name": "Scripting", "layer": 2, "globs": ["Zenith/Scripting/**"] },
                 { "name": "TaskSystem", "layer": 1, "globs": ["Zenith/TaskSystem/**"] },
                 { "name": "Input", "layer": 1, "globs": ["Zenith/Input/**"] },
                 { "name": "SaveData", "layer": 1, "globs": ["Zenith/SaveData/**"] },
@@ -87,6 +88,7 @@
                 "forbid_up_edges": true,
                 "forbidden_edges": [
                     { "from": "ZenithECS", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab"] },
+                    { "from": "Scripting", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab", "Vulkan"] },
                     { "from": "Physics", "to": ["Flux"] }
                 ],
                 "allowed_edges": [],

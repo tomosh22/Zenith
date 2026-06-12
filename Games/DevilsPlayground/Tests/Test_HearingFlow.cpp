@@ -9,8 +9,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #include "Tests/DPTestSupport.h"
@@ -25,7 +25,7 @@
 //   - The reported position matches the noise origin (within tolerance)
 //
 // The test does NOT verify the BB write path — that is a side effect of
-// Priest_Behaviour::OnUpdate which only runs in Playing mode AND requires
+// Priest_Component::OnUpdate which only runs in Playing mode AND requires
 // the AIAgentComponent's tick. Verifying the BB requires the BT to settle,
 // which gets brittle. The accessor is the load-bearing piece.
 // ============================================================================
@@ -69,15 +69,15 @@ static bool Step_HearingFlow(int iFrame)
 	{
 		Zenith_EntityID xFoundPriest;
 		Zenith_EntityID xFoundSource;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundPriest](Zenith_EntityID xId, Priest_Behaviour&) { xFoundPriest = xId; });
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundPriest](Zenith_EntityID xId, Priest_Component&) { xFoundPriest = xId; });
 		// Use the villager as the synthetic sound source — needs to be a
 		// VALID, NON-PRIEST EntityID. Zenith_PerceptionSystem::UpdateHearingPerception
 		// silently drops sounds whose source is invalid (no FindOrCreateTarget),
 		// and ignores sounds where source == self (priest doesn't hear its own
 		// footsteps).
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundSource](Zenith_EntityID xId, DPVillager_Behaviour&) { xFoundSource = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundSource](Zenith_EntityID xId, DPVillager_Component&) { xFoundSource = xId; });
 		if (xFoundPriest.IsValid() && xFoundSource.IsValid())
 		{
 			g_xPriest      = xFoundPriest;

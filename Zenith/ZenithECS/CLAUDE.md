@@ -127,7 +127,7 @@ Each component type has a dedicated `Zenith_ComponentPool<T>` (`Zenith_Component
 `Zenith_ComponentMeta` provides type-erased component operations using function pointers (no `std::function`). The **machinery** is the leaf; the **concrete component set is installed by the engine** (registration is inverted so the leaf names no concrete type):
 
 - The engine calls `Zenith_ComponentMetaRegistry::Get().SetComponentRegistrar(&Zenith_RegisterEngineComponents)` then `EnsureInitialized()` in `Zenith_Engine::Initialise`. `Zenith_RegisterEngineComponents()` (in `../EntityComponent/Zenith_ComponentMeta_Registration.cpp`) calls `RegisterComponent<T>(name, order)` for each built-in with an explicit serialization order, plus `Zenith_AI_RegisterComponents()`.
-- Game/script components register via the `ZENITH_REGISTER_COMPONENT(Type, "Name"[, order])` macro (which enqueues a thunk drained by `EnsureInitialized()`) or the `ZENITH_BEHAVIOUR_TYPE_NAME` script macro.
+- Game components register via the `ZENITH_REGISTER_COMPONENT(Type, "Name"[, order])` macro (which enqueues a thunk drained by `EnsureInitialized()`).
 
 ### Lifecycle Hooks
 Components may implement (detected at compile-time via C++20 concepts): `OnAwake`, `OnStart`, `OnEnable`, `OnDisable`, `OnUpdate(float)`, `OnLateUpdate(float)`, `OnFixedUpdate(float)`, `OnDestroy`. Missing hooks → null function pointer, skipped. Dispatch via `Zenith_ComponentMetaRegistry::DispatchOn*()`.

@@ -24,7 +24,7 @@ Games/Marble/
   CLAUDE.md                      # This documentation
   Marble.cpp                     # Project entry points, resource initialization
   Components/
-    Marble_Behaviour.h           # Main coordinator (uses modules below)
+    Marble_GameComponent.h       # Main coordinator component (uses modules below)
     Marble_Config.h              # DataAsset for game configuration
     Marble_Input.h               # Camera-relative physics input
     Marble_PhysicsController.h   # Ball movement via Jolt Physics
@@ -39,15 +39,15 @@ Games/Marble/
 ## Module Breakdown
 
 ### Marble.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Procedural UV sphere generation with tangent calculation
 - Multiple material creation for game objects
 - Prefab creation for ball, platforms, collectibles, goal
 
-### Marble_Behaviour.h - Main Coordinator
-**Engine APIs:** `Zenith_ScriptBehaviour`, lifecycle hooks
+### Marble_GameComponent.h - Main Coordinator
+**Engine APIs:** `Zenith_ComponentMetaRegistry` (registered as "MarbleGame", order 100), lifecycle hooks
 
 Demonstrates:
 - Game state machine (enum-based states)
@@ -107,7 +107,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-Persistent scene holds GameManager entity (Camera + UI + Marble_Behaviour) with DontDestroyOnLoad. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
+Persistent scene holds GameManager entity (Camera + UI + MarbleGame component) with DontDestroyOnLoad. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
 
 ### Game State Machine
 ```
@@ -157,7 +157,7 @@ Project camera-to-target vector onto XZ plane (zero Y, normalize) to get forward
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + Script) - DontDestroyOnLoad
+- **GameManager** - Persistent entity (Camera + UI + MarbleGame component) - DontDestroyOnLoad
 - **PlayerBall** - The player-controlled marble with physics
 - **StartPlatform** - Initial platform where player spawns
 - **GoalPlatform** - Final destination platform

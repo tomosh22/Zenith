@@ -2,8 +2,8 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Core/Zenith_GraphicsOptions.h"
-#include "AIShowcase/Components/AIShowcase_Behaviour.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "AIShowcase/Components/AIShowcase_GameComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -30,6 +30,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 // ============================================================================
@@ -128,7 +129,7 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
 	// Initialize resources at startup
 	InitializeAIShowcaseResources();
@@ -143,7 +144,14 @@ void Project_RegisterScriptBehaviours()
 	Zenith_AIDebugVariables::Initialise();
 #endif
 
-	// AIShowcase_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME
+	// Register the AIShowcase game component with the component-meta registry
+	// (serialization/lifecycle) and, in tools builds, the editor "Add Component"
+	// registry (display name used by AddStep_AddComponent / the editor menu).
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	xRegistry.RegisterComponent<AIShowcase_GameComponent>("AIShowcaseGame", 100);
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<AIShowcase_GameComponent>("AIShowcaseGame");
+#endif
 }
 
 void Project_Shutdown()
@@ -177,7 +185,7 @@ void Project_LoadInitialScene(); // Forward declaration for automation steps
 #ifdef ZENITH_TOOLS
 void Project_InitializeResources()
 {
-	// All resources initialized in Project_RegisterScriptBehaviours
+	// All resources initialized in Project_RegisterGameComponents
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -200,7 +208,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	g_xEngine.EditorAutomation().AddStep_AttachScript("AIShowcase_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("AIShowcaseGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -258,8 +266,8 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIColor("Status", 0.6f, 0.8f, 1.f, 1.f);
 	g_xEngine.EditorAutomation().AddStep_SetUIVisible("Status", false);
 
-	// Script
-	g_xEngine.EditorAutomation().AddStep_AttachScript("AIShowcase_Behaviour");
+	// Game component
+	g_xEngine.EditorAutomation().AddStep_AddComponent("AIShowcaseGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/AIShowcase" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

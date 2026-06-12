@@ -16,13 +16,13 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
-#include "Components/DPChest_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DummyNoiseMachine_Behaviour.h"
-#include "Components/DPHUDController_Behaviour.h"
-#include "Components/DPOrbitCamera_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPDoor_Component.h"
+#include "Components/DPChest_Component.h"
+#include "Components/Priest_Component.h"
+#include "Components/DummyNoiseMachine_Component.h"
+#include "Components/DPHUDController_Component.h"
+#include "Components/DPOrbitCamera_Component.h"
 
 // ============================================================================
 // Six tests covering gameplay systems not yet directly tested:
@@ -35,7 +35,7 @@
 //   HUDLifeBar_Test       — Possess villager → HUD's "LifeBar" UI text becomes visible + non-empty
 //
 // Each follows the multi-frame state-machine pattern from Test_Possession.cpp.
-// All use the runtime-spawned items + scene from DPItemManager_Behaviour.
+// All use the runtime-spawned items + scene from DPItemManager_Component.
 // ============================================================================
 
 namespace
@@ -44,19 +44,19 @@ namespace
 	Zenith_EntityID FindFirstEntityWith()
 	{
 		Zenith_EntityID xResult;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&xResult](Zenith_EntityID xId, T&) { if (!xResult.IsValid()) xResult = xId; });
 		return xResult;
 	}
 
 	template<typename T>
-	T* GetScript(Zenith_EntityID xId)
+	T* GetGameComponent(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<T>();
+		if (!xEnt.IsValid()) return nullptr;
+		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TryGetEntityPosition(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
@@ -118,7 +118,7 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 
 	case kWait:
 	{
-		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
+		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
 		// 2026-05-25: most doors are now unlocked-by-default; "first door
 		// found" would silently pass the consume-key assertion against an
 		// unlocked door (the door opens without needing a key, the test
@@ -126,8 +126,8 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 		// actually requires a Key so the unlock path is the only way to
 		// open it.
 		g_xDoor = INVALID_ENTITY_ID;
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[](Zenith_EntityID xId, DPDoor_Behaviour& xScript)
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[](Zenith_EntityID xId, DPDoor_Component& xScript)
 			{
 				if (g_xDoor.IsValid()) return;
 				if (xScript.GetRequiredKey() == DP_ItemTag::Key)
@@ -137,7 +137,7 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 			});
 		if (!g_xVillager.IsValid() || !g_xDoor.IsValid()) return true;
 
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
 		g_bDoorWasOpen = pxDoor->IsOpen();   // expect false
 
@@ -183,7 +183,7 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 
 	case kVerify:
 	{
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor != nullptr) g_bDoorIsOpen = pxDoor->IsOpen();
 		g_eHeldAfter = DP_Player::GetHeldItemTag(g_xVillager);
 
@@ -259,7 +259,7 @@ static bool Step_VillagerDeath(int /*iFrame*/)
 
 	case kWait:
 	{
-		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
+		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
 		if (!g_xVillager.IsValid()) return true;
 		g_iPhase = kPossess;
 		return true;
@@ -280,7 +280,7 @@ static bool Step_VillagerDeath(int /*iFrame*/)
 	{
 		// Bump has happened (life is now 30). Shrink to 0.05s so the timer
 		// expires within a small frame budget.
-		DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(g_xVillager);
+		DPVillager_Component* pxV = GetGameComponent<DPVillager_Component>(g_xVillager);
 		if (pxV != nullptr)
 		{
 			pxV->SetRemainingLifeForTest(0.05f);
@@ -361,11 +361,11 @@ static bool Step_ChestInteract(int /*iFrame*/)
 
 	case kWait:
 	{
-		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
-		g_xChest    = FindFirstEntityWith<DPChest_Behaviour>();
+		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
+		g_xChest    = FindFirstEntityWith<DPChest_Component>();
 		if (!g_xVillager.IsValid() || !g_xChest.IsValid()) return true;
 
-		DPChest_Behaviour* pxChest = GetScript<DPChest_Behaviour>(g_xChest);
+		DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest);
 		if (pxChest == nullptr) return true;
 		g_bChestWasClosed = !pxChest->IsOpen();
 
@@ -393,7 +393,7 @@ static bool Step_ChestInteract(int /*iFrame*/)
 
 	case kVerify:
 	{
-		DPChest_Behaviour* pxChest = GetScript<DPChest_Behaviour>(g_xChest);
+		DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest);
 		if (pxChest != nullptr) g_bChestIsOpen = pxChest->IsOpen();
 		g_iPhase = kDone;
 		return false;
@@ -458,9 +458,9 @@ static bool Step_NoiseMachineFlow(int /*iFrame*/)
 
 	case kWait:
 	{
-		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
-		g_xPriest   = FindFirstEntityWith<Priest_Behaviour>();
-		g_xNoise    = FindFirstEntityWith<DummyNoiseMachine_Behaviour>();
+		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
+		g_xPriest   = FindFirstEntityWith<Priest_Component>();
+		g_xNoise    = FindFirstEntityWith<DummyNoiseMachine_Component>();
 		if (!g_xVillager.IsValid() || !g_xPriest.IsValid() || !g_xNoise.IsValid()) return true;
 
 		// Move priest right next to the noise machine so the emitted
@@ -537,7 +537,7 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xNoiseMachineFlowTest);
 // ============================================================================
 // OrbitCameraStaysFixed_Test
 //
-// DPOrbitCamera_Behaviour is a fixed bird's-eye camera pinned to the map
+// DPOrbitCamera_Component is a fixed bird's-eye camera pinned to the map
 // centre — it does NOT chase the possessed villager. This test verifies
 // the invariant that, between possess + 30 frames of villager motion, the
 // camera barely moves (small scripted yaw drift on Q/E only, but no input
@@ -577,8 +577,8 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 
 	case kWait:
 	{
-		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
-		g_xCamera   = FindFirstEntityWith<DPOrbitCamera_Behaviour>();
+		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
+		g_xCamera   = FindFirstEntityWith<DPOrbitCamera_Component>();
 		if (!g_xVillager.IsValid() || !g_xCamera.IsValid()) return true;
 		g_iPhase = kPossess;
 		return true;
@@ -587,7 +587,7 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 	case kPossess:
 	{
 		// Snapshot camera position BEFORE possession.
-		// DPOrbitCamera_Behaviour writes to Zenith_CameraComponent::SetPosition
+		// DPOrbitCamera_Component writes to Zenith_CameraComponent::SetPosition
 		// (the camera's logical view position), NOT the entity transform.
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xCamera);
 		if (pxScene != nullptr)
@@ -661,7 +661,7 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xOrbitCameraTest);
 // HUDLifeBar_Test
 //
 // HUD lifebar is a Zenith_UIText element named "LifeBar" living on the
-// GameManager's UIComponent. DPHUDController_Behaviour::OnUpdate makes it
+// GameManager's UIComponent. DPHUDController_Component::OnUpdate makes it
 // visible + sets the text to "Life: |...|" while a possessed villager exists.
 // ============================================================================
 namespace HUDLifeBarState
@@ -696,8 +696,8 @@ static bool Step_HUDLifeBar(int /*iFrame*/)
 
 	case kWait:
 	{
-		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
-		g_xHUD      = FindFirstEntityWith<DPHUDController_Behaviour>();
+		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
+		g_xHUD      = FindFirstEntityWith<DPHUDController_Component>();
 		if (!g_xVillager.IsValid() || !g_xHUD.IsValid()) return true;
 		g_iPhase = kPossess;
 		return true;

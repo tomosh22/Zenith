@@ -3,6 +3,9 @@
 
 #include "Flux/Flux_RendererImpl.h"
 #include "Editor/Zenith_Editor.h"
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Editor/Zenith_ImGuiInputBridge.h"
+#endif
 #pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
@@ -43,7 +46,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -63,6 +66,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_MaterialEditor.h"
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_Properties.h"
+#include "Panels/Zenith_EditorPanel_GraphEditor.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_TerrainEditor.h"
 #include "Panels/Zenith_EditorPanel_Toolbar.h"
@@ -492,6 +496,10 @@ void Zenith_Editor::RenderImGuiFrame()
 	// the same condition under which the main loop reaches this call.
 	Zenith_Assert(m_pxFluxBackend != nullptr, "RenderImGuiFrame called before Initialise");
 
+	// NOTE: simulated input reaches ImGui via g_pfnZenithImGuiSimulatedInput,
+	// invoked INSIDE ImGuiBeginFrame between the GLFW-backend NewFrame and
+	// ImGui::NewFrame - after the backend's real-cursor poll, so simulated
+	// events deterministically win while the simulator is enabled.
 	m_pxFluxBackend->ImGuiBeginFrame();
 
 	// Render the editor UI (includes docking, viewport, hierarchy, etc.)
@@ -941,6 +949,7 @@ void Zenith_Editor::Render()
 
 	Zenith_EditorPanelRenderGraph::Render();
 	Zenith_EditorPanelVariantEditor::Render();
+	Zenith_GraphEditorPanel::Render();
 	if (m_pxTerrainEditor != nullptr)
 	{
 		Zenith_EditorPanelTerrainEditor::Render(*m_pxTerrainEditor, m_xEditorState.m_xPanels.m_bShowTerrainEditor);
@@ -1694,48 +1703,21 @@ void Zenith_Editor::SetSelectedAsMainCamera()
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set entity '%s' as main camera", pxEntity->GetName().c_str());
 }
 
-void Zenith_Editor::AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName)
+void Zenith_Editor::AttachGraphToSelected(const char* szGraphAssetPath)
 {
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	Zenith_Assert(pxEntity, "No entity selected");
 
-	if (!pxEntity->HasComponent<Zenith_ScriptComponent>())
+	if (!pxEntity->HasComponent<Zenith_GraphComponent>())
 	{
-		pxEntity->AddComponent<Zenith_ScriptComponent>();
+		pxEntity->AddComponent<Zenith_GraphComponent>();
 	}
 
-	Zenith_Assert(Zenith_ScriptAsset::HasFactory(szBehaviourTypeName),
-		"No registered behaviour '%s'", szBehaviourTypeName);
+	Zenith_GraphComponent& xGraphComponent = pxEntity->GetComponent<Zenith_GraphComponent>();
+	xGraphComponent.AddGraphByAssetPath(szGraphAssetPath);
 
-	const std::string strAssetPath = Zenith_ScriptAsset::MakeAssetPath(szBehaviourTypeName);
-	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	Zenith_ScriptBehaviour* pxBehaviour = xScript.AddScriptByAssetPath(strAssetPath.c_str());
-	Zenith_Assert(pxBehaviour, "Failed to attach script '%s'", szBehaviourTypeName);
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Attached script '%s' to entity '%s' (%u total)",
-		szBehaviourTypeName, pxEntity->GetName().c_str(), xScript.GetScriptCount());
-}
-
-void Zenith_Editor::AttachScriptForSerializationToSelected(const char* szBehaviourTypeName)
-{
-	Zenith_Entity* pxEntity = GetSelectedEntity();
-	Zenith_Assert(pxEntity, "No entity selected");
-
-	if (!pxEntity->HasComponent<Zenith_ScriptComponent>())
-	{
-		pxEntity->AddComponent<Zenith_ScriptComponent>();
-	}
-
-	Zenith_Assert(Zenith_ScriptAsset::HasFactory(szBehaviourTypeName),
-		"No registered behaviour '%s'", szBehaviourTypeName);
-
-	const std::string strAssetPath = Zenith_ScriptAsset::MakeAssetPath(szBehaviourTypeName);
-	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	Zenith_ScriptBehaviour* pxBehaviour = xScript.AddScriptForSerializationByAssetPath(strAssetPath.c_str());
-	Zenith_Assert(pxBehaviour, "Failed to attach script for serialization '%s'", szBehaviourTypeName);
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Attached script for serialization '%s' to entity '%s' (%u total)",
-		szBehaviourTypeName, pxEntity->GetName().c_str(), xScript.GetScriptCount());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Attached behaviour graph '%s' to entity '%s' (%u total)",
+		szGraphAssetPath, pxEntity->GetName().c_str(), xGraphComponent.GetGraphCount());
 }
 
 void Zenith_Editor::CreateNewScene(const char* szName)

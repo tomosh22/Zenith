@@ -1,8 +1,8 @@
 {
   "name": "DPFogPass_Test",
   "passed": true,
-  "frames": 9,
-  "durationMs": 149.760,
+  "frames": 0,
+  "durationMs": 0.301,
   "failures": [],
-  "skipped": false
+  "skipped": true
 }

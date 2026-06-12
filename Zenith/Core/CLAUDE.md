@@ -163,7 +163,7 @@ Not everything moves onto the engine. These carve-outs are deliberate and the as
 - **`Zenith_GraphicsOptions`** — populated once by `Project_SetGraphicsOptions` at boot. Read-only thereafter.
 
 ### Static-init registration side-lists
-- **`ZENITH_REGISTER_COMPONENT` / `ZENITH_BEHAVIOUR_TYPE_NAME` macros** — populate process-level side-lists at static-init time. `Zenith_Engine::Initialise()` reads from these lists during construction; moving them onto the engine would create a chicken-and-egg ordering problem with the macros.
+- **`ZENITH_REGISTER_COMPONENT` macro** — populates a process-level side-list at static-init time. `Zenith_Engine::Initialise()` reads from this list during construction; moving it onto the engine would create a chicken-and-egg ordering problem with the macro.
 - **`Zenith_ComponentMetaRegistry::Get()`** — populated by `ZENITH_REGISTER_COMPONENT`. Belongs alongside the registration macros (same lifetime, same hazard if moved).
 - **`Zenith_EventDispatcher::Get()`** — process-level event bus populated by static-init registrations. Same rationale.
 

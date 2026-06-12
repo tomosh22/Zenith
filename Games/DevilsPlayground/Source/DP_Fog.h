@@ -36,8 +36,8 @@ namespace DP_Fog
 
 	// Cross-behaviour forwarder: for every villager in the active scene,
 	// register a fog hole of fRadius at the villager and record a memory
-	// reveal at its position. Moved here from DPFogPass_Behaviour::OnUpdate so
-	// the fog-pass header no longer includes DPVillager_Behaviour.h
-	// (cross-behaviour rule).
+	// reveal at its position. Moved here from DPFogPass_Component::OnUpdate so
+	// the fog-pass header no longer includes DPVillager_Component.h
+	// (cross-component rule).
 	void RegisterAllVillagerFogHoles(float fRadius);
 }

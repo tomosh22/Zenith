@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
 #include "Source/DevilsPlayground_Tags.h"
 
 #include <cstdio>
@@ -16,7 +16,7 @@
 //
 // Pins the format strings + state dispatch for the eight detailed-HUD
 // readouts added on 2026-05-15. Each formatter is a pure static helper on
-// DPHUDController_Behaviour (extracted from OnUpdate for testability);
+// DPHUDController_Component (extracted from OnUpdate for testability);
 // production code now calls these same helpers so the test path matches
 // the runtime path exactly.
 //
@@ -41,7 +41,7 @@ namespace
 	bool g_bPassed = false;
 	const char* g_szFailureReason = "";
 
-	using PriestDanger = DPHUDController_Behaviour::PriestDanger;
+	using PriestDanger = DPHUDController_Component::PriestDanger;
 
 	bool ContainsSubstring(const char* sz, const char* szNeedle)
 	{
@@ -71,21 +71,21 @@ static bool TestMovementMode()
 	char buf[64];
 
 	// Sprint wins ties.
-	DPHUDController_Behaviour::BuildMovementModeText(buf, sizeof(buf),
+	DPHUDController_Component::BuildMovementModeText(buf, sizeof(buf),
 		/*bSprintingNow=*/true, /*bWalkQuietNow=*/false);
 	if (!ContainsSubstring(buf, "SPRINT")) return Fail("movement: sprint case missing 'SPRINT'");
 
-	DPHUDController_Behaviour::BuildMovementModeText(buf, sizeof(buf),
+	DPHUDController_Component::BuildMovementModeText(buf, sizeof(buf),
 		/*bSprintingNow=*/false, /*bWalkQuietNow=*/true);
 	if (!ContainsSubstring(buf, "WALK QUIET")) return Fail("movement: quiet case missing 'WALK QUIET'");
 
-	DPHUDController_Behaviour::BuildMovementModeText(buf, sizeof(buf),
+	DPHUDController_Component::BuildMovementModeText(buf, sizeof(buf),
 		/*bSprintingNow=*/false, /*bWalkQuietNow=*/false);
 	if (!ContainsSubstring(buf, "Move")) return Fail("movement: default case missing 'Move'");
 
 	// Sprint + quiet held simultaneously -> sprint wins (matches villager
-	// OnUpdate's tie-break in DPVillager_Behaviour.h ~line 235).
-	DPHUDController_Behaviour::BuildMovementModeText(buf, sizeof(buf),
+	// OnUpdate's tie-break in DPVillager_Component.h ~line 235).
+	DPHUDController_Component::BuildMovementModeText(buf, sizeof(buf),
 		/*bSprintingNow=*/true, /*bWalkQuietNow=*/true);
 	if (!ContainsSubstring(buf, "SPRINT")) return Fail("movement: sprint+quiet tie should resolve to SPRINT");
 
@@ -96,14 +96,14 @@ static bool TestVillagersAlive()
 {
 	char buf[64];
 
-	DPHUDController_Behaviour::BuildVillagersAliveText(buf, sizeof(buf), 14, 17);
+	DPHUDController_Component::BuildVillagersAliveText(buf, sizeof(buf), 14, 17);
 	if (!ContainsSubstring(buf, "14")) return Fail("vessels: missing alive count");
 	if (!ContainsSubstring(buf, "17")) return Fail("vessels: missing total count");
 	if (!ContainsSubstring(buf, "Vessels: ")) return Fail("vessels: missing 'Vessels: ' prefix");
 
 	// Negative inputs clamp to 0 (defensive -- the count loop shouldn't
 	// emit negatives but the formatter is the last line of defence).
-	DPHUDController_Behaviour::BuildVillagersAliveText(buf, sizeof(buf), -3, -5);
+	DPHUDController_Component::BuildVillagersAliveText(buf, sizeof(buf), -3, -5);
 	if (ContainsSubstring(buf, "-")) return Fail("vessels: negative input should clamp -- got minus sign");
 
 	return true;
@@ -113,11 +113,11 @@ static bool TestPriestDistance()
 {
 	char buf[64];
 
-	DPHUDController_Behaviour::BuildPriestDistanceText(buf, sizeof(buf), 12.4f);
+	DPHUDController_Component::BuildPriestDistanceText(buf, sizeof(buf), 12.4f);
 	if (!ContainsSubstring(buf, "Priest: ")) return Fail("priest: missing prefix");
 	if (!ContainsSubstring(buf, "12 m")) return Fail("priest: 12.4 should round to 12");
 
-	DPHUDController_Behaviour::BuildPriestDistanceText(buf, sizeof(buf), -5.0f);
+	DPHUDController_Component::BuildPriestDistanceText(buf, sizeof(buf), -5.0f);
 	if (ContainsSubstring(buf, "-")) return Fail("priest: negative input should clamp");
 	if (!ContainsSubstring(buf, "0 m")) return Fail("priest: clamped negative should show 0 m");
 
@@ -127,13 +127,13 @@ static bool TestPriestDistance()
 static bool TestPriestDanger()
 {
 	// Threshold boundaries: <5m = Danger, <15m = Caution, else Calm.
-	if (DPHUDController_Behaviour::PriestDangerForDistance(0.0f)  != PriestDanger::Danger)  return Fail("danger: 0m should be Danger");
-	if (DPHUDController_Behaviour::PriestDangerForDistance(4.99f) != PriestDanger::Danger)  return Fail("danger: 4.99m should be Danger");
-	if (DPHUDController_Behaviour::PriestDangerForDistance(5.0f)  != PriestDanger::Caution) return Fail("danger: 5.0m should flip to Caution");
-	if (DPHUDController_Behaviour::PriestDangerForDistance(10.0f) != PriestDanger::Caution) return Fail("danger: 10m should be Caution");
-	if (DPHUDController_Behaviour::PriestDangerForDistance(14.99f)!= PriestDanger::Caution) return Fail("danger: 14.99m should be Caution");
-	if (DPHUDController_Behaviour::PriestDangerForDistance(15.0f) != PriestDanger::Calm)    return Fail("danger: 15.0m should flip to Calm");
-	if (DPHUDController_Behaviour::PriestDangerForDistance(50.0f) != PriestDanger::Calm)    return Fail("danger: 50m should be Calm");
+	if (DPHUDController_Component::PriestDangerForDistance(0.0f)  != PriestDanger::Danger)  return Fail("danger: 0m should be Danger");
+	if (DPHUDController_Component::PriestDangerForDistance(4.99f) != PriestDanger::Danger)  return Fail("danger: 4.99m should be Danger");
+	if (DPHUDController_Component::PriestDangerForDistance(5.0f)  != PriestDanger::Caution) return Fail("danger: 5.0m should flip to Caution");
+	if (DPHUDController_Component::PriestDangerForDistance(10.0f) != PriestDanger::Caution) return Fail("danger: 10m should be Caution");
+	if (DPHUDController_Component::PriestDangerForDistance(14.99f)!= PriestDanger::Caution) return Fail("danger: 14.99m should be Caution");
+	if (DPHUDController_Component::PriestDangerForDistance(15.0f) != PriestDanger::Calm)    return Fail("danger: 15.0m should flip to Calm");
+	if (DPHUDController_Component::PriestDangerForDistance(50.0f) != PriestDanger::Calm)    return Fail("danger: 50m should be Calm");
 
 	// Colour mapping. Hard-coded expected RGBA values mirror what the
 	// HUD authoring uses for visual continuity; changing these breaks
@@ -142,9 +142,9 @@ static bool TestPriestDanger()
 	const Zenith_Maths::Vector4 xAmber  (1.0f, 0.8f,  0.4f,  1.0f);
 	const Zenith_Maths::Vector4 xGrey   (0.85f, 0.85f, 0.85f, 1.0f);
 
-	if (!ColorsMatch(DPHUDController_Behaviour::PriestDistanceColor(PriestDanger::Danger),  xRed))   return Fail("colour: Danger != red");
-	if (!ColorsMatch(DPHUDController_Behaviour::PriestDistanceColor(PriestDanger::Caution), xAmber)) return Fail("colour: Caution != amber");
-	if (!ColorsMatch(DPHUDController_Behaviour::PriestDistanceColor(PriestDanger::Calm),    xGrey))  return Fail("colour: Calm != grey");
+	if (!ColorsMatch(DPHUDController_Component::PriestDistanceColor(PriestDanger::Danger),  xRed))   return Fail("colour: Danger != red");
+	if (!ColorsMatch(DPHUDController_Component::PriestDistanceColor(PriestDanger::Caution), xAmber)) return Fail("colour: Caution != amber");
+	if (!ColorsMatch(DPHUDController_Component::PriestDistanceColor(PriestDanger::Calm),    xGrey))  return Fail("colour: Calm != grey");
 
 	return true;
 }
@@ -153,19 +153,19 @@ static bool TestRunTimer()
 {
 	char buf[64];
 
-	DPHUDController_Behaviour::BuildRunTimerText(buf, sizeof(buf), 0.0f);
+	DPHUDController_Component::BuildRunTimerText(buf, sizeof(buf), 0.0f);
 	if (!ContainsSubstring(buf, "Time: 0:00")) return Fail("timer: zero should show 0:00");
 
-	DPHUDController_Behaviour::BuildRunTimerText(buf, sizeof(buf), 65.7f);
+	DPHUDController_Component::BuildRunTimerText(buf, sizeof(buf), 65.7f);
 	if (!ContainsSubstring(buf, "Time: 1:05")) return Fail("timer: 65.7s should show 1:05");
 
-	DPHUDController_Behaviour::BuildRunTimerText(buf, sizeof(buf), 9.0f);
+	DPHUDController_Component::BuildRunTimerText(buf, sizeof(buf), 9.0f);
 	if (!ContainsSubstring(buf, "Time: 0:09")) return Fail("timer: 9s should zero-pad to 0:09");
 
-	DPHUDController_Behaviour::BuildRunTimerText(buf, sizeof(buf), 600.0f);
+	DPHUDController_Component::BuildRunTimerText(buf, sizeof(buf), 600.0f);
 	if (!ContainsSubstring(buf, "Time: 10:00")) return Fail("timer: 10 minutes should show 10:00");
 
-	DPHUDController_Behaviour::BuildRunTimerText(buf, sizeof(buf), -7.0f);
+	DPHUDController_Component::BuildRunTimerText(buf, sizeof(buf), -7.0f);
 	if (ContainsSubstring(buf, "-")) return Fail("timer: negative input should clamp -- got minus sign");
 
 	return true;
@@ -175,15 +175,15 @@ static bool TestArchetype()
 {
 	char buf[64];
 
-	DPHUDController_Behaviour::BuildArchetypeText(buf, sizeof(buf), "Devout");
+	DPHUDController_Component::BuildArchetypeText(buf, sizeof(buf), "Devout");
 	if (!ContainsSubstring(buf, "Archetype: Devout")) return Fail("archetype: standard case wrong");
 
 	// Empty id -> empty output (HUD hides the element).
-	DPHUDController_Behaviour::BuildArchetypeText(buf, sizeof(buf), "");
+	DPHUDController_Component::BuildArchetypeText(buf, sizeof(buf), "");
 	if (buf[0] != '\0') return Fail("archetype: empty id should produce empty string");
 
 	// nullptr id -> empty output (defensive).
-	DPHUDController_Behaviour::BuildArchetypeText(buf, sizeof(buf), nullptr);
+	DPHUDController_Component::BuildArchetypeText(buf, sizeof(buf), nullptr);
 	if (buf[0] != '\0') return Fail("archetype: nullptr id should produce empty string");
 
 	return true;
@@ -193,14 +193,14 @@ static bool TestLifeNumeric()
 {
 	char buf[64];
 
-	DPHUDController_Behaviour::BuildLifeNumericText(buf, sizeof(buf), 23.4f, 30.0f);
+	DPHUDController_Component::BuildLifeNumericText(buf, sizeof(buf), 23.4f, 30.0f);
 	if (!ContainsSubstring(buf, "Life: ")) return Fail("life-numeric: missing prefix");
 	if (!ContainsSubstring(buf, "23.4"))  return Fail("life-numeric: missing remaining 23.4");
 	if (!ContainsSubstring(buf, "30"))    return Fail("life-numeric: missing max 30");
 	if (!ContainsSubstring(buf, " s"))    return Fail("life-numeric: missing seconds suffix");
 
 	// Negative remaining clamps to 0.
-	DPHUDController_Behaviour::BuildLifeNumericText(buf, sizeof(buf), -5.0f, 30.0f);
+	DPHUDController_Component::BuildLifeNumericText(buf, sizeof(buf), -5.0f, 30.0f);
 	if (ContainsSubstring(buf, "-5"))     return Fail("life-numeric: negative remaining should clamp");
 
 	return true;
@@ -210,17 +210,17 @@ static bool TestInteractHint()
 {
 	char buf[64];
 
-	DPHUDController_Behaviour::BuildInteractHintText(buf, sizeof(buf), "door");
+	DPHUDController_Component::BuildInteractHintText(buf, sizeof(buf), "door");
 	if (!ContainsSubstring(buf, "F: interact with door")) return Fail("interact: door case wrong");
 
-	DPHUDController_Behaviour::BuildInteractHintText(buf, sizeof(buf), "noise machine");
+	DPHUDController_Component::BuildInteractHintText(buf, sizeof(buf), "noise machine");
 	if (!ContainsSubstring(buf, "F: interact with noise machine")) return Fail("interact: noise machine case wrong");
 
 	// Empty + nullptr -> empty string (HUD hides element).
-	DPHUDController_Behaviour::BuildInteractHintText(buf, sizeof(buf), "");
+	DPHUDController_Component::BuildInteractHintText(buf, sizeof(buf), "");
 	if (buf[0] != '\0') return Fail("interact: empty type should produce empty string");
 
-	DPHUDController_Behaviour::BuildInteractHintText(buf, sizeof(buf), nullptr);
+	DPHUDController_Component::BuildInteractHintText(buf, sizeof(buf), nullptr);
 	if (buf[0] != '\0') return Fail("interact: nullptr type should produce empty string");
 
 	return true;
@@ -229,25 +229,25 @@ static bool TestInteractHint()
 static bool TestReagentHelp()
 {
 	// The three known reagents have specific descriptive text.
-	const char* szBell = DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::BellSoul);
+	const char* szBell = DPHUDController_Component::ReagentHelpText(DP_ItemTag::BellSoul);
 	if (!ContainsSubstring(szBell, "BellSoul")) return Fail("reagent: BellSoul missing label");
 	if (!ContainsSubstring(szBell, "alert"))    return Fail("reagent: BellSoul missing 'alert' description");
 
-	const char* szBog = DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::BogWater);
+	const char* szBog = DPHUDController_Component::ReagentHelpText(DP_ItemTag::BogWater);
 	if (!ContainsSubstring(szBog, "BogWater")) return Fail("reagent: BogWater missing label");
 	if (!ContainsSubstring(szBog, "Evaporat") && !ContainsSubstring(szBog, "evaporat"))
 		return Fail("reagent: BogWater missing evaporation description");
 
-	const char* szKey = DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::SkeletonKey);
+	const char* szKey = DPHUDController_Component::ReagentHelpText(DP_ItemTag::SkeletonKey);
 	if (!ContainsSubstring(szKey, "Skeleton Key")) return Fail("reagent: SkeletonKey missing label");
 	if (!ContainsSubstring(szKey, "lock"))         return Fail("reagent: SkeletonKey missing 'lock' hint");
 
 	// Non-reagent tags (Iron, Wood, Spike, Objective*, None) -> nullptr.
-	if (DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::Iron)      != nullptr) return Fail("reagent: Iron should return nullptr");
-	if (DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::Spike)     != nullptr) return Fail("reagent: Spike should return nullptr");
-	if (DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::Wood)      != nullptr) return Fail("reagent: Wood should return nullptr");
-	if (DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::None)      != nullptr) return Fail("reagent: None should return nullptr");
-	if (DPHUDController_Behaviour::ReagentHelpText(DP_ItemTag::Objective1)!= nullptr) return Fail("reagent: Objective1 should return nullptr");
+	if (DPHUDController_Component::ReagentHelpText(DP_ItemTag::Iron)      != nullptr) return Fail("reagent: Iron should return nullptr");
+	if (DPHUDController_Component::ReagentHelpText(DP_ItemTag::Spike)     != nullptr) return Fail("reagent: Spike should return nullptr");
+	if (DPHUDController_Component::ReagentHelpText(DP_ItemTag::Wood)      != nullptr) return Fail("reagent: Wood should return nullptr");
+	if (DPHUDController_Component::ReagentHelpText(DP_ItemTag::None)      != nullptr) return Fail("reagent: None should return nullptr");
+	if (DPHUDController_Component::ReagentHelpText(DP_ItemTag::Objective1)!= nullptr) return Fail("reagent: Objective1 should return nullptr");
 
 	return true;
 }

@@ -13,6 +13,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Input/Zenith_Input.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 // Re-enter the placement-new disabled zone for the additional Jolt headers
 // not already pulled in by Zenith_Physics.h (which re-enables on exit).
 #ifdef ZENITH_PLACEMENT_NEW_ZONE
@@ -362,22 +363,22 @@ void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEn
 
 void Zenith_Physics::DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType)
 {
-	if (!xEntity.HasComponent<Zenith_ScriptComponent>())
-	{
-		return;
-	}
-
-	Zenith_ScriptComponent& xScript = xEntity.GetComponent<Zenith_ScriptComponent>();
+	// Routed through the component-meta registry so physics names no concrete
+	// component: ANY component implementing OnCollisionEnter/Stay/Exit receives
+	// the event (concept-detected at registration - GraphComponent and
+	// GraphComponent both qualify). Still strictly main-thread (we're inside
+	// ProcessDeferredCollisionEvents).
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	switch (eEventType)
 	{
 	case COLLISION_EVENT_TYPE_START:
-		xScript.OnCollisionEnter(xOtherEntity);
+		xRegistry.DispatchOnCollisionEnter(xEntity, xOtherEntity);
 		break;
 	case COLLISION_EVENT_TYPE_STAY:
-		xScript.OnCollisionStay(xOtherEntity);
+		xRegistry.DispatchOnCollisionStay(xEntity, xOtherEntity);
 		break;
 	case COLLISION_EVENT_TYPE_EXIT:
-		xScript.OnCollisionExit(xOtherID);
+		xRegistry.DispatchOnCollisionExit(xEntity, xOtherID);
 		break;
 	}
 }

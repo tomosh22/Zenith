@@ -7,7 +7,7 @@ A classic box-pushing puzzle game demonstrating core Zenith engine features.
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
 | **Entity-Component System** | `Zenith_Entity`, `Zenith_Scene` | Entity creation, component attachment |
-| **Script Behaviors** | `Zenith_ScriptBehaviour` | Game logic via lifecycle hooks (OnAwake, OnStart, OnUpdate) |
+| **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks (OnAwake, OnStart, OnUpdate) |
 | **Prefab System** | `Zenith_Prefab`, `Zenith_Scene::Instantiate` | Entity templates for tiles, boxes, player |
 | **Input Handling** | `Zenith_Input` | Keyboard input polling |
 | **UI System** | `Zenith_UIComponent`, `Zenith_UIText` | Text elements with anchoring |
@@ -26,7 +26,7 @@ Games/Sokoban/
   CLAUDE.md                      # This documentation
   Sokoban.cpp                    # Project entry points, resource initialization
   Components/
-    Sokoban_Behaviour.h          # Main coordinator (uses modules below)
+    Sokoban_GameComponent.h      # Main coordinator component (uses modules below)
     Sokoban_Config.h             # DataAsset for game configuration
     Sokoban_Input.h              # Keyboard input handling
     Sokoban_GridLogic.h          # Movement and puzzle logic
@@ -41,7 +41,7 @@ Games/Sokoban/
 ## Module Breakdown
 
 ### Sokoban.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Project lifecycle hooks
@@ -50,15 +50,15 @@ Demonstrates:
 - Prefab creation for runtime instantiation
 - Scene setup with camera and UI entities
 
-### Sokoban_Behaviour.h - Main Coordinator
-**Engine APIs:** `Zenith_ScriptBehaviour`, lifecycle hooks
+### Sokoban_GameComponent.h - Main Coordinator
+**Engine APIs:** `Zenith_ComponentMetaRegistry` (registered as "SokobanGame", order 100), lifecycle hooks
 
 Demonstrates:
 - `OnAwake()` - Runtime initialization (not called during scene load)
 - `OnStart()` - Called before first update, after all OnAwake
 - `OnUpdate(float fDt)` - Main game loop
 - `RenderPropertiesPanel()` - Editor UI (tools build only)
-- `WriteParametersToDataStream/ReadParametersFromDataStream` - Serialization
+- `WriteToDataStream/ReadFromDataStream` - Serialization (leading component version + parameter payload)
 
 ### Sokoban_Input.h - Input Handling
 **Engine APIs:** `Zenith_Input::WasKeyPressedThisFrame`
@@ -114,7 +114,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-- **Persistent scene**: GameManager entity (Camera + UI + Script + ParticleEmitter), marked with `DontDestroyOnLoad()`
+- **Persistent scene**: GameManager entity (Camera + UI + SokobanGame component + ParticleEmitter), marked with `DontDestroyOnLoad()`
 - **Puzzle scene** (`m_xPuzzleScene`): Floor tiles, walls, boxes, targets, player - created/destroyed per level
 
 ### Game State Machine
@@ -132,7 +132,7 @@ Scene transitions use `CreateEmptyScene("Puzzle")` + `SetActiveScene()` to start
 ## Learning Path
 
 1. **Start here:** `Sokoban.cpp` - See how projects initialize resources
-2. **Understand behaviors:** `Sokoban_Behaviour.h` - Learn lifecycle hooks
+2. **Understand game components:** `Sokoban_GameComponent.h` - Learn lifecycle hooks
 3. **Study input:** `Sokoban_Input.h` - Simple input polling pattern
 4. **See rendering:** `Sokoban_Rendering.h` - Entity/component creation
 5. **Explore UI:** `Sokoban_UIManager.h` - Text element updates
@@ -157,7 +157,7 @@ Scene transitions use `CreateEmptyScene("Puzzle")` + `SetActiveScene()` to start
 ### Prefab Instantiation
 Create entity from prefab via `Zenith_Scene::Instantiate()`, set transform position, then add components (model, collider, etc.).
 
-### Behavior Lifecycle
+### Component Lifecycle
 `OnAwake()` = runtime creation only, `OnStart()` = before first update, `OnUpdate(float fDt)` = every frame.
 
 ### UI Text Updates
@@ -168,7 +168,7 @@ Find UI elements via `xUI.FindElement<Zenith_UIText>("Name")` and call `SetText(
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + Script + ParticleEmitter) - `DontDestroyOnLoad`
+- **GameManager** - Persistent entity (Camera + UI + SokobanGame component + ParticleEmitter) - `DontDestroyOnLoad`
 
 ### Viewport
 - **Top-down orthographic view** of a procedurally generated puzzle grid

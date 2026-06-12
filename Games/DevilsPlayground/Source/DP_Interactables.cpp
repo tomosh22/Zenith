@@ -10,11 +10,11 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 
-#include "../Components/DPDoor_Behaviour.h"
-#include "../Components/DPChest_Behaviour.h"
-#include "../Components/DPForge_Behaviour.h"
-#include "../Components/DPPentagram_Behaviour.h"
-#include "../Components/DummyNoiseMachine_Behaviour.h"
+#include "../Components/DPDoor_Component.h"
+#include "../Components/DPChest_Component.h"
+#include "../Components/DPForge_Component.h"
+#include "../Components/DPPentagram_Component.h"
+#include "../Components/DummyNoiseMachine_Component.h"
 
 namespace
 {
@@ -34,14 +34,14 @@ namespace
 	// Scan every interactable of type TInteract in the active scene; if the
 	// position xMyPos is within an instance's own interact radius AND it's the
 	// closest in-range interactable so far, record szTypeLabel + its squared
-	// distance. Moved verbatim from DPHUDController_Behaviour::ScanInteractables.
+	// distance. Moved verbatim from DPHUDController's ScanInteractables.
 	template<typename TInteract>
 	void ScanInteractables(const Zenith_Maths::Vector3& xMyPos,
 	                       const char* szTypeLabel,
 	                       const char*& szResult,
 	                       float& fClosestSq)
 	{
-		DP_Query::ForEachScriptInActiveScene<TInteract>(
+		DP_Query::ForEachComponentInActiveScene<TInteract>(
 			[&xMyPos, &szResult, &fClosestSq, szTypeLabel]
 			(Zenith_EntityID xId, TInteract& xInteract)
 			{
@@ -64,7 +64,7 @@ namespace DP_Interactables
 {
 	void MarkAsInteractable(Zenith_EntityID /*xId*/, Kind /*eKind*/, void* /*pUserData*/)
 	{
-		// W0 stub. B3 wires this into DPInteractable_Behaviour during script
+		// W0 stub. B3 wires this into DPInteractable_Base during component
 		// attach; this entry point is reserved for non-behaviour entities (props
 		// the editor can flag as interactable).
 	}
@@ -72,19 +72,19 @@ namespace DP_Interactables
 	// Walk every interactable subclass in the active scene; if the villager
 	// is within range of any of them, return a human-readable type name.
 	// Returns nullptr if none in range. Moved here from
-	// DPHUDController_Behaviour::FindNearestInteractableType so the HUD header
-	// no longer includes the interactable behaviour headers.
+	// DPHUDController's FindNearestInteractableType so the HUD header
+	// no longer includes the interactable component headers.
 	const char* FindNearestInteractableType(Zenith_EntityID xVillager)
 	{
 		Zenith_Maths::Vector3 xMyPos(0.0f);
 		if (!TryGetEntityPos(xVillager, xMyPos)) return nullptr;
 		const char* szResult = nullptr;
 		float fClosestSq = 1e30f;
-		ScanInteractables<DPDoor_Behaviour>           (xMyPos, "door",          szResult, fClosestSq);
-		ScanInteractables<DPChest_Behaviour>          (xMyPos, "chest",         szResult, fClosestSq);
-		ScanInteractables<DPForge_Behaviour>          (xMyPos, "forge",         szResult, fClosestSq);
-		ScanInteractables<DPPentagram_Behaviour>      (xMyPos, "pentagram",     szResult, fClosestSq);
-		ScanInteractables<DummyNoiseMachine_Behaviour>(xMyPos, "noise machine", szResult, fClosestSq);
+		ScanInteractables<DPDoor_Component>           (xMyPos, "door",          szResult, fClosestSq);
+		ScanInteractables<DPChest_Component>          (xMyPos, "chest",         szResult, fClosestSq);
+		ScanInteractables<DPForge_Component>          (xMyPos, "forge",         szResult, fClosestSq);
+		ScanInteractables<DPPentagram_Component>      (xMyPos, "pentagram",     szResult, fClosestSq);
+		ScanInteractables<DummyNoiseMachine_Component>(xMyPos, "noise machine", szResult, fClosestSq);
 		return szResult;
 	}
 }

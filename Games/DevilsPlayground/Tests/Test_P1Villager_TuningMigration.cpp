@@ -7,21 +7,21 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
 // ============================================================================
 // Test_P1Villager_TuningMigration (MVP-0.1.2)
 //
-// Verifies that DPVillager_Behaviour reads m_fMaxLife from
+// Verifies that DPVillager_Component reads m_fMaxLife from
 //   possession.life_timer_default_s and m_fMoveSpeed from
 //   movement.jog_speed_mps in OnAwake (via DP_Tuning::Get<float>),
 // rather than the previous hard-coded 30.0f / 8.0f class-body initializers.
 //
 // Proof:
 //   1. Load GameLevel (which has 17 authored villagers).
-//   2. Wait until at least one DPVillager_Behaviour is present + awoken.
+//   2. Wait until at least one DPVillager_Component is present + awoken.
 //   3. Compare its GetMaxLife() / GetMoveSpeed() against the values
 //      DP_Tuning returns for the same keys. Equality (not band) -- the
 //      migration's contract is exact propagation of the JSON value.
@@ -64,13 +64,13 @@ static bool Step_P1Villager_TuningMigration(int iFrame)
 
 	case kS_WaitVillager:
 	{
-		// Wait until a DPVillager_Behaviour shows up. OnAwake fires when the
+		// Wait until a DPVillager_Component shows up. OnAwake fires when the
 		// script attaches; by the time DP_Query finds it, the tuning reads
 		// have already populated m_fMaxLife and m_fMoveSpeed.
 		Zenith_EntityID xFoundId;
-		DPVillager_Behaviour* pxFound = nullptr;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundId, &pxFound](Zenith_EntityID xId, DPVillager_Behaviour& xVillager) {
+		DPVillager_Component* pxFound = nullptr;
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundId, &pxFound](Zenith_EntityID xId, DPVillager_Component& xVillager) {
 				if (!xFoundId.IsValid())
 				{
 					xFoundId = xId;
@@ -114,7 +114,7 @@ static bool Verify_P1Villager_TuningMigration()
 	if (!g_bFoundVillager)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"Test_P1Villager_TuningMigration: no DPVillager_Behaviour found "
+			"Test_P1Villager_TuningMigration: no DPVillager_Component found "
 			"in active scene after 120 frames");
 		return false;
 	}

@@ -7,7 +7,7 @@
 
 #include "ZenithECS/Zenith_EventSystem.h"
 
-#include "../Components/DPPlayerController_Behaviour.h"
+#include "../Components/DPPlayerController_Component.h"
 
 namespace DP_Night
 {
@@ -15,7 +15,7 @@ namespace DP_Night
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Night::StartNight must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		pxCtrl->m_fNightRemainingSec = (fDurationSeconds > 0.0f) ? fDurationSeconds : 0.0f;
 		pxCtrl->m_bNightActive       = true;
@@ -28,7 +28,7 @@ namespace DP_Night
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Night::TickNight must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr || !pxCtrl->m_bNightActive) return;
 		if (pxCtrl->m_bDawnDispatched)
 		{
@@ -52,7 +52,7 @@ namespace DP_Night
 
 	float GetNightTimeRemaining()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return 0.0f;
 		return pxCtrl->m_fNightRemainingSec;
 	}
@@ -63,14 +63,14 @@ namespace DP_Night
 	// EDGE specifically should use HasDawnReached() instead.
 	bool IsNightActive()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return false;
 		return pxCtrl->m_bNightActive;
 	}
 
 	bool HasDawnReached()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return false;
 		return pxCtrl->m_bDawnDispatched;
 	}
@@ -79,7 +79,7 @@ namespace DP_Night
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Night::Reset must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		pxCtrl->m_fNightRemainingSec = 0.0f;
 		pxCtrl->m_bNightActive       = false;

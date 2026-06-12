@@ -892,9 +892,9 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\CB_CityCamera_Behaviour.h" />
-    <ClInclude Include="..\Components\CB_CityManager_Behaviour.h" />
-    <ClInclude Include="..\Components\CB_DayNightCycle_Behaviour.h" />
+    <ClInclude Include="..\Components\CB_CityCameraComponent.h" />
+    <ClInclude Include="..\Components\CB_CityManagerComponent.h" />
+    <ClInclude Include="..\Components\CB_DayNightCycleComponent.h" />
     <ClInclude Include="..\Source\CB_BuildingDefs.h" />
     <ClInclude Include="..\Source\CB_BuildingPlacement.h" />
     <ClInclude Include="..\Source\CB_CameraController.h" />

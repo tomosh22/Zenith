@@ -7,8 +7,8 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPPauseMenuController_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPPauseMenuController_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -91,7 +91,7 @@ static void Setup_P2PauseRestart()
 	g_bRestartFlag = false;
 	g_xPossessedAfter = INVALID_ENTITY_ID;
 	g_xHeldAfter = INVALID_ENTITY_ID;
-	DPPauseMenuController_Behaviour::ResetPauseShortcutsForTest();
+	DPPauseMenuController_Component::ResetPauseShortcutsForTest();
 }
 
 static bool Step_P2PauseRestart(int iFrame)
@@ -106,14 +106,14 @@ static bool Step_P2PauseRestart(int iFrame)
 	case kRR_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
 		// Also wait for the persistent pause-menu singleton.
 		const bool bHasPersistent =
-			DPPauseMenuController_Behaviour::GetPersistentInstanceForTest() != nullptr;
+			DPPauseMenuController_Component::GetPersistentInstanceForTest() != nullptr;
 		if (xFound.IsValid() && bHasPersistent)
 		{
 			g_xVillagerBefore = xFound;
@@ -145,7 +145,7 @@ static bool Step_P2PauseRestart(int iFrame)
 	case kRR_TriggerRestart:
 		// HandleRestart fires LoadSceneByIndex(1, SINGLE) directly --
 		// no need to simulate Esc/R key sequence.
-		DPPauseMenuController_Behaviour::FireRestartShortcutForTest();
+		DPPauseMenuController_Component::FireRestartShortcutForTest();
 		g_iWaitFrames = 0;
 		g_iPhase = kRR_WaitForReload;
 		return true;
@@ -156,7 +156,7 @@ static bool Step_P2PauseRestart(int iFrame)
 		return true;
 
 	case kRR_Snapshot:
-		g_bRestartFlag = DPPauseMenuController_Behaviour::WasRestartRequestedForTest();
+		g_bRestartFlag = DPPauseMenuController_Component::WasRestartRequestedForTest();
 		g_xPossessedAfter = DP_Player::GetPossessedVillager();
 		g_xHeldAfter = DP_Player::GetHeldItemEntity(g_xVillagerBefore);
 		g_iPhase = kRR_Verify;
@@ -171,7 +171,7 @@ static bool Step_P2PauseRestart(int iFrame)
 			(int)g_bRestartFlag);
 		std::fflush(stdout);
 		// Cleanup flag for next test.
-		DPPauseMenuController_Behaviour::ResetPauseShortcutsForTest();
+		DPPauseMenuController_Component::ResetPauseShortcutsForTest();
 		g_iPhase = kRR_Done;
 		return false;
 

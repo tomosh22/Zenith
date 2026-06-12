@@ -10,16 +10,15 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_EventSystem.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
-#include "../Components/DPVillager_Behaviour.h"
-#include "../Components/Priest_Behaviour.h"
-#include "../Components/DPPlayerController_Behaviour.h"
+#include "../Components/DPVillager_Component.h"
+#include "../Components/Priest_Component.h"
+#include "../Components/DPPlayerController_Component.h"
 
 #include <cmath>
 
@@ -47,8 +46,8 @@ namespace
 // state (an anon-namespace free function can't be befriended). Its sole
 // callers, DP_Player::TryVoluntaryPossessSwitch + TickChannel, are in the
 // controller's friend list and so can call this private static member.
-void DPPlayerController_Behaviour::CommitVoluntaryPossession(
-	DPPlayerController_Behaviour& xCtrl,
+void DPPlayerController_Component::CommitVoluntaryPossession(
+	DPPlayerController_Component& xCtrl,
 	Zenith_EntityID xId,
 	const Zenith_Maths::Vector3& xNewPos,
 	bool bGotNewPos)
@@ -86,7 +85,7 @@ namespace DP_Player
 {
 	Zenith_EntityID GetPossessedVillager()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return INVALID_ENTITY_ID;
 		return pxCtrl->m_xPossessedVillager;
 	}
@@ -95,7 +94,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::SetPossessedVillager must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		const Zenith_EntityID xPrior = pxCtrl->m_xPossessedVillager;
 		pxCtrl->m_xPossessedVillager = xId;
@@ -118,7 +117,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TryVoluntaryPossessSwitch must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return false;
 
 		// Idempotent re-click.
@@ -150,22 +149,18 @@ namespace DP_Player
 			return false;
 		}
 
-		// Resolve the candidate villager script once and share it across
-		// the possessability check + Devout-channel branch below. GetScript
-		// is a linear scan by type-name string, so two queries per click is
-		// avoidable churn (Components/CLAUDE.md known-gotcha).
-		DPVillager_Behaviour* pxCandidateVillager = nullptr;
+		// Resolve the candidate villager component once and share it across
+		// the possessability check + Devout-channel branch below.
+		DPVillager_Component* pxCandidateVillager = nullptr;
 		if (xId.IsValid())
 		{
 			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 			if (pxScene != nullptr)
 			{
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_ScriptComponent>())
+				if (xEnt.IsValid())
 				{
-					pxCandidateVillager =
-						xEnt.GetComponent<Zenith_ScriptComponent>()
-							.GetScript<DPVillager_Behaviour>();
+					pxCandidateVillager = xEnt.TryGetComponent<DPVillager_Component>();
 				}
 			}
 		}
@@ -208,28 +203,28 @@ namespace DP_Player
 			return true;
 		}
 
-		DPPlayerController_Behaviour::CommitVoluntaryPossession(
+		DPPlayerController_Component::CommitVoluntaryPossession(
 			*pxCtrl, xId, xNewPos, bGotNewPos);
 		return true;
 	}
 
 	bool IsChanneling()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return false;
 		return pxCtrl->m_bChannelActive;
 	}
 
 	Zenith_EntityID GetChannelTarget()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return INVALID_ENTITY_ID;
 		return pxCtrl->m_xChannelTarget;
 	}
 
 	float GetChannelRemaining()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return 0.0f;
 		return pxCtrl->m_fChannelRemaining;
 	}
@@ -238,7 +233,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::InterruptChannel must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr || !pxCtrl->m_bChannelActive) return;
 		pxCtrl->m_bChannelActive    = false;
 		pxCtrl->m_xChannelTarget    = INVALID_ENTITY_ID;
@@ -249,7 +244,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TickChannel must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr || !pxCtrl->m_bChannelActive) return;
 
 		// MVP-2.1.2 interrupt check: any priest within
@@ -264,9 +259,9 @@ namespace DP_Player
 			const float fInterruptDist =
 				DP_Tuning::Get<float>("possession.channel_interrupt_distance_m");
 			bool bInterrupted = false;
-			DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			DP_Query::ForEachComponentInActiveScene<Priest_Component>(
 				[&bInterrupted, &xTargetPos, fInterruptDist]
-				(Zenith_EntityID xPriestId, Priest_Behaviour&)
+				(Zenith_EntityID xPriestId, Priest_Component&)
 				{
 					if (bInterrupted) return;
 					Zenith_Maths::Vector3 xPriestPos;
@@ -296,7 +291,7 @@ namespace DP_Player
 			Zenith_Maths::Vector3 xCommitPos(0.0f);
 			const bool bGotPos =
 				xTarget.IsValid() && TryGetVillagerPos(xTarget, xCommitPos);
-			DPPlayerController_Behaviour::CommitVoluntaryPossession(
+			DPPlayerController_Component::CommitVoluntaryPossession(
 				*pxCtrl, xTarget, xCommitPos, bGotPos);
 		}
 	}
@@ -305,7 +300,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TickPossessionCooldown must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr || pxCtrl->m_fPossessionCooldownSec <= 0.0f) return;
 		pxCtrl->m_fPossessionCooldownSec -= fDt;
 		if (pxCtrl->m_fPossessionCooldownSec < 0.0f)
@@ -316,7 +311,7 @@ namespace DP_Player
 
 	float GetPossessionCooldownRemaining()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return 0.0f;
 		return pxCtrl->m_fPossessionCooldownSec;
 	}
@@ -324,7 +319,7 @@ namespace DP_Player
 	float GetDemonScent(Zenith_EntityID xVillager)
 	{
 		if (!xVillager.IsValid()) return 0.0f;
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return 0.0f;
 		return pxCtrl->GetDemonScent(xVillager);
 	}
@@ -333,7 +328,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TickDemonScent must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr || !pxCtrl->HasDemonScentEntries()) return;
 		const float fDecayPerSec =
 			DP_Tuning::Get<float>("possession.demon_scent_decay_per_s");
@@ -346,7 +341,7 @@ namespace DP_Player
 			"DP_Player::WriteHighestScentToBlackboard must be called from main thread");
 		Zenith_EntityID xHighestId = INVALID_ENTITY_ID;
 		float fHighestScent = 0.0f;
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl != nullptr)
 		{
 			pxCtrl->ForEachDemonScentEntry(
@@ -395,14 +390,14 @@ namespace DP_Player
 
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager)
 	{
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return DP_ItemTag::None;
 		return pxCtrl->GetHeldItemTag(xVillager);
 	}
 
 	Zenith_EntityID GetHeldItemEntity(Zenith_EntityID xVillager)
 	{
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return INVALID_ENTITY_ID;
 		return pxCtrl->GetHeldItemEntity(xVillager);
 	}
@@ -411,7 +406,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::SetHeldItem must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		DPVillagerHeldRecord xRec;
 		xRec.m_xItem = xItem;
@@ -425,7 +420,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::RemoveHeldItem must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		pxCtrl->RemoveHeldItem(xVillager);
 	}
@@ -434,7 +429,7 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::ResetForNewRun must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		// Scene-bound state lifetime: held-items + demon-scent tables are
 		// owned by the controller and cleared by Clear() below. Possession,
@@ -455,10 +450,10 @@ namespace DP_Player
 	}
 
 	// ========================================================================
-	// Cross-behaviour villager forwarders. Resolve the villager script and
-	// read the requested field. Moved here from Priest_Behaviour /
-	// DPItemBase_Behaviour / DPHUDController_Behaviour so those headers no
-	// longer include DPVillager_Behaviour.h (cross-behaviour rule).
+	// Cross-component villager forwarders. Resolve the villager component and
+	// read the requested field. Moved here from Priest_Component /
+	// DPItemBase / DPHUDController so those headers no
+	// longer include DPVillager_Component.h (cross-component rule).
 	// ========================================================================
 
 	bool IsPossessedVillager(Zenith_EntityID xCandidate)
@@ -466,9 +461,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return false;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->IsPossessed();
 	}
 
@@ -477,9 +471,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return false;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->GetArchetypeId() == "Beggar";
 	}
 
@@ -488,9 +481,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return false;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->GetArchetypeId() == "Child" && DP_IsToolTag(eTag);
 	}
 
@@ -499,9 +491,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return 0.0f;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return 0.0f;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return 0.0f;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV ? pxV->GetRemainingLife() : 0.0f;
 	}
 
@@ -510,9 +501,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return 0.0f;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return 0.0f;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return 0.0f;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV ? pxV->GetMaxLife() : 0.0f;
 	}
 
@@ -521,9 +511,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return "";
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return "";
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return "";
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV ? pxV->GetArchetypeId().c_str() : "";
 	}
 
@@ -532,9 +521,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return false;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->IsSprintingNow();
 	}
 
@@ -543,9 +531,8 @@ namespace DP_Player
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return false;
-		DPVillager_Behaviour* pxV =
-			xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) return false;
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->IsWalkQuietNow();
 	}
 
@@ -553,8 +540,8 @@ namespace DP_Player
 	{
 		iOutAlive = 0;
 		iOutTotal = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iOutAlive, &iOutTotal](Zenith_EntityID, DPVillager_Behaviour& xV)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iOutAlive, &iOutTotal](Zenith_EntityID, DPVillager_Component& xV)
 			{
 				++iOutTotal;
 				if (xV.GetRemainingLife() > 0.0f) ++iOutAlive;
@@ -565,8 +552,8 @@ namespace DP_Player
 	                                  void* pUserData)
 	{
 		if (pfnCallback == nullptr) return;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[pfnCallback, pUserData](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[pfnCallback, pUserData](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				pfnCallback(xId, pUserData);
 			});

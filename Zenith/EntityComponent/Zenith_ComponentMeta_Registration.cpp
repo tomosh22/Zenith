@@ -14,7 +14,7 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
@@ -63,7 +63,9 @@ void Zenith_RegisterEngineComponents()
 	xRegistry.RegisterComponent<Zenith_LightComponent>("Light", 25);
 	xRegistry.RegisterComponent<Zenith_TerrainComponent>("Terrain", 40);   // Must be before Collider
 	xRegistry.RegisterComponent<Zenith_ColliderComponent>("Collider", 50);
-	xRegistry.RegisterComponent<Zenith_ScriptComponent>("Script", 60);
+	// Behaviour Graphs (the scripting-system replacement) at order 60 — the
+	// slot the retired script component vacated, between Collider and UI.
+	xRegistry.RegisterComponent<Zenith_GraphComponent>("Graph", 60);
 	xRegistry.RegisterComponent<Zenith_UIComponent>("UI", 70);
 	// These auto-registered but were absent from the old map's "named" block; they
 	// were given explicit, distinct orders past 70 so std::sort (not stable)
@@ -102,7 +104,7 @@ void Zenith_RegisterEngineComponents()
 	xEditorRegistry.RegisterComponent<Zenith_TerrainComponent>("Terrain");
 	xEditorRegistry.RegisterComponent<Zenith_InstancedMeshComponent>("InstancedMesh");
 	xEditorRegistry.RegisterComponent<Zenith_ParticleEmitterComponent>("ParticleEmitter");
-	xEditorRegistry.RegisterComponent<Zenith_ScriptComponent>("Script");
+	xEditorRegistry.RegisterComponent<Zenith_GraphComponent>("Graph");
 	xEditorRegistry.RegisterComponent<Zenith_UIComponent>("UI");
 #endif
 }

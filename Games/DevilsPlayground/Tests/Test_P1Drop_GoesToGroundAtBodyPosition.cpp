@@ -12,8 +12,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPItemBase_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -87,14 +87,13 @@ namespace
 		return std::sqrt(fDx * fDx + fDz * fDz);
 	}
 
-	DPItemBase_Behaviour* GetItemBehaviour(Zenith_EntityID xId)
+	DPItemBase_Component* GetItemBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPItemBase_Behaviour>();
+		return xEnt.TryGetComponent<DPItemBase_Component>();
 	}
 
 	// Find a villager that has at least one DPItem within 5 m -- if
@@ -104,14 +103,14 @@ namespace
 	bool PickVillagerNearItem(Zenith_EntityID& xVillagerOut)
 	{
 		Zenith_Vector<Zenith_EntityID> axVillagers;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axVillagers](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axVillagers](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				axVillagers.PushBack(xId);
 			});
 		Zenith_Vector<Zenith_Maths::Vector3> axItemPositions;
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&axItemPositions](Zenith_EntityID xId, DPItemBase_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&axItemPositions](Zenith_EntityID xId, DPItemBase_Component&)
 			{
 				Zenith_Maths::Vector3 xPos;
 				if (TryGetEntityPos(xId, xPos)) axItemPositions.PushBack(xPos);
@@ -166,15 +165,15 @@ static bool Step_P1Drop(int iFrame)
 		int iVillagerCount = 0;
 		int iItemCount = 0;
 		Zenith_EntityID xFoundVillager;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
 			[&iVillagerCount, &xFoundVillager]
-			(Zenith_EntityID xId, DPVillager_Behaviour&)
+			(Zenith_EntityID xId, DPVillager_Component&)
 			{
 				++iVillagerCount;
 				if (!xFoundVillager.IsValid()) xFoundVillager = xId;
 			});
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&iItemCount](Zenith_EntityID, DPItemBase_Behaviour&) { ++iItemCount; });
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&iItemCount](Zenith_EntityID, DPItemBase_Component&) { ++iItemCount; });
 		if (iFrame == 30)
 		{
 			Zenith_Log(LOG_CATEGORY_AI,
@@ -204,8 +203,8 @@ static bool Step_P1Drop(int iFrame)
 		// is just setup. Find any DPItemBase, hand it to the villager
 		// via DP_Player's public side-table API.
 		Zenith_EntityID xTargetItem;
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&xTargetItem](Zenith_EntityID xId, DPItemBase_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&xTargetItem](Zenith_EntityID xId, DPItemBase_Component&)
 			{
 				if (!xTargetItem.IsValid()) xTargetItem = xId;
 			});
@@ -269,7 +268,7 @@ static bool Step_P1Drop(int iFrame)
 	{
 		g_eTagAfterDrop = DP_Player::GetHeldItemTag(g_xVillager);
 		TryGetEntityPos(g_xItem, g_xItemPosAfterDrop);
-		if (DPItemBase_Behaviour* pxItemBeh = GetItemBehaviour(g_xItem))
+		if (DPItemBase_Component* pxItemBeh = GetItemBehaviour(g_xItem))
 		{
 			g_fCooldownAfterDrop = pxItemBeh->GetPostDropCooldownForTest();
 		}

@@ -1,29 +1,46 @@
-# CityBuilder — Components/ (behaviours)
+# CityBuilder — Components/ (game components)
 
-The three `Zenith_ScriptBehaviour` classes that turn the headless `Source/` systems into a
-playable game. Each follows the engine behaviour pattern:
+The three game ECS components that turn the headless `Source/` systems into a playable game
+(promoted from the deleted legacy script classes). Each follows the engine
+component contract:
 
 ```cpp
-class CB_Foo_Behaviour ZENITH_FINAL : public Zenith_ScriptBehaviour
+class CB_FooComponent
 {
-    friend class Zenith_ScriptComponent;
-    ZENITH_BEHAVIOUR_TYPE_NAME(CB_Foo_Behaviour)
-    CB_Foo_Behaviour(Zenith_Entity& /*xParent*/) {}   // do NOT forward to a base ctor
-    ...
+public:
+    CB_FooComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {}
+    void OnUpdate(float fDt) { ... }                       // concept-detected hooks
+    void WriteToDataStream(Zenith_DataStream&) const;      // version tag only (no params persist)
+    void ReadFromDataStream(Zenith_DataStream&);
+#ifdef ZENITH_TOOLS
+    void RenderPropertiesPanel();
+#endif
+private:
+    Zenith_Entity m_xParentEntity;
 };
 ```
 
-Every behaviour header is `#include`d from `../CityBuilder.cpp` so MSVC's dead-strip doesn't drop
-the static-init registrar before link. Init happens in **`OnStart`** (the scene is *deserialized*,
-so the behaviour attaches on load — `OnAwake` does not fire for deserialized entities).
+Registration: `ZENITH_REGISTER_COMPONENT(Type, "Name", order)` thunks at the top of
+`../CityBuilder.cpp` — `CBCityManager` (100) / `CBCityCamera` (101) / `CBDayNight` (102) —
+mirrored into `Zenith_ComponentEditorRegistry` in `Project_RegisterGameComponents` under
+`ZENITH_TOOLS` (what `AddStep_AddComponent` resolves against). Every component header is
+`#include`d from `../CityBuilder.cpp` so MSVC's dead-strip doesn't drop the static-init
+registrar before link. Init happens in **`OnStart`** (the scene is *deserialized*, so the
+component attaches on load — `OnAwake` does not fire for deserialized entities).
+
+**Moves are hand-written** (copies deleted): component pools relocate components on
+resize / swap-and-pop, and these classes publish static pointers to MEMBER addresses
+(`GetActive*()`), wire sibling-subsystem pointers (`m_xBuild` holds `&m_xDistricts` etc.),
+and register an engine stream hook holding `&m_xHeightfield` — the move ctor/assign
+re-point all of them at the destination object.
 
 See `../Source/CLAUDE.md` for the subsystems these drive and `../CLAUDE.md` for controls/overview.
 
 ---
 
-## CB_CityManager_Behaviour.h — the orchestrator
+## CB_CityManagerComponent.h — the orchestrator
 
-The largest behaviour. It **owns every subsystem by value**, drives the whole frame, builds + updates
+The largest component. It **owns every subsystem by value**, drives the whole frame, builds + updates
 the HUD, and publishes static accessors so tests/automation can reach the live city.
 
 ### Owned subsystems (members)
@@ -41,7 +58,7 @@ the HUD, and publishes static accessors so tests/automation can reach the live c
 
 ### Static accessors (for tests / automation / `CB_TerrainModifier`)
 ```
-GetActive()              → CB_CityManager_Behaviour*   (live manager, null if none)
+GetActive()              → CB_CityManagerComponent*   (live manager, null if none)
 GetActiveRoadController() → CB_RoadController*
 GetActiveZoning()        → CB_Zoning*
 GetActiveBuild()         → CB_BuildingPlacement*
@@ -75,7 +92,7 @@ the B tool is active, else city-wide).
 
 ---
 
-## CB_CityCamera_Behaviour.h — RTS camera
+## CB_CityCameraComponent.h — RTS camera
 
 Drives a `CB_CameraController` from input and writes the result into the entity's `Zenith_CameraComponent`
 each frame. `OnAwake` resets the controller (fresh per Play session); `OnUpdate` applies input; `GetController()`
@@ -86,7 +103,7 @@ each frame. `OnAwake` resets the controller (fresh per Play session); `OnUpdate`
 
 ---
 
-## CB_DayNightCycle_Behaviour.h — day/night
+## CB_DayNightCycleComponent.h — day/night
 
 Advances a `CB_DayNight` clock each frame and (windowed only) drives the skybox sun intensity
 (`0.2 + 2.6 × elevation`). `OnStart` creates + publishes the clock; `OnUpdate` advances + applies;

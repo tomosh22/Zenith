@@ -11,8 +11,8 @@
 #include "UI/Zenith_UIText.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPHUDController_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -71,11 +71,11 @@ namespace
 		}
 	}
 
-	DPHUDController_Behaviour* FindHud()
+	DPHUDController_Component* FindHud()
 	{
-		DPHUDController_Behaviour* pxHud = nullptr;
-		DP_Query::ForEachScriptInActiveScene<DPHUDController_Behaviour>(
-			[&pxHud](Zenith_EntityID, DPHUDController_Behaviour& xH)
+		DPHUDController_Component* pxHud = nullptr;
+		DP_Query::ForEachComponentInActiveScene<DPHUDController_Component>(
+			[&pxHud](Zenith_EntityID, DPHUDController_Component& xH)
 			{
 				if (pxHud == nullptr) pxHud = &xH;
 			});
@@ -124,10 +124,10 @@ static bool Step_P4LossDawn(int iFrame)
 		// Wait for HUD + at least one villager (so DPPlayerController is
 		// guaranteed to be ticking TickNight from OnUpdate -- it only fires
 		// when the controller exists, which happens after scene authoring).
-		DPHUDController_Behaviour* pxHud = FindHud();
+		DPHUDController_Component* pxHud = FindHud();
 		int iVillagerCount = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iVillagerCount](Zenith_EntityID, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iVillagerCount](Zenith_EntityID, DPVillager_Component&)
 			{
 				++iVillagerCount;
 			});
@@ -156,7 +156,7 @@ static bool Step_P4LossDawn(int iFrame)
 
 	case kLD_Snapshot:
 	{
-		DPHUDController_Behaviour* pxHud = FindHud();
+		DPHUDController_Component* pxHud = FindHud();
 		if (pxHud != nullptr)
 		{
 			g_bHudFired = pxHud->DidRunLostHandlerFireForTest();

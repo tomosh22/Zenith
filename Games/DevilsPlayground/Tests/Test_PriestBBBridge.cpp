@@ -12,25 +12,25 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include "Tests/DPTestSupport.h"
 
 // ============================================================================
 // PriestBBBridge_Test
 //
-// Companion test to HearingFlow_Test: verifies that Priest_Behaviour's
+// Companion test to HearingFlow_Test: verifies that Priest_Component's
 // BridgePerceptionToBlackboard actually writes the freshest heard-sound
 // position into the priest's BB (not just that GetLastHeardSoundFor returns
 // valid).
 //
 // Investigation of the previous failure:
-//   - The BB-bridge runs inside Priest_Behaviour::OnUpdate, which is invoked
+//   - The BB-bridge runs inside Priest_Component::OnUpdate, which is invoked
 //     by the script-component dispatcher each frame.
 //   - The HearingFlow_Test already proves the perception subsystem populates
 //     GetLastHeardSoundFor correctly given a valid source EntityID.
-//   - When Priest_Behaviour was a stub, the bridge code was already in place
+//   - When Priest_Component was a stub, the bridge code was already in place
 //     but the test was reading the BB BEFORE OnUpdate had a chance to fire
 //     after the perception update. This test waits an extra two frames after
 //     emitting noise so the perception system processes the stimulus AND
@@ -83,10 +83,10 @@ static bool Step_PriestBBBridge(int iFrame)
 	{
 		Zenith_EntityID xPriest;
 		Zenith_EntityID xSource;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xPriest](Zenith_EntityID xId, Priest_Behaviour&) { xPriest = xId; });
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xSource](Zenith_EntityID xId, DPVillager_Behaviour&) { xSource = xId; });
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xPriest](Zenith_EntityID xId, Priest_Component&) { xPriest = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xSource](Zenith_EntityID xId, DPVillager_Component&) { xSource = xId; });
 		if (xPriest.IsValid() && xSource.IsValid())
 		{
 			g_xPriest = xPriest;

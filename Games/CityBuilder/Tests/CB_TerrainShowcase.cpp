@@ -3,8 +3,8 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
-#include "CityBuilder/Components/CB_CityCamera_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
+#include "CityBuilder/Components/CB_CityCameraComponent.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_Zoning.h"
 #include "CityBuilder/Source/CB_BuildingPlacement.h"
@@ -25,10 +25,10 @@ static bool Step_TerrainShowcase(int iFrame)
 {
 	if (!s_bBuilt)
 	{
-		CB_RoadController*     pxCtrl  = CB_CityManager_Behaviour::GetActiveRoadController();
-		CB_Zoning*             pxZone  = CB_CityManager_Behaviour::GetActiveZoning();
-		CB_TerrainHeightfield* pxField = CB_CityManager_Behaviour::GetActiveHeightfield();
-		CB_BuildingPlacement*  pxBuild = CB_CityManager_Behaviour::GetActiveBuild();
+		CB_RoadController*     pxCtrl  = CB_CityManagerComponent::GetActiveRoadController();
+		CB_Zoning*             pxZone  = CB_CityManagerComponent::GetActiveZoning();
+		CB_TerrainHeightfield* pxField = CB_CityManagerComponent::GetActiveHeightfield();
+		CB_BuildingPlacement*  pxBuild = CB_CityManagerComponent::GetActiveBuild();
 		if (pxCtrl != nullptr && pxZone != nullptr && pxField != nullptr && pxBuild != nullptr)
 		{
 			pxCtrl->SetRoadClass(CB_ROADCLASS_MEDIUM);
@@ -56,7 +56,7 @@ static bool Step_TerrainShowcase(int iFrame)
 	}
 
 	// Drive the camera to a low oblique angle, zoomed out, so the hill relief reads.
-	if (CB_CityCamera_Behaviour* pxCam = CB_CityCamera_Behaviour::GetActive())
+	if (CB_CityCameraComponent* pxCam = CB_CityCameraComponent::GetActive())
 	{
 		CB_CameraController& xC = pxCam->GetController();
 		xC.m_fPitch    = 0.55f;    // ~31 deg downward — a clear 3/4 view of the streets + hill relief
@@ -70,7 +70,7 @@ static bool Step_TerrainShowcase(int iFrame)
 
 static bool Verify_TerrainShowcase()
 {
-	return CB_CityManager_Behaviour::GetActiveBuild() != nullptr;
+	return CB_CityManagerComponent::GetActiveBuild() != nullptr;
 }
 
 static const Zenith_AutomatedTest g_xTerrainShowcaseTest = { "CB_TerrainShowcase", &Setup_TerrainShowcase, &Step_TerrainShowcase, &Verify_TerrainShowcase, 3200, true };

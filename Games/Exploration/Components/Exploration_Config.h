@@ -25,6 +25,46 @@ class Exploration_Config : public Zenith_Asset
 public:
 	ZENITH_ASSET_TYPE_NAME(Exploration_Config)
 
+	// Value-copy of every setting (Zenith_Asset itself is neither copyable nor
+	// movable, so holders that need to relocate - e.g. the pooled
+	// Exploration_GameComponent - copy the DATA across instead).
+	void CopyValuesFrom(const Exploration_Config& xOther)
+	{
+		m_fMoveSpeed = xOther.m_fMoveSpeed;
+		m_fSprintMultiplier = xOther.m_fSprintMultiplier;
+		m_fMouseSensitivity = xOther.m_fMouseSensitivity;
+		m_fPlayerEyeHeight = xOther.m_fPlayerEyeHeight;
+		m_fGravity = xOther.m_fGravity;
+		m_fJumpVelocity = xOther.m_fJumpVelocity;
+		m_fFOV = xOther.m_fFOV;
+		m_fNearPlane = xOther.m_fNearPlane;
+		m_fFarPlane = xOther.m_fFarPlane;
+		m_fPitchLimit = xOther.m_fPitchLimit;
+		m_fDayCycleDuration = xOther.m_fDayCycleDuration;
+		m_fStartTimeOfDay = xOther.m_fStartTimeOfDay;
+		m_bDayCycleEnabled = xOther.m_bDayCycleEnabled;
+		m_fSunIntensity = xOther.m_fSunIntensity;
+		m_fAmbientIntensity = xOther.m_fAmbientIntensity;
+		m_fNightAmbient = xOther.m_fNightAmbient;
+		for (int i = 0; i < 3; ++i)
+		{
+			m_afSunriseColor[i] = xOther.m_afSunriseColor[i];
+			m_afMiddayColor[i] = xOther.m_afMiddayColor[i];
+			m_afSunsetColor[i] = xOther.m_afSunsetColor[i];
+			m_afNightColor[i] = xOther.m_afNightColor[i];
+			m_afFogColorDay[i] = xOther.m_afFogColorDay[i];
+			m_afFogColorNight[i] = xOther.m_afFogColorNight[i];
+			m_afFogColorSunrise[i] = xOther.m_afFogColorSunrise[i];
+		}
+		m_fFogDensityBase = xOther.m_fFogDensityBase;
+		m_fFogDensityFoggy = xOther.m_fFogDensityFoggy;
+		m_fFogTransitionSpeed = xOther.m_fFogTransitionSpeed;
+		m_fWeatherChangeInterval = xOther.m_fWeatherChangeInterval;
+		m_fWeatherTransitionDuration = xOther.m_fWeatherTransitionDuration;
+		m_bRandomWeather = xOther.m_bRandomWeather;
+		m_bShowDebugHUD = xOther.m_bShowDebugHUD;
+	}
+
 	// ========================================================================
 	// Player Movement Settings
 	// ========================================================================

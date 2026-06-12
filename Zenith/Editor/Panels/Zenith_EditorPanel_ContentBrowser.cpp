@@ -6,6 +6,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_ContentBrowser.h"
+#include "Zenith_EditorPanel_GraphEditor.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -39,7 +40,7 @@ static const EditorFileTypeInfo s_axKnownFileTypes[] = {
 	{ ZENITH_PREFAB_EXT,     "[PRE]", "Prefab",    DRAGDROP_PAYLOAD_PREFAB },
 	{ ZENITH_SCENE_EXT,      "[SCN]", "Scene",     DRAGDROP_PAYLOAD_FILE_GENERIC },
 	{ ZENITH_ANIMATION_EXT,  "[ANM]", "Animation", DRAGDROP_PAYLOAD_ANIMATION },
-	{ ZENITH_SCRIPT_EXT,     "[SCR]", "Script",    DRAGDROP_PAYLOAD_SCRIPT_ASSET },
+	{ ZENITH_BGRAPH_EXT,     "[BGR]", "Graph",     DRAGDROP_PAYLOAD_GRAPH_ASSET },
 };
 
 const EditorFileTypeInfo* GetFileTypeInfo(const std::string& strExtension)
@@ -375,6 +376,10 @@ void Zenith_EditorPanelContentBrowser::HandleEntryDoubleClickOpen(const ContentB
 	else if (xEntry.m_strExtension == ZENITH_SCENE_EXT)
 	{
 		g_xEngine.Editor().RequestLoadSceneFromFile(xEntry.m_strFullPath);
+	}
+	else if (xEntry.m_strExtension == ZENITH_BGRAPH_EXT)
+	{
+		Zenith_GraphEditorPanel::OpenAsset(Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath).c_str());
 	}
 }
 

@@ -2,6 +2,7 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
+#include "Core/Zenith_PropertySystem.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -138,22 +139,33 @@ private:
 	Zenith_Entity m_xParentEntity;
 
 	LIGHT_TYPE m_eLightType = LIGHT_TYPE_POINT;
-	Zenith_Maths::Vector3 m_xColor = { 1.0f, 1.0f, 1.0f };  // Linear RGB (not sRGB)
+
+	// Reflected tunables (Behaviour Graphs Phase 0). Declared via ZENITH_PROPERTY
+	// so the property table drives tuning-file bindings and (future) graph access.
+	// Hand-written serialization + the bespoke editor panel are unchanged - the
+	// declarations keep identical member order, types, and defaults. Ranges match
+	// the existing setter clamps. LIGHT_TYPE (enum) and the interdependent spot
+	// angles stay plain members.
+	ZENITH_PROPERTIES_BEGIN(Zenith_LightComponent)
+	// Linear RGB (not sRGB)
+	ZENITH_PROPERTY_COLOUR(Zenith_Maths::Vector3, m_xColor, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f))
 	// Intensity in lumens (point/spot) or lux (directional). Typical values:
 	// - Candle: ~12 lm, 60W bulb: ~800 lm, Studio light: ~5000 lm
 	// - Direct sunlight: ~100000 lux, Overcast: ~1000 lux
-	float m_fIntensity = 800.0f;  // 800 lumens (60W incandescent equivalent)
-	float m_fRange = 10.0f;
+	// 800 lumens default (60W incandescent equivalent)
+	ZENITH_PROPERTY_RANGED(float, m_fIntensity, 800.0f, 0.0f, 10000000.0f)
+	ZENITH_PROPERTY_RANGED(float, m_fRange, 10.0f, 0.1f, 10000.0f)
 
 	// Spot light specific (angles in radians)
 	float m_fSpotInnerAngle = 0.349066f;  // 20 degrees
 	float m_fSpotOuterAngle = 0.523599f;  // 30 degrees
 
-	bool m_bCastShadows = false;  // Reserved for future shadow mapping
+	// Reserved for future shadow mapping
+	ZENITH_PROPERTY(bool, m_bCastShadows, false)
 
 	// Position/direction offsets (added to transform component values)
 	bool m_bUsePositionOffset = false;
-	Zenith_Maths::Vector3 m_xPositionOffset = { 0.0f, 0.0f, 0.0f };
+	ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xPositionOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 	bool m_bUseDirectionOffset = false;
-	Zenith_Maths::Vector3 m_xDirectionOffset = { 0.0f, 0.0f, 0.0f };
+	ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xDirectionOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 };

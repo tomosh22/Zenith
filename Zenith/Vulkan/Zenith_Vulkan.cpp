@@ -1,5 +1,8 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#if defined(ZENITH_TOOLS) && defined(ZENITH_INPUT_SIMULATOR)
+#include "Core/Zenith_ImGuiBridgeHook.h"
+#endif
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
 
@@ -1163,6 +1166,17 @@ void Zenith_Vulkan::ImGuiBeginFrame()
 	ImGui_ImplVulkan_NewFrame();
 #ifdef ZENITH_WINDOWS
 	ImGui_ImplGlfw_NewFrame();
+#endif
+#if defined(ZENITH_TOOLS) && defined(ZENITH_INPUT_SIMULATOR)
+	// Simulated test input must be queued AFTER the GLFW backend's NewFrame
+	// (which polls the real OS cursor every focused frame) and BEFORE
+	// ImGui::NewFrame consumes the queue - last event wins, so simulated input
+	// deterministically overrides the hardware mouse while the simulator is
+	// enabled. See Core/Zenith_ImGuiBridgeHook.h.
+	if (g_pfnZenithImGuiSimulatedInput)
+	{
+		g_pfnZenithImGuiSimulatedInput();
+	}
 #endif
 	ImGui::NewFrame();
 }

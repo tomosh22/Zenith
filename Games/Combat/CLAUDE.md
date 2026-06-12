@@ -15,7 +15,7 @@ An arena-based combat game demonstrating Animation State Machines, Inverse Kinem
 | **Event System** | `Zenith_EventDispatcher` | Custom damage/death events with deferred dispatch |
 | **Entity Queries** | `Zenith_Query` | Finding enemies within attack radius |
 | **Physics Hit Detection** | `Zenith_ColliderComponent` | Capsule colliders for characters |
-| **Script Behaviours** | `Zenith_ScriptBehaviour` | OnCollisionEnter for hit registration |
+| **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks (OnAwake, OnStart, OnUpdate) |
 | **DataAsset Configuration** | `Zenith_DataAsset` | Combat tuning parameters |
 | **Multi-Scene Management** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
@@ -29,7 +29,9 @@ Games/Combat/
   Combat.cpp                     # Project entry points, resource initialization
   Components/
     Combat_Config.h              # DataAsset for combat tuning
-    Combat_Behaviour.h           # Main game coordinator
+    Combat_GameComponent.h       # Main game coordinator component
+    Combat_PlayerComponent.h/.cpp # Per-entity player component (controller/anim/IK/hit detection)
+    Combat_EnemyComponent.h/.cpp # Per-entity enemy component (wraps Combat_EnemyAI)
     Combat_PlayerController.h    # Movement + combat input handling
     Combat_AnimationController.h # Animation state machine wrapper
     Combat_IKController.h        # Foot placement + look-at IK
@@ -45,7 +47,7 @@ Games/Combat/
 ## Module Breakdown
 
 ### Combat.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Procedural capsule geometry generation for characters
@@ -54,8 +56,8 @@ Demonstrates:
 - Prefab creation for runtime instantiation
 - Event subscription for damage system
 
-### Combat_Behaviour.h - Main Coordinator
-**Engine APIs:** `Zenith_ScriptBehaviour`, lifecycle hooks
+### Combat_GameComponent.h - Main Coordinator
+**Engine APIs:** `Zenith_ComponentMetaRegistry` (registered as "CombatGame", order 100; player/enemy components at 101/102), lifecycle hooks
 
 Demonstrates:
 - Coordinator pattern delegating to specialized modules
@@ -142,7 +144,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-Persistent scene holds GameManager entity (Camera + UI + Combat_Behaviour) with DontDestroyOnLoad. Arena scene holds level entities (arena floor/walls, player, enemies), created/destroyed on transitions.
+Persistent scene holds GameManager entity (Camera + UI + Combat_GameComponent) with DontDestroyOnLoad. Arena scene holds level entities (arena floor/walls, player, enemies), created/destroyed on transitions.
 
 ### Game State Machine
 ```
@@ -230,7 +232,7 @@ Query entities via `xScene.Query<ComponentA, ComponentB>().ForEach()` with lambd
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + Script) - DontDestroyOnLoad
+- **GameManager** - Persistent entity (Camera + UI + CombatGame component) - DontDestroyOnLoad
 - **Player** - Player character entity with model, collider, and animation components
 - **ArenaFloor** - Ground plane for the combat arena
 - **ArenaWall_X** - Wall entities forming the arena boundary

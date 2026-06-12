@@ -2,9 +2,9 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
-#include "TilePuzzle/Components/TilePuzzle_Behaviour.h"
-#include "TilePuzzle/Components/Pinball_Behaviour.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "TilePuzzle/Components/TilePuzzle_GameComponent.h"
+#include "TilePuzzle/Components/Pinball_GameComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -30,13 +30,14 @@
 #include <unordered_set>
 
 #ifdef ZENITH_INPUT_SIMULATOR
-#include "TilePuzzle/Tests/TilePuzzle_AutoTest.h"
+#include "TilePuzzle/Tests/TilePuzzle_AutoTestComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #endif
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 #ifdef ZENITH_WINDOWS
@@ -1216,7 +1217,7 @@ static void LoadProceduralAssets()
 	// handle's Set() AddRefs the asset so UnloadUnusedAssets (fired on every
 	// SCENE_LOAD_SINGLE, e.g. transitioning into the pinball scene at level 10)
 	// leaves them alone. Storing the raw pointer would leave the asset at
-	// refcount 0 and crash later inside Pinball_Behaviour::CreateMaterials.
+	// refcount 0 and crash later inside Pinball_GameComponent::CreateMaterials.
 	Resources().m_xPinballBallMaterial.Set(
 		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT));
 	Resources().m_xPinballPegMaterial.Set(
@@ -1485,12 +1486,30 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions)
 static bool TilePuzzle_HasAutoTestFlag();
 #endif
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
 	Zenith_SaveData::Initialise("TilePuzzle");
 	InitializeTilePuzzleResources();
-	// TilePuzzle_Behaviour, Pinball_Behaviour, and TilePuzzle_AutoTest auto-register
-	// via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit calls needed).
+
+	// Register the game components with the component-meta registry
+	// (orders 100+ are unique per game, after the engine built-ins).
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	xRegistry.RegisterComponent<TilePuzzle_GameComponent>("TilePuzzleGame", 100);
+	xRegistry.RegisterComponent<Pinball_GameComponent>("PinballGame", 101);
+	xRegistry.RegisterComponent<Pinball_BallComponent>("PinballBall", 102);
+#ifdef ZENITH_INPUT_SIMULATOR
+	xRegistry.RegisterComponent<TilePuzzle_AutoTestComponent>("TilePuzzleAutoTest", 103);
+#endif
+
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
+	xEditorRegistry.RegisterComponent<TilePuzzle_GameComponent>("TilePuzzleGame");
+	xEditorRegistry.RegisterComponent<Pinball_GameComponent>("PinballGame");
+	xEditorRegistry.RegisterComponent<Pinball_BallComponent>("PinballBall");
+#ifdef ZENITH_INPUT_SIMULATOR
+	xEditorRegistry.RegisterComponent<TilePuzzle_AutoTestComponent>("TilePuzzleAutoTest");
+#endif
+#endif
 }
 
 void Project_Shutdown()
@@ -1685,8 +1704,8 @@ void Project_InitializeResources()
 	// ================================================================
 	// 4. Generate and write pinball data
 	// ================================================================
-	Pinball_Behaviour::GenerateAndWriteLayouts();
-	Pinball_Behaviour::GenerateAndWriteGateData();
+	Pinball_GameComponent::GenerateAndWriteLayouts();
+	Pinball_GameComponent::GenerateAndWriteGateData();
 
 	Zenith_Log(LOG_CATEGORY_GENERAL,
 		"Wrote pinball peg layouts and gate data to " GAME_ASSETS_DIR "Pinball/");
@@ -2587,8 +2606,8 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIColor("CreditsDismissText", 0.6f, 0.6f, 0.6f, 0.7f);
 	g_xEngine.EditorAutomation().AddStep_AddUIChild("CreditsOverlay", "CreditsDismissText");
 
-	// Script
-	g_xEngine.EditorAutomation().AddStep_AttachScript("TilePuzzle_Behaviour");
+	// Game component
+	g_xEngine.EditorAutomation().AddStep_AddComponent("TilePuzzleGame");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
@@ -2869,11 +2888,11 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetParticleConfigByName("VictoryConfetti");
 	g_xEngine.EditorAutomation().AddStep_SetParticleEmitting(false);
 
-	// Re-select GameManager for the script step
+	// Re-select GameManager for the component step
 	g_xEngine.EditorAutomation().AddStep_SelectEntity("GameManager");
 
-	// Script
-	g_xEngine.EditorAutomation().AddStep_AttachScript("TilePuzzle_Behaviour");
+	// Game component
+	g_xEngine.EditorAutomation().AddStep_AddComponent("TilePuzzleGame");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
@@ -3018,8 +3037,8 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	g_xEngine.EditorAutomation().AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
-	// Script
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Pinball_Behaviour");
+	// Game component
+	g_xEngine.EditorAutomation().AddStep_AddComponent("PinballGame");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
@@ -3043,14 +3062,13 @@ void Project_LoadInitialScene()
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "TilePuzzle --autotest mode enabled");
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "====================================");
 
-		// Create an entity in the active scene with the autotest behaviour
+		// Create an entity in the active scene with the autotest component
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 
 		Zenith_Entity xTestEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "AutoTestRunner");
 		xTestEntity.DontDestroyOnLoad();
-		Zenith_ScriptComponent& xScript = xTestEntity.AddComponent<Zenith_ScriptComponent>();
-		xScript.AddScript<TilePuzzle_AutoTest>();
+		xTestEntity.AddComponent<TilePuzzle_AutoTestComponent>();
 
 #ifdef ZENITH_TOOLS
 		// Switch editor to Playing mode so SceneManager::Update runs

@@ -7,7 +7,7 @@
 // DP_Player — published by B2 (player + camera + input).
 // Possession, cooldown, anchor-range gate, Devout channel, held-item table,
 // demon-scent table. State lives in the .cpp's anon namespace + on the
-// scene-owned DPPlayerController_Behaviour (held items, scent).
+// scene-owned DPPlayerController_Component (held items, scent).
 // ============================================================================
 namespace DP_Player
 {
@@ -48,23 +48,23 @@ namespace DP_Player
 	void ResetForNewRun();
 
 	// ========================================================================
-	// Cross-behaviour villager forwarders. These mediate other behaviours'
-	// access to DPVillager_Behaviour state so the caller's header doesn't have
-	// to include the villager header (cross-behaviour rule). Each resolves the
-	// villager script via Zenith_ScriptComponent and reads the requested field.
+	// Cross-component villager forwarders. These mediate other components'
+	// access to DPVillager_Component state so the caller's header doesn't have
+	// to include the villager header (cross-component rule). Each resolves the
+	// villager component on the entity and reads the requested field.
 	// ========================================================================
 
-	// True if the candidate resolves to a possessed DPVillager_Behaviour.
-	// Used by Priest_Behaviour's perception->BB bridge.
+	// True if the candidate resolves to a possessed DPVillager_Component.
+	// Used by Priest_Component's perception->BB bridge.
 	bool IsPossessedVillager(Zenith_EntityID xCandidate);
 
 	// True if the candidate is a villager whose archetype id == "Beggar".
-	// Used by Priest_Behaviour (Beggar invisible to Aelfric) + the player
+	// Used by Priest_Component (Beggar invisible to Aelfric) + the player
 	// controller's BeggarStealthAura.
 	bool IsBeggarVillager(Zenith_EntityID xCandidate);
 
 	// True if the villager is a "Child" archetype AND the tag is a tool tag.
-	// Used by DPItemBase_Behaviour's child-tool-refusal path.
+	// Used by DPItemBase_Component's child-tool-refusal path.
 	bool IsChildVillagerWithToolTag(Zenith_EntityID xVillager, DP_ItemTag eTag);
 
 	// Possessed-villager life accessors for the HUD. Return 0.0f when the
@@ -90,7 +90,7 @@ namespace DP_Player
 	// Enumerate every villager EntityID in the active scene via a plain
 	// function-pointer callback (std::function is forbidden engine-wide). The
 	// callback receives the villager id + the opaque pUserData. Lets a caller
-	// iterate villagers WITHOUT naming DPVillager_Behaviour at its call site
+	// iterate villagers WITHOUT naming DPVillager_Component at its call site
 	// (the type filter lives in the .cpp), so the caller's header doesn't need
 	// the villager header. Used by DPPlayerController's click-to-possess pick.
 	void ForEachVillagerInActiveScene(void (*pfnCallback)(Zenith_EntityID, void*),

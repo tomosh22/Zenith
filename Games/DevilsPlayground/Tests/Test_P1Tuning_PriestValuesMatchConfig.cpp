@@ -7,7 +7,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/Priest_Component.h"
 
 #include <cmath>
 
@@ -15,7 +15,7 @@
 // Test_P1Tuning_PriestValuesMatchConfig (MVP-0.1.3)
 //
 // Regression guard against the priest-tuning drift fixed in MVP-0.1.3.
-// Priest_Behaviour previously hardcoded sight=20, hearing=25, FOV=120,
+// Priest_Component previously hardcoded sight=20, hearing=25, FOV=120,
 // move=5, peripheral=FOV*1.25 — drift from GDD §4.5 / Tuning.json which
 // specify sight=25, hearing=30, FOV=110, pursue=7, peripheral=130. After
 // the migration the priest reads from DP_Tuning in OnAwake; this test
@@ -66,9 +66,9 @@ static bool Step_P1Tuning_PriestValuesMatchConfig(int iFrame)
 
 	case kPr_WaitPriest:
 	{
-		Priest_Behaviour* pxPriest = nullptr;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&pxPriest](Zenith_EntityID /*xId*/, Priest_Behaviour& xP) {
+		Priest_Component* pxPriest = nullptr;
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&pxPriest](Zenith_EntityID /*xId*/, Priest_Component& xP) {
 				if (pxPriest == nullptr) { pxPriest = &xP; }
 			});
 
@@ -122,7 +122,7 @@ static bool Verify_P1Tuning_PriestValuesMatchConfig()
 	if (!g_bFoundPriest)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"Test_P1Tuning_PriestValuesMatchConfig: no Priest_Behaviour in active scene after 120 frames");
+			"Test_P1Tuning_PriestValuesMatchConfig: no Priest_Component in active scene after 120 frames");
 		return false;
 	}
 
@@ -169,7 +169,7 @@ static const Zenith_AutomatedTest g_xPriestTuningTest = {
 	&Step_P1Tuning_PriestValuesMatchConfig,
 	&Verify_P1Tuning_PriestValuesMatchConfig,
 	180,
-	// m_bRequiresGraphics: GameLevel's priest entity attaches Priest_Behaviour
+	// m_bRequiresGraphics: GameLevel's priest entity attaches Priest_Component
 	// through the scene's full authoring chain (model load + script attach +
 	// AIAgent registration). On a fresh CI checkout where Assets/Meshes/ is
 	// gitignored, the priest entity may not fully spawn -- tag so headless CI

@@ -6,7 +6,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -40,24 +40,24 @@ static bool Verify_P5HUDTelegraphs()
 	char xBuf[80];
 
 	// ----- Awareness text + colour -----
-	DPHUDController_Behaviour::BuildAwarenessText(xBuf, sizeof(xBuf),
-		DPHUDController_Behaviour::AelfricState::Calm);
+	DPHUDController_Component::BuildAwarenessText(xBuf, sizeof(xBuf),
+		DPHUDController_Component::AelfricState::Calm);
 	if (std::strstr(xBuf, "Patrolling") == nullptr || std::strstr(xBuf, "~") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
 			"P5HUDTelegraphs: Calm awareness text wrong: \"%s\"", xBuf);
 		return false;
 	}
-	DPHUDController_Behaviour::BuildAwarenessText(xBuf, sizeof(xBuf),
-		DPHUDController_Behaviour::AelfricState::Suspicious);
+	DPHUDController_Component::BuildAwarenessText(xBuf, sizeof(xBuf),
+		DPHUDController_Component::AelfricState::Suspicious);
 	if (std::strstr(xBuf, "SUSPICIOUS") == nullptr || std::strstr(xBuf, "?") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
 			"P5HUDTelegraphs: Suspicious awareness text wrong: \"%s\"", xBuf);
 		return false;
 	}
-	DPHUDController_Behaviour::BuildAwarenessText(xBuf, sizeof(xBuf),
-		DPHUDController_Behaviour::AelfricState::Pursuing);
+	DPHUDController_Component::BuildAwarenessText(xBuf, sizeof(xBuf),
+		DPHUDController_Component::AelfricState::Pursuing);
 	if (std::strstr(xBuf, "PURSUING") == nullptr || std::strstr(xBuf, "!") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -67,11 +67,11 @@ static bool Verify_P5HUDTelegraphs()
 
 	// Awareness colours: Calm is green-dominant, Pursuing is red-dominant.
 	const Zenith_Maths::Vector4 xCalmColor =
-		DPHUDController_Behaviour::AwarenessColor(
-			DPHUDController_Behaviour::AelfricState::Calm, 0.0f);
+		DPHUDController_Component::AwarenessColor(
+			DPHUDController_Component::AelfricState::Calm, 0.0f);
 	const Zenith_Maths::Vector4 xPursuingColor =
-		DPHUDController_Behaviour::AwarenessColor(
-			DPHUDController_Behaviour::AelfricState::Pursuing, 0.0f);
+		DPHUDController_Component::AwarenessColor(
+			DPHUDController_Component::AelfricState::Pursuing, 0.0f);
 	if (!(xCalmColor.y > xCalmColor.x))
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -90,7 +90,7 @@ static bool Verify_P5HUDTelegraphs()
 	// ----- Scent bar -----
 	// At fScent=0, fThreshold=0.5: bar should be 10 cells, all empty,
 	// with a threshold separator after the 5th cell.
-	DPHUDController_Behaviour::BuildScentBar(xBuf, sizeof(xBuf), 0.0f, 0.5f);
+	DPHUDController_Component::BuildScentBar(xBuf, sizeof(xBuf), 0.0f, 0.5f);
 	if (std::strstr(xBuf, "Scent") == nullptr
 		|| std::strstr(xBuf, "[") == nullptr
 		|| std::strstr(xBuf, "]") == nullptr)
@@ -104,7 +104,7 @@ static bool Verify_P5HUDTelegraphs()
 	// separator). We confirm it contains "|" (the threshold marker)
 	// and at least 4 '#' characters (one less than 5 is acceptable
 	// rounding slack).
-	DPHUDController_Behaviour::BuildScentBar(xBuf, sizeof(xBuf), 0.5f, 0.5f);
+	DPHUDController_Component::BuildScentBar(xBuf, sizeof(xBuf), 0.5f, 0.5f);
 	{
 		int iHashes = 0;
 		for (const char* p = xBuf; *p; ++p) if (*p == '#') ++iHashes;
@@ -124,7 +124,7 @@ static bool Verify_P5HUDTelegraphs()
 		}
 	}
 	// At fScent=1.0, fThreshold=0.5: 10 cells filled.
-	DPHUDController_Behaviour::BuildScentBar(xBuf, sizeof(xBuf), 1.0f, 0.5f);
+	DPHUDController_Component::BuildScentBar(xBuf, sizeof(xBuf), 1.0f, 0.5f);
 	{
 		int iHashes = 0;
 		for (const char* p = xBuf; *p; ++p) if (*p == '#') ++iHashes;
@@ -140,9 +140,9 @@ static bool Verify_P5HUDTelegraphs()
 	// Scent colour: below threshold is purple-leaning, above threshold
 	// is red-dominant.
 	const Zenith_Maths::Vector4 xLowScent =
-		DPHUDController_Behaviour::ScentBarColor(0.2f, 0.5f);
+		DPHUDController_Component::ScentBarColor(0.2f, 0.5f);
 	const Zenith_Maths::Vector4 xHighScent =
-		DPHUDController_Behaviour::ScentBarColor(0.8f, 0.5f);
+		DPHUDController_Component::ScentBarColor(0.8f, 0.5f);
 	if (!(xLowScent.z > xLowScent.y))
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -159,7 +159,7 @@ static bool Verify_P5HUDTelegraphs()
 	}
 
 	// ----- Archetype status -----
-	const char* szBeggar = DPHUDController_Behaviour::BuildArchetypeStatusText("Beggar");
+	const char* szBeggar = DPHUDController_Component::BuildArchetypeStatusText("Beggar");
 	if (szBeggar == nullptr || std::strstr(szBeggar, "BEGGAR") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -167,7 +167,7 @@ static bool Verify_P5HUDTelegraphs()
 			szBeggar != nullptr ? szBeggar : "(null)");
 		return false;
 	}
-	const char* szDevout = DPHUDController_Behaviour::BuildArchetypeStatusText("Devout");
+	const char* szDevout = DPHUDController_Component::BuildArchetypeStatusText("Devout");
 	if (szDevout == nullptr || std::strstr(szDevout, "DEVOUT") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -175,7 +175,7 @@ static bool Verify_P5HUDTelegraphs()
 			szDevout != nullptr ? szDevout : "(null)");
 		return false;
 	}
-	const char* szChild = DPHUDController_Behaviour::BuildArchetypeStatusText("Child");
+	const char* szChild = DPHUDController_Component::BuildArchetypeStatusText("Child");
 	if (szChild == nullptr || std::strstr(szChild, "CHILD") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -184,7 +184,7 @@ static bool Verify_P5HUDTelegraphs()
 		return false;
 	}
 	// Farmhand has no special rule -> nullptr (HUD line hides).
-	const char* szFarmhand = DPHUDController_Behaviour::BuildArchetypeStatusText("Farmhand");
+	const char* szFarmhand = DPHUDController_Component::BuildArchetypeStatusText("Farmhand");
 	if (szFarmhand != nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
@@ -193,14 +193,14 @@ static bool Verify_P5HUDTelegraphs()
 	}
 
 	// ----- Locked-door alert -----
-	DPHUDController_Behaviour::BuildLockedDoorAlertText(xBuf, sizeof(xBuf), DP_ItemTag::Key);
+	DPHUDController_Component::BuildLockedDoorAlertText(xBuf, sizeof(xBuf), DP_ItemTag::Key);
 	if (std::strstr(xBuf, "LOCKED") == nullptr || std::strstr(xBuf, "Key") == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
 			"P5HUDTelegraphs: LockedDoor(Key) text wrong: \"%s\"", xBuf);
 		return false;
 	}
-	DPHUDController_Behaviour::BuildLockedDoorAlertText(
+	DPHUDController_Component::BuildLockedDoorAlertText(
 		xBuf, sizeof(xBuf), DP_ItemTag::SkeletonKey);
 	if (std::strstr(xBuf, "Skeleton") == nullptr)
 	{

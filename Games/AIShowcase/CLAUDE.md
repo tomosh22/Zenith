@@ -29,7 +29,7 @@ Games/AIShowcase/
 ├── CLAUDE.md                    # This file
 ├── AIShowcase.cpp               # Entry points, resource initialization
 ├── Components/
-│   └── AIShowcase_Behaviour.h   # Main game coordinator
+│   └── AIShowcase_GameComponent.h # Main game coordinator component
 └── Assets/
     └── Scenes/
         └── AIShowcase.zscen     # Generated scene file
@@ -143,7 +143,7 @@ Access via the AIShowcase properties panel checkbox or Zenith_DebugVariables sys
 ## Multi-Scene Architecture
 
 ### Entity Layout
-- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + ScriptComponent (AIShowcase_Behaviour). Survives scene transitions.
+- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + AIShowcaseGame component (AIShowcase_GameComponent). Survives scene transitions.
 - **Arena scene** (`m_xArenaScene`, named "Arena"): Contains all level entities (floor, walls, obstacles, player, enemies). Created on play, destroyed on return to menu.
 
 ### Game State Machine
@@ -159,7 +159,7 @@ MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
 Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start gameplay, `SetScenePaused(scene, true/false)` for pause/resume, and `UnloadScene()` to return to menu.
 
 ### Editor View / Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UIComponent + ScriptComponent/AIShowcase_Behaviour) - DontDestroyOnLoad
+- **GameManager** - Persistent entity (Camera + UIComponent + AIShowcaseGame component) - DontDestroyOnLoad
 - *(Arena scene "Arena", created at runtime)*
   - **Floor** - Arena ground plane with collider
   - **Wall_X** - Arena boundary walls

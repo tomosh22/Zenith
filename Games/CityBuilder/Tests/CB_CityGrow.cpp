@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_Zoning.h"
 #include "CityBuilder/Source/CB_BuildingPlacement.h"
@@ -25,10 +25,10 @@ static bool Step_CityGrow(int iFrame)
 {
 	if (!s_bBuilt)
 	{
-		CB_RoadController*     pxCtrl  = CB_CityManager_Behaviour::GetActiveRoadController();
-		CB_Zoning*             pxZone  = CB_CityManager_Behaviour::GetActiveZoning();
-		CB_TerrainHeightfield* pxField = CB_CityManager_Behaviour::GetActiveHeightfield();
-		CB_BuildingPlacement*  pxBuild = CB_CityManager_Behaviour::GetActiveBuild();
+		CB_RoadController*     pxCtrl  = CB_CityManagerComponent::GetActiveRoadController();
+		CB_Zoning*             pxZone  = CB_CityManagerComponent::GetActiveZoning();
+		CB_TerrainHeightfield* pxField = CB_CityManagerComponent::GetActiveHeightfield();
+		CB_BuildingPlacement*  pxBuild = CB_CityManagerComponent::GetActiveBuild();
 		if (pxCtrl != nullptr && pxZone != nullptr && pxField != nullptr && pxBuild != nullptr)
 		{
 			pxCtrl->SetRoadClass(CB_ROADCLASS_MEDIUM);
@@ -62,8 +62,8 @@ static bool Step_CityGrow(int iFrame)
 
 static bool Verify_CityGrow()
 {
-	CB_BuildingPlacement* pxBuild = CB_CityManager_Behaviour::GetActiveBuild();
-	CB_RoadController*     pxCtrl  = CB_CityManager_Behaviour::GetActiveRoadController();
+	CB_BuildingPlacement* pxBuild = CB_CityManagerComponent::GetActiveBuild();
+	CB_RoadController*     pxCtrl  = CB_CityManagerComponent::GetActiveRoadController();
 	if (pxBuild == nullptr || pxCtrl == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "CB_CityGrow: missing controller/build");

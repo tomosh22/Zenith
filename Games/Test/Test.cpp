@@ -18,8 +18,10 @@ const char* Project_GetGameAssetsDirectory()
 	return GAME_ASSETS_DIR;
 }
 
-#include "Test/Components/SphereMovement_Behaviour.h"
-#include "Test/Components/PlayerController_Behaviour.h"
+#include "Test/Components/Test_HookesLawComponent.h"
+#include "Test/Components/Test_RotationComponent.h"
+#include "Test/Components/Test_PlayerControllerComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -34,16 +36,28 @@ const char* Project_GetGameAssetsDirectory()
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
-	// All behaviours auto-register via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit calls needed).
-	// Function retained as a per-game lifecycle hook called during engine startup.
+	// Register the game components with the component-meta registry
+	// (orders 100+ are unique per game, after the engine built-ins).
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	xRegistry.RegisterComponent<Test_PlayerControllerComponent>("TestPlayerController", 100);
+	xRegistry.RegisterComponent<Test_HookesLawComponent>("TestHookesLaw", 101);
+	xRegistry.RegisterComponent<Test_RotationComponent>("TestRotation", 102);
+
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
+	xEditorRegistry.RegisterComponent<Test_PlayerControllerComponent>("TestPlayerController");
+	xEditorRegistry.RegisterComponent<Test_HookesLawComponent>("TestHookesLaw");
+	xEditorRegistry.RegisterComponent<Test_RotationComponent>("TestRotation");
+#endif
 }
 
 void Project_Shutdown()

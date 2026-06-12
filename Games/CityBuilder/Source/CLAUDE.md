@@ -173,16 +173,16 @@ Plain POD event payloads dispatched via `Zenith_EventDispatcher`: `CB_OnToolSele
 CityBuilder layer over the engine `Zenith_Telemetry` recorder. `Begin/End/NextFrame/ShouldSampleThisFrame/SampleCity/EmitSessionEnd`; `Hooks` (RAII subscribes to all `CB_On*` → forwards to the recorder); `Summarize()→Summary` (peak pop/buildings, event counts) + `LogSummary`. Writes `.ztlm` + `.json` (+ optional CSV). 10 Hz sampling at fixed 60 fps.
 
 ### CB_ToolIcons.h
-Runtime-safe shared metadata (icon base-name + tooltip) for the 20 toolbar buttons. `Def { szIcon, szTooltip }`, `All(&count)`. **Order must match `CB_CityManager_Behaviour::ToolDescs()`** so tool indices align. Icons load at runtime from `game:UI/Icons/cb_<name>.ztxtr`.
+Runtime-safe shared metadata (icon base-name + tooltip) for the 20 toolbar buttons. `Def { szIcon, szTooltip }`, `All(&count)`. **Order must match `CB_CityManagerComponent::ToolDescs()`** so tool indices align. Icons load at runtime from `game:UI/Icons/cb_<name>.ztxtr`.
 
 ### CB_ToolIconGen.h
 Tools-build-only procedural icon drawing: pure-CPU `Canvas` primitives (`rect/disc/seg/poly/tri/star`), `DrawGlyph(idx)` (white-on-transparent + dark outline), 4× supersample + alpha-weighted `Downsample`, `RenderToolIcon(idx,outSize,&out)`. 20 hardcoded glyphs (a new tool needs a new case).
 
 ### CB_CameraController.h
-Pure RTS orbit/pan/zoom math (no engine/input types), unit-testable. State `m_xTarget`(=2048,0,2048), `m_fDistance`(400), `m_fYaw`, `m_fPitch`(0.95). `Zoom`/`Rotate`/`Pan` (clamped: dist 30..2500, pitch 0.20..1.45), `ComputeCamera(&pos,&yaw,&pitch)` in `Zenith_CameraComponent` convention. Applied by `CB_CityCamera_Behaviour`.
+Pure RTS orbit/pan/zoom math (no engine/input types), unit-testable. State `m_xTarget`(=2048,0,2048), `m_fDistance`(400), `m_fYaw`, `m_fPitch`(0.95). `Zoom`/`Rotate`/`Pan` (clamped: dist 30..2500, pitch 0.20..1.45), `ComputeCamera(&pos,&yaw,&pitch)` in `Zenith_CameraComponent` convention. Applied by `CB_CityCameraComponent`.
 
 ### CB_DayNight.h
-Pure day clock + sun math. `m_fTimeOfDay`(0..1), `m_fDayLengthSecs`(120). `Advance(dt)`, `IsDay()` (0.25<t<0.75), `GetSunElevation()` (sine, 0 night → 1 noon), `GetSunDirection()` (normalized light dir). Applied by `CB_DayNightCycle_Behaviour`.
+Pure day clock + sun math. `m_fTimeOfDay`(0..1), `m_fDayLengthSecs`(120). `Advance(dt)`, `IsDay()` (0.25<t<0.75), `GetSunElevation()` (sine, 0 night → 1 noon), `GetSunDirection()` (normalized light dir). Applied by `CB_DayNightCycleComponent`.
 
 ---
 

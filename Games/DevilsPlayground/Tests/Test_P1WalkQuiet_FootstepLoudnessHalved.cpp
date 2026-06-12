@@ -12,7 +12,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -23,7 +23,7 @@
 //
 // Verifies that holding Ctrl ("walk-quiet") halves the loudness of
 // every emitted footstep. The data path goes:
-//   DPVillager_Behaviour::TickFootsteps
+//   DPVillager_Component::TickFootsteps
 //     -> Zenith_AudioBus::EmitSound(name, pos, loudness, radius)
 //     -> Zenith_PerceptionSystem::EmitSoundStimulus(...) [same loudness]
 //
@@ -123,8 +123,8 @@ static bool Step_P1WalkQuiet(int iFrame)
 	case kWQ_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});

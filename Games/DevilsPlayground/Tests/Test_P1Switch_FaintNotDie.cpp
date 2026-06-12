@@ -12,7 +12,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -98,8 +98,8 @@ namespace
 	{
 		struct VPos { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<VPos> axVs;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axVs](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axVs](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				VPos xV; xV.xId = xId;
 				if (TryGetEntityPos(xId, xV.xPos)) axVs.PushBack(xV);
@@ -114,14 +114,13 @@ namespace
 		}
 	}
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -186,7 +185,7 @@ static bool Step_P1FaintNotDie(int iFrame)
 
 	case kFN_Snapshot:
 	{
-		DPVillager_Behaviour* pxA = GetVillagerBehaviour(g_xA);
+		DPVillager_Component* pxA = GetVillagerBehaviour(g_xA);
 		if (pxA != nullptr)
 		{
 			g_eAFinalState = pxA->GetState();

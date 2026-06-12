@@ -2,7 +2,7 @@
   "name": "Test_P2Fog_MemoryDimsAfter10s",
   "passed": true,
   "frames": 1,
-  "durationMs": 16.587,
+  "durationMs": 0.081,
   "failures": [],
   "skipped": false
 }

@@ -4,9 +4,6 @@
     <ClCompile Include="..\Marble.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Marble_Behaviour.h">
-      <Filter>Components</Filter>
-    </ClInclude>
     <ClInclude Include="..\Components\Marble_CameraFollow.h">
       <Filter>Components</Filter>
     </ClInclude>
@@ -14,6 +11,9 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Marble_Config.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Marble_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Marble_Input.h">

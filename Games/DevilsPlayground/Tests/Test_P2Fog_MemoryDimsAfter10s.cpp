@@ -9,7 +9,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "../Components/DPFogPass_Behaviour.h"
+#include "../Components/DPFogPass_Component.h"
 
 #include <cstdio>
 
@@ -75,14 +75,15 @@ static void Setup_P2MemoryFog()
 	g_iFailureStep = 0;
 
 	// 2026-05-17 ownership refactor: DP_Fog memory-reveals table moved
-	// onto DPFogPass_Behaviour::m_xMemoryReveals. Spin up a scene with
-	// the script attached so the DP_Fog::Record/Get/Tick forwarders
-	// actually do something (no-ops without an Instance()).
+	// onto DPFogPass_Component::m_xMemoryReveals. Spin up a scene with
+	// the component attached so the DP_Fog::Record/Get/Tick forwarders
+	// actually do something (no-ops without an Instance()). OnAwake is
+	// called by hand: a WITHOUT_LOADING scene is never activated, so the
+	// engine awake wave-drain never visits it.
 	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("MemoryFogTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xFogEntity = g_xEngine.Scenes().CreateEntity(pxScene, "FogPassEntity");
-	xFogEntity.AddComponent<Zenith_ScriptComponent>()
-		.AddScript<DPFogPass_Behaviour>();
+	xFogEntity.AddComponent<DPFogPass_Component>().OnAwake();
 
 	// Ensure clean state -- the between-tests reset hook should have
 	// cleared this already, but belt-and-braces.

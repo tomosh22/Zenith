@@ -18,7 +18,7 @@
 #include "UI/Zenith_UIButton.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -113,12 +113,12 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 	case kFEP_WaitGameLevel:
 	{
 		++g_iWaitFrames;
-		// Wait until GameLevel-specific entities (DPVillager_Behaviour) are
+		// Wait until GameLevel-specific entities (DPVillager_Component) are
 		// in the active scene. That's a reliable proxy for "scene 1 swapped
 		// in cleanly."
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iCount](Zenith_EntityID, DPVillager_Behaviour&) { ++iCount; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iCount](Zenith_EntityID, DPVillager_Component&) { ++iCount; });
 		if (iCount > 0)
 		{
 			g_bGameLevelLoaded = true;
@@ -177,8 +177,8 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 		int iWithCollider = 0, iWithBody = 0;
 		int iRaycastHits = 0;
 		float fMinY = 1e9f, fMaxY = -1e9f;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				Zenith_SceneData* pxSceneV = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 				if (!pxSceneV) return;
@@ -245,7 +245,7 @@ static bool Verify_FrontEndPlay()
 	if (!g_bFrontEndLoaded)         return false;
 	if (!g_bGameLevelLoaded)        return false;
 	if (!g_bMainCameraSet)          return false;
-	// DPOrbitCamera_Behaviour overrides the authored camera each frame
+	// DPOrbitCamera_Component overrides the authored camera each frame
 	// with a bird's-eye view orbiting the map centre (50,0,50) at radius
 	// 90 m + ~83° down → camera Y around 89 m. Anything below 50 m
 	// signals the orbit camera regressed to a third-person follow or to

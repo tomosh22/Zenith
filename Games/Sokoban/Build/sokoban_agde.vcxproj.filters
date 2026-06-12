@@ -7,10 +7,10 @@
     <ClInclude Include="..\Components\Sokoban_Animation.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Sokoban_Behaviour.h">
+    <ClInclude Include="..\Components\Sokoban_Config.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Sokoban_Config.h">
+    <ClInclude Include="..\Components\Sokoban_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Sokoban_GridLogic.h">

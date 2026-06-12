@@ -362,3 +362,5 @@ static void Zenith_GatherLightsImpl(Zenith_Vector<Zenith_LightRenderData>& xOut)
 // Published to the renderer. Constant-initialised, so referencing g_pfnZenithLightGather
 // from Flux_DynamicLights pulls this TU in (no static-init-order or dead-strip hazard).
 Zenith_LightGatherFn g_pfnZenithLightGather = &Zenith_GatherLightsImpl;
+
+#include "EntityComponent/Components/Zenith_LightComponent.Tests.inl"

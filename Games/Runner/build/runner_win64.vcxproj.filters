@@ -7,9 +7,6 @@
     <ClInclude Include="..\Components\Runner_AnimationDriver.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Runner_Behaviour.h">
-      <Filter>Components</Filter>
-    </ClInclude>
     <ClInclude Include="..\Components\Runner_CharacterController.h">
       <Filter>Components</Filter>
     </ClInclude>
@@ -17,6 +14,9 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Runner_Config.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Runner_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Runner_ParticleManager.h">

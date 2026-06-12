@@ -84,7 +84,7 @@ namespace
 	{
 		DPProcLevel::GenConfig xCfg;
 		// Mirror the runtime override applied by
-		// DPProcLevelBootstrap_Behaviour.h so the test exercises the
+		// DPProcLevelBootstrap_Component.h so the test exercises the
 		// same wall thickness the player sees.
 		xCfg.fWallHalfThickness = 0.4f;
 

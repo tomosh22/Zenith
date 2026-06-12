@@ -17,9 +17,9 @@
 // Wave-19: AnimatorComponent.h is a Flux-include-free forwarding handle now;
 // this TU uses the complete Flux_AnimationController type directly (GetController()).
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -38,12 +38,13 @@
 #include "UI/Zenith_UI.h"
 #include "Zenith_OS_Include.h"
 
-// Header-only behaviours: must be included into a compiled TU so their
-// ZENITH_BEHAVIOUR_TYPE_NAME auto-registers the factory at startup.
-#include "RenderTest/Components/RenderTest_PlayerBehaviour.h"
-#include "RenderTest/Components/RenderTest_FollowCamera.h"
+// Header-only game components: included into this TU so the
+// ZENITH_REGISTER_COMPONENT thunks below can name the complete types.
+#include "RenderTest/Components/RenderTest_PlayerComponent.h"
+#include "RenderTest/Components/RenderTest_FollowCameraComponent.h"
 
 #ifdef ZENITH_TOOLS
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
@@ -516,26 +517,23 @@ static bool RenderTest_LogIKOnSurfaceState(uint32_t uFrame, float fExpectedSurfa
 	return bPass && RenderTest_LogIKSmokeState(uFrame);
 }
 
-class RenderTest_SmokeRunner : public Zenith_ScriptBehaviour
+class RenderTest_SmokeRunnerComponent
 {
-	friend class Zenith_ScriptComponent;
 public:
-	ZENITH_BEHAVIOUR_TYPE_NAME(RenderTest_SmokeRunner)
-
-	RenderTest_SmokeRunner() = delete;
-	RenderTest_SmokeRunner(Zenith_Entity& xParentEntity)
+	RenderTest_SmokeRunnerComponent() = delete;
+	RenderTest_SmokeRunnerComponent(Zenith_Entity& xParentEntity)
+		: m_xParentEntity(xParentEntity)
 	{
-		m_xParentEntity = xParentEntity;
 	}
 
-	void OnStart() override
+	void OnStart()
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN,
 			"[RenderTestSmoke] starting bounded terrain smoke run frameLimit=%u",
 			s_uRenderTestSmokeFrameLimit);
 	}
 
-	void OnUpdate(float) override
+	void OnUpdate(float)
 	{
 		m_uFrame++;
 
@@ -545,8 +543,8 @@ public:
 
 			// IK chain registration / no-NaN check. Warm-up gate: chain
 			// registration runs in the player's OnStart, which fires after the
-			// scripts are dispatched — give it 60 frames to settle before
-			// validating.
+			// pending-start components are dispatched — give it 60 frames to
+			// settle before validating.
 			if (m_uFrame >= 60)
 			{
 				m_bPassed = RenderTest_LogIKSmokeState(m_uFrame) && m_bPassed;
@@ -579,11 +577,11 @@ public:
 		// Decal smoke: fire several shots straight down at the platform between
 		// frames 210-220. Each shot exercises the full chain (raycast → decal
 		// spawn → CPU pool → GPU upload → render-graph passes), and the
-		// per-stage diagnostic logs in Flux_Decals + PlayerBehaviour::Shoot
+		// per-stage diagnostic logs in Flux_Decals + RenderTest_PlayerComponent::Shoot
 		// pinpoint where the chain breaks if decals don't appear in the frame.
 		if (m_uFrame == 210 || m_uFrame == 215 || m_uFrame == 220)
 		{
-			RenderTest_PlayerBehaviour* pxPlayer = RenderTest_PlayerBehaviour::GetActiveInstance();
+			RenderTest_PlayerComponent* pxPlayer = RenderTest_PlayerComponent::GetActiveInstance();
 			if (pxPlayer)
 			{
 				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
@@ -593,7 +591,7 @@ public:
 			else
 			{
 				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
-					"[DECAL_SMOKE] frame %u: PlayerBehaviour instance not registered yet", m_uFrame);
+					"[DECAL_SMOKE] frame %u: PlayerComponent instance not registered yet", m_uFrame);
 			}
 		}
 
@@ -624,6 +622,26 @@ public:
 			RenderTest_RequestClose();
 		}
 	}
+
+	// Component contract. The smoke runner is pure runtime probe state; only
+	// the version tag persists.
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		const u_int uVersion = 1;
+		xStream << uVersion;
+	}
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0;
+		xStream >> uVersion;
+	}
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		ImGui::Text("Frame: %u", m_uFrame);
+		ImGui::Text("Passed so far: %s", m_bPassed ? "true" : "false");
+	}
+#endif
 
 private:
 	// Teleport the player's physics body to a target world position. Used by the
@@ -682,12 +700,32 @@ private:
 		}
 	}
 
+	Zenith_Entity m_xParentEntity;
+
 	uint32_t m_uFrame = 0;
 	bool m_bPassed = true;
 	Zenith_Vector<RenderTest_ResidencySnapshot> m_axSnapshotT0;
 	Zenith_Vector<RenderTest_ResidencySnapshot> m_axSnapshotT1;
 	Zenith_Vector<RenderTest_ResidencySnapshot> m_axSnapshotT2;
 };
+
+// Component-meta registration (serialization + lifecycle dispatch). These MUST
+// go through the ZENITH_REGISTER_COMPONENT static-init thunks, NOT direct
+// RegisterComponent calls from Project_RegisterGameComponents: the engine
+// seals the meta registry (EnsureInitialized -> Finalize, which builds the
+// sorted dispatch list) in Zenith_Engine::InitialiseECS, BEFORE
+// Project_RegisterGameComponents runs in InitialiseProject. A post-seal
+// RegisterComponent call lands in the name map but never in the sorted list,
+// so the component would silently never serialize nor receive OnUpdate. The
+// thunks enqueue at static-init and are drained by the boot-time
+// EnsureInitialized, landing the types in the sealed sorted list. Dead-strip
+// safety: this TU defines Project_GetName etc., so its .obj is always linked.
+// Orders 100+ keep game components after every engine built-in (Transform=0
+// ... ParticleEmitter=85, AIAgent=90) — in particular the player's OnUpdate
+// runs after the Animator's component update, matching the old script phase.
+ZENITH_REGISTER_COMPONENT(RenderTest_FollowCameraComponent, "RenderTestFollowCamera", 100u)
+ZENITH_REGISTER_COMPONENT(RenderTest_PlayerComponent, "RenderTestPlayer", 101u)
+ZENITH_REGISTER_COMPONENT(RenderTest_SmokeRunnerComponent, "RenderTestSmokeRunner", 102u)
 
 // (ExportColoredTexture/CreateFlatColorMaterial used to live here for the
 // flat-teal player material — the StickFigure .zmodel now bundles its own
@@ -1125,8 +1163,20 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
+	// Component-meta registration happens via the ZENITH_REGISTER_COMPONENT
+	// thunks next to the class definitions (see the comment there for why it
+	// cannot live here). This hook only mirrors the components into the editor
+	// "Add Component" registry, which is append-any-time (no seal) and is what
+	// AddStep_AddComponent resolves display names against.
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
+	xEditorRegistry.RegisterComponent<RenderTest_FollowCameraComponent>("RenderTestFollowCamera");
+	xEditorRegistry.RegisterComponent<RenderTest_PlayerComponent>("RenderTestPlayer");
+	xEditorRegistry.RegisterComponent<RenderTest_SmokeRunnerComponent>("RenderTestSmokeRunner");
+#endif
+
 	s_uRenderTestSmokeFrameLimit = RenderTest_GetCommandLineUInt("--rendertest-smoke-frames=", 240);
 	InitializeRenderTestResources();
 }
@@ -1245,7 +1295,7 @@ void Project_RegisterEditorAutomationSteps()
 	using namespace Flux_TerrainConfig;
 
 	// Resources (cube model + stick figure model + materials) are initialized
-	// from Project_RegisterScriptBehaviours, which runs before automation steps.
+	// from Project_RegisterGameComponents, which runs before automation steps.
 
 	// Terrain authoring: the engine terrain editor GENERATES the terrain
 	// deterministically (seed 1337 + integer-hash noise => byte-identical
@@ -1314,7 +1364,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	g_xEngine.EditorAutomation().AddStep_CreateScene("RenderTest");
 
-	// GameManager — main camera with follow-camera script.
+	// GameManager — main camera with follow-camera component.
 	// Initial position is approximate; the FollowCamera overwrites it on the
 	// first OnLateUpdate to track the player at the over-the-shoulder offset.
 	// Pitch starts at the shooter angle so the editor preview matches the
@@ -1334,7 +1384,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetCameraNear(0.1f);
 	g_xEngine.EditorAutomation().AddStep_SetCameraFar(10000.0f);
 	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
-	g_xEngine.EditorAutomation().AddStep_AttachScript("RenderTest_FollowCamera");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("RenderTestFollowCamera");
 
 	// Terrain — fully expressible via the new automation steps.
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestTerrain");
@@ -1414,13 +1464,13 @@ void Project_RegisterEditorAutomationSteps()
 	// The .zmodel bundles the painted-atlas body material — no override step.
 	g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
 	g_xEngine.EditorAutomation().AddStep_AddAnimator();
-	// Muzzle flash emitter lives on the Player entity; the player behaviour
+	// Muzzle flash emitter lives on the Player entity; the player component
 	// overrides its emit position+direction per shot so we don't need a
 	// separate gun-barrel child entity.
 	g_xEngine.EditorAutomation().AddStep_AddParticleEmitter();
 	g_xEngine.EditorAutomation().AddStep_SetParticleConfigByName("RenderTest_MuzzleFlash");
 	g_xEngine.EditorAutomation().AddStep_SetParticleEmitting(false);
-	g_xEngine.EditorAutomation().AddStep_AttachScript("RenderTest_PlayerBehaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("RenderTestPlayer");
 
 	// HUD canvas — crosshair (5 small UIRects) + ammo counter text.
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("HUD");
@@ -1469,7 +1519,7 @@ void Project_RegisterEditorAutomationSteps()
 	{
 		g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestSmokeRunner");
 		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
-		g_xEngine.EditorAutomation().AddStep_AttachScript("RenderTest_SmokeRunner");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("RenderTestSmokeRunner");
 	}
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
@@ -1576,7 +1626,8 @@ void Project_LoadInitialScene()
 	// real scene arrived.
 }
 
-// Input-simulator tests for RenderTest_FollowCamera + RenderTest_PlayerBehaviour.
-// Included here (rather than from a Zenith engine TU) so the auto-registered
-// ZENITH_TEST cases land in the RenderTest binary's test runner.
-#include "RenderTest/Components/RenderTest_PlayerBehaviour.Tests.inl"
+// Input-simulator tests for RenderTest_FollowCameraComponent +
+// RenderTest_PlayerComponent. Included here (rather than from a Zenith engine
+// TU) so the auto-registered ZENITH_TEST cases land in the RenderTest binary's
+// test runner.
+#include "RenderTest/Components/RenderTest_PlayerComponent.Tests.inl"

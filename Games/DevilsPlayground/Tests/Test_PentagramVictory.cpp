@@ -10,8 +10,8 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPPentagram_Component.h"
 
 // ============================================================================
 // PentagramVictory_Test
@@ -30,7 +30,7 @@
 //          fires (range exit clears m_bWasInRangeLastFrame).
 //   5. After 5 cycles, verify DP_Win::HasWon() and DP_OnVictory fired.
 //
-// Note: because DPInteractable_Behaviour::OnEnterRange polls
+// Note: because DPInteractable_Base::OnEnterRange polls
 // DP_Input::ReadInteractPressed (F-press), and our headless harness has no
 // keyboard input, the on-overlap path is taken instead. The pentagram is
 // configured with bInteractOnOverlap=false by default, so we'd never trigger.
@@ -155,8 +155,8 @@ static bool Step_PentagramVictory(int iFrame)
 	case kPV_WaitScene:
 	{
 		Zenith_EntityID xFoundV;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundV](Zenith_EntityID xId, DPVillager_Behaviour&) { xFoundV = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundV](Zenith_EntityID xId, DPVillager_Component&) { xFoundV = xId; });
 		if (xFoundV.IsValid())
 		{
 			g_xPVVillager = xFoundV;
@@ -172,8 +172,8 @@ static bool Step_PentagramVictory(int iFrame)
 	case kPV_FindPentagram:
 	{
 		Zenith_EntityID xFoundP;
-		DP_Query::ForEachScriptInActiveScene<DPPentagram_Behaviour>(
-			[&xFoundP](Zenith_EntityID xId, DPPentagram_Behaviour&) { xFoundP = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
+			[&xFoundP](Zenith_EntityID xId, DPPentagram_Component&) { xFoundP = xId; });
 		if (xFoundP.IsValid())
 		{
 			g_xPVPentagram = xFoundP;

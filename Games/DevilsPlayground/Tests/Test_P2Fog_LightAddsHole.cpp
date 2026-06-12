@@ -9,7 +9,7 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -17,15 +17,15 @@
 // Test_P2Fog_LightAddsHole (MVP-2.4.4)
 //
 // Pins the "lights contribute fog holes" half of the GDD §4.6 fog
-// contract. After DPFogPass_Behaviour::OnUpdate runs, the registered
+// contract. After DPFogPass_Component::OnUpdate runs, the registered
 // fog hole count equals (villager count) + (light count) -- no more,
 // no less. Counts are taken from the active scene.
 //
 // Procedure:
 //   1. Load GameLevel.
-//   2. Tick a few frames so DPFogPass_Behaviour::OnUpdate runs at
+//   2. Tick a few frames so DPFogPass_Component::OnUpdate runs at
 //      least once (rebuilds the table from scratch each frame).
-//   3. Count villagers via DP_Query::ForEachScriptInActiveScene.
+//   3. Count villagers via DP_Query::ForEachComponentInActiveScene.
 //   4. Count lights via the scene's Query<Zenith_LightComponent>.
 //   5. Get DP_Fog::GetFogHoleCount().
 //   6. Assert holeCount == villagerCount + lightCount.
@@ -85,8 +85,8 @@ static bool Step_P2FogLightAddsHole(int iFrame)
 		// Wait until at least one villager exists (proxy for "scene
 		// fully OnAwoken").
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iCount](Zenith_EntityID, DPVillager_Behaviour&) { ++iCount; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iCount](Zenith_EntityID, DPVillager_Component&) { ++iCount; });
 		if (iCount > 0)
 		{
 			g_iPhase = kFL_Tick;
@@ -109,8 +109,8 @@ static bool Step_P2FogLightAddsHole(int iFrame)
 		// Count villagers and lights using the same loops DPFogPass
 		// uses internally, so a mismatch means producers <-> consumer
 		// disagree on what's in scope.
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[](Zenith_EntityID, DPVillager_Behaviour&) { ++g_iVillagerCount; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[](Zenith_EntityID, DPVillager_Component&) { ++g_iVillagerCount; });
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene != nullptr)

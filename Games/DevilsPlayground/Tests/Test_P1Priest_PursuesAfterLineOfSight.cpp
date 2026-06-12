@@ -13,8 +13,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
@@ -34,7 +34,7 @@
 //      at priest_pos + (0, 0, +4)).
 //   5. Possess the villager.
 //   6. Tick frames; the perception system's UpdateSightPerception runs
-//      every frame via DPPlayerController_Behaviour::OnUpdate's
+//      every frame via DPPlayerController_Component::OnUpdate's
 //      `Zenith_PerceptionSystem::Update(fDt)` call. With awareness
 //      gain rate ~2.0/s the priest's awareness of the villager
 //      crosses any reasonable threshold within ~1 s.
@@ -145,10 +145,10 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 	case kLS_WaitScene:
 	{
 		Zenith_EntityID xFoundPriest, xFoundVillager;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundPriest](Zenith_EntityID xId, Priest_Behaviour&) { xFoundPriest = xId; });
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundVillager](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundPriest](Zenith_EntityID xId, Priest_Component&) { xFoundPriest = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundVillager](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFoundVillager.IsValid()) xFoundVillager = xId;
 			});
@@ -169,7 +169,7 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 	{
 		// MVP-1.9 setup: register the villager with the perception
 		// system as a HOSTILE target so the priest's sight pass
-		// considers it. Production DPVillager_Behaviour doesn't
+		// considers it. Production DPVillager_Component doesn't
 		// self-register today (the omniscient fallback obviated that
 		// for the pre-1.9 tests); a future PR can wire OnAwake
 		// registration once the production gameplay loop needs sight

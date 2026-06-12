@@ -39,7 +39,6 @@ class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
-class Zenith_ScriptAsset;
 
 // Forward declare .zdata loader (defined in .cpp, used by RegisterAssetType<T>)
 Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);

@@ -13,9 +13,9 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -49,7 +49,7 @@ namespace
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xForge;
 	Zenith_EntityID         g_xInput;
-	DPForge_Behaviour*      g_pxForge = nullptr;
+	DPForge_Component*      g_pxForge = nullptr;
 
 	Zenith_EntityID         g_xHeldAfter;
 	DP_ItemTag              g_eHeldTagAfter = DP_ItemTag::None;
@@ -80,8 +80,8 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 	case kFS_WaitScene:
 		{
 			int iCount = 0;
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[&iCount](Zenith_EntityID, DPVillager_Behaviour&) { ++iCount; });
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+				[&iCount](Zenith_EntityID, DPVillager_Component&) { ++iCount; });
 			if (iCount > 0)
 			{
 				g_iPhase = kFS_BuildForge;
@@ -98,8 +98,8 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxScene == nullptr) { g_iPhase = kFS_Done; return false; }
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!g_xVillager.IsValid()) g_xVillager = xId;
 			});
@@ -112,8 +112,7 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
 				Zenith_Maths::Vector3(-60.0f, 0.0f, -60.0f));
 		}
-		g_pxForge = xForge.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPForge_Behaviour>();
+		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 		if (g_pxForge != nullptr)
 		{
 			g_pxForge->SetRecipe(DP_ItemTag::Iron, DP_ItemTag::SkeletonKey);
@@ -137,8 +136,7 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 		}
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-		DPItemBase_Behaviour* pxItemBase = xInput.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPItemBase_Behaviour>();
+		DPItemBase_Component* pxItemBase = &xInput.AddComponent<DPItemBase_Component>();
 		if (pxItemBase != nullptr) pxItemBase->SetTag(DP_ItemTag::Iron);
 		DP_Player::SetHeldItem(g_xVillager, g_xInput);
 		g_iPhase = kFS_Craft;

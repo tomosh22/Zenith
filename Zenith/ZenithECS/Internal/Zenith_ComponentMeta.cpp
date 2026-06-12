@@ -299,7 +299,7 @@ namespace
 	// loop lives here exactly once (pfnHook is a pointer-to-member naming the field).
 	//
 	// The IsValid() probe between iterations is load-bearing: a user-side hook
-	// (typically ScriptComponent::OnUpdate dispatching to a Zenith_ScriptBehaviour)
+	// (typically a component OnUpdate hook dispatching into game logic)
 	// may call xEntity.DestroyImmediate() on itself. Once the slot is freed, the next
 	// iteration's m_pfnHasComponent lookup would assert "Entity has no scene". The
 	// regression is covered by Scene::DestroyImmediateDuringSelfOnUpdate.
@@ -362,6 +362,24 @@ void Zenith_ComponentMetaRegistry::DispatchOnFixedUpdate(Zenith_Entity& xEntity,
 {
 	EnsureInitialized();
 	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnFixedUpdate, fDt);
+}
+
+void Zenith_ComponentMetaRegistry::DispatchOnCollisionEnter(Zenith_Entity& xEntity, Zenith_Entity& xOther) const
+{
+	EnsureInitialized();
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnCollisionEnter, xOther);
+}
+
+void Zenith_ComponentMetaRegistry::DispatchOnCollisionStay(Zenith_Entity& xEntity, Zenith_Entity& xOther) const
+{
+	EnsureInitialized();
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnCollisionStay, xOther);
+}
+
+void Zenith_ComponentMetaRegistry::DispatchOnCollisionExit(Zenith_Entity& xEntity, Zenith_EntityID xOtherID) const
+{
+	EnsureInitialized();
+	DispatchLifecycleHook(m_xMetasSorted, xEntity, &Zenith_ComponentMeta::m_pfnOnCollisionExit, xOtherID);
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnDestroy(Zenith_Entity& xEntity) const

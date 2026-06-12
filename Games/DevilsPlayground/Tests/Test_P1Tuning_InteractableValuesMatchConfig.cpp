@@ -7,13 +7,12 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPDoor_Behaviour.h"
-#include "Components/DPDoubleDoor_Behaviour.h"
-#include "Components/DPChest_Behaviour.h"
-#include "Components/DummyNoiseMachine_Behaviour.h"
+#include "Components/DPDoor_Component.h"
+#include "Components/DPDoubleDoor_Component.h"
+#include "Components/DPChest_Component.h"
+#include "Components/DummyNoiseMachine_Component.h"
 
 #include <cmath>
 #include <string>
@@ -83,8 +82,8 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 		// bootstrap a handful of frames to populate the scene, then probe.
 		if (iFrame < 30) return true;
 
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[](Zenith_EntityID, DPDoor_Behaviour& xD) {
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[](Zenith_EntityID, DPDoor_Component& xD) {
 				if (!g_bFoundDoor) {
 					g_bFoundDoor         = true;
 					g_fDoorOpenYaw       = xD.GetOpenYaw();
@@ -92,15 +91,15 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 					g_fInteractRadius    = xD.GetInteractRadius();
 				}
 			});
-		DP_Query::ForEachScriptInActiveScene<DPChest_Behaviour>(
-			[](Zenith_EntityID, DPChest_Behaviour& xC) {
+		DP_Query::ForEachComponentInActiveScene<DPChest_Component>(
+			[](Zenith_EntityID, DPChest_Component& xC) {
 				if (!g_bFoundChest) {
 					g_bFoundChest        = true;
 					g_fChestOpenDuration = xC.GetOpenDuration();
 				}
 			});
-		DP_Query::ForEachScriptInActiveScene<DummyNoiseMachine_Behaviour>(
-			[](Zenith_EntityID, DummyNoiseMachine_Behaviour& xN) {
+		DP_Query::ForEachComponentInActiveScene<DummyNoiseMachine_Component>(
+			[](Zenith_EntityID, DummyNoiseMachine_Component& xN) {
 				if (!g_bFoundNoise) {
 					g_bFoundNoise     = true;
 					g_fNoiseLoudness  = xN.GetLoudness();
@@ -135,8 +134,7 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 		if (pxScene == nullptr) { g_iPhase = kI_Done; return false; }
 
 		Zenith_Entity xDoor = g_xEngine.Scenes().CreateEntity(pxScene, std::string("TuningTestDoubleDoor"));
-		xDoor.AddComponent<Zenith_ScriptComponent>()
-		     .AddScript<DPDoubleDoor_Behaviour>();
+		xDoor.AddComponent<DPDoubleDoor_Component>();
 
 		g_iPhase = kI_CaptureAll;
 		return true;
@@ -147,8 +145,8 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 		// The synthetic DPDoubleDoor's OnAwake has fired by now (script
 		// attach pumps OnAwake before the next frame begins). Pick up its
 		// tuning values.
-		DP_Query::ForEachScriptInActiveScene<DPDoubleDoor_Behaviour>(
-			[](Zenith_EntityID, DPDoubleDoor_Behaviour& xD) {
+		DP_Query::ForEachComponentInActiveScene<DPDoubleDoor_Component>(
+			[](Zenith_EntityID, DPDoubleDoor_Component& xD) {
 				if (!g_bFoundDoubleDoor) {
 					g_bFoundDoubleDoor = true;
 					g_fDDOpenYaw       = xD.GetOpenYaw();
@@ -183,10 +181,10 @@ static bool Verify_P1Tuning_InteractableValuesMatchConfig()
 {
 	g_iFailures = 0;
 
-	if (!g_bFoundDoor)        { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPDoor_Behaviour found");        ++g_iFailures; }
-	if (!g_bFoundDoubleDoor)  { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPDoubleDoor_Behaviour found");  ++g_iFailures; }
-	if (!g_bFoundChest)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPChest_Behaviour found");       ++g_iFailures; }
-	if (!g_bFoundNoise)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DummyNoiseMachine_Behaviour found"); ++g_iFailures; }
+	if (!g_bFoundDoor)        { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPDoor_Component found");        ++g_iFailures; }
+	if (!g_bFoundDoubleDoor)  { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPDoubleDoor_Component found");  ++g_iFailures; }
+	if (!g_bFoundChest)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPChest_Component found");       ++g_iFailures; }
+	if (!g_bFoundNoise)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DummyNoiseMachine_Component found"); ++g_iFailures; }
 	if (g_iFailures > 0) return false;
 
 	// 1) Match DP_Tuning's returned values.

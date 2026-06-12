@@ -12,7 +12,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
@@ -118,8 +118,8 @@ namespace
 		const float fRange = DP_Tuning::Get<float>("possession.range_from_anchor_m");
 		struct Cand { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<Cand> axCands;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axCands](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axCands](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				Cand xV; xV.xId = xId;
 				if (TryGetEntityPos(xId, xV.xPos)) axCands.PushBack(xV);

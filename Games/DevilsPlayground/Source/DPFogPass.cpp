@@ -134,7 +134,7 @@ void DPFogPass::Init()
 	// so its pass is declared right after the engine fog step — the exact slot the
 	// old hardcoded @GameHook:PostFog occupied — keeping DP_Fog's HDR write-chain
 	// position unchanged. The registry owns the lifecycle: because Flux is already
-	// up when this runs (Project_RegisterScriptBehaviours fires after
+	// up when this runs (Project_RegisterGameComponents fires after
 	// FluxRenderer().LateInitialise()), Register() calls InitialiseDPFog()
 	// immediately and requests a graph rebuild so SetupDPFog runs before the first
 	// frame — no manual RequestGraphRebuild() needed here anymore.

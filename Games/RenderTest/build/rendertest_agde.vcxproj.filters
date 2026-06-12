@@ -5,18 +5,27 @@
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\HumanShowcase.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\RenderTest_FollowCamera.h">
+    <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_GameplayState.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h">
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.Tests.inl">
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl">
       <Filter>Components</Filter>
     </ClInclude>
   </ItemGroup>

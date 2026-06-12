@@ -2,18 +2,15 @@
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\Combat.cpp" />
-    <ClCompile Include="..\Components\Combat_EnemyBehaviour.cpp">
+    <ClCompile Include="..\Components\Combat_EnemyComponent.cpp">
       <Filter>Components</Filter>
     </ClCompile>
-    <ClCompile Include="..\Components\Combat_PlayerBehaviour.cpp">
+    <ClCompile Include="..\Components\Combat_PlayerComponent.cpp">
       <Filter>Components</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Combat_AnimationController.h">
-      <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Components\Combat_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_Config.h">
@@ -25,7 +22,10 @@
     <ClInclude Include="..\Components\Combat_EnemyAI.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Combat_EnemyBehaviour.h">
+    <ClInclude Include="..\Components\Combat_EnemyComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Combat_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_HitDetection.h">
@@ -34,7 +34,7 @@
     <ClInclude Include="..\Components\Combat_IKController.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Combat_PlayerBehaviour.h">
+    <ClInclude Include="..\Components\Combat_PlayerComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_PlayerController.h">

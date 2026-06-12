@@ -12,8 +12,8 @@
 #include "UI/Zenith_UIText.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPHUDController_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -71,11 +71,11 @@ namespace
 		}
 	}
 
-	DPHUDController_Behaviour* FindHud()
+	DPHUDController_Component* FindHud()
 	{
-		DPHUDController_Behaviour* pxHud = nullptr;
-		DP_Query::ForEachScriptInActiveScene<DPHUDController_Behaviour>(
-			[&pxHud](Zenith_EntityID, DPHUDController_Behaviour& xH)
+		DPHUDController_Component* pxHud = nullptr;
+		DP_Query::ForEachComponentInActiveScene<DPHUDController_Component>(
+			[&pxHud](Zenith_EntityID, DPHUDController_Component& xH)
 			{
 				if (pxHud == nullptr) pxHud = &xH;
 			});
@@ -123,9 +123,9 @@ static bool Step_P4LossNoVessels(int iFrame)
 	case kLNV_WaitScene:
 	{
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iCount](Zenith_EntityID, DPVillager_Behaviour&) { ++iCount; });
-		DPHUDController_Behaviour* pxHud = FindHud();
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iCount](Zenith_EntityID, DPVillager_Component&) { ++iCount; });
+		DPHUDController_Component* pxHud = FindHud();
 		if (iCount >= 2 && pxHud != nullptr)
 		{
 			pxHud->ResetRunLostForTest();
@@ -142,8 +142,8 @@ static bool Step_P4LossNoVessels(int iFrame)
 	case kLNV_KillAll:
 	{
 		Zenith_Vector<Zenith_EntityID> axVillagers;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axVillagers](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axVillagers](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				axVillagers.PushBack(xId);
 			});
@@ -154,9 +154,8 @@ static bool Step_P4LossNoVessels(int iFrame)
 			if (pxScene == nullptr) continue;
 			Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 			if (!xEnt.IsValid()) continue;
-			if (!xEnt.HasComponent<Zenith_ScriptComponent>()) continue;
-			DPVillager_Behaviour* pxV =
-				xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+			DPVillager_Component* pxV =
+				xEnt.TryGetComponent<DPVillager_Component>();
 			if (pxV != nullptr) pxV->Kill();
 		}
 		g_iWait = 0;
@@ -174,7 +173,7 @@ static bool Step_P4LossNoVessels(int iFrame)
 
 	case kLNV_Snapshot:
 	{
-		DPHUDController_Behaviour* pxHud = FindHud();
+		DPHUDController_Component* pxHud = FindHud();
 		if (pxHud != nullptr)
 		{
 			g_bHudFired = pxHud->DidRunLostHandlerFireForTest();

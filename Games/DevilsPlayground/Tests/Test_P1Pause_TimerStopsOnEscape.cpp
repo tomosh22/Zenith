@@ -9,7 +9,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 // ============================================================================
 // Test_P1Pause_TimerStopsOnEscape (MVP-1.1.1)
@@ -48,8 +48,8 @@ namespace
 	float ReadLife()
 	{
 		float fLife = -1.0f;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&fLife](Zenith_EntityID, DPVillager_Behaviour& xV)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&fLife](Zenith_EntityID, DPVillager_Component& xV)
 			{
 				if (fLife < 0.0f) fLife = xV.GetRemainingLife();
 			});
@@ -82,8 +82,8 @@ static bool Step_P1PauseTimer(int iFrame)
 	case kP_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});

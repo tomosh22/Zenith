@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="..\Components\DPProcLevelBootstrap_Behaviour.cpp">
+    <ClCompile Include="..\Components\DPProcLevelBootstrap_Component.cpp">
       <Filter>Components</Filter>
     </ClCompile>
     <ClCompile Include="..\DevilsPlayground.cpp" />
@@ -96,6 +96,12 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_GameRenderFeatures.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_GraphEditorLiveAuthoring.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_GraphEditorScreenshotTour.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_HearingFlow.cpp">
@@ -409,64 +415,64 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\DPChest_Behaviour.h">
+    <ClInclude Include="..\Components\DPChest_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPDoor_Behaviour.h">
+    <ClInclude Include="..\Components\DPDoor_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPDoubleDoor_Behaviour.h">
+    <ClInclude Include="..\Components\DPDoubleDoor_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPFogPass_Behaviour.h">
+    <ClInclude Include="..\Components\DPFogPass_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPForge_Behaviour.h">
+    <ClInclude Include="..\Components\DPForge_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPHUDController_Behaviour.h">
+    <ClInclude Include="..\Components\DPHUDController_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPInteractable_Behaviour.h">
+    <ClInclude Include="..\Components\DPInteractable_Base.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPItemBase_Behaviour.h">
+    <ClInclude Include="..\Components\DPItemBase_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPItemManager_Behaviour.h">
+    <ClInclude Include="..\Components\DPItemManager_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPItemSpawn_Behaviour.h">
+    <ClInclude Include="..\Components\DPItemSpawn_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPMainMenuController_Behaviour.h">
+    <ClInclude Include="..\Components\DPMainMenuController_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPOrbitCamera_Behaviour.h">
+    <ClInclude Include="..\Components\DPOrbitCamera_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPPauseMenuController_Behaviour.h">
+    <ClInclude Include="..\Components\DPPauseMenuController_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPPentagram_Behaviour.h">
+    <ClInclude Include="..\Components\DPPentagram_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPPlayerController_Behaviour.h">
+    <ClInclude Include="..\Components\DPPlayerController_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPProcLevelBootstrap_Behaviour.h">
+    <ClInclude Include="..\Components\DPProcLevelBootstrap_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPVillager_Behaviour.h">
+    <ClInclude Include="..\Components\DPVillager_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DP_BT_Nodes.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DummyNoiseMachine_Behaviour.h">
+    <ClInclude Include="..\Components\DummyNoiseMachine_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Priest_Behaviour.h">
+    <ClInclude Include="..\Components\Priest_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h">

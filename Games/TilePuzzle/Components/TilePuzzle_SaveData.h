@@ -629,7 +629,7 @@ static void TilePuzzle_ReadSaveData(Zenith_DataStream& xStream, uint32_t uGameVe
 	}
 }
 
-// Shared between TilePuzzle_Behaviour and Pinball_Behaviour for scene transitions
+// Shared between TilePuzzle_GameComponent and Pinball_GameComponent for scene transitions
 namespace TilePuzzle
 {
 	inline uint32_t g_uPinballRequestedGate = UINT32_MAX; // UINT32_MAX = no request

@@ -97,6 +97,9 @@
     <ClInclude Include="..\Zenith\Core\Zenith_EditorQuery.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_EditorWindowNames.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Engine.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -109,10 +112,22 @@
     <ClInclude Include="..\Zenith\Core\Zenith_GizmoTransformAccess.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphEditorHook.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_ImGuiBridgeHook.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_ParticleData.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_PropertySystem.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_PropertySystem.Tests.inl">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_RenderGather.h">

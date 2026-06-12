@@ -13,9 +13,9 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -24,7 +24,7 @@
 //
 // Pins the forge's per-instance recipe configuration: a forge
 // configured with SetRecipe(Wood, Spike) transforms a held Wood
-// item into a held Spike. Confirms that DPForge_Behaviour supports
+// item into a held Spike. Confirms that DPForge_Component supports
 // recipes beyond its default Iron -> Key.
 //
 // Construction parallels the existing Forge_Test (Test_DoubleDoor-
@@ -66,7 +66,7 @@ namespace
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xForge;
 	Zenith_EntityID         g_xInput;
-	DPForge_Behaviour*      g_pxForge = nullptr;
+	DPForge_Component*      g_pxForge = nullptr;
 
 	Zenith_EntityID         g_xHeldAfter;
 	DP_ItemTag              g_eHeldTagAfter = DP_ItemTag::None;
@@ -99,8 +99,8 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 		// for "scene OnAwoken").
 		{
 			int iCount = 0;
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[&iCount](Zenith_EntityID, DPVillager_Behaviour&) { ++iCount; });
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+				[&iCount](Zenith_EntityID, DPVillager_Component&) { ++iCount; });
 			if (iCount > 0)
 			{
 				g_iPhase = kFW_BuildForge;
@@ -126,8 +126,8 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 		// can of OnAwake / collider sequencing worms. The villager's
 		// own Behaviour doesn't matter for this test -- we just need
 		// an EntityID to pass to SetHeldItem.
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!g_xVillager.IsValid()) g_xVillager = xId;
 			});
@@ -140,8 +140,7 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
 				Zenith_Maths::Vector3(-50.0f, 0.0f, -50.0f));
 		}
-		g_pxForge = xForge.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPForge_Behaviour>();
+		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 		if (g_pxForge != nullptr)
 		{
 			g_pxForge->SetRecipe(DP_ItemTag::Wood, DP_ItemTag::Spike);
@@ -169,8 +168,7 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 		}
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-		DPItemBase_Behaviour* pxItemBase = xInput.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPItemBase_Behaviour>();
+		DPItemBase_Component* pxItemBase = &xInput.AddComponent<DPItemBase_Component>();
 		if (pxItemBase != nullptr) pxItemBase->SetTag(DP_ItemTag::Wood);
 		// Hand the input directly to the villager via the side-table.
 		DP_Player::SetHeldItem(g_xVillager, g_xInput);

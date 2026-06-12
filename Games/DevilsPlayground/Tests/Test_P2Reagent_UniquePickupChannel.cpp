@@ -13,8 +13,8 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DP_Reagents.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -86,8 +86,8 @@ namespace
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xBogWater;
 	Zenith_EntityID         g_xIron;
-	DPItemBase_Behaviour*   g_pxBogWaterBeh = nullptr;
-	DPItemBase_Behaviour*   g_pxIronBeh = nullptr;
+	DPItemBase_Component*   g_pxBogWaterBeh = nullptr;
+	DPItemBase_Component*   g_pxIronBeh = nullptr;
 
 	int                     g_iTickCounter = 0;
 
@@ -134,7 +134,7 @@ namespace
 
 	Zenith_EntityID BuildItem(const char* szName, DP_ItemTag eTag,
 	                          const Zenith_Maths::Vector3& xPos,
-	                          DPItemBase_Behaviour** ppxOutBeh)
+	                          DPItemBase_Component** ppxOutBeh)
 	{
 		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
@@ -147,8 +147,7 @@ namespace
 		}
 		xEnt.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-		DPItemBase_Behaviour* pxBeh = xEnt.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPItemBase_Behaviour>();
+		DPItemBase_Component* pxBeh = &xEnt.AddComponent<DPItemBase_Component>();
 		if (pxBeh != nullptr) pxBeh->SetTag(eTag);
 		if (ppxOutBeh != nullptr) *ppxOutBeh = pxBeh;
 		return xEnt.GetEntityID();
@@ -184,8 +183,8 @@ static bool Step_P2ReagentChannel(int iFrame)
 	case kR_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});

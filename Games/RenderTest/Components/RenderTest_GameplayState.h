@@ -1,15 +1,15 @@
 #pragma once
 
 // Tiny shared header to break a header-only mutual-include cycle between
-// RenderTest_FollowCamera and RenderTest_PlayerBehaviour: the camera reads the
-// player's aiming flag, and the player reads the camera's yaw/pitch.
+// RenderTest_FollowCameraComponent and RenderTest_PlayerComponent: the camera
+// reads the player's aiming flag, and the player reads the camera's yaw/pitch.
 //
 // IMPORTANT: keep this strictly minimal. Anything beyond camera angles + the
 // aiming flag belongs in a proper component, not in this header.
 
 namespace RenderTest_GameplayState
 {
-	// Inline globals (C++17+). The two behaviour headers each #include this and
+	// Inline globals (C++17+). The two component headers each #include this and
 	// read/write directly; no static accessors on either class are needed.
 	inline float s_fCameraYaw   = 0.0f;
 	inline float s_fCameraPitch = 0.0f;

@@ -25,7 +25,7 @@ Games/Runner/
   Runner.cpp                     # Project entry points, resource initialization
   Components/
     Runner_Config.h              # DataAsset for game configuration
-    Runner_Behaviour.h           # Main game coordinator
+    Runner_GameComponent.h       # Main game coordinator component
     Runner_CharacterController.h # Lane-based movement, jump, slide
     Runner_AnimationDriver.h     # Animation state machine control
     Runner_TerrainManager.h      # Terrain chunk management
@@ -39,7 +39,7 @@ Games/Runner/
 ## Module Breakdown
 
 ### Runner.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Procedural capsule geometry generation (for character)
@@ -131,7 +131,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + ScriptComponent (Runner_Behaviour). Survives scene transitions.
+- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + RunnerGame component (Runner_GameComponent). Survives scene transitions.
 - **Game scene** (`m_xGameScene`, named "Run"): Contains all level entities (player, terrain chunks, obstacles, collectibles, particles). Created on play, destroyed on return to menu.
 
 ### Game State Machine
@@ -202,7 +202,7 @@ For real terrain: `SampleHeightAt(fX, fZ)`. For this demo: simple chunk-based he
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UIComponent + ScriptComponent/Runner_Behaviour) - DontDestroyOnLoad
+- **GameManager** - Persistent entity (Camera + UIComponent + RunnerGame component) - DontDestroyOnLoad
 - *(Game scene "Run", created at runtime)*
   - **Player** - Character entity (capsule) in the center lane
   - **TerrainChunk_X** - Procedural terrain chunk entities ahead of player

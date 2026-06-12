@@ -15,10 +15,10 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Source/DPParticles.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPPlayerController_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPPlayerController_Component.h"
 #include "Components/DP_BT_Nodes.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/Priest_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -71,9 +71,9 @@ namespace
 	int                     g_iFrameDelay = 0;
 }
 
-static DPPlayerController_Behaviour* GetController()
+static DPPlayerController_Component* GetController()
 {
-	return DPPlayerController_Behaviour::Instance();
+	return DPPlayerController_Component::Instance();
 }
 
 static bool IsAuraEmitting()
@@ -112,8 +112,8 @@ static bool Step_P5ScentBias(int iFrame)
 	case kSP_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -143,7 +143,7 @@ static bool Step_P5ScentBias(int iFrame)
 		// Bump scent above hound-bark threshold (default 0.5). The
 		// per-possession bump is 0.3; 3 calls puts us at 0.9 well
 		// above threshold.
-		DPPlayerController_Behaviour* pxCtrl = GetController();
+		DPPlayerController_Component* pxCtrl = GetController();
 		if (pxCtrl == nullptr) { g_iPhase = kSP_Done; return false; }
 		const float fThreshold =
 			DP_Tuning::Get<float>("possession.demon_scent_hound_bark_threshold");
@@ -178,8 +178,8 @@ static bool Step_P5ScentBias(int iFrame)
 		// scent target set. Verify the resulting PATROL_TARGET lands
 		// near the villager rather than near the priest.
 		Zenith_EntityID xPriest;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xPriest](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xPriest](Zenith_EntityID xId, Priest_Component&)
 			{
 				if (!xPriest.IsValid()) xPriest = xId;
 			});
@@ -231,7 +231,7 @@ static bool Step_P5ScentBias(int iFrame)
 	case kSP_DropScent:
 	{
 		// Decay scent below threshold to verify the bias clears.
-		DPPlayerController_Behaviour* pxCtrl = GetController();
+		DPPlayerController_Component* pxCtrl = GetController();
 		if (pxCtrl == nullptr) { g_iPhase = kSP_Done; return false; }
 		// Decay very fast so we drop below threshold in one tick.
 		pxCtrl->DecayDemonScent(/*ratePerSec=*/100.0f, /*dt=*/1.0f);

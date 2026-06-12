@@ -10,7 +10,7 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -22,10 +22,10 @@
 // DPPlayerController have to drive the system correctly during real
 // gameplay for the memory effect to manifest. Specifically:
 //
-//   * DPFogPass_Behaviour::OnUpdate must call DP_Fog::RecordMemoryReveal
+//   * DPFogPass_Component::OnUpdate must call DP_Fog::RecordMemoryReveal
 //     at every villager's position each frame. Without this, no cells
 //     accumulate.
-//   * DPPlayerController_Behaviour::OnUpdate must call
+//   * DPPlayerController_Component::OnUpdate must call
 //     DP_Fog::TickMemoryFog(fDt) each frame. Without this, all cells
 //     stay at age 0 forever.
 //
@@ -163,8 +163,8 @@ static bool Step_P2MemoryFollows(int iFrame)
 	case kI_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});

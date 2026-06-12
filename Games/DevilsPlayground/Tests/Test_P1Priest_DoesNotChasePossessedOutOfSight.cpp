@@ -12,8 +12,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
@@ -21,7 +21,7 @@
 // Test_P1Priest_DoesNotChasePossessedOutOfSight (MVP-1.9.1 + 1.9.2)
 //
 // MVP-1.9 removes the omniscient fallback from
-// `Priest_Behaviour::BridgePerceptionToBlackboard`. With the fallback
+// `Priest_Component::BridgePerceptionToBlackboard`. With the fallback
 // disabled, possessing a villager that the priest cannot SEE (or hear)
 // must NOT populate the priest's `BB_KEY_TARGET_WITH_DEVIL` slot --
 // the priest stays in patrol mode until perception delivers a target.
@@ -117,9 +117,9 @@ static bool Step_P1NoChaseOutOfSight(int iFrame)
 		Zenith_Maths::Vector3 xPriestPos(0.0f);
 		bool bGotPriestPos = false;
 
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
 			[&xFoundPriest, &xPriestPos, &bGotPriestPos]
-			(Zenith_EntityID xId, Priest_Behaviour&)
+			(Zenith_EntityID xId, Priest_Component&)
 			{
 				xFoundPriest = xId;
 				bGotPriestPos = TryGetEntityPos(xId, xPriestPos);
@@ -128,9 +128,9 @@ static bool Step_P1NoChaseOutOfSight(int iFrame)
 		if (xFoundPriest.IsValid() && bGotPriestPos)
 		{
 			float fFarthestDist = 0.0f;
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
 				[&xFarthest, &fFarthestDist, &xPriestPos]
-				(Zenith_EntityID xId, DPVillager_Behaviour&)
+				(Zenith_EntityID xId, DPVillager_Component&)
 				{
 					Zenith_Maths::Vector3 xVPos;
 					if (!TryGetEntityPos(xId, xVPos)) return;

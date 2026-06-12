@@ -145,11 +145,26 @@ public class GameProject : ZenithBaseProject
 	}
 }
 
-// Test game project - the existing test game
+// Sokoban game project (historically misnamed TestGameProject — renamed so the
+// real Games/Test project below can carry the honest name)
+[Sharpmake.Generate]
+public class SokobanGameProject : GameProject
+{
+	public override string GameName => "Sokoban";
+
+	public SokobanGameProject() : base()
+	{
+		// Sokoban-specific configuration if needed
+	}
+}
+
+// Test game project - the engine-feature test game (Games/Test). Restored to
+// the build after the misnamed class above was found generating Sokoban
+// instead; its stale hand-era vcxproj predated the RenderBackend config prefix.
 [Sharpmake.Generate]
 public class TestGameProject : GameProject
 {
-	public override string GameName => "Sokoban";
+	public override string GameName => "Test";
 
 	public TestGameProject() : base()
 	{

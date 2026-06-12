@@ -1,7 +1,7 @@
 #pragma once
 #include "Core/Zenith_Engine.h"
 /**
- * Custom BT nodes used by Priest_Behaviour.
+ * Custom BT nodes used by Priest_Component.
  *
  *  - DP_BTAction_FindPosInSuspicionSphere    (writes BB.PatrolTarget)
  *  - DP_BTCondition_HasInvestigatePos        (reads BB.HasInvestigatePos)
@@ -197,7 +197,7 @@ public:
 // DP_OnRunLost{Apprehended} and clears the player's possession.
 // Interruption sources:
 //   * Possessed-villager handle changes (player switched to another
-//     vessel) -- Priest_Behaviour::OnUpdate's m_xTree.Reset() on rising-
+//     vessel) -- Priest_Component::OnUpdate's m_xTree.Reset() on rising-
 //     edge of BB target tears the node down before this Execute runs.
 //   * Target leaves apprehend range (player ran) -- Execute returns
 //     FAILURE so the Selector falls back to pursue.
@@ -299,7 +299,7 @@ public:
 
 		// Lock onto target on first valid tick. If the BB target swaps
 		// mid-channel (player switched villager), m_xTree.Reset() in
-		// Priest_Behaviour::OnUpdate aborts this node -- but as a defence
+		// Priest_Component::OnUpdate aborts this node -- but as a defence
 		// in depth, also bail here on mismatch.
 		if (!m_xChannelTarget.IsValid())
 		{

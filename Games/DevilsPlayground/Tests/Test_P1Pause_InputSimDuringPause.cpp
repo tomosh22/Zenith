@@ -10,8 +10,8 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPPauseMenuController_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPPauseMenuController_Component.h"
+#include "Components/DPVillager_Component.h"
 
 // ============================================================================
 // Test_P1Pause_InputSimDuringPause (MVP-1.1.4)
@@ -45,15 +45,15 @@ namespace
 	bool g_bSawUnpause = false;
 	bool g_bPassed     = false;
 
-	DPPauseMenuController_Behaviour* FindController()
+	DPPauseMenuController_Component* FindController()
 	{
 		// The controller's OnStart establishes itself as the persistent
-		// singleton (see DPPauseMenuController_Behaviour). Subsequent scene
+		// singleton (see DPPauseMenuController_Component). Subsequent scene
 		// loads update the singleton's gameplay-scene handle rather than
 		// migrating new entities. So the singleton accessor is the contract:
 		// whatever this returns is "the" pause controller for the current
 		// gameplay scene.
-		return DPPauseMenuController_Behaviour::GetPersistentInstanceForTest();
+		return DPPauseMenuController_Component::GetPersistentInstanceForTest();
 	}
 
 	// We need at least one villager in the scene so the test waits for full
@@ -64,8 +64,8 @@ namespace
 	bool GameLevelLoadedEnough()
 	{
 		bool bHasVillager = false;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&bHasVillager](Zenith_EntityID, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&bHasVillager](Zenith_EntityID, DPVillager_Component&)
 			{
 				bHasVillager = true;
 			});

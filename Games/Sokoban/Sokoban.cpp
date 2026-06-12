@@ -1,9 +1,9 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
-#include "Sokoban/Components/Sokoban_Behaviour.h"
+#include "Sokoban/Components/Sokoban_GameComponent.h"
 #include "Sokoban/Components/Sokoban_Config.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -23,10 +23,26 @@
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 // ============================================================================
-// Sokoban Resources - Global access for behaviours
+// Component registration (meta registry: serialization order 100, lifecycle
+// hooks, scene save/load).
+//
+// NOTE: this MUST be the static-init macro, not a direct RegisterComponent
+// call from Project_RegisterGameComponents - Zenith_Engine::InitialiseECS
+// seals the meta registry (EnsureInitialized -> Finalize builds the sorted
+// dispatch/serialization list exactly once) BEFORE InitialiseProject runs the
+// project hook. The macro enqueues a thunk at static init that the seal drains,
+// so the component lands in the sorted list. Dead-strip safe: this TU defines
+// the Project_* entry points the engine references, so its static initializers
+// always run.
+// ============================================================================
+ZENITH_REGISTER_COMPONENT(Sokoban_GameComponent, "SokobanGame", 100u)
+
+// ============================================================================
+// Sokoban Resources - Global access for game components
 // ============================================================================
 namespace Sokoban
 {
@@ -141,7 +157,7 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
 	// Initialize resources at startup
 	InitializeSokobanResources();
@@ -165,7 +181,14 @@ void Project_RegisterScriptBehaviours()
 	Sokoban::Resources().m_pxDustConfig->m_bUseGPUCompute = false;
 	Flux_ParticleEmitterConfig::Register("Sokoban_DustTrail", Sokoban::Resources().m_pxDustConfig);
 
-	// Sokoban_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit call needed)
+	// Meta-registry registration happens via the ZENITH_REGISTER_COMPONENT macro
+	// at the top of this file (see the note there - the registry is sealed before
+	// this hook runs). Tools builds additionally register with the editor
+	// "Add Component" registry here (display name used by AddStep_AddComponent
+	// and the editor menu; this registry is append-anytime, not sealed).
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Sokoban_GameComponent>("SokobanGame");
+#endif
 }
 
 void Project_Shutdown()
@@ -195,7 +218,7 @@ void Project_LoadInitialScene(); // Forward declaration for automation steps
 #ifdef ZENITH_TOOLS
 void Project_InitializeResources()
 {
-	// All Sokoban resources initialized in Project_RegisterScriptBehaviours
+	// All Sokoban resources initialized in Project_RegisterGameComponents
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -218,7 +241,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Sokoban_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("SokobanGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -336,9 +359,9 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_AddParticleEmitter();
 	g_xEngine.EditorAutomation().AddStep_SetParticleConfig(Sokoban::Resources().m_pxDustConfig);
 
-	// Back to GameManager for script
+	// Back to GameManager for the game component
 	g_xEngine.EditorAutomation().AddStep_SelectEntity("GameManager");
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Sokoban_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("SokobanGame");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Sokoban" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();

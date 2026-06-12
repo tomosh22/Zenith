@@ -11,7 +11,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -61,14 +61,13 @@ namespace
 
 	constexpr int kTICK_FRAMES = 60; // ~1.0 s at 60 Hz fixed-dt
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -99,8 +98,8 @@ static bool Step_P1Sprint(int iFrame)
 		// Grab any villager -- which one doesn't matter for the sprint
 		// life math.
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -131,7 +130,7 @@ static bool Step_P1Sprint(int iFrame)
 	case kSP_SprintBaseline:
 	{
 		// Snapshot baseline + arm sprint inputs.
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		pxV->SetRemainingLifeForTest(30.0f);
 		g_fSprintBaseline = pxV->GetRemainingLife();
@@ -151,7 +150,7 @@ static bool Step_P1Sprint(int iFrame)
 		// don't grab the first-frame transient.
 		if (g_iTickCount == kTICK_FRAMES / 2)
 		{
-			DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr) g_bSprintingObservedSprintWindow = pxV->IsSprintingNow();
 		}
 		if (g_iTickCount >= kTICK_FRAMES)
@@ -163,7 +162,7 @@ static bool Step_P1Sprint(int iFrame)
 
 	case kSP_SprintRecord:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		g_fSprintAfter = pxV->GetRemainingLife();
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
@@ -174,7 +173,7 @@ static bool Step_P1Sprint(int iFrame)
 
 	case kSP_WalkBaseline:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		pxV->SetRemainingLifeForTest(30.0f);
 		g_fWalkBaseline = pxV->GetRemainingLife();
@@ -188,7 +187,7 @@ static bool Step_P1Sprint(int iFrame)
 		++g_iTickCount;
 		if (g_iTickCount == kTICK_FRAMES / 2)
 		{
-			DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr) g_bSprintingObservedWalkWindow = pxV->IsSprintingNow();
 		}
 		if (g_iTickCount >= kTICK_FRAMES)
@@ -200,7 +199,7 @@ static bool Step_P1Sprint(int iFrame)
 
 	case kSP_WalkRecord:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		g_fWalkAfter = pxV->GetRemainingLife();
 		// Release W so we don't leak input state into a subsequent

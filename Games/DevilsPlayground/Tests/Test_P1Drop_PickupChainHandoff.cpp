@@ -12,8 +12,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPItemBase_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -38,7 +38,7 @@
 //     keyed PER-VILLAGER -- after drop, A's slot is empty AND B's slot
 //     starts empty AND the proximity-pickup code path can fill B's slot
 //     without leaking A's stale state.
-//   * `DPItemBase_Behaviour::OnUpdate`'s pickup check correctly reads
+//   * `DPItemBase_Component::OnUpdate`'s pickup check correctly reads
 //     the CURRENTLY possessed villager (B), not the most-recently
 //     possessed (A who just dropped it).
 //
@@ -112,8 +112,8 @@ namespace
 		// test does NOT depend on them being close (we teleport B to the
 		// dropped item position) or in any particular spatial layout.
 		Zenith_Vector<Zenith_EntityID> axVillagers;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&axVillagers](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&axVillagers](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				axVillagers.PushBack(xId);
 			});
@@ -123,8 +123,8 @@ namespace
 			xB = axVillagers.Get(1);
 		}
 
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&xItem, &eTag](Zenith_EntityID xId, DPItemBase_Behaviour& xBeh)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&xItem, &eTag](Zenith_EntityID xId, DPItemBase_Component& xBeh)
 			{
 				if (!xItem.IsValid())
 				{

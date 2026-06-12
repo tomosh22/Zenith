@@ -7,18 +7,18 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPItemBase_Component.h"
 
 // ============================================================================
 // ItemPickup_Test
 //
 // End-to-end pickup loop:
 //   1. Load GameLevel.
-//   2. Wait for DPItemManager_Behaviour::OnStart to spawn the 15 items.
+//   2. Wait for DPItemManager_Component::OnStart to spawn the 15 items.
 //   3. Pick a villager and the first spawned item.
 //   4. Possess the villager + teleport it onto the item (within pickup radius).
-//   5. Wait one frame for DPItemBase_Behaviour::OnUpdate to detect proximity.
+//   5. Wait one frame for DPItemBase_Component::OnUpdate to detect proximity.
 //   6. Verify DP_Player::GetHeldItemTag(villager) matches the item's tag.
 //
 // The pickup-detection path runs entirely off the public DP_Player /
@@ -70,8 +70,8 @@ static bool Step_ItemPickup(int iFrame)
 		// Wait for the villager scripts to appear (proxy for "scene fully
 		// loaded and OnAwake hooks fired").
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&) { xFound = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&) { xFound = xId; });
 		if (xFound.IsValid())
 		{
 			g_xIPVillager = xFound;
@@ -86,14 +86,15 @@ static bool Step_ItemPickup(int iFrame)
 
 	case kIP_WaitItems:
 	{
-		// Items are spawned by DPItemManager_Behaviour::OnStart, which fires
+		// Items are spawned by DPItemManager_Component::OnStart, which fires
 		// after all OnAwake hooks. By the time the manager spawns them and
-		// AddScript<DPItemBase_Behaviour> calls OnAwake -> Internal_RegisterItemTag,
-		// we should see DPItemBase_Behaviour scripts in the scene.
+		// the explicit OnAwake -> Internal_RegisterItemTag runs after
+		// AddComponent<DPItemBase_Component>, we should see DPItemBase_Component
+		// components in the scene.
 		Zenith_EntityID xFirstItem;
 		DP_ItemTag      eFirstTag = DP_ItemTag::None;
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&xFirstItem, &eFirstTag](Zenith_EntityID xId, DPItemBase_Behaviour& xItem)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&xFirstItem, &eFirstTag](Zenith_EntityID xId, DPItemBase_Component& xItem)
 			{
 				if (!xFirstItem.IsValid())
 				{
@@ -141,7 +142,7 @@ static bool Step_ItemPickup(int iFrame)
 	}
 
 	case kIP_WaitPickup:
-		// Give DPItemBase_Behaviour::OnUpdate a frame to detect proximity and
+		// Give DPItemBase_Component::OnUpdate a frame to detect proximity and
 		// fire DP_Player::SetHeldItem.
 		g_iIPPhase = kIP_Verify;
 		return true;

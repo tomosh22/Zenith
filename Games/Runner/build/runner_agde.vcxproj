@@ -165,10 +165,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Runner_AnimationDriver.h" />
-    <ClInclude Include="..\Components\Runner_Behaviour.h" />
     <ClInclude Include="..\Components\Runner_CharacterController.h" />
     <ClInclude Include="..\Components\Runner_CollectibleSpawner.h" />
     <ClInclude Include="..\Components\Runner_Config.h" />
+    <ClInclude Include="..\Components\Runner_GameComponent.h" />
     <ClInclude Include="..\Components\Runner_ParticleManager.h" />
     <ClInclude Include="..\Components\Runner_TerrainManager.h" />
     <ClInclude Include="..\Components\Runner_UIManager.h" />

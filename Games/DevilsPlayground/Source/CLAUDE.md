@@ -1,7 +1,7 @@
 # DevilsPlayground/Source
 
 Cross-cutting state + algorithms. Anything in this folder is a shared
-"library" that the per-entity behaviours in `Components/` lean on. The
+"library" that the per-entity components in `Components/` lean on. The
 discipline is: behaviours read and write game state **only** through
 the namespaces declared here — they don't reach into each other's
 headers, and they don't carry their own state buckets.
@@ -70,10 +70,10 @@ a sibling behaviour's header.
 | `DP_Items` | Side-table EntityID → DP_ItemTag | `GetItemTag(id)` / `FindItemByTag(tag)` (returns INVALID_ENTITY_ID on miss; SourceBugFixed) / `GetItemWorldPos(id)`. Populated by DPItemBase OnAwake; depopulated OnDestroy. |
 | `DP_Interactables` | Marker for non-behaviour interactables | Currently a no-op stub. Reserved for proximity-only world entities. |
 | `DP_AI` | Priest blackboard bridge + noise emission | `EmitNoise(pos, loudness, radius)` → wraps `Zenith_PerceptionSystem::EmitSoundStimulus`. `NotifyAllPriestsOfInvestigatePos(vec3)` is the direct-BB fanout for map-wide stimuli (BellSoul) that bypasses the perception-clamp. Defines BB key constants (`BB_KEY_TARGET_WITH_DEVIL`, `BB_KEY_HAS_INVESTIGATE_POS`, etc). |
-| `DP_Fog` | Fog-of-war hole registry | `ClearAllFogHoles()` + `RegisterFogHole(pos, radius)`. DPFogPass_Behaviour drives this every frame. |
+| `DP_Fog` | Fog-of-war hole registry | `ClearAllFogHoles()` + `RegisterFogHole(pos, radius)`. DPFogPass_Component drives this every frame. |
 | `DP_Win` | Victory state | `GetCollectedObjectivesMask()` (bitmask of 5 objectives) / `DepositObjective(tag)` / `HasWon()` / `DP_OnVictory` event dispatched when `popcount(mask) >= night.reagents_required_for_victory` (default 3-of-5 since 2026-05-22; was `mask == 0b11111` strict-5-of-5 before). The win threshold is a single tuning knob -- bump it to 5 to restore the all-of-5 design. |
 | `DP_Night` | Dawn timer | `StartNight(duration)` / `TickNight(dt)` / `GetNightTimeRemaining()` / `IsNightActive()`. Fires `DP_OnRunLost{Dawn}` exactly once on cross-zero. |
-| `DP_Query` | Template helpers | `ForEachScriptInActiveScene<T>(lambda)` — the way to iterate scripts by type (scripts live INSIDE Zenith_ScriptComponent so direct `Query<T>` doesn't work). |
+| `DP_Query` | Template helpers | `ForEachComponentInActiveScene<T>(lambda)` — iterate game components by type (thin wrapper over the scene's `Query<T>()` with the null-scene guard); `ForEachComponentInLoadedScenes<T>` is the all-loaded-scenes variant. |
 | `DP_Save` | Run state serialisation | `DP_RunState` struct + binary round-trip via Zenith_SaveData. Schema versioned (`uSchemaVersion = 1`); future versions migrate or fall back to default. |
 
 The state buckets (held-item table, scent table, fog-hole list, win
@@ -101,7 +101,7 @@ Files:
 - `DPProcLevel_JsonExport.{h,cpp}` — layout → JSON for the offline
   visualiser (`Tools/dp_proclevel_visualise.py`).
 
-Layout fields the bootstrap (`DPProcLevelBootstrap_Behaviour`)
+Layout fields the bootstrap (`DPProcLevelBootstrap_Component`)
 consumes:
 
 - `rooms[]` (rectangular footprints, possibly non-square),
@@ -178,7 +178,7 @@ what it is.
 Three guarded ports from the UE5 source map (each marked
 `SourceBugFixed:` in code):
 
-1. **`DPInteractable_Behaviour::OnExitRange`** (Components/) — source
+1. **`DPInteractable_Base::OnExitRange`** (Components/) — source
    removed the wrong delegate type. Port stores the exact subscription
    handle on rising-edge and unsubscribes that exact handle on
    falling-edge plus in OnDisable/OnDestroy.

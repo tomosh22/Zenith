@@ -10,7 +10,7 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/Priest_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -29,7 +29,7 @@
 // Procedure:
 //   1. Load GameLevel.
 //   2. Find the priest entity.
-//   3. Tick a few frames so DPFogPass_Behaviour::OnUpdate runs at
+//   3. Tick a few frames so DPFogPass_Component::OnUpdate runs at
 //      least once (which clears + rebuilds the fog hole table).
 //   4. Snapshot the priest's world position.
 //   5. Gather every fog hole's position via DP_Fog::GatherFogHolePositions.
@@ -38,8 +38,8 @@
 //      entity).
 //
 // What this catches:
-//   * A regression where DPFogPass starts iterating Priest_Behaviour
-//     scripts in the same loop as DPVillager_Behaviour and registers
+//   * A regression where DPFogPass starts iterating Priest_Component
+//     scripts in the same loop as DPVillager_Component and registers
 //     a hole for the priest.
 //   * A regression where the priest is given a light component (e.g.,
 //     a lantern in a future visual polish pass) and the light-fog-hole
@@ -103,8 +103,8 @@ static bool Step_P2FogAelfricNotRevealed(int iFrame)
 	case kFR_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFound](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFound](Zenith_EntityID xId, Priest_Component&)
 			{ xFound = xId; });
 		if (xFound.IsValid())
 		{
@@ -167,7 +167,7 @@ static bool Verify_P2FogAelfricNotRevealed()
 	if (g_uHoleCount == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P2FogAelfricNotRevealed: no fog holes registered at all -- DPFogPass_Behaviour didn't OnUpdate, or there are no villagers/lights in GameLevel. Test pre-condition failed");
+			"P2FogAelfricNotRevealed: no fog holes registered at all -- DPFogPass_Component didn't OnUpdate, or there are no villagers/lights in GameLevel. Test pre-condition failed");
 		return false;
 	}
 	// 0.5 m threshold: if a fog hole's CENTER is within half a metre
@@ -179,7 +179,7 @@ static bool Verify_P2FogAelfricNotRevealed()
 	if (g_fClosestHoleDist < fAelfricRevealedThreshold)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P2FogAelfricNotRevealed: a fog hole was registered within %.3f m of the priest (threshold %.3f). DPFogPass_Behaviour is revealing the priest, breaking the GDD's 'Aelfric does not carve a hole' contract",
+			"P2FogAelfricNotRevealed: a fog hole was registered within %.3f m of the priest (threshold %.3f). DPFogPass_Component is revealing the priest, breaking the GDD's 'Aelfric does not carve a hole' contract",
 			g_fClosestHoleDist, fAelfricRevealedThreshold);
 		return false;
 	}

@@ -164,14 +164,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\RenderTest_FollowCamera.h" />
+    <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h" />
     <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h" />
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.Tests.inl" />
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp" />
+    <ClCompile Include="..\Tests\HumanShowcase.cpp" />
+    <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp" />
+    <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

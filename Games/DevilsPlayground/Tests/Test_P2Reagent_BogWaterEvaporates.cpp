@@ -12,8 +12,8 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -68,7 +68,7 @@ namespace
 	int                     g_iPhase = kBV_Start;
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xBogWater;
-	DPItemBase_Behaviour*   g_pxBeh = nullptr;
+	DPItemBase_Component*   g_pxBeh = nullptr;
 
 	float                   g_fEvaporateRemainingMid = -1.0f;
 	float                   g_fEvaporateDurationMid = -1.0f;
@@ -116,8 +116,8 @@ static bool Step_P2BogWaterEvap(int iFrame)
 	case kBV_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -148,8 +148,7 @@ static bool Step_P2BogWaterEvap(int iFrame)
 		}
 		xEnt.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-		g_pxBeh = xEnt.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPItemBase_Behaviour>();
+		g_pxBeh = &xEnt.AddComponent<DPItemBase_Component>();
 		if (g_pxBeh != nullptr) g_pxBeh->SetTag(DP_ItemTag::BogWater);
 		g_iPhase = kBV_Hand;
 		return true;

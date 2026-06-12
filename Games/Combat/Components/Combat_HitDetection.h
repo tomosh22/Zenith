@@ -238,8 +238,9 @@ private:
 /**
  * Combat_CollisionHandler - Handles OnCollisionEnter for combat entities
  *
- * This would be integrated with Zenith_ScriptBehaviour::OnCollisionEnter
- * for physics-based collision detection as an alternative to distance checks.
+ * This would be integrated with a game component's OnCollisionEnter(Zenith_Entity)
+ * hook (concept-detected by the component-meta registry) for physics-based
+ * collision detection as an alternative to distance checks.
  */
 class Combat_CollisionHandler
 {

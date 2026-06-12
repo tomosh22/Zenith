@@ -5,7 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
 #include "Source/DPProcLevel/DPProcLevel_LevelLayout.h"
-#include "Components/DPProcLevelBootstrap_Behaviour.h"
+#include "Components/DPProcLevelBootstrap_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -264,7 +264,7 @@ static bool Step_ArchetypeVariety(int /*iFrame*/)
 	};
 
 	Zenith_Vector<const char*> a1;
-	DPProcLevelBootstrap_Behaviour::BuildVillagerArchetypeAssignment(17u, 12345ull, a1);
+	DPProcLevelBootstrap_Component::BuildVillagerArchetypeAssignment(17u, 12345ull, a1);
 	if (a1.GetSize() != 17u) { g_szReason = "assignment size != 17"; return false; }
 
 	// All four MVP archetypes must appear (the bug was all-Farmhand).
@@ -282,7 +282,7 @@ static bool Step_ArchetypeVariety(int /*iFrame*/)
 
 	// Deterministic: same seed -> identical assignment.
 	Zenith_Vector<const char*> a2;
-	DPProcLevelBootstrap_Behaviour::BuildVillagerArchetypeAssignment(17u, 12345ull, a2);
+	DPProcLevelBootstrap_Component::BuildVillagerArchetypeAssignment(17u, 12345ull, a2);
 	if (a2.GetSize() != a1.GetSize()) { g_szReason = "size mismatch on repeat"; return false; }
 	for (uint32_t u = 0; u < a1.GetSize(); ++u)
 		if (std::strcmp(a1.Get(u), a2.Get(u)) != 0) { g_szReason = "non-deterministic for same seed"; return false; }

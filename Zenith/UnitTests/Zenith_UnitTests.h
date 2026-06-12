@@ -692,9 +692,10 @@ public:
 	static void TestRootMotionRotationInterpolatesBetween();
 	static void TestRootMotionRotationPastEnd();
 
-	// RenderTest input-simulator tests (FollowCamera + PlayerBehaviour driven
-	// via Zenith_InputSimulator). Each test owns a fresh test scene + minimal
-	// Player/GameManager entities. See RenderTest_PlayerBehaviour.Tests.inl.
+	// RenderTest input-simulator tests (RenderTest_FollowCameraComponent +
+	// RenderTest_PlayerComponent driven via Zenith_InputSimulator). Each test
+	// owns a fresh test scene + minimal Player/GameManager entities. See
+	// RenderTest_PlayerComponent.Tests.inl.
 	static void TestRenderTestCameraYawDecreasesOnMouseRight();
 	static void TestRenderTestCameraPitchDecreasesOnMouseDown();
 	static void TestRenderTestCameraPitchClampedAtFloor();

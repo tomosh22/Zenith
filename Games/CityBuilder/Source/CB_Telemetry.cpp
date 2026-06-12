@@ -3,7 +3,7 @@
 #include "CityBuilder/Source/CB_Telemetry.h"
 #include "CityBuilder/Source/CB_Events.h"
 #include "CityBuilder/Source/CB_ToolSystem.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 
@@ -91,7 +91,7 @@ namespace CB_Telemetry
 	{
 		Zenith_Telemetry::Recorder& xRec = Zenith_Telemetry::GetRecorder();
 		if (!xRec.IsRecording()) return;
-		CB_CityManager_Behaviour* pxMgr = CB_CityManager_Behaviour::GetActive();
+		CB_CityManagerComponent* pxMgr = CB_CityManagerComponent::GetActive();
 		if (pxMgr == nullptr) return;
 
 		const CB_BuildingPlacement& xB = pxMgr->GetBuild();
@@ -120,7 +120,7 @@ namespace CB_Telemetry
 	void EmitSessionEnd()
 	{
 		if (!Zenith_Telemetry::GetRecorder().IsRecording()) return;
-		if (CB_CityManager_Behaviour* pxMgr = CB_CityManager_Behaviour::GetActive())
+		if (CB_CityManagerComponent* pxMgr = CB_CityManagerComponent::GetActive())
 		{
 			const CB_BuildingPlacement& xB = pxMgr->GetBuild();
 			EmitEvent(CB_EventType::SessionEnd,

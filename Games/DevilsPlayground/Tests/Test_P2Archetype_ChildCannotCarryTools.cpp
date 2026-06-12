@@ -12,8 +12,8 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPItemBase_Component.h"
 
 #include <cstdio>
 
@@ -100,14 +100,13 @@ namespace
 		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
 	}
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -137,15 +136,15 @@ static bool Step_P2ChildNoTools(int iFrame)
 	case kCC_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
 		// Wait for at least one item to spawn (DPItemManager OnStart).
 		int iItemCount = 0;
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&iItemCount](Zenith_EntityID, DPItemBase_Behaviour&) { ++iItemCount; });
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&iItemCount](Zenith_EntityID, DPItemBase_Component&) { ++iItemCount; });
 		if (xFound.IsValid() && iItemCount > 0)
 		{
 			g_xChild = xFound;
@@ -160,8 +159,8 @@ static bool Step_P2ChildNoTools(int iFrame)
 
 	case kCC_FindItems:
 		// Scan items: pick the first tool and the first objective.
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[](Zenith_EntityID xId, DPItemBase_Behaviour& xB)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[](Zenith_EntityID xId, DPItemBase_Component& xB)
 			{
 				const DP_ItemTag eTag = xB.GetTag();
 				if (DP_IsToolTag(eTag) && !g_xToolItem.IsValid())
@@ -188,7 +187,7 @@ static bool Step_P2ChildNoTools(int iFrame)
 
 	case kCC_ApplyArchetypeAndPossess:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xChild);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xChild);
 		if (pxV != nullptr) pxV->ApplyArchetype("Child");
 		DP_Player::SetPossessedVillager(g_xChild);
 		g_iPhase = kCC_TeleportOntoTool;
@@ -241,7 +240,7 @@ static bool Step_P2ChildNoTools(int iFrame)
 
 	case kCC_Verify:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xChild);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xChild);
 		if (pxV != nullptr) g_strArchetypeFinal = pxV->GetArchetypeId();
 		std::printf("[P2ChildNoTools] archetype=%s toolTag=%s heldAfterTool=(%u/%u) objTag=%s heldAfterObj=(%u/%u) expectedObj=(%u/%u)\n",
 			g_strArchetypeFinal.c_str(),

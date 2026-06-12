@@ -24,7 +24,7 @@ static void Setup_DPFogPass()
 	++g_iSetupCalls;
 
 	// Inject a synthetic fog hole so we can verify the gather hook regardless
-	// of whether DPFogPass_Behaviour has run yet on the current scene.
+	// of whether DPFogPass_Component has run yet on the current scene.
 	DP_Fog::ClearAllFogHoles();
 }
 

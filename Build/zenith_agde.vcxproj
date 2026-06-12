@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -858,6 +858,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_BehaviourGraphAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FontAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_Image.h" />
@@ -865,7 +866,8 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
-    <ClInclude Include="..\Zenith\AssetHandling\Zenith_ScriptAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
@@ -888,16 +890,20 @@
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_BenchECS.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
-    <ClInclude Include="..\Zenith\Core\Zenith_EditorWindowNames.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_DragDropPayloads.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_EditorQuery.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_EditorWindowNames.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Engine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_ErrorCode.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GizmoTransformAccess.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphEditorHook.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_ImGuiBridgeHook.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_ParticleData.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_PropertySystem.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_PropertySystem.Tests.inl" />
     <ClInclude Include="..\Zenith\Core\Zenith_RenderGather.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Result.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
@@ -916,14 +922,20 @@
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_GraphEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_TerrainEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor.h" />
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor.Tests.inl" />
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditorUndo.h" />
+    <ClInclude Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Noise.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.Tests.inl" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.h" />
@@ -932,22 +944,26 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_ImGuiInputBridge.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_GraphComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_GraphComponent.Tests.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.Tests.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_GraphReload.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
@@ -1145,6 +1161,11 @@
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h" />
+    <ClInclude Include="..\Zenith\Scripting\Zenith_BehaviourGraph.h" />
+    <ClInclude Include="..\Zenith\Scripting\Zenith_GraphBlackboard.h" />
+    <ClInclude Include="..\Zenith\Scripting\Zenith_GraphNode.h" />
+    <ClInclude Include="..\Zenith\Scripting\Zenith_GraphNodeRegistry.h" />
+    <ClInclude Include="..\Zenith\Scripting\Zenith_Scripting.Tests.inl" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h" />
@@ -1793,11 +1814,11 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
+    <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
+    <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
@@ -1832,6 +1853,7 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_Asset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandle.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_BehaviourGraphAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FontAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_Image.cpp" />
@@ -1839,7 +1861,7 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
-    <ClCompile Include="..\Zenith\AssetHandling\Zenith_ScriptAsset.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_TextureAsset.cpp" />
     <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp" />
@@ -1875,6 +1897,7 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_PropertySystem.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1902,6 +1925,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_GraphEditor.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1926,6 +1953,18 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1942,10 +1981,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Trees.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Erosion.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1954,15 +1989,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp">
+    <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Trees.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
@@ -1994,6 +2021,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_ImGuiInputBridge.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_SelectionSystem.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -2005,12 +2036,12 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_GraphComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent_Editor.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
@@ -2019,6 +2050,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_CameraResolve.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphReload.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
@@ -2103,6 +2136,9 @@
     <ClCompile Include="..\Zenith\Prefab\Zenith_Prefab.cpp" />
     <ClCompile Include="..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp" />
+    <ClCompile Include="..\Zenith\Scripting\Zenith_BehaviourGraph.cpp" />
+    <ClCompile Include="..\Zenith\Scripting\Zenith_GraphBlackboard.cpp" />
+    <ClCompile Include="..\Zenith\Scripting\Zenith_GraphNodeRegistry.cpp" />
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp" />

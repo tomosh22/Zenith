@@ -188,8 +188,7 @@ public:
 	void SetSelectedEntityTransient(bool bTransient);
 	bool AddComponentToSelected(const char* szDisplayName);
 	void SetSelectedAsMainCamera();
-	void AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName);
-	void AttachScriptForSerializationToSelected(const char* szBehaviourTypeName);
+	void AttachGraphToSelected(const char* szGraphAssetPath);
 	void CreateNewScene(const char* szName);
 	void SaveActiveScene(const char* szPath);
 	void UnloadActiveScene();

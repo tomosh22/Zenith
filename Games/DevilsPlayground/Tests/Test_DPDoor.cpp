@@ -13,8 +13,8 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DPCommonTypes.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPDoor_Component.h"
 
 #include <cstdio>
 
@@ -49,13 +49,13 @@
 namespace
 {
 	template<typename T>
-	T* GetScript(Zenith_EntityID xId)
+	T* GetGameComponent(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<T>();
+		if (!xEnt.IsValid()) return nullptr;
+		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TrySetEntityPosition(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
@@ -72,8 +72,8 @@ namespace
 	Zenith_EntityID FindDoorMatching(Pred xPred)
 	{
 		Zenith_EntityID xResult;
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[&xResult, &xPred](Zenith_EntityID xId, DPDoor_Behaviour& xDoor)
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[&xResult, &xPred](Zenith_EntityID xId, DPDoor_Component& xDoor)
 			{
 				if (xResult.IsValid()) return;
 				if (xPred(xDoor)) xResult = xId;
@@ -84,8 +84,8 @@ namespace
 	Zenith_EntityID FindFirstVillager()
 	{
 		Zenith_EntityID xResult;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xResult](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xResult](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xResult.IsValid()) xResult = xId;
 			});
@@ -133,7 +133,7 @@ static bool Step_UnlockedOpens(int /*iFrame*/)
 
 	case kWait:
 		g_xVillager = FindFirstVillager();
-		g_xDoor = FindDoorMatching([](DPDoor_Behaviour& xD) {
+		g_xDoor = FindDoorMatching([](DPDoor_Component& xD) {
 			return xD.GetRequiredKey() == DP_ItemTag::None;
 		});
 		if (!g_xVillager.IsValid() || !g_xDoor.IsValid()) return true;
@@ -142,7 +142,7 @@ static bool Step_UnlockedOpens(int /*iFrame*/)
 
 	case kSetup:
 	{
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
 		g_bDoorOpenedBefore = pxDoor->IsOpen();   // expect false
 		DP_Player::SetPossessedVillager(g_xVillager);
@@ -163,7 +163,7 @@ static bool Step_UnlockedOpens(int /*iFrame*/)
 
 	case kVerify:
 	{
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor != nullptr) g_bDoorOpenedAfter = pxDoor->IsOpen();
 		g_iPhase = kDone;
 		return false;
@@ -253,7 +253,7 @@ static bool Step_CloseReopen(int /*iFrame*/)
 
 	case kWait:
 		g_xVillager = FindFirstVillager();
-		g_xDoor = FindDoorMatching([](DPDoor_Behaviour& xD) {
+		g_xDoor = FindDoorMatching([](DPDoor_Component& xD) {
 			return xD.GetRequiredKey() == DP_ItemTag::None;
 		});
 		if (!g_xVillager.IsValid() || !g_xDoor.IsValid()) return true;
@@ -262,7 +262,7 @@ static bool Step_CloseReopen(int /*iFrame*/)
 
 	case kSetup:
 	{
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
 		DP_Player::SetPossessedVillager(g_xVillager);
 		DP_Player::RemoveHeldItem(g_xVillager);
@@ -283,9 +283,9 @@ static bool Step_CloseReopen(int /*iFrame*/)
 		// Wait for the Opening -> Open transition (m_fOpenDuration is
 		// 0.4 s by default = ~24 frames at 60 Hz). Give it 60 to be safe.
 		++g_iWait;
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
-		if (pxDoor->GetAnim() == DPDoor_Behaviour::DoorAnim::Open) {
+		if (pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Open) {
 			g_iPhase = kReleaseGap;
 			g_iWait = 0;
 			return true;
@@ -316,9 +316,9 @@ static bool Step_CloseReopen(int /*iFrame*/)
 	case kWaitClosed:
 	{
 		++g_iWait;
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
-		if (pxDoor->GetAnim() == DPDoor_Behaviour::DoorAnim::Closed) {
+		if (pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Closed) {
 			g_bSawClosedState = true;
 			g_iPhase = kReleaseGap2;
 			g_iWait = 0;
@@ -348,7 +348,7 @@ static bool Step_CloseReopen(int /*iFrame*/)
 	case kWaitReopened:
 	{
 		++g_iWait;
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor != nullptr && pxDoor->IsOpen()) {
 			g_bReopened = true;
 		}
@@ -443,7 +443,7 @@ static bool Step_StickyUnlock(int /*iFrame*/)
 
 	case kWait:
 		g_xVillager = FindFirstVillager();
-		g_xDoor = FindDoorMatching([](DPDoor_Behaviour& xD) {
+		g_xDoor = FindDoorMatching([](DPDoor_Component& xD) {
 			return xD.GetRequiredKey() == DP_ItemTag::Key;
 		});
 		if (!g_xVillager.IsValid() || !g_xDoor.IsValid()) return true;
@@ -452,7 +452,7 @@ static bool Step_StickyUnlock(int /*iFrame*/)
 
 	case kSetup:
 	{
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
 		// Synthetic Key (same trick DoorUnlock_Test uses -- a fake
 		// EntityID registered under the Key tag; TryConsumeKeyForUnlock's
@@ -478,9 +478,9 @@ static bool Step_StickyUnlock(int /*iFrame*/)
 	case kWaitOpen:
 	{
 		++g_iWait;
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
-		if (pxDoor->GetAnim() == DPDoor_Behaviour::DoorAnim::Open) {
+		if (pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Open) {
 			g_iPhase = kReleaseGap;
 			g_iWait = 0;
 			return true;
@@ -506,9 +506,9 @@ static bool Step_StickyUnlock(int /*iFrame*/)
 	case kWaitClosed:
 	{
 		++g_iWait;
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor == nullptr) return true;
-		if (pxDoor->GetAnim() == DPDoor_Behaviour::DoorAnim::Closed) {
+		if (pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Closed) {
 			g_iPhase = kReleaseGap2;
 			g_iWait = 0;
 			return true;
@@ -539,7 +539,7 @@ static bool Step_StickyUnlock(int /*iFrame*/)
 	case kWaitReopened:
 	{
 		++g_iWait;
-		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
+		DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor);
 		if (pxDoor != nullptr && pxDoor->IsOpen()) {
 			g_bDoorReopenedAfterClose = true;
 		}

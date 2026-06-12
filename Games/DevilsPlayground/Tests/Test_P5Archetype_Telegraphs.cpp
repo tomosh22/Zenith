@@ -14,7 +14,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DPParticles.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -96,8 +96,8 @@ static bool Step_P5ArchetypeTelegraphs(int /*iFrame*/)
 
 		// Pick any villager for the entity-arg slots.
 		Zenith_EntityID xAny;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xAny](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xAny](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xAny.IsValid()) xAny = xId;
 			});

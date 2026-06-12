@@ -13,8 +13,8 @@
 #include "Maths/Zenith_Maths.h"
 #include "DevilsPlayground_Tags.h"
 
-#include "../Components/DPPlayerController_Behaviour.h"
-#include "../Components/DPPentagram_Behaviour.h"
+#include "../Components/DPPlayerController_Component.h"
+#include "../Components/DPPentagram_Component.h"
 
 #include <cstdint>
 #include <bit>
@@ -23,14 +23,14 @@ namespace DP_Win
 {
 	uint32_t GetCollectedObjectivesMask()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return 0;
 		return pxCtrl->m_uCollectedObjectivesMask;
 	}
 
 	bool HasWon()
 	{
-		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		const DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return false;
 		return pxCtrl->m_bHasWon;
 	}
@@ -41,7 +41,7 @@ namespace DP_Win
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Win::NotifyObjectiveCollected must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		const uint32_t uBit = DP_ObjectiveTagToBit(eObjective);
 		if (uBit == 0) return;
@@ -67,16 +67,16 @@ namespace DP_Win
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Win::Reset must be called from main thread");
-		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		DPPlayerController_Component* pxCtrl = DPPlayerController_Component::Instance();
 		if (pxCtrl == nullptr) return;
 		pxCtrl->m_uCollectedObjectivesMask = 0;
 		pxCtrl->m_bHasWon                  = false;
 	}
 
 	// 2026-05-26: returns true if a Pentagram is within the villager's
-	// F-press range. Moved here from DPDoor_Behaviour::IsPentagramInRange
+	// F-press range. Moved here from DPDoor's IsPentagramInRange
 	// so the door header no longer needs to include the pentagram header
-	// (cross-behaviour rule). Used to defer the door's close-on-F-press
+	// (cross-component rule). Used to defer the door's close-on-F-press
 	// when the same F-press is targeting the adjacent pentagram.
 	bool IsPentagramInRange(Zenith_EntityID xVillager)
 	{
@@ -89,8 +89,8 @@ namespace DP_Win
 		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
 
 		bool bInRange = false;
-		DP_Query::ForEachScriptInActiveScene<DPPentagram_Behaviour>(
-			[&bInRange, &xVPos, pxScene](Zenith_EntityID xId, DPPentagram_Behaviour& xPent)
+		DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
+			[&bInRange, &xVPos, pxScene](Zenith_EntityID xId, DPPentagram_Component& xPent)
 			{
 				if (bInRange) return;  // already found one
 				const float fR = xPent.GetInteractRadius();

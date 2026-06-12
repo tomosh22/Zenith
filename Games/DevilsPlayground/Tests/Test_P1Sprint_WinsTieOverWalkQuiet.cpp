@@ -11,7 +11,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -29,7 +29,7 @@
 //    Shift+Ctrl resolves to sprint -- the louder, faster mode
 //    shouldn't be silenced by a held Ctrl."
 //
-// The relevant code in DPVillager_Behaviour::OnUpdate:
+// The relevant code in DPVillager_Component::OnUpdate:
 //   m_bIsSprintingNow = DP_Input::ReadSprintHeld() && bMoving;
 //   m_bIsWalkQuietNow = !m_bIsSprintingNow
 //       && DP_Input::ReadWalkQuietHeld() && bMoving;
@@ -83,14 +83,13 @@ namespace
 
 	constexpr int kTICK_FRAMES = 30;
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -117,8 +116,8 @@ static bool Step_P1SprintWinsTie(int iFrame)
 	case kTW_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -168,7 +167,7 @@ static bool Step_P1SprintWinsTie(int iFrame)
 		// OnUpdate one tick to observe possession + compute state).
 		if (g_iTickCount == kTICK_FRAMES / 2)
 		{
-			DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr)
 			{
 				g_bSprintingObservedShiftCtrlWindow = pxV->IsSprintingNow();
@@ -198,7 +197,7 @@ static bool Step_P1SprintWinsTie(int iFrame)
 		++g_iTickCount;
 		if (g_iTickCount == kTICK_FRAMES / 2)
 		{
-			DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr)
 			{
 				g_bSprintingObservedCtrlOnlyWindow = pxV->IsSprintingNow();

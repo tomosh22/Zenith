@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_Zoning.h"
 #include "CityBuilder/Source/CB_BuildingPlacement.h"
@@ -24,10 +24,10 @@ static bool Step_UIShowcase(int iFrame)
 {
 	if (!s_bBuilt)
 	{
-		CB_RoadController*     pxCtrl  = CB_CityManager_Behaviour::GetActiveRoadController();
-		CB_Zoning*             pxZone  = CB_CityManager_Behaviour::GetActiveZoning();
-		CB_TerrainHeightfield* pxField = CB_CityManager_Behaviour::GetActiveHeightfield();
-		CB_BuildingPlacement*  pxBuild = CB_CityManager_Behaviour::GetActiveBuild();
+		CB_RoadController*     pxCtrl  = CB_CityManagerComponent::GetActiveRoadController();
+		CB_Zoning*             pxZone  = CB_CityManagerComponent::GetActiveZoning();
+		CB_TerrainHeightfield* pxField = CB_CityManagerComponent::GetActiveHeightfield();
+		CB_BuildingPlacement*  pxBuild = CB_CityManagerComponent::GetActiveBuild();
 		if (pxCtrl != nullptr && pxZone != nullptr && pxField != nullptr && pxBuild != nullptr)
 		{
 			pxCtrl->SetRoadClass(CB_ROADCLASS_MEDIUM);
@@ -55,14 +55,14 @@ static bool Step_UIShowcase(int iFrame)
 	// different tooltips (res, power, police, school, transit, district, terrain).
 	static const int s_aiTools[] = { 2, 6, 8, 11, 14, 16, 19 };
 	const int iCount = static_cast<int>(sizeof(s_aiTools) / sizeof(s_aiTools[0]));
-	CB_CityManager_Behaviour::ShowcaseHoverTool(s_aiTools[(iFrame / 110) % iCount]);
+	CB_CityManagerComponent::ShowcaseHoverTool(s_aiTools[(iFrame / 110) % iCount]);
 
 	return iFrame < 900;   // ~15s windowed, plenty of time to screenshot
 }
 
 static bool Verify_UIShowcase()
 {
-	return CB_CityManager_Behaviour::GetActiveBuild() != nullptr;
+	return CB_CityManagerComponent::GetActiveBuild() != nullptr;
 }
 
 static const Zenith_AutomatedTest g_xUIShowcaseTest = { "CB_UIShowcase", &Setup_UIShowcase, &Step_UIShowcase, &Verify_UIShowcase, 1000, true };

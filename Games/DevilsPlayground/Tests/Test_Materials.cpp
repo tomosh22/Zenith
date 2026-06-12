@@ -14,7 +14,7 @@
 // Materials_Test
 //
 // Loads GameLevel (build index 1), then verifies:
-//   - DPMaterials::Initialize ran during Project_RegisterScriptBehaviours
+//   - DPMaterials::Initialize ran during Project_RegisterGameComponents
 //   - The asset registry returns non-null for at least one expected material
 //     authored from a UE parameter dump
 //   - The total registered count is at least 30 (the dump produces 37 .json

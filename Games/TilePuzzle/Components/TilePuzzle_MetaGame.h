@@ -11,7 +11,7 @@
  * - Daily Puzzle
  * - Level Map star rendering
  *
- * These are helper methods mixed into TilePuzzle_Behaviour via inclusion.
+ * These are helper methods mixed into TilePuzzle_GameComponent via inclusion.
  * This file is NOT standalone - it is included inside the class body.
  */
 
@@ -273,25 +273,25 @@ void OnCatCafeNextCat()
 
 static void OnCatCafeClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->m_uCatCafeCurrentIndex = 0;
 	pxSelf->StartTransition(TILEPUZZLE_STATE_CAT_CAFE);
 }
 
 static void OnCatCafeBackClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 }
 
 static void OnCatCafePrevPageClicked(void* pxUserData)
 {
-	static_cast<TilePuzzle_Behaviour*>(pxUserData)->OnCatCafePrevCat();
+	static_cast<TilePuzzle_GameComponent*>(pxUserData)->OnCatCafePrevCat();
 }
 
 static void OnCatCafeNextPageClicked(void* pxUserData)
 {
-	static_cast<TilePuzzle_Behaviour*>(pxUserData)->OnCatCafeNextCat();
+	static_cast<TilePuzzle_GameComponent*>(pxUserData)->OnCatCafeNextCat();
 }
 
 // ============================================================================
@@ -657,7 +657,7 @@ void UpdateLivesDisplay()
 
 static void OnRefillLivesClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	if (pxSelf->m_xSaveData.TryRefillLivesWithCoins())
 	{
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
@@ -685,7 +685,7 @@ void UpdateCoinDisplay()
 
 static void OnDailyPuzzleClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 
 	uint32_t uToday = GetCurrentDateYYYYMMDD();
 
@@ -793,13 +793,13 @@ void SyncSettingsToggles()
 
 static void OnSettingsClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->StartTransition(TILEPUZZLE_STATE_SETTINGS);
 }
 
 static void OnSettingsBackClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 		TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
 	pxSelf->StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
@@ -807,25 +807,25 @@ static void OnSettingsBackClicked(void* pxUserData)
 
 static void OnSettingSoundChanged(bool bNewValue, void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->m_xSaveData.bSoundEnabled = bNewValue;
 }
 
 static void OnSettingMusicChanged(bool bNewValue, void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->m_xSaveData.bMusicEnabled = bNewValue;
 }
 
 static void OnSettingHapticsChanged(bool bNewValue, void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->m_xSaveData.bHapticsEnabled = bNewValue;
 }
 
 static void OnCreditsClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->m_bCreditsOverlayActive = true;
 	if (pxSelf->m_pxCreditsOverlay)
 		pxSelf->m_pxCreditsOverlay->Show();
@@ -833,7 +833,7 @@ static void OnCreditsClicked(void* pxUserData)
 
 static void OnAchievementsClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	TilePuzzle_GameComponent* pxSelf = static_cast<TilePuzzle_GameComponent*>(pxUserData);
 	pxSelf->StartTransition(TILEPUZZLE_STATE_ACHIEVEMENTS);
 }
 

@@ -14,10 +14,10 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/Priest_Component.h"
 
 #include <cstdio>
 
@@ -73,7 +73,7 @@ namespace
 	Zenith_EntityID         g_xPriest;
 	Zenith_EntityID         g_xForge;
 	Zenith_EntityID         g_xInput;
-	DPForge_Behaviour*      g_pxForge = nullptr;
+	DPForge_Component*      g_pxForge = nullptr;
 	Zenith_Maths::Vector3   g_xForgePos(0.0f);
 
 	int                     g_iTickCounter = 0;
@@ -135,13 +135,13 @@ static bool Step_P2ForgePriestHears(int iFrame)
 	case kFP_WaitScene:
 	{
 		Zenith_EntityID xFoundV, xFoundP;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundV](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundV](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFoundV.IsValid()) xFoundV = xId;
 			});
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundP](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundP](Zenith_EntityID xId, Priest_Component&)
 			{ xFoundP = xId; });
 		if (xFoundV.IsValid() && xFoundP.IsValid())
 		{
@@ -169,8 +169,7 @@ static bool Step_P2ForgePriestHears(int iFrame)
 		{
 			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(g_xForgePos);
 		}
-		g_pxForge = xForge.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPForge_Behaviour>();
+		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 		// Default recipe Iron -> Key.
 		g_iPhase = kFP_TeleportPriest;
 		return true;
@@ -197,8 +196,7 @@ static bool Step_P2ForgePriestHears(int iFrame)
 		g_xInput = xInput.GetEntityID();
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
-		DPItemBase_Behaviour* pxIB = xInput.AddComponent<Zenith_ScriptComponent>()
-			.AddScript<DPItemBase_Behaviour>();
+		DPItemBase_Component* pxIB = &xInput.AddComponent<DPItemBase_Component>();
 		if (pxIB != nullptr) pxIB->SetTag(DP_ItemTag::Iron);
 		g_iPhase = kFP_HandToVillager;
 		return true;

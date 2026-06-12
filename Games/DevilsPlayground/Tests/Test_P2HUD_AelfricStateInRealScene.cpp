@@ -7,9 +7,9 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPHUDController_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/Priest_Component.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
@@ -19,7 +19,7 @@
 // ============================================================================
 // Test_P2HUD_AelfricStateInRealScene (MVP-2.5.1 + 2.5.3 INTEGRATION)
 //
-// Pins the CLASSIFIER (DPHUDController_Behaviour::ComputeAelfricState):
+// Pins the CLASSIFIER (DPHUDController_Component::ComputeAelfricState):
 // the priest's blackboard each frame must classify into Calm / Suspicious
 // / Pursuing.
 //
@@ -63,10 +63,10 @@ namespace
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xPriest;
 	int                     g_iTickCounter = 0;
-	DPHUDController_Behaviour::AelfricState g_eCalmSnapshot =
-		DPHUDController_Behaviour::AelfricState::Pursuing;   // sentinel
-	DPHUDController_Behaviour::AelfricState g_ePursuingSnapshot =
-		DPHUDController_Behaviour::AelfricState::Calm;       // sentinel
+	DPHUDController_Component::AelfricState g_eCalmSnapshot =
+		DPHUDController_Component::AelfricState::Pursuing;   // sentinel
+	DPHUDController_Component::AelfricState g_ePursuingSnapshot =
+		DPHUDController_Component::AelfricState::Calm;       // sentinel
 
 	// One full update cycle has to elapse between EmitDamageStimulus and
 	// reading BB.TargetWithDevil: PerceptionSystem::Update runs first to
@@ -76,13 +76,13 @@ namespace
 	// chance to run regardless of script vs system update ordering.
 	constexpr int kBRIDGE_TICKS = 2;
 
-	const char* StateName(DPHUDController_Behaviour::AelfricState e)
+	const char* StateName(DPHUDController_Component::AelfricState e)
 	{
 		switch (e)
 		{
-		case DPHUDController_Behaviour::AelfricState::Calm:       return "Calm";
-		case DPHUDController_Behaviour::AelfricState::Suspicious: return "Suspicious";
-		case DPHUDController_Behaviour::AelfricState::Pursuing:   return "Pursuing";
+		case DPHUDController_Component::AelfricState::Calm:       return "Calm";
+		case DPHUDController_Component::AelfricState::Suspicious: return "Suspicious";
+		case DPHUDController_Component::AelfricState::Pursuing:   return "Pursuing";
 		}
 		return "?";
 	}
@@ -94,8 +94,8 @@ static void Setup_P2HUDAelfricRealScene()
 	g_xVillager = INVALID_ENTITY_ID;
 	g_xPriest = INVALID_ENTITY_ID;
 	g_iTickCounter = 0;
-	g_eCalmSnapshot = DPHUDController_Behaviour::AelfricState::Pursuing;
-	g_ePursuingSnapshot = DPHUDController_Behaviour::AelfricState::Calm;
+	g_eCalmSnapshot = DPHUDController_Component::AelfricState::Pursuing;
+	g_ePursuingSnapshot = DPHUDController_Component::AelfricState::Calm;
 }
 
 static bool Step_P2HUDAelfricRealScene(int iFrame)
@@ -110,13 +110,13 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 	case kAS_WaitScene:
 	{
 		Zenith_EntityID xFoundV, xFoundP;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundV](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundV](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFoundV.IsValid()) xFoundV = xId;
 			});
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundP](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundP](Zenith_EntityID xId, Priest_Component&)
 			{ xFoundP = xId; });
 		if (xFoundV.IsValid() && xFoundP.IsValid())
 		{
@@ -153,7 +153,7 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 				xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
 			}
 		}
-		g_eCalmSnapshot = DPHUDController_Behaviour::ComputeAelfricState();
+		g_eCalmSnapshot = DPHUDController_Component::ComputeAelfricState();
 		g_iPhase = kAS_EmitDamage;
 		return true;
 	}
@@ -181,7 +181,7 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 		return true;
 
 	case kAS_SnapshotPursuing:
-		g_ePursuingSnapshot = DPHUDController_Behaviour::ComputeAelfricState();
+		g_ePursuingSnapshot = DPHUDController_Component::ComputeAelfricState();
 		g_iPhase = kAS_Verify;
 		return true;
 
@@ -205,14 +205,14 @@ static bool Verify_P2HUDAelfricRealScene()
 		Zenith_Log(LOG_CATEGORY_AI, "P2HUDAelfricReal: setup entities missing");
 		return false;
 	}
-	if (g_eCalmSnapshot != DPHUDController_Behaviour::AelfricState::Calm)
+	if (g_eCalmSnapshot != DPHUDController_Component::AelfricState::Calm)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
 			"P2HUDAelfricReal: state pre-possession is %s, expected Calm. The priest's BB has stale TargetWithDevil/HasInvestigatePos before the test possessed anything",
 			StateName(g_eCalmSnapshot));
 		return false;
 	}
-	if (g_ePursuingSnapshot != DPHUDController_Behaviour::AelfricState::Pursuing)
+	if (g_ePursuingSnapshot != DPHUDController_Component::AelfricState::Pursuing)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
 			"P2HUDAelfricReal: state after EmitDamageStimulus is %s, expected Pursuing. Either the priest's BridgePerceptionToBlackboard isn't translating the damage-perceived possessed villager into BB.TargetWithDevil, or ComputeAelfricState isn't reading the right BB key",

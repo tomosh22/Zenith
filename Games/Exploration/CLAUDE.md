@@ -12,7 +12,7 @@ A first-person terrain exploration experience demonstrating atmospheric renderin
 | **Cascaded Shadow Maps** | `Flux_Shadows` | 4-cascade shadow system |
 | **SSAO** | `Flux_SSAO` | Screen-space ambient occlusion |
 | **First-Person Camera** | `Zenith_CameraComponent` | Mouse-look + WASD movement |
-| **Script Behaviours** | `Zenith_ScriptBehaviour` | Game logic via lifecycle hooks |
+| **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration serialization |
 | **UI System** | `Zenith_UIComponent` | Minimal HUD overlay |
 | **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
@@ -26,7 +26,7 @@ Games/Exploration/
   Exploration.cpp                    # Project entry points, resource initialization
   Components/
     Exploration_Config.h             # DataAsset for game configuration
-    Exploration_Behaviour.h          # Main coordinator (uses modules below)
+    Exploration_GameComponent.h      # Main coordinator component (uses modules below)
     Exploration_PlayerController.h   # First-person movement and mouse-look
     Exploration_TerrainExplorer.h    # Terrain streaming observer
     Exploration_AtmosphereController.h # Day/night cycle + weather
@@ -38,7 +38,7 @@ Games/Exploration/
 ## Module Breakdown
 
 ### Exploration.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Project lifecycle hooks
@@ -46,8 +46,8 @@ Demonstrates:
 - Terrain component creation with materials
 - Initial camera positioning for terrain exploration
 
-### Exploration_Behaviour.h - Main Coordinator
-**Engine APIs:** `Zenith_ScriptBehaviour`, lifecycle hooks
+### Exploration_GameComponent.h - Main Coordinator
+**Engine APIs:** `Zenith_ComponentMetaRegistry` (registered as "ExplorationGame", order 100), lifecycle hooks
 
 Demonstrates:
 - `OnAwake()` - Runtime initialization
@@ -102,7 +102,7 @@ Demonstrates:
 
 The game uses two scenes:
 
-- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and `Zenith_ScriptComponent` (Exploration_Behaviour). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
+- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and the ExplorationGame component (Exploration_GameComponent). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
 - **World Scene** (`m_xWorldScene`, named "World"): Contains terrain, atmosphere objects, and all world entities. Created when entering gameplay, unloaded when returning to menu.
 
 ### Game State Machine
@@ -208,7 +208,7 @@ On the very first launch, the game will generate terrain mesh data:
 This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may take several minutes.
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + Script) - `DontDestroyOnLoad`
+- **GameManager** - Persistent entity (Camera + UI + ExplorationGame component) - `DontDestroyOnLoad`
 - **Terrain** - Terrain entity with Zenith_TerrainComponent (in World scene)
 
 ### Viewport

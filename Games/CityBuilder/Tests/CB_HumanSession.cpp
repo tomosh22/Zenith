@@ -7,7 +7,7 @@
 #include "Input/Zenith_KeyCodes.h"
 #include "Windows/Zenith_Windows_Window.h"
 #include "Collections/Zenith_Vector.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_RoadGraph.h"
 #include "CityBuilder/Source/CB_Zoning.h"
@@ -325,13 +325,13 @@ namespace
 
 	void RunProbe(int id)
 	{
-		CB_BuildingPlacement*  pxB = CB_CityManager_Behaviour::GetActiveBuild();
-		CB_RoadController*     pxC = CB_CityManager_Behaviour::GetActiveRoadController();
-		CB_TerrainHeightfield* pxF = CB_CityManager_Behaviour::GetActiveHeightfield();
-		CB_Districts*          pxD = CB_CityManager_Behaviour::GetActiveDistricts();
-		CB_TransitLines*       pxT = CB_CityManager_Behaviour::GetActiveTransit();
-		CB_Conduits*           pxK = CB_CityManager_Behaviour::GetActiveConduits();
-		CB_CityManager_Behaviour* pxM = CB_CityManager_Behaviour::GetActive();
+		CB_BuildingPlacement*  pxB = CB_CityManagerComponent::GetActiveBuild();
+		CB_RoadController*     pxC = CB_CityManagerComponent::GetActiveRoadController();
+		CB_TerrainHeightfield* pxF = CB_CityManagerComponent::GetActiveHeightfield();
+		CB_Districts*          pxD = CB_CityManagerComponent::GetActiveDistricts();
+		CB_TransitLines*       pxT = CB_CityManagerComponent::GetActiveTransit();
+		CB_Conduits*           pxK = CB_CityManagerComponent::GetActiveConduits();
+		CB_CityManagerComponent* pxM = CB_CityManagerComponent::GetActive();
 		if (pxB == nullptr || pxC == nullptr || pxF == nullptr || pxM == nullptr) { return; }
 
 		switch (id)
@@ -360,13 +360,13 @@ namespace
 		case P_TRAFFIC_BARE:
 		{
 			// Roads exist but no buildings → a demand-driven model carries ZERO traffic.
-			const CB_Traffic* pxTr = CB_CityManager_Behaviour::GetActiveTraffic();
+			const CB_Traffic* pxTr = CB_CityManagerComponent::GetActiveTraffic();
 			g_bTrafficBareEmpty = (pxTr != nullptr && pxTr->GetActiveVehicleCount() == 0u);
 			break;
 		}
 		case P_TRAFFIC_CITY:
 		{
-			const CB_Traffic* pxTr = CB_CityManager_Behaviour::GetActiveTraffic();
+			const CB_Traffic* pxTr = CB_CityManagerComponent::GetActiveTraffic();
 			if (pxTr != nullptr)
 			{
 				const CB_TrafficStats& xS = pxTr->GetStats();
@@ -378,8 +378,8 @@ namespace
 			}
 			break;
 		}
-		case P_GHOSTS_ON:  g_uGhostsOn  = CB_CityManager_Behaviour::GetLastGhostCount(); break;
-		case P_GHOSTS_OFF: g_uGhostsOff = CB_CityManager_Behaviour::GetLastGhostCount(); break;
+		case P_GHOSTS_ON:  g_uGhostsOn  = CB_CityManagerComponent::GetLastGhostCount(); break;
+		case P_GHOSTS_OFF: g_uGhostsOff = CB_CityManagerComponent::GetLastGhostCount(); break;
 		case P_FINAL:
 			g_uFinalRoads      = pxC->GetGraph().GetActiveSegmentCount();
 			g_uFinalBuildings  = pxB->GetActiveBuildings();
@@ -419,11 +419,11 @@ static void Setup_CB_HumanSession()
 static bool Step_CB_HumanSession(int /*iFrame*/)
 {
 	// Wait for the manager + every subsystem to come up before driving input.
-	CB_CityManager_Behaviour* pxMgr = CB_CityManager_Behaviour::GetActive();
+	CB_CityManagerComponent* pxMgr = CB_CityManagerComponent::GetActive();
 	if (pxMgr == nullptr
-	    || CB_CityManager_Behaviour::GetActiveRoadController() == nullptr
-	    || CB_CityManager_Behaviour::GetActiveBuild() == nullptr
-	    || CB_CityManager_Behaviour::GetActiveHeightfield() == nullptr)
+	    || CB_CityManagerComponent::GetActiveRoadController() == nullptr
+	    || CB_CityManagerComponent::GetActiveBuild() == nullptr
+	    || CB_CityManagerComponent::GetActiveHeightfield() == nullptr)
 	{
 		return true;   // keep waiting (bounded by maxFrames)
 	}

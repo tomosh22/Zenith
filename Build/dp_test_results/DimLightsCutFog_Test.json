@@ -1,8 +1,8 @@
 {
   "name": "DimLightsCutFog_Test",
-  "passed": false,
-  "frames": 7,
-  "durationMs": 1614.518,
+  "passed": true,
+  "frames": 0,
+  "durationMs": 0.290,
   "failures": [],
-  "skipped": false
+  "skipped": true
 }

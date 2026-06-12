@@ -20,16 +20,19 @@
 #include <string>
 #include <vector>
 
-// Behaviour headers are included here so their ZENITH_BEHAVIOUR_TYPE_NAME
-// static registrars are pulled into the link. MSVC dead-strips object files
-// that no other TU references; a header-only behaviour only registers if some
-// compiled .cpp includes it. CityBuilder.cpp is that anchor.
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
-#include "CityBuilder/Components/CB_CityCamera_Behaviour.h"
-#include "CityBuilder/Components/CB_DayNightCycle_Behaviour.h"
+// Game-component headers are included here so the ZENITH_REGISTER_COMPONENT
+// thunks below can name the complete types. MSVC dead-strips object files that
+// no other TU references; a header-only component only registers if some
+// compiled .cpp includes it. CityBuilder.cpp is that anchor (it defines the
+// Project_* entry points the engine references, so its statics always run).
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
+#include "CityBuilder/Components/CB_CityCameraComponent.h"
+#include "CityBuilder/Components/CB_DayNightCycleComponent.h"
 #include "CityBuilder/Source/CB_ToolIcons.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 
 #ifdef ZENITH_TOOLS
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "CityBuilder/Source/CB_ToolIconGen.h"   // procedural toolbar-icon drawing (tools build)
 // Offline terrain bake (engine lib, ZENITH_TOOLS): heightmap -> chunk meshes.
@@ -37,10 +40,23 @@ extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const 
 #endif
 
 // ============================================================================
+// Component-meta registration (serialization + lifecycle dispatch). These MUST
+// go through the ZENITH_REGISTER_COMPONENT static-init thunks, NOT direct
+// RegisterComponent calls from Project_RegisterGameComponents: the engine
+// seals the meta registry in Zenith_Engine::InitialiseECS, BEFORE the project
+// hook runs. The thunks enqueue at static init and are drained by the seal,
+// landing the types in the sorted dispatch list. Orders 100+ keep game
+// components after every engine built-in.
+// ============================================================================
+ZENITH_REGISTER_COMPONENT(CB_CityManagerComponent, "CBCityManager", 100u)
+ZENITH_REGISTER_COMPONENT(CB_CityCameraComponent, "CBCityCamera", 101u)
+ZENITH_REGISTER_COMPONENT(CB_DayNightCycleComponent, "CBDayNight", 102u)
+
+// ============================================================================
 // CityBuilder — Project entry points
 //
 // A single "City" scene (build index 0) holds the persistent CityManager entity
-// (Camera + UI + the coordinator behaviours), a sun light, and the ground
+// (Camera + UI + the coordinator components), a sun light, and the ground
 // terrain — a real Zenith_TerrainComponent (not a debug primitive).
 //
 // Terrain alignment: the city grid is 1024 cells * 4m = 4096m wide from origin
@@ -317,9 +333,20 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOpts)
 	xOpts.m_bFogEnabled     = false;
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
-	// Behaviours auto-register via ZENITH_BEHAVIOUR_TYPE_NAME (headers above).
+	// Component-meta registration happens via the ZENITH_REGISTER_COMPONENT
+	// thunks at the top of this file (the meta registry is sealed before this
+	// hook runs — see the note there). This hook only mirrors the components
+	// into the editor "Add Component" registry, which is append-any-time and is
+	// what AddStep_AddComponent resolves display names against.
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
+	xEditorRegistry.RegisterComponent<CB_CityManagerComponent>("CBCityManager");
+	xEditorRegistry.RegisterComponent<CB_CityCameraComponent>("CBCityCamera");
+	xEditorRegistry.RegisterComponent<CB_DayNightCycleComponent>("CBDayNight");
+#endif
+
 	// Terrain materials are created here (tools + runtime) so the loaded scene's
 	// terrain entity resolves its material slots.
 	CB_InitTerrainResources();
@@ -364,8 +391,8 @@ void Project_RegisterEditorAutomationSteps()
 
 	// ---- City scene (build index 0) ----
 	// The CityManager entity is persistent: it carries the main camera, the UI
-	// canvas (future HUD), and the two coordinator behaviours. The camera
-	// behaviour drives the camera component every frame from its orbit params;
+	// canvas (future HUD), and the coordinator game components. The camera
+	// component drives the camera every frame from its orbit params;
 	// the camera fields set here are just the saved initial state.
 	g_xEngine.EditorAutomation().AddStep_CreateScene("City");
 
@@ -378,7 +405,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
 	g_xEngine.EditorAutomation().AddStep_AddUI();
 
-	// HUD readouts (updated each frame by CB_CityManager_Behaviour::UpdateHUD).
+	// HUD readouts (updated each frame by CB_CityManagerComponent::UpdateHUD).
 	struct CB_HUDLine { const char* szName; const char* szInit; float fY; };
 	static const CB_HUDLine axHUD[] = {
 		{ "CB_Pop",    "Population: 0",    24.f },
@@ -397,9 +424,9 @@ void Project_RegisterEditorAutomationSteps()
 		g_xEngine.EditorAutomation().AddStep_SetUIColor(xLine.szName, 0.95f, 0.97f, 1.0f, 1.0f);
 	}
 
-	g_xEngine.EditorAutomation().AddStep_AttachScript("CB_CityCamera_Behaviour");
-	g_xEngine.EditorAutomation().AddStep_AttachScript("CB_CityManager_Behaviour");
-	g_xEngine.EditorAutomation().AddStep_AttachScript("CB_DayNightCycle_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("CBCityCamera");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("CBCityManager");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("CBDayNight");
 
 	// Ground terrain — a real Zenith_TerrainComponent (flat, 4096m, y=0). Not
 	// transient so it persists in the saved scene; the chunk meshes + materials +

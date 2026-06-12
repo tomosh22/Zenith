@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -40,7 +40,7 @@ namespace
 	bool g_bPassed = false;
 	const char* g_szFailureReason = "";
 
-	using AelfricState = DPHUDController_Behaviour::AelfricState;
+	using AelfricState = DPHUDController_Component::AelfricState;
 
 	bool Has(const char* sz, const char* szNeedle)
 	{
@@ -56,19 +56,19 @@ static void Setup_P2HUDAelfric()
 	char buf[64];
 
 	// --- WhisperLine ---
-	DPHUDController_Behaviour::BuildWhisperText(buf, sizeof(buf), AelfricState::Calm);
+	DPHUDController_Component::BuildWhisperText(buf, sizeof(buf), AelfricState::Calm);
 	if (!Has(buf, "patrols"))
 	{
 		g_szFailureReason = "whisper for Calm doesn't contain 'patrols'";
 		return;
 	}
-	DPHUDController_Behaviour::BuildWhisperText(buf, sizeof(buf), AelfricState::Suspicious);
+	DPHUDController_Component::BuildWhisperText(buf, sizeof(buf), AelfricState::Suspicious);
 	if (!Has(buf, "stirs"))
 	{
 		g_szFailureReason = "whisper for Suspicious doesn't contain 'stirs'";
 		return;
 	}
-	DPHUDController_Behaviour::BuildWhisperText(buf, sizeof(buf), AelfricState::Pursuing);
+	DPHUDController_Component::BuildWhisperText(buf, sizeof(buf), AelfricState::Pursuing);
 	if (!Has(buf, "sees"))
 	{
 		g_szFailureReason = "whisper for Pursuing doesn't contain 'sees'";
@@ -81,19 +81,19 @@ static void Setup_P2HUDAelfric()
 	// "Patrolling" (more player-friendly than "CALM"). Suspicious /
 	// Pursuing keep their uppercase emphasis for urgency. Test still
 	// pins the "Aelfric: " prefix + the state-name substring.
-	DPHUDController_Behaviour::BuildAwarenessText(buf, sizeof(buf), AelfricState::Calm);
+	DPHUDController_Component::BuildAwarenessText(buf, sizeof(buf), AelfricState::Calm);
 	if (!Has(buf, "Aelfric: ") || !Has(buf, "Patrolling"))
 	{
 		g_szFailureReason = "awareness for Calm doesn't contain 'Aelfric: Patrolling'";
 		return;
 	}
-	DPHUDController_Behaviour::BuildAwarenessText(buf, sizeof(buf), AelfricState::Suspicious);
+	DPHUDController_Component::BuildAwarenessText(buf, sizeof(buf), AelfricState::Suspicious);
 	if (!Has(buf, "SUSPICIOUS"))
 	{
 		g_szFailureReason = "awareness for Suspicious doesn't contain 'SUSPICIOUS'";
 		return;
 	}
-	DPHUDController_Behaviour::BuildAwarenessText(buf, sizeof(buf), AelfricState::Pursuing);
+	DPHUDController_Component::BuildAwarenessText(buf, sizeof(buf), AelfricState::Pursuing);
 	if (!Has(buf, "PURSUING"))
 	{
 		g_szFailureReason = "awareness for Pursuing doesn't contain 'PURSUING'";

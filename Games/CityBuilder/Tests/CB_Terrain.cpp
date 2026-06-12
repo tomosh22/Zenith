@@ -6,7 +6,7 @@
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
 #include "CityBuilder/Source/CB_TerrainModifier.h"
 #include "CityBuilder/Source/CB_TerrainGen.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include <cmath>
 
 // ============================================================================
@@ -139,7 +139,7 @@ static bool Verify_CB_Terraform_RaiseLower()
 // ---- CB_Terrain_Active: CityManager publishes a live, hill-shaped heightfield ----
 static bool Verify_CB_Terrain_Active()
 {
-	CB_TerrainHeightfield* pxField = CB_CityManager_Behaviour::GetActiveHeightfield();
+	CB_TerrainHeightfield* pxField = CB_CityManagerComponent::GetActiveHeightfield();
 	if (pxField == nullptr) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Terrain_Active: no active heightfield"); return false; }
 	if (!pxField->IsInitialized()) { Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Terrain_Active: active field not initialised"); return false; }
 	// The field is shaped to the shared CB_TerrainGen rolling hills (the SAME

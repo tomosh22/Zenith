@@ -6,7 +6,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
 
 #include <cstdio>
 #include <cstring>
@@ -65,7 +65,7 @@ static void Setup_P2HUDReadouts()
 	char buf[64];
 
 	// Step 1: positive dawn timer.
-	DPHUDController_Behaviour::BuildDawnText(buf, sizeof(buf), 12.3f);
+	DPHUDController_Component::BuildDawnText(buf, sizeof(buf), 12.3f);
 	if (!ContainsSubstring(buf, "Dawn: "))
 	{
 		g_szFailureReason = "dawn text missing 'Dawn: ' prefix";
@@ -83,7 +83,7 @@ static void Setup_P2HUDReadouts()
 	}
 
 	// Step 2: clamp negative input to non-negative output.
-	DPHUDController_Behaviour::BuildDawnText(buf, sizeof(buf), -5.0f);
+	DPHUDController_Component::BuildDawnText(buf, sizeof(buf), -5.0f);
 	if (ContainsSubstring(buf, "-"))
 	{
 		g_szFailureReason = "dawn text with -5s input contains a minus sign -- clamp missing";
@@ -91,7 +91,7 @@ static void Setup_P2HUDReadouts()
 	}
 
 	// Step 3: scent value.
-	DPHUDController_Behaviour::BuildScentText(buf, sizeof(buf), 0.42f);
+	DPHUDController_Component::BuildScentText(buf, sizeof(buf), 0.42f);
 	if (!ContainsSubstring(buf, "Scent: "))
 	{
 		g_szFailureReason = "scent text missing 'Scent: ' prefix";
@@ -104,7 +104,7 @@ static void Setup_P2HUDReadouts()
 	}
 
 	// Step 4: zero scent.
-	DPHUDController_Behaviour::BuildScentText(buf, sizeof(buf), 0.0f);
+	DPHUDController_Component::BuildScentText(buf, sizeof(buf), 0.0f);
 	if (!ContainsSubstring(buf, "0.00"))
 	{
 		g_szFailureReason = "scent text at 0 doesn't render 0.00";

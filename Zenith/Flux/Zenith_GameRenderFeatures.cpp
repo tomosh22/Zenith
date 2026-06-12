@@ -73,7 +73,7 @@ namespace Zenith_GameRenderFeatures
 		s_axFeatures.PushBack(xFeat);
 
 		// Late-registration path (graph already valid — the common case for games
-		// that register during Project_RegisterScriptBehaviours): initialise now
+		// that register during Project_RegisterGameComponents): initialise now
 		// and request a rebuild so this feature's setup runs before the next frame.
 		// Otherwise InitialiseAllPending() (from LateInitialise) runs it later.
 		if (g_xEngine.FluxRenderer().IsRenderGraphValid())

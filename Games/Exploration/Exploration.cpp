@@ -2,9 +2,9 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Core/Zenith_GraphicsOptions.h"
-#include "Exploration/Components/Exploration_Behaviour.h"
+#include "Exploration/Components/Exploration_GameComponent.h"
 #include "Exploration/Components/Exploration_Config.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
@@ -31,6 +31,7 @@ extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::st
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #endif
 
@@ -646,12 +647,19 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
 	// Initialize resources at startup
 	InitializeExplorationResources();
 
-	// Exploration_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit call needed)
+	// Register the Exploration game component with the component-meta registry
+	// (serialization/lifecycle) and, in tools builds, the editor "Add Component"
+	// registry (display name used by AddStep_AddComponent / the editor menu).
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	xRegistry.RegisterComponent<Exploration_GameComponent>("ExplorationGame", 100);
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Exploration_GameComponent>("ExplorationGame");
+#endif
 }
 
 void Project_Shutdown()
@@ -674,7 +682,7 @@ static void Exploration_GenerateTerrainDataWrapper()
 
 void Project_InitializeResources()
 {
-	// All resources initialized in Project_RegisterScriptBehaviours
+	// All resources initialized in Project_RegisterGameComponents
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -705,7 +713,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Exploration_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("ExplorationGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -719,7 +727,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetCameraFar(10000.0f);
 	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
 	// HUD UI is created by Exploration_UIManager in OnStart
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Exploration_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("ExplorationGame");
 	// NOTE: Procedural world generation (terrain + vegetation) cannot be decomposed into
 	// atomic editor steps. This is an intentional exception to the one-action-per-step rule.
 	g_xEngine.EditorAutomation().AddStep_Custom(&Exploration_GenerateTerrainDataWrapper);

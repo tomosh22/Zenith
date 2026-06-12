@@ -9,8 +9,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
@@ -134,8 +134,8 @@ static bool Step_PriestPursuit(int iFrame)
 		Zenith_Maths::Vector3 xPriestPos(0.0f);
 		bool bGotPriestPos = false;
 
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFoundPriest, &xPriestPos, &bGotPriestPos](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFoundPriest, &xPriestPos, &bGotPriestPos](Zenith_EntityID xId, Priest_Component&)
 			{
 				xFoundPriest = xId;
 				bGotPriestPos = TryGetEntityPos(xId, xPriestPos);
@@ -143,8 +143,8 @@ static bool Step_PriestPursuit(int iFrame)
 
 		if (xFoundPriest.IsValid() && bGotPriestPos)
 		{
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[&xFoundVillager, &fClosestDist, &xPriestPos](Zenith_EntityID xId, DPVillager_Behaviour&)
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+				[&xFoundVillager, &fClosestDist, &xPriestPos](Zenith_EntityID xId, DPVillager_Component&)
 				{
 					Zenith_Maths::Vector3 xVPos;
 					if (!TryGetEntityPos(xId, xVPos)) return;
@@ -188,7 +188,7 @@ static bool Step_PriestPursuit(int iFrame)
 		// whole test) flaky. Placed ONCE so the priest can then close the gap.
 		PlaceInPriestFOV(g_xPriest, g_xVillager, 6.0f);
 		// Possess the chosen villager. The villager will then satisfy
-		// Priest_Behaviour::IsPossessedVillager(), and the priest's BB-bridge
+		// Priest_Component::IsPossessedVillager(), and the priest's BB-bridge
 		// will write its EntityID into BB.TargetWithDevil — driving the
 		// pursue branch of the BT.
 		DP_Player::SetPossessedVillager(g_xVillager);

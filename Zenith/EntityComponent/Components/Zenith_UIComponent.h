@@ -15,10 +15,10 @@
  * Zenith_UIComponent - Component for attaching UI to entities
  *
  * This component allows entities to own and manage UI elements.
- * ScriptBehaviour classes can access this component to manipulate
+ * Game components can access this component to manipulate
  * the UI during gameplay.
  *
- * Usage from ScriptBehaviour:
+ * Usage from a game component:
  *
  *   void MyBehaviour::OnCreate() {
  *       auto& ui = m_xParentEntity.GetComponent<Zenith_UIComponent>();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
 
 // ============================================================================
@@ -15,7 +15,7 @@ namespace CB_TerrainModifier
 {
 	inline CB_TerrainHeightfield* GetActive()
 	{
-		return CB_CityManager_Behaviour::GetActiveHeightfield();
+		return CB_CityManagerComponent::GetActiveHeightfield();
 	}
 
 	inline float GetHeightAt(float fWorldX, float fWorldZ)

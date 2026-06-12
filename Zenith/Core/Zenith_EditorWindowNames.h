@@ -22,6 +22,7 @@ constexpr const char* szEDITOR_WINDOW_CONSOLE          = "Console";
 constexpr const char* szEDITOR_WINDOW_CONTENT_BROWSER  = "Content Browser";
 constexpr const char* szEDITOR_WINDOW_MATERIAL_EDITOR  = "Material Editor";
 constexpr const char* szEDITOR_WINDOW_TERRAIN_EDITOR   = "Terrain Editor";
+constexpr const char* szEDITOR_WINDOW_GRAPH_EDITOR     = "Graph Editor";
 constexpr const char* szEDITOR_WINDOW_MEMORY_PROFILER  = "Memory Profiler";
 constexpr const char* szEDITOR_WINDOW_RENDER_GRAPH     = "Render Graph";
 constexpr const char* szEDITOR_WINDOW_VARIANT_EDITOR   = "Variant Editor";

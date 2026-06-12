@@ -1,6 +1,6 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "Core/Zenith_PropertySystem.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -11,7 +11,6 @@
 
 class Zenith_CameraComponent
 {
-	friend class Zenith_ScriptComponent;
 public:
 	enum CameraType
 	{
@@ -77,14 +76,18 @@ public:
 #endif
 
 private:
+	// Reflected tunables (Behaviour Graphs Phase 0): same members, order, and
+	// defaults as before - the macro declarations just register the property
+	// table. No ranges, matching the existing unclamped setters.
 	// Safe defaults to prevent division by zero / NaN in BuildProjectionMatrix
-	float m_fNear = 0.1f;           // Near plane must be > 0
-	float m_fFar = 1000.0f;         // Far plane must be > near
+	ZENITH_PROPERTIES_BEGIN(Zenith_CameraComponent)
+	ZENITH_PROPERTY(float, m_fNear, 0.1f)           // Near plane must be > 0
+	ZENITH_PROPERTY(float, m_fFar, 1000.0f)         // Far plane must be > near
 	float m_fLeft = -1.0f;          // Orthographic defaults
 	float m_fRight = 1.0f;
 	float m_fTop = 1.0f;
 	float m_fBottom = -1.0f;
-	float m_fFOV = 60.0f;           // Field of view in degrees
+	ZENITH_PROPERTY(float, m_fFOV, 60.0f)           // Field of view in degrees
 	double m_fYaw = 0;
 	double m_fPitch = 0;
 	float m_fAspect = 16.0f / 9.0f; // Common aspect ratio

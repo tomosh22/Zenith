@@ -30,7 +30,7 @@ via `ZENITH_REGISTER_COMPONENT` semantics (the explicit set + order is installed
 | `Zenith_TerrainComponent` | Heightmap-based terrain |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
-| `Zenith_ScriptComponent` | Custom behaviour attachment (Unity-style; see below) |
+| `Zenith_GraphComponent` | Behaviour Graph host (designer-authored .bgraph logic; see below) |
 | `Zenith_UIComponent` | UI element support |
 | `Zenith_AnimatorComponent` | Skeletal animation state machine (separate from ModelComponent) |
 | `Zenith_TweenComponent` | Property tweening |
@@ -40,7 +40,7 @@ dispatches them generically through `Zenith_ComponentMeta` without naming a conc
 type.
 
 ### ECS↔engine glue (the wiring the leaf cannot contain)
-- **`Zenith_ComponentMeta_Registration.cpp`** — defines `Zenith_RegisterEngineComponents()`, which calls `RegisterComponent<T>(name, order)` for the 12 built-ins (Transform=0, Model=10, Tween=12, Animator=15, Camera=20, Light=25, Terrain=40, Collider=50, Script=60, UI=70, InstancedMesh=80, ParticleEmitter=85) then `Zenith_AI_RegisterComponents()` (AIAgent=90). In `ZENITH_TOOLS` builds it also mirrors the set into the editor "Add Component" registry. `Zenith_Engine::Initialise` installs this via `SetComponentRegistrar(&Zenith_RegisterEngineComponents)` then `EnsureInitialized()`. **Orders are centralised here.**
+- **`Zenith_ComponentMeta_Registration.cpp`** — defines `Zenith_RegisterEngineComponents()`, which calls `RegisterComponent<T>(name, order)` for the 12 built-ins (Transform=0, Model=10, Tween=12, Animator=15, Camera=20, Light=25, Terrain=40, Collider=50, Graph=60, UI=70, InstancedMesh=80, ParticleEmitter=85) then `Zenith_AI_RegisterComponents()` (AIAgent=90). In `ZENITH_TOOLS` builds it also mirrors the set into the editor "Add Component" registry. `Zenith_Engine::Initialise` installs this via `SetComponentRegistrar(&Zenith_RegisterEngineComponents)` then `EnsureInitialized()`. **Orders are centralised here.**
 - **`Zenith_CameraResolve.h/cpp`** — the engine-side main-camera resolver. The leaf exposes only `FindMainCameraEntityAcrossScenes()` / `GetMainCameraEntity()` (EntityID-only); `Zenith_GetMainCamera()` / `Zenith_GetMainCameraAcrossScenes()` here wrap that and resolve to a `Zenith_CameraComponent&` (naming the concrete type, hence engine-side).
 - **`Zenith_ComponentEditorRegistry.h/cpp`** — the editor "Add Component" registry (display name + has/render/add callbacks per component type). Consumed by the editor property/hierarchy panels.
 
@@ -53,19 +53,24 @@ leaf needs through leaf-safe seams, so the leaf names no engine symbol:
 The leaf works with null hooks and no registrar (that is exactly what the
 `SentinelECS` link-proof exercises); the engine just installs richer behaviour.
 
-## Script Components (Unity-style)
-Custom behaviours use `Zenith_ScriptComponent` + `Zenith_ScriptAsset`:
-1. Inherit from `Zenith_ScriptBehaviour`.
-2. Put `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` in the class body — auto-registration, no explicit call.
-3. Each entity has at most one `Zenith_ScriptComponent`, holding **multiple script slots** (each = asset path `game:Scripts/<TypeName>.zscript` + a behaviour instance with serialized params).
+## Gameplay logic: Behaviour Graphs + game components
+The old C++ script-behaviour system was fully removed. Gameplay logic now has
+two homes:
 
-Attach: `AddScript<T>()` / `AddScriptByAssetPath(...)` (runtime, runs OnAwake) or `AddScriptForSerialization<T>()` (build/scene load, no OnAwake) or `Zenith_EditorAutomation::AddStep_AttachScript("MyBehaviour")`. Query: `GetScriptCount()` / `GetScriptAt(i)` / `GetScript<T>()`. Remove: `RemoveScriptAt(i)` / `RemoveAllScripts()` (OnDestroy fires in REVERSE slot order). Lifecycle hooks per slot in insertion order; `OnDestroy` reversed (Unity convention); plus `OnCollisionEnter/Stay/Exit`.
+1. **Behaviour Graphs** (`Zenith_GraphComponent` + `.bgraph` assets) — designer-authored,
+   hot-reloadable node graphs interpreted by `Zenith/Scripting/`. Slots hold
+   `{asset path, graph instance, blackboard overrides}`; attach via the editor panel,
+   content-browser drag-drop, or `Zenith_EditorAutomation::AddStep_AttachGraph("game:Graphs/Foo.bgraph")`.
+2. **Game ECS components** (systems-tier C++) — plain classes registered with
+   `ZENITH_REGISTER_COMPONENT(Type, "Name", order)` from the game's main .cpp; the
+   meta registry concept-detects the lifecycle hooks (`OnAwake`/`OnStart`/`OnUpdate`/
+   `OnCollisionEnter`/...). Per-entity tuning uses `ZENITH_PROPERTY`.
 
-`Zenith_ScriptAsset::SyncRegisteredTypesToDisk()` runs once at TOOLS-build startup (from `Zenith_Main.cpp`), writing `<GAME_ASSETS_DIR>/Scripts/<TypeName>.zscript` per registered behaviour; orphans → `.stale`.
+Doctrine: systems are ECS components (C++); gameplay logic is graphs.
 
 ## Static-init dead-strip pitfall
 `ZENITH_REGISTER_COMPONENT` does not fire if the component's `.obj` is never
 referenced (MSVC dead-strips it). Engine components are safe (the registrar names
 them explicitly); a game component that is only added at runtime can hit this —
-add it from script (`AddComponent<T>()` in `OnAwake`) rather than relying on the
+add it from code (`AddComponent<T>()` in `OnAwake`) rather than relying on the
 static registrar.

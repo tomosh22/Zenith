@@ -34,7 +34,7 @@
 // the matrix and pick the strictness level that matches its safety profile.
 //
 // Post-dispatch cleanup paths (e.g., FlushPendingRemovalsViaEntity in
-// Zenith_ScriptComponent.cpp) should use TryGetComponent because their
+// hot dispatch paths) should use TryGetComponent because their
 // parent entity may legitimately have been moved or destroyed by the
 // callback they were dispatching.
 //==============================================================================

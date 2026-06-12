@@ -25,7 +25,7 @@
 // The player's controller composes LAYERS, which bypasses the editor's
 // direct-play path entirely — so the showcase drives the BASE layer's state
 // machine instead: locomotion through the real Speed/IsSprinting parameters
-// (photo mode freezes the behaviour's per-frame writes), and the non-state
+// (photo mode freezes the player component's per-frame writes), and the non-state
 // clips (attacks/reload/death) through showcase-added states entered via
 // CrossFade. Those states have no outgoing transitions, so each holds until
 // the next CrossFade.
@@ -101,7 +101,7 @@ namespace
 		// Full-body three-quarter view from the sunlit (+X) side: the model
 		// faces +Z at spawn and the directional light favours +X, so a camera
 		// at +X+Z looking back (yaw = pi + pi/4) keeps the front lit. Photo
-		// mode also freezes the behaviour's animation parameters and ground IK.
+		// mode also freezes the player component's animation parameters and ground IK.
 		RenderTest_GameplayState::s_bPhotoModeActive = true;
 		Human_SetCamera(2.1f, 0.4f, 2.1f, 2.3562f, -0.04f);
 	}

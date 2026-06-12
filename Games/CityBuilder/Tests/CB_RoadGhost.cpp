@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
 #include <cmath>
@@ -22,9 +22,9 @@ static void Setup_RoadGhost() { s_bSetup = false; }
 
 static bool Step_RoadGhost(int iFrame)
 {
-	CB_RoadController*     pxCtrl  = CB_CityManager_Behaviour::GetActiveRoadController();
-	CB_TerrainHeightfield* pxField = CB_CityManager_Behaviour::GetActiveHeightfield();
-	CB_CityManager_Behaviour* pxMgr = CB_CityManager_Behaviour::GetActive();
+	CB_RoadController*     pxCtrl  = CB_CityManagerComponent::GetActiveRoadController();
+	CB_TerrainHeightfield* pxField = CB_CityManagerComponent::GetActiveHeightfield();
+	CB_CityManagerComponent* pxMgr = CB_CityManagerComponent::GetActive();
 	if (pxCtrl == nullptr || pxField == nullptr || pxMgr == nullptr)
 	{
 		return iFrame < 900;
@@ -65,7 +65,7 @@ static bool Step_RoadGhost(int iFrame)
 
 static bool Verify_RoadGhost()
 {
-	CB_RoadController* pxCtrl = CB_CityManager_Behaviour::GetActiveRoadController();
+	CB_RoadController* pxCtrl = CB_CityManagerComponent::GetActiveRoadController();
 	if (pxCtrl == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "CB_RoadGhost: no road controller");

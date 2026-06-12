@@ -7,7 +7,7 @@
 #define ZENITH_PREFAB_EXT		".zprfb"
 #define ZENITH_SCENE_EXT		".zscen"
 #define ZENITH_PARTICLES_EXT	".zptcl"
-#define ZENITH_SCRIPT_EXT		".zscript"
+#define ZENITH_BGRAPH_EXT		".bgraph"
 #define ZENITH_SKELETON_EXT		".zskel"
 #define ZENITH_MODEL_EXT		".zmodel"
 #define ZENITH_ANIMATION_EXT	".zanim"

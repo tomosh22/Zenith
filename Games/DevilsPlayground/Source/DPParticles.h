@@ -12,7 +12,7 @@
 //
 // Architecture (modeled on Sokoban's dust trail):
 //
-//   1. Project_RegisterScriptBehaviours / DevilsPlayground::InitializeResources
+//   1. Project_RegisterGameComponents / DevilsPlayground::InitializeResources
 //      calls DP_Particles::Initialize() once at boot. That registers eight
 //      Flux_ParticleEmitterConfigs with the global registry (so the engine
 //      can resolve them by name) and subscribes to the DP events that
@@ -89,7 +89,7 @@ namespace DP_Particles
 	// ----- Per-scene emitter entities -----
 
 	// Create one persistent-scene emitter entity per Kind. Called by
-	// DPProcLevelBootstrap_Behaviour::OnAwake after the bootstrap has
+	// DPProcLevelBootstrap_Component::OnAwake after the bootstrap has
 	// inserted itself into the gameplay scene. Idempotent -- skips kinds
 	// whose emitter EntityID is still valid from a prior call.
 	void EnsureEmittersInScene();
@@ -115,7 +115,7 @@ namespace DP_Particles
 	// ----- Continuous-emission API (for the HighScentAura kind) -----
 
 	// Reposition the HighScentAura emitter to track a villager + toggle
-	// emission. Called by DPPlayerController_Behaviour once per frame
+	// emission. Called by DPPlayerController_Component once per frame
 	// (after WriteHighestScentToBlackboard) with the highest-scent
 	// villager + a bShow flag derived from scent >= threshold. Passing
 	// INVALID_ENTITY_ID for xVillager OR bShow=false stops emission.
@@ -124,7 +124,7 @@ namespace DP_Particles
 
 	// 2026-05-21: archetype-aware aura updates. Same shape as
 	// UpdateHighScentAura but for the Beggar + Devout effects.
-	// Called once per frame from DPPlayerController_Behaviour to
+	// Called once per frame from DPPlayerController_Component to
 	// track:
 	//   * The currently-possessed Beggar (BeggarStealthAura emits).
 	//   * The current Devout channel target during a 0.8 s channel

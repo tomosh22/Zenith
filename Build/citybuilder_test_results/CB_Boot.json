@@ -2,7 +2,7 @@
   "name": "CB_Boot",
   "passed": true,
   "frames": 6,
-  "durationMs": 0.124,
+  "durationMs": 0.083,
   "failures": [],
   "skipped": false
 }

@@ -165,8 +165,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Sokoban_Animation.h" />
-    <ClInclude Include="..\Components\Sokoban_Behaviour.h" />
     <ClInclude Include="..\Components\Sokoban_Config.h" />
+    <ClInclude Include="..\Components\Sokoban_GameComponent.h" />
     <ClInclude Include="..\Components\Sokoban_GridLogic.h" />
     <ClInclude Include="..\Components\Sokoban_Input.h" />
     <ClInclude Include="..\Components\Sokoban_LevelGenerator.h" />

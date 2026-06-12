@@ -7,9 +7,9 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DP_Tuning.h"
-#include "../Components/DPItemManager_Behaviour.h"
-#include "../Components/DPPlayerController_Behaviour.h"
-#include "../Components/DPFogPass_Behaviour.h"
+#include "../Components/DPItemManager_Component.h"
+#include "../Components/DPPlayerController_Component.h"
+#include "../Components/DPFogPass_Component.h"
 
 #include <cstdio>
 
@@ -60,18 +60,19 @@ static void Setup_HeldItem()
 	g_iFailCount = 0;
 
 	// 2026-05-17: DP_Items + DP_Player side tables were moved onto
-	// DPItemManager_Behaviour + DPPlayerController_Behaviour so they
+	// DPItemManager_Component + DPPlayerController_Component so they
 	// auto-clean on scene unload. Any test that exercises
 	// Internal_RegisterItemTag / SetHeldItem has to load a scene with
-	// both scripts attached -- otherwise the registration silently
-	// no-ops. Spin up a one-entity scene with both scripts attached.
+	// both components attached -- otherwise the registration silently
+	// no-ops. Spin up a one-entity scene with both components attached.
+	// OnAwake is called by hand: the engine awakens mid-frame-created
+	// entities on the next scene Update, but this test runs synchronously
+	// inside Setup and unloads the scene before any Update happens.
 	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("HeldItemTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
-	Zenith_ScriptComponent& xScripts =
-		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
-	xScripts.AddScript<DPItemManager_Behaviour>();
-	xScripts.AddScript<DPPlayerController_Behaviour>();
+	xManagerEntity.AddComponent<DPItemManager_Component>().OnAwake();
+	xManagerEntity.AddComponent<DPPlayerController_Component>().OnAwake();
 
 	const Zenith_EntityID xVillager = MakeFakeId(1001);
 	const Zenith_EntityID xItemKey  = MakeFakeId(2001);
@@ -117,10 +118,10 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xHeldItemTest);
 // scene-unload purge.
 //
 // 2026-05-17: g_xItemTagTable was moved out of the PublicInterfaces.cpp anon
-// namespace onto DPItemManager_Behaviour as an instance member. That means
-// FindItemByTag forwards through DPItemManager_Behaviour::Instance() and the
+// namespace onto DPItemManager_Component as an instance member. That means
+// FindItemByTag forwards through DPItemManager_Component::Instance() and the
 // table dies with the scene that owns the manager -- no stale rows can leak
-// across scenes. Test setup creates a scene with a DPItemManager script
+// across scenes. Test setup creates a scene with a DPItemManager component
 // attached and exercises the same register/find/unregister round-trip as
 // before, plus a scene-unload step that proves the new ownership boundary
 // actually purges the registry (which the old global-map design could not
@@ -141,13 +142,12 @@ static void Setup_FindByTag()
 	}
 
 	// 2) Spin up an in-memory scene with a DPItemManager attached
-	// (creates DPItemManager_Behaviour::Instance()) + a real item
+	// (creates DPItemManager_Component::Instance()) + a real item
 	// entity to register against.
 	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("FindByTagTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
-	xManagerEntity.AddComponent<Zenith_ScriptComponent>()
-		.AddScript<DPItemManager_Behaviour>();
+	xManagerEntity.AddComponent<DPItemManager_Component>().OnAwake();
 	Zenith_Entity xIronEntity = g_xEngine.Scenes().CreateEntity(pxScene, "IronEntity");
 	const Zenith_EntityID xIron = xIronEntity.GetEntityID();
 
@@ -210,7 +210,7 @@ static void Setup_Win()
 	g_bAllPassed = true;
 	g_bVictoryFired = false;
 
-	// 2026-05-17: DP_Win's state lives on DPPlayerController_Behaviour
+	// 2026-05-17: DP_Win's state lives on DPPlayerController_Component
 	// (was process-global before). Tests that exercise NotifyObjective-
 	// Collected / Reset have to spin up a scene with the controller
 	// attached -- otherwise every call silently no-ops on a null
@@ -218,9 +218,7 @@ static void Setup_Win()
 	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("WinTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
-	Zenith_ScriptComponent& xScripts =
-		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
-	xScripts.AddScript<DPPlayerController_Behaviour>();
+	xManagerEntity.AddComponent<DPPlayerController_Component>().OnAwake();
 
 	DP_Win::Reset();
 
@@ -304,14 +302,13 @@ static void Setup_Fog()
 	g_bAllPassed = true;
 
 	// 2026-05-17 ownership refactor: DP_Fog's fog-hole table moved
-	// onto DPFogPass_Behaviour::m_xFogHoles. Tests now need that
-	// script attached to a scene entity for any of the DP_Fog::*
+	// onto DPFogPass_Component::m_xFogHoles. Tests now need that
+	// component attached to a scene entity for any of the DP_Fog::*
 	// forwarders to take effect (no-ops otherwise).
 	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("FogTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xFogEntity = g_xEngine.Scenes().CreateEntity(pxScene, "FogPassEntity");
-	xFogEntity.AddComponent<Zenith_ScriptComponent>()
-		.AddScript<DPFogPass_Behaviour>();
+	xFogEntity.AddComponent<DPFogPass_Component>().OnAwake();
 
 	DP_Fog::ClearAllFogHoles();
 
@@ -360,10 +357,8 @@ static void Setup_Unlock()
 	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("UnlockTest", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Entity xManagerEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ManagerEntity");
-	Zenith_ScriptComponent& xScripts =
-		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
-	xScripts.AddScript<DPItemManager_Behaviour>();
-	xScripts.AddScript<DPPlayerController_Behaviour>();
+	xManagerEntity.AddComponent<DPItemManager_Component>().OnAwake();
+	xManagerEntity.AddComponent<DPPlayerController_Component>().OnAwake();
 
 	const Zenith_EntityID xVillager = MakeFakeId(8001);
 	const Zenith_EntityID xKeyItem  = MakeFakeId(8101);

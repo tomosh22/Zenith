@@ -75,7 +75,7 @@ struct DP_OnVictory
 	// so existing dispatchers that fire `DP_OnVictory{}` keep compiling
 	// (the fields just stay invalid -- only diagnostic value lost). The
 	// production dispatcher in DP_Win::NotifyObjectiveCollected (called
-	// from DPPentagram_Behaviour::HandleInteract) populates both.
+	// from DPPentagram_Component::HandleInteract) populates both.
 	Zenith_EntityID m_xVillager;   // who placed the 5th objective (the winner)
 	Zenith_EntityID m_xPentagram;  // the ritual altar entity
 };
@@ -91,7 +91,7 @@ struct DP_OnVictory
 //     5 objectives. MVP-1.3.5 / MVP-4.2.2 wires this.
 //   * NoVessels -- every villager in the level has died (life timer)
 //     and no fresh body is available for possession. MVP-1.3.5 /
-//     MVP-4.2.3 wires this from DPVillager_Behaviour::TickLife.
+//     MVP-4.2.3 wires this from DPVillager_Component::TickLife.
 //
 // Subscribers (DPHUDController, GameManager / state machine, future
 // "game over" overlay) treat all three as "run is over" and switch

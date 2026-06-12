@@ -40,7 +40,7 @@ Static manager for physics simulation. Key responsibilities:
 Two object layers: `NON_MOVING` (static) and `MOVING` (dynamic). Static objects only collide with dynamic objects. Used for broadphase optimization.
 
 ### Event Handling
-Contact callbacks executed on worker threads. Events queued as `DeferredCollisionEvent` structs, processed on main thread during `Update()`. Dispatched to `Zenith_ScriptComponent` callbacks: `OnCollisionEnter()`, `OnCollisionStay()`, `OnCollisionExit()`.
+Contact callbacks executed on worker threads. Events queued as `DeferredCollisionEvent` structs, processed on main thread during `Update()`. Dispatched through the component-meta registry to any component implementing `OnCollisionEnter(Zenith_Entity)`, `OnCollisionStay(Zenith_Entity)`, or `OnCollisionExit(Zenith_EntityID)` (concept-detected).
 
 ## Physics Mesh Generation
 

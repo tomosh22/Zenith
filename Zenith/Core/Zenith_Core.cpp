@@ -25,7 +25,9 @@
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
 #ifdef ZENITH_TOOLS
+#include "AssetHandling/Zenith_PropertyTuning.h"
 #include "Editor/Zenith_Editor.h"
+#include "EntityComponent/Zenith_GraphReload.h"
 #endif
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_TouchInput.h"
@@ -128,6 +130,15 @@ void Zenith_Core::Zenith_MainLoop()
 	// Skip physics and scene updates when editor is paused or stopped
 	// Only run game simulation when in Playing mode
 	bool bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
+
+	// Live property-tuning reload: dispatch pending tuning-file watch events at
+	// a safe point - after the editor update, before physics/scene update touch
+	// the bound instances (the Flux_ShaderHotReload safe-sync-point discipline).
+	Zenith_PropertyTuning::Update();
+
+	// Behaviour Graph hot reload: drain queued .bgraph changes (editor saves +
+	// external file edits) at the same safe point, before any graph dispatch.
+	Zenith_GraphReload::Update();
 #else
 	bool bShouldUpdateGameLogic = true;
 #endif

@@ -10,8 +10,6 @@ class Zenith_NavMesh;
 // ============================================================================
 namespace DP_AI
 {
-	constexpr const char* PRIEST_BEHAVIOUR_TYPE = "Priest_Behaviour";
-
 	constexpr const char* BB_KEY_SELF_ACTOR          = "SelfActor";
 	constexpr const char* BB_KEY_TARGET_WITH_DEVIL   = "TargetWithDevil";
 	constexpr const char* BB_KEY_SUSPICION_RADIUS    = "SuspicionRadius";
@@ -24,7 +22,7 @@ namespace DP_AI
 	void EmitNoise(Vec3 xPos, float fLoudness, float fRadius, Zenith_EntityID xSource);
 
 	// MVP-2.2.6+ map-wide bell broadcast. Bypasses perception's hearing-radius
-	// clamp by writing straight into every Priest_Behaviour agent's blackboard.
+	// clamp by writing straight into every Priest_Component agent's blackboard.
 	void NotifyAllPriestsOfInvestigatePos(Vec3 xPos);
 
 	// Lazily-built level navmesh.
@@ -45,9 +43,9 @@ namespace DP_AI
 	const Zenith_Vector<Vec3>& GetPatrolNodes();
 
 	// 2026-05-25: F-press equivalent for non-player actors (priest +
-	// scripted events). Mediates between Priest_Behaviour and
-	// DPDoor_Behaviour without the priest having to include the door
-	// header (cross-behaviour rule). Iterates every door in the active
+	// scripted events). Mediates between Priest_Component and
+	// DPDoor_Component without the priest having to include the door
+	// header (cross-component rule). Iterates every door in the active
 	// scene; for each closed door within the door's own interact
 	// radius of xActorPos, calls DPDoor::TryInteract(xActor) which
 	// bypasses the DPInteractable visibility/range gating + the
@@ -57,10 +55,10 @@ namespace DP_AI
 	                        const Vec3& xActorPos);
 
 	// ========================================================================
-	// Cross-behaviour priest-state forwarders for the HUD. Iterate every
-	// Priest_Behaviour in the active scene and read its blackboard / position.
-	// Moved here from DPHUDController_Behaviour so the HUD header no longer
-	// includes Priest_Behaviour.h (cross-behaviour rule).
+	// Cross-component priest-state forwarders for the HUD. Iterate every
+	// Priest_Component in the active scene and read its blackboard / position.
+	// Moved here from DPHUDController so the HUD header no longer
+	// includes Priest_Component.h (cross-component rule).
 	// ========================================================================
 
 	// True if any priest has a valid BB_KEY_TARGET_WITH_DEVIL (pursuing).

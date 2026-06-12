@@ -23,7 +23,7 @@ namespace DP_Input
 
 	// MVP-1.7: sprint hold. Either Shift key works (some Windows /
 	// laptop keyboards don't fire both as the same logical key).
-	// DPVillager_Behaviour reads this each frame to decide whether
+	// DPVillager_Component reads this each frame to decide whether
 	// to apply movement.sprint_speed_mps and the
 	// movement.sprint_life_cost_extra_per_s drain.
 	inline bool ReadSprintHeld()

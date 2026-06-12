@@ -7,10 +7,10 @@
     <ClInclude Include="..\Components\Exploration_AtmosphereController.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Exploration_Behaviour.h">
+    <ClInclude Include="..\Components\Exploration_Config.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\Exploration_Config.h">
+    <ClInclude Include="..\Components\Exploration_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Exploration_PlayerController.h">

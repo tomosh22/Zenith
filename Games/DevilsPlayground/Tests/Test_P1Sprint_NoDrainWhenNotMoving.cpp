@@ -11,7 +11,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -21,7 +21,7 @@
 //
 // Negative-case sibling to Test_P1Sprint_DrainsLifeFaster: holding
 // Shift while NOT moving must NOT incur the sprint life cost. The
-// guard lives in DPVillager_Behaviour::OnUpdate, where
+// guard lives in DPVillager_Component::OnUpdate, where
 // m_bIsSprintingNow is computed as `ReadSprintHeld() && moving`. If
 // the guard's "moving" check got dropped (e.g., during a refactor),
 // standing-still players would burn life for nothing, breaking
@@ -55,14 +55,13 @@ namespace
 
 	constexpr int kTICK_FRAMES = 60;
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -88,8 +87,8 @@ static bool Step_P1SprintNoDrain(int iFrame)
 	case kSN_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -116,7 +115,7 @@ static bool Step_P1SprintNoDrain(int iFrame)
 
 	case kSN_ArmInputs:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 		if (pxV == nullptr) { g_iPhase = kSN_Done; return false; }
 		pxV->SetRemainingLifeForTest(30.0f);
 		g_fBaseline = pxV->GetRemainingLife();
@@ -140,12 +139,12 @@ static bool Step_P1SprintNoDrain(int iFrame)
 		++g_iTickCount;
 		if (g_iTickCount == kTICK_FRAMES / 2)
 		{
-			DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr) g_bSprintingObservedMidWindow = pxV->IsSprintingNow();
 		}
 		if (g_iTickCount >= kTICK_FRAMES)
 		{
-			DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xVillager);
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr) g_fAfter = pxV->GetRemainingLife();
 			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
 			g_iPhase = kSN_Verify;

@@ -164,26 +164,26 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\DPChest_Behaviour.h" />
-    <ClInclude Include="..\Components\DPDoor_Behaviour.h" />
-    <ClInclude Include="..\Components\DPDoubleDoor_Behaviour.h" />
-    <ClInclude Include="..\Components\DPFogPass_Behaviour.h" />
-    <ClInclude Include="..\Components\DPForge_Behaviour.h" />
-    <ClInclude Include="..\Components\DPHUDController_Behaviour.h" />
-    <ClInclude Include="..\Components\DPInteractable_Behaviour.h" />
-    <ClInclude Include="..\Components\DPItemBase_Behaviour.h" />
-    <ClInclude Include="..\Components\DPItemManager_Behaviour.h" />
-    <ClInclude Include="..\Components\DPItemSpawn_Behaviour.h" />
-    <ClInclude Include="..\Components\DPMainMenuController_Behaviour.h" />
-    <ClInclude Include="..\Components\DPOrbitCamera_Behaviour.h" />
-    <ClInclude Include="..\Components\DPPauseMenuController_Behaviour.h" />
-    <ClInclude Include="..\Components\DPPentagram_Behaviour.h" />
-    <ClInclude Include="..\Components\DPPlayerController_Behaviour.h" />
-    <ClInclude Include="..\Components\DPProcLevelBootstrap_Behaviour.h" />
-    <ClInclude Include="..\Components\DPVillager_Behaviour.h" />
+    <ClInclude Include="..\Components\DPChest_Component.h" />
+    <ClInclude Include="..\Components\DPDoor_Component.h" />
+    <ClInclude Include="..\Components\DPDoubleDoor_Component.h" />
+    <ClInclude Include="..\Components\DPFogPass_Component.h" />
+    <ClInclude Include="..\Components\DPForge_Component.h" />
+    <ClInclude Include="..\Components\DPHUDController_Component.h" />
+    <ClInclude Include="..\Components\DPInteractable_Base.h" />
+    <ClInclude Include="..\Components\DPItemBase_Component.h" />
+    <ClInclude Include="..\Components\DPItemManager_Component.h" />
+    <ClInclude Include="..\Components\DPItemSpawn_Component.h" />
+    <ClInclude Include="..\Components\DPMainMenuController_Component.h" />
+    <ClInclude Include="..\Components\DPOrbitCamera_Component.h" />
+    <ClInclude Include="..\Components\DPPauseMenuController_Component.h" />
+    <ClInclude Include="..\Components\DPPentagram_Component.h" />
+    <ClInclude Include="..\Components\DPPlayerController_Component.h" />
+    <ClInclude Include="..\Components\DPProcLevelBootstrap_Component.h" />
+    <ClInclude Include="..\Components\DPVillager_Component.h" />
     <ClInclude Include="..\Components\DP_BT_Nodes.h" />
-    <ClInclude Include="..\Components\DummyNoiseMachine_Behaviour.h" />
-    <ClInclude Include="..\Components\Priest_Behaviour.h" />
+    <ClInclude Include="..\Components\DummyNoiseMachine_Component.h" />
+    <ClInclude Include="..\Components\Priest_Component.h" />
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h" />
     <ClInclude Include="..\Source\DPCommonTypes.h" />
     <ClInclude Include="..\Source\DPFogPass.h" />
@@ -215,7 +215,7 @@
     <ClInclude Include="..\Tests\DPTestSupport.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Components\DPProcLevelBootstrap_Behaviour.cpp" />
+    <ClCompile Include="..\Components\DPProcLevelBootstrap_Component.cpp" />
     <ClCompile Include="..\DevilsPlayground.cpp" />
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
@@ -248,6 +248,8 @@
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_GameplaySystems.cpp" />
     <ClCompile Include="..\Tests\Test_GameRenderFeatures.cpp" />
+    <ClCompile Include="..\Tests\Test_GraphEditorLiveAuthoring.cpp" />
+    <ClCompile Include="..\Tests\Test_GraphEditorScreenshotTour.cpp" />
     <ClCompile Include="..\Tests\Test_HearingFlow.cpp" />
     <ClCompile Include="..\Tests\Test_Hello.cpp" />
     <ClCompile Include="..\Tests\Test_ItemPickup.cpp" />

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
@@ -16,16 +16,16 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\RenderTest_FollowCamera.h">
+    <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_GameplayState.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h">
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.Tests.inl">
+    <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl">
       <Filter>Components</Filter>
     </ClInclude>
   </ItemGroup>

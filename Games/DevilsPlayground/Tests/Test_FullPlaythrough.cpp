@@ -19,16 +19,16 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
-#include "Components/DPChest_Behaviour.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
-#include "Components/DPHUDController_Behaviour.h"
-#include "Components/DPOrbitCamera_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DummyNoiseMachine_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPDoor_Component.h"
+#include "Components/DPChest_Component.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPPentagram_Component.h"
+#include "Components/DPHUDController_Component.h"
+#include "Components/DPOrbitCamera_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DummyNoiseMachine_Component.h"
+#include "Components/Priest_Component.h"
 
 #include <cstdio>
 
@@ -43,10 +43,10 @@
 //      flips its m_bIsPossessed flag.
 //   3. WASD movement actually moves the possessed villager (verified via
 //      Zenith_InputSimulator::SimulateKeyDown/Up + position delta).
-//   4. Orbit camera snaps onto the villager (DPOrbitCamera_Behaviour:75).
+//   4. Orbit camera snaps onto the villager (DPOrbitCamera_Component:75).
 //   5. HUD reflects state: LifeBar visible, Objectives counter renders,
 //      HeldItem visible-only-when-something-held.
-//   6. Item pickup: distance-based pickup via DPItemBase_Behaviour::OnUpdate.
+//   6. Item pickup: distance-based pickup via DPItemBase_Component::OnUpdate.
 //   7. Door unlock: synthesised key + proximity → DPDoor::IsOpen().
 //   8. Chest open: proximity → DPChest::IsOpen().
 //   9. Forge crafting: held Iron → CraftForTest → held Key + craft count++.
@@ -63,12 +63,12 @@
 //
 // - Possession uses DP_Player::SetPossessedVillager directly rather than
 //   simulating a mouse click + raycast. The raycast path is covered by
-//   DPPlayerController_Behaviour and exercised by the diagnostic tests
+//   DPPlayerController_Component and exercised by the diagnostic tests
 //   added earlier; here we focus on the gameplay state machine.
 //
 // - For door / chest / pentagram / noise-machine interactions we pre-flip
 //   m_bInteractOnOverlap to true, teleport the villager into range, and
-//   tick one frame so DPInteractable_Behaviour::OnEnterRange synchronously
+//   tick one frame so DPInteractable_Base::OnEnterRange synchronously
 //   fires HandleInteract. This sidesteps the F-press path (covered by
 //   DPInteractable's per-frame F-press poll already in place) and keeps
 //   the test deterministic.
@@ -180,7 +180,7 @@ namespace
 	Zenith_EntityID FindFirstScript()
 	{
 		Zenith_EntityID xResult;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&xResult](Zenith_EntityID xId, T&) { if (!xResult.IsValid()) xResult = xId; });
 		return xResult;
 	}
@@ -189,19 +189,19 @@ namespace
 	int CountScripts()
 	{
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&iCount](Zenith_EntityID, T&) { ++iCount; });
 		return iCount;
 	}
 
 	template<typename T>
-	T* GetScript(Zenith_EntityID xId)
+	T* GetGameComponent(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<T>();
+		if (!xEnt.IsValid()) return nullptr;
+		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
@@ -239,7 +239,7 @@ namespace
 	// Look up a UI element by name in ANY loaded scene's UICanvas. The
 	// HUD elements (LifeBar / Objectives / HeldItem / Status / ...) are
 	// authored on the GameManager entity in the active gameplay scene,
-	// but DPPauseMenuController_Behaviour::OnStart migrates its parent
+	// but DPPauseMenuController_Component::OnStart migrates its parent
 	// entity (and the PauseOverlay text element on it) to the persistent
 	// scene via `entity.DontDestroyOnLoad()` so the
 	// controller keeps ticking while the gameplay scene is paused.
@@ -349,7 +349,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	case kFP_WaitForLoad:
 	{
 		++g_iWait;
-		const int iVillagers = CountScripts<DPVillager_Behaviour>();
+		const int iVillagers = CountScripts<DPVillager_Component>();
 		if (iVillagers > 0)
 		{
 			g_iPhase = kFP_AssertInitialState;
@@ -364,16 +364,16 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kFP_AssertInitialState:
 	{
-		g_iVillagerCountObserved   = CountScripts<DPVillager_Behaviour>();
-		g_iDoorCountObserved       = CountScripts<DPDoor_Behaviour>();
-		g_iChestCountObserved      = CountScripts<DPChest_Behaviour>();
-		g_iPriestCountObserved     = CountScripts<Priest_Behaviour>();
-		g_iPentagramCountObserved  = CountScripts<DPPentagram_Behaviour>();
-		g_iItemCountObserved       = CountScripts<DPItemBase_Behaviour>();
+		g_iVillagerCountObserved   = CountScripts<DPVillager_Component>();
+		g_iDoorCountObserved       = CountScripts<DPDoor_Component>();
+		g_iChestCountObserved      = CountScripts<DPChest_Component>();
+		g_iPriestCountObserved     = CountScripts<Priest_Component>();
+		g_iPentagramCountObserved  = CountScripts<DPPentagram_Component>();
+		g_iItemCountObserved       = CountScripts<DPItemBase_Component>();
 
 		// Capture references for later phases.
-		g_xPriest    = FindFirstScript<Priest_Behaviour>();
-		g_xPentagram = FindFirstScript<DPPentagram_Behaviour>();
+		g_xPriest    = FindFirstScript<Priest_Component>();
+		g_xPentagram = FindFirstScript<DPPentagram_Component>();
 		// 2026-05-25: doors are now unlocked-by-default. The kFP_DoorSetup
 		// phase explicitly gives the villager a Key and exercises the
 		// unlock path -- pick a LOCKED door so we actually test the key-
@@ -381,8 +381,8 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// locked door exists keeps the test runnable in artificial
 		// configurations (zero pentagram corridors).
 		g_xDoor      = INVALID_ENTITY_ID;
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[](Zenith_EntityID xId, DPDoor_Behaviour& xScript)
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[](Zenith_EntityID xId, DPDoor_Component& xScript)
 			{
 				if (g_xDoor.IsValid()) return;
 				if (xScript.GetRequiredKey() == DP_ItemTag::Key)
@@ -390,15 +390,15 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 					g_xDoor = xId;
 				}
 			});
-		if (!g_xDoor.IsValid()) g_xDoor = FindFirstScript<DPDoor_Behaviour>();
-		g_xChest     = FindFirstScript<DPChest_Behaviour>();
-		g_xNoise     = FindFirstScript<DummyNoiseMachine_Behaviour>();
+		if (!g_xDoor.IsValid()) g_xDoor = FindFirstScript<DPDoor_Component>();
+		g_xChest     = FindFirstScript<DPChest_Component>();
+		g_xNoise     = FindFirstScript<DummyNoiseMachine_Component>();
 
 		// Pick the first two villagers; first is the playthrough hero,
 		// second is the death-and-repossess target.
 		int iVillagerIdx = 0;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&iVillagerIdx](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&iVillagerIdx](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (iVillagerIdx == 0) g_xVillager = xId;
 				else if (iVillagerIdx == 1) g_xSecondVillager = xId;
@@ -409,8 +409,8 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// First non-objective item (Iron / Key / SkeletonKey) — used as
 		// the pickup target. Avoid Objective tags so the pentagram
 		// doesn't pick it up early.
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[](Zenith_EntityID xId, DPItemBase_Behaviour& xItem)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[](Zenith_EntityID xId, DPItemBase_Component& xItem)
 			{
 				if (g_xPickupTarget.IsValid()) return;
 				const DP_ItemTag eTag = xItem.GetTag();
@@ -448,7 +448,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// Deplete the villager's life timer to 1 second so the
 		// possession-time bump-to-max is observable in the post-possession
 		// snapshot (otherwise life starts at max and "bump" is invisible).
-		if (DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(g_xVillager))
+		if (DPVillager_Component* pxV = GetGameComponent<DPVillager_Component>(g_xVillager))
 		{
 			pxV->SetRemainingLifeForTest(1.0f);
 			g_fLifeBeforePossess = pxV->GetRemainingLife();
@@ -464,7 +464,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		// One frame for DPVillager::OnUpdate to flip m_bIsPossessed and bump life.
 		if (g_iWait < 2) return true;
-		if (DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(g_xVillager))
+		if (DPVillager_Component* pxV = GetGameComponent<DPVillager_Component>(g_xVillager))
 		{
 			g_fLifeAfterPossess = pxV->GetRemainingLife();
 		}
@@ -524,7 +524,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		TryGetEntityPos(g_xVillager, xVPos);
 
 		// 1) Camera stays high above the map centre, not over the villager.
-		//    Map centre is (50, 0, 50). DPOrbitCamera_Behaviour orbits
+		//    Map centre is (50, 0, 50). DPOrbitCamera_Component orbits
 		//    that point with radius 80 m at ~69° pitch, putting the camera
 		//    ~75 m up and ~29 m off-centre (along whichever axis the orbit
 		//    yaw lands on — currently +π/2 puts the camera west of centre
@@ -594,7 +594,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// transform -- corner-anchored SM_Cube offsets the transform by
 		// ~1 m), flip interact-on-overlap so the next OnUpdate's rising-
 		// edge dispatches HandleInteract directly.
-		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		if (DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor))
 		{
 			TrySetEntityPos(g_xVillager, pxDoor->GetInteractionCentre());
 			pxDoor->SetInteractOnOverlap(true);
@@ -608,7 +608,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 3) return true;
-		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		if (DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor))
 		{
 			g_bDoorOpenedObserved = pxDoor->IsOpen();
 		}
@@ -631,7 +631,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		{
 			TrySetEntityPos(g_xVillager, xChestPos);
 		}
-		if (DPChest_Behaviour* pxChest = GetScript<DPChest_Behaviour>(g_xChest))
+		if (DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest))
 		{
 			pxChest->SetInteractOnOverlap(true);
 		}
@@ -644,7 +644,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 3) return true;
-		if (DPChest_Behaviour* pxChest = GetScript<DPChest_Behaviour>(g_xChest))
+		if (DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest))
 		{
 			g_bChestOpenedObserved = pxChest->IsOpen();
 		}
@@ -672,7 +672,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		g_xForge = xForge.GetEntityID();
 		xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
 			Zenith_Maths::Vector3(80.0f, 0.0f, 80.0f));
-		xForge.AddComponent<Zenith_ScriptComponent>().AddScript<DPForge_Behaviour>();
+		xForge.AddComponent<DPForge_Component>();
 
 		// Hand the villager an Iron and trigger the recipe via the test bypass.
 		GiveSyntheticHeldItem(g_xVillager, DP_ItemTag::Iron);
@@ -684,7 +684,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 
 	case kFP_ForgeRunCraft:
 	{
-		if (DPForge_Behaviour* pxForge = GetScript<DPForge_Behaviour>(g_xForge))
+		if (DPForge_Component* pxForge = GetGameComponent<DPForge_Component>(g_xForge))
 		{
 			pxForge->CraftForTest(g_xVillager);
 			g_uForgeCraftsObserved = pxForge->GetCraftCount();
@@ -728,8 +728,8 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// Move the villager onto the noise machine to drive the rising-edge.
 		TrySetEntityPos(g_xVillager, xNoiseNewPos);
 
-		if (DummyNoiseMachine_Behaviour* pxNoise =
-				GetScript<DummyNoiseMachine_Behaviour>(g_xNoise))
+		if (DummyNoiseMachine_Component* pxNoise =
+				GetGameComponent<DummyNoiseMachine_Component>(g_xNoise))
 		{
 			pxNoise->SetInteractOnOverlap(true);
 		}
@@ -773,8 +773,8 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kFP_PentagramSetup:
 	{
-		if (DPPentagram_Behaviour* pxPent =
-				GetScript<DPPentagram_Behaviour>(g_xPentagram))
+		if (DPPentagram_Component* pxPent =
+				GetGameComponent<DPPentagram_Component>(g_xPentagram))
 		{
 			pxPent->SetInteractOnOverlap(true);
 		}
@@ -914,7 +914,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// (m_bIsPossessed flips on rising edge), THEN shrink the timer.
 		if (g_iWait == 1)
 		{
-			if (DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(g_xSecondVillager))
+			if (DPVillager_Component* pxV = GetGameComponent<DPVillager_Component>(g_xSecondVillager))
 			{
 				pxV->SetRemainingLifeForTest(0.005f);
 			}

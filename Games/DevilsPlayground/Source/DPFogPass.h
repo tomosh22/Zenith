@@ -5,7 +5,7 @@
  * the engine fog system generically via the render graph's force-disable overlay
  * (xGraph.SetOwnerForceDisabled("Fog", ...)) — no fog-specific engine API.
  *
- * Init() is called from Project_RegisterScriptBehaviours; it registers the
+ * Init() is called from Project_RegisterGameComponents; it registers the
  * feature, and the registry drives its lifecycle (InitialiseDPFog / SetupDPFog /
  * ShutdownDPFog). Shutdown() is called from Project_Shutdown and unregisters the
  * feature; ShutdownDPFog is guarded so it survives render-graph teardown order.

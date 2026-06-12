@@ -32,15 +32,15 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DPTelemetry.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPDoor_Behaviour.h"
-#include "Components/DPChest_Behaviour.h"
-#include "Components/DPForge_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
-#include "Components/DPOrbitCamera_Behaviour.h"
-#include "Components/DPItemBase_Behaviour.h"
-#include "Components/DummyNoiseMachine_Behaviour.h"
-#include "Components/Priest_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPDoor_Component.h"
+#include "Components/DPChest_Component.h"
+#include "Components/DPForge_Component.h"
+#include "Components/DPPentagram_Component.h"
+#include "Components/DPOrbitCamera_Component.h"
+#include "Components/DPItemBase_Component.h"
+#include "Components/DummyNoiseMachine_Component.h"
+#include "Components/Priest_Component.h"
 
 #include "Physics/Zenith_Physics.h"
 
@@ -326,7 +326,7 @@ namespace
 		Personality::Stealth,     "Stealth",
 		// 2026-05-26: NOT enabling adaptive sprint on Stealth -- the
 		// villager's movement resolves "Sprint wins ties; walk-quiet
-		// takes the slow speed" (DPVillager_Behaviour ~line 495), so
+		// takes the slow speed" (DPVillager_Component ~line 495), so
 		// adaptive=true + quiet=true would default to sprint speed
 		// during long walks, defeating Stealth's quiet-footstep
 		// advantage. Stealth retains adaptive=false; it's expected to
@@ -778,7 +778,7 @@ namespace
 	Zenith_EntityID FindFirstScript()
 	{
 		Zenith_EntityID xResult;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&xResult](Zenith_EntityID xId, T&) { if (!xResult.IsValid()) xResult = xId; });
 		return xResult;
 	}
@@ -787,19 +787,19 @@ namespace
 	int CountScripts()
 	{
 		int iCount = 0;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&iCount](Zenith_EntityID, T&) { ++iCount; });
 		return iCount;
 	}
 
 	template<typename T>
-	T* GetScript(Zenith_EntityID xId)
+	T* GetGameComponent(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (!pxScene) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<T>();
+		if (!xEnt.IsValid()) return nullptr;
+		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
@@ -813,7 +813,7 @@ namespace
 	}
 
 	// Resolve the priest's current BT branch + nav-target by inspecting
-	// the blackboard keys Priest_Behaviour writes. Mirror of the priest BT
+	// the blackboard keys Priest_Component writes. Mirror of the priest BT
 	// Selector ordering -- Apprehend > Pursue > Investigate > Patrol.
 	void DerivePriestIntentAndTarget(Zenith_EntityID xPriestId,
 	                                 const Zenith_Maths::Vector3& xPriestPos,
@@ -876,14 +876,14 @@ namespace
 	}
 
 	// Sample the orbit camera once per frame. Returns a valid=false
-	// CameraState if no DPOrbitCamera_Behaviour exists in the active
+	// CameraState if no DPOrbitCamera_Component exists in the active
 	// scene (e.g. FrontEnd scene during early Setup).
 	Zenith_Telemetry::CameraState SampleCameraState()
 	{
 		Zenith_Telemetry::CameraState xCam;
 		xCam.bValid = 0;
-		DP_Query::ForEachScriptInActiveScene<DPOrbitCamera_Behaviour>(
-			[&xCam](Zenith_EntityID, DPOrbitCamera_Behaviour& xOrbit)
+		DP_Query::ForEachComponentInActiveScene<DPOrbitCamera_Component>(
+			[&xCam](Zenith_EntityID, DPOrbitCamera_Component& xOrbit)
 			{
 				if (xCam.bValid) return;  // first one wins; there's only one
 				const Zenith_Maths::Vector3 xTarget = xOrbit.GetOrbitTarget();
@@ -1011,8 +1011,8 @@ namespace
 
 		const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
 
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xSample, xPossessed](Zenith_EntityID xId, DPVillager_Behaviour& xVilla)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xSample, xPossessed](Zenith_EntityID xId, DPVillager_Component& xVilla)
 			{
 				Zenith_Telemetry::EntitySnapshot xE;
 				xE.xId = xId;
@@ -1038,8 +1038,8 @@ namespace
 			});
 
 		Zenith_EntityID xPriestId;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xSample, &xPriestId](Zenith_EntityID xId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xSample, &xPriestId](Zenith_EntityID xId, Priest_Component&)
 			{
 				Zenith_Telemetry::EntitySnapshot xE;
 				xE.xId = xId;
@@ -1174,7 +1174,7 @@ namespace
 	}
 
 	// Look up a UI element by name in ANY loaded scene's UICanvas.
-	// DPPauseMenuController_Behaviour::OnStart migrates its parent
+	// DPPauseMenuController_Component::OnStart migrates its parent
 	// entity to the persistent scene, so a search restricted to the
 	// active scene would miss PauseOverlay. Walk every loaded scene;
 	// first match wins. See FullPlaythrough_Test::FindHudText for the
@@ -1229,7 +1229,7 @@ namespace
 	}
 
 	// Compute the camera's horizontal forward/right basis (matches
-	// DPVillager_Behaviour::TickMovement so WASD inputs land where we expect).
+	// DPVillager_Component::TickMovement so WASD inputs land where we expect).
 	bool GetCameraHorizontalBasis(Zenith_Maths::Vector3& xForward, Zenith_Maths::Vector3& xRight)
 	{
 		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
@@ -1380,8 +1380,8 @@ namespace
 			g_axBlockingDoor[i] = Zenith_EntityID{};
 		}
 		uint32_t uDoorCells = 0;
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[&uDoorCells](Zenith_EntityID xId, DPDoor_Behaviour& xDoor)
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[&uDoorCells](Zenith_EntityID xId, DPDoor_Component& xDoor)
 			{
 				// 2026-05-25 v4: rasterise ALL doors (regardless of
 				// BlocksPath state). Open doors are SENSOR colliders
@@ -1405,8 +1405,8 @@ namespace
 				// the wall). World -> local: rotate by -yaw. World point P
 				// is inside the OBB iff |R^-1*(P - xC)| <= half-extents
 				// componentwise.
-				const float fHalfThick = DPDoor_Behaviour::kDoorHalfThick;
-				const float fHalfWide  = DPDoor_Behaviour::kDoorHalfWide;
+				const float fHalfThick = DPDoor_Component::kDoorHalfThick;
+				const float fHalfWide  = DPDoor_Component::kDoorHalfWide;
 				// Bounding-box screen of candidate cells: the OBB fits
 				// inside a (halfThick + halfWide) AABB diagonal-wise.
 				const float fSearch = fHalfThick + fHalfWide + 0.5f;
@@ -1628,8 +1628,8 @@ namespace
 	Zenith_EntityID OpportunisticDoorPress(const Zenith_Maths::Vector3& xVillagerPos)
 	{
 		Zenith_EntityID xPressed;
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[&xPressed, &xVillagerPos](Zenith_EntityID xId, DPDoor_Behaviour& xDoor)
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[&xPressed, &xVillagerPos](Zenith_EntityID xId, DPDoor_Component& xDoor)
 			{
 				if (xPressed.IsValid()) return;              // already F-pressed this frame
 				if (!xDoor.BlocksPath()) return;             // already open / opening
@@ -1911,8 +1911,8 @@ namespace
 	{
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xBest, &fBestSq, &xRef](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xBest, &fBestSq, &xRef](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				Zenith_Maths::Vector3 xPos;
 				if (!TryGetEntityPos(xId, xPos)) return;
@@ -1933,7 +1933,7 @@ namespace
 	{
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
-		DP_Query::ForEachScriptInActiveScene<T>(
+		DP_Query::ForEachComponentInActiveScene<T>(
 			[&xBest, &fBestSq, &xRef](Zenith_EntityID xId, T&)
 			{
 				Zenith_Maths::Vector3 xPos;
@@ -1962,8 +1962,8 @@ namespace
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
 		DP_ItemTag eBest = DP_ItemTag::None;
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&xBest, &fBestSq, &eBest, &xRef, uMask](Zenith_EntityID xId, DPItemBase_Behaviour& xItem)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&xBest, &fBestSq, &eBest, &xRef, uMask](Zenith_EntityID xId, DPItemBase_Component& xItem)
 			{
 				const DP_ItemTag eTag = xItem.GetTag();
 				if (!DP_IsObjectiveTag(eTag)) return;
@@ -1987,8 +1987,8 @@ namespace
 	{
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
-		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
-			[&xBest, &fBestSq, &xRef, eTag](Zenith_EntityID xId, DPItemBase_Behaviour& xItem)
+		DP_Query::ForEachComponentInActiveScene<DPItemBase_Component>(
+			[&xBest, &fBestSq, &xRef, eTag](Zenith_EntityID xId, DPItemBase_Component& xItem)
 			{
 				if (xItem.GetTag() != eTag) return;
 				Zenith_Maths::Vector3 xPos;
@@ -2069,8 +2069,8 @@ namespace
 		const Zenith_Maths::Vector3 xCentre(50.0f, 0.0f, 50.0f);
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xBest, &fBestSq, &xCentre](Zenith_EntityID xId, DPVillager_Behaviour& xVilla)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xBest, &fBestSq, &xCentre](Zenith_EntityID xId, DPVillager_Component& xVilla)
 			{
 				if (xVilla.GetRemainingLife() <= 0.0f) return;
 				Zenith_Maths::Vector3 xPos;
@@ -2199,7 +2199,7 @@ namespace
 		const float fDz = xTarget.z - xPos.z;
 		const float fDist = std::sqrt(fDx*fDx + fDz*fDz);
 		float fLife = -1.0f;
-		if (DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(xV))
+		if (DPVillager_Component* pxV = GetGameComponent<DPVillager_Component>(xV))
 			fLife = pxV->GetRemainingLife();
 		std::printf("[HumanPlaythrough] %s budget=%d pos=(%.1f,%.1f,%.1f) tgt=(%.1f,%.1f,%.1f) dist=%.1f life=%.1f\n",
 			szPhase, g_iWalkBudget, xPos.x, xPos.y, xPos.z,
@@ -2387,8 +2387,8 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	case kHP_WaitGameLevel:
 	{
 		++g_iWait;
-		// Wait until GameLevel-specific entities (DPVillager_Behaviour) appear.
-		const int iV = CountScripts<DPVillager_Behaviour>();
+		// Wait until GameLevel-specific entities (DPVillager_Component) appear.
+		const int iV = CountScripts<DPVillager_Component>();
 		if (iV > 0) {
 			g_iPhase = kHP_CaptureRefs;
 			g_iWait = 0;
@@ -2403,13 +2403,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kHP_CaptureRefs:
 	{
-		g_iVillagerCount = CountScripts<DPVillager_Behaviour>();
-		g_iDoorCount     = CountScripts<DPDoor_Behaviour>();
-		g_iChestCount    = CountScripts<DPChest_Behaviour>();
+		g_iVillagerCount = CountScripts<DPVillager_Component>();
+		g_iDoorCount     = CountScripts<DPDoor_Component>();
+		g_iChestCount    = CountScripts<DPChest_Component>();
 
-		g_xPriest    = FindFirstScript<Priest_Behaviour>();
-		g_xPentagram = FindFirstScript<DPPentagram_Behaviour>();
-		g_xForge     = FindFirstScript<DPForge_Behaviour>();
+		g_xPriest    = FindFirstScript<Priest_Component>();
+		g_xPentagram = FindFirstScript<DPPentagram_Component>();
+		g_xForge     = FindFirstScript<DPForge_Component>();
 		// Door, chest, noise: pick the instance closest to the forge so the
 		// test's WASD walks stay short. The UE-imported door batch stacks all
 		// 15 doors at world origin (~60 m from the forge); the relocated
@@ -2429,9 +2429,9 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// the pentagram reachable.
 		Zenith_Maths::Vector3 xPentPos(50.0f, 0.0f, 70.0f);
 		if (g_xPentagram.IsValid()) TryGetEntityPos(g_xPentagram, xPentPos);
-		g_xDoor   = FindClosestScriptTo<DPDoor_Behaviour>(xPentPos);
-		g_xChest  = FindClosestScriptTo<DPChest_Behaviour>(xForgePos);
-		g_xNoise  = FindClosestScriptTo<DummyNoiseMachine_Behaviour>(xForgePos);
+		g_xDoor   = FindClosestScriptTo<DPDoor_Component>(xPentPos);
+		g_xChest  = FindClosestScriptTo<DPChest_Component>(xForgePos);
+		g_xNoise  = FindClosestScriptTo<DummyNoiseMachine_Component>(xForgePos);
 
 		// Pick the villager closest to the map centre — keeps the screen-space
 		// click-to-possess inside the orbit camera's frame.
@@ -2467,7 +2467,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 
 		// Snapshot orbit yaw/distance so we can detect the camera-control inputs
 		// took effect.
-		if (DPOrbitCamera_Behaviour* pxOrbit = GetScript<DPOrbitCamera_Behaviour>(g_xPossessTarget))
+		if (DPOrbitCamera_Component* pxOrbit = GetGameComponent<DPOrbitCamera_Component>(g_xPossessTarget))
 		{
 			(void)pxOrbit;  // orbit lives on GameManager, not the villager — defensive
 		}
@@ -2850,7 +2850,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			? DP_Player::GetHeldItemTag(xCur) : DP_ItemTag::None;
 		if (xCur.IsValid()) g_xCurrentVillager = xCur;
 		uint32_t uCrafts = 0;
-		if (DPForge_Behaviour* pxF = GetScript<DPForge_Behaviour>(g_xForge))
+		if (DPForge_Component* pxF = GetGameComponent<DPForge_Component>(g_xForge))
 		{
 			uCrafts = pxF->GetCraftCount();
 		}
@@ -2894,7 +2894,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 					// proceed to the door phase, which will see
 					// IsOpen() and advance to chest/obj-loop.
 					bool bDoorAlreadyOpen = false;
-					if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+					if (DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor))
 					{
 						bDoorAlreadyOpen = pxDoor->IsOpen();
 					}
@@ -2925,7 +2925,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// is rejected. Walking to the logical centre puts the bot
 		// inside InteractRadius reliably.
 		Zenith_Maths::Vector3 xDoorPos;
-		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		if (DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor))
 		{
 			xDoorPos = pxDoor->GetInteractionCentre();
 		}
@@ -2977,7 +2977,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// door 86 at t=165.5s after villager 116 had opened it earlier.
 		// Closed-door blocks the bot's subsequent path back to the
 		// pentagram. Skip-if-already-open keeps the bot moving forward.
-		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		if (DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor))
 		{
 			if (pxDoor->IsOpen())
 			{
@@ -2997,7 +2997,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 3) return true;
-		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		if (DPDoor_Component* pxDoor = GetGameComponent<DPDoor_Component>(g_xDoor))
 		{
 			g_bDoorOpened = pxDoor->IsOpen();
 		}
@@ -3113,7 +3113,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 3) return true;
-		if (DPChest_Behaviour* pxChest = GetScript<DPChest_Behaviour>(g_xChest))
+		if (DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest))
 		{
 			g_bChestOpened = pxChest->IsOpen();
 		}
@@ -3531,7 +3531,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// item (the obj-item walk is BEFORE pickup, nothing to drop).
 		if (g_xActiveCfg.bUseRelayDrop && xCur.IsValid())
 		{
-			if (DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(xCur))
+			if (DPVillager_Component* pxV = GetGameComponent<DPVillager_Component>(xCur))
 			{
 				const float fLife = pxV->GetRemainingLife();
 				if (fLife > 0.0f && fLife < kRelayLifeThresholdSec)
@@ -3656,8 +3656,8 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// filter the current villager and tried entries out.
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xBest, &fBestSq, &xCurPos, xCur](Zenith_EntityID xId, DPVillager_Behaviour& xVilla)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xBest, &fBestSq, &xCurPos, xCur](Zenith_EntityID xId, DPVillager_Component& xVilla)
 			{
 				if (xId == xCur) return;
 				if (xVilla.GetRemainingLife() <= 0.0f) return;

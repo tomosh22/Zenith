@@ -15,8 +15,8 @@
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
-#include "../Components/Priest_Behaviour.h"
-#include "../Components/DPDoor_Behaviour.h"
+#include "../Components/Priest_Component.h"
+#include "../Components/DPDoor_Component.h"
 
 #include <cmath>
 
@@ -96,8 +96,8 @@ namespace DP_AI
 		// emit doesn't reach a priest 100 m away. The GDD intent for
 		// BellSoul is "map-wide" so we iterate every priest in the
 		// active scene and write straight into its BB.
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xPos](Zenith_EntityID xPriestId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xPos](Zenith_EntityID xPriestId, Priest_Component&)
 			{
 				Zenith_SceneData* pxScene =
 					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
@@ -141,8 +141,8 @@ namespace DP_AI
 		// is the gated DPInteractable proximity poll is bypassed.
 		constexpr float kAiDoorRadiusM = 4.0f;
 		constexpr float kAiDoorRadiusSq = kAiDoorRadiusM * kAiDoorRadiusM;
-		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
-			[&xActor, &xActorPos](Zenith_EntityID /*xDoorId*/, DPDoor_Behaviour& xDoor)
+		DP_Query::ForEachComponentInActiveScene<DPDoor_Component>(
+			[&xActor, &xActorPos](Zenith_EntityID /*xDoorId*/, DPDoor_Component& xDoor)
 			{
 				if (!xDoor.BlocksPath()) return;          // already open/opening
 				const Vec3 xC = xDoor.GetInteractionCentre();
@@ -246,17 +246,17 @@ namespace DP_AI
 	}
 
 	// ========================================================================
-	// Cross-behaviour priest-state forwarders for the HUD. The BB-read pattern
-	// mirrors DPHUDController_Behaviour::ComputeAelfricState; the priest-position
+	// Cross-component priest-state forwarders for the HUD. The BB-read pattern
+	// mirrors DPHUDController's ComputeAelfricState; the priest-position
 	// resolve mirrors the HUD's PriestDistance block. Moved here so the HUD
-	// header no longer includes Priest_Behaviour.h (cross-behaviour rule).
+	// header no longer includes Priest_Component.h (cross-component rule).
 	// ========================================================================
 
 	bool IsAnyPriestPursuing()
 	{
 		bool bPursuing = false;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&bPursuing](Zenith_EntityID xPriestId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&bPursuing](Zenith_EntityID xPriestId, Priest_Component&)
 			{
 				if (bPursuing) return;
 				Zenith_SceneData* pxScene =
@@ -279,8 +279,8 @@ namespace DP_AI
 	bool IsAnyPriestInvestigating()
 	{
 		bool bInvestigating = false;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&bInvestigating](Zenith_EntityID xPriestId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&bInvestigating](Zenith_EntityID xPriestId, Priest_Component&)
 			{
 				if (bInvestigating) return;
 				Zenith_SceneData* pxScene =
@@ -303,8 +303,8 @@ namespace DP_AI
 	float GetNearestPriestDistanceFrom(const Vec3& xFrom)
 	{
 		float fClosestDist = -1.0f;
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xFrom, &fClosestDist](Zenith_EntityID xPriestId, Priest_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
+			[&xFrom, &fClosestDist](Zenith_EntityID xPriestId, Priest_Component&)
 			{
 				Zenith_SceneData* pxScene =
 					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);

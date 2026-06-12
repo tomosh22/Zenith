@@ -6,9 +6,8 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
-#include "Components/DPProcLevelBootstrap_Behaviour.h"
+#include "Components/DPProcLevelBootstrap_Component.h"
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
 
 #include <cstdio>
@@ -24,7 +23,7 @@
 //
 // The test:
 //   1. Creates an empty scene.
-//   2. Adds an entity with DPProcLevelBootstrap_Behaviour attached.
+//   2. Adds an entity with DPProcLevelBootstrap_Component attached.
 //   3. Sets the test seed via SetSeedForTest BEFORE OnAwake fires.
 //   4. Lets the engine drive OnAwake.
 //   5. Verifies the layout is populated (>=1 room) and the seed
@@ -53,32 +52,27 @@ static void Setup_ProcLevelBootstrap()
 		return;
 	}
 
-	// Attach the bootstrap script. AddScript fires OnAwake immediately
-	// (the AddScript flavour, as opposed to AddScriptForSerialization,
-	// drives the lifecycle hooks). Set the seed BEFORE the OnAwake
-	// reads it -- AddScript returns AFTER OnAwake has already fired, so
-	// we have to use the AddScriptForSerialization path + manual
-	// initialisation, OR set the seed before AddScript.
-	//
-	// We use AddScript here and accept the default seed=0 for the
-	// "did the wire-up work" assertion. A SetSeedForTest call after
-	// the fact would be too late to affect the generated layout. A
-	// later PR can add a config-driven seed if needed.
+	// Attach the bootstrap component. OnAwake -- which runs the generator
+	// -- is invoked by hand: a SCENE_LOAD_ADDITIVE_WITHOUT_LOADING scene
+	// is never activated, so the engine's per-Update awake wave-drain
+	// never visits it (IsSceneUpdatable requires IsActivated). The manual
+	// call is exactly-once for the same reason. We accept the default
+	// seed=0 for the "did the wire-up work" assertion -- a SetSeedForTest
+	// call after the fact would be too late to affect the generated
+	// layout. A later PR can add a config-driven seed if needed.
 	Zenith_Entity xBootstrapEntity = g_xEngine.Scenes().CreateEntity(pxScene, "ProcLevelBootstrap");
-	auto& xScript = xBootstrapEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.AddScript<DPProcLevelBootstrap_Behaviour>();
+	xBootstrapEntity.AddComponent<DPProcLevelBootstrap_Component>().OnAwake();
 }
 
 static bool Step_ProcLevelBootstrap(int iFrame)
 {
-	// Give the lifecycle scheduler one frame to settle, then verify.
-	// Most state we care about is already populated after AddScript
-	// returns (OnAwake fires synchronously), but using a frame lets
-	// the harness print the bootstrap's stdout BEFORE Verify runs.
+	// Give the harness one frame to settle, then verify. Everything is
+	// populated synchronously by the manual OnAwake in Setup; the frame
+	// just lets the bootstrap's stdout print BEFORE Verify runs.
 	if (iFrame < 1) return true;
 
-	DPProcLevelBootstrap_Behaviour* pxBootstrap =
-		DPProcLevelBootstrap_Behaviour::Instance();
+	DPProcLevelBootstrap_Component* pxBootstrap =
+		DPProcLevelBootstrap_Component::Instance();
 	if (pxBootstrap == nullptr)
 	{
 		g_szFailureReason = "Bootstrap instance not registered after OnAwake";

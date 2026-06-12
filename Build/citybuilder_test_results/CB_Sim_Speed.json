@@ -2,7 +2,7 @@
   "name": "CB_Sim_Speed",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.035,
+  "durationMs": 0.028,
   "failures": [],
   "skipped": false
 }

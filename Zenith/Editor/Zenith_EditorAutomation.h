@@ -145,8 +145,8 @@ enum class Zenith_EditorActionType
 	CREATE_UI_SCROLL_VIEW,
 	SET_UI_SCROLL_VIEW_CONTENT_SIZE,
 
-	// Script (via Zenith_Editor::AttachScriptForSerializationToSelected)
-	ATTACH_SCRIPT,
+	// Behaviour Graph (via Zenith_Editor::AttachGraphToSelected)
+	ATTACH_GRAPH,
 
 	// Particles
 	SET_PARTICLE_CONFIG,
@@ -261,8 +261,6 @@ void AddStep_AddComponent(const char* szDisplayName);
 	// Convenience wrappers for common components
 void AddStep_AddCamera() { AddStep_AddComponent("Camera"); }
 void AddStep_AddUI() { AddStep_AddComponent("UI"); }
-	// AddStep_AddScript removed - use AddStep_AttachScript("Foo_Behaviour") instead.
-	// AttachScript implicitly adds the ScriptComponent if missing.
 void AddStep_AddParticleEmitter() { AddStep_AddComponent("ParticleEmitter"); }
 void AddStep_AddCollider() { AddStep_AddComponent("Collider"); }
 void AddStep_AddModel() { AddStep_AddComponent("Model"); }
@@ -397,13 +395,11 @@ void AddStep_SetUIButtonTextShadow(const char* szElement, float fOffX, float fOf
 void AddStep_SetUIButtonTextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
 
 	//--------------------------------------------------------------------------
-	// Script Step Helpers
+	// Graph Step Helpers
 	//--------------------------------------------------------------------------
-	// AttachScript adds a script slot (and the ScriptComponent if missing) to the selected
-	// entity. The behaviour type name resolves deterministically to "game:Scripts/<TypeName>.zscript".
-	// Like the old AddStep_SetBehaviourForSerialization, this does NOT call OnAwake -
-	// lifecycle is dispatched on first frame / Play mode entry.
-void AddStep_AttachScript(const char* szBehaviourTypeName);
+	// Attaches a Behaviour Graph (.bgraph asset path, e.g. "game:Graphs/Door.bgraph")
+	// to the selected entity's Zenith_GraphComponent (added if absent).
+void AddStep_AttachGraph(const char* szGraphAssetPath);
 
 	//--------------------------------------------------------------------------
 	// Particle Step Helpers

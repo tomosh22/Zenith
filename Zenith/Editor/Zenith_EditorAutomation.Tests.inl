@@ -11,7 +11,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIButton.h"
@@ -708,51 +708,39 @@ ZENITH_TEST(Automation, SetUIButtonStyleStep)
 }
 
 //=============================================================================
-// Script/Behaviour Tests
+// Behaviour Graph attach test
 //=============================================================================
 
-static bool s_bTestBehaviourAwakeCalled = false;
-
-class AutomationTestBehaviour : public Zenith_ScriptBehaviour
+ZENITH_TEST(Automation, AttachGraphStep)
 {
-public:
-	ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(AutomationTestBehaviour)
-	AutomationTestBehaviour(Zenith_Entity& xEntity) { m_xParentEntity = xEntity; }
-	void OnAwake() override { s_bTestBehaviourAwakeCalled = true; }
-};
-
-// AutomationTestBehaviour auto-registers via the macro's static initializer.
-// No explicit registration call needed.
-ZENITH_TEST(Automation, AttachScriptStep)
-{
-	EDITOR_TEST_BEGIN(TestAttachScriptStep);
+	EDITOR_TEST_BEGIN(TestAttachGraphStep);
 
 	g_xEngine.EditorAutomation().Reset();
-	s_bTestBehaviourAwakeCalled = false;
 
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("AutoSerEntity");
-	g_xEngine.EditorAutomation().AddStep_AttachScript("AutomationTestBehaviour");
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/AutomationTest_DoesNotExist.bgraph");
 	g_xEngine.EditorAutomation().Begin();
 
 	g_xEngine.EditorAutomation().ExecuteNextStep(); // Create entity
-	g_xEngine.EditorAutomation().ExecuteNextStep(); // Attach script (adds ScriptComponent + slot, no OnAwake)
+	g_xEngine.EditorAutomation().ExecuteNextStep(); // Attach graph (adds GraphComponent + slot)
 
 	Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
-	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_GraphComponent>(), "Entity should have GraphComponent");
 
-	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	ZENITH_ASSERT_EQ(xScript.GetScriptCount(), 1u, "Should have exactly one script slot");
+	Zenith_GraphComponent& xGraphs = pxEntity->GetComponent<Zenith_GraphComponent>();
+	ZENITH_ASSERT_EQ(xGraphs.GetGraphCount(), 1u, "Should have exactly one graph slot");
 
-	Zenith_ScriptBehaviour* pxBehaviour = xScript.GetScriptAt(0);
-	ZENITH_ASSERT_NOT_NULL(pxBehaviour, "Slot behaviour should be set");
-	ZENITH_ASSERT_STREQ(pxBehaviour->GetBehaviourTypeName(), "AutomationTestBehaviour", "Behaviour type name should be 'AutomationTestBehaviour'");
-	ZENITH_ASSERT_FALSE(s_bTestBehaviourAwakeCalled, "OnAwake should NOT have been called by AttachScriptForSerializationToSelected");
+	// The asset doesn't exist - the slot is preserved unresolved with its path
+	// intact (the round-trip contract).
+	ZENITH_ASSERT_NULL(xGraphs.GetGraphAt(0), "Missing asset keeps the slot unresolved");
+	ZENITH_ASSERT_STREQ(xGraphs.GetGraphAssetPathAt(0), "game:Graphs/AutomationTest_DoesNotExist.bgraph",
+		"Slot path should round-trip verbatim");
 
 	g_xEngine.EditorAutomation().ExecuteNextStep();
 	g_xEngine.EditorAutomation().Reset();
 
-	EDITOR_TEST_END(TestAttachScriptStep);
+	EDITOR_TEST_END(TestAttachGraphStep);
 }
 
 //=============================================================================

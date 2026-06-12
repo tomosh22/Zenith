@@ -4,8 +4,8 @@
 // CB_ToolIcons — shared presentation metadata for the toolbar buttons: the icon
 // file base-name + the hover-tooltip description for each tool. Runtime-safe
 // (no drawing, no ZENITH_TOOLS, no engine deps) so BOTH the icon GENERATOR
-// (CityBuilder.cpp, tools build) and the HUD (CB_CityManager_Behaviour, runtime)
-// read the SAME list. Indexed 1:1 with CB_CityManager_Behaviour::ToolDescs() —
+// (CityBuilder.cpp, tools build) and the HUD (CB_CityManagerComponent, runtime)
+// read the SAME list. Indexed 1:1 with CB_CityManagerComponent::ToolDescs() —
 // keep the order in sync.
 //
 // Icons are generated procedurally at tools-build into

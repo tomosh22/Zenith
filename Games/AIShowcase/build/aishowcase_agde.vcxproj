@@ -164,7 +164,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\AIShowcase_Behaviour.h" />
+    <ClInclude Include="..\Components\AIShowcase_GameComponent.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AIShowcase.cpp" />

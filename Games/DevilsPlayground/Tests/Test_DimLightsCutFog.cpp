@@ -9,7 +9,7 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "ZenithECS/Zenith_Query.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -28,7 +28,7 @@
 //      the currently-possessed one. Player needs to see every villager
 //      to pick a successor when the host dies.
 //
-//   3. DPFogPass_Behaviour::OnUpdate has rebuilt the fog-hole table this
+//   3. DPFogPass_Component::OnUpdate has rebuilt the fog-hole table this
 //      frame, registering a hole per light + a hole per villager.
 //      Verify hole count == LightCount + VillagerCount.
 // ============================================================================
@@ -101,7 +101,7 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 
 	case kSettle:
 	{
-		// One frame for DPFogPass_Behaviour::OnUpdate to clear-and-rebuild
+		// One frame for DPFogPass_Component::OnUpdate to clear-and-rebuild
 		// the fog-hole table after the scene-load completes.
 		++g_iWait;
 		if (g_iWait < 3) return true;
@@ -122,9 +122,9 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 					if (fI > 200.0f) g_bAllLightsDim = false;
 				});
 		}
-		// Count villagers via DP_Query (lives on Zenith_ScriptComponent).
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[](Zenith_EntityID, DPVillager_Behaviour&) { ++g_iVillagerCount; });
+		// Count villagers via DP_Query (component-pool query).
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[](Zenith_EntityID, DPVillager_Component&) { ++g_iVillagerCount; });
 		g_uFogHoleCount = DP_Fog::GetFogHoleCount();
 
 		std::printf("[DimLightsCutFog] lights=%d villagers=%d intensity=[%.0f..%.0f] foghole=%u allDim=%d\n",

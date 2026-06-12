@@ -6,8 +6,8 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
-#include "Components/DPMainMenuController_Behaviour.h"
-#include "Components/DPPauseMenuController_Behaviour.h"
+#include "Components/DPMainMenuController_Component.h"
+#include "Components/DPPauseMenuController_Component.h"
 
 #include <cstdio>
 
@@ -26,12 +26,12 @@
 //                Zenith_Application::RequestQuit).
 //
 // Procedure (no scene needed; flags only):
-//   1. DPMainMenuController_Behaviour::ResetQuitForTest(); confirm
+//   1. DPMainMenuController_Component::ResetQuitForTest(); confirm
 //      WasQuitRequestedForTest() == false.
 //   2. FireQuitClickForTest() -- direct invocation of the Quit
 //      button's OnClick handler. Assert WasQuitRequestedForTest()
 //      == true.
-//   3. DPPauseMenuController_Behaviour::ResetPauseShortcutsForTest().
+//   3. DPPauseMenuController_Component::ResetPauseShortcutsForTest().
 //      Confirm both shortcut flags == false.
 //   4. Load GameLevel so a persistent pause-menu singleton exists.
 //   5. FireRestartShortcutForTest. Assert
@@ -82,22 +82,22 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 	case kPM_Start:
 		// Step 1+2: MainMenu Quit click. No scene needed -- the
 		// static handler test only touches a static flag.
-		DPMainMenuController_Behaviour::ResetQuitForTest();
-		if (DPMainMenuController_Behaviour::WasQuitRequestedForTest())
+		DPMainMenuController_Component::ResetQuitForTest();
+		if (DPMainMenuController_Component::WasQuitRequestedForTest())
 		{
 			FailAt(1, "WasQuitRequestedForTest true after ResetQuitForTest");
 			g_iPhase = kPM_Done;
 			return false;
 		}
-		DPMainMenuController_Behaviour::FireQuitClickForTest();
-		if (!DPMainMenuController_Behaviour::WasQuitRequestedForTest())
+		DPMainMenuController_Component::FireQuitClickForTest();
+		if (!DPMainMenuController_Component::WasQuitRequestedForTest())
 		{
 			FailAt(2, "Quit click handler didn't set flag");
 			g_iPhase = kPM_Done;
 			return false;
 		}
 		// Cleanup the static flag so its mere existence doesn't leak.
-		DPMainMenuController_Behaviour::ResetQuitForTest();
+		DPMainMenuController_Component::ResetQuitForTest();
 
 		// Step 3-6 require the persistent pause-menu instance. Load
 		// GameLevel and wait a few frames for OnStart to migrate the
@@ -108,7 +108,7 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 
 	case kPM_WaitForPersistentInstance:
 		++g_iFrameWait;
-		if (DPPauseMenuController_Behaviour::GetPersistentInstanceForTest() != nullptr)
+		if (DPPauseMenuController_Component::GetPersistentInstanceForTest() != nullptr)
 		{
 			g_iPhase = kPM_RunAssertions;
 		}
@@ -122,26 +122,26 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 
 	case kPM_RunAssertions:
 	{
-		DPPauseMenuController_Behaviour::ResetPauseShortcutsForTest();
-		if (DPPauseMenuController_Behaviour::WasRestartRequestedForTest()
-			|| DPPauseMenuController_Behaviour::WasQuitToMenuRequestedForTest())
+		DPPauseMenuController_Component::ResetPauseShortcutsForTest();
+		if (DPPauseMenuController_Component::WasRestartRequestedForTest()
+			|| DPPauseMenuController_Component::WasQuitToMenuRequestedForTest())
 		{
 			FailAt(4, "ResetPauseShortcutsForTest left flags asserted");
 			g_iPhase = kPM_Done;
 			return false;
 		}
 
-		DPPauseMenuController_Behaviour::FireRestartShortcutForTest();
-		if (!DPPauseMenuController_Behaviour::WasRestartRequestedForTest())
+		DPPauseMenuController_Component::FireRestartShortcutForTest();
+		if (!DPPauseMenuController_Component::WasRestartRequestedForTest())
 		{
 			FailAt(5, "Restart shortcut didn't set flag");
 			g_iPhase = kPM_Done;
 			return false;
 		}
 
-		DPPauseMenuController_Behaviour::ResetPauseShortcutsForTest();
-		DPPauseMenuController_Behaviour::FireQuitToMenuShortcutForTest();
-		if (!DPPauseMenuController_Behaviour::WasQuitToMenuRequestedForTest())
+		DPPauseMenuController_Component::ResetPauseShortcutsForTest();
+		DPPauseMenuController_Component::FireQuitToMenuShortcutForTest();
+		if (!DPPauseMenuController_Component::WasQuitToMenuRequestedForTest())
 		{
 			FailAt(6, "Quit-to-menu shortcut didn't set flag");
 			g_iPhase = kPM_Done;
@@ -149,7 +149,7 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 		}
 
 		// Cleanup so the next test doesn't see stale state.
-		DPPauseMenuController_Behaviour::ResetPauseShortcutsForTest();
+		DPPauseMenuController_Component::ResetPauseShortcutsForTest();
 
 		g_bPassed = true;
 		std::printf("[P2MenuShortcuts] all 3 wiring cases passed\n");

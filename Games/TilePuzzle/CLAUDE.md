@@ -9,7 +9,7 @@ Players slide colored polyomino shapes across a grid to match them with cats of 
 ## Files
 
 - `TilePuzzle.cpp` - Main entry point, resource initialization, scene setup
-- `Components/TilePuzzle_Behaviour.h` - Main game coordinator (implements `Zenith_ScriptBehaviour`)
+- `Components/TilePuzzle_GameComponent.h` - Main game coordinator (game ECS component)
 - `Components/TilePuzzle_Types.h` - Game state enums, shape definitions, level data structures
 - `Components/TilePuzzle_LevelGenerator.h` - Procedural level generation via reverse scramble
 - `Components/TilePuzzle_Rules.h` - Shared game rules (single source of truth for solver and gameplay)
@@ -104,7 +104,7 @@ The grid has a 1-cell empty border, so playable area is `(width-2) x (height-2)`
 
 ## Shared Rules Architecture
 
-`TilePuzzle_Rules.h` is the **single source of truth** for all gameplay logic. Both the game (`TilePuzzle_Behaviour`) and the level generator (scramble) use the same rule functions, ensuring they can never interpret rules differently.
+`TilePuzzle_Rules.h` is the **single source of truth** for all gameplay logic. Both the game (`TilePuzzle_GameComponent`) and the level generator (scramble) use the same rule functions, ensuring they can never interpret rules differently.
 
 ### Lightweight State Views
 Rules operate on `ShapeState` and `CatState` structs that contain only logical data (position, color, definition pointer) without entity/visual information. This allows the same rule functions to be called from gameplay code (which has entities) and the generator (which doesn't).
@@ -147,14 +147,14 @@ The scramble loop itself never needs to change when adding new object types.
 
 ## Pinball Minigame
 
-`Components/Pinball_Behaviour.h` — A pinball-style minigame with a plunger launcher, physics ball, walls, curves, pegs, and a scoring target.
+`Components/Pinball_GameComponent.h` — A pinball-style minigame with a plunger launcher, physics ball, walls, curves, pegs, and a scoring target.
 
 ### Peg Layout System
 
 Peg positions are **pre-generated during ZENITH_TOOLS boot** and saved to disk, then loaded at runtime. This ensures layouts are predetermined and logical rather than randomly scattered at runtime.
 
 **Generation (tools only):**
-- `Pinball_Behaviour::GenerateAndWriteLayouts()` is called from `Project_InitializeResources()`
+- `Pinball_GameComponent::GenerateAndWriteLayouts()` is called from `Project_InitializeResources()`
 - Generates 6 layouts, each with 8 pegs placed within the main playfield area
 - Uses seeded `std::mt19937` (seed = `layoutIndex * 31337 + 42`) for deterministic output
 - Enforces minimum 0.7 unit separation between pegs to prevent overlap
@@ -182,7 +182,7 @@ uint32_t  layoutCount
 
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
-| **Script Behaviours** | `Zenith_ScriptBehaviour` | Main game logic in `TilePuzzle_Behaviour` |
+| **Game Components** | `Zenith_ComponentMetaRegistry` | Main game logic in `TilePuzzle_GameComponent` |
 | **Scene Management** | `Zenith_SceneManager` | Get active scene, create entities |
 | **Entity Creation** | `Zenith_Entity` | Floor tiles, shapes, cats |
 | **Prefab System** | `Zenith_Prefab` | Template-based entity instantiation |

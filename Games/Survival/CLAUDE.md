@@ -10,7 +10,7 @@ A resource gathering and crafting survival game demonstrating advanced Zenith en
 | **Event System** | `Zenith_EventDispatcher` | Custom game events with deferred queue |
 | **Query System** | `Zenith_Query` | Multi-component entity queries |
 | **Entity-Component System** | `Zenith_Entity`, `Zenith_Scene` | Entity creation, component attachment |
-| **Script Behaviors** | `Zenith_ScriptBehaviour` | Game logic via lifecycle hooks |
+| **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks |
 | **Prefab System** | `Zenith_Prefab`, `Zenith_Scene::Instantiate` | Entity templates for player, resources |
 | **Input Handling** | `Zenith_Input` | Continuous and discrete input polling |
 | **UI System** | `Zenith_UIComponent`, `Zenith_UIText` | HUD with inventory, crafting progress |
@@ -28,7 +28,7 @@ Games/Survival/
   CLAUDE.md                      # This documentation
   Survival.cpp                   # Project entry points, resource initialization
   Components/
-    Survival_Behaviour.h         # Main coordinator (uses all modules below)
+    Survival_GameComponent.h     # Main coordinator component (uses all modules below)
     Survival_Config.h            # DataAsset for game configuration
     Survival_EventBus.h          # Custom game events
     Survival_Inventory.h         # Item storage
@@ -70,12 +70,12 @@ Use `scene.Query<ComponentA, ComponentB>()` with `.Count()`, `.First()`, `.Any()
 ## Module Breakdown
 
 ### Survival.cpp - Entry Points
-- Project lifecycle hooks (`Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_LoadInitialScene`)
+- Project lifecycle hooks (`Project_GetName`, `Project_RegisterGameComponents`, `Project_LoadInitialScene`)
 - Procedural geometry generation (cube, sphere, capsule)
 - Material and prefab creation
 - Scene setup with camera and UI
 
-### Survival_Behaviour.h - Main Coordinator
+### Survival_GameComponent.h - Main Coordinator
 - Lifecycle hooks (OnAwake, OnStart, OnUpdate)
 - Event subscription and handling
 - System coordination (movement, crafting, resources)
@@ -134,7 +134,7 @@ Use `scene.Query<ComponentA, ComponentB>()` with `.Count()`, `.First()`, `.Any()
 
 The game uses two scenes:
 
-- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and `Zenith_ScriptComponent` (Survival_Behaviour). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
+- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and the SurvivalGame component (Survival_GameComponent). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
 - **World Scene** (`m_xWorldScene`, named "World"): Contains the player, resource nodes (trees, rocks, berry bushes), ground plane, and all world entities. Created when entering gameplay, unloaded when returning to menu.
 
 ### Game State Machine

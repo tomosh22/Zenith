@@ -284,6 +284,7 @@ public class ZenithSolution : Solution
 		{
 			conf.AddProject<SentinelECSProject>(target);
 		}
+		conf.AddProject<SokobanGameProject>(target);
 		conf.AddProject<TestGameProject>(target);
 		conf.AddProject<MarbleGameProject>(target);
 		conf.AddProject<RunnerGameProject>(target);

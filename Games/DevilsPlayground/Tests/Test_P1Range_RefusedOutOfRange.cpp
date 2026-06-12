@@ -12,7 +12,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cmath>
 
@@ -95,9 +95,9 @@ static bool Step_P1RangeRefused(int iFrame)
 		// computations -- trivial.
 		struct VillagerPos { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<VillagerPos> axCands;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
 			[&axCands]
-			(Zenith_EntityID xId, DPVillager_Behaviour&)
+			(Zenith_EntityID xId, DPVillager_Component&)
 			{
 				VillagerPos xV;
 				xV.xId = xId;

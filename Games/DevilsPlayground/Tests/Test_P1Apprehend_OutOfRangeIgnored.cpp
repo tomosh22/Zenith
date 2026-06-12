@@ -11,8 +11,8 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/Priest_Behaviour.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Component.h"
+#include "Components/DPVillager_Component.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include <cmath>
@@ -125,18 +125,18 @@ static bool Step_P1ApprehendOutOfRange(int iFrame)
 		Zenith_Maths::Vector3 xPriestPos(0.0f);
 		bool bGotPriestPos = false;
 
-		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
 			[&xFoundPriest, &xPriestPos, &bGotPriestPos]
-			(Zenith_EntityID xId, Priest_Behaviour&)
+			(Zenith_EntityID xId, Priest_Component&)
 			{
 				xFoundPriest = xId;
 				bGotPriestPos = TryGetEntityPos(xId, xPriestPos);
 			});
 		if (xFoundPriest.IsValid() && bGotPriestPos)
 		{
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
 				[&xClosest, &fClosestDist, &xPriestPos]
-				(Zenith_EntityID xId, DPVillager_Behaviour&)
+				(Zenith_EntityID xId, DPVillager_Component&)
 				{
 					Zenith_Maths::Vector3 xVPos;
 					if (!TryGetEntityPos(xId, xVPos)) return;

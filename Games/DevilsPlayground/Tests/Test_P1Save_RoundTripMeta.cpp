@@ -100,7 +100,7 @@ static void Setup_P1SaveRoundTrip()
 	const bool bOk = DP_Save::TryLoad(xStream, xLoaded);
 
 	std::printf("[P1SaveRoundTrip] wrote=%llu bytes, TryLoad=%d\n",
-		ulWritten, (int)bOk);
+		static_cast<unsigned long long>(ulWritten), (int)bOk);
 
 	if (!bOk)
 	{

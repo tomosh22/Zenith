@@ -892,18 +892,18 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Pinball_Behaviour.h" />
+    <ClInclude Include="..\Components\Pinball_GameComponent.h" />
     <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h" />
     <ClInclude Include="..\Components\TilePuzzle_AssetGen.h" />
-    <ClInclude Include="..\Components\TilePuzzle_Behaviour.h" />
     <ClInclude Include="..\Components\TilePuzzle_ConditionalValidator.h" />
+    <ClInclude Include="..\Components\TilePuzzle_GameComponent.h" />
     <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h" />
     <ClInclude Include="..\Components\TilePuzzle_MetaGame.h" />
     <ClInclude Include="..\Components\TilePuzzle_Rules.h" />
     <ClInclude Include="..\Components\TilePuzzle_SaveData.h" />
     <ClInclude Include="..\Components\TilePuzzle_Solver.h" />
     <ClInclude Include="..\Components\TilePuzzle_Types.h" />
-    <ClInclude Include="..\Tests\TilePuzzle_AutoTest.h" />
+    <ClInclude Include="..\Tests\TilePuzzle_AutoTestComponent.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\TilePuzzle.cpp" />

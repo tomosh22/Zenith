@@ -26,7 +26,7 @@ main()                                   Zenith/Windows/Zenith_Windows_Main.cpp
        │     ├─ AssetRegistry            phase 2: GPU-dependent assets
        │     ├─ Flux::LateInitialise     pipelines + render graph
        │     ├─ Editor::Initialise       (ZENITH_TOOLS only)
-       │     └─ Project_RegisterScriptBehaviours()
+       │     └─ Project_RegisterGameComponents()
        ├─ while (!ShouldClose) Zenith_MainLoop()
        └─ Zenith_Shutdown()              reverse order of Init
 ```

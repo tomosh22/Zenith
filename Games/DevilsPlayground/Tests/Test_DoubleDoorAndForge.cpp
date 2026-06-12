@@ -7,13 +7,12 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPDoubleDoor_Behaviour.h"
-#include "Components/DPForge_Behaviour.h"
+#include "Components/DPDoubleDoor_Component.h"
+#include "Components/DPForge_Component.h"
 
 // ============================================================================
 // DoubleDoor_Test + Forge_Test
@@ -57,7 +56,7 @@ namespace DoubleDoorTestState
 	Zenith_EntityID           g_xDoor;
 	Zenith_EntityID           g_xLeftLeaf;
 	Zenith_EntityID           g_xRightLeaf;
-	DPDoubleDoor_Behaviour*   g_pxDoor = nullptr;
+	DPDoubleDoor_Component*   g_pxDoor = nullptr;
 
 	bool                      g_bWasOpen        = false;
 	bool                      g_bIsOpenAfter    = false;
@@ -96,7 +95,7 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 	{
 		// Wait until the scene is loaded, then construct a minimal
 		// "test villager" entity for the interact path. We don't need a
-		// real DPVillager_Behaviour — only a stable EntityID for
+		// real DPVillager_Component — only a stable EntityID for
 		// DP_Player::SetPossessedVillager and the held-item table key.
 		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
@@ -131,8 +130,7 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		xRight.SetParent(g_xDoor);
 
 		// Attach the script LAST so OnAwake has the parent + children in place.
-		g_pxDoor = xDoor.AddComponent<Zenith_ScriptComponent>()
-		               .AddScript<DPDoubleDoor_Behaviour>();
+		g_pxDoor = &xDoor.AddComponent<DPDoubleDoor_Component>();
 		g_bWasOpen = (g_pxDoor != nullptr) && g_pxDoor->IsOpen();
 
 		// Synthesise a Key in the villager's hand so TryConsumeKeyForUnlock
@@ -257,7 +255,7 @@ namespace ForgeTestState
 	Zenith_EntityID      g_xVillager;
 	Zenith_EntityID      g_xForge;
 	Zenith_EntityID      g_xIronItem;       // real entity, not synth
-	DPForge_Behaviour*   g_pxForge = nullptr;
+	DPForge_Component*   g_pxForge = nullptr;
 
 	bool                 g_bIronExistsAfter = true;
 	DP_ItemTag           g_eHeldAfter       = DP_ItemTag::None;
@@ -310,8 +308,7 @@ static bool Step_Forge(int /*iFrame*/)
 		g_xForge = xForge.GetEntityID();
 		xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
-		g_pxForge = xForge.AddComponent<Zenith_ScriptComponent>()
-		                  .AddScript<DPForge_Behaviour>();
+		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 
 		// Place the villager on top of the forge so the rising-edge proximity
 		// path triggers HandleInteract via interact-on-overlap.

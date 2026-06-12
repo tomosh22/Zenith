@@ -8,7 +8,7 @@
 #include "ZenithECS/Zenith_SceneData.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 #include <cstdio>
 
@@ -19,7 +19,7 @@
 // (life timer hits 0) sets state to Dead, NOT Fainted.
 //
 // Without this guard, an over-zealous "all un-possession faints"
-// regression in DPVillager_Behaviour::OnUpdate would have the
+// regression in DPVillager_Component::OnUpdate would have the
 // possessed-villager's burn-out moment treated as a voluntary
 // switch -- letting the player re-possess the burned-out villager
 // after 10 s "recovery". That breaks the GDD's permanent-loss
@@ -64,14 +64,13 @@ namespace
 	float                   g_fVFaintTimer = -1.0f;
 	bool                    g_bRePossessOk = false;
 
-	DPVillager_Behaviour* GetVillagerBehaviour(Zenith_EntityID xId)
+	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
 		if (pxScene == nullptr) return nullptr;
 		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
-		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
-		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
 }
 
@@ -97,8 +96,8 @@ static bool Step_P1BurnOutDoesDie(int iFrame)
 	case kBD_WaitScene:
 	{
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFound.IsValid()) xFound = xId;
 			});
@@ -129,7 +128,7 @@ static bool Step_P1BurnOutDoesDie(int iFrame)
 		// One frame's worth of TickLife drain (~0.01666 s) is more than
 		// 0.001, so next OnUpdate's TickLife will drain past 0 and
 		// invoke Kill().
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xV);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xV);
 		if (pxV != nullptr)
 		{
 			pxV->SetRemainingLifeForTest(0.001f);
@@ -147,7 +146,7 @@ static bool Step_P1BurnOutDoesDie(int iFrame)
 
 	case kBD_Snapshot:
 	{
-		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xV);
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xV);
 		if (pxV != nullptr)
 		{
 			g_eVFinalState = pxV->GetState();

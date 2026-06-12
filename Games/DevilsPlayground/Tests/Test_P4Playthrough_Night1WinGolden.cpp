@@ -14,9 +14,9 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPVillager_Behaviour.h"
-#include "Components/DPPentagram_Behaviour.h"
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPVillager_Component.h"
+#include "Components/DPPentagram_Component.h"
+#include "Components/DPHUDController_Component.h"
 
 #include <cmath>
 #include <cstdio>
@@ -162,11 +162,11 @@ namespace
 		return true;
 	}
 
-	DPPentagram_Behaviour* GetPentagramScript()
+	DPPentagram_Component* GetPentagramScript()
 	{
-		DPPentagram_Behaviour* pxResult = nullptr;
-		DP_Query::ForEachScriptInActiveScene<DPPentagram_Behaviour>(
-			[&pxResult](Zenith_EntityID, DPPentagram_Behaviour& xP)
+		DPPentagram_Component* pxResult = nullptr;
+		DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
+			[&pxResult](Zenith_EntityID, DPPentagram_Component& xP)
 			{
 				if (pxResult == nullptr) pxResult = &xP;
 			});
@@ -250,17 +250,17 @@ static bool Step_P4WinGolden(int iFrame)
 	case kWG_WaitScene:
 	{
 		Zenith_EntityID xFoundV;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFoundV](Zenith_EntityID xId, DPVillager_Behaviour&)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFoundV](Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFoundV.IsValid()) xFoundV = xId;
 			});
 		Zenith_EntityID xFoundP;
-		DPPentagram_Behaviour* pxPent = GetPentagramScript();
+		DPPentagram_Component* pxPent = GetPentagramScript();
 		if (pxPent != nullptr)
 		{
-			DP_Query::ForEachScriptInActiveScene<DPPentagram_Behaviour>(
-				[&xFoundP](Zenith_EntityID xId, DPPentagram_Behaviour&)
+			DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
+				[&xFoundP](Zenith_EntityID xId, DPPentagram_Component&)
 				{
 					if (!xFoundP.IsValid()) xFoundP = xId;
 				});
@@ -302,7 +302,7 @@ static bool Step_P4WinGolden(int iFrame)
 	}
 
 	case kWG_DeliverOutOfRange:
-		// Tick one frame so DPInteractable_Behaviour::OnUpdate observes
+		// Tick one frame so DPInteractable_Base::OnUpdate observes
 		// the now-out-of-range villager and resets m_bWasInRangeLastFrame
 		// to false. Without this the next teleport-into-range wouldn't
 		// register as a rising edge.
@@ -457,7 +457,7 @@ static bool Verify_P4WinGolden()
 	if (std::strcmp(g_szHudStatusText, "VICTORY") != 0)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P4WinGolden: HUD Status text is '%s', expected 'VICTORY'. The DP_OnVictory subscriber in DPHUDController_Behaviour regressed (PR #75 wired it); OR a subsequent death banner overwrote the permanent victory banner",
+			"P4WinGolden: HUD Status text is '%s', expected 'VICTORY'. The DP_OnVictory subscriber in DPHUDController_Component regressed (PR #75 wired it); OR a subsequent death banner overwrote the permanent victory banner",
 			g_szHudStatusText);
 		return false;
 	}

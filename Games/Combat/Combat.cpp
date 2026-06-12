@@ -1,9 +1,11 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
-#include "Combat/Components/Combat_Behaviour.h"
+#include "Combat/Components/Combat_GameComponent.h"
+#include "Combat/Components/Combat_PlayerComponent.h"
+#include "Combat/Components/Combat_EnemyComponent.h"
 #include "Combat/Components/Combat_Config.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -31,10 +33,31 @@
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
 // ============================================================================
-// Combat Resources - Global access for behaviours
+// Component registration (meta registry: serialization orders 100-102,
+// lifecycle hooks, scene save/load).
+//
+// File-scope static-init macros, matching the Sokoban/RenderTest precedent.
+// The macros enqueue thunks at static init; Zenith_Engine::InitialiseECS's seal
+// (EnsureInitialized -> Finalize) drains them into the sorted dispatch/
+// serialization list. (Direct RegisterComponent calls from
+// Project_RegisterGameComponents also work now - the registry re-finalizes on
+// post-seal registration - but the macro form is preferred for consistency.)
+// Dead-strip safe: this TU defines the Project_* entry points the engine
+// references, so its static initializers always run. Orders 100+ keep game
+// components after every engine built-in (Transform=0 ... ParticleEmitter=85,
+// AIAgent=90) - in particular the player's and enemies' OnUpdate runs after the
+// Animator's component update.
+// ============================================================================
+ZENITH_REGISTER_COMPONENT(Combat_GameComponent, "CombatGame", 100u)
+ZENITH_REGISTER_COMPONENT(Combat_PlayerComponent, "CombatPlayer", 101u)
+ZENITH_REGISTER_COMPONENT(Combat_EnemyComponent, "CombatEnemy", 102u)
+
+// ============================================================================
+// Combat Resources - Global access for game components
 // ============================================================================
 namespace Combat
 {
@@ -660,13 +683,24 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
 
-void Project_RegisterScriptBehaviours()
+void Project_RegisterGameComponents()
 {
-	// Behaviour registration is now automatic via the ZENITH_BEHAVIOUR_TYPE_NAME macro's
-	// static initializer (runs at program startup before main()). This function remains as
-	// the per-game lifecycle hook for early CPU-only resource initialization that must
-	// happen before any scene load (TOOLS or non-TOOLS builds).
+	// Meta-registry registration happens via the ZENITH_REGISTER_COMPONENT macros
+	// at the top of this file (see the note there - the registry is sealed before
+	// this hook runs). This function remains as the per-game lifecycle hook for
+	// early CPU-only resource initialization that must happen before any scene
+	// load (TOOLS or non-TOOLS builds). Tools builds additionally mirror the
+	// components into the editor "Add Component" registry here (display names
+	// used by AddStep_AddComponent and the editor menu; this registry is
+	// append-anytime, not sealed).
 	InitializeCombatResources();
+
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
+	xEditorRegistry.RegisterComponent<Combat_GameComponent>("CombatGame");
+	xEditorRegistry.RegisterComponent<Combat_PlayerComponent>("CombatPlayer");
+	xEditorRegistry.RegisterComponent<Combat_EnemyComponent>("CombatEnemy");
+#endif
 }
 
 void Project_Shutdown()
@@ -679,7 +713,7 @@ void Project_LoadInitialScene(); // Forward declaration for automation steps
 #ifdef ZENITH_TOOLS
 void Project_InitializeResources()
 {
-	// All combat resources initialized in Project_RegisterScriptBehaviours via InitializeCombatResources
+	// All combat resources initialized in Project_RegisterGameComponents via InitializeCombatResources
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -702,7 +736,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.0f, 0.0f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.0f, 50.0f);
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Combat_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("CombatGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -779,7 +813,7 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	g_xEngine.EditorAutomation().AddStep_SetUIVisible("Status", false);
 
-	g_xEngine.EditorAutomation().AddStep_AttachScript("Combat_Behaviour");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("CombatGame");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

@@ -15,7 +15,7 @@
  *   - DPTelemetry (here)        -- defines what game-side events look
  *     like (DPEventType enum), name resolver for JSON export, and
  *     the Hooks RAII helper that wires DP event dispatch -> recorder.
- *   - DPTelemetryRecorder_Behaviour (Phase 2.5 / Phase 3) -- a script
+ *   - DPTelemetryRecorder (Phase 2.5 / Phase 3) -- a script
  *     that owns a Hooks instance + drives the per-frame
  *     NextFrame / position-sample loop.
  *
@@ -133,7 +133,7 @@ namespace DPTelemetry
 		static constexpr uint32_t PriestPursuing   = 1u << 6;
 		// Phase-5-audit follow-up (2026-05-17): entity-role tag, set
 		// by the test's per-frame sampler when iterating
-		// Priest_Behaviour. Lets the visualiser classify the priest
+		// Priest_Component. Lets the visualiser classify the priest
 		// deterministically even when no Suspicious/Pursuing state is
 		// active -- without this bit, an idle-patrolling priest had
 		// flags=0 and fell into the "Unknown / priest?" legend bucket.

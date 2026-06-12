@@ -4,7 +4,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 
-#include "Components/DPHUDController_Behaviour.h"
+#include "Components/DPHUDController_Component.h"
 #include "Source/DevilsPlayground_Tags.h"
 
 #include <cstdio>
@@ -41,7 +41,7 @@ namespace
 	bool g_bPassed = false;
 	const char* g_szFailureReason = "";
 
-	using AelfricState = DPHUDController_Behaviour::AelfricState;
+	using AelfricState = DPHUDController_Component::AelfricState;
 
 	bool ContainsSubstring(const char* sz, const char* szNeedle)
 	{
@@ -78,14 +78,14 @@ static void Setup_TutorialHint()
 
 	// Case 1: run-over wins over everything else.
 	if (!ExpectNull("run-over",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::Iron, AelfricState::Pursuing,
 			/*bRunOver=*/true)))
 		return;
 
 	// Case 2: no possession.
 	if (!ExpectSubstring("not-possessed",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/false, DP_ItemTag::None, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"possess"))
@@ -93,7 +93,7 @@ static void Setup_TutorialHint()
 
 	// Case 3: priest pursuing -- takes precedence over the held-item branches.
 	if (!ExpectSubstring("pursuing",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::Iron, AelfricState::Pursuing,
 			/*bRunOver=*/false),
 		"Aelfric sees you"))
@@ -105,7 +105,7 @@ static void Setup_TutorialHint()
 		const DP_ItemTag eTag = static_cast<DP_ItemTag>(
 			static_cast<int>(DP_ItemTag::Objective1) + iObj);
 		if (!ExpectSubstring("holding-objective",
-			DPHUDController_Behaviour::BuildTutorialHintForState(
+			DPHUDController_Component::BuildTutorialHintForState(
 				/*bPossessed=*/true, eTag, AelfricState::Calm,
 				/*bRunOver=*/false),
 			"pentagram"))
@@ -114,7 +114,7 @@ static void Setup_TutorialHint()
 
 	// Case 5: holding SkeletonKey.
 	if (!ExpectSubstring("holding-skeleton-key",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::SkeletonKey, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"Skeleton Key"))
@@ -122,7 +122,7 @@ static void Setup_TutorialHint()
 
 	// Case 6: holding Iron.
 	if (!ExpectSubstring("holding-iron",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::Iron, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"forge"))
@@ -132,13 +132,13 @@ static void Setup_TutorialHint()
 	// generic 'Reagent in hand' hint; the per-reagent detail is on the
 	// ReagentHelp line instead).
 	if (!ExpectSubstring("holding-bellsoul",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::BellSoul, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"Reagent"))
 		return;
 	if (!ExpectSubstring("holding-bogwater",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::BogWater, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"Reagent"))
@@ -146,7 +146,7 @@ static void Setup_TutorialHint()
 
 	// Case 8: priest suspicious (no held item).
 	if (!ExpectSubstring("suspicious",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::None, AelfricState::Suspicious,
 			/*bRunOver=*/false),
 		"suspicious"))
@@ -154,7 +154,7 @@ static void Setup_TutorialHint()
 
 	// Case 9: default fall-through.
 	if (!ExpectSubstring("default",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::None, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"Find an objective"))
@@ -163,7 +163,7 @@ static void Setup_TutorialHint()
 	// Sanity: holding a non-reagent / non-special tag (Spike, Wood)
 	// falls through to the default hint, NOT the reagent line.
 	if (!ExpectSubstring("default-with-non-reagent-tag",
-		DPHUDController_Behaviour::BuildTutorialHintForState(
+		DPHUDController_Component::BuildTutorialHintForState(
 			/*bPossessed=*/true, DP_ItemTag::Spike, AelfricState::Calm,
 			/*bRunOver=*/false),
 		"Find an objective"))

@@ -169,7 +169,7 @@ namespace DPProcLevel
 		bool     bValid      = false;  // true once PlaceAI populates it
 	};
 
-	// One waypoint in the priest's patrol cycle. The Priest_Behaviour
+	// One waypoint in the priest's patrol cycle. The Priest_Component
 	// script walks between consecutive nodes, looping back to the first
 	// after the last.
 	struct PatrolNode

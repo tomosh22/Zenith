@@ -8,7 +8,7 @@
 #include "ZenithECS/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -18,13 +18,15 @@
 #include <cmath>
 
 //==============================================================================
-// PhysicsTestBehaviour - tracks collision callbacks via static counters
+// PhysicsTestComponent - tracks collision callbacks via static counters.
+// A plain component: the collision hooks are concept-detected at registration
+// and dispatched by Zenith_Physics through the component-meta registry.
 //==============================================================================
 
-class PhysicsTestBehaviour : public Zenith_ScriptBehaviour
+class PhysicsTestComponent
 {
 public:
-	PhysicsTestBehaviour(Zenith_Entity& xEntity) { m_xParentEntity = xEntity; }
+	PhysicsTestComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {}
 
 	static uint32_t s_uCollisionEnterCount;
 	static uint32_t s_uCollisionStayCount;
@@ -41,31 +43,51 @@ public:
 		s_xLastCollisionExitOther = Zenith_EntityID();
 	}
 
-	void OnCollisionEnter(Zenith_Entity xOther) override
+	void OnCollisionEnter(Zenith_Entity xOther)
 	{
 		s_uCollisionEnterCount++;
 		s_xLastCollisionEnterOther = xOther.GetEntityID();
 	}
 
-	void OnCollisionStay(Zenith_Entity) override
+	void OnCollisionStay(Zenith_Entity)
 	{
 		s_uCollisionStayCount++;
 	}
 
-	void OnCollisionExit(Zenith_EntityID xOtherID) override
+	void OnCollisionExit(Zenith_EntityID xOtherID)
 	{
 		s_uCollisionExitCount++;
 		s_xLastCollisionExitOther = xOtherID;
 	}
 
-	ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(PhysicsTestBehaviour)
+	// Component contract.
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		const u_int uVersion = 1;
+		xStream << uVersion;
+	}
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0;
+		xStream >> uVersion;
+	}
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel() {}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
 };
 
-uint32_t PhysicsTestBehaviour::s_uCollisionEnterCount = 0;
-uint32_t PhysicsTestBehaviour::s_uCollisionStayCount = 0;
-uint32_t PhysicsTestBehaviour::s_uCollisionExitCount = 0;
-Zenith_EntityID PhysicsTestBehaviour::s_xLastCollisionEnterOther;
-Zenith_EntityID PhysicsTestBehaviour::s_xLastCollisionExitOther;
+uint32_t PhysicsTestComponent::s_uCollisionEnterCount = 0;
+uint32_t PhysicsTestComponent::s_uCollisionStayCount = 0;
+uint32_t PhysicsTestComponent::s_uCollisionExitCount = 0;
+Zenith_EntityID PhysicsTestComponent::s_xLastCollisionEnterOther;
+Zenith_EntityID PhysicsTestComponent::s_xLastCollisionExitOther;
+
+// Collision dispatch resolves component types through the meta registry, so
+// the test component must be registered like any other.
+ZENITH_REGISTER_COMPONENT(PhysicsTestComponent, "PhysicsTest", 200u)
 
 //==============================================================================
 // Helper Functions
@@ -584,23 +606,23 @@ ZENITH_TEST(Physics, CollisionEnterCallback)
 	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_CollEnter", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
-	PhysicsTestBehaviour::ResetCounters();
+	PhysicsTestComponent::ResetCounters();
 
 	// Static floor with script component
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xFloor.AddComponent<PhysicsTestComponent>();
 
 	// Dynamic sphere that will fall onto the floor
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "FallingSphere",
 		Zenith_Maths::Vector3(0, 3, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
-	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xSphere.AddComponent<PhysicsTestComponent>();
 
 	// Step enough frames for sphere to hit the floor
 	StepPhysics(120);
 
-	ZENITH_ASSERT_GT(PhysicsTestBehaviour::s_uCollisionEnterCount, 0, "TestCollisionEnterCallback: Expected collision enter count > 0, got %u", PhysicsTestBehaviour::s_uCollisionEnterCount);
+	ZENITH_ASSERT_GT(PhysicsTestComponent::s_uCollisionEnterCount, 0, "TestCollisionEnterCallback: Expected collision enter count > 0, got %u", PhysicsTestComponent::s_uCollisionEnterCount);
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
@@ -609,23 +631,23 @@ ZENITH_TEST(Physics, CollisionStayCallback)
 	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_CollStay", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
-	PhysicsTestBehaviour::ResetCounters();
+	PhysicsTestComponent::ResetCounters();
 
 	// Static floor
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xFloor.AddComponent<PhysicsTestComponent>();
 
 	// Dynamic sphere close to floor so it hits quickly
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "StaySphere",
 		Zenith_Maths::Vector3(0, 2, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
-	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xSphere.AddComponent<PhysicsTestComponent>();
 
 	// Step many frames - after initial contact, stay events should fire each frame
 	StepPhysics(180);
 
-	ZENITH_ASSERT_GT(PhysicsTestBehaviour::s_uCollisionStayCount, 0, "TestCollisionStayCallback: Expected collision stay count > 0, got %u", PhysicsTestBehaviour::s_uCollisionStayCount);
+	ZENITH_ASSERT_GT(PhysicsTestComponent::s_uCollisionStayCount, 0, "TestCollisionStayCallback: Expected collision stay count > 0, got %u", PhysicsTestComponent::s_uCollisionStayCount);
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
@@ -634,31 +656,31 @@ ZENITH_TEST(Physics, CollisionExitCallback)
 	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_CollExit", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
-	PhysicsTestBehaviour::ResetCounters();
+	PhysicsTestComponent::ResetCounters();
 
 	// Static floor
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xFloor.AddComponent<PhysicsTestComponent>();
 
 	// Dynamic sphere close to floor
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ExitSphere",
 		Zenith_Maths::Vector3(0, 2, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xSphere.AddComponent<PhysicsTestComponent>();
 
 	// Step until collision
 	StepPhysics(60);
 
 	// Now launch the sphere upward to separate from floor
 	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 20, 0));
-	PhysicsTestBehaviour::s_uCollisionExitCount = 0;
+	PhysicsTestComponent::s_uCollisionExitCount = 0;
 
 	// Step to allow separation
 	StepPhysics(60);
 
-	ZENITH_ASSERT_GT(PhysicsTestBehaviour::s_uCollisionExitCount, 0, "TestCollisionExitCallback: Expected collision exit count > 0, got %u", PhysicsTestBehaviour::s_uCollisionExitCount);
+	ZENITH_ASSERT_GT(PhysicsTestComponent::s_uCollisionExitCount, 0, "TestCollisionExitCallback: Expected collision exit count > 0, got %u", PhysicsTestComponent::s_uCollisionExitCount);
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
@@ -667,23 +689,23 @@ ZENITH_TEST(Physics, CollisionEventBothEntitiesReceive)
 	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_CollBoth", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
 	ResetPhysicsState();
-	PhysicsTestBehaviour::ResetCounters();
+	PhysicsTestComponent::ResetCounters();
 
 	// Static floor with behaviour
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xFloor.AddComponent<PhysicsTestComponent>();
 
 	// Falling sphere with behaviour
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "BothSphere",
 		Zenith_Maths::Vector3(0, 3, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
-	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
+	xSphere.AddComponent<PhysicsTestComponent>();
 
 	StepPhysics(120);
 
 	// Both entities should receive OnCollisionEnter, so count >= 2
-	ZENITH_ASSERT_GE(PhysicsTestBehaviour::s_uCollisionEnterCount, 2, "TestCollisionEventBothEntitiesReceive: Expected collision enter count >= 2 (got %u)", PhysicsTestBehaviour::s_uCollisionEnterCount);
+	ZENITH_ASSERT_GE(PhysicsTestComponent::s_uCollisionEnterCount, 2, "TestCollisionEventBothEntitiesReceive: Expected collision enter count >= 2 (got %u)", PhysicsTestComponent::s_uCollisionEnterCount);
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }

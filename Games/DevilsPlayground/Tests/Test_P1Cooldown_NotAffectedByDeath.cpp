@@ -10,13 +10,13 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 // ============================================================================
 // Test_P1Cooldown_NotAffectedByDeath (MVP-1.5.3)
 //
 // Regression guard: when a possessed villager dies (life timer expires
-// -> DPVillager_Behaviour::TickLife dispatches DP_OnVillagerDied and
+// -> DPVillager_Component::TickLife dispatches DP_OnVillagerDied and
 // calls DP_Player::SetPossessedVillager(INVALID_ENTITY_ID)), NO
 // possession cooldown should accrue. The player must be able to
 // immediately TryVoluntaryPossessSwitch onto another villager.
@@ -96,9 +96,9 @@ static bool Step_P1CooldownDeath(int iFrame)
 		// Pick first two distinct villagers iterated. Order matches
 		// DP_LevelData::kVillager insertion order, so this is reproducible.
 		Zenith_EntityID xFirst, xSecond;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
 			[&xFirst, &xSecond]
-			(Zenith_EntityID xId, DPVillager_Behaviour&)
+			(Zenith_EntityID xId, DPVillager_Component&)
 			{
 				if (!xFirst.IsValid()) { xFirst = xId; return; }
 				if (!xSecond.IsValid() && xId.m_uIndex != xFirst.m_uIndex)
@@ -139,8 +139,8 @@ static bool Step_P1CooldownDeath(int iFrame)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xA);
 		if (pxScene == nullptr) { g_iPhase = kND_Done; return false; }
 		Zenith_Entity xEnt = pxScene->TryGetEntity(g_xA);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ScriptComponent>()) { g_iPhase = kND_Done; return false; }
-		DPVillager_Behaviour* pxV = xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+		if (!xEnt.IsValid()) { g_iPhase = kND_Done; return false; }
+		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		if (pxV == nullptr) { g_iPhase = kND_Done; return false; }
 		pxV->SetRemainingLifeForTest(0.05f);
 		g_iPhase = kND_ShrinkLife;

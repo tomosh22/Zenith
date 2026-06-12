@@ -29,7 +29,7 @@ lives in per-directory docs (engine convention):
 | Doc | Covers |
 |---|---|
 | [`Source/CLAUDE.md`](Source/CLAUDE.md) | every gameplay system — roads (spline/graph/mesh/controller/tools), zoning, buildings + defs, the sim, districts/policies/transit/conduits, traffic, terrain (gen/heightfield/carve/modifier), save/serialize, zones/sim-speed/events/telemetry/icons/camera/day-night. Public types, key API, constants, invariants. |
-| [`Components/CLAUDE.md`](Components/CLAUDE.md) | the 3 behaviours — `CB_CityManager_Behaviour` (orchestrator: owned subsystems, lifecycle, **static accessors**, HUD, hotkeys), `CB_CityCamera_Behaviour`, `CB_DayNightCycle_Behaviour`. |
+| [`Components/CLAUDE.md`](Components/CLAUDE.md) | the 3 game components — `CB_CityManagerComponent` (orchestrator: owned subsystems, lifecycle, **static accessors**, HUD, hotkeys), `CB_CityCameraComponent`, `CB_DayNightCycleComponent`. |
 | [`Tests/CLAUDE.md`](Tests/CLAUDE.md) | the test suite — headless logic vs windowed, how to run (incl. the `_True`-only headless gate), the no-reentrant-simulator rule, and `CB_HumanSession` (the pure-input playthrough). |
 
 ### Directory layout
@@ -38,14 +38,14 @@ Games/CityBuilder/
   CityBuilder.cpp        # Project_* hooks: terrain/material/icon asset bake + City scene creation
   CLAUDE.md              # this overview
   Source/                # headless gameplay systems (CB_*.{h,cpp}) — see Source/CLAUDE.md
-  Components/            # the 3 Zenith_ScriptBehaviour classes — see Components/CLAUDE.md
+  Components/            # the 3 game ECS components — see Components/CLAUDE.md
   Tests/                 # Zenith_AutomatedTest coverage — see Tests/CLAUDE.md
-  Assets/                # Scenes (City.zscen), Terrain (baked heightmap + chunk meshes), UI/Icons, Scripts
+  Assets/                # Scenes (City.zscen), Terrain (baked heightmap + chunk meshes), UI/Icons
   Build/ , Android/      # generated solution output + Android (AGDE) project
 ```
 `CityBuilder.cpp` bakes the terrain (4096px heightmap from `CB_TerrainGen::HillNorm` + 4 materials +
 splatmap, marker-gated `terrain_hills_vN`) and the 20 toolbar icons (`CB_UI_ICONS_VERSION`, tools-build),
-registers the 3 behaviours, disables SS*/shadows/fog (keeps skybox + IBL), and loads the City scene
+registers the 3 game components, disables SS*/shadows/fog (keeps skybox + IBL), and loads the City scene
 (build index 0).
 
 ## Build + autonomous test gate
@@ -82,7 +82,7 @@ they are skipped headless and only run in the windowed pass.
   of the available placement lots** (a flat slab in the tool's colour on every open, unzoned
   frontage lot — `CB_Zoning::RenderPlacementGhosts`), so you can see exactly where a zone can
   go before painting; they clear as lots are zoned/built or when the tool is deselected.
-  Telemetry: `CB_CityManager_Behaviour::GetLastGhostCount()` (asserted in `CB_HumanSession`).
+  Telemetry: `CB_CityManagerComponent::GetLastGhostCount()` (asserted in `CB_HumanSession`).
 - **Utilities/services:** 7 Power plant · 8 Water tower · 6 Services (click to place;
   press 6 again to cycle Police → Fire → Hospital → School → Landfill → Sewage Plant →
   Bus Depot → Post Office).
@@ -144,7 +144,7 @@ CB_ToolIcons.h             # toolbar icon filenames + hover-tooltip text (shared
 CB_ToolIconGen.h           # procedural toolbar-icon drawing (tools-build): white glyph + outline -> RGBA8
 ```
 
-## HUD / toolbar (`CB_CityManager_Behaviour::BuildGameUI`)
+## HUD / toolbar (`CB_CityManagerComponent::BuildGameUI`)
 
 The in-game HUD (built on the Zenith UI suite, rendered in ALL configs incl. `_False`)
 is a SimCity/C:S-style layout: a top info bar (treasury/tax/pop/jobs/happiness/buildings/
@@ -155,7 +155,7 @@ The UI **rebuilds on canvas-size change** (`m_fUIBuiltW/H`) so the pixel-anchore
 tracks window resize / DPI.
 
 Icons are drawn at tools-build (`CB_EnsureUIIcons` in `CityBuilder.cpp`, fired from
-`Project_RegisterScriptBehaviours` under `ZENITH_TOOLS`, version-marker-gated) into
+`Project_RegisterGameComponents` under `ZENITH_TOOLS`, version-marker-gated) into
 `Assets/UI/Icons/cb_<name>.ztxtr` and shown via a **`UIImage` overlay** centred on each
 button — NOT `UIButton`'s `ICON_ONLY` (which doesn't mark the texture bindless, so it never
 renders; `UIImage` does). See memory `reference-zenith-ui-icon-textures`. Capture
@@ -164,9 +164,9 @@ out of the shot (see `reference-screen-capture-and-primitive-winding`). The wind
 `CB_UIShowcase` test builds a small city + rotates a simulated hover across tools so the
 icons + tooltips can be screenshotted.
 
-Behaviours (`Components/`): `CB_CityManager_Behaviour` owns every subsystem and drives
-sim + tools + render + HUD + traffic each frame; `CB_CityCamera_Behaviour` (RTS camera);
-`CB_DayNightCycle_Behaviour` (advances the clock + drives the sky sun intensity).
+Game components (`Components/`): `CB_CityManagerComponent` owns every subsystem and drives
+sim + tools + render + HUD + traffic each frame; `CB_CityCameraComponent` (RTS camera);
+`CB_DayNightCycleComponent` (advances the clock + drives the sky sun intensity).
 
 The **RCI demand** is super-critical (residents → jobs → more residents), so a mixed
 R/C/I district grows until a constraint bites: **power/water capacity** (place plants/
@@ -196,10 +196,13 @@ density (level-up) additionally needs **land value** (happiness from service cov
 
 - No `std::function`; `std::vector`→`Zenith_Vector`; no pimpl. Subsystems are headless-
   testable — tests build local instances in `Verify`.
-- Behaviours: `class CB_Foo_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour` +
-  `friend class Zenith_ScriptComponent;` + `ZENITH_BEHAVIOUR_TYPE_NAME(...)`; ctor takes
-  `Zenith_Entity&`. Every new behaviour header must be `#include`d from `CityBuilder.cpp`
-  (MSVC dead-strips unreferenced `.obj`s). CityManager init is in `OnStart`.
+- Game components: plain classes (no base) satisfying the component contract — ctor takes
+  `Zenith_Entity&`, `WriteToDataStream`/`ReadFromDataStream`, `RenderPropertiesPanel` under
+  `ZENITH_TOOLS`; registered via `ZENITH_REGISTER_COMPONENT(Type, "Name", order)` in
+  `CityBuilder.cpp` + mirrored into the editor registry under `ZENITH_TOOLS`. Every new
+  component header must be `#include`d from `CityBuilder.cpp` (MSVC dead-strips
+  unreferenced `.obj`s). CityManager init is in `OnStart`. Components publishing statics
+  that hold member addresses need hand-written moves (see `Components/CLAUDE.md`).
 - Rendering is immediate-mode `g_xEngine.Primitives()` each frame, guarded by
   `!Zenith_CommandLine::IsHeadless()`; a `.cpp` calling `g_xEngine.X()` must include the
   full `*Impl` header (e.g. `Flux/Primitives/Flux_PrimitivesImpl.h`).
@@ -234,7 +237,7 @@ The hills are gentle rolling (`HillNorm` ≈ 20..150m, ~10..18° slopes — "sli
 mountainous), with higher-frequency terms (~0.55..1.1km wavelengths) so there is visible
 local relief near the city, not just one ~4km swell (which reads flat). They only read from
 an oblique camera — the default near-top-down view masks gentle slopes (see the windowed
-`CB_TerrainShowcase` test, which tilts `CB_CityCamera_Behaviour::GetActive()` low + zoomed
+`CB_TerrainShowcase` test, which tilts `CB_CityCameraComponent::GetActive()` low + zoomed
 out for a screenshot).
 
 To change the terrain shape: edit `HillNorm` + **bump the marker version** in
@@ -243,7 +246,7 @@ re-bake on the next **windowed `_True`** run (`CB_EnsureTerrainAssets` re-writes
 heightmap + chunk meshes; takes a few minutes). `_False` only loads the baked chunks, so a
 `_True` run must bake first.
 
-The player can also **terraform** (the `T` tool, or `CB_CityManager_Behaviour::TerraformAt`
+The player can also **terraform** (the `T` tool, or `CB_CityManagerComponent::TerraformAt`
 for automation): a raise/lower brush edits the heightfield, then `RestreamTerraformRegion`
 re-streams the brushed chunks so the same stream-in hook re-shapes them (race-free, identical
 machinery to the road carve).

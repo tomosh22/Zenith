@@ -3,7 +3,6 @@
 #include "Core/Zenith_Engine.h"
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "AssetHandling/Zenith_ScriptAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -19,6 +18,9 @@
 // (SetComponentRegistrar) and force the one-time EnsureInitialized() drain. The
 // core itself names no concrete type; the engine wires the registrar in here.
 #include "ZenithECS/Zenith_ComponentMeta.h"
+// Behaviour Graphs: the node-type registry the engine installs its node
+// registrar onto (the Scripting module's twin of the component-meta inversion).
+#include "Scripting/Zenith_GraphNodeRegistry.h"
 // Engine-side (NOT the ECS leaf): needed so the m_pfnAddDefaultComponents hook
 // installed below can name Zenith_TransformComponent and add it via the
 // AddComponent<> template. Keeping this name on the engine side is exactly how
@@ -90,7 +92,7 @@ extern void GenerateTestAssets();
 #endif
 
 extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
-extern void Project_RegisterScriptBehaviours();
+extern void Project_RegisterGameComponents();
 extern void Project_Shutdown();
 
 // Engine-side built-in component registrar (ECS leaf-extraction Phase 4). Defined
@@ -99,6 +101,12 @@ extern void Project_Shutdown();
 // include) so the engine can install it on the ECS reflection core without the
 // core ever naming a concrete component type. Installed + invoked in Initialise.
 void Zenith_RegisterEngineComponents();
+
+// Engine-side Behaviour Graph node registrar (the scripting system's twin of the
+// component registrar above). Defined in
+// EntityComponent/Zenith_GraphNode_Registration.cpp; installed on the (leaf-clean)
+// Zenith_GraphNodeRegistry in Initialise, drained lazily on first registry use.
+void Zenith_RegisterEngineGraphNodes();
 
 #ifdef ZENITH_TOOLS
 extern void Project_InitializeResources();
@@ -589,6 +597,11 @@ void Zenith_Engine::InitialiseECS()
 	Zenith_ComponentMetaRegistry::Get().SetComponentRegistrar(&Zenith_RegisterEngineComponents);
 	Zenith_ComponentMetaRegistry::Get().EnsureInitialized();
 
+	// Behaviour Graph node set: the same registrar inversion for the scripting
+	// system. Installing the function pointer here also guarantees the node-
+	// library TU survives /OPT:REF; the registry drains it on first use.
+	Zenith_GraphNodeRegistry::Get().SetNodeRegistrar(&Zenith_RegisterEngineGraphNodes);
+
 	// W6.3: registration-verification diagnostic (lifecycle hardening). The registrar
 	// above explicitly names every engine built-in, so they cannot be dead-stripped
 	// individually — but if the registrar TU were stripped, EnsureInitialized() never
@@ -703,15 +716,9 @@ void Zenith_Engine::InitialiseEditor()
 // Game callbacks: behaviours, unit tests, resources/automation or initial scene.
 void Zenith_Engine::InitialiseProject()
 {
-	Project_RegisterScriptBehaviours();
+	Project_RegisterGameComponents();
 
 #ifdef ZENITH_TOOLS
-	// Sync registered script behaviours to disk: write missing game:Scripts/<TypeName>.zscript
-	// files for each behaviour that auto-registered via the ZENITH_BEHAVIOUR_TYPE_NAME macro,
-	// and rename orphan .zscript files (whose behaviour is no longer registered) to .stale.
-	// Must run AFTER static-init / Project_RegisterScriptBehaviours and BEFORE the test runner
-	// (so tests can resolve .zscript assets via Zenith_AssetRegistry::Get) and before any scene load.
-	Zenith_ScriptAsset::SyncRegisteredTypesToDisk();
 
 	// Brush-indicator decal textures are generated artifacts — rebuilt at
 	// every editor boot so the files on disk always match the generator.

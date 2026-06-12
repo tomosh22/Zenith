@@ -6,13 +6,13 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 // ============================================================================
 // Possession_RoundTrip_Test
 //
 // Loads GameLevel, finds the authored Villager_0, and proves the
-// DPVillager_Behaviour observes possession state through the public
+// DPVillager_Component observes possession state through the public
 // interface:
 //
 //   - Initial: IsPossessed() == false
@@ -56,10 +56,10 @@ static bool Step_Possession(int iFrame)
 
 	case kP_WaitScene:
 	{
-		// Wait until DPVillager_Behaviour shows up in the active scene.
+		// Wait until DPVillager_Component shows up in the active scene.
 		Zenith_EntityID xFound;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound](Zenith_EntityID xId, DPVillager_Behaviour&) { xFound = xId; });
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound](Zenith_EntityID xId, DPVillager_Component&) { xFound = xId; });
 		if (xFound.IsValid())
 		{
 			g_xVillager = xFound;
@@ -77,8 +77,8 @@ static bool Step_Possession(int iFrame)
 		// Initial state: not possessed (DP_Player has no possessed villager
 		// set yet because no controller has run click-to-possess).
 		bool bIsPossessed = false;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&bIsPossessed](Zenith_EntityID, DPVillager_Behaviour& xV)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&bIsPossessed](Zenith_EntityID, DPVillager_Component& xV)
 			{
 				if (xV.IsPossessed()) bIsPossessed = true;
 			});
@@ -97,8 +97,8 @@ static bool Step_Possession(int iFrame)
 	case kP_VerifyPossessed:
 	{
 		bool bIsPossessed = false;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&bIsPossessed](Zenith_EntityID, DPVillager_Behaviour& xV)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&bIsPossessed](Zenith_EntityID, DPVillager_Component& xV)
 			{
 				if (xV.IsPossessed()) bIsPossessed = true;
 			});
@@ -115,8 +115,8 @@ static bool Step_Possession(int iFrame)
 	case kP_VerifyCleared:
 	{
 		bool bAnyPossessed = false;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&bAnyPossessed](Zenith_EntityID, DPVillager_Behaviour& xV)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&bAnyPossessed](Zenith_EntityID, DPVillager_Component& xV)
 			{
 				if (xV.IsPossessed()) bAnyPossessed = true;
 			});

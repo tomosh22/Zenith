@@ -7,14 +7,14 @@
 #include "Core/Zenith_Core.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 // ============================================================================
 // LifeTimer_Test
 //
-// Exercises DPVillager_Behaviour::TickLife on a possessed villager. Possession
+// Exercises DPVillager_Component::TickLife on a possessed villager. Possession
 // is set explicitly via DP_Player::SetPossessedVillager (the click-to-possess
-// raycast path is covered separately by DPPlayerController_Behaviour wiring).
+// raycast path is covered separately by DPPlayerController_Component wiring).
 //
 // Phases:
 //   kLT_Start         — request LoadSceneByIndex(1, SINGLE)
@@ -75,8 +75,8 @@ static bool Step_LifeTimer(int iFrame)
 	{
 		Zenith_EntityID xFound;
 		float fLife = 0.0f;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xFound, &fLife](Zenith_EntityID xId, DPVillager_Behaviour& xV)
+		DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+			[&xFound, &fLife](Zenith_EntityID xId, DPVillager_Component& xV)
 			{
 				xFound = xId;
 				fLife  = xV.GetRemainingLife();
@@ -114,8 +114,8 @@ static bool Step_LifeTimer(int iFrame)
 			// step can compare the life delta against the same game-time
 			// clock TickLife uses (Zenith_Core::GetDt), independent of
 			// wall-clock framerate or fixed-dt override.
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[](Zenith_EntityID, DPVillager_Behaviour& xV)
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+				[](Zenith_EntityID, DPVillager_Component& xV)
 				{
 					g_fInitialLife = xV.GetRemainingLife();
 				});
@@ -124,8 +124,8 @@ static bool Step_LifeTimer(int iFrame)
 		++g_iTicks;
 		if (g_iTicks >= kTICK_FRAMES)
 		{
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[](Zenith_EntityID, DPVillager_Behaviour& xV)
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+				[](Zenith_EntityID, DPVillager_Component& xV)
 				{
 					g_fFinalLife = xV.GetRemainingLife();
 				});

@@ -10,7 +10,7 @@ Target users:
 - Vulkan MemoryManager (`u_int64` probe cache)
 - AI Perception (`uint64_t` agent/target tables)
 - AssetRegistry (`std::string` → asset pointer, `Zenith_TypeIndex` → loader fn)
-- FileWatcher, ScriptComponent, Blackboard (string-keyed maps)
+- FileWatcher, GraphBlackboard, Blackboard (string-keyed maps)
 - Scene Data entity-component mapping (`TypeID` → pool index)
 
 ## Goals

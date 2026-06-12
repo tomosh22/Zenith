@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "CityBuilder/Components/CB_CityManager_Behaviour.h"
+#include "CityBuilder/Components/CB_CityManagerComponent.h"
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_TerrainHeightfield.h"
 
@@ -19,7 +19,7 @@ namespace
 {
 	bool s_bDrawn = false;
 
-	CB_RoadController* Ctrl() { return CB_CityManager_Behaviour::GetActiveRoadController(); }
+	CB_RoadController* Ctrl() { return CB_CityManagerComponent::GetActiveRoadController(); }
 }
 
 static void Setup_RoadDraw()
@@ -32,7 +32,7 @@ static bool Step_RoadDraw(int iFrame)
 	if (!s_bDrawn)
 	{
 		CB_RoadController*     pxCtrl  = Ctrl();
-		CB_TerrainHeightfield* pxField = CB_CityManager_Behaviour::GetActiveHeightfield();
+		CB_TerrainHeightfield* pxField = CB_CityManagerComponent::GetActiveHeightfield();
 		if (pxCtrl != nullptr && pxField != nullptr)
 		{
 			// Four clicks near the 4km-world centre → a smooth S-curve (3 segments).

@@ -10,7 +10,7 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Source/PublicInterfaces.h"
-#include "Components/DPVillager_Behaviour.h"
+#include "Components/DPVillager_Component.h"
 
 // ============================================================================
 // VisualWiring_Test
@@ -67,8 +67,8 @@ static bool Step_VisualWiring(int iFrame)
 		if (pxSceneData != nullptr)
 		{
 			int iFound = 0;
-			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-				[&iFound](Zenith_EntityID, DPVillager_Behaviour&) { ++iFound; });
+			DP_Query::ForEachComponentInActiveScene<DPVillager_Component>(
+				[&iFound](Zenith_EntityID, DPVillager_Component&) { ++iFound; });
 			if (iFound > 0) g_bSceneSwapped = true;
 		}
 		if (iFrame > 30 && !g_bSceneSwapped)
