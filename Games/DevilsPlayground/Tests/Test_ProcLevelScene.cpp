@@ -12,7 +12,7 @@
 #include "Components/DPVillager_Component.h"
 #include "Components/Priest_Component.h"
 #include "Components/DPItemBase_Component.h"
-#include "Components/DPPentagram_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
 #include "Components/DPForge_Component.h"
 #include "Components/DPDoor_Component.h"
 
@@ -34,7 +34,7 @@
 //     valid priest spawn.
 //   - At least 1 DPVillager_Component script in the active scene.
 //   - Exactly 1 Priest_Component script.
-//   - At least 1 DPPentagram_Component + 1 DPForge_Component.
+//   - At least 1 pentagram (graph-driven) + 1 DPForge_Component.
 //   - At least 1 DPItemBase script (iron + objectives).
 // ============================================================================
 
@@ -135,7 +135,7 @@ static bool Step_ProcLevelScene(int /*iFrame*/)
 		const int iVillagers = CountComponents<DPVillager_Component>();
 		const int iPriests   = CountComponents<Priest_Component>();
 		const int iItems     = CountComponents<DPItemBase_Component>();
-		const int iPents     = CountComponents<DPPentagram_Component>();
+		const int iPents     = DP_CountEntitiesWithGraph("game:Graphs/DP_Pentagram.bgraph");
 		const int iForges    = CountComponents<DPForge_Component>();
 		const int iDoors     = CountComponents<DPDoor_Component>();
 

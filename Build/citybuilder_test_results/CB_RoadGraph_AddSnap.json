@@ -2,7 +2,7 @@
   "name": "CB_RoadGraph_AddSnap",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.047,
+  "durationMs": 0.046,
   "failures": [],
   "skipped": false
 }

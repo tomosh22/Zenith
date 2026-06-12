@@ -11,10 +11,9 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "../Components/DPDoor_Component.h"
-#include "../Components/DPChest_Component.h"
 #include "../Components/DPForge_Component.h"
-#include "../Components/DPPentagram_Component.h"
-#include "../Components/DummyNoiseMachine_Component.h"
+#include "../Components/DPGraphInteractable_Component.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 
 namespace
 {
@@ -58,6 +57,51 @@ namespace
 				}
 			});
 	}
+
+	// Graph-driven interactables share one shim component; the human-readable
+	// type label is derived from the attached graph asset.
+	const char* LabelForGraphEntity(Zenith_EntityID xId)
+	{
+		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
+		if (pxScene == nullptr) return nullptr;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_GraphComponent>()) return nullptr;
+		Zenith_GraphComponent& xGraphs = xEnt.GetComponent<Zenith_GraphComponent>();
+		for (u_int u = 0; u < xGraphs.GetGraphCount(); ++u)
+		{
+			const char* szPath = xGraphs.GetGraphAssetPathAt(u);
+			if (std::strcmp(szPath, "game:Graphs/DP_Chest.bgraph") == 0)        return "chest";
+			if (std::strcmp(szPath, "game:Graphs/DP_Pentagram.bgraph") == 0)    return "pentagram";
+			if (std::strcmp(szPath, "game:Graphs/DP_NoiseMachine.bgraph") == 0) return "noise machine";
+			if (std::strcmp(szPath, "game:Graphs/DP_DoubleDoor.bgraph") == 0)   return "door";
+		}
+		return nullptr;
+	}
+
+	void ScanGraphInteractables(const Zenith_Maths::Vector3& xMyPos,
+	                            const char*& szResult,
+	                            float& fClosestSq)
+	{
+		DP_Query::ForEachComponentInActiveScene<DPGraphInteractable_Component>(
+			[&xMyPos, &szResult, &fClosestSq]
+			(Zenith_EntityID xId, DPGraphInteractable_Component& xShim)
+			{
+				Zenith_Maths::Vector3 xIPos(0.0f);
+				if (!TryGetEntityPos(xId, xIPos)) return;
+				const float fDx = xIPos.x - xMyPos.x;
+				const float fDz = xIPos.z - xMyPos.z;
+				const float fSq = fDx * fDx + fDz * fDz;
+				const float fR = xShim.GetInteractRadius();
+				if (fSq <= fR * fR && fSq < fClosestSq)
+				{
+					if (const char* szLabel = LabelForGraphEntity(xId))
+					{
+						fClosestSq = fSq;
+						szResult = szLabel;
+					}
+				}
+			});
+	}
 }
 
 namespace DP_Interactables
@@ -80,11 +124,10 @@ namespace DP_Interactables
 		if (!TryGetEntityPos(xVillager, xMyPos)) return nullptr;
 		const char* szResult = nullptr;
 		float fClosestSq = 1e30f;
-		ScanInteractables<DPDoor_Component>           (xMyPos, "door",          szResult, fClosestSq);
-		ScanInteractables<DPChest_Component>          (xMyPos, "chest",         szResult, fClosestSq);
-		ScanInteractables<DPForge_Component>          (xMyPos, "forge",         szResult, fClosestSq);
-		ScanInteractables<DPPentagram_Component>      (xMyPos, "pentagram",     szResult, fClosestSq);
-		ScanInteractables<DummyNoiseMachine_Component>(xMyPos, "noise machine", szResult, fClosestSq);
+		ScanInteractables<DPDoor_Component> (xMyPos, "door",  szResult, fClosestSq);
+		ScanInteractables<DPForge_Component>(xMyPos, "forge", szResult, fClosestSq);
+		// Chest / pentagram / noise machine / double door are graph-driven.
+		ScanGraphInteractables(xMyPos, szResult, fClosestSq);
 		return szResult;
 	}
 }

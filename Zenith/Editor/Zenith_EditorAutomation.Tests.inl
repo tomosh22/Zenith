@@ -12,6 +12,9 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
+#include "AssetHandling/Zenith_BehaviourGraphAsset.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
 #include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIButton.h"
@@ -741,6 +744,65 @@ ZENITH_TEST(Automation, AttachGraphStep)
 	g_xEngine.EditorAutomation().Reset();
 
 	EDITOR_TEST_END(TestAttachGraphStep);
+}
+
+//=============================================================================
+// Graph authoring steps - the atomic graph-editor actions driven through the
+// automation queue (the boot-authoring path games use). Proves the
+// step-authored asset round-trips with exactly the authored contents.
+//=============================================================================
+ZENITH_TEST(Automation, GraphAuthoringSteps)
+{
+	EDITOR_TEST_BEGIN(TestGraphAuthoringSteps);
+
+	constexpr const char* szPATH = "game:Graphs/AutomationTest_Authoring.bgraph";
+	g_xEngine.EditorAutomation().Reset();
+
+	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh(szPATH);
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnUpdate");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("RotateEntity");
+	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("RotateEntity", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamFloat("m_fDegreesPerSecond", 123.0f);
+	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnUpdate", 0, 0, "RotateEntity", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphAddVariable("speed", "float", 2.0f);
+	g_xEngine.EditorAutomation().AddStep_GraphSave();
+	g_xEngine.EditorAutomation().AddStep_GraphClose();
+	g_xEngine.EditorAutomation().Begin();
+	for (u_int u = 0; u < 9u; ++u)
+	{
+		g_xEngine.EditorAutomation().ExecuteNextStep();
+	}
+
+	// The saved asset holds exactly what the steps authored.
+	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(szPATH);
+	ZENITH_ASSERT_NOT_NULL(pxAsset, "Step-authored asset should load from the registry");
+	if (pxAsset)
+	{
+		const Zenith_GraphDefinition& xDef = pxAsset->GetDefinition();
+		ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 2u, "Two nodes authored");
+		ZENITH_ASSERT_EQ(xDef.GetEdgeCount(), 1u, "One edge authored");
+		ZENITH_ASSERT_EQ(xDef.GetVariableCount(), 1u, "One variable declared");
+		if (xDef.GetVariableCount() == 1u)
+		{
+			ZENITH_ASSERT_STREQ(xDef.GetVariableAt(0).m_strName.c_str(), "speed", "Variable name round-trips");
+			ZENITH_ASSERT_EQ_FLOAT(xDef.GetVariableAt(0).m_xDefault.GetFloat(), 2.0f, 0.0001f, "Variable default round-trips");
+		}
+
+		// Re-open in the editor and read the param back through the same
+		// select-then-inspect path a human uses.
+		Zenith_GraphEditorPanel::OpenAsset(szPATH);
+		ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_SelectNode("RotateEntity", 0), "Re-select authored node");
+		float fDegrees = 0.0f;
+		ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::GetSelectedNodeParamFloat("m_fDegreesPerSecond", fDegrees), "Param readable");
+		ZENITH_ASSERT_EQ_FLOAT(fDegrees, 123.0f, 0.0001f, "Param value round-trips");
+		Zenith_GraphEditorPanel::Close();
+	}
+
+	std::error_code xEC;
+	std::filesystem::remove(Zenith_AssetRegistry::ResolvePath(szPATH), xEC);
+	g_xEngine.EditorAutomation().Reset();
+
+	EDITOR_TEST_END(TestGraphAuthoringSteps);
 }
 
 //=============================================================================

@@ -21,13 +21,12 @@
 #include "Source/DevilsPlayground_Tags.h"
 #include "Components/DPVillager_Component.h"
 #include "Components/DPDoor_Component.h"
-#include "Components/DPChest_Component.h"
 #include "Components/DPForge_Component.h"
-#include "Components/DPPentagram_Component.h"
 #include "Components/DPHUDController_Component.h"
 #include "Components/DPOrbitCamera_Component.h"
 #include "Components/DPItemBase_Component.h"
-#include "Components/DummyNoiseMachine_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
+#include "Components/DPGraphInteractable_Component.h"
 #include "Components/Priest_Component.h"
 
 #include <cstdio>
@@ -48,7 +47,7 @@
 //      HeldItem visible-only-when-something-held.
 //   6. Item pickup: distance-based pickup via DPItemBase_Component::OnUpdate.
 //   7. Door unlock: synthesised key + proximity → DPDoor::IsOpen().
-//   8. Chest open: proximity → DPChest::IsOpen().
+//   8. Chest open: proximity → chest graph blackboard isOpen.
 //   9. Forge crafting: held Iron → CraftForTest → held Key + craft count++.
 //  10. Noise machine: proximity F-press emits DP_AI sound; priest's
 //      blackboard records an investigate-position.
@@ -366,14 +365,14 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		g_iVillagerCountObserved   = CountScripts<DPVillager_Component>();
 		g_iDoorCountObserved       = CountScripts<DPDoor_Component>();
-		g_iChestCountObserved      = CountScripts<DPChest_Component>();
+		g_iChestCountObserved      = DP_CountEntitiesWithGraph("game:Graphs/DP_Chest.bgraph");
 		g_iPriestCountObserved     = CountScripts<Priest_Component>();
-		g_iPentagramCountObserved  = CountScripts<DPPentagram_Component>();
+		g_iPentagramCountObserved  = DP_CountEntitiesWithGraph("game:Graphs/DP_Pentagram.bgraph");
 		g_iItemCountObserved       = CountScripts<DPItemBase_Component>();
 
 		// Capture references for later phases.
 		g_xPriest    = FindFirstScript<Priest_Component>();
-		g_xPentagram = FindFirstScript<DPPentagram_Component>();
+		g_xPentagram = DP_FindFirstEntityWithGraph("game:Graphs/DP_Pentagram.bgraph");
 		// 2026-05-25: doors are now unlocked-by-default. The kFP_DoorSetup
 		// phase explicitly gives the villager a Key and exercises the
 		// unlock path -- pick a LOCKED door so we actually test the key-
@@ -391,8 +390,8 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 				}
 			});
 		if (!g_xDoor.IsValid()) g_xDoor = FindFirstScript<DPDoor_Component>();
-		g_xChest     = FindFirstScript<DPChest_Component>();
-		g_xNoise     = FindFirstScript<DummyNoiseMachine_Component>();
+		g_xChest     = DP_FindFirstEntityWithGraph("game:Graphs/DP_Chest.bgraph");
+		g_xNoise     = DP_FindFirstEntityWithGraph("game:Graphs/DP_NoiseMachine.bgraph");
 
 		// Pick the first two villagers; first is the playthrough hero,
 		// second is the death-and-repossess target.
@@ -631,9 +630,9 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		{
 			TrySetEntityPos(g_xVillager, xChestPos);
 		}
-		if (DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest))
+		if (DPGraphInteractable_Component* pxChestShim = GetGameComponent<DPGraphInteractable_Component>(g_xChest))
 		{
-			pxChest->SetInteractOnOverlap(true);
+			pxChestShim->SetInteractOnOverlap(true);
 		}
 		g_iPhase = kFP_ChestWait;
 		g_iWait = 0;
@@ -644,10 +643,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 3) return true;
-		if (DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest))
-		{
-			g_bChestOpenedObserved = pxChest->IsOpen();
-		}
+		g_bChestOpenedObserved = DP_GetGraphBool(g_xChest, "game:Graphs/DP_Chest.bgraph", "isOpen");
 		g_iPhase = kFP_AssertChest;
 		return true;
 	}
@@ -728,10 +724,10 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// Move the villager onto the noise machine to drive the rising-edge.
 		TrySetEntityPos(g_xVillager, xNoiseNewPos);
 
-		if (DummyNoiseMachine_Component* pxNoise =
-				GetGameComponent<DummyNoiseMachine_Component>(g_xNoise))
+		if (DPGraphInteractable_Component* pxNoiseShim =
+				GetGameComponent<DPGraphInteractable_Component>(g_xNoise))
 		{
-			pxNoise->SetInteractOnOverlap(true);
+			pxNoiseShim->SetInteractOnOverlap(true);
 		}
 		g_iPhase = kFP_NoiseWait;
 		g_iWait = 0;
@@ -773,10 +769,10 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	// ----------------------------------------------------------------------
 	case kFP_PentagramSetup:
 	{
-		if (DPPentagram_Component* pxPent =
-				GetGameComponent<DPPentagram_Component>(g_xPentagram))
+		if (DPGraphInteractable_Component* pxPentShim =
+				GetGameComponent<DPGraphInteractable_Component>(g_xPentagram))
 		{
-			pxPent->SetInteractOnOverlap(true);
+			pxPentShim->SetInteractOnOverlap(true);
 		}
 		g_iObjectivesDelivered = 0;
 		g_iPentagramSubPhase   = 0;

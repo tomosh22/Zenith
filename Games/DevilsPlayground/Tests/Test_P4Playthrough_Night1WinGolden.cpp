@@ -15,7 +15,8 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Components/DPVillager_Component.h"
-#include "Components/DPPentagram_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
+#include "Components/DPGraphInteractable_Component.h"
 #include "Components/DPHUDController_Component.h"
 
 #include <cmath>
@@ -162,15 +163,9 @@ namespace
 		return true;
 	}
 
-	DPPentagram_Component* GetPentagramScript()
+	bool PentagramExists()
 	{
-		DPPentagram_Component* pxResult = nullptr;
-		DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
-			[&pxResult](Zenith_EntityID, DPPentagram_Component& xP)
-			{
-				if (pxResult == nullptr) pxResult = &xP;
-			});
-		return pxResult;
+		return DP_FindFirstEntityWithGraph("game:Graphs/DP_Pentagram.bgraph").IsValid();
 	}
 
 	// Walk all loaded scenes for "Status" (HUD lives in the active gameplay
@@ -255,16 +250,7 @@ static bool Step_P4WinGolden(int iFrame)
 			{
 				if (!xFoundV.IsValid()) xFoundV = xId;
 			});
-		Zenith_EntityID xFoundP;
-		DPPentagram_Component* pxPent = GetPentagramScript();
-		if (pxPent != nullptr)
-		{
-			DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
-				[&xFoundP](Zenith_EntityID xId, DPPentagram_Component&)
-				{
-					if (!xFoundP.IsValid()) xFoundP = xId;
-				});
-		}
+		Zenith_EntityID xFoundP = DP_FindFirstEntityWithGraph("game:Graphs/DP_Pentagram.bgraph");
 		if (xFoundV.IsValid() && xFoundP.IsValid())
 		{
 			g_xVillager = xFoundV;
@@ -272,8 +258,19 @@ static bool Step_P4WinGolden(int iFrame)
 			TryGetEntityPos(g_xPentagram, g_xPentagramPos);
 			// Force the pentagram to interact on overlap (skips the F-key
 			// poll path; matches FullPlaythrough_Test's pattern and the
-			// 3 loss-state tests' rising-edge approach).
-			if (pxPent != nullptr) pxPent->SetInteractOnOverlap(true);
+			// 3 loss-state tests' rising-edge approach). The overlap flag
+			// lives on the graph-era interactable shim.
+			if (Zenith_SceneData* pxPentScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPentagram))
+			{
+				Zenith_Entity xPentEnt = pxPentScene->TryGetEntity(g_xPentagram);
+				if (xPentEnt.IsValid())
+				{
+					if (DPGraphInteractable_Component* pxShim = xPentEnt.TryGetComponent<DPGraphInteractable_Component>())
+					{
+						pxShim->SetInteractOnOverlap(true);
+					}
+				}
+			}
 			g_iPhase = kWG_Possess;
 		}
 		else if (iFrame > 90)

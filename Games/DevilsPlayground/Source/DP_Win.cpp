@@ -14,7 +14,8 @@
 #include "DevilsPlayground_Tags.h"
 
 #include "../Components/DPPlayerController_Component.h"
-#include "../Components/DPPentagram_Component.h"
+#include "../Components/DPGraphInteractable_Component.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 
 #include <cstdint>
 #include <bit>
@@ -88,14 +89,28 @@ namespace DP_Win
 		Zenith_Maths::Vector3 xVPos;
 		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
 
+		// Pentagrams are graph-driven: scan the interactable shims and match
+		// the pentagram graph slot (radius still lives on the shim's base).
 		bool bInRange = false;
-		DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
-			[&bInRange, &xVPos, pxScene](Zenith_EntityID xId, DPPentagram_Component& xPent)
+		DP_Query::ForEachComponentInActiveScene<DPGraphInteractable_Component>(
+			[&bInRange, &xVPos, pxScene](Zenith_EntityID xId, DPGraphInteractable_Component& xShim)
 			{
 				if (bInRange) return;  // already found one
-				const float fR = xPent.GetInteractRadius();
 				Zenith_Entity xP = pxScene->TryGetEntity(xId);
-				if (!xP.IsValid() || !xP.HasComponent<Zenith_TransformComponent>()) return;
+				if (!xP.IsValid() || !xP.HasComponent<Zenith_TransformComponent>()
+					|| !xP.HasComponent<Zenith_GraphComponent>()) return;
+				Zenith_GraphComponent& xGraphs = xP.GetComponent<Zenith_GraphComponent>();
+				bool bIsPentagram = false;
+				for (u_int u = 0; u < xGraphs.GetGraphCount(); ++u)
+				{
+					if (std::strcmp(xGraphs.GetGraphAssetPathAt(u), "game:Graphs/DP_Pentagram.bgraph") == 0)
+					{
+						bIsPentagram = true;
+						break;
+					}
+				}
+				if (!bIsPentagram) return;
+				const float fR = xShim.GetInteractRadius();
 				Zenith_Maths::Vector3 xPPos;
 				xP.GetComponent<Zenith_TransformComponent>().GetPosition(xPPos);
 				const float fDx = xVPos.x - xPPos.x;

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <string>
+#include <filesystem>
 
 namespace
 {
@@ -141,17 +142,17 @@ namespace
 		g_xGraphEditor.m_xPropertyRowRects[std::string(szPropertyName)] = xRect;
 	}
 
-	void AddNodeAtFreeSpot(const char* szTypeName)
+	bool AddNodeAtFreeSpot(const char* szTypeName)
 	{
 		Zenith_GraphDefinition* pxDef = GetOpenDefinition();
 		if (!pxDef)
 		{
-			return;
+			return false;
 		}
 		const u_int uNodeID = pxDef->AddNode(szTypeName);
 		if (uNodeID == 0)
 		{
-			return;
+			return false;
 		}
 		const u_int uIndex = pxDef->GetNodeCount() - 1;
 		pxDef->SetNodeEditorPos(uNodeID, Zenith_Maths::Vector2(
@@ -159,6 +160,31 @@ namespace
 			30.0f + static_cast<float>(uIndex / 3) * 150.0f));
 		g_xGraphEditor.m_uSelectedNodeID = uNodeID;
 		g_xGraphEditor.m_bDirty = true;
+		return true;
+	}
+
+	// Node addressing for the atomic editor actions: type name + occurrence in
+	// creation order - the way a human picks a node out of the canvas visually.
+	u_int ResolveNodeByTypeOccurrence(const char* szTypeName, u_int uOccurrence)
+	{
+		const Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+		if (!pxDef || !szTypeName)
+		{
+			return 0;
+		}
+		u_int uSeen = 0;
+		for (u_int u = 0; u < pxDef->GetNodeCount(); ++u)
+		{
+			if (pxDef->GetNodeAt(u).m_strTypeName == szTypeName)
+			{
+				if (uSeen == uOccurrence)
+				{
+					return pxDef->GetNodeAt(u).m_uNodeID;
+				}
+				++uSeen;
+			}
+		}
+		return 0;
 	}
 
 	// Looks up the live graph instance on the selected entity matching the open
@@ -813,6 +839,14 @@ void Zenith_GraphEditorPanel::Save()
 		return;
 	}
 
+	// First save into a game whose Graphs/ asset directory doesn't exist yet
+	// must create it (file-open would otherwise fail silently).
+	{
+		std::error_code xEC;
+		std::filesystem::create_directories(
+			std::filesystem::path(Zenith_AssetRegistry::ResolvePath(g_xGraphEditor.m_strAssetPath)).parent_path(), xEC);
+	}
+
 	if (!Zenith_AssetRegistry::Save(g_xGraphEditor.m_pxAsset, g_xGraphEditor.m_strAssetPath))
 	{
 		Zenith_Error(LOG_CATEGORY_EDITOR, "GraphEditor: failed to save '%s'", g_xGraphEditor.m_strAssetPath.c_str());
@@ -865,6 +899,161 @@ namespace
 }
 
 Zenith_OpenGraphEditorFn g_pfnZenithOpenGraphEditor = &OpenGraphEditorThunk;
+
+//------------------------------------------------------------------------------
+// Atomic editor actions (Zenith_EditorAutomation drives these; each is the
+// exact operation the matching UI handler runs)
+//------------------------------------------------------------------------------
+
+bool Zenith_GraphEditorPanel::Action_AddNode(const char* szTypeName)
+{
+	// == the palette-entry click handler.
+	return AddNodeAtFreeSpot(szTypeName);
+}
+
+bool Zenith_GraphEditorPanel::Action_Connect(const char* szSrcTypeName, u_int uSrcOccurrence, u_int uSrcPin,
+                                             const char* szDstTypeName, u_int uDstOccurrence)
+{
+	// == the pin drag-drop completion handler (drop is only ever onto a node's
+	// single input pin; the source pin must be one the canvas actually renders).
+	Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+	if (!pxDef)
+	{
+		return false;
+	}
+	const u_int uSrcNodeID = ResolveNodeByTypeOccurrence(szSrcTypeName, uSrcOccurrence);
+	const u_int uDstNodeID = ResolveNodeByTypeOccurrence(szDstTypeName, uDstOccurrence);
+	if (uSrcNodeID == 0 || uDstNodeID == 0)
+	{
+		return false;
+	}
+	const Zenith_GraphNodeDef* pxSrcDef = pxDef->FindNodeDef(uSrcNodeID);
+	const Zenith_GraphNodeTypeInfo* pxSrcInfo = pxSrcDef
+		? Zenith_GraphNodeRegistry::Get().Find(pxSrcDef->m_strTypeName.c_str()) : nullptr;
+	const u_int uSrcOutputs = pxSrcInfo ? pxSrcInfo->m_uExecOutputCount : 1;
+	if (uSrcPin >= uSrcOutputs)
+	{
+		return false;
+	}
+	if (!pxDef->AddEdge(uSrcNodeID, uSrcPin, uDstNodeID, 0))
+	{
+		return false;
+	}
+	g_xGraphEditor.m_bDirty = true;
+	return true;
+}
+
+bool Zenith_GraphEditorPanel::Action_SelectNode(const char* szTypeName, u_int uOccurrence)
+{
+	// == the canvas node click handler.
+	const u_int uNodeID = ResolveNodeByTypeOccurrence(szTypeName, uOccurrence);
+	if (uNodeID == 0)
+	{
+		return false;
+	}
+	g_xGraphEditor.m_uSelectedNodeID = uNodeID;
+	RefreshParamInstanceForSelection();
+	return true;
+}
+
+namespace
+{
+	// Shared body of the param-edit actions: look up the property on the
+	// SELECTED node's param instance, set it through the reflected table, and
+	// commit - exactly what an ImGui edit in the property panel does.
+	bool SetSelectedParamThroughTable(const char* szPropertyName, const Zenith_PropertyValue& xValue, Zenith_PropertyType eExpected)
+	{
+		Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+		if (!pxDef || g_xGraphEditor.m_uSelectedNodeID == 0)
+		{
+			return false;
+		}
+		RefreshParamInstanceForSelection();
+		if (!g_xGraphEditor.m_pxParamInstance || g_xGraphEditor.m_uParamInstanceNodeID == 0)
+		{
+			return false;
+		}
+		const Zenith_GraphNodeDef* pxNodeDef = pxDef->FindNodeDef(g_xGraphEditor.m_uParamInstanceNodeID);
+		if (!pxNodeDef)
+		{
+			return false;
+		}
+		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find(pxNodeDef->m_strTypeName.c_str());
+		if (!pxInfo || !pxInfo->m_pfnGetPropertyTable)
+		{
+			return false;
+		}
+		const Zenith_ReflectedProperty* pxProperty = pxInfo->m_pfnGetPropertyTable()->FindProperty(szPropertyName);
+		if (!pxProperty || pxProperty->m_eType != eExpected || !pxProperty->m_pfnSet)
+		{
+			return false;
+		}
+		pxProperty->m_pfnSet(g_xGraphEditor.m_pxParamInstance, xValue);
+		OnSelectedNodeParamChanged(nullptr, szPropertyName);
+		return true;
+	}
+}
+
+bool Zenith_GraphEditorPanel::Action_SetSelectedNodeParamFloat(const char* szPropertyName, float fValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(fValue);
+	return SetSelectedParamThroughTable(szPropertyName, xValue, PROPERTY_TYPE_FLOAT);
+}
+
+bool Zenith_GraphEditorPanel::Action_SetSelectedNodeParamString(const char* szPropertyName, const char* szValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetString(std::string(szValue ? szValue : ""));
+	return SetSelectedParamThroughTable(szPropertyName, xValue, PROPERTY_TYPE_STRING);
+}
+
+bool Zenith_GraphEditorPanel::Action_SetSelectedNodeParamVec3(const char* szPropertyName, float fX, float fY, float fZ)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetVector3(Zenith_Maths::Vector3(fX, fY, fZ));
+	return SetSelectedParamThroughTable(szPropertyName, xValue, PROPERTY_TYPE_VECTOR3);
+}
+
+bool Zenith_GraphEditorPanel::Action_SetSelectedNodeParamInt(const char* szPropertyName, int iValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetInt32(iValue);
+	return SetSelectedParamThroughTable(szPropertyName, xValue, PROPERTY_TYPE_INT32);
+}
+
+bool Zenith_GraphEditorPanel::Action_AddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric)
+{
+	// == the "Add Var" button handler (same name/type/default semantics).
+	Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+	if (!pxDef || !szName || szName[0] == '\0' || !szTypeName)
+	{
+		return false;
+	}
+	Zenith_PropertyValue xDefault;
+	if (std::strcmp(szTypeName, "float") == 0)        { xDefault.SetFloat(fDefaultNumeric); }
+	else if (std::strcmp(szTypeName, "int") == 0)     { xDefault.SetInt32(static_cast<int32_t>(fDefaultNumeric)); }
+	else if (std::strcmp(szTypeName, "bool") == 0)    { xDefault.SetBool(fDefaultNumeric != 0.0f); }
+	else if (std::strcmp(szTypeName, "string") == 0)  { xDefault.SetString(std::string()); }
+	else if (std::strcmp(szTypeName, "vector3") == 0) { xDefault.SetVector3(Zenith_Maths::Vector3(0.0f)); }
+	else { return false; }
+	pxDef->DeclareVariable(szName, xDefault);
+	g_xGraphEditor.m_bDirty = true;
+	return true;
+}
+
+void Zenith_GraphEditorPanel::OpenAssetFresh(const char* szAssetPath)
+{
+	OpenAsset(szAssetPath);
+	Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+	if (pxDef)
+	{
+		pxDef->Clear();
+		g_xGraphEditor.m_uSelectedNodeID = 0;
+		DestroyParamInstance();
+		g_xGraphEditor.m_bDirty = true;
+	}
+}
 
 //------------------------------------------------------------------------------
 // Test accessors
@@ -941,24 +1130,7 @@ u_int Zenith_GraphEditorPanel::GetSelectedNodeID()
 
 u_int Zenith_GraphEditorPanel::FindNodeIDByType(const char* szTypeName, u_int uOccurrence)
 {
-	const Zenith_GraphDefinition* pxDef = GetOpenDefinition();
-	if (!pxDef || !szTypeName)
-	{
-		return 0;
-	}
-	u_int uSeen = 0;
-	for (u_int u = 0; u < pxDef->GetNodeCount(); ++u)
-	{
-		if (pxDef->GetNodeAt(u).m_strTypeName == szTypeName)
-		{
-			if (uSeen == uOccurrence)
-			{
-				return pxDef->GetNodeAt(u).m_uNodeID;
-			}
-			++uSeen;
-		}
-	}
-	return 0;
+	return ResolveNodeByTypeOccurrence(szTypeName, uOccurrence);
 }
 
 bool Zenith_GraphEditorPanel::IsDirty()

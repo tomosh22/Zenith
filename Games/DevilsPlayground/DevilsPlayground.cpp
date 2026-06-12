@@ -39,20 +39,18 @@
 #include "Components/DPVillager_Component.h"
 #include "Components/DPPlayerController_Component.h"
 #include "Components/DPOrbitCamera_Component.h"
+#include "Components/DP_GraphNodes.h"
+#include "Components/DPGraphInteractable_Component.h"
+#include "Components/DPMenuRelay_Component.h"
 #include "Components/DPItemBase_Component.h"
 #include "Components/DPItemSpawn_Component.h"
 #include "Components/DPItemManager_Component.h"
 #include "Components/DPInteractable_Base.h"
 #include "Components/DPDoor_Component.h"
-#include "Components/DPDoubleDoor_Component.h"
-#include "Components/DPChest_Component.h"
 #include "Components/DPForge_Component.h"
-#include "Components/DPPentagram_Component.h"
 #include "Components/Priest_Component.h"
 #include "AI/Components/Zenith_AIAgentComponent.h"
-#include "Components/DummyNoiseMachine_Component.h"
 #include "Components/DPHUDController_Component.h"
-#include "Components/DPMainMenuController_Component.h"
 #include "Components/DPPauseMenuController_Component.h"
 #include "Components/DPFogPass_Component.h"
 #include "Components/DPProcLevelBootstrap_Component.h"
@@ -86,7 +84,6 @@ ZENITH_REGISTER_COMPONENT(DPItemManager_Component,       "DPItemManager",       
 ZENITH_REGISTER_COMPONENT(DPFogPass_Component,           "DPFogPass",           102u)
 ZENITH_REGISTER_COMPONENT(DPHUDController_Component,     "DPHUDController",     103u)
 ZENITH_REGISTER_COMPONENT(DPOrbitCamera_Component,       "DPOrbitCamera",       104u)
-ZENITH_REGISTER_COMPONENT(DPMainMenuController_Component, "DPMainMenuController", 105u)
 ZENITH_REGISTER_COMPONENT(DPPauseMenuController_Component, "DPPauseMenuController", 106u)
 ZENITH_REGISTER_COMPONENT(DPProcLevelBootstrap_Component, "DPProcLevelBootstrap", 107u)
 ZENITH_REGISTER_COMPONENT(DPVillager_Component,          "DPVillager",          108u)
@@ -94,11 +91,9 @@ ZENITH_REGISTER_COMPONENT(Priest_Component,              "Priest",              
 ZENITH_REGISTER_COMPONENT(DPItemBase_Component,          "DPItemBase",          110u)
 ZENITH_REGISTER_COMPONENT(DPItemSpawn_Component,         "DPItemSpawn",         111u)
 ZENITH_REGISTER_COMPONENT(DPDoor_Component,              "DPDoor",              112u)
-ZENITH_REGISTER_COMPONENT(DPDoubleDoor_Component,        "DPDoubleDoor",        113u)
-ZENITH_REGISTER_COMPONENT(DPChest_Component,             "DPChest",             114u)
 ZENITH_REGISTER_COMPONENT(DPForge_Component,             "DPForge",             115u)
-ZENITH_REGISTER_COMPONENT(DPPentagram_Component,         "DPPentagram",         116u)
-ZENITH_REGISTER_COMPONENT(DummyNoiseMachine_Component,   "DummyNoiseMachine",   117u)
+ZENITH_REGISTER_COMPONENT(DPGraphInteractable_Component, "DPGraphInteractable", 118u)
+ZENITH_REGISTER_COMPONENT(DPMenuRelay_Component,         "DPMenuRelay",         119u)
 
 // ============================================================================
 // Forward decls — Project_LoadInitialScene is referenced by the editor
@@ -338,7 +333,6 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<DPFogPass_Component>("DPFogPass");
 	xEditorRegistry.RegisterComponent<DPHUDController_Component>("DPHUDController");
 	xEditorRegistry.RegisterComponent<DPOrbitCamera_Component>("DPOrbitCamera");
-	xEditorRegistry.RegisterComponent<DPMainMenuController_Component>("DPMainMenuController");
 	xEditorRegistry.RegisterComponent<DPPauseMenuController_Component>("DPPauseMenuController");
 	xEditorRegistry.RegisterComponent<DPProcLevelBootstrap_Component>("DPProcLevelBootstrap");
 	xEditorRegistry.RegisterComponent<DPVillager_Component>("DPVillager");
@@ -346,12 +340,14 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<DPItemBase_Component>("DPItemBase");
 	xEditorRegistry.RegisterComponent<DPItemSpawn_Component>("DPItemSpawn");
 	xEditorRegistry.RegisterComponent<DPDoor_Component>("DPDoor");
-	xEditorRegistry.RegisterComponent<DPDoubleDoor_Component>("DPDoubleDoor");
-	xEditorRegistry.RegisterComponent<DPChest_Component>("DPChest");
 	xEditorRegistry.RegisterComponent<DPForge_Component>("DPForge");
-	xEditorRegistry.RegisterComponent<DPPentagram_Component>("DPPentagram");
-	xEditorRegistry.RegisterComponent<DummyNoiseMachine_Component>("DummyNoiseMachine");
+	xEditorRegistry.RegisterComponent<DPGraphInteractable_Component>("DPGraphInteractable");
+	xEditorRegistry.RegisterComponent<DPMenuRelay_Component>("DPMenuRelay");
 #endif
+
+	// Behaviour Graph node library (used by the boot-authored interactable +
+	// menu graphs).
+	DP_RegisterGraphNodes();
 
 	DevilsPlayground::InitializeResources();
 
@@ -579,7 +575,11 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuHowToBody", DPUI::fMENU_HOWTO_FONT);
 		g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuHowToBody", 0.9f, 0.9f, 0.85f, 1.0f);
 
-		g_xEngine.EditorAutomation().AddStep_AddComponent("DPMainMenuController");
+		// Menu logic lives in the boot-authored DP_MainMenu graph; the relay owns
+	// only the UI-button wiring (fires MenuPlay/MenuQuit custom events).
+	g_xEngine.EditorAutomation().AddStep_AddComponent("Graph");
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/DP_MainMenu.bgraph");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("DPMenuRelay");
 
 		g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
 		g_xEngine.EditorAutomation().AddStep_UnloadScene();
@@ -1047,8 +1047,95 @@ namespace
 	}
 }
 
+// ============================================================================
+// AuthorBehaviourGraphs - boot-time authoring of DP's gameplay graphs through
+// the graph editor's atomic actions (each step = the exact operation a human
+// performs in the editor: open, click palette entries, select nodes, edit
+// property rows, drag pin connections, add variables, Save). Regenerated from
+// scratch every boot, like the scenes.
+//
+// The graphs carry the gameplay logic the retired C++ interactable/menu
+// components owned; DPGraphInteractable_Component / DPMenuRelay_Component fire
+// "Interact" / "MenuPlay" / "MenuQuit" custom events into them.
+// ============================================================================
+static void AuthorBehaviourGraphs()
+{
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+
+	// ---- Front-end menu: Play -> load ProcLevel, Quit -> request quit ------
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/DP_MainMenu.bgraph");
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "MenuPlay");
+	xAuto.AddStep_GraphAddNode("LoadSceneByIndex");
+	xAuto.AddStep_GraphSelectNode("LoadSceneByIndex", 0);
+	xAuto.AddStep_GraphSetNodeParamInt("m_iSceneIndex", 1);
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "LoadSceneByIndex", 0);
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 1);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "MenuQuit");
+	xAuto.AddStep_GraphAddNode("DPRequestQuit");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 1, 0, "DPRequestQuit", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
+	// ---- Pentagram: win-state reset on start; interact deposits objective --
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/DP_Pentagram.bgraph");
+	xAuto.AddStep_GraphAddNode("OnStart");
+	xAuto.AddStep_GraphAddNode("DPResetWinState");
+	xAuto.AddStep_GraphConnect("OnStart", 0, 0, "DPResetWinState", 0);
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "Interact");
+	xAuto.AddStep_GraphAddNode("DPDepositHeldObjective");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "DPDepositHeldObjective", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
+	// ---- Chest: interact opens; per-frame lid progress ---------------------
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/DP_Chest.bgraph");
+	xAuto.AddStep_GraphAddVariable("isOpen", "bool", 0.0f);
+	xAuto.AddStep_GraphAddVariable("openT", "float", 0.0f);
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "Interact");
+	xAuto.AddStep_GraphAddNode("DPOpenChest");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "DPOpenChest", 0);
+	xAuto.AddStep_GraphAddNode("OnUpdate");
+	xAuto.AddStep_GraphAddNode("DPAdvanceChestLid");
+	xAuto.AddStep_GraphConnect("OnUpdate", 0, 0, "DPAdvanceChestLid", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
+	// ---- Noise machine: interact emits the priest-bait stimulus ------------
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/DP_NoiseMachine.bgraph");
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "Interact");
+	xAuto.AddStep_GraphAddNode("DPEmitNoise");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "DPEmitNoise", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
+	// ---- Double door: key-gated open; per-frame leaf animation -------------
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/DP_DoubleDoor.bgraph");
+	xAuto.AddStep_GraphAddVariable("isOpen", "bool", 0.0f);
+	xAuto.AddStep_GraphAddVariable("openT", "float", 0.0f);
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "Interact");
+	xAuto.AddStep_GraphAddNode("DPTryOpenDoor");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "DPTryOpenDoor", 0);
+	xAuto.AddStep_GraphAddNode("OnUpdate");
+	xAuto.AddStep_GraphAddNode("DPAnimateDoorLeaves");
+	xAuto.AddStep_GraphConnect("OnUpdate", 0, 0, "DPAnimateDoorLeaves", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
+	AuthorBehaviourGraphs();  // .bgraph assets (regenerated every boot)
 	AuthorFrontEndScene();    // build index 0
 	AuthorProcLevelScene();   // build index 1
 

@@ -6,7 +6,8 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
-#include "Components/DPMainMenuController_Component.h"
+#include "Components/DPMenuRelay_Component.h"
+#include "Components/DP_GraphNodes.h"
 #include "Components/DPPauseMenuController_Component.h"
 
 #include <cstdio>
@@ -26,10 +27,10 @@
 //                Zenith_Application::RequestQuit).
 //
 // Procedure (no scene needed; flags only):
-//   1. DPMainMenuController_Component::ResetQuitForTest(); confirm
+//   1. DPNode_RequestQuit::ResetQuitForTest(); confirm
 //      WasQuitRequestedForTest() == false.
-//   2. FireQuitClickForTest() -- direct invocation of the Quit
-//      button's OnClick handler. Assert WasQuitRequestedForTest()
+//   2. DPMenuRelay_Component::FireQuitClickForTest() -- drives the Quit
+//      button's real handler: relay -> MenuQuit graph event -> DPRequestQuit
 //      == true.
 //   3. DPPauseMenuController_Component::ResetPauseShortcutsForTest().
 //      Confirm both shortcut flags == false.
@@ -80,24 +81,26 @@ static bool Step_P2MenuShortcuts(int /*iFrame*/)
 	switch (g_iPhase)
 	{
 	case kPM_Start:
-		// Step 1+2: MainMenu Quit click. No scene needed -- the
-		// static handler test only touches a static flag.
-		DPMainMenuController_Component::ResetQuitForTest();
-		if (DPMainMenuController_Component::WasQuitRequestedForTest())
+		// Step 1+2: MainMenu Quit click through the REAL wiring: the relay
+		// resolves the live FrontEnd menu entity (loaded by the between-tests
+		// reset) and fires the MenuQuit graph event; DPRequestQuit sets the
+		// observable flag.
+		DPNode_RequestQuit::ResetQuitForTest();
+		if (DPNode_RequestQuit::WasQuitRequestedForTest())
 		{
 			FailAt(1, "WasQuitRequestedForTest true after ResetQuitForTest");
 			g_iPhase = kPM_Done;
 			return false;
 		}
-		DPMainMenuController_Component::FireQuitClickForTest();
-		if (!DPMainMenuController_Component::WasQuitRequestedForTest())
+		DPMenuRelay_Component::FireQuitClickForTest();
+		if (!DPNode_RequestQuit::WasQuitRequestedForTest())
 		{
 			FailAt(2, "Quit click handler didn't set flag");
 			g_iPhase = kPM_Done;
 			return false;
 		}
 		// Cleanup the static flag so its mere existence doesn't leak.
-		DPMainMenuController_Component::ResetQuitForTest();
+		DPNode_RequestQuit::ResetQuitForTest();
 
 		// Step 3-6 require the persistent pause-menu instance. Load
 		// GameLevel and wait a few frames for OnStart to migrate the

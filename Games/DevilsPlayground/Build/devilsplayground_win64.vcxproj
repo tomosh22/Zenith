@@ -892,25 +892,23 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\DPChest_Component.h" />
     <ClInclude Include="..\Components\DPDoor_Component.h" />
-    <ClInclude Include="..\Components\DPDoubleDoor_Component.h" />
     <ClInclude Include="..\Components\DPFogPass_Component.h" />
     <ClInclude Include="..\Components\DPForge_Component.h" />
+    <ClInclude Include="..\Components\DPGraphInteractable_Component.h" />
     <ClInclude Include="..\Components\DPHUDController_Component.h" />
     <ClInclude Include="..\Components\DPInteractable_Base.h" />
     <ClInclude Include="..\Components\DPItemBase_Component.h" />
     <ClInclude Include="..\Components\DPItemManager_Component.h" />
     <ClInclude Include="..\Components\DPItemSpawn_Component.h" />
-    <ClInclude Include="..\Components\DPMainMenuController_Component.h" />
+    <ClInclude Include="..\Components\DPMenuRelay_Component.h" />
     <ClInclude Include="..\Components\DPOrbitCamera_Component.h" />
     <ClInclude Include="..\Components\DPPauseMenuController_Component.h" />
-    <ClInclude Include="..\Components\DPPentagram_Component.h" />
     <ClInclude Include="..\Components\DPPlayerController_Component.h" />
     <ClInclude Include="..\Components\DPProcLevelBootstrap_Component.h" />
     <ClInclude Include="..\Components\DPVillager_Component.h" />
     <ClInclude Include="..\Components\DP_BT_Nodes.h" />
-    <ClInclude Include="..\Components\DummyNoiseMachine_Component.h" />
+    <ClInclude Include="..\Components\DP_GraphNodes.h" />
     <ClInclude Include="..\Components\Priest_Component.h" />
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h" />
     <ClInclude Include="..\Source\DPCommonTypes.h" />
@@ -941,6 +939,7 @@
     <ClInclude Include="..\Source\DP_Win.h" />
     <ClInclude Include="..\Source\PublicInterfaces.h" />
     <ClInclude Include="..\Tests\DPTestSupport.h" />
+    <ClInclude Include="..\Tests\DP_TestGraphHelpers.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Components\DPProcLevelBootstrap_Component.cpp" />

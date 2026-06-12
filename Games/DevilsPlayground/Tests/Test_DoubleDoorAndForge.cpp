@@ -11,7 +11,9 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
-#include "Components/DPDoubleDoor_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
+#include "Components/DPGraphInteractable_Component.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "Components/DPForge_Component.h"
 
 // ============================================================================
@@ -56,7 +58,6 @@ namespace DoubleDoorTestState
 	Zenith_EntityID           g_xDoor;
 	Zenith_EntityID           g_xLeftLeaf;
 	Zenith_EntityID           g_xRightLeaf;
-	DPDoubleDoor_Component*   g_pxDoor = nullptr;
 
 	bool                      g_bWasOpen        = false;
 	bool                      g_bIsOpenAfter    = false;
@@ -73,7 +74,6 @@ static void Setup_DoubleDoor()
 	g_xDoor      = INVALID_ENTITY_ID;
 	g_xLeftLeaf  = INVALID_ENTITY_ID;
 	g_xRightLeaf = INVALID_ENTITY_ID;
-	g_pxDoor = nullptr;
 	g_bWasOpen = false;
 	g_bIsOpenAfter = false;
 	g_fOpenProgress = 0.0f;
@@ -129,9 +129,11 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		g_xRightLeaf = xRight.GetEntityID();
 		xRight.SetParent(g_xDoor);
 
-		// Attach the script LAST so OnAwake has the parent + children in place.
-		g_pxDoor = &xDoor.AddComponent<DPDoubleDoor_Component>();
-		g_bWasOpen = (g_pxDoor != nullptr) && g_pxDoor->IsOpen();
+		// Graph-driven door: the shim owns proximity; the boot-authored
+		// DP_DoubleDoor graph owns the key gate + leaf animation.
+		xDoor.AddComponent<DPGraphInteractable_Component>().OnAwake();
+		xDoor.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/DP_DoubleDoor.bgraph");
+		g_bWasOpen = DP_GetGraphBool(g_xDoor, "game:Graphs/DP_DoubleDoor.bgraph", "isOpen");
 
 		// Synthesise a Key in the villager's hand so TryConsumeKeyForUnlock
 		// passes. We don't need a real entity — DP_Player::GetHeldItemTag
@@ -151,10 +153,20 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 	case kDD_Interact:
 	{
 		// Skip the rising-edge proximity dance — we test that path in
-		// DoorUnlock_Test against a real authored door. Here we focus on
-		// DPDoubleDoor's added behaviour: the open animation + the
-		// FindChildTransform("Leaf_L"/"Leaf_R") child resolution.
-		if (g_pxDoor != nullptr) g_pxDoor->OpenForTest();
+		// DoorUnlock_Test against a real authored door. Here we drive the
+		// door graph's REAL interact path (key consume + open + animation):
+		// fire the Interact event with the villager payload, exactly what
+		// the shim does on F-press.
+		{
+			Zenith_SceneData* pxDoorScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xDoor);
+			Zenith_Entity xDoorEnt = pxDoorScene ? pxDoorScene->TryGetEntity(g_xDoor) : Zenith_Entity();
+			if (xDoorEnt.IsValid() && xDoorEnt.HasComponent<Zenith_GraphComponent>())
+			{
+				Zenith_PropertyValue xPayload;
+				xPayload.SetPackedEntityID(g_xVillager.GetPacked());
+				xDoorEnt.GetComponent<Zenith_GraphComponent>().FireCustomEvent("Interact", &xPayload);
+			}
+		}
 		g_iPhase = kDD_Settle;
 		return true;
 	}
@@ -174,11 +186,8 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 
 	case kDD_Verify:
 	{
-		if (g_pxDoor != nullptr)
-		{
-			g_bIsOpenAfter = g_pxDoor->IsOpen();
-			g_fOpenProgress = g_pxDoor->GetOpenProgress();
-		}
+		g_bIsOpenAfter = DP_GetGraphBool(g_xDoor, "game:Graphs/DP_DoubleDoor.bgraph", "isOpen");
+		g_fOpenProgress = DP_GetGraphFloat(g_xDoor, "game:Graphs/DP_DoubleDoor.bgraph", "openT");
 		// Verify leaf rotations are non-identity (they were set as the door
 		// lerped open). Compare against a small epsilon to detect any
 		// rotation-application at all.

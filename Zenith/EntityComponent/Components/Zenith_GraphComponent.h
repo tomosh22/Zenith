@@ -121,8 +121,10 @@ public:
 	void RemoveAllGraphs();
 	void FlushPendingRemovals();
 
-	// Fires a custom (string-named) event on every slot of THIS entity.
-	void FireCustomEvent(const char* szName);
+	// Fires a custom (string-named) event on every slot of THIS entity. The
+	// optional payload reaches OnCustomEvent source nodes, which can store it
+	// to a blackboard variable (the collision sources' packed-EntityID pattern).
+	void FireCustomEvent(const char* szName, const Zenith_PropertyValue* pxPayload = nullptr);
 
 	//--------------------------------------------------------------------------
 	// Lifecycle hooks (concept-detected by Zenith_ComponentMeta)

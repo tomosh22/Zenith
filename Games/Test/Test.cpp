@@ -18,9 +18,8 @@ const char* Project_GetGameAssetsDirectory()
 	return GAME_ASSETS_DIR;
 }
 
-#include "Test/Components/Test_HookesLawComponent.h"
-#include "Test/Components/Test_RotationComponent.h"
 #include "Test/Components/Test_PlayerControllerComponent.h"
+#include "Test/Components/Test_GraphNodes.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -49,14 +48,13 @@ void Project_RegisterGameComponents()
 	// (orders 100+ are unique per game, after the engine built-ins).
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	xRegistry.RegisterComponent<Test_PlayerControllerComponent>("TestPlayerController", 100);
-	xRegistry.RegisterComponent<Test_HookesLawComponent>("TestHookesLaw", 101);
-	xRegistry.RegisterComponent<Test_RotationComponent>("TestRotation", 102);
+
+	// Behaviour Graph node library (used by the boot-authored physics-toy graphs).
+	Test_RegisterGraphNodes();
 
 #ifdef ZENITH_TOOLS
 	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
 	xEditorRegistry.RegisterComponent<Test_PlayerControllerComponent>("TestPlayerController");
-	xEditorRegistry.RegisterComponent<Test_HookesLawComponent>("TestHookesLaw");
-	xEditorRegistry.RegisterComponent<Test_RotationComponent>("TestRotation");
 #endif
 }
 
@@ -93,11 +91,50 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
+	// ---- Behaviour graphs (regenerated every boot through the graph editor's
+	// ---- atomic actions; the physics-toy entities below run them) ----
+	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh("game:Graphs/Test_Spinner.bgraph");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnUpdate");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("TestSpinPlatform");
+	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("TestSpinPlatform", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamVec3("m_xAngularVel", 0.f, 2.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnUpdate", 0, 0, "TestSpinPlatform", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSave();
+	g_xEngine.EditorAutomation().AddStep_GraphClose();
+
+	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh("game:Graphs/Test_Spring.bgraph");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnUpdate");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("TestHookesForce");
+	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("TestHookesForce", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamVec3("m_xDesiredPosition", 0.f, 5.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnUpdate", 0, 0, "TestHookesForce", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSave();
+	g_xEngine.EditorAutomation().AddStep_GraphClose();
+
 	// ---- Test gameplay scene (build index 1) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("Test");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
 	g_xEngine.EditorAutomation().AddStep_AddCamera();
 	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(45.f));
+
+	// Spinning platform driven by the Test_Spinner graph (constant angular
+	// velocity through the physics body - the retired TestRotation logic).
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("Spinner");
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(0.f, 0.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_AddCollider();
+	g_xEngine.EditorAutomation().AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_DYNAMIC);
+	g_xEngine.EditorAutomation().AddStep_AddComponent("Graph");
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Test_Spinner.bgraph");
+
+	// Spring-tethered body driven by the Test_Spring graph (Hooke's-law force
+	// toward a target - the retired TestHookesLaw logic).
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("Spring");
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(3.f, 0.f, 0.f);
+	g_xEngine.EditorAutomation().AddStep_AddCollider();
+	g_xEngine.EditorAutomation().AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_DYNAMIC);
+	g_xEngine.EditorAutomation().AddStep_AddComponent("Graph");
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Test_Spring.bgraph");
+
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

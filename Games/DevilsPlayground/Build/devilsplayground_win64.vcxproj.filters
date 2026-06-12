@@ -415,19 +415,16 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\DPChest_Component.h">
-      <Filter>Components</Filter>
-    </ClInclude>
     <ClInclude Include="..\Components\DPDoor_Component.h">
-      <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Components\DPDoubleDoor_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPFogPass_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPForge_Component.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\DPGraphInteractable_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPHUDController_Component.h">
@@ -445,16 +442,13 @@
     <ClInclude Include="..\Components\DPItemSpawn_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DPMainMenuController_Component.h">
+    <ClInclude Include="..\Components\DPMenuRelay_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPOrbitCamera_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPPauseMenuController_Component.h">
-      <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Components\DPPentagram_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPPlayerController_Component.h">
@@ -469,7 +463,7 @@
     <ClInclude Include="..\Components\DP_BT_Nodes.h">
       <Filter>Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Components\DummyNoiseMachine_Component.h">
+    <ClInclude Include="..\Components\DP_GraphNodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Priest_Component.h">
@@ -560,6 +554,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Tests\DPTestSupport.h">
+      <Filter>Tests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tests\DP_TestGraphHelpers.h">
       <Filter>Tests</Filter>
     </ClInclude>
   </ItemGroup>

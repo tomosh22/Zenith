@@ -892,14 +892,11 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Test_HookesLawComponent.h" />
+    <ClInclude Include="..\Components\Test_GraphNodes.h" />
     <ClInclude Include="..\Components\Test_PlayerControllerComponent.h" />
-    <ClInclude Include="..\Components\Test_RotationComponent.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Components\Test_HookesLawComponent.cpp" />
     <ClCompile Include="..\Components\Test_PlayerControllerComponent.cpp" />
-    <ClCompile Include="..\Components\Test_RotationComponent.cpp" />
     <ClCompile Include="..\Test.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

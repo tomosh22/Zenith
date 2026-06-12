@@ -2,7 +2,7 @@
   "name": "CB_Terrain_Raise",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.363,
+  "durationMs": 0.256,
   "failures": [],
   "skipped": false
 }

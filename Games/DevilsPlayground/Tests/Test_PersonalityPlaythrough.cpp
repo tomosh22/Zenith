@@ -34,12 +34,10 @@
 #include "Source/DPTelemetry.h"
 #include "Components/DPVillager_Component.h"
 #include "Components/DPDoor_Component.h"
-#include "Components/DPChest_Component.h"
 #include "Components/DPForge_Component.h"
-#include "Components/DPPentagram_Component.h"
 #include "Components/DPOrbitCamera_Component.h"
 #include "Components/DPItemBase_Component.h"
-#include "Components/DummyNoiseMachine_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
 #include "Components/Priest_Component.h"
 
 #include "Physics/Zenith_Physics.h"
@@ -2405,10 +2403,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		g_iVillagerCount = CountScripts<DPVillager_Component>();
 		g_iDoorCount     = CountScripts<DPDoor_Component>();
-		g_iChestCount    = CountScripts<DPChest_Component>();
+		g_iChestCount    = DP_CountEntitiesWithGraph("game:Graphs/DP_Chest.bgraph");
 
 		g_xPriest    = FindFirstScript<Priest_Component>();
-		g_xPentagram = FindFirstScript<DPPentagram_Component>();
+		g_xPentagram = DP_FindFirstEntityWithGraph("game:Graphs/DP_Pentagram.bgraph");
 		g_xForge     = FindFirstScript<DPForge_Component>();
 		// Door, chest, noise: pick the instance closest to the forge so the
 		// test's WASD walks stay short. The UE-imported door batch stacks all
@@ -2430,8 +2428,8 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		Zenith_Maths::Vector3 xPentPos(50.0f, 0.0f, 70.0f);
 		if (g_xPentagram.IsValid()) TryGetEntityPos(g_xPentagram, xPentPos);
 		g_xDoor   = FindClosestScriptTo<DPDoor_Component>(xPentPos);
-		g_xChest  = FindClosestScriptTo<DPChest_Component>(xForgePos);
-		g_xNoise  = FindClosestScriptTo<DummyNoiseMachine_Component>(xForgePos);
+		g_xChest  = DP_FindClosestEntityWithGraph("game:Graphs/DP_Chest.bgraph", xForgePos);
+		g_xNoise  = DP_FindClosestEntityWithGraph("game:Graphs/DP_NoiseMachine.bgraph", xForgePos);
 
 		// Pick the villager closest to the map centre — keeps the screen-space
 		// click-to-possess inside the orbit camera's frame.
@@ -3113,10 +3111,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 3) return true;
-		if (DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest))
-		{
-			g_bChestOpened = pxChest->IsOpen();
-		}
+		g_bChestOpened = DP_GetGraphBool(g_xChest, "game:Graphs/DP_Chest.bgraph", "isOpen");
 		std::printf("[HumanPlaythrough] chest: open=%d\n", (int)g_bChestOpened);
 		std::fflush(stdout);
 		// Stealth skips the noise machine -- the whole point of the

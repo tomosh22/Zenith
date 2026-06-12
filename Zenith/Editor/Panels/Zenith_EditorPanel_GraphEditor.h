@@ -39,6 +39,39 @@ public:
 
 	static const char* GetOpenAssetPath();
 
+	//--------------------------------------------------------------------------
+	// Atomic editor actions - the EXACT operations the panel's UI handlers run
+	// (palette click, pin drag-drop, canvas node click, property-row edit,
+	// "Add Var"). Zenith_EditorAutomation's AddStep_Graph* steps drive these so
+	// boot-time graph authoring performs the same atomic actions a human using
+	// the editor would. All return false (and change nothing) on bad input.
+	//--------------------------------------------------------------------------
+	// Palette click: create a node of the registered type at the next free
+	// canvas spot and select it.
+	static bool Action_AddNode(const char* szTypeName);
+	// Pin drag-drop: connect (srcNode, srcPin) -> dstNode's input pin, with the
+	// same one-edge-per-(node,pin) rule the canvas enforces. Nodes are addressed
+	// by type name + occurrence (creation order), like a human picking them out
+	// visually.
+	static bool Action_Connect(const char* szSrcTypeName, u_int uSrcOccurrence, u_int uSrcPin,
+	                           const char* szDstTypeName, u_int uDstOccurrence);
+	// Canvas node click: select the node and build its param-edit instance.
+	static bool Action_SelectNode(const char* szTypeName, u_int uOccurrence);
+	// Property-row edit on the SELECTED node (requires Action_SelectNode first,
+	// exactly like a human): sets via the reflected-property table and commits.
+	static bool Action_SetSelectedNodeParamFloat(const char* szPropertyName, float fValue);
+	static bool Action_SetSelectedNodeParamString(const char* szPropertyName, const char* szValue);
+	static bool Action_SetSelectedNodeParamVec3(const char* szPropertyName, float fX, float fY, float fZ);
+	static bool Action_SetSelectedNodeParamInt(const char* szPropertyName, int iValue);
+	// "Add Var" button: declare a blackboard variable. szTypeName is one of
+	// float|int|bool|string|vector3 (the combo entries); fDefaultNumeric seeds
+	// float/int/bool defaults (string/vector3 start empty/zero, as in the UI).
+	static bool Action_AddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric);
+	// Boot-regeneration variant of OpenAsset: opens the path and resets the
+	// definition to empty so authoring steps rebuild it from scratch each boot
+	// (the graph analogue of scene authoring overwriting saved scenes).
+	static void OpenAssetFresh(const char* szAssetPath);
+
 #ifdef ZENITH_TESTING
 	// Live screen-position accessors (centre of the rect recorded during the
 	// most recent Render). Tests must query AFTER a rendered frame.

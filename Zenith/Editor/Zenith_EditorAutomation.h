@@ -148,6 +148,22 @@ enum class Zenith_EditorActionType
 	// Behaviour Graph (via Zenith_Editor::AttachGraphToSelected)
 	ATTACH_GRAPH,
 
+	// Behaviour Graph authoring (via Zenith_GraphEditorPanel's atomic editor
+	// actions - each step performs the exact operation a human's UI gesture
+	// runs: open the editor, click a palette entry, drag a pin connection,
+	// click-select a node, edit a property row, add a variable, Save, close).
+	GRAPH_OPEN_FRESH,
+	GRAPH_ADD_NODE,
+	GRAPH_SELECT_NODE,
+	GRAPH_SET_NODE_PARAM_FLOAT,
+	GRAPH_SET_NODE_PARAM_STRING,
+	GRAPH_SET_NODE_PARAM_VEC3,
+	GRAPH_SET_NODE_PARAM_INT,
+	GRAPH_CONNECT,
+	GRAPH_ADD_VARIABLE,
+	GRAPH_SAVE,
+	GRAPH_CLOSE,
+
 	// Particles
 	SET_PARTICLE_CONFIG,
 	SET_PARTICLE_CONFIG_BY_NAME,
@@ -400,6 +416,26 @@ void AddStep_SetUIButtonTextShadowColor(const char* szElement, float fR, float f
 	// Attaches a Behaviour Graph (.bgraph asset path, e.g. "game:Graphs/Door.bgraph")
 	// to the selected entity's Zenith_GraphComponent (added if absent).
 void AddStep_AttachGraph(const char* szGraphAssetPath);
+
+	// Graph AUTHORING steps - boot-time .bgraph creation through the graph
+	// editor's atomic actions (the same operations a human's UI gestures run).
+	// Nodes are addressed by type name + occurrence in creation order. The
+	// authoring sequence for one graph is:
+	//   GraphOpenFresh -> GraphAddNode... -> GraphSelectNode + param edits...
+	//   -> GraphConnect... -> GraphAddVariable... -> GraphSave -> GraphClose.
+	// GraphOpenFresh resets the definition so each boot re-authors the asset
+	// from scratch (the graph analogue of scene authoring overwriting scenes).
+void AddStep_GraphOpenFresh(const char* szAssetPath);
+void AddStep_GraphAddNode(const char* szTypeName);
+void AddStep_GraphSelectNode(const char* szTypeName, int iOccurrence);
+void AddStep_GraphSetNodeParamFloat(const char* szPropertyName, float fValue);
+void AddStep_GraphSetNodeParamString(const char* szPropertyName, const char* szValue);
+void AddStep_GraphSetNodeParamVec3(const char* szPropertyName, float fX, float fY, float fZ);
+void AddStep_GraphSetNodeParamInt(const char* szPropertyName, int iValue);
+void AddStep_GraphConnect(const char* szSrcTypeName, int iSrcOccurrence, int iSrcPin, const char* szDstTypeName, int iDstOccurrence);
+void AddStep_GraphAddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric);
+void AddStep_GraphSave();
+void AddStep_GraphClose();
 
 	//--------------------------------------------------------------------------
 	// Particle Step Helpers

@@ -2,6 +2,8 @@
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Core/Zenith_Engine.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
 
 //------------------------------------------------------------------------------
 // Engine Behaviour Graph node library (Phase 1 set).
@@ -108,10 +110,40 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_OnCustomEvent)
 	public:
 		ZENITH_PROPERTY(std::string, m_strEventName, "event")
+		// When the firer supplied a payload, stash it into this blackboard
+		// variable (same pattern as the collision sources' packed EntityID).
+		ZENITH_PROPERTY(std::string, m_strStorePayloadVar, "payload")
 
-		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			if (xContext.m_pxEventPayload && !m_strStorePayloadVar.empty())
+			{
+				xContext.m_pxBlackboard->SetValue(m_strStorePayloadVar, *xContext.m_pxEventPayload);
+			}
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
 		const char* GetTypeName() const override { return "OnCustomEvent"; }
 		bool MatchesCustomEvent(const char* szName) const override { return m_strEventName == szName; }
+	};
+
+	// Loads a registered scene by build index (SINGLE: replaces the current
+	// scene set). The same call the front-end menu's Play handler makes; the
+	// scene system's mid-update deferral rules apply identically. Authoring
+	// note: place this at the END of a chain - the dispatching entity does not
+	// survive the load.
+	class Zenith_GraphNode_LoadSceneByIndex : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_LoadSceneByIndex)
+	public:
+		ZENITH_PROPERTY(int32_t, m_iSceneIndex, 0)
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(m_iSceneIndex, SCENE_LOAD_SINGLE);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "LoadSceneByIndex"; }
 	};
 
 	//==========================================================================
@@ -430,6 +462,7 @@ void Zenith_RegisterEngineGraphNodes()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetBlackboardFloat>("SetBlackboardFloat", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_AddBlackboardFloat>("AddBlackboardFloat", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_FireCustomEvent>("FireCustomEvent", GRAPH_EVENT_NONE, 1, false, "Events");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_LoadSceneByIndex>("LoadSceneByIndex", GRAPH_EVENT_NONE, 1, false, "Scene");
 
 	// Flow
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Wait>("Wait", GRAPH_EVENT_NONE, 1, false, "Flow");

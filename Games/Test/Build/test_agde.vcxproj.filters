@@ -1,25 +1,16 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="..\Components\Test_HookesLawComponent.cpp">
-      <Filter>Components</Filter>
-    </ClCompile>
     <ClCompile Include="..\Components\Test_PlayerControllerComponent.cpp">
-      <Filter>Components</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Components\Test_RotationComponent.cpp">
       <Filter>Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Test.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Test_HookesLawComponent.h">
+    <ClInclude Include="..\Components\Test_GraphNodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Test_PlayerControllerComponent.h">
-      <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Components\Test_RotationComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
   </ItemGroup>

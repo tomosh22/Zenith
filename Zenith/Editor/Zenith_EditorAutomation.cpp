@@ -15,6 +15,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
+#include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -394,9 +395,85 @@ void Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration(const char* 
 void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow        (const char* szElement, float fOffX, float fOffY, bool bEnabled)  { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_BUTTON_TEXT_SHADOW,         szElement, fOffX, fOffY, bEnabled); }
 void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor   (const char* szElement, float fR, float fG, float fB, float fA)  { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_BUTTON_TEXT_SHADOW_COLOR,   szElement, fR, fG, fB, fA); }
 
-// -- Script --
+// -- Graph --
 
 void Zenith_EditorAutomation::AddStep_AttachGraph                 (const char* szGraphAssetPath)    { Push(Zenith_EditorAutomation::m_axActions, ActionType::ATTACH_GRAPH, szGraphAssetPath); }
+
+// Graph authoring (each step = one atomic editor action; see header).
+
+void Zenith_EditorAutomation::AddStep_GraphOpenFresh        (const char* szAssetPath)               { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRAPH_OPEN_FRESH, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_GraphAddNode          (const char* szTypeName)                { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRAPH_ADD_NODE, szTypeName); }
+void Zenith_EditorAutomation::AddStep_GraphSave             ()                                      { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRAPH_SAVE); }
+void Zenith_EditorAutomation::AddStep_GraphClose            ()                                      { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRAPH_CLOSE); }
+
+void Zenith_EditorAutomation::AddStep_GraphSelectNode(const char* szTypeName, int iOccurrence)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_SELECT_NODE;
+	xAction.m_szArg1 = szTypeName;
+	xAction.m_aiArgs[0] = iOccurrence;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphSetNodeParamFloat(const char* szPropertyName, float fValue)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_FLOAT;
+	xAction.m_szArg1 = szPropertyName;
+	xAction.m_afArgs[0] = fValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphSetNodeParamString(const char* szPropertyName, const char* szValue)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_STRING;
+	xAction.m_szArg1 = szPropertyName;
+	xAction.m_szArg2 = szValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphSetNodeParamInt(const char* szPropertyName, int iValue)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_INT;
+	xAction.m_szArg1 = szPropertyName;
+	xAction.m_aiArgs[0] = iValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphSetNodeParamVec3(const char* szPropertyName, float fX, float fY, float fZ)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_VEC3;
+	xAction.m_szArg1 = szPropertyName;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	xAction.m_afArgs[2] = fZ;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphConnect(const char* szSrcTypeName, int iSrcOccurrence, int iSrcPin, const char* szDstTypeName, int iDstOccurrence)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_CONNECT;
+	xAction.m_szArg1 = szSrcTypeName;
+	xAction.m_szArg2 = szDstTypeName;
+	xAction.m_aiArgs[0] = iSrcOccurrence;
+	xAction.m_aiArgs[1] = iDstOccurrence;
+	xAction.m_afArgs[0] = static_cast<float>(iSrcPin);
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphAddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_ADD_VARIABLE;
+	xAction.m_szArg1 = szName;
+	xAction.m_szArg2 = szTypeName;
+	xAction.m_afArgs[0] = fDefaultNumeric;
+	m_axActions.PushBack(xAction);
+}
 
 // -- Particles --
 
@@ -683,6 +760,16 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+namespace
+{
+	// Graph authoring steps assert on failure so a bad boot-authoring sequence
+	// (typo'd node type, wrong occurrence, invalid pin) surfaces immediately.
+	void GraphActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation graph step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+}
 void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 {
 	// Terrain-editor authoring actions have their own executor (see above).
@@ -1519,6 +1606,21 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Script operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::ATTACH_GRAPH:  g_xEngine.Editor().AttachGraphToSelected(xAction.m_szArg1); break;
+
+	//--------------------------------------------------------------------------
+	// Graph authoring (each case = one atomic graph-editor action)
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::GRAPH_OPEN_FRESH:            Zenith_GraphEditorPanel::OpenAssetFresh(xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_ADD_NODE:              GraphActionChecked(Zenith_GraphEditorPanel::Action_AddNode(xAction.m_szArg1), "GraphAddNode", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_SELECT_NODE:           GraphActionChecked(Zenith_GraphEditorPanel::Action_SelectNode(xAction.m_szArg1, static_cast<u_int>(xAction.m_aiArgs[0])), "GraphSelectNode", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_FLOAT:  GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamFloat(xAction.m_szArg1, xAction.m_afArgs[0]), "GraphSetNodeParamFloat", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_STRING: GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamString(xAction.m_szArg1, xAction.m_szArg2), "GraphSetNodeParamString", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_INT:    GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamInt(xAction.m_szArg1, xAction.m_aiArgs[0]), "GraphSetNodeParamInt", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_VEC3:   GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamVec3(xAction.m_szArg1, xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]), "GraphSetNodeParamVec3", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_CONNECT:               GraphActionChecked(Zenith_GraphEditorPanel::Action_Connect(xAction.m_szArg1, static_cast<u_int>(xAction.m_aiArgs[0]), static_cast<u_int>(xAction.m_afArgs[0]), xAction.m_szArg2, static_cast<u_int>(xAction.m_aiArgs[1])), "GraphConnect", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_ADD_VARIABLE:          GraphActionChecked(Zenith_GraphEditorPanel::Action_AddVariable(xAction.m_szArg1, xAction.m_szArg2, xAction.m_afArgs[0]), "GraphAddVariable", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_SAVE:                  Zenith_GraphEditorPanel::Save(); break;
+	case Zenith_EditorActionType::GRAPH_CLOSE:                 Zenith_GraphEditorPanel::Close(); break;
 
 	//--------------------------------------------------------------------------
 	// Particle operations

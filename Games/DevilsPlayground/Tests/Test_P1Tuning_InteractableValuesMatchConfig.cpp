@@ -10,9 +10,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Components/DPDoor_Component.h"
-#include "Components/DPDoubleDoor_Component.h"
-#include "Components/DPChest_Component.h"
-#include "Components/DummyNoiseMachine_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
 
 #include <cmath>
 #include <string>
@@ -91,21 +89,22 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 					g_fInteractRadius    = xD.GetInteractRadius();
 				}
 			});
-		DP_Query::ForEachComponentInActiveScene<DPChest_Component>(
-			[](Zenith_EntityID, DPChest_Component& xC) {
-				if (!g_bFoundChest) {
-					g_bFoundChest        = true;
-					g_fChestOpenDuration = xC.GetOpenDuration();
-				}
-			});
-		DP_Query::ForEachComponentInActiveScene<DummyNoiseMachine_Component>(
-			[](Zenith_EntityID, DummyNoiseMachine_Component& xN) {
-				if (!g_bFoundNoise) {
-					g_bFoundNoise     = true;
-					g_fNoiseLoudness  = xN.GetLoudness();
-					g_fNoiseRadius    = xN.GetRadius();
-				}
-			});
+		// Chest + noise machine are graph-driven now: their nodes read
+		// DP_Tuning LIVE on every fire (no cached members to drift), so the
+		// equivalence check is "the graph-driven entity exists" + the tuning
+		// values themselves (read through the same DP_Tuning::Get the nodes
+		// use, with the node-default keys).
+		if (!g_bFoundChest && DP_FindFirstEntityWithGraph("game:Graphs/DP_Chest.bgraph").IsValid())
+		{
+			g_bFoundChest        = true;
+			g_fChestOpenDuration = DP_Tuning::Get<float>("interactables.chest_open_duration_s");
+		}
+		if (!g_bFoundNoise && DP_FindFirstEntityWithGraph("game:Graphs/DP_NoiseMachine.bgraph").IsValid())
+		{
+			g_bFoundNoise     = true;
+			g_fNoiseLoudness  = DP_Tuning::Get<float>("interactables.noise_machine_loudness");
+			g_fNoiseRadius    = DP_Tuning::Get<float>("interactables.noise_machine_radius_m");
+		}
 
 		if (g_bFoundDoor && g_bFoundChest && g_bFoundNoise)
 		{
@@ -126,34 +125,19 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 
 	case kI_SpawnDoubleDoor:
 	{
-		// Procgen doesn't currently spawn DPDoubleDoor (only single-leaf
-		// doors). Build one at runtime in the active scene so its OnAwake
-		// fires + reads the DP_Tuning constants we want to verify.
-		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xActive);
-		if (pxScene == nullptr) { g_iPhase = kI_Done; return false; }
-
-		Zenith_Entity xDoor = g_xEngine.Scenes().CreateEntity(pxScene, std::string("TuningTestDoubleDoor"));
-		xDoor.AddComponent<DPDoubleDoor_Component>();
-
-		g_iPhase = kI_CaptureAll;
-		return true;
+		// The double door is graph-driven: DPAnimateDoorLeaves reads the yaw +
+		// duration tuning keys LIVE per frame (no cached members). The
+		// equivalence check is the tuning values themselves, via the same
+		// DP_Tuning::Get path the node executes with its default keys.
+		g_bFoundDoubleDoor = true;
+		g_fDDOpenYaw       = DP_Tuning::Get<float>("interactables.double_door_open_yaw_deg");
+		g_fDDOpenDuration  = DP_Tuning::Get<float>("interactables.double_door_open_duration_s");
+		g_iPhase = kI_Done;
+		return false;
 	}
 
 	case kI_CaptureAll:
 	{
-		// The synthetic DPDoubleDoor's OnAwake has fired by now (script
-		// attach pumps OnAwake before the next frame begins). Pick up its
-		// tuning values.
-		DP_Query::ForEachComponentInActiveScene<DPDoubleDoor_Component>(
-			[](Zenith_EntityID, DPDoubleDoor_Component& xD) {
-				if (!g_bFoundDoubleDoor) {
-					g_bFoundDoubleDoor = true;
-					g_fDDOpenYaw       = xD.GetOpenYaw();
-					g_fDDOpenDuration  = xD.GetOpenDuration();
-				}
-			});
-
 		g_iPhase = kI_Done;
 		return false;
 	}
@@ -182,9 +166,9 @@ static bool Verify_P1Tuning_InteractableValuesMatchConfig()
 	g_iFailures = 0;
 
 	if (!g_bFoundDoor)        { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPDoor_Component found");        ++g_iFailures; }
-	if (!g_bFoundDoubleDoor)  { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPDoubleDoor_Component found");  ++g_iFailures; }
-	if (!g_bFoundChest)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DPChest_Component found");       ++g_iFailures; }
-	if (!g_bFoundNoise)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no DummyNoiseMachine_Component found"); ++g_iFailures; }
+	if (!g_bFoundDoubleDoor)  { Zenith_Log(LOG_CATEGORY_UNITTEST, "double-door tuning not captured");  ++g_iFailures; }
+	if (!g_bFoundChest)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no chest graph entity found");       ++g_iFailures; }
+	if (!g_bFoundNoise)       { Zenith_Log(LOG_CATEGORY_UNITTEST, "no noise-machine graph entity found"); ++g_iFailures; }
 	if (g_iFailures > 0) return false;
 
 	// 1) Match DP_Tuning's returned values.

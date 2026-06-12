@@ -18,9 +18,8 @@
 #include "Source/DevilsPlayground_Tags.h"
 #include "Components/DPVillager_Component.h"
 #include "Components/DPDoor_Component.h"
-#include "Components/DPChest_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
 #include "Components/Priest_Component.h"
-#include "Components/DummyNoiseMachine_Component.h"
 #include "Components/DPHUDController_Component.h"
 #include "Components/DPOrbitCamera_Component.h"
 
@@ -29,7 +28,7 @@
 //
 //   DoorUnlock_Test       — Held key + proximity → door opens, key consumed
 //   VillagerDeath_Test    — Possessed villager life timer expires → DP_OnVillagerDied + possession cleared
-//   ChestInteract_Test    — F-press near chest → m_bIsOpen flips
+//   ChestInteract_Test    — F-press near chest → graph blackboard isOpen flips
 //   NoiseMachineFlow_Test — F-press near noise machine → priest hears (BB.HasInvestigatePos true)
 //   OrbitCameraStaysFixed_Test — Possess villager → bird's-eye camera position unchanged
 //   HUDLifeBar_Test       — Possess villager → HUD's "LifeBar" UI text becomes visible + non-empty
@@ -362,12 +361,11 @@ static bool Step_ChestInteract(int /*iFrame*/)
 	case kWait:
 	{
 		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
-		g_xChest    = FindFirstEntityWith<DPChest_Component>();
+		g_xChest    = DP_FindFirstEntityWithGraph("game:Graphs/DP_Chest.bgraph");
 		if (!g_xVillager.IsValid() || !g_xChest.IsValid()) return true;
 
-		DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest);
-		if (pxChest == nullptr) return true;
-		g_bChestWasClosed = !pxChest->IsOpen();
+		if (DP_GetGraphOn(g_xChest, "game:Graphs/DP_Chest.bgraph") == nullptr) return true;
+		g_bChestWasClosed = !DP_GetGraphBool(g_xChest, "game:Graphs/DP_Chest.bgraph", "isOpen");
 
 		// Possess + teleport into chest's interact radius (default 2m).
 		DP_Player::SetPossessedVillager(g_xVillager);
@@ -393,8 +391,7 @@ static bool Step_ChestInteract(int /*iFrame*/)
 
 	case kVerify:
 	{
-		DPChest_Component* pxChest = GetGameComponent<DPChest_Component>(g_xChest);
-		if (pxChest != nullptr) g_bChestIsOpen = pxChest->IsOpen();
+		g_bChestIsOpen = DP_GetGraphBool(g_xChest, "game:Graphs/DP_Chest.bgraph", "isOpen");
 		g_iPhase = kDone;
 		return false;
 	}
@@ -460,7 +457,7 @@ static bool Step_NoiseMachineFlow(int /*iFrame*/)
 	{
 		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
 		g_xPriest   = FindFirstEntityWith<Priest_Component>();
-		g_xNoise    = FindFirstEntityWith<DummyNoiseMachine_Component>();
+		g_xNoise    = DP_FindFirstEntityWithGraph("game:Graphs/DP_NoiseMachine.bgraph");
 		if (!g_xVillager.IsValid() || !g_xPriest.IsValid() || !g_xNoise.IsValid()) return true;
 
 		// Move priest right next to the noise machine so the emitted

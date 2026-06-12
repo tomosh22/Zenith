@@ -29,12 +29,11 @@
 // is the scene's master spawn-factory -- it instantiates one entity per procgen
 // layout element using these concrete components. Read cross-queries still go
 // through DP_* forwarders. See Components/CLAUDE.md.
-#include "Components/DPPentagram_Component.h"
 #include "Components/DPForge_Component.h"
 #include "Components/DPDoor_Component.h"
-#include "Components/DPChest_Component.h"
-#include "Components/DummyNoiseMachine_Component.h"
 #include "Components/DPItemBase_Component.h"
+#include "Components/DPGraphInteractable_Component.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "Components/DPVillager_Component.h"
 #include "Components/Priest_Component.h"
 #include "Components/DPOrbitCamera_Component.h"
@@ -257,7 +256,11 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 		case DPProcLevel::GameElementType::Pentagram:
 			if (xEntity.HasComponent<Zenith_ColliderComponent>())
 				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
-			xEntity.AddComponent<DPPentagram_Component>().OnAwake();
+			// Graph-driven interactable: the shim owns proximity + F-press; the
+			// boot-authored DP_Pentagram graph owns the deposit/victory logic.
+			// (DP_Win::Reset rides the graph's OnStart.)
+			xEntity.AddComponent<DPGraphInteractable_Component>().OnAwake();
+			xEntity.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/DP_Pentagram.bgraph");
 			break;
 		case DPProcLevel::GameElementType::Forge:
 			xEntity.AddComponent<DPForge_Component>().OnAwake();
@@ -275,10 +278,16 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 		case DPProcLevel::GameElementType::Chest:
 			if (xEntity.HasComponent<Zenith_ColliderComponent>())
 				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
-			xEntity.AddComponent<DPChest_Component>().OnAwake();
+			// Graph-driven: open guard + DP_OnChestOpened + lid progress live in
+			// the boot-authored DP_Chest graph.
+			xEntity.AddComponent<DPGraphInteractable_Component>().OnAwake();
+			xEntity.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/DP_Chest.bgraph");
 			break;
 		case DPProcLevel::GameElementType::NoiseMachine:
-			xEntity.AddComponent<DummyNoiseMachine_Component>().OnAwake();
+			// Graph-driven: the boot-authored DP_NoiseMachine graph emits the
+			// priest-bait stimulus on interact.
+			xEntity.AddComponent<DPGraphInteractable_Component>().OnAwake();
+			xEntity.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/DP_NoiseMachine.bgraph");
 			break;
 		case DPProcLevel::GameElementType::Iron:
 		case DPProcLevel::GameElementType::Objective1:

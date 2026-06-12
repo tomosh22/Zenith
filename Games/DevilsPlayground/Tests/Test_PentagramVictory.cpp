@@ -11,7 +11,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Components/DPVillager_Component.h"
-#include "Components/DPPentagram_Component.h"
+#include "Tests/DP_TestGraphHelpers.h"
 
 // ============================================================================
 // PentagramVictory_Test
@@ -171,9 +171,7 @@ static bool Step_PentagramVictory(int iFrame)
 
 	case kPV_FindPentagram:
 	{
-		Zenith_EntityID xFoundP;
-		DP_Query::ForEachComponentInActiveScene<DPPentagram_Component>(
-			[&xFoundP](Zenith_EntityID xId, DPPentagram_Component&) { xFoundP = xId; });
+		Zenith_EntityID xFoundP = DP_FindFirstEntityWithGraph("game:Graphs/DP_Pentagram.bgraph");
 		if (xFoundP.IsValid())
 		{
 			g_xPVPentagram = xFoundP;

@@ -182,7 +182,7 @@ void Zenith_GraphComponent::FireEventOnSlots(GraphEventType eEvent, float fDt, c
 	}
 }
 
-void Zenith_GraphComponent::FireCustomEvent(const char* szName)
+void Zenith_GraphComponent::FireCustomEvent(const char* szName, const Zenith_PropertyValue* pxPayload)
 {
 	if (!szName)
 	{
@@ -207,6 +207,7 @@ void Zenith_GraphComponent::FireCustomEvent(const char* szName)
 		xContext.m_xSelf = xParent;
 		xContext.m_pxGraph = axGraphs.Get(u);
 		xContext.m_pxBlackboard = &axGraphs.Get(u)->GetBlackboard();
+		xContext.m_pxEventPayload = pxPayload;
 		axGraphs.Get(u)->FireCustomEvent(szName, xContext);
 	}
 	--s_iGraphDispatchDepth;
