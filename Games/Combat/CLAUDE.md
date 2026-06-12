@@ -40,8 +40,13 @@ Games/Combat/
     Combat_EnemyAI.h             # Simple enemy behavior (chase + attack)
     Combat_QueryHelper.h         # Entity query utilities
     Combat_UIManager.h           # Health bars + combo display
+    Combat_GraphNodes.h          # Behaviour Graph node library (attack + round flow)
+  Tests/
+    Test_CombatCharacterization.cpp  # 4 automated tests (attack flow, victory, game over, combo timer)
   Assets/
-    Scenes/Arena.zscen           # Serialized scene
+    Scenes/MainMenu.zscen, Arena.zscen  # Boot-authored scenes
+    Graphs/                      # Boot-authored Behaviour Graphs:
+                                 #   Combat_PlayerAttack.bgraph, Combat_RoundFlow.bgraph
 ```
 
 ## Module Breakdown
@@ -140,6 +145,45 @@ Demonstrates:
 - Combo counter with timeout
 - Enemy health indicators
 - Game over / victory screens
+
+## Behaviour Graphs (attack flow + round flow)
+
+The combat DECISION logic lives in two boot-authored graphs (regenerated every
+tools boot via `Zenith_EditorAutomation` graph steps in
+`Project_RegisterEditorAutomationSteps`; runtime docs in
+`Zenith/Scripting/CLAUDE.md`). The C++ components fire the driving custom
+events at EXACTLY the points the old bodies ran, so per-frame ordering is
+unchanged:
+
+| Graph | Attached | Driven by | Nodes |
+|---|---|---|---|
+| `Combat_PlayerAttack.bgraph` | runtime, in `CreateArena` (`AddGraphByAssetPath`) | "AttackTick" fired at the end of `Combat_PlayerComponent::OnUpdate` | `CombatAttackFlow` — hitbox activation on attack start (light/heavy damage + range are node properties: 10/1.5, 25/2.0 defaults), hit registration on attack hit-frames, `NotifyComboHit` push, deactivation when the attack ends |
+| `Combat_RoundFlow.bgraph` | authored, `AddStep_AttachGraph` on the Arena GameManager | "RoundTick" (dt as float payload) fired from the PLAYING branch of `Combat_GameComponent::OnUpdate` | `CombatTickComboTimer` → `CombatCheckRoundState` (all enemies dead → VICTORY; player dead → GAME_OVER) |
+
+The shims expose the systems the nodes execute through:
+`Combat_PlayerComponent::HitDetection()/AnimController()/GetController()`;
+`Combat_GameComponent::SetGameState` is public static. The old C++
+`UpdateAttack` / `CheckGameState` / `UpdateComboTimer` bodies are DELETED.
+Nodes registered via `Combat_RegisterGraphNodes()` from
+`Project_RegisterGameComponents`.
+
+**Equivalence proof:** `Tests/Test_CombatCharacterization.cpp` — written
+against the C++ versions FIRST, identical pre/post conversion. Run WINDOWED
+(headless asserts on the skeletal model's GPU buffers):
+
+```
+combat.exe --all-automated-tests --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
+```
+
+`Combat_AttackFlow_Test` (steers via held WASD + real left-click; asserts
+EXACTLY 10 damage, combo 1, no double-dip per swing),
+`Combat_RoundVictory_Test` / `Combat_RoundGameOver_Test` (real
+damage-event path), `Combat_ComboTimer_Test`.
+
+> Note: the menu→Play path (`LoadSceneByIndex(1)` → Arena GameComponent
+> OnAwake → `StartGame` → additive `LoadScene`) depends on the engine's
+> `SCENE_LOAD_ADDITIVE_WITHOUT_LOADING` fast path being exempt from the
+> mid-dispatch deferral — see `Zenith_SceneSystem_Operations.cpp`.
 
 ## Multi-Scene Architecture
 

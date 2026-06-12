@@ -32,8 +32,41 @@ Games/Marble/
     Marble_LevelGenerator.h      # Platform and collectible placement
     Marble_CollectibleSystem.h   # Pickup detection and scoring
     Marble_UIManager.h           # HUD management
+    Marble_GraphNodes.h          # Behaviour Graph node library (timer + win/loss flow)
+  Tests/
+    Test_MarbleCharacterization.cpp  # 2 automated tests (timer flow, fall loss)
   Assets/
-    Scenes/Marble.zscen          # Serialized scene
+    Scenes/MainMenu.zscen, Marble.zscen  # Boot-authored scenes
+    Graphs/Marble_LevelFlow.bgraph       # Boot-authored level-flow graph
+```
+
+## Behaviour Graphs (timer + win/loss flow)
+
+The level-flow DECISIONS live in `Marble_LevelFlow.bgraph` (boot-authored via
+`Zenith_EditorAutomation` graph steps; attached to the gameplay GameManager
+with `AddStep_AttachGraph`; runtime docs in `Zenith/Scripting/CLAUDE.md`).
+`Marble_GameComponent`'s PLAYING branch runs the systems pass
+(`HandleInput` → `ComputeCollectibles` → `ComputeFallState`) then fires
+"LevelTick" (dt as float payload); the chain preserves the old same-frame
+decision order:
+
+`MarbleTickTimer` (countdown −dt, clamp 0, LOST at expiry) →
+`MarbleApplyCollection` (score/collected accumulation from the stashed
+`CollectionResult`; all collected → WON) →
+`MarbleCheckFall` (ball below the kill plane → LOST).
+
+The shim exposes the graph-facing surface (`GetLastCollection`,
+`HasBallFallen`, `SetTimeRemaining`, `SetGameStateFromGraph`, `AddScore`,
+`AddCollectedCount`); the old inline timer/win/loss C++ is DELETED. Nodes
+registered via `Marble_RegisterGraphNodes()`.
+
+**Equivalence proof:** `Tests/Test_MarbleCharacterization.cpp` (headless OK):
+`Marble_TimerFlow_Test` pins the countdown rate (±1 s over 600 fixed-dt
+frames) + LOST at expiry with time clamped to 0; `Marble_FallLoss_Test` rolls
+off via held W (real input) and requires LOST with >5 s remaining.
+
+```
+marble.exe --all-automated-tests --headless --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
 ```
 
 ## Module Breakdown

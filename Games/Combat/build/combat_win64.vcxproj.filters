@@ -8,6 +8,9 @@
     <ClCompile Include="..\Components\Combat_PlayerComponent.cpp">
       <Filter>Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_CombatCharacterization.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Combat_AnimationController.h">
@@ -26,6 +29,9 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_GameComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Combat_GraphNodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_HitDetection.h">
@@ -50,6 +56,9 @@
   <ItemGroup>
     <Filter Include="Components">
       <UniqueIdentifier>{3bb4bb05-923d-8332-e0b6-ffafd088f41f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tests">
+      <UniqueIdentifier>{e52d7990-6129-41c3-18f9-76ebe4af3a75}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

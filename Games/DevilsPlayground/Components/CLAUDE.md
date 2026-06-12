@@ -41,8 +41,10 @@ DPHUDController_Component.h       # The HUD. Life bar (colour gradient) + held-i
                                   #   AELFRIC" / "DAWN BREAKS" / "NO VESSELS REMAIN"). Also
                                   #   houses ControlsHint / TutorialHint / HelpOverlay /
                                   #   MenuHowTo (the instructional HUD).
-DPMainMenuController_Component.h  # Front-end Play button -> LoadSceneByIndex(1) = ProcLevel.
-                                  #   Lives in scene 0 (FrontEnd).
+DPMenuRelay_Component.h           # Menu-button shim. Wires the FrontEnd UI buttons to
+                                  #   "MenuPlay"/"MenuQuit" custom events consumed by
+                                  #   DP_MainMenu.bgraph (Play -> LoadSceneByIndex node;
+                                  #   Quit -> DPRequestQuit node). Lives in scene 0.
 DPPauseMenuController_Component.h # Esc-toggle pause overlay. Migrates to persistent scene
                                   #   (singleton pattern) on first OnStart so it can pump
                                   #   input while the gameplay scene is paused -- otherwise
@@ -63,6 +65,10 @@ rising-edge F-press inside range. Only the concrete leaves register as
 components; they publicly inherit the base, and the leaf constructor
 passes the parent entity through to the base's protected constructor.
 
+Most interactable LOGIC now lives in boot-authored Behaviour Graphs (see
+"Behaviour Graphs & shims" below); the C++ leaves that remain are input
+plumbing + systems shims.
+
 ```
 DPInteractable_Base.h             # Base class. Distance-based proximity (default 2 m radius
                                   #   from Tuning.json). F-press fires DP_OnInteract. Stores
@@ -71,28 +77,29 @@ DPInteractable_Base.h             # Base class. Distance-based proximity (defaul
                                   #   the UE5 source map's wrong-delegate-type bug). Hand-
                                   #   written moves re-subscribe the this-capturing lambda
                                   #   after a component-pool relocation.
-DPDoor_Component.h                #   Lerp-rotate door. Key-gated; consumes the held Key on
-                                  #   interact. SetIncludeInNavMesh(false) so the navmesh
-                                  #   emits walkable polygons through the doorway;
-                                  #   SyncNavMeshBlock toggles the BLOCKED flag at runtime
-                                  #   for priest pathing. Spawned with scale (0.3, 4.0, 2.0)
-                                  #   at y=1, rotated to the wall axis (procgen stores
-                                  #   fYawRadians on the door GameElement); OnStart captures
-                                  #   the transform yaw as m_fClosedYaw.
-DPDoubleDoor_Component.h          #   Two-leaf door. FindChildTransform("Leaf_L" / "Leaf_R")
-                                  #   drives per-leaf rotation. Same key-gated semantics.
-DPChest_Component.h               #   Lid pivot + (WIP) loot dispense. Currently only the lid
-                                  #   pivot is wired; loot drop is post-MVP.
+DPGraphInteractable_Component.h   #   Generic graph-interact shim leaf: on F-press, fires the
+                                  #   "Interact" custom event into the entity's GraphComponent
+                                  #   with the interacting villager as a packed-EntityID
+                                  #   payload. Hosts pentagram / chest / noise machine (their
+                                  #   logic lives in DP_Pentagram / DP_Chest /
+                                  #   DP_NoiseMachine .bgraph).
+DPDoor_Component.h                #   SYSTEMS SHIM for the graph-driven single-leaf door.
+                                  #   Keeps in C++: navmesh portal stitch (OnStart) + runtime
+                                  #   BLOCKED toggling, collider SOLID-iff-Closed sensor
+                                  #   toggle, lock tint, closed-yaw capture + swing rotation,
+                                  #   logical-centre anchor, F-press rising-edge latch.
+                                  #   Decisions live in DP_Door.bgraph; state on its
+                                  #   blackboard (anim 0-3 / openT / requiredKey) — the
+                                  #   accessors (IsOpen/GetAnim/BlocksPath/GetRequiredKey)
+                                  #   read the blackboard, so consumers (bot grid, priest's
+                                  #   TryInteract, HUD scan) compile unchanged. Graph nodes
+                                  #   call OnDoorStateChanged()/ApplyRotationFromT()/
+                                  #   RefreshLockTint() back on the shim SYNCHRONOUSLY (no
+                                  #   1-frame navmesh race). Bootstrap MUST attach the graph
+                                  #   before SetRequiredKey (it writes the blackboard).
 DPForge_Component.h               #   Recipe Iron -> Key. Per-instance recipes via SetRecipe.
                                   #   On interact: consume held item + spawn output entity +
-                                  #   auto-equip to villager.
-DPPentagram_Component.h           #   Win condition. On interact: if held item tag is in
-                                  #   Objective1..5 and not already collected, mark the bit
-                                  #   in DP_Win's mask; threshold-of-5 dispatches DP_OnVictory.
-DummyNoiseMachine_Component.h     #   Deliberate hearing stimulus. F-press emits a
-                                  #   loudness=1.0 / radius=19 m sound via DP_AI::EmitNoise.
-                                  #   The one in-game source of deliberate priest aggro --
-                                  #   Stealth personality opts out (bRunNoiseMachine=false).
+                                  #   auto-equip to villager. (Still pure C++.)
 ```
 
 ### Item components
@@ -141,10 +148,42 @@ DPProcLevelBootstrap_Component.h  # ProcLevel scene's bootstrap (impl in matchin
                                   #   var if set.
 ```
 
+## Behaviour Graphs & shims
+
+The interactable/menu LOGIC lives in six boot-authored graphs (regenerated
+every tools boot by `AuthorBehaviourGraphs()` in DevilsPlayground.cpp; see the
+game-root CLAUDE.md for the graph table and `Zenith/Scripting/CLAUDE.md` for
+the runtime + conversion playbook). The split:
+
+- **Shims (C++, this directory):** input plumbing + systems execution.
+  `DPGraphInteractable_Component` and `DPMenuRelay_Component` only fire custom
+  events; `DPDoor_Component` additionally owns the door's navmesh/collider/
+  tint/rotation systems, called back synchronously by the door nodes.
+- **Nodes (`DP_GraphNodes.h`):** each `Execute` body is the retired C++
+  handler VERBATIM (same DP_* calls, same analytics events, same guards;
+  tuning read LIVE via key-string node params). Observable state (isOpen,
+  openT, door anim) lives on graph blackboards; tests read it via
+  `Tests/DP_TestGraphHelpers.h`.
+
+| Node | Replaced C++ |
+|---|---|
+| `DPResetWinState` | DPPentagram OnAwake win-state reset |
+| `DPDepositHeldObjective` | DPPentagram HandleInteract |
+| `DPEmitNoise` | DummyNoiseMachine HandleInteract |
+| `DPTryOpenDoor` / `DPAnimateDoorLeaves` | DPDoubleDoor interact / OnUpdate |
+| `DPOpenChest` / `DPAdvanceChestLid` | DPChest interact / OnUpdate |
+| `DPRequestQuit` | DPMainMenuController OnQuitClicked |
+| `DPDoorHandleInteract` / `DPDoorAdvanceAnim` | DPDoor HandleInteractInternal / OnUpdate animation |
+
+Registered via `DP_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
+The deleted components (DPPentagram / DPChest / DPDoubleDoor /
+DummyNoiseMachine / DPMainMenuController) have NO C++ remnants — equivalence
+was proven by characterization tests that pass identically pre/post conversion
+(DP suite 138/138).
+
 ## The component pattern
 
-Every game component follows the same skeleton (see
-`Docs/GraphMigration_Playbook.md` for the full contract):
+Every game component follows the same skeleton:
 
 ```cpp
 #pragma once
@@ -205,7 +244,7 @@ that points at `this` hand-writes its moves:
   `SetNavMeshAgent(&m_xNavAgent)`) — the move re-wires the pointer.
 
 Components with only trivially-movable members (DPVillager, DPOrbitCamera,
-DPItemBase, DPItemSpawn, DPMainMenuController, the interactable leaves)
+DPItemBase, DPItemSpawn, DPMenuRelay, DPGraphInteractable)
 rely on their implicit moves — do NOT add a user-declared destructor to
 them without re-checking movability.
 

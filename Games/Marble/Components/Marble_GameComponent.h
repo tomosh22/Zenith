@@ -26,6 +26,7 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -113,6 +114,23 @@ public:
 	}
 	~Marble_GameComponent() = default;
 
+	// State probes for the characterization tests (read-only; same surface
+	// before and after the wave-2 graph conversion).
+	MarbleGameState GetGameState() const { return m_eGameState; }
+	float GetTimeRemaining() const { return m_fTimeRemaining; }
+	uint32_t GetScore() const { return m_uScore; }
+	uint32_t GetCollectedCount() const { return m_uCollectedCount; }
+
+	// Graph-facing surface (wave-2): the timer / win-loss DECISIONS live in
+	// the boot-authored Marble_LevelFlow graph; the nodes read the frame's
+	// systems results below and write the decisions back through these.
+	void SetTimeRemaining(float fTime) { m_fTimeRemaining = fTime; }
+	void SetGameStateFromGraph(MarbleGameState eState) { m_eGameState = eState; }
+	void AddScore(uint32_t uScore) { m_uScore += uScore; }
+	void AddCollectedCount(uint32_t uCount) { m_uCollectedCount += uCount; }
+	const Marble_CollectibleSystem::CollectionResult& GetLastCollection() const { return m_xLastCollection; }
+	bool HasBallFallen() const { return m_bBallFellThisFrame; }
+
 	void OnAwake()
 	{
 		// Cache resource pointers
@@ -188,17 +206,13 @@ public:
 				return;
 			}
 
-			// Timer
-			m_fTimeRemaining -= fDt;
-			if (m_fTimeRemaining <= 0.0f)
-			{
-				m_fTimeRemaining = 0.0f;
-				m_eGameState = MarbleGameState::LOST;
-			}
-
 			HandleInput(fDt);
-			HandleCollectibles(fDt);
-			CheckFallCondition();
+			ComputeCollectibles(fDt);
+			ComputeFallState();
+			// Timer countdown + win/lose decisions live in the boot-authored
+			// Marble_LevelFlow graph (chain: timer -> collection -> fall,
+			// the old same-frame decision order); dt rides the payload.
+			FireLevelTick(fDt);
 			UpdateCamera(fDt);
 			UpdateUI();
 			break;
@@ -482,8 +496,11 @@ private:
 		}
 	}
 
-	void CheckFallCondition()
+	// Systems query only - the fell -> LOST decision lives in the graph
+	// (MarbleNode_CheckFall reads HasBallFallen()).
+	void ComputeFallState()
 	{
+		m_bBallFellThisFrame = false;
 		if (!m_xLevelScene.IsValid())
 			return;
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
@@ -494,10 +511,18 @@ private:
 		Zenith_Maths::Vector3 xBallPos;
 		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
 
-		if (Marble_PhysicsController::HasFallenOff(xBallPos))
+		m_bBallFellThisFrame = Marble_PhysicsController::HasFallenOff(xBallPos);
+	}
+
+	void FireLevelTick(float fDt)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
 		{
-			m_eGameState = MarbleGameState::LOST;
+			return;
 		}
+		Zenith_PropertyValue xDt;
+		xDt.SetFloat(fDt);
+		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("LevelTick", &xDt);
 	}
 
 	// ========================================================================
@@ -525,8 +550,12 @@ private:
 	// ========================================================================
 	// Collectibles (delegates to Marble_CollectibleSystem)
 	// ========================================================================
-	void HandleCollectibles(float fDt)
+	// Systems pass only - detection + the destroy + the spin animation. The
+	// score/collected accumulation and the all-collected -> WON decision live
+	// in the graph (MarbleNode_ApplyCollection reads GetLastCollection()).
+	void ComputeCollectibles(float fDt)
 	{
+		m_xLastCollection = Marble_CollectibleSystem::CollectionResult();
 		if (!m_xLevelScene.IsValid())
 			return;
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
@@ -538,16 +567,8 @@ private:
 		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
 
 		// Check for collections (uses GetActiveScene internally - still works)
-		Marble_CollectibleSystem::CollectionResult xResult =
+		m_xLastCollection =
 			Marble_CollectibleSystem::CheckCollectibles(xBallPos, m_xLevelEntities.axCollectibleEntityIDs, m_uCollectedCount);
-
-		m_uScore += xResult.uScoreGained;
-		m_uCollectedCount += xResult.uCollectedCount;
-
-		if (xResult.bAllCollected)
-		{
-			m_eGameState = MarbleGameState::WON;
-		}
 
 		// Animate collectibles (uses GetActiveScene internally - still works)
 		Marble_CollectibleSystem::UpdateCollectibleRotation(m_xLevelEntities.axCollectibleEntityIDs, fDt);
@@ -587,6 +608,10 @@ private:
 
 	// Scene handle for the level scene
 	Zenith_Scene m_xLevelScene;
+
+	// Per-frame systems results consumed by the Marble_LevelFlow graph nodes.
+	Marble_CollectibleSystem::CollectionResult m_xLastCollection;
+	bool m_bBallFellThisFrame = false;
 
 	// Random number generator
 	std::mt19937 m_xRng;

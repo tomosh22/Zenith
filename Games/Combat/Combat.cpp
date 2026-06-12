@@ -4,6 +4,7 @@
 #include "Combat/Components/Combat_GameComponent.h"
 #include "Combat/Components/Combat_PlayerComponent.h"
 #include "Combat/Components/Combat_EnemyComponent.h"
+#include "Combat/Components/Combat_GraphNodes.h"
 #include "Combat/Components/Combat_Config.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -694,6 +695,7 @@ void Project_RegisterGameComponents()
 	// used by AddStep_AddComponent and the editor menu; this registry is
 	// append-anytime, not sealed).
 	InitializeCombatResources();
+	Combat_RegisterGraphNodes();
 
 #ifdef ZENITH_TOOLS
 	Zenith_ComponentEditorRegistry& xEditorRegistry = Zenith_ComponentEditorRegistry::Get();
@@ -718,6 +720,36 @@ void Project_InitializeResources()
 
 void Project_RegisterEditorAutomationSteps()
 {
+	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
+	// Wave-2 conversions: the attack flow + round flow DECISIONS live here;
+	// the C++ components fire the driving custom events ("AttackTick" /
+	// "RoundTick") at exactly the points the old bodies ran, and the nodes
+	// execute systems back through the components.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+
+	// Player attack flow: hitbox lifecycle + hit registration + combo push.
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/Combat_PlayerAttack.bgraph");
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "AttackTick");
+	xAuto.AddStep_GraphAddNode("CombatAttackFlow");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "CombatAttackFlow", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
+	// Round flow: combo-timer tick (dt rides the event payload) then the
+	// win/lose decision, chained in the old call order.
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/Combat_RoundFlow.bgraph");
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "RoundTick");
+	xAuto.AddStep_GraphAddNode("CombatTickComboTimer");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "CombatTickComboTimer", 0);
+	xAuto.AddStep_GraphAddNode("CombatCheckRoundState");
+	xAuto.AddStep_GraphConnect("CombatTickComboTimer", 0, 0, "CombatCheckRoundState", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
 	// ---- MainMenu scene (build index 0) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
@@ -814,6 +846,9 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIVisible("Status", false);
 
 	g_xEngine.EditorAutomation().AddStep_AddComponent("CombatGame");
+	// Round-flow graph on the Arena GameManager: CombatGame fires "RoundTick"
+	// into it from the PLAYING branch of its OnUpdate.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Combat_RoundFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

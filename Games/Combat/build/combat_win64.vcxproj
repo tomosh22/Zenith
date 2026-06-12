@@ -898,6 +898,7 @@
     <ClInclude Include="..\Components\Combat_EnemyAI.h" />
     <ClInclude Include="..\Components\Combat_EnemyComponent.h" />
     <ClInclude Include="..\Components\Combat_GameComponent.h" />
+    <ClInclude Include="..\Components\Combat_GraphNodes.h" />
     <ClInclude Include="..\Components\Combat_HitDetection.h" />
     <ClInclude Include="..\Components\Combat_IKController.h" />
     <ClInclude Include="..\Components\Combat_PlayerComponent.h" />
@@ -909,6 +910,7 @@
     <ClCompile Include="..\Combat.cpp" />
     <ClCompile Include="..\Components\Combat_EnemyComponent.cpp" />
     <ClCompile Include="..\Components\Combat_PlayerComponent.cpp" />
+    <ClCompile Include="..\Tests\Test_CombatCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

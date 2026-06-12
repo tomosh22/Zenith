@@ -18,6 +18,7 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "Flux/Flux_ModelInstance.h"
@@ -265,8 +266,11 @@ public:
 			// dispatched via their own OnUpdate hooks - the engine routes those for us.
 			Combat_DamageSystem::Update(fDt);
 			ProcessDeferredEvents();
-			UpdateComboTimer(fDt);
-			CheckGameState();
+			// Round flow (combo-timer tick + win/lose decision) lives in the
+			// boot-authored Combat_RoundFlow graph; fire its driving event at
+			// exactly the point the old UpdateComboTimer/CheckGameState ran.
+			// dt rides the payload for the timer node.
+			FireRoundTick(fDt);
 			UpdateCamera(fDt);
 			UpdateUI();
 			UpdateEntityOverheadDisplay();
@@ -632,6 +636,11 @@ private:
 		// arrives via the entity's pending-start dispatch next frame.
 		xPlayer.AddComponent<Combat_PlayerComponent>().OnAwake();
 
+		// Attach the boot-authored attack-flow graph: the player component
+		// fires "AttackTick" into it at the end of its OnUpdate (the decisions
+		// run in the graph; the systems run back through the component).
+		xPlayer.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/Combat_PlayerAttack.bgraph");
+
 		// Create hit spark emitter in arena scene
 		Zenith_Entity xHitSparkEmitter = g_xEngine.Scenes().CreateEntity(pxSceneData, "HitSparkEmitter");
 		Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
@@ -860,19 +869,15 @@ private:
 	// Game State
 	// ========================================================================
 
-	void UpdateComboTimer(float fDt)
+	void FireRoundTick(float fDt)
 	{
-		// Combat_PlayerComponent pushes combo state via NotifyComboHit after a
-		// successful hit; we just tick its timer down here.
-		TickComboTimer(fDt);
-	}
-
-	// Game state mutator. Static so per-entity components (Combat_PlayerComponent /
-	// Combat_EnemyComponent) can read it via IsInPlayingState() / GetGameState()
-	// without needing a GameManager instance handle.
-	static void SetGameState(Combat_GameState eState)
-	{
-		s_eGameState = eState;
+		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		{
+			return;
+		}
+		Zenith_PropertyValue xDt;
+		xDt.SetFloat(fDt);
+		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("RoundTick", &xDt);
 	}
 
 	uint32_t CountAliveEnemies() const
@@ -888,18 +893,9 @@ private:
 		return uAlive;
 	}
 
-	void CheckGameState()
-	{
-		if (CountAliveEnemies() == 0 && !s_axEnemyEntityIDs.empty())
-		{
-			SetGameState(Combat_GameState::VICTORY);
-		}
-
-		if (s_uPlayerEntityID != INVALID_ENTITY_ID && Combat_DamageSystem::IsDead(s_uPlayerEntityID))
-		{
-			SetGameState(Combat_GameState::GAME_OVER);
-		}
-	}
+	// (UpdateComboTimer / CheckGameState removed - the round flow now lives in
+	//  the boot-authored Combat_RoundFlow graph: CombatNode_TickComboTimer +
+	//  CombatNode_CheckRoundState, driven by the RoundTick custom event above.)
 
 	// ========================================================================
 	// UI Update
@@ -1196,6 +1192,14 @@ public:
 
 	static bool IsInPlayingState() { return s_eGameState == Combat_GameState::PLAYING; }
 	static Combat_GameState GetGameState() { return s_eGameState; }
+
+	// Game state mutator. Static so the round-flow graph nodes (and the
+	// per-entity components) can drive it without a GameManager instance
+	// handle (component instances RELOCATE on pool resize).
+	static void SetGameState(Combat_GameState eState)
+	{
+		s_eGameState = eState;
+	}
 
 	static void NotifyComboHit(uint32_t uComboCount, float fTimer = 2.0f)
 	{

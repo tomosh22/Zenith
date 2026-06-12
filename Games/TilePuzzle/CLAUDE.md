@@ -149,6 +149,45 @@ The scramble loop itself never needs to change when adding new object types.
 
 `Components/Pinball_GameComponent.h` — A pinball-style minigame with a plunger launcher, physics ball, walls, curves, pegs, and a scoring target.
 
+### Ball-Lost / Gate-Respawn Flow (Behaviour Graph)
+
+The BALL_LOST decision flow lives in `Pinball_BallLostFlow.bgraph`
+(boot-authored via `Zenith_EditorAutomation` graph steps in
+`Project_RegisterEditorAutomationSteps`; attached to the Pinball scene's
+manager entity with `AddStep_AttachGraph`; runtime docs in
+`Zenith/Scripting/CLAUDE.md`). `Pinball_GameComponent` fires "BallLost" from
+its `PINBALL_STATE_BALL_LOST` state — exactly where the old `HandleBallLost`
+call sat — and `PinballHandleBallLost` (`Components/Pinball_GraphNodes.h`,
+registered via `Pinball_RegisterGraphNodes()`) runs the retired body verbatim:
+
+1. limited-ball gates decrement the ball counter,
+2. objective met → `GateCleared()` (coins/save/celebration),
+3. out of balls → `GateFailed()` (failure display, then retry reset),
+4. otherwise → `RespawnBallFromGraph()` + READY.
+
+The component keeps the systems as public graph-facing methods
+(`GateCleared`/`GateFailed`/`RespawnBallFromGraph`, plus queries
+`IsGateActive`/`GetGateMaxBalls`/`GetBallsRemaining`/`IsGateObjectiveMet`).
+
+**Equivalence proof:** `Tests/Test_PinballCharacterization.cpp` —
+`Pinball_RespawnFlow_Test` requests gate 5 (3-ball gate) via
+`TilePuzzle::g_uPinballRequestedGate`, drives the REAL plunger mouse-drag
+(Newton-inverting the camera's `ScreenSpaceToWorldSpace` to aim at the plunger),
+drains 3 balls and asserts the 3→2→1→0 counter walk, the gate-failed display,
+and the retry reset back to 3 balls + READY. Headless-runnable:
+
+```
+tilepuzzle.exe --automated-test Pinball_RespawnFlow_Test --headless --exit-after-frames 25000 --fixed-dt 0.01666 --skip-unit-tests
+```
+
+Gate on the Suite-summary line, not the process exit code — tilepuzzle has a
+known layout-dependent pre-existing shutdown AV after "Shutdown complete"
+(heap corruption freed at atexit by the module-scope `g_xResources`; tracked
+as a task chip with the full diagnostic trail).
+
+Caveat: `Pinball_GameComponent.h` is not self-contained — include
+`TilePuzzle_GameComponent.h` first (it declares `TilePuzzle::Resources()`).
+
 ### Peg Layout System
 
 Peg positions are **pre-generated during ZENITH_TOOLS boot** and saved to disk, then loaded at runtime. This ensures layouts are predetermined and logical rather than randomly scattered at runtime.

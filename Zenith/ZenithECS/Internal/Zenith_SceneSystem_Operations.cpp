@@ -59,6 +59,28 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 	if (!ValidateLoadRequestInternal(strPath))
 		return Zenith_Scene::INVALID_SCENE;
 
+	// ADDITIVE_WITHOUT_LOADING: create an empty scene with no file I/O. This is
+	// pure allocation — no teardown of live scenes, no deserialisation, no
+	// lifecycle dispatch (an empty scene has nothing to awaken) — so it is
+	// deliberately EXEMPT from the mid-dispatch deferral below. Callers need
+	// the returned handle immediately to populate the new scene (a game's
+	// StartGame running from its scene's OnAwake is the canonical case);
+	// deferring would hand back INVALID_SCENE and break that
+	// create-and-populate pattern.
+	if (eMode == SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)
+	{
+		const std::string strCanonicalPath = Zenith_SceneSystem::CanonicalisePath(strPath);
+		const int iPendingBuildIndex = m_iPendingBuildIndex;
+		m_iPendingBuildIndex = -1;
+		const std::string strName = ExtractSceneNameFromPath(strCanonicalPath);
+		Zenith_Scene xScene = AllocateEmptyScene(strName);
+		Zenith_SceneData* pxSceneData = GetSceneData(xScene);
+		pxSceneData->m_strPath = strCanonicalPath;
+		if (iPendingBuildIndex >= 0)
+			pxSceneData->m_iBuildIndex = iPendingBuildIndex;
+		return xScene;
+	}
+
 	// Defer if we're inside a frame-update pass (UI iteration, script OnUpdate)
 	// OR inside another LoadScene's lifecycle dispatch (a script's Awake/OnEnable
 	// hook). Either case would tear down state the outer pass is still
@@ -79,18 +101,6 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 	const std::string strCanonicalPath = Zenith_SceneSystem::CanonicalisePath(strPath);
 	const int iPendingBuildIndex = m_iPendingBuildIndex;
 	m_iPendingBuildIndex = -1;
-
-	// ADDITIVE_WITHOUT_LOADING: create an empty scene with no file I/O.
-	if (eMode == SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)
-	{
-		const std::string strName = ExtractSceneNameFromPath(strCanonicalPath);
-		Zenith_Scene xScene = AllocateEmptyScene(strName);
-		Zenith_SceneData* pxSceneData = GetSceneData(xScene);
-		pxSceneData->m_strPath = strCanonicalPath;
-		if (iPendingBuildIndex >= 0)
-			pxSceneData->m_iBuildIndex = iPendingBuildIndex;
-		return xScene;
-	}
 
 	// File existence. This is the first of two pre-teardown checks: existence
 	// here, then ValidateSceneStream's non-destructive header pre-pass right

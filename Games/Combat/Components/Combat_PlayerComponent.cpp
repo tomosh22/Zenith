@@ -5,6 +5,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "Physics/Zenith_Physics.h"
 
 #include "Combat_GameComponent.h"   // static GameManager state (player/enemy registry, game state)
@@ -68,7 +69,10 @@ void Combat_PlayerComponent::OnUpdate(float fDt)
 		m_xController.GetState() != Combat_PlayerState::DEAD;
 	m_xIKController.UpdateWithAutoTarget(xTransform, m_xParentEntity.GetEntityID(), 0.0f, bCanUseIK, fDt);
 
-	UpdateAttack(xTransform);
+	// The attack flow lives in the Combat_PlayerAttack graph; fire its driving
+	// event at exactly the point the old UpdateAttack body ran so per-frame
+	// ordering against the controller/animation updates above is unchanged.
+	FireAttackTick();
 }
 
 void Combat_PlayerComponent::TriggerHitStun(float fDuration)
@@ -76,30 +80,11 @@ void Combat_PlayerComponent::TriggerHitStun(float fDuration)
 	m_xController.TriggerHitStun(fDuration);
 }
 
-void Combat_PlayerComponent::UpdateAttack(Zenith_TransformComponent& xTransform)
+void Combat_PlayerComponent::FireAttackTick()
 {
-	if (m_xController.WasAttackJustStarted())
+	if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
 	{
-		Combat_AttackType eType = m_xController.GetCurrentAttackType();
-		float fDamage = (eType == Combat_AttackType::HEAVY) ? 25.0f : 10.0f;
-		float fRange = (eType == Combat_AttackType::HEAVY) ? 2.0f : 1.5f;
-		uint32_t uCombo = m_xController.GetComboCount();
-		m_xHitDetection.ActivateHitbox(fDamage, fRange, uCombo, uCombo > 1);
+		return;
 	}
-
-	if (m_xController.IsAttacking() && m_xAnimController.IsAttackHitFrame())
-	{
-		uint32_t uHits = m_xHitDetection.Update(xTransform);
-		if (uHits > 0)
-		{
-			// Push combo state up to the GameManager so the central HUD picks it up
-			// without poking back into us.
-			Combat_GameComponent::NotifyComboHit(m_xController.GetComboCount(), 2.0f);
-		}
-	}
-
-	if (!m_xController.IsAttacking())
-	{
-		m_xHitDetection.DeactivateHitbox();
-	}
+	m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("AttackTick");
 }

@@ -126,6 +126,25 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 | Mesh | `.zmesh` | Geometry data with optional skinning weights |
 | Skeleton | `.zskel` | Bone hierarchy and bind pose data |
 | Animation | `.zanim` | Keyframe animation clips |
+| Behaviour Graph | `.bgraph` | Designer-authored visual-scripting graph (see below) |
+
+## Behaviour Graph Assets (Zenith_BehaviourGraphAsset)
+
+`Zenith_BehaviourGraphAsset.{h,cpp}` wraps a serialized `Zenith_GraphDefinition`
+(the Behaviour Graph blueprint — variables, nodes, edges, editor layout; the
+runtime lives in `Zenith/Scripting/`, see its CLAUDE.md). Surface:
+
+- `GetDefinition()` — the owned `Zenith_GraphDefinition`.
+- `LoadedOk()` — false when deserialization failed (the consumer keeps the
+  slot unresolved rather than crashing; see `Zenith_GraphComponent`).
+- Registered via `ZENITH_REGISTER_ASSET_TYPE(Zenith_BehaviourGraphAsset)` at
+  file scope. Because nothing else references the TU, dead-strip safety is
+  anchored by `Zenith_BehaviourGraphAsset_ForceLink()` called from
+  `Zenith_GraphComponent::InstantiateSlotGraph()`.
+- Path convention: `"game:Graphs/Foo.bgraph"` (`game:` resolves to
+  `GAME_ASSETS_DIR`; extension constant `ZENITH_BGRAPH_EXT`). Games regenerate
+  their graphs every tools boot through `Zenith_EditorAutomation` graph steps,
+  exactly like `.zscen` scenes.
 
 ## Export Pipeline
 

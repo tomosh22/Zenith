@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Runner/Components/Runner_GameComponent.h"
+#include "Runner/Components/Runner_GraphNodes.h"
 #include "Runner/Components/Runner_Config.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -453,6 +454,7 @@ void Project_RegisterGameComponents()
 	// registry (display name used by AddStep_AddComponent / the editor menu).
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	xRegistry.RegisterComponent<Runner_GameComponent>("RunnerGame", 100);
+	Runner_RegisterGraphNodes();
 #ifdef ZENITH_TOOLS
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Runner_GameComponent>("RunnerGame");
 #endif
@@ -487,6 +489,22 @@ void Project_InitializeResources()
 
 void Project_RegisterEditorAutomationSteps()
 {
+	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
+	// Wave-2 conversion: the scoring + game-over decisions live here;
+	// Runner_GameComponent fires "RunTick" once per PLAYING frame at exactly
+	// the point the old decision block ran.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/Runner_RunFlow.bgraph");
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "RunTick");
+	xAuto.AddStep_GraphAddNode("RunnerApplyScoring");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "RunnerApplyScoring", 0);
+	xAuto.AddStep_GraphAddNode("RunnerCheckGameOver");
+	xAuto.AddStep_GraphConnect("RunnerApplyScoring", 0, 0, "RunnerCheckGameOver", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
 	// --- MainMenu scene (build index 0) ---
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
@@ -587,6 +605,9 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Game component
 	g_xEngine.EditorAutomation().AddStep_AddComponent("RunnerGame");
+	// Run-flow graph on the gameplay GameManager: RunnerGame fires "RunTick"
+	// into it from the PLAYING branch of its OnUpdate.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Runner_RunFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Runner" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

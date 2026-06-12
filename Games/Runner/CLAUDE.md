@@ -32,8 +32,39 @@ Games/Runner/
     Runner_CollectibleSpawner.h  # Obstacles and collectibles
     Runner_ParticleManager.h     # Visual particle effects
     Runner_UIManager.h           # HUD management
+    Runner_GraphNodes.h          # Behaviour Graph node library (scoring + game-over flow)
+  Tests/
+    Test_RunnerCharacterization.cpp  # Automated game-over flow test
   Assets/
-    Scenes/Runner.zscen          # Serialized scene
+    Scenes/MainMenu.zscen, Runner.zscen  # Boot-authored scenes
+    Graphs/Runner_RunFlow.bgraph         # Boot-authored run-flow graph
+```
+
+## Behaviour Graphs (scoring + game-over flow)
+
+The run-flow DECISIONS live in `Runner_RunFlow.bgraph` (boot-authored via
+`Zenith_EditorAutomation` graph steps; attached to the gameplay GameManager
+with `AddStep_AttachGraph`; runtime docs in `Zenith/Scripting/CLAUDE.md`).
+`Runner_GameComponent`'s PLAYING tick computes the systems results
+(`CheckCollectibles` → stashed `CollectionResult` + particle bursts;
+`CheckObstacleCollision` → stashed flag) then fires "RunTick" at exactly the
+point the old decision block ran:
+
+`RunnerApplyScoring` (score += the frame's collectible points) →
+`RunnerCheckGameOver` (obstacle hit → `Runner_CharacterController::OnObstacleHit`
++ GAME_OVER + high-score sync; character DEAD → GAME_OVER — deliberately
+WITHOUT high-score sync, a preserved pre-graph quirk).
+
+Shim surface: `GetLastCollection`, `WasObstacleHit`, `AddScore`,
+`SetHighScore`, `SetGameStateFromGraph`. Nodes registered via
+`Runner_RegisterGraphNodes()`.
+
+**Equivalence proof:** `Tests/Test_RunnerCharacterization.cpp` (headless OK):
+`Runner_GameOverFlow_Test` — the auto-runner with no evasive input must reach
+GAME_OVER, score stays monotonic, final high score >= final score.
+
+```
+runner.exe --all-automated-tests --headless --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
 ```
 
 ## Module Breakdown

@@ -30,6 +30,7 @@
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DPCommonTypes.h"
 #include "Source/DP_Tuning.h"
+#include "Components/DPDoor_Component.h"
 
 namespace
 {
@@ -284,6 +285,186 @@ public:
 };
 
 //==============================================================================
+// Single-leaf door (wave 2) - decisions here; systems on DPDoor_Component
+//==============================================================================
+
+// The door interact: state transitions with key gating (sticky unlock), the
+// pentagram close-deferral, open/close events + audio cues. Body is the
+// pre-graph DPDoor_Component::HandleInteractInternal verbatim; systems
+// execution (navmesh re-block, collider solidity, lock tint) runs
+// SYNCHRONOUSLY through the shim so there is no 1-frame race.
+class DPNode_DoorHandleInteract : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(DPNode_DoorHandleInteract)
+public:
+	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
+	ZENITH_PROPERTY(std::string, m_strAnimVar, "anim")
+	ZENITH_PROPERTY(std::string, m_strRequiredKeyVar, "requiredKey")
+	ZENITH_PROPERTY(std::string, m_strLoudnessKey, "interactables.door_audible_loudness")
+	ZENITH_PROPERTY(std::string, m_strRadiusKey, "interactables.door_audible_at_m")
+
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		if (!xVillager.IsValid()) return GRAPH_NODE_STATUS_FAILURE;
+		DPDoor_Component* pxShim = xContext.m_xSelf.IsValid()
+			? xContext.m_xSelf.TryGetComponent<DPDoor_Component>() : nullptr;
+		if (pxShim == nullptr) return GRAPH_NODE_STATUS_FAILURE;
+
+		const int32_t iAnim = xContext.m_pxBlackboard->GetInt32(m_strAnimVar, 0);
+		switch (static_cast<DPDoor_Component::DoorAnim>(iAnim))
+		{
+		case DPDoor_Component::DoorAnim::Closed:
+		{
+			// Locked door: try to consume the matching key. Unlocked door
+			// (requiredKey == None): skip the consume. Unlocking is STICKY --
+			// requiredKey cleared to None so future F-presses skip the check.
+			const DP_ItemTag eRequiredKey = static_cast<DP_ItemTag>(
+				xContext.m_pxBlackboard->GetInt32(m_strRequiredKeyVar, static_cast<int32_t>(DP_ItemTag::None)));
+			if (eRequiredKey != DP_ItemTag::None)
+			{
+				if (!DP_Items::TryConsumeKeyForUnlock(xVillager, eRequiredKey))
+				{
+					// Only the possessed (player) villager surfaces the
+					// rejection -- the priest probes nearby doors every frame
+					// via DP_AI::OpenNearbyDoorsFor and would spam
+					// DP_OnDoorLockRejected (HUD flicker + false telemetry).
+					if (xVillager != DP_Player::GetPossessedVillager()) { return GRAPH_NODE_STATUS_FAILURE; }
+					Zenith_EventDispatcher::Get().Dispatch(
+						DP_OnDoorLockRejected{ xVillager,
+						                       xContext.m_xSelf.GetEntityID(),
+						                       eRequiredKey });
+					return GRAPH_NODE_STATUS_FAILURE;
+				}
+				Zenith_PropertyValue xNone;
+				xNone.SetInt32(static_cast<int32_t>(DP_ItemTag::None));
+				xContext.m_pxBlackboard->SetValue(m_strRequiredKeyVar, xNone);
+				// Re-tint immediately so the door visually flips red -> green
+				// at the moment of unlock.
+				pxShim->RefreshLockTint();
+			}
+			SetAnim(xContext, DPDoor_Component::DoorAnim::Opening);
+			// Unblock the navmesh + switch to sensor so the rotating collider
+			// doesn't shove the player out of the doorway as it swings.
+			pxShim->OnDoorStateChanged();
+			// Audio cue: the priest hears doors opening within
+			// door_audible_at_m at door_audible_loudness.
+			DP_AI::EmitNoise(pxShim->GetInteractionCentre(),
+				DP_Tuning::Get<float>(m_strLoudnessKey.c_str()),
+				DP_Tuning::Get<float>(m_strRadiusKey.c_str()),
+				xContext.m_xSelf.GetEntityID());
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnDoorOpened{ xVillager, xContext.m_xSelf.GetEntityID() });
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		case DPDoor_Component::DoorAnim::Open:
+		{
+			// Don't close if the F-press is ALSO hitting a Pentagram in range
+			// (the player's intent is to DELIVER; order-independent fix --
+			// see the pre-graph component history for the telemetry story).
+			if (DP_Win::IsPentagramInRange(xVillager))
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			SetAnim(xContext, DPDoor_Component::DoorAnim::Closing);
+			// Block the navmesh IMMEDIATELY (the priest must not race through
+			// a closing door); stay sensor during Closing.
+			pxShim->OnDoorStateChanged();
+			DP_AI::EmitNoise(pxShim->GetInteractionCentre(),
+				DP_Tuning::Get<float>(m_strLoudnessKey.c_str()),
+				DP_Tuning::Get<float>(m_strRadiusKey.c_str()),
+				xContext.m_xSelf.GetEntityID());
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnDoorClosed{ xVillager, xContext.m_xSelf.GetEntityID() });
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		default:
+			// Opening / Closing: animation in progress; ignore F-presses.
+			return GRAPH_NODE_STATUS_FAILURE;
+		}
+	}
+	const char* GetTypeName() const override { return "DPDoorHandleInteract"; }
+
+private:
+	static void SetAnim(Zenith_GraphContext& xContext, DPDoor_Component::DoorAnim eAnim)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(static_cast<int32_t>(eAnim));
+		xContext.m_pxBlackboard->SetValue("anim", xValue);
+	}
+};
+
+// Per-frame door animation: advances openT toward the directional target and
+// applies the swing rotation through the shim; settles Opening -> Open and
+// Closing -> Closed (with the navmesh/collider sync at the Closed settle).
+// Body is the pre-graph DPDoor_Component::OnUpdate animation block verbatim.
+class DPNode_DoorAdvanceAnim : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(DPNode_DoorAdvanceAnim)
+public:
+	ZENITH_PROPERTY(std::string, m_strAnimVar, "anim")
+	ZENITH_PROPERTY(std::string, m_strOpenTVar, "openT")
+	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.door_open_duration_s")
+
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		DPDoor_Component* pxShim = xContext.m_xSelf.IsValid()
+			? xContext.m_xSelf.TryGetComponent<DPDoor_Component>() : nullptr;
+		if (pxShim == nullptr) return GRAPH_NODE_STATUS_FAILURE;
+
+		const int32_t iAnim = xContext.m_pxBlackboard->GetInt32(m_strAnimVar, 0);
+		float fOpenT = xContext.m_pxBlackboard->GetFloat(m_strOpenTVar);
+
+		if (iAnim == static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening))
+		{
+			const float fDuration = DP_Tuning::Get<float>(m_strDurationKey.c_str());
+			fOpenT = glm::min(1.0f, fOpenT + xContext.m_fDt / fDuration);
+			StoreT(xContext, fOpenT);
+			pxShim->ApplyRotationFromT(fOpenT);
+			if (fOpenT >= 1.0f)
+			{
+				SetAnim(xContext, DPDoor_Component::DoorAnim::Open);
+				// Steady-state navmesh sync (already unblocked at the
+				// Closed -> Opening transition; idempotent but explicit).
+				pxShim->OnDoorStateChanged();
+			}
+		}
+		else if (iAnim == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closing))
+		{
+			const float fDuration = DP_Tuning::Get<float>(m_strDurationKey.c_str());
+			fOpenT = glm::max(0.0f, fOpenT - xContext.m_fDt / fDuration);
+			StoreT(xContext, fOpenT);
+			pxShim->ApplyRotationFromT(fOpenT);
+			if (fOpenT <= 0.0f)
+			{
+				SetAnim(xContext, DPDoor_Component::DoorAnim::Closed);
+				// Restore navmesh block + physical solidity now the door has
+				// fully closed -- the player capsule bumps into it again.
+				pxShim->OnDoorStateChanged();
+			}
+		}
+		return GRAPH_NODE_STATUS_SUCCESS;
+	}
+	const char* GetTypeName() const override { return "DPDoorAdvanceAnim"; }
+
+private:
+	static void SetAnim(Zenith_GraphContext& xContext, DPDoor_Component::DoorAnim eAnim)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(static_cast<int32_t>(eAnim));
+		xContext.m_pxBlackboard->SetValue("anim", xValue);
+	}
+	void StoreT(Zenith_GraphContext& xContext, float fOpenT)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetFloat(fOpenT);
+		xContext.m_pxBlackboard->SetValue(m_strOpenTVar, xValue);
+	}
+};
+
+//==============================================================================
 // Front-end menu
 //==============================================================================
 
@@ -325,4 +506,6 @@ inline void DP_RegisterGraphNodes()
 	xRegistry.RegisterNodeType<DPNode_OpenChest>("DPOpenChest", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_AdvanceChestLid>("DPAdvanceChestLid", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_RequestQuit>("DPRequestQuit", GRAPH_EVENT_NONE, 1, false, "DP");
+	xRegistry.RegisterNodeType<DPNode_DoorHandleInteract>("DPDoorHandleInteract", GRAPH_EVENT_NONE, 1, false, "DP");
+	xRegistry.RegisterNodeType<DPNode_DoorAdvanceAnim>("DPDoorAdvanceAnim", GRAPH_EVENT_NONE, 1, false, "DP");
 }

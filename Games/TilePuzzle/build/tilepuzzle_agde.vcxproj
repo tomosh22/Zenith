@@ -165,6 +165,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Pinball_GameComponent.h" />
+    <ClInclude Include="..\Components\Pinball_GraphNodes.h" />
     <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h" />
     <ClInclude Include="..\Components\TilePuzzle_AssetGen.h" />
     <ClInclude Include="..\Components\TilePuzzle_ConditionalValidator.h" />
@@ -178,6 +179,7 @@
     <ClInclude Include="..\Tests\TilePuzzle_AutoTestComponent.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\Tests\Test_PinballCharacterization.cpp" />
     <ClCompile Include="..\TilePuzzle.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

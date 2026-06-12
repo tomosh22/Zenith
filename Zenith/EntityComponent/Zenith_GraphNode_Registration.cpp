@@ -126,6 +126,40 @@ namespace
 		bool MatchesCustomEvent(const char* szName) const override { return m_strEventName == szName; }
 	};
 
+	// Compares a blackboard float against a constant (or another variable) and
+	// writes the boolean result to a blackboard variable - Branch consumes it.
+	// Op: 0 = less, 1 = lessEqual, 2 = greater, 3 = greaterEqual, 4 = equal.
+	class Zenith_GraphNode_CompareBlackboardFloat : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_CompareBlackboardFloat)
+	public:
+		ZENITH_PROPERTY(std::string, m_strVar, "value")
+		ZENITH_PROPERTY(float, m_fCompareTo, 0.0f)
+		ZENITH_PROPERTY(int32_t, m_iOp, 0)
+		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const float fValue = xContext.m_pxBlackboard->GetFloat(m_strVar);
+			bool bResult = false;
+			switch (m_iOp)
+			{
+			case 0: bResult = fValue <  m_fCompareTo; break;
+			case 1: bResult = fValue <= m_fCompareTo; break;
+			case 2: bResult = fValue >  m_fCompareTo; break;
+			case 3: bResult = fValue >= m_fCompareTo; break;
+			case 4: bResult = fValue == m_fCompareTo; break;
+			default: return GRAPH_NODE_STATUS_FAILURE;
+			}
+			Zenith_PropertyValue xResult;
+			xResult.SetBool(bResult);
+			xContext.m_pxBlackboard->SetValue(m_strResultVar, xResult);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "CompareBlackboardFloat"; }
+	};
+
 	// Loads a registered scene by build index (SINGLE: replaces the current
 	// scene set). The same call the front-end menu's Play handler makes; the
 	// scene system's mid-update deferral rules apply identically. Authoring
@@ -463,6 +497,7 @@ void Zenith_RegisterEngineGraphNodes()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_AddBlackboardFloat>("AddBlackboardFloat", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_FireCustomEvent>("FireCustomEvent", GRAPH_EVENT_NONE, 1, false, "Events");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_LoadSceneByIndex>("LoadSceneByIndex", GRAPH_EVENT_NONE, 1, false, "Scene");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_CompareBlackboardFloat>("CompareBlackboardFloat", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 
 	// Flow
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Wait>("Wait", GRAPH_EVENT_NONE, 1, false, "Flow");

@@ -1131,6 +1131,27 @@ static void AuthorBehaviourGraphs()
 	xAuto.AddStep_GraphConnect("OnUpdate", 0, 0, "DPAnimateDoorLeaves", 0);
 	xAuto.AddStep_GraphSave();
 	xAuto.AddStep_GraphClose();
+
+	// ---- Single-leaf door: key-gated state machine + swing animation -------
+	// (wave 2) Decisions live here (DPDoorHandleInteract / DPDoorAdvanceAnim);
+	// systems execution (navmesh, collider, tint, rotation) stays on the
+	// DPDoor_Component shim, called synchronously by the nodes. anim is the
+	// DoorAnim int (0=Closed 1=Opening 2=Open 3=Closing); requiredKey is the
+	// DP_ItemTag int seeded per-door by the bootstrap AFTER graph attach.
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/DP_Door.bgraph");
+	xAuto.AddStep_GraphAddVariable("anim", "int", 0.0f);
+	xAuto.AddStep_GraphAddVariable("openT", "float", 0.0f);
+	xAuto.AddStep_GraphAddVariable("requiredKey", "int", 0.0f);
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "Interact");
+	xAuto.AddStep_GraphAddNode("DPDoorHandleInteract");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "DPDoorHandleInteract", 0);
+	xAuto.AddStep_GraphAddNode("OnUpdate");
+	xAuto.AddStep_GraphAddNode("DPDoorAdvanceAnim");
+	xAuto.AddStep_GraphConnect("OnUpdate", 0, 0, "DPDoorAdvanceAnim", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
 }
 
 void Project_RegisterEditorAutomationSteps()

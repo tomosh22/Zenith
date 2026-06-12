@@ -897,12 +897,14 @@
     <ClInclude Include="..\Components\Runner_CollectibleSpawner.h" />
     <ClInclude Include="..\Components\Runner_Config.h" />
     <ClInclude Include="..\Components\Runner_GameComponent.h" />
+    <ClInclude Include="..\Components\Runner_GraphNodes.h" />
     <ClInclude Include="..\Components\Runner_ParticleManager.h" />
     <ClInclude Include="..\Components\Runner_TerrainManager.h" />
     <ClInclude Include="..\Components\Runner_UIManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Runner.cpp" />
+    <ClCompile Include="..\Tests\Test_RunnerCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

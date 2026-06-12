@@ -111,6 +111,17 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_GraphSave();
 	g_xEngine.EditorAutomation().AddStep_GraphClose();
 
+	// Player actions (wave 2): the controller fires "Shoot" on E-press; the
+	// graph binds it to the projectile-spawn action.
+	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh("game:Graphs/Test_PlayerActions.bgraph");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnCustomEvent");
+	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("OnCustomEvent", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamString("m_strEventName", "Shoot");
+	g_xEngine.EditorAutomation().AddStep_GraphAddNode("TestSpawnProjectile");
+	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnCustomEvent", 0, 0, "TestSpawnProjectile", 0);
+	g_xEngine.EditorAutomation().AddStep_GraphSave();
+	g_xEngine.EditorAutomation().AddStep_GraphClose();
+
 	// ---- Test gameplay scene (build index 1) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("Test");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");

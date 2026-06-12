@@ -88,8 +88,16 @@ public:
 	const Combat_PlayerController& GetController() const { return m_xController; }
 	const Combat_AnimationController& GetAnimController() const { return m_xAnimController; }
 
+	// Wave-2 graph conversion: the attack flow DECISIONS live in the
+	// boot-authored Combat_PlayerAttack.bgraph (CombatNode_AttackFlow on the
+	// "AttackTick" custom event, fired at the end of OnUpdate - exactly where
+	// the old UpdateAttack ran). These expose the systems the node executes
+	// through.
+	Combat_HitDetection& HitDetection() { return m_xHitDetection; }
+	const Combat_AnimationController& AnimController() const { return m_xAnimController; }
+
 private:
-	void UpdateAttack(Zenith_TransformComponent& xTransform);
+	void FireAttackTick();
 
 	Zenith_Entity              m_xParentEntity;
 	Combat_PlayerController    m_xController;

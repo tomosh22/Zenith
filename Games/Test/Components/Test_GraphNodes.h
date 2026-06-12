@@ -15,6 +15,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
+#include "Test/Components/Test_PlayerControllerComponent.h"
 
 // Test_RotationComponent::OnUpdate verbatim: constant angular velocity, zeroed
 // linear velocity (keeps the spinning platform anchored).
@@ -67,9 +68,29 @@ public:
 	const char* GetTypeName() const override { return "TestHookesForce"; }
 };
 
+// The shoot action (wave 2): the E-press plumbing stays on
+// Test_PlayerControllerComponent (which fires the "Shoot" custom event); the
+// graph binds the event to this action, which executes the bullet spawn
+// systems (ring-slot pooling + prefab apply + launch impulse) back through
+// the component.
+class TestNode_SpawnProjectile : public Zenith_GraphNode
+{
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		Test_PlayerControllerComponent* pxShim = xContext.m_xSelf.IsValid()
+			? xContext.m_xSelf.TryGetComponent<Test_PlayerControllerComponent>() : nullptr;
+		if (pxShim == nullptr) return GRAPH_NODE_STATUS_FAILURE;
+		pxShim->Shoot();
+		return GRAPH_NODE_STATUS_SUCCESS;
+	}
+	const char* GetTypeName() const override { return "TestSpawnProjectile"; }
+};
+
 inline void Test_RegisterGraphNodes()
 {
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 	xRegistry.RegisterNodeType<TestNode_SpinPlatform>("TestSpinPlatform", GRAPH_EVENT_NONE, 1, false, "Test");
 	xRegistry.RegisterNodeType<TestNode_HookesForce>("TestHookesForce", GRAPH_EVENT_NONE, 1, false, "Test");
+	xRegistry.RegisterNodeType<TestNode_SpawnProjectile>("TestSpawnProjectile", GRAPH_EVENT_NONE, 1, false, "Test");
 }

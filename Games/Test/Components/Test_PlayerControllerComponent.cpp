@@ -4,6 +4,7 @@
 #include "Test/Components/Test_PlayerControllerComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -227,7 +228,12 @@ void Test_PlayerControllerComponent::OnUpdate(const float)
 
 	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E))
 	{
-		Shoot();
+		// The shoot binding lives in the Test_PlayerActions graph; fire its
+		// driving event at exactly the point the old Shoot() call sat.
+		if (m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("Shoot");
+		}
 	}
 
 	// Inventory slot selection (keys 1-6)

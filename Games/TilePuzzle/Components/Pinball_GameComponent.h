@@ -17,6 +17,7 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -622,6 +623,27 @@ public:
 	{
 	}
 
+	// State probes for the characterization tests (read-only; same surface
+	// before and after the wave-2 graph conversion).
+	PinballState GetPinballState() const { return m_eState; }
+	bool IsGateActive() const { return m_bGateActive; }
+	uint32_t GetBallsRemaining() const { return m_uBallsRemaining; }
+	uint32_t GetSessionScore() const { return m_uSessionScore; }
+	bool IsGateFailedDisplayActive() const { return m_bGateFailed; }
+	bool IsTutorialActive() const { return m_bTutorialActive; }
+
+	// Graph-facing surface (wave-2): the ball-lost / gate respawn DECISIONS
+	// live in the boot-authored Pinball_BallLostFlow graph
+	// (PinballNode_HandleBallLost on the "BallLost" custom event); the node
+	// reads these queries and executes the systems methods below.
+	uint32_t GetGateMaxBalls() const { return m_xCurrentGateData.uMaxBalls; }
+	void DecrementBallsRemaining() { m_uBallsRemaining--; }
+	bool IsGateObjectiveMet() const { return CheckGateObjectiveMet(); }
+	void SetStateFromGraph(PinballState eState) { m_eState = eState; }
+	void GateCleared() { OnGateCleared(); }
+	void GateFailed() { OnGateFailed(); }
+	void RespawnBallFromGraph() { RespawnBall(); }
+
 	void OnUpdate(const float fDeltaTime)
 	{
 		// Tutorial overlay blocks all input while active
@@ -703,7 +725,10 @@ public:
 			break;
 
 		case PINBALL_STATE_BALL_LOST:
-			HandleBallLost();
+			// The ball-lost / gate respawn decisions live in the boot-authored
+			// Pinball_BallLostFlow graph, fired at exactly the point the old
+			// HandleBallLost ran.
+			FireBallLostEvent();
 			break;
 
 		default:
@@ -1726,31 +1751,17 @@ private:
 		return false;
 	}
 
-	void HandleBallLost()
+	// (HandleBallLost removed - the ball-lost / gate respawn decisions now
+	//  live in the boot-authored Pinball_BallLostFlow graph:
+	//  PinballNode_HandleBallLost, driven by the BallLost custom event.)
+
+	void FireBallLostEvent()
 	{
-		// Decrement ball counter for limited-ball objectives
-		if (m_bGateActive && m_xCurrentGateData.uMaxBalls > 0 && m_uBallsRemaining > 0)
+		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
 		{
-			m_uBallsRemaining--;
-		}
-
-		// Check if objective is met
-		if (m_bGateActive && CheckGateObjectiveMet())
-		{
-			OnGateCleared();
 			return;
 		}
-
-		// Check if out of balls (gate failed)
-		if (m_bGateActive && m_xCurrentGateData.uMaxBalls > 0 && m_uBallsRemaining == 0)
-		{
-			OnGateFailed();
-			return;
-		}
-
-		// Normal respawn
-		RespawnBall();
-		m_eState = PINBALL_STATE_READY;
+		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("BallLost");
 	}
 
 	void OnGateCleared()
@@ -2676,7 +2687,7 @@ private:
 		Pinball_GameComponent* pxBehaviour;
 		uint32_t uGateIndex;
 	};
-	static GateButtonCallbackData s_axGateButtonData[s_uPB_MaxGates];
+	// inline: the header is now included by more than one TU (the
+	// characterization test as well as TilePuzzle.cpp).
+	static inline GateButtonCallbackData s_axGateButtonData[s_uPB_MaxGates] = {};
 };
-
-Pinball_GameComponent::GateButtonCallbackData Pinball_GameComponent::s_axGateButtonData[10] = {};

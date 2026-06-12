@@ -1,10 +1,16 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="..\Tests\Test_PinballCharacterization.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\TilePuzzle.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Pinball_GameComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Pinball_GraphNodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h">

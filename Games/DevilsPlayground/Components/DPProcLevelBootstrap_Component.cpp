@@ -272,6 +272,9 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 			DPDoor_Component& xDoor = xEntity.AddComponent<DPDoor_Component>();
 			xDoor.OnAwake();
 			xDoor.SetLogicalCentre(xDoorLogicalCentre);
+			// Attach the boot-authored decisions graph BEFORE seeding the lock
+			// state: SetRequiredKey writes the graph's blackboard now.
+			xEntity.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath(DPDoor_Component::kszGraphAsset);
 			xDoor.SetRequiredKey(xElem.bDoorLocked ? DP_ItemTag::Key : DP_ItemTag::None);
 			break;
 		}

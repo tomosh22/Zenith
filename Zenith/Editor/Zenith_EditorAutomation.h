@@ -65,7 +65,9 @@ enum class Zenith_EditorActionType
 	SET_LIGHT_RANGE,
 	SET_LIGHT_COLOR,
 
-	// UI element creation and field edits
+	// UI element creation and field edits. The whole UI range, from
+	// CREATE_UI_TEXT through SET_UI_SCROLL_VIEW_CONTENT_SIZE below, must stay
+	// CONTIGUOUS (ExecuteAction routes the range to ExecuteUIAction).
 	CREATE_UI_TEXT,
 	CREATE_UI_BUTTON,
 	CREATE_UI_RECT,
@@ -143,7 +145,7 @@ enum class Zenith_EditorActionType
 
 	// UI ScrollView
 	CREATE_UI_SCROLL_VIEW,
-	SET_UI_SCROLL_VIEW_CONTENT_SIZE,
+	SET_UI_SCROLL_VIEW_CONTENT_SIZE,	// END of the contiguous UI range (see CREATE_UI_TEXT)
 
 	// Behaviour Graph (via Zenith_Editor::AttachGraphToSelected)
 	ATTACH_GRAPH,

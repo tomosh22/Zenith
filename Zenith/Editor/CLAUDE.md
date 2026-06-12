@@ -30,7 +30,13 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
   claims viewport clicks ahead of gizmo/picking. Editor automation drives the
   same API via `AddStep_Terrain*` (RenderTest generates its terrain this way,
   seed 1337).
-- `Panels/` - Panel implementations (Console, ContentBrowser, Hierarchy, MaterialEditor, Memory, Properties, TerrainEditor, Toolbar, Viewport)
+- `Zenith_EditorAutomation.h/cpp` - Boot-time authoring step queue (scenes, entities,
+  components, UI, terrain, Behaviour Graphs); games' `Project_RegisterEditorAutomationSteps`
+  enqueue steps, drained before the initial scene load. See "Graph Authoring via
+  Editor Automation" below for the graph verbs.
+- `Zenith_ImGuiInputBridge.h/cpp` - Pumps `Zenith_InputSimulator` state into ImGui
+  (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
+- `Panels/` - Panel implementations (Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, TerrainEditor, Toolbar, Viewport)
 
 ## Related Systems
 
@@ -133,9 +139,9 @@ Three execution states control editor behavior:
 - New terrain components created during load wouldn't be registered with streaming manager
 - Load must happen BEFORE SubmitRenderTasks() for proper component initialization
 
-### Static State in Game Behaviours
+### Static State in Game Components
 
-**CRITICAL:** Static variables in game behaviours persist across Play/Stop/Play cycles because the executable is not reloaded. Game behaviours MUST manually reset all static state in `OnAwake()`.
+**CRITICAL:** Static variables in game components persist across Play/Stop/Play cycles because the executable is not reloaded. Game components MUST manually reset all static state in `OnAwake()`. (Behaviour-Graph state is immune: graph blackboards are re-seeded from the asset's declared defaults on every instantiation.)
 
 **What Must Be Reset:**
 - Static containers (vectors, maps) holding entity IDs or game state
@@ -148,7 +154,7 @@ Three execution states control editor behavior:
 - Systems reference invalid entity IDs from previous session
 - Health/damage systems report entities as dead when they shouldn't be
 
-See `Combat_Behaviour::OnAwake()` for a reference implementation.
+See `Combat_GameComponent::OnAwake()` for a reference implementation.
 
 ## UI Panel System
 
@@ -256,6 +262,73 @@ Create and edit materials with texture assignment:
 - **Assignment:** Drag-drop from Content Browser to slot
 - **Preview:** Texture thumbnail in each slot
 - **Reload Button:** Live refresh without restarting editor
+
+### Behaviour Graph Editor Panel (`Panels/Zenith_EditorPanel_GraphEditor`)
+
+The hand-rolled node editor for `.bgraph` Behaviour Graph assets (the runtime
+is `Zenith/Scripting/` — see its CLAUDE.md):
+
+- **Palette** — registered node types grouped by editor category; click to
+  place at the next free canvas spot.
+- **Canvas** — drag nodes; drag an output pin onto an input pin to connect
+  (one edge per (node, pin) enforced); right-click an output pin to
+  disconnect; Delete removes the selected node.
+- **Parameter editing** — the reflected-property auto panel (`ZENITH_PROPERTY`)
+  for the selected node: float/int/bool/string/vector3 fields.
+- **Blackboard variable panel** — declare variables with type combo
+  `"float" / "int" / "bool" / "string" / "vector3"` + numeric default.
+- **Unresolved nodes** render error-red ("UNRESOLVED") when the type isn't in
+  `Zenith_GraphNodeRegistry`; the asset round-trips them verbatim.
+- **Live execution highlighting** — while Playing, recently-executed nodes of
+  the selected entity's matching graph slot glow (fed by
+  `Zenith_BehaviourGraph::GetRecentlyExecuted`).
+- **Open/Save/Close:** `OpenAsset` (registry-backed), `OpenAssetFresh`
+  (boot-time authoring: clears the definition for regenerate-from-scratch),
+  `Save` (creates parent directories, writes through the asset registry, then
+  queues `Zenith_GraphReload::NotifyAssetChanged` → live instances hot-swap at
+  the next safe point).
+
+**Atomic `Action_*` verbs.** Every UI gesture has a static, bool-returning
+twin that performs EXACTLY the handler's body — `Action_AddNode(typeName)`,
+`Action_SelectNode(typeName, occurrence)`,
+`Action_SetSelectedNodeParam{Float,Int,String,Vec3}(declaredFieldName, ...)`,
+`Action_Connect(srcType, srcOcc, srcPin, dstType, dstOcc)`,
+`Action_AddVariable(name, typeString, defaultNumeric)`. Nodes are addressed by
+**(typeName, occurrence)** in creation order; param names are the DECLARED
+property field names (`"m_fDegreesPerSecond"`, not `"DegreesPerSecond"`).
+
+**ZENITH_TESTING accessors** record live screen rects each Render so simulated
+input can click real coordinates: `GetPaletteEntryScreenPos`,
+`GetNodeScreenPos`, `GetPinScreenPos`, `GetToolbarButtonScreenPos`,
+`GetPropertyRowScreenPos/Rect`, plus state probes (`GetNodeCount`,
+`GetEdgeCount`, `GetSelectedNodeID`, `FindNodeIDByType`, `IsDirty`).
+
+**Simulated-input bridge** (`Zenith_ImGuiInputBridge`, gated
+`ZENITH_TOOLS && ZENITH_INPUT_SIMULATOR`): pumps `Zenith_InputSimulator` state
+into ImGui IO events, injected in `Zenith_Vulkan::ImGuiBeginFrame` BETWEEN the
+GLFW backend and `ImGui::NewFrame` so the last-event-wins queue makes
+simulated input deterministic. This is what lets automated tests drive the
+editor with real clicks/keys — flagship proofs: `Test_GraphEditorLiveAuthoring`
+and `Test_GraphEditorScreenshotTour` (DP suite, windowed).
+
+### Graph Authoring via Editor Automation
+
+`Zenith_EditorAutomation` exposes one step per atomic editor verb, used by
+games to regenerate their `.bgraph` assets every tools boot (exactly like
+scene authoring): `AddStep_GraphOpenFresh`, `AddStep_GraphAddNode`,
+`AddStep_GraphSelectNode`, `AddStep_GraphSetNodeParam{Float,String,Int,Vec3}`,
+`AddStep_GraphConnect`, `AddStep_GraphAddVariable`, `AddStep_GraphSave`,
+`AddStep_GraphClose`, plus `AddStep_AttachGraph(assetPath)`
+(`Zenith_Editor::AttachGraphToSelected` — lazy-adds `Zenith_GraphComponent`
+and appends the slot). Each graph step is wrapped in `GraphActionChecked`,
+which asserts on failure so an authoring typo (wrong node type/occurrence/pin)
+surfaces at boot, not as a silently-empty graph.
+
+`ExecuteAction` routes two CONTIGUOUS enum ranges to sub-executors before its
+main switch — terrain-editor actions → `ExecuteTerrainEditorAction`, UI actions
+(`CREATE_UI_TEXT` .. `SET_UI_SCROLL_VIEW_CONTENT_SIZE`) → `ExecuteUIAction` —
+keeping the dispatcher inside the complexity gate. Keep those ranges contiguous
+when adding action types.
 
 ## Selection System
 

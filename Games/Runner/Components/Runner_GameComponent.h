@@ -24,6 +24,7 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -107,6 +108,21 @@ public:
 	{
 	}
 	~Runner_GameComponent() = default;
+
+	// State probes for the characterization tests (read-only; same surface
+	// before and after the wave-2 graph conversion).
+	RunnerGameState GetGameState() const { return m_eGameState; }
+	uint32_t GetScore() const { return m_uScore; }
+	uint32_t GetHighScore() const { return m_uHighScore; }
+
+	// Graph-facing surface (wave-2): the scoring / game-over DECISIONS live
+	// in the boot-authored Runner_RunFlow graph; the nodes read the frame's
+	// systems results and write the decisions back through these.
+	const Runner_CollectibleSpawner::CollectionResult& GetLastCollection() const { return m_xLastCollection; }
+	bool WasObstacleHit() const { return m_bObstacleHitThisFrame; }
+	void AddScore(uint32_t uScore) { m_uScore += uScore; }
+	void SetHighScore(uint32_t uScore) { m_uHighScore = uScore; }
+	void SetGameStateFromGraph(RunnerGameState eState) { m_eGameState = eState; }
 
 	void OnAwake()
 	{
@@ -492,35 +508,23 @@ private:
 		// Update collectibles and obstacles
 		Runner_CollectibleSpawner::Update(fDt, fPlayerZ);
 
-		// Check collectible pickups
+		// Check collectible pickups (detection + the particle bursts are
+		// systems; the SCORING decision lives in the Runner_RunFlow graph).
 		float fPlayerRadius = 0.4f;
-		Runner_CollectibleSpawner::CollectionResult xCollectResult =
-			Runner_CollectibleSpawner::CheckCollectibles(xPlayerPos, fPlayerRadius);
-
-		if (xCollectResult.m_uCollectedCount > 0)
+		m_xLastCollection = Runner_CollectibleSpawner::CheckCollectibles(xPlayerPos, fPlayerRadius);
+		for (uint32_t i = 0; i < m_xLastCollection.m_uCollectedCount; i++)
 		{
-			m_uScore += xCollectResult.m_uPointsGained;
-			for (uint32_t i = 0; i < xCollectResult.m_uCollectedCount; i++)
-			{
-				Runner_ParticleManager::SpawnCollectEffect(xPlayerPos);
-			}
+			Runner_ParticleManager::SpawnCollectEffect(xPlayerPos);
 		}
 
-		// Check obstacle collision
+		// Obstacle collision (systems query; the game-over decision lives in
+		// the graph).
 		float fPlayerHeight = Runner_CharacterController::GetCurrentCharacterHeight();
-		if (Runner_CollectibleSpawner::CheckObstacleCollision(xPlayerPos, fPlayerRadius, fPlayerHeight))
-		{
-			Runner_CharacterController::OnObstacleHit();
-			m_eGameState = RunnerGameState::GAME_OVER;
-			if (m_uScore > m_uHighScore)
-				m_uHighScore = m_uScore;
-		}
+		m_bObstacleHitThisFrame = Runner_CollectibleSpawner::CheckObstacleCollision(xPlayerPos, fPlayerRadius, fPlayerHeight);
 
-		// Check if character is dead from falling
-		if (Runner_CharacterController::GetState() == RunnerCharacterState::DEAD)
-		{
-			m_eGameState = RunnerGameState::GAME_OVER;
-		}
+		// Scoring + game-over decisions: fire the graph's driving event at
+		// exactly the point the old decision block ran.
+		FireRunTick();
 
 		// Update particles
 		bool bIsRunning = Runner_CharacterController::GetState() == RunnerCharacterState::RUNNING;
@@ -591,6 +595,19 @@ private:
 	// ========================================================================
 	// Member Variables
 	// ========================================================================
+	void FireRunTick()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		{
+			return;
+		}
+		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("RunTick");
+	}
+
+	// Per-frame systems results consumed by the Runner_RunFlow graph nodes.
+	Runner_CollectibleSpawner::CollectionResult m_xLastCollection;
+	bool m_bObstacleHitThisFrame = false;
+
 	RunnerGameState m_eGameState;
 	uint32_t m_uScore;
 	uint32_t m_uHighScore;

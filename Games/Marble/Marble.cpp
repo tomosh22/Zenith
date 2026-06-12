@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Marble/Components/Marble_GameComponent.h"
+#include "Marble/Components/Marble_GraphNodes.h"
 #include "Marble/Components/Marble_Config.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -259,6 +260,7 @@ void Project_RegisterGameComponents()
 	// registry (display name used by AddStep_AddComponent / the editor menu).
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	xRegistry.RegisterComponent<Marble_GameComponent>("MarbleGame", 100);
+	Marble_RegisterGraphNodes();
 #ifdef ZENITH_TOOLS
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Marble_GameComponent>("MarbleGame");
 #endif
@@ -290,6 +292,25 @@ void Project_InitializeResources()
 
 void Project_RegisterEditorAutomationSteps()
 {
+	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
+	// Wave-2 conversion: the timer countdown + win/lose decisions live here;
+	// Marble_GameComponent fires "LevelTick" (dt payload) once per PLAYING
+	// frame after its systems pass, and the chain preserves the old
+	// same-frame decision order (timer -> collection -> fall).
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.AddStep_GraphOpenFresh("game:Graphs/Marble_LevelFlow.bgraph");
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "LevelTick");
+	xAuto.AddStep_GraphAddNode("MarbleTickTimer");
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "MarbleTickTimer", 0);
+	xAuto.AddStep_GraphAddNode("MarbleApplyCollection");
+	xAuto.AddStep_GraphConnect("MarbleTickTimer", 0, 0, "MarbleApplyCollection", 0);
+	xAuto.AddStep_GraphAddNode("MarbleCheckFall");
+	xAuto.AddStep_GraphConnect("MarbleApplyCollection", 0, 0, "MarbleCheckFall", 0);
+	xAuto.AddStep_GraphSave();
+	xAuto.AddStep_GraphClose();
+
 	// ---- MainMenu scene (build index 0) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
@@ -383,6 +404,9 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIColor("Status", 0.2f, 1.f, 0.2f, 1.f);
 
 	g_xEngine.EditorAutomation().AddStep_AddComponent("MarbleGame");
+	// Level-flow graph on the gameplay GameManager: MarbleGame fires
+	// "LevelTick" into it from the PLAYING branch of its OnUpdate.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Marble_LevelFlow.bgraph");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Marble" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();

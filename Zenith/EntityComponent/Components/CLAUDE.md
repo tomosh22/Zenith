@@ -92,18 +92,13 @@ Components must satisfy the `Zenith_Component` concept defined in `Zenith_Scene.
 
 Component serialization order is determined by type name in `Zenith_ComponentMeta.cpp::GetSerializationOrder()`. Lower values serialize first. This matters for dependencies (e.g., TerrainComponent must serialize before ColliderComponent that depends on terrain data).
 
-Current order:
-1. Transform (0)
-2. Model (10)
-3. Camera (20)
-4. Light (25)
-5. Text (30)
-6. Terrain (40)
-7. Collider (50)
-8. Script (60)
-9. UI (70)
+Current order (centralised in `Zenith_ComponentMeta_Registration.cpp`):
+Transform (0), Model (10), Tween (12), Animator (15), Camera (20), Light (25),
+Terrain (40), Collider (50), Graph (60), UI (70), InstancedMesh (80),
+ParticleEmitter (85), AIAgent (90).
 
-New components default to order 1000 (serialized last).
+New components default to order 1000 (serialized last). Game components use
+orders 100+ (unique per game).
 
 ## Accessing Components
 

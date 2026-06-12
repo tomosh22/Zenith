@@ -896,6 +896,7 @@
     <ClInclude Include="..\Components\Marble_CollectibleSystem.h" />
     <ClInclude Include="..\Components\Marble_Config.h" />
     <ClInclude Include="..\Components\Marble_GameComponent.h" />
+    <ClInclude Include="..\Components\Marble_GraphNodes.h" />
     <ClInclude Include="..\Components\Marble_Input.h" />
     <ClInclude Include="..\Components\Marble_LevelGenerator.h" />
     <ClInclude Include="..\Components\Marble_PhysicsController.h" />
@@ -903,6 +904,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Marble.cpp" />
+    <ClCompile Include="..\Tests\Test_MarbleCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

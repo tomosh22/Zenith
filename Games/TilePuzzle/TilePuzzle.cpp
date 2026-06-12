@@ -4,6 +4,7 @@
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_GameComponent.h"
 #include "TilePuzzle/Components/Pinball_GameComponent.h"
+#include "TilePuzzle/Components/Pinball_GraphNodes.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -1497,6 +1498,7 @@ void Project_RegisterGameComponents()
 	xRegistry.RegisterComponent<TilePuzzle_GameComponent>("TilePuzzleGame", 100);
 	xRegistry.RegisterComponent<Pinball_GameComponent>("PinballGame", 101);
 	xRegistry.RegisterComponent<Pinball_BallComponent>("PinballBall", 102);
+	Pinball_RegisterGraphNodes();
 #ifdef ZENITH_INPUT_SIMULATOR
 	xRegistry.RegisterComponent<TilePuzzle_AutoTestComponent>("TilePuzzleAutoTest", 103);
 #endif
@@ -1877,6 +1879,20 @@ namespace TilePuzzleUI
 
 void Project_RegisterEditorAutomationSteps()
 {
+	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
+	// Wave-2 conversion: the pinball ball-lost / gate respawn decisions live
+	// here; Pinball_GameComponent fires "BallLost" from its BALL_LOST state -
+	// exactly where the old HandleBallLost call sat.
+	Zenith_EditorAutomation& xGraphAuto = g_xEngine.EditorAutomation();
+	xGraphAuto.AddStep_GraphOpenFresh("game:Graphs/Pinball_BallLostFlow.bgraph");
+	xGraphAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xGraphAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
+	xGraphAuto.AddStep_GraphSetNodeParamString("m_strEventName", "BallLost");
+	xGraphAuto.AddStep_GraphAddNode("PinballHandleBallLost");
+	xGraphAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "PinballHandleBallLost", 0);
+	xGraphAuto.AddStep_GraphSave();
+	xGraphAuto.AddStep_GraphClose();
+
 	// ---- MainMenu scene (build index 0) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
@@ -3039,6 +3055,9 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Game component
 	g_xEngine.EditorAutomation().AddStep_AddComponent("PinballGame");
+	// Ball-lost flow graph on the pinball manager: PinballGame fires
+	// "BallLost" into it from its BALL_LOST state.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Pinball_BallLostFlow.bgraph");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();

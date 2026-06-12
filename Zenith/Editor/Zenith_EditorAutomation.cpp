@@ -770,182 +770,13 @@ namespace
 		(void)bOk; (void)szAction; (void)szArg;
 	}
 }
-void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
+// All UI authoring actions (CREATE_UI_TEXT .. SET_UI_SCROLL_VIEW_CONTENT_SIZE,
+// kept CONTIGUOUS in the enum) live in their own executor, mirroring the
+// terrain-editor split above - ExecuteAction routes the whole range here.
+static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 {
-	// Terrain-editor authoring actions have their own executor (see above).
-	if (xAction.m_eType >= Zenith_EditorActionType::TERRAIN_EDITOR_RESET &&
-		xAction.m_eType <= Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS)
-	{
-		ExecuteTerrainEditorAction(xAction);
-		return;
-	}
-
 	switch (xAction.m_eType)
 	{
-	//--------------------------------------------------------------------------
-	// Scene operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::CREATE_SCENE:
-		g_xEngine.Editor().CreateNewScene(xAction.m_szArg1);
-		break;
-
-	case Zenith_EditorActionType::SAVE_SCENE:
-		g_xEngine.Editor().SaveActiveScene(xAction.m_szArg1);
-		break;
-
-	case Zenith_EditorActionType::UNLOAD_SCENE:
-		g_xEngine.Editor().UnloadActiveScene();
-		break;
-
-	//--------------------------------------------------------------------------
-	// Entity operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::CREATE_ENTITY:
-		g_xEngine.Editor().CreateEntity(xAction.m_szArg1);
-		break;
-
-	case Zenith_EditorActionType::SELECT_ENTITY:
-		g_xEngine.Editor().SelectEntityByName(xAction.m_szArg1);
-		break;
-
-	case Zenith_EditorActionType::SET_ENTITY_TRANSIENT:
-		g_xEngine.Editor().SetSelectedEntityTransient(xAction.m_bArg);
-		break;
-
-	//--------------------------------------------------------------------------
-	// Component operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::ADD_COMPONENT:
-		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1);
-		break;
-
-	//--------------------------------------------------------------------------
-	// Camera field edits
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::SET_CAMERA_POSITION:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_POSITION");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetPosition(
-			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_CAMERA_PITCH:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_PITCH");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetPitch(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_CAMERA_YAW:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_YAW");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetYaw(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_CAMERA_FOV:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_FOV");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetFOV(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_CAMERA_NEAR:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_NEAR");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetNearPlane(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_CAMERA_FAR:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_FAR");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetFarPlane(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_CAMERA_ASPECT:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_ASPECT");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetAspectRatio(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_MAIN_CAMERA:
-		g_xEngine.Editor().SetSelectedAsMainCamera();
-		break;
-
-	//--------------------------------------------------------------------------
-	// Transform field edits
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::SET_TRANSFORM_POSITION:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_POSITION");
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetPosition(
-			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_TRANSFORM_SCALE:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_SCALE");
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetScale(
-			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION_YAW:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION_YAW");
-		const float fYaw = xAction.m_afArgs[0];
-		const Zenith_Maths::Quat xRot = glm::angleAxis(
-			fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_LIGHT_INTENSITY:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_INTENSITY");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
-			"SET_LIGHT_INTENSITY: selected entity has no LightComponent");
-		pxEntity->GetComponent<Zenith_LightComponent>().SetIntensity(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_LIGHT_RANGE:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_RANGE");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
-			"SET_LIGHT_RANGE: selected entity has no LightComponent");
-		pxEntity->GetComponent<Zenith_LightComponent>().SetRange(xAction.m_afArgs[0]);
-		break;
-	}
-
-	case Zenith_EditorActionType::SET_LIGHT_COLOR:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_COLOR");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
-			"SET_LIGHT_COLOR: selected entity has no LightComponent");
-		pxEntity->GetComponent<Zenith_LightComponent>().SetColor(
-			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
-		break;
-	}
-
 	//--------------------------------------------------------------------------
 	// UI element creation and field edits
 	//--------------------------------------------------------------------------
@@ -1599,6 +1430,196 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
 		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
 		pxButton->SetTextShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-UI action routed to ExecuteUIAction");
+		break;
+	}
+}
+
+void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
+{
+	// Terrain-editor authoring actions have their own executor (see above).
+	if (xAction.m_eType >= Zenith_EditorActionType::TERRAIN_EDITOR_RESET &&
+		xAction.m_eType <= Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS)
+	{
+		ExecuteTerrainEditorAction(xAction);
+		return;
+	}
+
+	// UI authoring actions likewise have their own executor (see below).
+	if (xAction.m_eType >= Zenith_EditorActionType::CREATE_UI_TEXT &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE)
+	{
+		ExecuteUIAction(xAction);
+		return;
+	}
+
+	switch (xAction.m_eType)
+	{
+	//--------------------------------------------------------------------------
+	// Scene operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_SCENE:
+		g_xEngine.Editor().CreateNewScene(xAction.m_szArg1);
+		break;
+
+	case Zenith_EditorActionType::SAVE_SCENE:
+		g_xEngine.Editor().SaveActiveScene(xAction.m_szArg1);
+		break;
+
+	case Zenith_EditorActionType::UNLOAD_SCENE:
+		g_xEngine.Editor().UnloadActiveScene();
+		break;
+
+	//--------------------------------------------------------------------------
+	// Entity operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_ENTITY:
+		g_xEngine.Editor().CreateEntity(xAction.m_szArg1);
+		break;
+
+	case Zenith_EditorActionType::SELECT_ENTITY:
+		g_xEngine.Editor().SelectEntityByName(xAction.m_szArg1);
+		break;
+
+	case Zenith_EditorActionType::SET_ENTITY_TRANSIENT:
+		g_xEngine.Editor().SetSelectedEntityTransient(xAction.m_bArg);
+		break;
+
+	//--------------------------------------------------------------------------
+	// Component operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::ADD_COMPONENT:
+		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1);
+		break;
+
+	//--------------------------------------------------------------------------
+	// Camera field edits
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_CAMERA_POSITION:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_POSITION");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetPosition(
+			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_CAMERA_PITCH:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_PITCH");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetPitch(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_CAMERA_YAW:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_YAW");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetYaw(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_CAMERA_FOV:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_FOV");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetFOV(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_CAMERA_NEAR:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_NEAR");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetNearPlane(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_CAMERA_FAR:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_FAR");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetFarPlane(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_CAMERA_ASPECT:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_ASPECT");
+		pxEntity->GetComponent<Zenith_CameraComponent>().SetAspectRatio(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_MAIN_CAMERA:
+		g_xEngine.Editor().SetSelectedAsMainCamera();
+		break;
+
+	//--------------------------------------------------------------------------
+	// Transform field edits
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_TRANSFORM_POSITION:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_POSITION");
+		pxEntity->GetComponent<Zenith_TransformComponent>().SetPosition(
+			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_TRANSFORM_SCALE:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_SCALE");
+		pxEntity->GetComponent<Zenith_TransformComponent>().SetScale(
+			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION_YAW:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION_YAW");
+		const float fYaw = xAction.m_afArgs[0];
+		const Zenith_Maths::Quat xRot = glm::angleAxis(
+			fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_INTENSITY:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_INTENSITY");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_INTENSITY: selected entity has no LightComponent");
+		pxEntity->GetComponent<Zenith_LightComponent>().SetIntensity(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_RANGE:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_RANGE");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_RANGE: selected entity has no LightComponent");
+		pxEntity->GetComponent<Zenith_LightComponent>().SetRange(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_COLOR:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_COLOR");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_COLOR: selected entity has no LightComponent");
+		pxEntity->GetComponent<Zenith_LightComponent>().SetColor(
+			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
 		break;
 	}
 
