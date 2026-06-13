@@ -1,0 +1,8 @@
+{
+  "name": "Test_P1Priest_DoesNotChasePossessedOutOfSight",
+  "passed": true,
+  "frames": 124,
+  "durationMs": 2256.095,
+  "failures": [],
+  "skipped": false
+}

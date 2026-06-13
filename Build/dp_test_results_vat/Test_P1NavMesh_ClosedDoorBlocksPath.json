@@ -1,0 +1,8 @@
+{
+  "name": "Test_P1NavMesh_ClosedDoorBlocksPath",
+  "passed": true,
+  "frames": 7,
+  "durationMs": 97.369,
+  "failures": [],
+  "skipped": false
+}

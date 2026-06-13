@@ -1,0 +1,8 @@
+{
+  "name": "Test_DPDoor_UnlockedOpensWithoutKey",
+  "passed": true,
+  "frames": 5,
+  "durationMs": 1843.348,
+  "failures": [],
+  "skipped": false
+}

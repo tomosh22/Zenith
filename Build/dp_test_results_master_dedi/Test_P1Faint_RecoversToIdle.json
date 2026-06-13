@@ -1,0 +1,8 @@
+{
+  "name": "Test_P1Faint_RecoversToIdle",
+  "passed": true,
+  "frames": 121,
+  "durationMs": 1930.481,
+  "failures": [],
+  "skipped": false
+}

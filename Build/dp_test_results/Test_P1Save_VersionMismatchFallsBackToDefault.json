@@ -2,7 +2,7 @@
   "name": "Test_P1Save_VersionMismatchFallsBackToDefault",
   "passed": true,
   "frames": 1,
-  "durationMs": 1.161,
+  "durationMs": 0.527,
   "failures": [],
   "skipped": false
 }

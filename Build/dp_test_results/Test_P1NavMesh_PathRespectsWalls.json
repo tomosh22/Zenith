@@ -2,7 +2,7 @@
   "name": "Test_P1NavMesh_PathRespectsWalls",
   "passed": true,
   "frames": 5,
-  "durationMs": 58.146,
+  "durationMs": 47.322,
   "failures": [],
   "skipped": false
 }

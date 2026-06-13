@@ -1,0 +1,8 @@
+{
+  "name": "Test_T1NavMesh_BTUnitsCanFollowRealPath",
+  "passed": true,
+  "frames": 67,
+  "durationMs": 40.552,
+  "failures": [],
+  "skipped": false
+}

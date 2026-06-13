@@ -2,7 +2,7 @@
   "name": "CB_SaveLoad_Roundtrip",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.636,
+  "durationMs": 0.611,
   "failures": [],
   "skipped": false
 }

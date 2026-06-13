@@ -1,0 +1,8 @@
+{
+  "name": "CB_Zoning_SegRemove",
+  "passed": true,
+  "frames": 2,
+  "durationMs": 0.335,
+  "failures": [],
+  "skipped": false
+}

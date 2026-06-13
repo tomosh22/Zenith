@@ -2,7 +2,7 @@
   "name": "Test_T0RenderBus_RecordsDrawCalls",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.020,
+  "durationMs": 0.024,
   "failures": [],
   "skipped": false
 }

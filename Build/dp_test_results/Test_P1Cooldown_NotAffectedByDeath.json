@@ -2,7 +2,7 @@
   "name": "Test_P1Cooldown_NotAffectedByDeath",
   "passed": true,
   "frames": 10,
-  "durationMs": 2171.978,
+  "durationMs": 1586.282,
   "failures": [],
   "skipped": false
 }

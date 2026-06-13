@@ -1,0 +1,8 @@
+{
+  "name": "Test_P1Pause_TimerStopsOnEscape",
+  "passed": true,
+  "frames": 98,
+  "durationMs": 1957.480,
+  "failures": [],
+  "skipped": false
+}

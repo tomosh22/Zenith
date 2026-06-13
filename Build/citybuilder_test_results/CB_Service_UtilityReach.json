@@ -2,7 +2,7 @@
   "name": "CB_Service_UtilityReach",
   "passed": true,
   "frames": 2,
-  "durationMs": 1.334,
+  "durationMs": 1.000,
   "failures": [],
   "skipped": false
 }

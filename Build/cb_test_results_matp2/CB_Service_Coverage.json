@@ -1,0 +1,8 @@
+{
+  "name": "CB_Service_Coverage",
+  "passed": true,
+  "frames": 2,
+  "durationMs": 0.589,
+  "failures": [],
+  "skipped": false
+}
