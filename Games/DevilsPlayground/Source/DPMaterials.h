@@ -81,6 +81,21 @@ namespace DPMaterials
 		const Zenith_Maths::Vector3& xRgb,
 		const char* szLabel);
 
+	// Build (or return cached) a full-PBR material authored from scratch (NOT a
+	// clone of an existing base) for world entities that want an appropriate
+	// look — weathered stone walls, a glowing pentagram, an ember-lit forge,
+	// wooden doors/chests, metal contraptions, robed villagers, the priest's
+	// dark robe. Cached + pinned under game:Materials/<key>.zmtrl; repeated
+	// calls with the same key return the cached asset. xEmissive {0,0,0} with
+	// intensity 0 = no emission. Returns the default material if Create fails.
+	Zenith_MaterialAsset* GetOrCreateNamedMaterial(
+		const char* szKey,
+		const Zenith_Maths::Vector3& xBaseColour,
+		float fRoughness,
+		float fMetallic,
+		const Zenith_Maths::Vector3& xEmissive,
+		float fEmissiveIntensity);
+
 	// Default lit material for meshes that have no associated material -
 	// guaranteed non-null after Initialize() finishes. Registered under
 	// game:Materials/__DPDefault.zmtrl.

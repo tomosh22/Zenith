@@ -126,6 +126,21 @@ void DPProcLevelBootstrap_Component::OnDestroy()
 	if (s_pxInstance == this) s_pxInstance = nullptr;
 }
 
+// Overwrite every material slot on an entity's model instance with pxMat.
+// No-op if the entity has no model component / instance, or pxMat is null.
+// (Same per-slot loop the priest tint already used inline.)
+static void DP_ApplyEntityMaterial(Zenith_Entity& xEntity, Zenith_MaterialAsset* pxMat)
+{
+	if (pxMat == nullptr || !xEntity.HasComponent<Zenith_ModelComponent>()) return;
+	Flux_ModelInstance* pxInst = xEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+	if (pxInst == nullptr) return;
+	const uint32_t uMatCount = pxInst->GetNumMaterials();
+	for (uint32_t u = 0; u < uMatCount; ++u)
+	{
+		pxInst->SetMaterial(u, pxMat);
+	}
+}
+
 void DPProcLevelBootstrap_Component::SpawnWalls()
 {
 	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
@@ -134,6 +149,11 @@ void DPProcLevelBootstrap_Component::SpawnWalls()
 
 	Zenith_Prefab* pxWallPrefab = DevilsPlayground::Resources().m_xWallPrefab.GetDirect();
 	if (pxWallPrefab == nullptr) return;
+
+	// Weathered stone for all walls (shared, cached material).
+	Zenith_MaterialAsset* pxStone = DPMaterials::GetOrCreateNamedMaterial(
+		"DP_StoneWall", Zenith_Maths::Vector3(0.40f, 0.40f, 0.44f), 0.90f, 0.0f,
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
 
 	uint32_t uSpawned = 0;
 	const uint32_t uN = m_xLayout.axWallSegments.GetSize();
@@ -156,6 +176,8 @@ void DPProcLevelBootstrap_Component::SpawnWalls()
 		// transform and rebuilds the collider body to match.
 		Zenith_Entity xEntity = pxWallPrefab->Instantiate(pxScene, std::string(szName), xPos, xRot, xScale);
 		if (!xEntity.IsValid()) continue;
+
+		DP_ApplyEntityMaterial(xEntity, pxStone);
 
 		++uSpawned;
 	}
@@ -245,6 +267,48 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 		// applies the transform and rebuilds any collider body to match.
 		Zenith_Entity xEntity = pxPrefab->Instantiate(pxScene, std::string(szName), xPos, xRot, xScale);
 		if (!xEntity.IsValid()) continue;
+
+		// Appropriate per-type material. Items (Iron/Objectives) are intentionally
+		// left to DPItemBase::ApplyTagTint, which colours them by tag.
+		{
+			Zenith_MaterialAsset* pxMat = nullptr;
+			switch (xElem.eType)
+			{
+			case DPProcLevel::GameElementType::Pentagram:
+				// Dark stone slab with an ominous red occult glow.
+				pxMat = DPMaterials::GetOrCreateNamedMaterial("DP_Pentagram",
+					Zenith_Maths::Vector3(0.08f, 0.06f, 0.07f), 0.55f, 0.0f,
+					Zenith_Maths::Vector3(0.90f, 0.05f, 0.04f), 3.0f);
+				break;
+			case DPProcLevel::GameElementType::Forge:
+				// Sooty iron with glowing orange embers.
+				pxMat = DPMaterials::GetOrCreateNamedMaterial("DP_Forge",
+					Zenith_Maths::Vector3(0.15f, 0.13f, 0.12f), 0.5f, 0.55f,
+					Zenith_Maths::Vector3(1.0f, 0.42f, 0.06f), 4.0f);
+				break;
+			case DPProcLevel::GameElementType::Door:
+				// Worn wood; DPDoor's lock-tint clones this for locked doors.
+				pxMat = DPMaterials::GetOrCreateNamedMaterial("DP_DoorWood",
+					Zenith_Maths::Vector3(0.36f, 0.22f, 0.10f), 0.7f, 0.0f,
+					Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+				break;
+			case DPProcLevel::GameElementType::Chest:
+				// Dark wood with a little iron sheen.
+				pxMat = DPMaterials::GetOrCreateNamedMaterial("DP_Chest",
+					Zenith_Maths::Vector3(0.30f, 0.18f, 0.09f), 0.6f, 0.15f,
+					Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+				break;
+			case DPProcLevel::GameElementType::NoiseMachine:
+				// Brassy metal contraption.
+				pxMat = DPMaterials::GetOrCreateNamedMaterial("DP_NoiseMachine",
+					Zenith_Maths::Vector3(0.55f, 0.45f, 0.20f), 0.35f, 0.8f,
+					Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+				break;
+			default:
+				break; // Iron / Objectives: handled by DPItemBase::ApplyTagTint.
+			}
+			DP_ApplyEntityMaterial(xEntity, pxMat);
+		}
 
 		// Per-instance config + game components stay post-instantiation: navmesh
 		// flags aren't serialized into the prefab, and components need their
@@ -532,21 +596,13 @@ bool DPProcLevelBootstrap_Component::SpawnCharacterEntity(
 	Zenith_Entity xEntity = pxPrefab->Instantiate(pxScene, std::string(szName), xPos, xRot, xScale);
 	if (!xEntity.IsValid()) return false;
 
-	// Priest: tint the (per-instance) model red.
-	if (bIsPriest && xEntity.HasComponent<Zenith_ModelComponent>())
+	// Priest (Aelfric): a near-black robe with a faint, ominous red glow.
+	if (bIsPriest)
 	{
-		Flux_ModelInstance* pxInst = xEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
-		if (pxInst != nullptr)
-		{
-			const uint32_t uMatCount = pxInst->GetNumMaterials();
-			const Zenith_Maths::Vector3 xRgb{ 0.95f, 0.10f, 0.10f };
-			for (uint32_t u = 0; u < uMatCount; ++u)
-			{
-				Zenith_MaterialAsset* pxBase = pxInst->GetMaterial(u);
-				Zenith_MaterialAsset* pxRed = DPMaterials::GetOrCreateColouredVariant(pxBase, xRgb, "Priest");
-				pxInst->SetMaterial(u, pxRed);
-			}
-		}
+		Zenith_MaterialAsset* pxPriest = DPMaterials::GetOrCreateNamedMaterial(
+			"DP_PriestRobe", Zenith_Maths::Vector3(0.12f, 0.02f, 0.02f), 0.75f, 0.0f,
+			Zenith_Maths::Vector3(0.70f, 0.0f, 0.0f), 1.8f);
+		DP_ApplyEntityMaterial(xEntity, pxPriest);
 	}
 
 	// Disable gravity + lock rotation on the (already-final) capsule body.
@@ -578,6 +634,27 @@ bool DPProcLevelBootstrap_Component::SpawnCharacterEntity(
 		{
 			xV.ApplyArchetype(szArchetype);
 		}
+
+		// Robed-fabric material tinted per archetype (Farmhand brown, Beggar
+		// drab, Devout cream, Child light): the archetype tint_rgb was defined
+		// in Config/Archetypes.json but never applied. High roughness, no metal.
+		// This becomes the villager's base material, so DPVillager's possession
+		// glow correctly captures + restores it.
+		Zenith_Maths::Vector3 xRobe(0.55f, 0.50f, 0.42f);
+		std::string strRobeKey = "DP_Robe_Default";
+		if (szArchetype != nullptr)
+		{
+			const DP_Archetypes::Archetype* pxArch = DP_Archetypes::Get(szArchetype);
+			if (pxArch != nullptr)
+			{
+				xRobe = Zenith_Maths::Vector3(pxArch->tint_r, pxArch->tint_g, pxArch->tint_b);
+				strRobeKey = std::string("DP_Robe_") + szArchetype;
+			}
+		}
+		Zenith_MaterialAsset* pxRobe = DPMaterials::GetOrCreateNamedMaterial(
+			strRobeKey.c_str(), xRobe, 0.85f, 0.0f,
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+		DP_ApplyEntityMaterial(xEntity, pxRobe);
 	}
 
 	return true;

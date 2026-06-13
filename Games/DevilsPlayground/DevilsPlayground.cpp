@@ -1014,6 +1014,14 @@ namespace
 			/*bAddCollider=*/true,
 			COLLISION_VOLUME_TYPE_OBB,
 			RIGIDBODY_TYPE_STATIC);
+		// Dark cobblestone ground (overrides the default grey) so the floor reads
+		// as a dim stone courtyard rather than a bright slab.
+		if (Zenith_MaterialAsset* pxGround = DPMaterials::GetOrCreateNamedMaterial(
+			"DP_Ground", Zenith_Maths::Vector3(0.16f, 0.15f, 0.14f), 0.92f, 0.0f,
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f))
+		{
+			g_xEngine.EditorAutomation().AddStep_SetModelMaterial(0, pxGround);
+		}
 
 		// ------ Four corner lights for general visibility ---------------------
 		// Hand-authored point lights at high y so the procgen-spawned walls

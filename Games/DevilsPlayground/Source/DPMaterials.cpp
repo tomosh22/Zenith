@@ -509,4 +509,40 @@ namespace DPMaterials
 		++s_uRegisteredMaterialCount;
 		return pxTint;
 	}
+
+	Zenith_MaterialAsset* GetOrCreateNamedMaterial(
+		const char* szKey,
+		const Zenith_Maths::Vector3& xBaseColour,
+		float fRoughness,
+		float fMetallic,
+		const Zenith_Maths::Vector3& xEmissive,
+		float fEmissiveIntensity)
+	{
+		const char* szSafeKey = (szKey && szKey[0] != '\0') ? szKey : "Named";
+		std::string strRegPath = std::string("game:Materials/") + szSafeKey + ".zmtrl";
+
+		// Probe before Create: Create overwrites the registry entry, leaking the
+		// previous pinned asset and invalidating model slots still pointing at it.
+		if (Zenith_MaterialAsset* pxExisting =
+			Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strRegPath))
+		{
+			return pxExisting;
+		}
+
+		Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		if (!pxMat) return s_pxDefaultMaterial;
+
+		pxMat->SetName(szSafeKey);
+		pxMat->SetBaseColor(Zenith_Maths::Vector4{ xBaseColour.x, xBaseColour.y, xBaseColour.z, 1.0f });
+		pxMat->SetRoughness(fRoughness);
+		pxMat->SetMetallic(fMetallic);
+		pxMat->SetEmissiveColor(xEmissive);
+		pxMat->SetEmissiveIntensity(fEmissiveIntensity);
+
+		// Pin so UnloadUnused can't free us mid-run.
+		pxMat->AddRef();
+
+		++s_uRegisteredMaterialCount;
+		return pxMat;
+	}
 }

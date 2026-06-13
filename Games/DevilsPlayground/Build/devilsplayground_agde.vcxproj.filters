@@ -65,6 +65,9 @@
     <ClCompile Include="..\Source\DP_Win.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\MaterialEntityShowcase.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
