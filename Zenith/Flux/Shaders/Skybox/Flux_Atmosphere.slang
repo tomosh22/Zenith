@@ -64,6 +64,7 @@ struct GBufferOut
 	float4 diffuse        : SV_Target0;
 	float4 normalsAmbient : SV_Target1;
 	float4 material       : SV_Target2;
+	float4 emissive       : SV_Target3;
 };
 
 [shader("fragment")]
@@ -167,7 +168,9 @@ GBufferOut fsMain(FullscreenVsOut input)
 	GBufferOut o;
 	o.diffuse        = float4(xSkyColor, 1.0);
 	o.normalsAmbient = float4(0.0, 0.0, 0.0, 0.0);
-	// Sky has zero surface roughness/metallic; emissive luminance = colour magnitude.
-	o.material       = float4(0.0, 0.0, length(xSkyColor), 1.0);
+	// Sky pixels skip lighting (depth==1 early-out in deferred shading) —
+	// the material/emissive targets just carry zeros.
+	o.material       = float4(0.0, 0.0, 0.0, 0.0);
+	o.emissive       = float4(0.0, 0.0, 0.0, 0.0);
 	return o;
 }

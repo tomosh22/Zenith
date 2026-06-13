@@ -253,7 +253,9 @@
     <ClCompile Include="..\Tests\Test_Hello.cpp" />
     <ClCompile Include="..\Tests\Test_ItemPickup.cpp" />
     <ClCompile Include="..\Tests\Test_LifeTimer.cpp" />
+    <ClCompile Include="..\Tests\Test_MaterialEditorLivePreview.cpp" />
     <ClCompile Include="..\Tests\Test_Materials.cpp" />
+    <ClCompile Include="..\Tests\Test_MaterialShowcase.cpp" />
     <ClCompile Include="..\Tests\Test_MouseWheel.cpp" />
     <ClCompile Include="..\Tests\Test_P1Apprehend_OutOfRangeIgnored.cpp" />
     <ClCompile Include="..\Tests\Test_P1Apprehend_SwitchBreaksChannel.cpp" />

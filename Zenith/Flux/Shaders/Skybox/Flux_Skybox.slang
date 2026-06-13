@@ -23,6 +23,7 @@ struct GBufferOut
 	float4 diffuse        : SV_Target0;
 	float4 normalsAmbient : SV_Target1;
 	float4 material       : SV_Target2;
+	float4 emissive       : SV_Target3;
 };
 
 [shader("fragment")]
@@ -33,6 +34,7 @@ GBufferOut fsMain(FullscreenVsOut i)
 	GBufferOut o;
 	o.diffuse        = g_xCubemap.Sample(xRayDir);
 	o.normalsAmbient = float4(0.0, 0.0, 0.0, 0.0);
-	o.material       = float4(0.0, 0.0, 0.0, 1.0);
+	o.material       = float4(0.0, 0.0, 0.0, 0.0);
+	o.emissive       = float4(0.0, 0.0, 0.0, 0.0);
 	return o;
 }

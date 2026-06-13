@@ -36,6 +36,39 @@ public static const float  PBR_EPSILON           = 0.0001;
 public static const float  PBR_EPSILON_SMALL     = 0.0000001;
 public static const float  PBR_DIRECTION_EPSILON = 0.0001;
 
+// ---------- F0 from the material's specular parameter ----------
+// UE convention: specular scales dielectric F0 as F0 = 0.08 * specular, so
+// the default 0.5 reproduces the classic 4% (PBR_DIELECTRIC_F0). Metals take
+// F0 from albedo; specular is ignored at metallic = 1.
+public float3 ComputeF0(float3 xAlbedo, float fMetallic, float fSpecular)
+{
+	float fDielectricF0 = 0.08 * fSpecular;
+	return lerp(float3(fDielectricF0, fDielectricF0, fDielectricF0), xAlbedo, fMetallic);
+}
+
+// ---------- Clear coat ----------
+// Second specular lobe over the base layer (UE Clear Coat model, simplified):
+// fixed F0 = 0.04 (polyurethane), GGX distribution at the coat's own
+// roughness. The base layer is attenuated by (1 - coat Fresnel * strength)
+// for energy conservation.
+public static const float PBR_CLEARCOAT_F0 = 0.04;
+
+// Direct-light clear-coat lobe. Returns the coat specular contribution and
+// outputs the energy multiplier to apply to the base layer.
+public float3 ClearCoatLobe_Direct(float NdotH, float NdotV, float NdotL, float HdotV,
+									 float fCoatStrength, float fCoatRoughness,
+									 out float fBaseAttenuation)
+{
+	float fRough = max(fCoatRoughness, PBR_MIN_ROUGHNESS);
+	float  D = DistributionGGX(NdotH, fRough);
+	float  G = GeometrySmith_Direct(NdotV, NdotL, fRough);
+	float  F = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - HdotV), PBR_FRESNEL_POWER);
+	float  fCoat = F * fCoatStrength;
+	fBaseAttenuation = 1.0 - fCoat;
+	float fDenom = 4.0 * NdotV * NdotL;
+	return float3(1.0, 1.0, 1.0) * (D * G * fCoat) / max(fDenom, PBR_EPSILON);
+}
+
 // ---------- Fresnel ----------
 
 public float3 FresnelSchlick(float cosTheta, float3 F0)

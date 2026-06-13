@@ -54,8 +54,12 @@ public:
 	// from the recovered instance inside the ExecuteGBuffer trampoline
 	// (xZZ.RenderModelInstanceMeshes(...)), which is why it stays public
 	// alongside the already-public record state.
+	// bTwoSidedPass selects which materials this walk draws (meshes whose
+	// material's two-sidedness doesn't match the active cull pipeline are
+	// skipped — ExecuteGBuffer walks the packet once per cull mode).
 	void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
-		Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix);
+		Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix,
+		bool bTwoSidedPass);
 	void DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Maths::Matrix4& xModelMatrix,
 		Zenith_MaterialAsset* pxMaterial,
@@ -68,7 +72,15 @@ public:
 	Zenith_Vector<Flux_StaticMeshDrawItem> m_xDrawPacket;
 
 	Flux_Shader   m_xGBufferShader;
-	Flux_Pipeline m_xGBufferPipeline;
+	// Cull mode is baked into the pipeline (no dynamic cull on Android), so
+	// per-material two-sidedness needs a permutation pair: one-sided =
+	// CULL_MODE_BACK, two-sided = CULL_MODE_NONE.
+	Flux_Pipeline m_xGBufferPipeline;			// one-sided (cull back)
+	Flux_Pipeline m_xGBufferPipelineTwoSided;	// two-sided (cull none)
 	Flux_Shader   m_xShadowShader;
 	Flux_Pipeline m_xShadowPipeline;
+
+	// Debug safety valve: route every draw through the two-sided pipeline
+	// (cull none — the engine's historical behaviour).
+	bool m_bDbgForceCullNone = false;
 };

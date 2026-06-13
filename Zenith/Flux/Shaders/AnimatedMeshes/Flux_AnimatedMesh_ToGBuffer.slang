@@ -13,6 +13,7 @@
 import Common.Frame;
 import Common.DrawConstants;
 import Common.Material;
+import Common.MaterialSurface;
 import Common.GBuffer;
 
 struct VsIn
@@ -92,21 +93,20 @@ VsOut vsMain(VsIn input)
 }
 
 // Material textures offset by 1 vs static (Bones occupies slot 1).
-[[vk::binding(2, 1)]] Sampler2D g_xDiffuseTex;
-[[vk::binding(3, 1)]] Sampler2D g_xNormalTex;
-[[vk::binding(4, 1)]] Sampler2D g_xRoughnessMetallicTex;
-[[vk::binding(5, 1)]] Sampler2D g_xOcclusionTex;
-[[vk::binding(6, 1)]] Sampler2D g_xEmissiveTex;
+// Slot order matches MaterialTextureSlot in Zenith_MaterialParamTable.h.
+[[vk::binding( 2, 1)]] Sampler2D g_xBaseColorTex;
+[[vk::binding( 3, 1)]] Sampler2D g_xNormalTex;
+[[vk::binding( 4, 1)]] Sampler2D g_xRoughnessMetallicTex;
+[[vk::binding( 5, 1)]] Sampler2D g_xOcclusionTex;
+[[vk::binding( 6, 1)]] Sampler2D g_xEmissiveTex;
+[[vk::binding( 7, 1)]] Sampler2D g_xHeightTex;
+[[vk::binding( 8, 1)]] Sampler2D g_xDetailAlbedoTex;
+[[vk::binding( 9, 1)]] Sampler2D g_xDetailNormalTex;
+[[vk::binding(10, 1)]] Sampler2D g_xDetailMaskTex;
 
 [shader("fragment")]
-GBufferOut fsMain(VsOut input)
+GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
-	float2 xUV = TransformUV(input.uv, GetUVTiling(), GetUVOffset());
-
-	float4 xDiffuse = SampleDiffuseWithBaseColor(g_xDiffuseTex, xUV, DrawConstants.g_xBaseColor);
-	if (input.vertexColor.a > 0.0) xDiffuse *= input.vertexColor;
-	if (xDiffuse.a < GetAlphaCutoff()) discard;
-
 	// Rebuild TBN from the packed varying triple. Note: stored as columns,
 	// so reconstructed matrix's mul(M, v) takes a tangent-space vector to
 	// world space — same convention as Common.Material.BuildTBN.
@@ -115,16 +115,13 @@ GBufferOut fsMain(VsOut input)
 		input.tbn1.x, input.tbn1.y, input.tbn1.z,
 		input.tbn2.x, input.tbn2.y, input.tbn2.z);
 
-	float3 xNormalTangent = g_xNormalTex.Sample(xUV).xyz * 2.0 - 1.0;
-	float3 xWorldNormal   = normalize(mul(TBN, xNormalTangent));
+	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - input.worldPos);
 
-	float fRoughness, fMetallic;
-	SampleRoughnessMetallic(g_xRoughnessMetallicTex, xUV,
-							 GetRoughnessMultiplier(), GetMetallicMultiplier(),
-							 fRoughness, fMetallic);
-	float fOcclusion = SampleOcclusion(g_xOcclusionTex, xUV, GetOcclusionStrength());
-	float fEmissive  = CalculateEmissiveLuminance(g_xEmissiveTex, xUV,
-													GetEmissiveColor(), GetEmissiveIntensity());
+	MaterialSurface xSurface = EvaluateMaterialSurface(
+		g_xBaseColorTex, g_xNormalTex, g_xRoughnessMetallicTex,
+		g_xOcclusionTex, g_xEmissiveTex, g_xHeightTex,
+		g_xDetailAlbedoTex, g_xDetailNormalTex, g_xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace);
 
-	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic, fEmissive);
+	return MakeGBuffer(xSurface);
 }

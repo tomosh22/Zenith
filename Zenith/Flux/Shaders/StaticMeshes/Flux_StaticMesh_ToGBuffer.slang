@@ -4,17 +4,20 @@
 // Subsystem: StaticMeshes. Forward G-buffer write for static (non-
 // animated, non-instanced) meshes. Reads vertex attributes (position,
 // uv, normal, tangent, bitangent, vertex colour), applies the per-draw
-// model matrix, samples the standard PBR texture set, and writes the
-// G-buffer (diffuse / normals+ambient / material).
+// model matrix, evaluates the uber-material surface (POM, detail maps,
+// normal strength, two-sided normal flip, emissive RGB, clear coat),
+// and writes the 4-target G-buffer.
 //
 // Imports Common.Frame (view×proj), Common.DrawConstants (model
-// matrix + material params), Common.Material (texture helpers,
-// BuildTBN), Common.GBuffer (MakeGBuffer struct + helper).
+// matrix + material params), Common.MaterialSurface (the shared
+// uber-material evaluation), Common.Material (BuildTBN etc),
+// Common.GBuffer (GBufferOut).
 // =====================================================================
 
 import Common.Frame;
 import Common.DrawConstants;
 import Common.Material;
+import Common.MaterialSurface;
 import Common.GBuffer;
 
 struct VsIn
@@ -63,39 +66,29 @@ VsOut vsMain(VsIn input)
 }
 
 // Material textures — bind at set=1 starting from slot 1 (DrawConstants
-// occupies slot 0 within set 1).
-[[vk::binding(1, 1)]] Sampler2D g_xDiffuseTex;
-[[vk::binding(2, 1)]] Sampler2D g_xNormalTex;
-[[vk::binding(3, 1)]] Sampler2D g_xRoughnessMetallicTex;
-[[vk::binding(4, 1)]] Sampler2D g_xOcclusionTex;
-[[vk::binding(5, 1)]] Sampler2D g_xEmissiveTex;
+// occupies slot 0 within set 1). Slot order matches MaterialTextureSlot
+// in Zenith_MaterialParamTable.h.
+[[vk::binding( 1, 1)]] Sampler2D g_xBaseColorTex;
+[[vk::binding( 2, 1)]] Sampler2D g_xNormalTex;
+[[vk::binding( 3, 1)]] Sampler2D g_xRoughnessMetallicTex;
+[[vk::binding( 4, 1)]] Sampler2D g_xOcclusionTex;
+[[vk::binding( 5, 1)]] Sampler2D g_xEmissiveTex;
+[[vk::binding( 6, 1)]] Sampler2D g_xHeightTex;
+[[vk::binding( 7, 1)]] Sampler2D g_xDetailAlbedoTex;
+[[vk::binding( 8, 1)]] Sampler2D g_xDetailNormalTex;
+[[vk::binding( 9, 1)]] Sampler2D g_xDetailMaskTex;
 
 [shader("fragment")]
-GBufferOut fsMain(VsOut input)
+GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
-	float2 xUV = TransformUV(input.uv, GetUVTiling(), GetUVOffset());
+	float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
+	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - input.worldPos);
 
-	float4 xDiffuse = SampleDiffuseWithBaseColor(g_xDiffuseTex, xUV, DrawConstants.g_xBaseColor);
+	MaterialSurface xSurface = EvaluateMaterialSurface(
+		g_xBaseColorTex, g_xNormalTex, g_xRoughnessMetallicTex,
+		g_xOcclusionTex, g_xEmissiveTex, g_xHeightTex,
+		g_xDetailAlbedoTex, g_xDetailNormalTex, g_xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace);
 
-	// Vertex-colour modulation: only mix when alpha indicates "use me"
-	// (legacy convention so meshes without per-vertex tinting can leave
-	// colour at zero alpha and pass through unchanged).
-	if (input.vertexColor.a > 0.0) xDiffuse *= input.vertexColor;
-
-	float fAlphaCutoff = GetAlphaCutoff();
-	if (xDiffuse.a < fAlphaCutoff) discard;
-
-	float3x3 TBN          = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-	float3   xWorldNormal = SampleNormalMap(g_xNormalTex, xUV, TBN);
-
-	float fRoughness, fMetallic;
-	SampleRoughnessMetallic(g_xRoughnessMetallicTex, xUV,
-							 GetRoughnessMultiplier(), GetMetallicMultiplier(),
-							 fRoughness, fMetallic);
-
-	float fOcclusion = SampleOcclusion(g_xOcclusionTex, xUV, GetOcclusionStrength());
-	float fEmissive  = CalculateEmissiveLuminance(g_xEmissiveTex, xUV,
-													GetEmissiveColor(), GetEmissiveIntensity());
-
-	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic, fEmissive);
+	return MakeGBuffer(xSurface);
 }

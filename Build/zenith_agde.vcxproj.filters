@@ -550,6 +550,9 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialParamTable.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
@@ -832,6 +835,9 @@
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_Screenshot.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
@@ -870,6 +876,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp">
       <Filter>Flux\InstancedMeshes</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview.cpp">
+      <Filter>Flux\MaterialPreview</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp">
       <Filter>Flux\MeshAnimation</Filter>
@@ -978,6 +987,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Text\Flux_TextQueue.cpp">
       <Filter>Flux\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Translucency\Flux_Translucency.cpp">
+      <Filter>Flux\Translucency</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp">
       <Filter>Flux\Vegetation</Filter>
@@ -3366,6 +3378,12 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.Tests.inl">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialParamTable.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -3762,6 +3780,9 @@
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_Screenshot.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -3806,6 +3827,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
       <Filter>Flux\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreviewImpl.h">
+      <Filter>Flux\MaterialPreview</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h">
       <Filter>Flux\MeshAnimation</Filter>
@@ -3898,6 +3922,9 @@
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Material.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialSurface.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang">
@@ -4065,6 +4092,12 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToShadowmap.slang">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang">
+      <Filter>Flux\Shaders\MaterialPreview</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Tonemap.slang">
+      <Filter>Flux\Shaders\MaterialPreview</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.slang">
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
@@ -4152,6 +4185,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.slang">
       <Filter>Flux\Shaders\Text</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Translucency\Flux_Translucent_Forward.slang">
+      <Filter>Flux\Shaders\Translucency</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang">
       <Filter>Flux\Shaders\Vegetation</Filter>
     </ClInclude>
@@ -4208,6 +4244,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextQueue.h">
       <Filter>Flux\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Translucency\Flux_TranslucencyImpl.h">
+      <Filter>Flux\Translucency</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h">
       <Filter>Flux\Vegetation</Filter>
@@ -4550,6 +4589,9 @@
     <Filter Include="Flux\InstancedMeshes">
       <UniqueIdentifier>{7109fc1e-ca9a-d2fa-7525-1fec74c49b4d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\MaterialPreview">
+      <UniqueIdentifier>{00f07789-62f9-5e93-f2bb-baee312de31e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\MeshAnimation">
       <UniqueIdentifier>{eaca438f-c905-fe04-4c8e-faed919b2340}</UniqueIdentifier>
     </Filter>
@@ -4622,6 +4664,9 @@
     <Filter Include="Flux\Shaders\InstancedMeshes">
       <UniqueIdentifier>{b314e0cc-c57a-cfb4-9281-f0bd3ebfb433}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\MaterialPreview">
+      <UniqueIdentifier>{aa152075-de9f-03b0-2f3c-77c6db29088c}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\Particles">
       <UniqueIdentifier>{4ebcffad-75d4-aa28-cf01-3889f4480f8b}</UniqueIdentifier>
     </Filter>
@@ -4655,6 +4700,9 @@
     <Filter Include="Flux\Shaders\Text">
       <UniqueIdentifier>{e1b55da0-f29d-c66a-8ae3-2759a7cded5b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\Translucency">
+      <UniqueIdentifier>{536d9211-1876-ee20-9bf9-074bf2207d4e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\Vegetation">
       <UniqueIdentifier>{cc361528-2c01-902a-6706-5126a9573784}</UniqueIdentifier>
     </Filter>
@@ -4678,6 +4726,9 @@
     </Filter>
     <Filter Include="Flux\Text">
       <UniqueIdentifier>{d1b13c6f-88b2-add3-d423-556fa13f6214}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Translucency">
+      <UniqueIdentifier>{5a262800-1ab1-7880-9ed0-0660cc086c45}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Vegetation">
       <UniqueIdentifier>{82a3d927-f8ba-16d0-f637-8145163bb70a}</UniqueIdentifier>

@@ -174,7 +174,8 @@ enum MRTIndex
 {
 	MRT_INDEX_DIFFUSE,
 	MRT_INDEX_NORMALSAMBIENT,
-	MRT_INDEX_MATERIAL,
+	MRT_INDEX_MATERIAL,			// R=roughness, G=metallic, B=specular, A=packed flags (shading model + clear coat)
+	MRT_INDEX_EMISSIVE,			// RGB=HDR emissive colour, A=clear-coat roughness
 	MRT_INDEX_COUNT,
 };
 

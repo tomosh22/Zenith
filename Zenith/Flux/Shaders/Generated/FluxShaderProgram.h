@@ -69,6 +69,9 @@ enum class FluxShaderProgram : unsigned int
 	Decals_NormalsCopy = 57,
 	Decals_Apply = 58,
 	DevilsPlayground_DPFog = 59,
+	Translucent_Forward = 60,
+	MaterialPreview_Background = 61,
+	MaterialPreview_Tonemap = 62,
 
 	COUNT
 };

@@ -391,9 +391,13 @@ static void BuildDefaultDockLayout(ImGuiID uDockspaceID, const ImGuiViewport* px
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_TOOLBAR,         uToolbar);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_VIEWPORT,        uCentre);
 
-	// Right column: Properties group (Terrain Editor tabs with Properties;
-	// Properties docked last so it fronts), tools group below.
+	// Right column: Properties group (Terrain Editor + Material Editor tab with
+	// Properties; Properties docked last so it fronts by default). The Material
+	// Editor lives here (a tall panel, UE-style) rather than the short bottom
+	// strip so its live IBL preview + grouped property foldouts have vertical
+	// room; selecting a material fronts its tab. Tools group below.
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_TERRAIN_EDITOR,  uRight);
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_MATERIAL_EDITOR, uRight);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_PROPERTIES,      uRight);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_RENDER_GRAPH,    uRightBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_ZENITH_TOOLS,    uRightBottom);
@@ -402,7 +406,6 @@ static void BuildDefaultDockLayout(ImGuiID uDockspaceID, const ImGuiViewport* px
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_VARIANT_EDITOR,  uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_MEMORY_PROFILER, uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_PROFILING,       uBottom);
-	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_MATERIAL_EDITOR, uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_CONTENT_BROWSER, uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_CONSOLE,         uBottomRight);
 
@@ -1857,11 +1860,7 @@ void Zenith_Editor::ClearMaterialSelection()
 
 void Zenith_Editor::RenderMaterialEditorPanel()
 {
-	MaterialEditorState xState = {
-		m_xEditorState.m_xMaterial.m_xSelectedMaterial.GetDirect(),
-		m_xEditorState.m_xMaterial.m_bShowEditor
-	};
-	Zenith_EditorPanelMaterialEditor::Render(xState);
+	Zenith_MaterialEditorPanel::Render();
 }
 
 // Editor Camera System is implemented in Zenith_EditorCamera.cpp

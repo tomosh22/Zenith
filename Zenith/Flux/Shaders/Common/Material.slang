@@ -45,12 +45,22 @@ public float SampleOcclusion(Sampler2D xTex, float2 xUV, float fStrength)
 	return lerp(1.0, fAO, fStrength);
 }
 
-// Emissive convolved to luminance for G-buffer.b storage.
+// Full-colour HDR emissive: texture x colour x intensity. Stored in the
+// dedicated emissive G-buffer target (RGBA16F) — values above 1.0 survive
+// into the HDR scene and drive bloom.
+public float3 SampleEmissiveRGB(Sampler2D xTex, float2 xUV,
+								  float3 xEmissiveColor, float fIntensity)
+{
+	float3 xEmissiveTex = xTex.Sample(xUV).rgb;
+	return xEmissiveTex * xEmissiveColor * fIntensity;
+}
+
+// Legacy: emissive convolved to luminance. Superseded by SampleEmissiveRGB +
+// the emissive MRT; kept only for shaders not yet migrated.
 public float CalculateEmissiveLuminance(Sampler2D xTex, float2 xUV,
 										  float3 xEmissiveColor, float fIntensity)
 {
-	float3 xEmissiveTex = xTex.Sample(xUV).rgb;
-	float3 xEmissive    = xEmissiveTex * xEmissiveColor * fIntensity;
+	float3 xEmissive = SampleEmissiveRGB(xTex, xUV, xEmissiveColor, fIntensity);
 	return dot(xEmissive, float3(0.299, 0.587, 0.114));
 }
 

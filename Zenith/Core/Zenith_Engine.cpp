@@ -59,6 +59,7 @@
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
+#include "Flux/Translucency/Flux_TranslucencyImpl.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
@@ -75,6 +76,7 @@
 #include "Editor/Zenith_UndoSystem.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
+#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 #include "UnitTests/Zenith_UnitTests.h"
@@ -300,11 +302,13 @@ Flux_SSGIImpl&                     Zenith_Engine::SSGI()              { return *
 Flux_IBLImpl&                      Zenith_Engine::IBL()               { return *m_pxIBL; }
 Flux_SkyboxImpl&                   Zenith_Engine::Skybox()            { return *m_pxSkybox; }
 Flux_GrassImpl&                    Zenith_Engine::Grass()             { return *m_pxGrass; }
+Flux_TranslucencyImpl&             Zenith_Engine::Translucency()      { return *m_pxTranslucency; }
 Flux_PrimitivesImpl&               Zenith_Engine::Primitives()        { return *m_pxPrimitives; }
 Flux_HDRImpl&                      Zenith_Engine::HDR()               { return *m_pxHDR; }
 Flux_TerrainImpl&                  Zenith_Engine::Terrain()           { return *m_pxTerrain; }
 #ifdef ZENITH_TOOLS
 Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *m_pxGizmos; }
+Flux_MaterialPreviewImpl&          Zenith_Engine::MaterialPreview()   { return *m_pxMaterialPreview; }
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -443,15 +447,17 @@ void Zenith_Engine::AllocateFluxSubsystems()
 	m_pxIBL  = new Flux_IBLImpl();
 
 	// large subsystems.
-	m_pxSkybox     = new Flux_SkyboxImpl();
-	m_pxGrass      = new Flux_GrassImpl();
-	m_pxPrimitives = new Flux_PrimitivesImpl();
+	m_pxSkybox       = new Flux_SkyboxImpl();
+	m_pxGrass        = new Flux_GrassImpl();
+	m_pxTranslucency = new Flux_TranslucencyImpl();
+	m_pxPrimitives   = new Flux_PrimitivesImpl();
 
 	// biggest subsystems.
 	m_pxHDR     = new Flux_HDRImpl();
 	m_pxTerrain = new Flux_TerrainImpl();
 #ifdef ZENITH_TOOLS
 	m_pxGizmos          = new Flux_GizmosImpl();
+	m_pxMaterialPreview = new Flux_MaterialPreviewImpl();
 #endif
 }
 
@@ -960,11 +966,13 @@ void Zenith_Engine::DeleteRendererState()
 	delete m_pxIBL;  m_pxIBL  = nullptr;
 	delete m_pxSkybox;     m_pxSkybox     = nullptr;
 	delete m_pxGrass;      m_pxGrass      = nullptr;
+	delete m_pxTranslucency; m_pxTranslucency = nullptr;
 	delete m_pxPrimitives; m_pxPrimitives = nullptr;
 	delete m_pxHDR;     m_pxHDR     = nullptr;
 	delete m_pxTerrain; m_pxTerrain = nullptr;
 #ifdef ZENITH_TOOLS
 	delete m_pxGizmos;          m_pxGizmos = nullptr;
+	delete m_pxMaterialPreview; m_pxMaterialPreview = nullptr;
 #endif
 
 	// Free Flux renderer state. Flux::Shutdown above has already freed the

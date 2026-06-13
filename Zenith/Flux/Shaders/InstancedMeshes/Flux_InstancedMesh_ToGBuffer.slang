@@ -13,11 +13,11 @@
 //
 // Bindings:
 //   set=1 binding=0  DrawConstants
-//   set=1 binding=1  g_xDiffuseTex
+//   set=1 binding=1  g_xBaseColorTex
 //   set=1 binding=2  g_xNormalTex
 //   set=1 binding=3  g_xRoughnessMetallicTex
 //   set=1 binding=4  g_xOcclusionTex
-//   set=1 binding=5  g_xEmissiveTex
+//   set=1 binding=5  (unused — emissive needs the VAT-aliased params)
 //   set=1 binding=6  TransformBuffer (RWStructuredBuffer, written by culling)
 //   set=1 binding=7  AnimDataBuffer  (RWStructuredBuffer)
 //   set=1 binding=8  VisibleIndexBuffer (RWStructuredBuffer<uint>)
@@ -51,11 +51,13 @@ struct VsOut
 	float4 instanceTint  : TEXCOORD6;
 };
 
-[[vk::binding(1, 1)]] Sampler2D g_xDiffuseTex;
+// No emissive texture: g_xEmissiveParams is VAT data on this path, so the
+// emissive colour/intensity needed to interpret an emissive map are not
+// available — instanced geometry writes zero emissive (slot 5 left unused).
+[[vk::binding(1, 1)]] Sampler2D g_xBaseColorTex;
 [[vk::binding(2, 1)]] Sampler2D g_xNormalTex;
 [[vk::binding(3, 1)]] Sampler2D g_xRoughnessMetallicTex;
 [[vk::binding(4, 1)]] Sampler2D g_xOcclusionTex;
-[[vk::binding(5, 1)]] Sampler2D g_xEmissiveTex;
 
 // Read-only in the graphics pipeline. Without
 // vertexPipelineStoresAndAtomics, vertex/tess/geom storage buffers must
@@ -148,26 +150,41 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	return o;
 }
 
+// NOTE: the instanced path supports the core material set (base colour,
+// normal, R/M, specular, occlusion, alpha cutoff, UV transform, unlit,
+// two-sided normal flip) but NOT POM/detail maps/emissive colour —
+// g_xEmissiveParams carries VAT data here (see header comment), so emissive
+// stays texture-only at unit intensity for instanced geometry, and the
+// height/detail slots are not bound (bindings 6-9 hold the instancing
+// buffers).
 [shader("fragment")]
-GBufferOut fsMain(VsOut input)
+GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
+	const uint uFlags = GetMaterialFlags();
+
 	float2 xUV = TransformUV(input.uv, GetUVTiling(), GetUVOffset());
 
-	float4 xDiffuse = SampleDiffuseWithBaseColor(g_xDiffuseTex, xUV, DrawConstants.g_xBaseColor);
+	float4 xDiffuse = SampleDiffuseWithBaseColor(g_xBaseColorTex, xUV, DrawConstants.g_xBaseColor);
 	xDiffuse.rgb   *= input.instanceTint.rgb; // per-instance colour tint
 	if (input.vertexColor.a > 0.0) xDiffuse *= input.vertexColor;
-	if (xDiffuse.a < GetAlphaCutoff()) discard;
+	float fAlphaCutoff = GetAlphaCutoff();
+	if (fAlphaCutoff > 0.0 && xDiffuse.a < fAlphaCutoff) discard;
 
 	float3x3 TBN          = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
 	float3   xWorldNormal = SampleNormalMap(g_xNormalTex, xUV, TBN);
+	if ((uFlags & MATERIAL_FLAG_TWO_SIDED_NORMAL_FLIP) != 0u && !bFrontFace)
+	{
+		xWorldNormal = -xWorldNormal;
+	}
 
 	float fRoughness, fMetallic;
 	SampleRoughnessMetallic(g_xRoughnessMetallicTex, xUV,
 							 GetRoughnessMultiplier(), GetMetallicMultiplier(),
 							 fRoughness, fMetallic);
 	float fOcclusion = SampleOcclusion(g_xOcclusionTex, xUV, GetOcclusionStrength());
-	float fEmissive  = CalculateEmissiveLuminance(g_xEmissiveTex, xUV,
-													GetEmissiveColor(), GetEmissiveIntensity());
 
-	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic, fEmissive);
+	uint uShadingModel = ((uFlags & MATERIAL_FLAG_UNLIT) != 0u) ? GBUFFER_SHADING_UNLIT : GBUFFER_SHADING_DEFAULT_LIT;
+
+	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic,
+						GetSpecular(), float3(0.0, 0.0, 0.0), 0.0, 0.0, uShadingModel);
 }

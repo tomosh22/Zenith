@@ -18,6 +18,7 @@ import Common.Fullscreen;
 import Common.Frame;
 import Common.PBR;
 import Common.Lighting;
+import Common.GBuffer;	// UnpackGBufferFlags + shading-model tags
 
 struct DeferredShadingConstantsLayout
 {
@@ -67,6 +68,9 @@ struct ShadowMatrixLayout { float4x4 m_xMat; };
 [[vk::binding(19, 0)]] StructuredBuffer<LightInstance> LightBuffer;
 [[vk::binding(20, 0)]] StructuredBuffer<uint>          ClusterLightCounts;
 [[vk::binding(21, 0)]] StructuredBuffer<uint>          ClusterLightIndices;
+
+// 4th G-buffer target: HDR emissive RGB + clear-coat roughness in A.
+[[vk::binding(22, 0)]] Sampler2D   g_xGBufferEmissiveTex;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -120,10 +124,10 @@ static const float SSR_CONFIDENCE_EPSILON  = 0.001;
 
 float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 						   float fMetallic, float fRoughness, float fAmbientOcclusion,
-						   float2 xUV)
+						   float2 xUV, float fSpecular, float fClearCoat, float fClearCoatRoughness)
 {
 	float  NdotV = max(dot(xNormal, xViewDir), PBR_EPSILON);
-	float3 F0    = lerp(PBR_DIELECTRIC_F0, xAlbedo, fMetallic);
+	float3 F0    = ComputeF0(xAlbedo, fMetallic, fSpecular);
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, fRoughness);
 
 	float  fRoughnessForLUT = clamp(fRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
@@ -200,8 +204,23 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 		pow(NdotV + fAmbientOcclusion, exp2(-16.0 * fRoughness - 1.0))
 		- 1.0 + fAmbientOcclusion);
 
-	return (xFinalDiffuse * fAmbientOcclusion + xFinalSpecular * fSpecularAO) *
-		   DeferredShadingConstants.g_fIBLIntensity;
+	float3 xBase = xFinalDiffuse * fAmbientOcclusion + xFinalSpecular * fSpecularAO;
+
+	// Clear-coat IBL lobe: second prefiltered sample at the coat's own
+	// roughness, fixed F0 = 0.04, base attenuated for energy conservation.
+	if (fClearCoat > 0.0 && DeferredShadingConstants.g_bIBLSpecularEnabled != 0)
+	{
+		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
+		float fCoatRoughForLUT = clamp(fClearCoatRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
+		float2 xCoatBRDF = g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float3 xReflect = reflect(-xViewDir, xNormal);
+		float  fCoatLOD = fClearCoatRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
+		float3 xCoatPrefiltered = g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * fClearCoat;
+		xBase = xBase * (1.0 - fClearCoat * fCoatFresnel) + xCoatSpecular * fSpecularAO;
+	}
+
+	return xBase * DeferredShadingConstants.g_fIBLIntensity;
 }
 
 // ----- Direct lighting (was DeferredShading_Lighting.fxh) -----
@@ -215,7 +234,10 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 								float3 xNormal,
 								float fMetal,
 								float fRough,
-								float3 xWorldPos)
+								float3 xWorldPos,
+								float fSpecularParam,
+								float fClearCoat,
+								float fClearCoatRoughness)
 {
 	float3 xLightDir = normalize(xLight.m_xDirection.xyz);
 	float3 xViewDir  = normalize(FrameConstants.g_xCamPos_Pad.xyz - xWorldPos);
@@ -230,7 +252,7 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 
 	float roughness = max(fRough, PBR_MIN_ROUGHNESS);
 
-	float3 F0 = lerp(PBR_DIELECTRIC_F0, xDiffuse.rgb, fMetal);
+	float3 F0 = ComputeF0(xDiffuse.rgb, fMetal, fSpecularParam);
 
 	float  D = DistributionGGX(NdotH, roughness);
 	float  G = GeometrySmith_Direct(NdotV, NdotL, roughness);
@@ -244,10 +266,20 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 	float3 kD = (1.0 - kS) * (1.0 - fMetal);
 
 	float3 diffuse  = kD * xDiffuse.rgb / PI;
-	float3 radiance = xLight.m_xColour.rgb * xLight.m_xColour.a;
-	float3 Lo       = (diffuse + specular) * radiance * NdotL;
+	float3 Lo       = diffuse + specular;
 
-	xFinalColor.rgb += Lo;
+	// Clear-coat second lobe (energy-conserving: base attenuated by the
+	// coat's Fresnel-weighted strength).
+	if (fClearCoat > 0.0)
+	{
+		float fBaseAttenuation;
+		float3 xCoat = ClearCoatLobe_Direct(NdotH, NdotV, NdotL, HdotV,
+											 fClearCoat, fClearCoatRoughness, fBaseAttenuation);
+		Lo = Lo * fBaseAttenuation + xCoat;
+	}
+
+	float3 radiance = xLight.m_xColour.rgb * xLight.m_xColour.a;
+	xFinalColor.rgb += Lo * radiance * NdotL;
 	xFinalColor.a    = 1.0;
 }
 
@@ -305,6 +337,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	float4 xMaterial      = g_xMaterialTex.Sample(input.uv);
 	float4 xNormalAmbient = g_xNormalsAmbientTex.Sample(input.uv);
+	float4 xEmissiveCC    = g_xGBufferEmissiveTex.Sample(input.uv);
 	float3 xNormal        = normalize(xNormalAmbient.xyz);
 	float  fAmbient       = xNormalAmbient.w;
 
@@ -312,15 +345,25 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	float fRoughness = xMaterial.x;
 	float fMetallic  = xMaterial.y;
-	float fEmissive  = xMaterial.z;
+	float fSpecular  = xMaterial.z;
+	uint  uShadingModel;
+	float fClearCoat;
+	UnpackGBufferFlags(xMaterial.w, uShadingModel, fClearCoat);
+	float3 xEmissive          = xEmissiveCC.rgb;
+	float  fClearCoatRoughness = xEmissiveCC.a;
 	if (DeferredShadingConstants.g_bForceRoughness != 0u)
 		fRoughness = DeferredShadingConstants.g_fForcedRoughness;
+
+	// Unlit surfaces bypass all lighting: base colour + emissive, done.
+	if (uShadingModel == GBUFFER_SHADING_UNLIT)
+		return float4(xDiffuse.rgb + xEmissive, 1.0);
 
 	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - xWorldPos);
 
 	// IBL + SSR + SSGI ambient — produces the base colour before direct light.
 	float3 xIBLAmbient = ComputeIBLAmbient(xNormal, xViewDir, xDiffuse.rgb,
-											fMetallic, fRoughness, fAmbient, input.uv);
+											fMetallic, fRoughness, fAmbient, input.uv,
+											fSpecular, fClearCoat, fClearCoatRoughness);
 	float4 xColour = float4(xIBLAmbient, 1.0);
 
 	// Cascaded shadow mapping. Walk cascades 0..3, pick the first one whose
@@ -409,7 +452,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (fNdotL > 0.0)
 	{
 		if (xLight.m_xColour.a > LIGHT_INTENSITY_THRESHOLD)
-			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xWorldPos);
+			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xWorldPos,
+									  fSpecular, fClearCoat, fClearCoatRoughness);
 		xColour.rgb = xIBLAmbient + (xColour.rgb - xIBLAmbient) * fShadowFactor;
 	}
 
@@ -430,14 +474,15 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			uint uLightIdx = ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
 			LightInstance xL = LightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
-			                            xDiffuse.rgb, fMetallic, fRoughness,
+			                            xDiffuse.rgb, fMetallic, fRoughness, fSpecular,
 			                            g_xBRDFLUT);
 		}
 		xColour.rgb += xDynLights;
 	}
 
-	// Emissive bypasses lighting and shadows entirely.
-	xColour.rgb += float3(fEmissive, fEmissive, fEmissive);
+	// Emissive bypasses lighting and shadows entirely — full HDR colour
+	// (values above 1 survive into the HDR scene and drive bloom).
+	xColour.rgb += xEmissive;
 	xColour.a    = 1.0;
 	return xColour;
 }

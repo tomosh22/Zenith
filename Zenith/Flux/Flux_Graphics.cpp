@@ -49,9 +49,10 @@ void Flux_GraphicsImpl::Initialise()
 {
 	// MRT format defaults -- previously a static-init initialiser list,
 	// now set at engine-init time on the engine-owned Impl.
-	m_aeMRTFormats[MRT_INDEX_DIFFUSE]        = TEXTURE_FORMAT_RGBA8_UNORM;
-	m_aeMRTFormats[MRT_INDEX_NORMALSAMBIENT] = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
-	m_aeMRTFormats[MRT_INDEX_MATERIAL]       = TEXTURE_FORMAT_RGBA8_UNORM;
+	m_aeMRTFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+	m_aeMRTFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+	m_aeMRTFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
+	m_aeMRTFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
 
 	Flux_SurfaceInfo xTexInfo;
 	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;

@@ -26,8 +26,12 @@
 #endif
 
 //=============================================================================
-// Push Constants for Instanced Meshes (128 bytes)
-// Different from MaterialDrawConstants - has animation params instead of emissive
+// Push Constants for Instanced Meshes (192 bytes)
+// Mirrors MaterialDrawConstants except the 5th field carries VAT animation
+// params instead of emissive (same 16 bytes, instanced flavour — see
+// Common/DrawConstants.slang). Layout must stay byte-compatible with
+// DrawConstantsLayout: the instanced fragment shader reads the params2/flags
+// fields through the shared accessors.
 //=============================================================================
 struct InstancedMeshPushConstants
 {
@@ -36,8 +40,13 @@ struct InstancedMeshPushConstants
 	Zenith_Maths::Vector4 m_xMaterialParams;    // 16 bytes (metallic, roughness, alphaCutoff, occlusionStrength)
 	Zenith_Maths::Vector4 m_xUVParams;          // 16 bytes (tilingX, tilingY, offsetX, offsetY)
 	Zenith_Maths::Vector4 m_xAnimTexParams;     // 16 bytes (textureWidth, textureHeight, enableVAT, unused)
+	Zenith_Maths::Vector4 m_xMaterialParams2;   // 16 bytes (specular, normalStrength, 0, 0)
+	Zenith_Maths::Vector4 m_xParallaxParams;    // 16 bytes (unused on the instanced path)
+	Zenith_Maths::Vector4 m_xDetailParams;      // 16 bytes (unused on the instanced path)
+	Zenith_Maths::Vector4 m_xFlagsParams;       // 16 bytes (MaterialDrawFlags as uint bits, unused x3)
 };
-static_assert(sizeof(InstancedMeshPushConstants) == 128, "InstancedMeshPushConstants must be 128 bytes");
+static_assert(sizeof(InstancedMeshPushConstants) == sizeof(MaterialDrawConstants),
+	"InstancedMeshPushConstants must stay byte-compatible with MaterialDrawConstants / DrawConstantsLayout");
 
 //=============================================================================
 // Static Data
@@ -85,6 +94,7 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xGBufferShader;
@@ -246,6 +256,7 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),		RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 }
@@ -414,19 +425,25 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
 	const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
 
-	// Build and push material constants
+	// Build and push material constants (instance-aware resolved view).
+	const Zenith_MaterialResolved& xResolved = pxMaterial->GetResolved();
+	const Zenith_MaterialParams& xParams = xResolved.m_xParams;
+
 	InstancedMeshPushConstants xPushConstants;
 	xPushConstants.m_xModelMatrix = glm::identity<glm::mat4>();  // Per-instance in buffer
-	xPushConstants.m_xBaseColor = pxMaterial->GetBaseColor();
+	xPushConstants.m_xBaseColor = xParams.m_xBaseColor;
+	// Opaque never alpha-tests (cutoff 0 disables the shader's discard);
+	// Masked uses the authored cutoff — same rule as BuildMaterialDrawConstants.
+	const float fAlphaCutoff = (xParams.m_eBlendMode == MATERIAL_BLEND_MASKED) ? xParams.m_fAlphaCutoff : 0.0f;
 	xPushConstants.m_xMaterialParams = Zenith_Maths::Vector4(
-		pxMaterial->GetMetallic(),
-		pxMaterial->GetRoughness(),
-		pxMaterial->GetAlphaCutoff(),
-		pxMaterial->GetOcclusionStrength()
+		xParams.m_fMetallic,
+		xParams.m_fRoughness,
+		fAlphaCutoff,
+		xParams.m_fOcclusionStrength
 	);
-	const Zenith_Maths::Vector2& xTiling = pxMaterial->GetUVTiling();
-	const Zenith_Maths::Vector2& xOffset = pxMaterial->GetUVOffset();
-	xPushConstants.m_xUVParams = Zenith_Maths::Vector4(xTiling.x, xTiling.y, xOffset.x, xOffset.y);
+	xPushConstants.m_xUVParams = Zenith_Maths::Vector4(
+		xParams.m_xUVTiling.x, xParams.m_xUVTiling.y,
+		xParams.m_xUVOffset.x, xParams.m_xUVOffset.y);
 
 	if (bHasVAT)
 	{
@@ -442,14 +459,27 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 		xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
 	}
 
+	xPushConstants.m_xMaterialParams2 = Zenith_Maths::Vector4(xParams.m_fSpecular, xParams.m_fNormalStrength, 0.0f, 0.0f);
+	xPushConstants.m_xParallaxParams = Zenith_Maths::Vector4(0.0f, 8.0f, 32.0f, 0.0f);
+	xPushConstants.m_xDetailParams = Zenith_Maths::Vector4(4.0f, 4.0f, 1.0f, 1.0f);
+
+	// Instanced path supports unlit + two-sided normal flip only (POM/detail/
+	// clear coat are mesh-path features; emissive needs the VAT-aliased field).
+	u_int uFlags = 0;
+	if (xParams.m_eShadingModel == MATERIAL_SHADING_UNLIT) uFlags |= MATERIAL_DRAW_FLAG_UNLIT;
+	if (xParams.m_bTwoSided) uFlags |= MATERIAL_DRAW_FLAG_TWO_SIDED_NORMAL_FLIP;
+	Zenith_Maths::Vector4 xFlags(0.0f);
+	memcpy(&xFlags.x, &uFlags, sizeof(u_int));
+	xPushConstants.m_xFlagsParams = xFlags;
+
 	xBinder.BindDrawConstants(m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
-	// Bind material textures
-	xBinder.BindSRV(m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+	// Bind material textures (instance-aware; emissive slot intentionally
+	// not bound — the instanced shader doesn't declare it).
+	xBinder.BindSRV(m_xGBufferShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
+	xBinder.BindSRV(m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_NORMAL)->m_xSRV);
+	xBinder.BindSRV(m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_ROUGHNESS_METALLIC)->m_xSRV);
+	xBinder.BindSRV(m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_OCCLUSION)->m_xSRV);
 
 	// Bind animation texture (VAT) if available, else bind blank texture
 	if (bHasVAT)

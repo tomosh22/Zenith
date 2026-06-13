@@ -150,6 +150,24 @@ enum class Zenith_EditorActionType
 	// Behaviour Graph (via Zenith_Editor::AttachGraphToSelected)
 	ATTACH_GRAPH,
 
+	// Material editor authoring (via Zenith_MaterialEditorPanel's atomic editor
+	// actions - each step performs the exact operation a human's UI gesture
+	// runs: create/open a .zmtrl, set a parameter row, swap a texture slot,
+	// pick a parent, toggle an override, switch the preview mesh/light, Save).
+	// This block must stay CONTIGUOUS (ExecuteAction routes the whole range to
+	// ExecuteMaterialAction).
+	MATERIAL_CREATE,
+	MATERIAL_OPEN,
+	MATERIAL_SET_PARAM_FLOAT,
+	MATERIAL_SET_PARAM_COLOR,
+	MATERIAL_SET_PARAM_INT,
+	MATERIAL_SET_TEXTURE,
+	MATERIAL_SET_PARENT,
+	MATERIAL_SET_OVERRIDE,
+	MATERIAL_SET_PREVIEW_MESH,
+	MATERIAL_SET_PREVIEW_LIGHT,
+	MATERIAL_SAVE,	// END of the contiguous MATERIAL range (see MATERIAL_CREATE)
+
 	// Behaviour Graph authoring (via Zenith_GraphEditorPanel's atomic editor
 	// actions - each step performs the exact operation a human's UI gesture
 	// runs: open the editor, click a palette entry, drag a pin connection,
@@ -438,6 +456,29 @@ void AddStep_GraphConnect(const char* szSrcTypeName, int iSrcOccurrence, int iSr
 void AddStep_GraphAddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric);
 void AddStep_GraphSave();
 void AddStep_GraphClose();
+
+	//--------------------------------------------------------------------------
+	// Material editor step helpers (drive Zenith_MaterialEditorPanel's atomic
+	// Action_* verbs — the same operations a human editing a material runs).
+	// Parameter / texture-slot names are the stable strings from the
+	// Zenith_MaterialParamTable reflection table ("Roughness", "BaseColor",
+	// "Normal", ...). A typical authoring sequence:
+	//   MaterialCreate("game:Materials/foo.zmtrl") ->
+	//   MaterialSetParamFloat("Roughness", 0.2f) ->
+	//   MaterialSetTexture("BaseColor", "game:Textures/albedo.ztxtr") ->
+	//   MaterialSave().
+	//--------------------------------------------------------------------------
+void AddStep_MaterialCreate(const char* szAssetPath);
+void AddStep_MaterialOpen(const char* szAssetPath);
+void AddStep_MaterialSetParamFloat(const char* szParamName, float fValue);
+void AddStep_MaterialSetParamColor(const char* szParamName, float fR, float fG, float fB, float fA);
+void AddStep_MaterialSetParamInt(const char* szParamName, int iValue);
+void AddStep_MaterialSetTexture(const char* szSlotName, const char* szTexturePath);
+void AddStep_MaterialSetParent(const char* szParentAssetPath);	// nullptr/"" clears the parent
+void AddStep_MaterialSetOverride(const char* szParamName, bool bOverridden);
+void AddStep_MaterialSetPreviewMesh(int iMesh);
+void AddStep_MaterialSetPreviewLight(float fYaw, float fPitch);
+void AddStep_MaterialSave(const char* szAssetPath);	// nullptr/"" saves to the current path
 
 	//--------------------------------------------------------------------------
 	// Particle Step Helpers

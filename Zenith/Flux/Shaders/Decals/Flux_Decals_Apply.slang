@@ -16,8 +16,10 @@
 // MRT 0 (diffuse)        — alpha-blend RGB; alpha-channel write masked.
 // MRT 1 (normalsAmbient) — alpha-blend world-space normal RGB; alpha
 //                          (AO) preserved.
-// MRT 2 (material)       — alpha-blend roughness/metallic/emissive;
-//                          alpha (unused) preserved.
+// MRT 2 (material)       — alpha-blend roughness/metallic/specular;
+//                          alpha (packed shading flags) preserved via the
+//                          0x7 colour write mask — do NOT widen it.
+// MRT 3 (emissive)       — not attached by the decal pass; untouched.
 //
 // All three MRTs use the same fAlpha output for the SrcAlpha factor.
 // =====================================================================
@@ -165,11 +167,11 @@ ApplyOut fsMain(VsOut input)
 	const float3 xDecalDiffuse  = float3(0.05, 0.04, 0.03);  // dark scorch
 	const float  fDecalRoughness = 0.85;                     // matte
 	const float  fDecalMetallic  = 0.0;
-	const float  fDecalEmissive  = 0.0;
+	const float  fDecalSpecular  = 0.5;                      // material.b = specular (default 4% F0)
 
 	ApplyOut o;
 	o.m_xDiffuse  = float4(xDecalDiffuse,                                       fAlpha);
 	o.m_xNormal   = float4(xWorldNormal,                                         fAlpha);
-	o.m_xMaterial = float4(fDecalRoughness, fDecalMetallic, fDecalEmissive,      fAlpha);
+	o.m_xMaterial = float4(fDecalRoughness, fDecalMetallic, fDecalSpecular,      fAlpha);
 	return o;
 }

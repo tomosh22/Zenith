@@ -10,6 +10,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Core/Zenith_CommandLine.h"
+#include "Flux/Flux_Screenshot.h"
 
 #include <cstdio>
 
@@ -186,11 +187,19 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	xCreateInfo.imageArrayLayers = 1;
 	xCreateInfo.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
 
-	// --screenshot copies the swapchain image to a buffer, which requires
-	// TRANSFER_SRC usage. Add it only when a screenshot was requested so
-	// default rendering keeps byte-identical swapchain creation. Guarded on
-	// surface support (virtually all desktop surfaces allow it).
-	if (Zenith_CommandLine::GetScreenshotPath() != nullptr &&
+	// Swapchain readback (CLI --screenshot OR the programmatic
+	// Flux_Screenshot::RequestDump path) copies the swapchain image to a
+	// buffer, which requires TRANSFER_SRC usage. In TOOLS builds always add it
+	// (negligible cost) so RequestDump works without the CLI flag; in shipping
+	// builds add it only when --screenshot was requested, keeping default
+	// swapchain creation byte-identical. Guarded on surface support (virtually
+	// all desktop surfaces allow it).
+#ifdef ZENITH_TOOLS
+	const bool bWantTransferSrc = true;
+#else
+	const bool bWantTransferSrc = (Zenith_CommandLine::GetScreenshotPath() != nullptr);
+#endif
+	if (bWantTransferSrc &&
 		(xSwapChainSupport.m_xCapabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferSrc))
 	{
 		xCreateInfo.imageUsage |= vk::ImageUsageFlagBits::eTransferSrc;
@@ -700,6 +709,15 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 			g_xEngine.Frame().GetFrameIndex() == Zenith_CommandLine::GetScreenshotFrame())
 		{
 			WriteSwapchainScreenshotTGA(*this, szScreenshotPath);
+		}
+
+		// Programmatic dump request (Flux_Screenshot::RequestDump) — lets a test
+		// capture the full framebuffer at its exact step-frame, independent of
+		// the global frame index the CLI flag keys off.
+		std::string strPendingDump;
+		if (Flux_Screenshot::ConsumePendingDump(strPendingDump))
+		{
+			WriteSwapchainScreenshotTGA(*this, strPendingDump.c_str());
 		}
 	}
 

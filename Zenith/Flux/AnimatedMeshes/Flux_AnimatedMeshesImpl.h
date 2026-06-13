@@ -57,7 +57,10 @@ public:
 	Zenith_Vector<Flux_AnimatedMeshDrawItem> m_xDrawPacket;
 
 	Flux_Shader   m_xGBufferShader;
-	Flux_Pipeline m_xGBufferPipeline;
+	// Cull permutation pair (see Flux_StaticMeshesImpl): one-sided culls back
+	// faces, two-sided renders both with the shader-side normal flip.
+	Flux_Pipeline m_xGBufferPipeline;			// one-sided (cull back)
+	Flux_Pipeline m_xGBufferPipelineTwoSided;	// two-sided (cull none)
 	Flux_Shader   m_xShadowShader;
 	Flux_Pipeline m_xShadowPipeline;
 };

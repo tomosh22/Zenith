@@ -8,6 +8,9 @@
     <ClCompile Include="..\Tests\HumanShowcase.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\MaterialBattleTest.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -178,6 +178,9 @@ public:
 	void SelectMaterial(Zenith_MaterialAsset* pMaterial);
 	void ClearMaterialSelection();
 	Zenith_MaterialAsset* GetSelectedMaterial();
+	// The Material Editor panel's show/hide flag (View menu toggle + window
+	// close box). Exposed by reference so the panel can clear it on close.
+	bool& GetMaterialEditorShowFlag() { return m_xEditorState.m_xMaterial.m_bShowEditor; }
 
 	//--------------------------------------------------------------------------
 	// Editor Operations

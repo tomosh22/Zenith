@@ -33,6 +33,7 @@ class Flux_StaticMeshesImpl;
 class Flux_TerrainStreamingManagerImpl;
 class Flux_VolumeFogImpl;
 class Flux_GizmosImpl;
+class Flux_MaterialPreviewImpl;
 class Flux_InstancedMeshesImpl;
 class Flux_ParticlesImpl;
 class Flux_ParticleGPUImpl;
@@ -42,6 +43,7 @@ class Flux_SSGIImpl;
 class Flux_IBLImpl;
 class Flux_SkyboxImpl;
 class Flux_GrassImpl;
+class Flux_TranslucencyImpl;
 class Flux_PrimitivesImpl;
 class Flux_HDRImpl;
 class Flux_TerrainImpl;
@@ -156,11 +158,13 @@ public:
 	Flux_IBLImpl& IBL();
 	Flux_SkyboxImpl& Skybox();
 	Flux_GrassImpl& Grass();
+	Flux_TranslucencyImpl& Translucency();
 	Flux_PrimitivesImpl& Primitives();
 	Flux_HDRImpl& HDR();
 	Flux_TerrainImpl& Terrain();
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl& Gizmos();
+	Flux_MaterialPreviewImpl& MaterialPreview();
 #endif
 #ifdef ZENITH_TOOLS
 	Zenith_Editor& Editor();
@@ -253,11 +257,13 @@ private:
 	Flux_IBLImpl*                       m_pxIBL              = nullptr;
 	Flux_SkyboxImpl*                    m_pxSkybox           = nullptr;
 	Flux_GrassImpl*                     m_pxGrass            = nullptr;
+	Flux_TranslucencyImpl*              m_pxTranslucency     = nullptr;
 	Flux_PrimitivesImpl*                m_pxPrimitives       = nullptr;
 	Flux_HDRImpl*                       m_pxHDR              = nullptr;
 	Flux_TerrainImpl*                   m_pxTerrain          = nullptr;
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
+	Flux_MaterialPreviewImpl*           m_pxMaterialPreview  = nullptr;
 #endif
 #ifdef ZENITH_TOOLS
 	Zenith_Editor*                  m_pxEditor             = nullptr;

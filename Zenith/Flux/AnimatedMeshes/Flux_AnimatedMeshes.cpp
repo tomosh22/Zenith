@@ -61,6 +61,7 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xGBufferShader;
@@ -75,7 +76,13 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 			xBlendState.m_bBlendEnabled = false;
 		}
 
+		// Cull permutation pair (StaticMeshes pattern): one-sided culls back
+		// faces, two-sided renders both with the shader-side normal flip.
+		xPipelineSpec.m_eCullMode = CULL_MODE_BACK;
 		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipeline, xPipelineSpec);
+
+		xPipelineSpec.m_eCullMode = CULL_MODE_NONE;
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineTwoSided, xPipelineSpec);
 	}
 
 	{
@@ -117,6 +124,7 @@ void Flux_AnimatedMeshesImpl::Shutdown()
 	// Pipelines reference their shaders, so destroy pipelines first. Instance
 	// method: direct member access, no g_xEngine.AnimatedMeshes() self-lookup.
 	m_xGBufferPipeline.Reset();
+	m_xGBufferPipelineTwoSided.Reset();
 	m_xShadowPipeline.Reset();
 	m_xGBufferShader.Reset();
 	m_xShadowShader.Reset();
@@ -132,12 +140,14 @@ void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// CallPrepareCallbacks runs every enabled pass's Prepare before
 	// RecordCommandLists dispatches any record task. Reads/Writes/DependsOn are
 	// unchanged so the resolved pass order stays byte-identical.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer)
 		.Prepare([](void* p){ g_xEngine.AnimatedMeshes().GatherDrawPacket(p); }) // ECS gather — self-routed, NOT injected.
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 // Prepare callback (main thread): consume the EC-side model gather (every model
@@ -192,22 +202,26 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	// member) through xZZ (mirrors ExecuteSSAOGenerate / ExecuteQuads).
 	Flux_AnimatedMeshesImpl& xZZ = g_xEngine.AnimatedMeshes();
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xGBufferPipeline);
-
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	// Bind FrameConstants once per command list (set 0 - per-frame data). The
+	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
+	// access here — this runs on a worker thread; only heap-stable Flux objects
+	// (model instance, skeleton instance) are dereferenced. Two walks: one per
+	// cull pipeline (one-sided cull-back, then two-sided cull-none).
+	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = xZZ.m_xDrawPacket;
+
+	static bool s_bLoggedOnce = false;
+	for (u_int uCullPass = 0; uCullPass < 2; uCullPass++)
+	{
+	const bool bTwoSidedPass = (uCullPass == 1);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
+
+	// Bind FrameConstants once per pipeline (set 0 - per-frame data). The
 	// lone FluxGraphics reach-in routes through the recovered instance's
 	// injected member.
 	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
-	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
-	// access here — this runs on a worker thread; only heap-stable Flux objects
-	// (model instance, skeleton instance) are dereferenced.
-	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = xZZ.m_xDrawPacket;
-
-	static bool s_bLoggedOnce = false;
 	for (u_int uItem = 0; uItem < xPacket.GetSize(); uItem++)
 	{
 		const Flux_AnimatedMeshDrawItem& xItem = xPacket.Get(uItem);
@@ -246,9 +260,6 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 				continue;
 			}
 
-			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
-
 			Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
 			if (!pxMaterial)
 			{
@@ -256,21 +267,36 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 				continue;
 			}
 
-			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
+			const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
+
+			// Translucent/Additive submeshes are routed to the forward
+			// Translucency path (which skips skinned meshes with a warning).
+			if (xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT ||
+				xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE) continue;
+
+			// Bin by cull mode (StaticMeshes pattern).
+			const bool bMaterialTwoSided = xParams.m_bTwoSided;
+			if (bMaterialTwoSided != bTwoSidedPass) continue;
+
+			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+
+			// Build and push material constants (192 bytes) - uses scratch buffer in set 1
 			MaterialDrawConstants xPushConstants;
 			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
 			xBinder.BindDrawConstants(xZZ.m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
-			// Bind set 1: bone buffer and material textures (named bindings)
+			// Bind set 1: bone buffer and the full material texture set.
 			xBinder.BindCBV(xZZ.m_xGBufferShader, "Bones", &xBoneBuffer.GetCBV());
-			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-			xBinder.BindSRV(xZZ.m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+			for (u_int uSlot = 0; uSlot < MATERIAL_TEXTURE_SLOT_COUNT; uSlot++)
+			{
+				Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(uSlot));
+				xBinder.BindSRV(xZZ.m_xGBufferShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
+			}
 
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
+	}
 	}
 }
 

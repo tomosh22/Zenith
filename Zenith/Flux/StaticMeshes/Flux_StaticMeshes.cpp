@@ -51,6 +51,7 @@ void Flux_StaticMeshesImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xGBufferShader;
@@ -65,7 +66,13 @@ void Flux_StaticMeshesImpl::BuildPipelines()
 			xBlendState.m_bBlendEnabled = false;
 		}
 
+		// Cull permutation pair: one-sided materials cull back faces; two-sided
+		// materials render both (and flip the shading normal in the shader).
+		xPipelineSpec.m_eCullMode = CULL_MODE_BACK;
 		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipeline, xPipelineSpec);
+
+		xPipelineSpec.m_eCullMode = CULL_MODE_NONE;
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineTwoSided, xPipelineSpec);
 	}
 
 	{
@@ -98,6 +105,7 @@ void Flux_StaticMeshesImpl::Initialise()
 #endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "StaticMeshes", "Force Cull None" }, m_bDbgForceCullNone);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes initialised");
@@ -107,6 +115,7 @@ void Flux_StaticMeshesImpl::Shutdown()
 {
 	// Pipelines reference their shaders, so destroy pipelines first.
 	m_xGBufferPipeline.Reset();
+	m_xGBufferPipelineTwoSided.Reset();
 	m_xShadowPipeline.Reset();
 	m_xGBufferShader.Reset();
 	m_xShadowShader.Reset();
@@ -120,12 +129,14 @@ void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// (which call RenderToShadowMap from Flux_Shadows). Pass-registration order
 	// is irrelevant to Prepare timing — CallPrepareCallbacks runs every enabled
 	// pass's Prepare before RecordCommandLists dispatches any record task.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)
 		.Prepare([](void* p){ g_xEngine.StaticMeshes().GatherDrawPacket(p); })
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 // Prepare callback (main thread): walk every Zenith_ModelComponent in all
@@ -182,18 +193,19 @@ void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_Sha
 	BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
 	xBinder.BindDrawConstants(m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
-	xBinder.BindSRV(m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
+	{
+		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
+		xBinder.BindSRV(m_xGBufferShader, GetMaterialTextureBindingName(u), &pxTexture->m_xSRV);
+	}
 
 	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
 }
 
-// Called from the recovered instance in ExecuteGBuffer.
+// Called from the recovered instance in ExecuteGBuffer, once per cull pass.
 void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
-	Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix)
+	Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix,
+	bool bTwoSidedPass)
 {
 	// One-shot debug log: log the first static-model layout we render so we can
 	// diagnose missing/empty meshes by looking at the first frame's logs.
@@ -222,14 +234,28 @@ void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandList* pxCmdLis
 		Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
 		if (!pxMeshInstance) continue;
 
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
-
 		Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
 		// Member method (promoted): route the FluxGraphics reach-in (blank-material
 		// fallback) through the injected member directly.
 		if (!pxMaterial) pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 		Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
+
+		const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
+
+		// Translucent/Additive submeshes render on the forward Translucency
+		// path, not the opaque G-buffer.
+		if (xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT ||
+			xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE) continue;
+
+		// Bin by cull mode: meshes belong to exactly one of the two cull
+		// passes. With ForceCullNone everything draws in the two-sided pass
+		// (the engine's historical behaviour — safety valve for assets with
+		// reversed winding).
+		const bool bMaterialTwoSided = xParams.m_bTwoSided || m_bDbgForceCullNone;
+		if (bMaterialTwoSided != bTwoSidedPass) continue;
+
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());
 	}
@@ -244,18 +270,23 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	// injected FluxGraphics, packet and the promoted record helper through it.
 	Flux_StaticMeshesImpl& xZZ = g_xEngine.StaticMeshes();
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xGBufferPipeline);
-
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
-	// access here — this runs on a worker thread.
+	// access here — this runs on a worker thread. Two walks: one per cull
+	// pipeline (one-sided cull-back, then two-sided cull-none).
 	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = xZZ.m_xDrawPacket;
-	for (u_int u = 0; u < xPacket.GetSize(); u++)
+	for (u_int uCullPass = 0; uCullPass < 2; uCullPass++)
 	{
-		const Flux_StaticMeshDrawItem& xItem = xPacket.Get(u);
-		xZZ.RenderModelInstanceMeshes(pxCmdList, xBinder, xItem.m_pxModelInstance, xItem.m_xModelMatrix);
+		const bool bTwoSidedPass = (uCullPass == 1);
+		pxCmdList->AddCommand<Flux_CommandSetPipeline>(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
+		xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+
+		for (u_int u = 0; u < xPacket.GetSize(); u++)
+		{
+			const Flux_StaticMeshDrawItem& xItem = xPacket.Get(u);
+			xZZ.RenderModelInstanceMeshes(pxCmdList, xBinder, xItem.m_pxModelInstance, xItem.m_xModelMatrix, bTwoSidedPass);
+		}
 	}
 }
 
@@ -282,6 +313,14 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const F
 		{
 			Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
 			if (!pxMeshInstance) continue;
+
+			// Translucent/Additive submeshes don't cast shadows (UE-style).
+			Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+			if (pxMaterial)
+			{
+				const MaterialBlendMode eBlend = pxMaterial->GetResolved().m_xParams.m_eBlendMode;
+				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE) continue;
+			}
 
 			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
 			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());

@@ -809,6 +809,42 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"spirv_1_3",
 		"Fog",
 	},
+
+	// Forward-lit translucent mesh pass (Translucent/Additive blend modes).
+	// Also reused by the editor material preview against its own targets.
+	{
+		FluxShaderProgram::Translucent_Forward,
+		"Translucent_Forward",
+		"Translucency/Flux_Translucent_Forward",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"Translucency",
+	},
+
+	// Editor material-preview offscreen renderer (TOOLS): environment-cubemap
+	// background + fixed-exposure tonemap to the ImGui-visible LDR target.
+	{
+		FluxShaderProgram::MaterialPreview_Background,
+		"MaterialPreview_Background",
+		"MaterialPreview/Flux_MaterialPreview_Background",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"MaterialPreview",
+	},
+	{
+		FluxShaderProgram::MaterialPreview_Tonemap,
+		"MaterialPreview_Tonemap",
+		"MaterialPreview/Flux_MaterialPreview_Tonemap",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"MaterialPreview",
+	},
 };
 
 static constexpr u_int kRegistryCount = sizeof(s_axRegistry) / sizeof(s_axRegistry[0]);

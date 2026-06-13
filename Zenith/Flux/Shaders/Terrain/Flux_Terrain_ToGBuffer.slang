@@ -100,7 +100,7 @@ struct TerrainMaterialConstantsLayout
 {
 	float4 g_axBaseColors[4];      // RGBA per material
 	float4 g_axUVParams[4];        // (tilingX, tilingY, offsetX, offsetY)
-	float4 g_axMaterialParams[4];  // (metallic, roughness, occlusion, 0)
+	float4 g_axMaterialParams[4];  // (metallic, roughness, occlusion, specular)
 	float4 g_axEmissiveParams[4];  // (R, G, B, intensity)
 	float4 g_xTerrainParams;       // (originX, originZ, sizeX, sizeZ)
 	float4 g_xTerrainParams2;      // (materialCount-bits, debugMode-bits, 0, 0)
@@ -207,7 +207,7 @@ GBufferOut fsMain(VsOut input)
 		}
 		if (bHandled)
 		{
-			return MakeGBuffer(float4(xDebugColor, 1.0), input.worldNormal, 0.2, 0.8, 0.0, 0.0);
+			return MakeGBuffer(float4(xDebugColor, 1.0), input.worldNormal, 0.2, 0.8, 0.0);
 		}
 	}
 
@@ -228,25 +228,25 @@ GBufferOut fsMain(VsOut input)
 	float3 xNormalMap0 = g_xNormalTex0.Sample(xUV0).xyz * 2.0 - 1.0;
 	float2 xRM0       = g_xRoughnessMetallicTex0.Sample(xUV0).gb;
 	float  fOcc0      = SampleOcclusion(g_xOcclusionTex0, xUV0, TerrainMaterialConstants.g_axMaterialParams[0].z);
-	float  fEm0       = CalculateEmissiveLuminance(g_xEmissiveTex0, xUV0, TerrainMaterialConstants.g_axEmissiveParams[0].rgb, TerrainMaterialConstants.g_axEmissiveParams[0].w);
+	float3 xEm0       = SampleEmissiveRGB(g_xEmissiveTex0, xUV0, TerrainMaterialConstants.g_axEmissiveParams[0].rgb, TerrainMaterialConstants.g_axEmissiveParams[0].w);
 
 	float4 xDiffuse1 = SampleDiffuseWithBaseColor(g_xDiffuseTex1, xUV1, TerrainMaterialConstants.g_axBaseColors[1]);
 	float3 xNormalMap1 = g_xNormalTex1.Sample(xUV1).xyz * 2.0 - 1.0;
 	float2 xRM1       = g_xRoughnessMetallicTex1.Sample(xUV1).gb;
 	float  fOcc1      = SampleOcclusion(g_xOcclusionTex1, xUV1, TerrainMaterialConstants.g_axMaterialParams[1].z);
-	float  fEm1       = CalculateEmissiveLuminance(g_xEmissiveTex1, xUV1, TerrainMaterialConstants.g_axEmissiveParams[1].rgb, TerrainMaterialConstants.g_axEmissiveParams[1].w);
+	float3 xEm1       = SampleEmissiveRGB(g_xEmissiveTex1, xUV1, TerrainMaterialConstants.g_axEmissiveParams[1].rgb, TerrainMaterialConstants.g_axEmissiveParams[1].w);
 
 	float4 xDiffuse2 = SampleDiffuseWithBaseColor(g_xDiffuseTex2, xUV2, TerrainMaterialConstants.g_axBaseColors[2]);
 	float3 xNormalMap2 = g_xNormalTex2.Sample(xUV2).xyz * 2.0 - 1.0;
 	float2 xRM2       = g_xRoughnessMetallicTex2.Sample(xUV2).gb;
 	float  fOcc2      = SampleOcclusion(g_xOcclusionTex2, xUV2, TerrainMaterialConstants.g_axMaterialParams[2].z);
-	float  fEm2       = CalculateEmissiveLuminance(g_xEmissiveTex2, xUV2, TerrainMaterialConstants.g_axEmissiveParams[2].rgb, TerrainMaterialConstants.g_axEmissiveParams[2].w);
+	float3 xEm2       = SampleEmissiveRGB(g_xEmissiveTex2, xUV2, TerrainMaterialConstants.g_axEmissiveParams[2].rgb, TerrainMaterialConstants.g_axEmissiveParams[2].w);
 
 	float4 xDiffuse3 = SampleDiffuseWithBaseColor(g_xDiffuseTex3, xUV3, TerrainMaterialConstants.g_axBaseColors[3]);
 	float3 xNormalMap3 = g_xNormalTex3.Sample(xUV3).xyz * 2.0 - 1.0;
 	float2 xRM3       = g_xRoughnessMetallicTex3.Sample(xUV3).gb;
 	float  fOcc3      = SampleOcclusion(g_xOcclusionTex3, xUV3, TerrainMaterialConstants.g_axMaterialParams[3].z);
-	float  fEm3       = CalculateEmissiveLuminance(g_xEmissiveTex3, xUV3, TerrainMaterialConstants.g_axEmissiveParams[3].rgb, TerrainMaterialConstants.g_axEmissiveParams[3].w);
+	float3 xEm3       = SampleEmissiveRGB(g_xEmissiveTex3, xUV3, TerrainMaterialConstants.g_axEmissiveParams[3].rgb, TerrainMaterialConstants.g_axEmissiveParams[3].w);
 
 	// Splatmap-weighted blend.
 	float4 xDiffuse = xDiffuse0 * xWeights.r + xDiffuse1 * xWeights.g
@@ -267,8 +267,12 @@ GBufferOut fsMain(VsOut input)
 					 + xRM3.y * TerrainMaterialConstants.g_axMaterialParams[3].x * xWeights.a;
 	float fOcclusion = fOcc0 * xWeights.r + fOcc1 * xWeights.g
 					 + fOcc2 * xWeights.b + fOcc3 * xWeights.a;
-	float fEmissive  = fEm0  * xWeights.r + fEm1  * xWeights.g
-					 + fEm2  * xWeights.b + fEm3  * xWeights.a;
+	float3 xEmissive = xEm0  * xWeights.r + xEm1  * xWeights.g
+					 + xEm2  * xWeights.b + xEm3  * xWeights.a;
+	float fSpecular  = TerrainMaterialConstants.g_axMaterialParams[0].w * xWeights.r
+					 + TerrainMaterialConstants.g_axMaterialParams[1].w * xWeights.g
+					 + TerrainMaterialConstants.g_axMaterialParams[2].w * xWeights.b
+					 + TerrainMaterialConstants.g_axMaterialParams[3].w * xWeights.a;
 
 	if (uDebugMode >= 5u && uDebugMode <= 7u)
 	{
@@ -276,11 +280,13 @@ GBufferOut fsMain(VsOut input)
 		if      (uDebugMode == 5u) xDebugColor = float3(fRoughness, fRoughness, fRoughness);
 		else if (uDebugMode == 6u) xDebugColor = float3(fMetallic, fMetallic, fMetallic);
 		else                       xDebugColor = float3(fOcclusion, fOcclusion, fOcclusion);
-		return MakeGBuffer(float4(xDebugColor, 1.0), input.worldNormal, 0.2, 0.8, 0.0, 0.0);
+		return MakeGBuffer(float4(xDebugColor, 1.0), input.worldNormal, 0.2, 0.8, 0.0);
 	}
 
 	float3x3 TBN          = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
 	float3   xWorldNormal = normalize(mul(TBN, xNormalTangent));
 
-	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic, fEmissive);
+	// Terrain is always default-lit, no clear coat; splat-weighted specular.
+	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic,
+						fSpecular, xEmissive, 0.0, 0.0, GBUFFER_SHADING_DEFAULT_LIT);
 }

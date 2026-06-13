@@ -107,6 +107,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xDS.m_xShader, "g_xDiffuseTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(xDS.m_xShader, "g_xNormalsAmbientTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(xDS.m_xShader, "g_xMaterialTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(xDS.m_xShader, "g_xGBufferEmissiveTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
 	xBinder.BindSRV(xDS.m_xShader, "g_xDepthTex", xFluxGraphics.GetDepthStencilSRV());
 
 	// Bind shadow maps (named bindings)

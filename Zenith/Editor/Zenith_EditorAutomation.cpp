@@ -16,6 +16,7 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
+#include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -406,6 +407,41 @@ void Zenith_EditorAutomation::AddStep_GraphAddNode          (const char* szTypeN
 void Zenith_EditorAutomation::AddStep_GraphSave             ()                                      { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRAPH_SAVE); }
 void Zenith_EditorAutomation::AddStep_GraphClose            ()                                      { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRAPH_CLOSE); }
 
+// ---- Material editor authoring steps ----
+void Zenith_EditorAutomation::AddStep_MaterialCreate        (const char* szAssetPath)               { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_CREATE, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_MaterialOpen          (const char* szAssetPath)               { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_OPEN, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_MaterialSave          (const char* szAssetPath)               { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_SAVE, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_MaterialSetParent     (const char* szParentAssetPath)         { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_SET_PARENT, szParentAssetPath); }
+void Zenith_EditorAutomation::AddStep_MaterialSetTexture    (const char* szSlotName, const char* szTexturePath) { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_SET_TEXTURE, szSlotName, szTexturePath); }
+void Zenith_EditorAutomation::AddStep_MaterialSetParamFloat (const char* szParamName, float fValue) { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_SET_PARAM_FLOAT, szParamName, fValue); }
+void Zenith_EditorAutomation::AddStep_MaterialSetParamInt   (const char* szParamName, int iValue)   { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_SET_PARAM_INT, szParamName, iValue); }
+void Zenith_EditorAutomation::AddStep_MaterialSetOverride   (const char* szParamName, bool bOverridden) { Push(Zenith_EditorAutomation::m_axActions, ActionType::MATERIAL_SET_OVERRIDE, szParamName, bOverridden); }
+
+void Zenith_EditorAutomation::AddStep_MaterialSetParamColor(const char* szParamName, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::MATERIAL_SET_PARAM_COLOR;
+	xAction.m_szArg1 = szParamName;
+	xAction.m_afArgs[0] = fR; xAction.m_afArgs[1] = fG; xAction.m_afArgs[2] = fB; xAction.m_afArgs[3] = fA;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_MaterialSetPreviewMesh(int iMesh)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::MATERIAL_SET_PREVIEW_MESH;
+	xAction.m_aiArgs[0] = iMesh;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_MaterialSetPreviewLight(float fYaw, float fPitch)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::MATERIAL_SET_PREVIEW_LIGHT;
+	xAction.m_afArgs[0] = fYaw; xAction.m_afArgs[1] = fPitch;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_GraphSelectNode(const char* szTypeName, int iOccurrence)
 {
 	Zenith_EditorAction xAction = {};
@@ -768,6 +804,38 @@ namespace
 	{
 		Zenith_Assert(bOk, "EditorAutomation graph step %s('%s') failed", szAction, szArg ? szArg : "");
 		(void)bOk; (void)szAction; (void)szArg;
+	}
+
+	// Material authoring steps assert on failure for the same reason (a typo'd
+	// param/slot name or a cyclic parent surfaces at boot, not as a silent no-op).
+	void MaterialActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation material step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+}
+
+// All material authoring actions (MATERIAL_CREATE .. MATERIAL_SAVE, kept
+// CONTIGUOUS in the enum) live in their own executor, mirroring the graph /
+// terrain-editor / UI splits — ExecuteAction routes the whole range here.
+static void ExecuteMaterialAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::MATERIAL_CREATE:           MaterialActionChecked(Zenith_MaterialEditorPanel::Action_CreateMaterial(xAction.m_szArg1), "MaterialCreate", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_OPEN:             MaterialActionChecked(Zenith_MaterialEditorPanel::Action_OpenMaterial(xAction.m_szArg1), "MaterialOpen", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SAVE:             MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SaveMaterial(xAction.m_szArg1), "MaterialSave", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARAM_FLOAT:  MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamFloat(xAction.m_szArg1, xAction.m_afArgs[0]), "MaterialSetParamFloat", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARAM_COLOR:  MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamColor(xAction.m_szArg1, xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]), "MaterialSetParamColor", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARAM_INT:    MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamInt(xAction.m_szArg1, xAction.m_aiArgs[0]), "MaterialSetParamInt", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_TEXTURE:      MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetTexture(xAction.m_szArg1, xAction.m_szArg2), "MaterialSetTexture", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARENT:       MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParent(xAction.m_szArg1), "MaterialSetParent", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_OVERRIDE:     MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetOverride(xAction.m_szArg1, xAction.m_bArg), "MaterialSetOverride", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PREVIEW_MESH: MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetPreviewMesh(xAction.m_aiArgs[0]), "MaterialSetPreviewMesh", nullptr); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PREVIEW_LIGHT:MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetPreviewLight(xAction.m_afArgs[0], xAction.m_afArgs[1]), "MaterialSetPreviewLight", nullptr); break;
+	default:
+		Zenith_Assert(false, "Non-material action routed to ExecuteMaterialAction");
+		break;
 	}
 }
 // All UI authoring actions (CREATE_UI_TEXT .. SET_UI_SCROLL_VIEW_CONTENT_SIZE,
@@ -1454,6 +1522,14 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE)
 	{
 		ExecuteUIAction(xAction);
+		return;
+	}
+
+	// Material editor authoring actions have their own executor too.
+	if (xAction.m_eType >= Zenith_EditorActionType::MATERIAL_CREATE &&
+		xAction.m_eType <= Zenith_EditorActionType::MATERIAL_SAVE)
+	{
+		ExecuteMaterialAction(xAction);
 		return;
 	}
 

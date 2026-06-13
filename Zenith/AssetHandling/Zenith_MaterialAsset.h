@@ -2,6 +2,7 @@
 
 #include "AssetHandling/Zenith_Asset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "AssetHandling/Zenith_MaterialParamTable.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
 
@@ -9,26 +10,48 @@
 class Zenith_DataStream;
 class Zenith_TextureAsset;
 
+// Maximum parent-chain depth for material instances (cycle/degenerate guard).
+constexpr u_int uMATERIAL_MAX_PARENT_DEPTH = 8;
+
+// ----------------------------------------------------------------------------
+// The fully-resolved view of a material after applying the parent chain.
+// Renderers consume ONLY this (params + per-slot texture handles); they never
+// walk the inheritance chain themselves. Texture pointers reference handles
+// owned by materials in the chain - parents are ref-held by their children's
+// MaterialHandle, so the pointers stay valid while the child is alive.
+// ----------------------------------------------------------------------------
+struct Zenith_MaterialResolved
+{
+	Zenith_MaterialParams m_xParams;
+	const TextureHandle* m_apxTextures[MATERIAL_TEXTURE_SLOT_COUNT] = {};
+};
+
 /**
- * Zenith_MaterialAsset - Material asset containing texture references and properties
+ * Zenith_MaterialAsset - parameter-based PBR material (UE5/Unity hybrid model).
  *
- * This is the new material system:
- * - Materials are assets managed by Zenith_AssetRegistry
- * - Textures are referenced by path using TextureHandle
- * - Reference counted for automatic cleanup
+ * - All numeric/bool/enum parameters live in a Zenith_MaterialParams block
+ *   described by the Zenith_MaterialParamTable reflection table (the contract
+ *   shared by the editor UI, automation verbs, and any future graph layer).
+ * - 9 texture slots (see MaterialTextureSlot), each falling back to a pinned
+ *   1x1 default when unset.
+ * - Material INSTANCES: a material may name a parent material and override a
+ *   subset of params/textures. The override mask uses MaterialParamID as the
+ *   bit index for params and (32 + slot) for textures. Non-overridden values
+ *   track the parent live. GetResolved() returns the flattened result with
+ *   stamp-based caching (cheap when nothing changed).
+ * - Serialized as .zmat version 5. Versions 3/4 load with legacy mapping
+ *   (Transparent -> Translucent, otherwise Masked - v4 always alpha-tested;
+ *   Unlit -> shading model).
  *
  * Usage:
- *   // Load existing material
- *   auto* pMat = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>("Assets/mat.zmat");
+ *   auto* pMat = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>("game:Materials/mat.zmat");
+ *   pMat->SetRoughness(0.2f);
+ *   pMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, TextureHandle("game:Textures/albedo.ztxtr"));
  *
- *   // Create new material
- *   auto* pMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
- *   pMat->SetName("MyMaterial");
- *   pMat->SetDiffuseTexture(TextureHandle("Assets/Textures/diffuse.ztxtr"));
- *   pMat->SaveToFile("Assets/Materials/MyMaterial.zmat");
- *
- *   // Get texture for rendering
- *   const Zenith_TextureAsset* pDiffuse = pMat->GetDiffuseTexture();
+ *   // Instance workflow
+ *   pInstance->SetParent(MaterialHandle("game:Materials/master.zmat"));
+ *   pInstance->SetBaseColor({1,0,0,1});   // auto-marks the BaseColor override
+ *   const Zenith_MaterialResolved& xRes = pInstance->GetResolved();
  */
 class Zenith_MaterialAsset : public Zenith_Asset
 {
@@ -44,122 +67,163 @@ public:
 	// Loading / Saving
 	//--------------------------------------------------------------------------
 
-	/**
-	 * Save material data to file
-	 * @param strPath Path to save to (becomes the asset path)
-	 * @return true on success
-	 */
 	bool SaveToFile(const std::string& strPath);
-
-	/**
-	 * Reload material data from disk (uses stored path)
-	 * @return true on success
-	 */
 	bool Reload();
-
-	/**
-	 * Write material data to stream
-	 */
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
-
-	/**
-	 * Read material data from stream
-	 */
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------
-	// Material Properties
+	// Identity
 	//--------------------------------------------------------------------------
 
-	// Name
 	const std::string& GetName() const { return m_strName; }
-	void SetName(const std::string& strName) { m_strName = strName; m_bDirty = true; }
+	void SetName(const std::string& strName) { m_strName = strName; MarkEdited(); }
 
-	// Base color (multiplied with diffuse texture)
-	const Zenith_Maths::Vector4& GetBaseColor() const { return m_xBaseColor; }
-	void SetBaseColor(const Zenith_Maths::Vector4& xColor) { m_xBaseColor = xColor; m_bDirty = true; }
-
-	// Metallic/Roughness factors
-	float GetMetallic() const { return m_fMetallic; }
-	void SetMetallic(float fMetallic) { m_fMetallic = fMetallic; m_bDirty = true; }
-
-	float GetRoughness() const { return m_fRoughness; }
-	void SetRoughness(float fRoughness) { m_fRoughness = fRoughness; m_bDirty = true; }
-
-	// Emissive
-	const Zenith_Maths::Vector3& GetEmissiveColor() const { return m_xEmissiveColor; }
-	void SetEmissiveColor(const Zenith_Maths::Vector3& xColor) { m_xEmissiveColor = xColor; m_bDirty = true; }
-
-	float GetEmissiveIntensity() const { return m_fEmissiveIntensity; }
-	void SetEmissiveIntensity(float fIntensity) { m_fEmissiveIntensity = fIntensity; m_bDirty = true; }
-
-	// Alpha/Transparency
-	bool IsTransparent() const { return m_bTransparent; }
-	void SetTransparent(bool bTransparent) { m_bTransparent = bTransparent; m_bDirty = true; }
-
-	float GetAlphaCutoff() const { return m_fAlphaCutoff; }
-	void SetAlphaCutoff(float fCutoff) { m_fAlphaCutoff = fCutoff; m_bDirty = true; }
-
-	// UV Controls
-	const Zenith_Maths::Vector2& GetUVTiling() const { return m_xUVTiling; }
-	void SetUVTiling(const Zenith_Maths::Vector2& xTiling) { m_xUVTiling = xTiling; m_bDirty = true; }
-
-	const Zenith_Maths::Vector2& GetUVOffset() const { return m_xUVOffset; }
-	void SetUVOffset(const Zenith_Maths::Vector2& xOffset) { m_xUVOffset = xOffset; m_bDirty = true; }
-
-	// Occlusion Strength
-	float GetOcclusionStrength() const { return m_fOcclusionStrength; }
-	void SetOcclusionStrength(float fStrength) { m_fOcclusionStrength = fStrength; m_bDirty = true; }
-
-	// Render Flags
-	bool IsTwoSided() const { return m_bTwoSided; }
-	void SetTwoSided(bool bTwoSided) { m_bTwoSided = bTwoSided; m_bDirty = true; }
-
-	bool IsUnlit() const { return m_bUnlit; }
-	void SetUnlit(bool bUnlit) { m_bUnlit = bUnlit; m_bDirty = true; }
-
-	// Dirty flag
 	bool IsDirty() const { return m_bDirty; }
 
 	//--------------------------------------------------------------------------
-	// Texture Setters (handle-based — covers both file-backed and procedural)
+	// Parameter block access
+	//
+	// GetParams() returns this material's LOCAL values (what the editor shows
+	// in its own rows). GetResolved() returns the flattened parent-chain view
+	// renderers consume. ModifyParams() hands out mutable access and marks the
+	// asset edited - callers editing via the table (editor/automation) must
+	// also set the matching override bit themselves when a parent is set; the
+	// typed setters below do both automatically.
 	//--------------------------------------------------------------------------
 
-	void SetDiffuseTexture(TextureHandle xHandle);
-	void SetNormalTexture(TextureHandle xHandle);
-	void SetRoughnessMetallicTexture(TextureHandle xHandle);
-	void SetOcclusionTexture(TextureHandle xHandle);
-	void SetEmissiveTexture(TextureHandle xHandle);
+	const Zenith_MaterialParams& GetParams() const { return m_xParams; }
+	Zenith_MaterialParams& ModifyParams() { MarkEdited(); return m_xParams; }
+
+	const Zenith_MaterialResolved& GetResolved();
+
+	// Monotonic stamp bumped by every edit (params, textures, parent, name).
+	u_int64 GetEditStamp() const { return m_uEditStamp; }
 
 	//--------------------------------------------------------------------------
-	// Texture Handle Accessors (for material-copy and procedural preservation)
+	// Typed parameter setters/getters (local values).
+	// Setters auto-mark the parameter's override bit when a parent is set.
 	//--------------------------------------------------------------------------
 
-	const TextureHandle& GetDiffuseTextureHandle() const           { return m_xDiffuseTexture; }
-	const TextureHandle& GetNormalTextureHandle() const            { return m_xNormalTexture; }
-	const TextureHandle& GetRoughnessMetallicTextureHandle() const { return m_xRoughnessMetallicTexture; }
-	const TextureHandle& GetOcclusionTextureHandle() const         { return m_xOcclusionTexture; }
-	const TextureHandle& GetEmissiveTextureHandle() const          { return m_xEmissiveTexture; }
+	const Zenith_Maths::Vector4& GetBaseColor() const { return m_xParams.m_xBaseColor; }
+	void SetBaseColor(const Zenith_Maths::Vector4& xColor) { m_xParams.m_xBaseColor = xColor; OnParamEdited(MATERIAL_PARAM_BASE_COLOR); }
+
+	float GetMetallic() const { return m_xParams.m_fMetallic; }
+	void SetMetallic(float fMetallic) { m_xParams.m_fMetallic = fMetallic; OnParamEdited(MATERIAL_PARAM_METALLIC); }
+
+	float GetRoughness() const { return m_xParams.m_fRoughness; }
+	void SetRoughness(float fRoughness) { m_xParams.m_fRoughness = fRoughness; OnParamEdited(MATERIAL_PARAM_ROUGHNESS); }
+
+	float GetSpecular() const { return m_xParams.m_fSpecular; }
+	void SetSpecular(float fSpecular) { m_xParams.m_fSpecular = fSpecular; OnParamEdited(MATERIAL_PARAM_SPECULAR); }
+
+	const Zenith_Maths::Vector3& GetEmissiveColor() const { return m_xParams.m_xEmissiveColor; }
+	void SetEmissiveColor(const Zenith_Maths::Vector3& xColor) { m_xParams.m_xEmissiveColor = xColor; OnParamEdited(MATERIAL_PARAM_EMISSIVE_COLOR); }
+
+	float GetEmissiveIntensity() const { return m_xParams.m_fEmissiveIntensity; }
+	void SetEmissiveIntensity(float fIntensity) { m_xParams.m_fEmissiveIntensity = fIntensity; OnParamEdited(MATERIAL_PARAM_EMISSIVE_INTENSITY); }
+
+	float GetAlphaCutoff() const { return m_xParams.m_fAlphaCutoff; }
+	void SetAlphaCutoff(float fCutoff) { m_xParams.m_fAlphaCutoff = fCutoff; OnParamEdited(MATERIAL_PARAM_ALPHA_CUTOFF); }
+
+	const Zenith_Maths::Vector2& GetUVTiling() const { return m_xParams.m_xUVTiling; }
+	void SetUVTiling(const Zenith_Maths::Vector2& xTiling) { m_xParams.m_xUVTiling = xTiling; OnParamEdited(MATERIAL_PARAM_UV_TILING); }
+
+	const Zenith_Maths::Vector2& GetUVOffset() const { return m_xParams.m_xUVOffset; }
+	void SetUVOffset(const Zenith_Maths::Vector2& xOffset) { m_xParams.m_xUVOffset = xOffset; OnParamEdited(MATERIAL_PARAM_UV_OFFSET); }
+
+	float GetOcclusionStrength() const { return m_xParams.m_fOcclusionStrength; }
+	void SetOcclusionStrength(float fStrength) { m_xParams.m_fOcclusionStrength = fStrength; OnParamEdited(MATERIAL_PARAM_OCCLUSION_STRENGTH); }
+
+	float GetNormalStrength() const { return m_xParams.m_fNormalStrength; }
+	void SetNormalStrength(float fStrength) { m_xParams.m_fNormalStrength = fStrength; OnParamEdited(MATERIAL_PARAM_NORMAL_STRENGTH); }
+
+	float GetHeightScale() const { return m_xParams.m_fHeightScale; }
+	void SetHeightScale(float fScale) { m_xParams.m_fHeightScale = fScale; OnParamEdited(MATERIAL_PARAM_HEIGHT_SCALE); }
+
+	const Zenith_Maths::Vector2& GetDetailTiling() const { return m_xParams.m_xDetailTiling; }
+	void SetDetailTiling(const Zenith_Maths::Vector2& xTiling) { m_xParams.m_xDetailTiling = xTiling; OnParamEdited(MATERIAL_PARAM_DETAIL_TILING); }
+
+	float GetClearCoatStrength() const { return m_xParams.m_fClearCoatStrength; }
+	void SetClearCoatStrength(float fStrength) { m_xParams.m_fClearCoatStrength = fStrength; OnParamEdited(MATERIAL_PARAM_CLEARCOAT_STRENGTH); }
+
+	float GetClearCoatRoughness() const { return m_xParams.m_fClearCoatRoughness; }
+	void SetClearCoatRoughness(float fRoughness) { m_xParams.m_fClearCoatRoughness = fRoughness; OnParamEdited(MATERIAL_PARAM_CLEARCOAT_ROUGHNESS); }
+
+	MaterialBlendMode GetBlendMode() const { return m_xParams.m_eBlendMode; }
+	void SetBlendMode(MaterialBlendMode eMode) { m_xParams.m_eBlendMode = eMode; OnParamEdited(MATERIAL_PARAM_BLEND_MODE); }
+
+	MaterialShadingModel GetShadingModel() const { return m_xParams.m_eShadingModel; }
+	void SetShadingModel(MaterialShadingModel eModel) { m_xParams.m_eShadingModel = eModel; OnParamEdited(MATERIAL_PARAM_SHADING_MODEL); }
+
+	bool IsTwoSided() const { return m_xParams.m_bTwoSided; }
+	void SetTwoSided(bool bTwoSided) { m_xParams.m_bTwoSided = bTwoSided; OnParamEdited(MATERIAL_PARAM_TWO_SIDED); }
+
+	bool IsUnlit() const { return m_xParams.m_eShadingModel == MATERIAL_SHADING_UNLIT; }
+	void SetUnlit(bool bUnlit) { SetShadingModel(bUnlit ? MATERIAL_SHADING_UNLIT : MATERIAL_SHADING_DEFAULT_LIT); }
+
+	// Legacy transparency shim. v4 materials always alpha-tested, so "not
+	// transparent" maps to Masked rather than Opaque.
+	bool IsTransparent() const { return m_xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT; }
+	void SetTransparent(bool bTransparent) { SetBlendMode(bTransparent ? MATERIAL_BLEND_TRANSLUCENT : MATERIAL_BLEND_MASKED); }
 
 	//--------------------------------------------------------------------------
-	// Texture Path Accessors (read-only convenience for UI / serialization)
+	// Material instances (parent + per-param/texture overrides)
 	//--------------------------------------------------------------------------
 
-	const std::string& GetDiffuseTexturePath() const           { return m_xDiffuseTexture.GetPath(); }
-	const std::string& GetNormalTexturePath() const            { return m_xNormalTexture.GetPath(); }
-	const std::string& GetRoughnessMetallicTexturePath() const { return m_xRoughnessMetallicTexture.GetPath(); }
-	const std::string& GetOcclusionTexturePath() const         { return m_xOcclusionTexture.GetPath(); }
-	const std::string& GetEmissiveTexturePath() const          { return m_xEmissiveTexture.GetPath(); }
+	// Returns false (and leaves the parent unchanged) on self-parent, cycle,
+	// or chain deeper than uMATERIAL_MAX_PARENT_DEPTH.
+	bool SetParent(const MaterialHandle& xParent);
+	void ClearParent();
+	const MaterialHandle& GetParentHandle() const { return m_xParentMaterial; }
+	Zenith_MaterialAsset* GetParent() { return m_xParentMaterial.Resolve(); }
+	bool HasParent() const { return static_cast<bool>(m_xParentMaterial); }
+
+	u_int64 GetOverrideMask() const { return m_uOverrideMask; }
+	bool HasOverride(u_int uBit) const { return (m_uOverrideMask & (1ull << uBit)) != 0; }
+	void SetOverride(u_int uBit, bool bOverridden);
+	bool HasParamOverride(MaterialParamID eID) const { return HasOverride(eID); }
+	bool HasTextureOverride(MaterialTextureSlot eSlot) const { return HasOverride(uMATERIAL_TEXTURE_OVERRIDE_BIT_BASE + eSlot); }
 
 	//--------------------------------------------------------------------------
-	// Texture Accessors (returns loaded texture, or blank if not set)
+	// Texture slots
 	//--------------------------------------------------------------------------
 
-	Zenith_TextureAsset* GetDiffuseTexture();
-	Zenith_TextureAsset* GetNormalTexture();
-	Zenith_TextureAsset* GetRoughnessMetallicTexture();
-	Zenith_TextureAsset* GetOcclusionTexture();
-	Zenith_TextureAsset* GetEmissiveTexture();
+	void SetTexture(MaterialTextureSlot eSlot, TextureHandle xHandle);
+	const TextureHandle& GetTextureHandle(MaterialTextureSlot eSlot) const;
+	const std::string& GetTexturePath(MaterialTextureSlot eSlot) const { return GetTextureHandle(eSlot).GetPath(); }
+
+	// Resolves the slot's LOCAL handle, falling back to the slot's pinned
+	// default (white / flat normal) when unset or failed to load.
+	Zenith_TextureAsset* GetTexture(MaterialTextureSlot eSlot);
+
+	// Resolves through the parent chain (instance-aware), then defaults.
+	Zenith_TextureAsset* GetResolvedTexture(MaterialTextureSlot eSlot);
+
+	// Legacy named accessors (BaseColor slot was historically "Diffuse").
+	void SetDiffuseTexture(TextureHandle xHandle) { SetTexture(MATERIAL_TEXTURE_BASE_COLOR, std::move(xHandle)); }
+	void SetNormalTexture(TextureHandle xHandle) { SetTexture(MATERIAL_TEXTURE_NORMAL, std::move(xHandle)); }
+	void SetRoughnessMetallicTexture(TextureHandle xHandle) { SetTexture(MATERIAL_TEXTURE_ROUGHNESS_METALLIC, std::move(xHandle)); }
+	void SetOcclusionTexture(TextureHandle xHandle) { SetTexture(MATERIAL_TEXTURE_OCCLUSION, std::move(xHandle)); }
+	void SetEmissiveTexture(TextureHandle xHandle) { SetTexture(MATERIAL_TEXTURE_EMISSIVE, std::move(xHandle)); }
+
+	const TextureHandle& GetDiffuseTextureHandle() const { return GetTextureHandle(MATERIAL_TEXTURE_BASE_COLOR); }
+	const TextureHandle& GetNormalTextureHandle() const { return GetTextureHandle(MATERIAL_TEXTURE_NORMAL); }
+	const TextureHandle& GetRoughnessMetallicTextureHandle() const { return GetTextureHandle(MATERIAL_TEXTURE_ROUGHNESS_METALLIC); }
+	const TextureHandle& GetOcclusionTextureHandle() const { return GetTextureHandle(MATERIAL_TEXTURE_OCCLUSION); }
+	const TextureHandle& GetEmissiveTextureHandle() const { return GetTextureHandle(MATERIAL_TEXTURE_EMISSIVE); }
+
+	const std::string& GetDiffuseTexturePath() const { return GetTexturePath(MATERIAL_TEXTURE_BASE_COLOR); }
+	const std::string& GetNormalTexturePath() const { return GetTexturePath(MATERIAL_TEXTURE_NORMAL); }
+	const std::string& GetRoughnessMetallicTexturePath() const { return GetTexturePath(MATERIAL_TEXTURE_ROUGHNESS_METALLIC); }
+	const std::string& GetOcclusionTexturePath() const { return GetTexturePath(MATERIAL_TEXTURE_OCCLUSION); }
+	const std::string& GetEmissiveTexturePath() const { return GetTexturePath(MATERIAL_TEXTURE_EMISSIVE); }
+
+	Zenith_TextureAsset* GetDiffuseTexture() { return GetTexture(MATERIAL_TEXTURE_BASE_COLOR); }
+	Zenith_TextureAsset* GetNormalTexture() { return GetTexture(MATERIAL_TEXTURE_NORMAL); }
+	Zenith_TextureAsset* GetRoughnessMetallicTexture() { return GetTexture(MATERIAL_TEXTURE_ROUGHNESS_METALLIC); }
+	Zenith_TextureAsset* GetOcclusionTexture() { return GetTexture(MATERIAL_TEXTURE_OCCLUSION); }
+	Zenith_TextureAsset* GetEmissiveTexture() { return GetTexture(MATERIAL_TEXTURE_EMISSIVE); }
 
 	//--------------------------------------------------------------------------
 	// Default Textures (static, for fallback). Pinned via TextureHandle so
@@ -168,6 +232,7 @@ public:
 
 	static Zenith_TextureAsset* GetDefaultWhiteTexture();
 	static Zenith_TextureAsset* GetDefaultNormalTexture();
+	static Zenith_TextureAsset* GetDefaultTextureForSlot(MaterialTextureSlot eSlot);
 	static void InitializeDefaults();
 	static void ShutdownDefaults();
 
@@ -182,41 +247,51 @@ private:
 
 	/**
 	 * Load material data from file (private - use Zenith_AssetRegistry::Get)
-	 * @param strPath Path to .zmat file
-	 * @return SUCCESS, or an error code on failure
 	 */
 	Zenith_Status LoadFromFile(const std::string& strPath);
+
+	void MarkEdited() { m_bDirty = true; ++m_uEditStamp; }
+
+	// Typed-setter hook: auto-mark the override bit when this material is an
+	// instance (has a parent), then bump the edit stamp.
+	void OnParamEdited(MaterialParamID eID)
+	{
+		if (HasParent())
+		{
+			m_uOverrideMask |= (1ull << eID);
+		}
+		MarkEdited();
+	}
+
+	// Resolve + validate the parent chain. Returns nullptr when there is no
+	// parent, the parent fails to load, or the chain is cyclic/too deep
+	// (reported once per offending configuration, then degrades to no-parent).
+	Zenith_MaterialAsset* ResolveParentChecked();
 
 	// Material identity
 	std::string m_strName;
 
-	// Material properties
-	Zenith_Maths::Vector4 m_xBaseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
-	float m_fMetallic = 0.0f;
-	float m_fRoughness = 0.5f;
-	Zenith_Maths::Vector3 m_xEmissiveColor = { 0.0f, 0.0f, 0.0f };
-	float m_fEmissiveIntensity = 0.0f;
-	bool m_bTransparent = false;
-	float m_fAlphaCutoff = 0.5f;
+	// Parameter block (local values; see GetResolved for the instance view)
+	Zenith_MaterialParams m_xParams;
 
-	// UV Controls
-	Zenith_Maths::Vector2 m_xUVTiling = { 1.0f, 1.0f };
-	Zenith_Maths::Vector2 m_xUVOffset = { 0.0f, 0.0f };
+	// Texture slots - each handle stores either a path (file-backed,
+	// lazy-loaded via the registry) or a procedural pointer set via
+	// TextureHandle::Set(). Resolve() handles both.
+	TextureHandle m_axTextures[MATERIAL_TEXTURE_SLOT_COUNT];
 
-	// Occlusion Strength
-	float m_fOcclusionStrength = 1.0f;
+	// Instance state
+	MaterialHandle m_xParentMaterial;
+	u_int64 m_uOverrideMask = 0;
 
-	// Render Flags
-	bool m_bTwoSided = false;
-	bool m_bUnlit = false;
-
-	// Texture handles — store either a path (file-backed, lazy-loaded via registry)
-	// or a procedural pointer set via TextureHandle::Set(). Resolve() handles both.
-	TextureHandle m_xDiffuseTexture;
-	TextureHandle m_xNormalTexture;
-	TextureHandle m_xRoughnessMetallicTexture;
-	TextureHandle m_xOcclusionTexture;
-	TextureHandle m_xEmissiveTexture;
+	// Edit tracking / resolve cache
+	u_int64 m_uEditStamp = 0;
+	u_int64 m_uResolveStamp = 0;			// bumped each time m_xResolved rebuilds
+	u_int64 m_uResolvedSelfStamp = 0;		// m_uEditStamp captured at last rebuild
+	u_int64 m_uResolvedParentStamp = 0;		// parent's m_uResolveStamp captured at last rebuild
+	Zenith_MaterialAsset* m_pxResolvedParent = nullptr;
+	Zenith_MaterialResolved m_xResolved;
+	bool m_bResolvedValid = false;
+	bool m_bReportedParentError = false;
 
 	// Dirty flag
 	bool m_bDirty = false;
@@ -227,7 +302,10 @@ private:
 };
 
 // Material file version
-#define ZENITH_MATERIAL_FILE_VERSION 4
+// v5: param block + specular/normal-strength/POM/detail/clear-coat, blend +
+//     shading enums, parent path + override mask, 9 texture slots.
+// v4: flat params, 5 texture slots by path. v3: no UV/occlusion/flags block.
+#define ZENITH_MATERIAL_FILE_VERSION 5
 
 //--------------------------------------------------------------------------
 // Register loader with asset registry

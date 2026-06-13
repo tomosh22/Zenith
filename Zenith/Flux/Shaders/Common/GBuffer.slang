@@ -1,11 +1,14 @@
 // =====================================================================
 // Common.GBuffer — shared Slang module.
 //
-// Replaces GBufferCommon.fxh's fragment-output layout. In Slang the
-// G-buffer outputs travel through a struct returned by the fragment
-// entry point (no module-scope `layout(location=N) out` allowed), so we
-// expose a public struct `GBufferOut` plus a `MakeGBuffer()` helper that
-// fills it.
+// Four-MRT G-buffer layout (mirrors MRTIndex in Flux_Enums.h):
+//   SV_Target0  diffuse        RGBA8    albedo.rgb + alpha
+//   SV_Target1  normalsAmbient RGBA16F  world normal.xyz + AO
+//   SV_Target2  material       RGBA8    roughness, metallic, specular,
+//                                       packed flags (shading model bits 0-1,
+//                                       clear-coat strength bits 2-7)
+//   SV_Target3  emissive       RGBA16F  HDR emissive.rgb + clear-coat
+//                                       roughness in A
 //
 // QU (quad-utilisation) debug analysis is intentionally NOT ported here
 // — the GLSL version uses GL_EXT_fragment_shader_barycentric and a
@@ -17,29 +20,61 @@ public struct GBufferOut
 {
 	public float4 diffuse        : SV_Target0;
 	public float4 normalsAmbient : SV_Target1;
-	public float4 material       : SV_Target2; // R=roughness, G=metallic, B=emissive luminance, A=1
+	public float4 material       : SV_Target2; // R=roughness, G=metallic, B=specular, A=packed flags
+	public float4 emissive       : SV_Target3; // RGB=HDR emissive, A=clear-coat roughness
 };
 
+// Shading-model tags carried in the packed-flags channel (bits 0-1).
+public static const uint GBUFFER_SHADING_DEFAULT_LIT = 0u;
+public static const uint GBUFFER_SHADING_UNLIT       = 1u;
+
+// Pack the shading model (2 bits) + clear-coat strength (6 bits, quantized
+// x63) into one UNORM8 channel.
+public float PackGBufferFlags(uint uShadingModel, float fClearCoatStrength)
+{
+	uint uCC = uint(saturate(fClearCoatStrength) * 63.0 + 0.5);
+	uint uPacked = (uShadingModel & 0x3u) | (uCC << 2);
+	return float(uPacked) / 255.0;
+}
+
+public void UnpackGBufferFlags(float fPacked, out uint uShadingModel, out float fClearCoatStrength)
+{
+	uint uPacked = uint(fPacked * 255.0 + 0.5);
+	uShadingModel = uPacked & 0x3u;
+	fClearCoatStrength = float(uPacked >> 2) / 63.0;
+}
+
+// Full-fat G-buffer write — the uber-material path (Static/Animated/
+// Instanced mesh shaders go through the MaterialSurface wrapper in
+// Common.MaterialSurface, Terrain calls this directly).
 public GBufferOut MakeGBuffer(float4 xDiffuse,
 								float3 xNormal,
 								float  fAmbient,
 								float  fRoughness,
 								float  fMetallic,
-								float  fEmissive)
+								float  fSpecular,
+								float3 xEmissive,
+								float  fClearCoatStrength,
+								float  fClearCoatRoughness,
+								uint   uShadingModel)
 {
 	GBufferOut o;
 	o.diffuse        = xDiffuse;
 	o.normalsAmbient = float4(xNormal, fAmbient);
-	o.material       = float4(fRoughness, fMetallic, fEmissive, 1.0);
+	o.material       = float4(fRoughness, fMetallic, fSpecular,
+							   PackGBufferFlags(uShadingModel, fClearCoatStrength));
+	o.emissive       = float4(xEmissive, fClearCoatRoughness);
 	return o;
 }
 
-// Backward-compat overload (no emissive) — matches the GLSL helper.
+// Legacy/simple writers (Primitives, Skybox-style geometry): default-lit,
+// specular 0.5 (the classic 4% F0), no emissive, no clear coat.
 public GBufferOut MakeGBuffer(float4 xDiffuse,
 								float3 xNormal,
 								float  fAmbient,
 								float  fRoughness,
 								float  fMetallic)
 {
-	return MakeGBuffer(xDiffuse, xNormal, fAmbient, fRoughness, fMetallic, 0.0);
+	return MakeGBuffer(xDiffuse, xNormal, fAmbient, fRoughness, fMetallic,
+						0.5, float3(0.0, 0.0, 0.0), 0.0, 0.0, GBUFFER_SHADING_DEFAULT_LIT);
 }

@@ -13,6 +13,7 @@
 #endif
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
+#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -434,6 +435,10 @@ void Flux_RendererImpl::Shutdown()
 #ifdef ZENITH_TOOLS
 	Flux_ShaderHotReload::Shutdown();
 	g_xEngine.Gizmos().Shutdown();
+	// MaterialPreview owns persistent attachments + a dynamic CB + pipelines,
+	// like Gizmos — shut down inline here (deliberately absent from the
+	// registry shutdown walk), before the device teardown below.
+	g_xEngine.MaterialPreview().Shutdown();
 	g_xEngine.FluxBackend().ShutdownImGui();
 #endif
 

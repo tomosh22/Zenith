@@ -20,6 +20,7 @@
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
+#include "Flux/Translucency/Flux_TranslucencyImpl.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
@@ -36,6 +37,7 @@
 #include "Flux/Text/Flux_TextImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
+#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
 #endif
 
 #include "Flux/Zenith_GameRenderFeatures.h" // generic game render-feature interleave + anchor verify
@@ -227,6 +229,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	RegisterFeature<&Zenith_Engine::HDR>(xReg, "HDR");
 #ifdef ZENITH_TOOLS
 	RegisterFeature<&Zenith_Engine::Gizmos>(xReg, "Gizmos");
+	RegisterFeature<&Zenith_Engine::MaterialPreview>(xReg, "MaterialPreview");
 #endif
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	RegisterFeature<&Zenith_Engine::Skybox>(xReg, "Skybox");
@@ -236,6 +239,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	RegisterFeature<&Zenith_Engine::InstancedMeshes>(xReg, "InstancedMeshes");
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain");
 	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass");
+	RegisterFeature<&Zenith_Engine::Translucency>(xReg, "Translucency");
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives");
 	RegisterFeature<&Zenith_Engine::HiZ>(xReg, "HiZ");
 	RegisterFeature<&Zenith_Engine::SSR>(xReg, "SSR");
@@ -281,6 +285,9 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToSetupWalk("Grass");
 	xReg.AddSetupStep("@Skybox:AerialPerspective", +[](Flux_RenderGraph& xGraph){ g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(xGraph); });
 	xReg.AddToSetupWalk("SSAO");
+	// Forward translucency between SSAO and Fog: glass must not be darkened
+	// by SSAO's post-hoc multiply, and fog must composite over it.
+	xReg.AddToSetupWalk("Translucency");
 	xReg.AddToSetupWalk("Fog");
 	xReg.AddToSetupWalk("SDFs");
 	xReg.AddToSetupWalk("Particles");
@@ -289,6 +296,9 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToSetupWalk("Text");
 #ifdef ZENITH_TOOLS
 	xReg.AddToSetupWalk("Gizmos");
+	// Material-preview offscreen passes last — they own persistent targets and
+	// early-out when the editor panel is closed, so placement is cosmetic.
+	xReg.AddToSetupWalk("MaterialPreview");
 #endif
 	xReg.AddSetupStep("@FinalRTLayoutTransition", +[](Flux_RenderGraph& xGraph){
 		// Leaves the Final Render Target in SHADER_READ_ONLY_OPTIMAL so the
@@ -306,6 +316,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToShutdownWalk("Quads");
 	xReg.AddToShutdownWalk("Particles");
 	xReg.AddToShutdownWalk("SDFs");
+	xReg.AddToShutdownWalk("Translucency");
 	xReg.AddToShutdownWalk("DeferredShading");
 	xReg.AddToShutdownWalk("SSAO");
 	xReg.AddToShutdownWalk("Decals");

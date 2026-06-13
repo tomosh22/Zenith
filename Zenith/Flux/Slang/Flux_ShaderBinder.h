@@ -106,9 +106,10 @@ private:
 	// pairs than NAME_CACHE_SIZE — bump the constant rather than ship a
 	// thrashing cache.
 	//
-	// Current worst case: deferred lighting pass binds ~25 unique names (frame
-	// constants + 4 GBuffer SRVs + depth SRV + 4 CSM SRVs + 4 ShadowMatrix CBVs
-	// + 3 IBL SRVs + SSR + SSGI + deferred-shading constants + draw constants).
+	// Current worst case: deferred lighting pass binds ~26 unique names (frame
+	// constants + 4 GBuffer SRVs incl. the emissive MRT + depth SRV + 4 CSM
+	// SRVs + 4 ShadowMatrix CBVs + 3 IBL SRVs + SSR + SSGI + cluster buffers
+	// + deferred-shading constants + draw constants).
 	// 64 gives >50% headroom for future passes or bind reshuffles; bumping from
 	// the original 32 because the refactored deferred path sat at 78% capacity
 	// one pass away from overflowing the assert.
@@ -124,7 +125,7 @@ private:
 	// into thrash-via-eviction territory. Tracks the real worst-case pass so a
 	// future reduction of NAME_CACHE_SIZE fails the build instead of silently
 	// regressing hot-path performance.
-	static constexpr u_int NAME_CACHE_WORST_CASE_PASS_BINDINGS = 25;
+	static constexpr u_int NAME_CACHE_WORST_CASE_PASS_BINDINGS = 26;
 	static_assert(NAME_CACHE_SIZE >= NAME_CACHE_WORST_CASE_PASS_BINDINGS * 2,
 		"Flux_ShaderBinder NAME_CACHE_SIZE must leave at least 2x headroom over the worst-case pass — bump the constant.");
 	NameCacheEntry m_axNameCache[NAME_CACHE_SIZE];

@@ -193,6 +193,7 @@ public float3 EvaluateCookTorrance(float3 xAlbedo,
                                     float3 xLightColor,
                                     float  fMetallic,
                                     float  fRoughness,
+                                    float  fSpecular,
                                     float  fAttenuation,
                                     Sampler2D xBRDFLUT)
 {
@@ -204,7 +205,7 @@ public float3 EvaluateCookTorrance(float3 xAlbedo,
     if (NdotL <= PBR_EPSILON) return float3(0.0, 0.0, 0.0);
 
     float fClampedRoughness = clamp(fRoughness, PBR_MIN_ROUGHNESS, 1.0);
-    float3 F0 = lerp(PBR_DIELECTRIC_F0, xAlbedo, fMetallic);
+    float3 F0 = ComputeF0(xAlbedo, fMetallic, fSpecular);
 
     float  D = DistributionGGX(NdotH, fClampedRoughness);
     float  G = GeometrySmith_Direct(NdotV, NdotL, fClampedRoughness);
@@ -242,6 +243,7 @@ public float3 EvaluateLight(LightInstance xLight,
                             float3 xAlbedo,
                             float  fMetallic,
                             float  fRoughness,
+                            float  fSpecular,
                             Sampler2D xBRDFLUT)
 {
     uint   uType        = uint(xLight.m_xTypeOuter.y);
@@ -281,6 +283,6 @@ public float3 EvaluateLight(LightInstance xLight,
     if (fAttenuation < LIGHT_CONTRIBUTION_THRESHOLD) return float3(0.0, 0.0, 0.0);
 
     return EvaluateCookTorrance(xAlbedo, xNormal, xViewDir, xLightDir,
-                                xLightColor, fMetallic, fRoughness,
+                                xLightColor, fMetallic, fRoughness, fSpecular,
                                 fAttenuation, xBRDFLUT);
 }
