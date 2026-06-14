@@ -23,9 +23,10 @@
 //   1. PRODUCERS MUST BE DECLARED BEFORE CONSUMERS. A reader is linked only to a
 //      writer of the SAME resource declared EARLIER in the walk
 //      (Flux_RenderGraph::FindBestWriter requires uBestWriter < uReader).
-//      Declaring a consumer step before its producer silently drops the
-//      dependency edge AND the barrier the graph would synthesise — and
-//      ValidateOrphanedReads will NOT catch it (a writer exists, just later).
+//      Declaring a consumer before its producer would silently drop the edge AND
+//      the barrier — now caught at Compile by
+//      Flux_RenderGraph::ValidateProducerBeforeConsumer (a Zenith_Check), so a
+//      bad reorder fails loudly instead of producing missing-barrier corruption.
 //   2. Multiple writers of the same resource execute in declaration order (the
 //      write-after-write chain). This is the tiebreak the graph falls back to
 //      when two passes write a resource with no dependency between them.

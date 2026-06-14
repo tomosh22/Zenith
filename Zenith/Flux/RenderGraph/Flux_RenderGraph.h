@@ -501,6 +501,12 @@ private:
     // and logs on failure (no return value); they all run unconditionally.
     void ValidateOrphanedReads() const;
     void ValidateUnusedTransients() const;
+    // Enforce the producer-before-consumer setup-walk invariant that the
+    // FindBestWriter edge-builder relies on: warns when a resource is read by a
+    // pass but every writer of it is declared LATER in the walk (so the
+    // read-after-write edge + barrier are silently dropped — the case
+    // ValidateOrphanedReads cannot see). See Flux_FeatureRegistry's ordering note.
+    void ValidateProducerBeforeConsumer() const;
     void ValidatePassBasics(const Flux_RenderGraph_Pass* pxP) const;
     void ValidatePassAttachmentCounts(const Flux_RenderGraph_Pass* pxP) const;
     // Walk m_xExecutionOrder, track per-(attachment, mip, layer) access state

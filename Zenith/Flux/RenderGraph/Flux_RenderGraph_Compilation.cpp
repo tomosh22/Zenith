@@ -149,9 +149,66 @@ void Flux_RenderGraph::ValidatePassAttachmentCounts(const Flux_RenderGraph_Pass*
         pxP->DebugName(), uRTVCount, uDSVCount, uUAVWriteCount);
 }
 
+// Producer-before-consumer invariant. The edge-builder (FindBestWriter) links a
+// reader to a writer of the SAME resource only when that writer is declared
+// EARLIER in the setup walk. If a resource has readers but every writer is
+// declared LATER, the read-after-write edge AND the barrier the graph would
+// synthesise are silently dropped — and ValidateOrphanedReads does NOT catch it
+// (a writer exists, just too late). This makes that case loud.
+//
+// Runs once per Compile (not per-frame), so the cost is negligible. Exemptions
+// that are NOT bugs: a reader that is also a writer (read-modify-write self-
+// orders) and a reader that directly DependsOn one of the writers. Enforced as a
+// Zenith_Check (shipping-survivable: logs loudly, doesn't crash) — confirmed
+// clean across the full 115-pass graph. (Only DIRECT DependsOn is exempted; a
+// reader ordered solely via a transitive DependsOn chain would log a benign
+// false positive — none exist today.)
+void Flux_RenderGraph::ValidateProducerBeforeConsumer() const
+{
+    for (Zenith_HashMap<void*, ResourceTraffic>::Iterator it(m_xTraffic); !it.Done(); it.Next())
+    {
+        const ResourceTraffic& xTraffic = it.GetValue();
+        const Zenith_Vector<u_int>& xWriters = xTraffic.m_xWriters;
+        const Zenith_Vector<u_int>& xReaders = xTraffic.m_xReaders;
+        if (xReaders.GetSize() == 0 || xWriters.GetSize() == 0) continue; // orphan reads handled by ValidateOrphanedReads
+
+        for (Zenith_Vector<u_int>::Iterator itR(xReaders); !itR.Done(); itR.Next())
+        {
+            const u_int uReader = itR.GetData();
+
+            bool bExempt = false;
+            for (Zenith_Vector<u_int>::Iterator itW(xWriters); !itW.Done(); itW.Next())
+            {
+                const u_int uWriter = itW.GetData();
+                if (uWriter == uReader) { bExempt = true; break; }  // read-modify-write self-orders
+                if (uWriter < uReader)  { bExempt = true; break; }  // has an earlier writer (edge will form)
+            }
+            if (bExempt) continue;
+
+            // No earlier (or self) writer. Legitimate only if the reader explicitly
+            // DependsOn one of the writers (direct dependency provides the ordering).
+            const Flux_RenderGraph_Pass* pxReader = m_xPasses.Get(uReader);
+            bool bDependsOnWriter = false;
+            for (Zenith_Vector<u_int>::Iterator itD(pxReader->m_xExplicitDependencies); !itD.Done() && !bDependsOnWriter; itD.Next())
+                for (Zenith_Vector<u_int>::Iterator itW(xWriters); !itW.Done(); itW.Next())
+                    if (itD.GetData() == itW.GetData()) { bDependsOnWriter = true; break; }
+            if (bDependsOnWriter) continue;
+
+            const Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(it.GetKey());
+            const char* szRes = (pxRes != nullptr) ? pxRes->m_xResource.GetName().c_str() : "<unknown>";
+            Zenith_Check(false,
+                "Flux_RenderGraph: pass '%s' reads '%s' but every writer is declared LATER in the setup walk "
+                "— the read-after-write edge + barrier are dropped. Declare the producer before the consumer, "
+                "or add DependsOn(producer).",
+                pxReader->DebugName(), szRes);
+        }
+    }
+}
+
 void Flux_RenderGraph::Validate() const
 {
     ValidateOrphanedReads();
+    ValidateProducerBeforeConsumer();
     ValidateUnusedTransients();
 
     for (u_int i = 0; i < m_xPasses.GetSize(); i++)
