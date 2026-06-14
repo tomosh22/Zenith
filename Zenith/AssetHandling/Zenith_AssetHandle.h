@@ -21,6 +21,12 @@ class Zenith_DataStream;
  *   GetDirect() - procedural: returns the pointer stored via Set(), no registry call.
  * See AssetHandling/CLAUDE.md for the full accessor breakdown.
  */
+// Ref-counts m_pxCached through the Zenith_Asset base. The cast is reinterpret_,
+// not static_, because these inline bodies are instantiated in TUs where T is only
+// forward-declared (a static_cast/upcast needs T complete). The T-derives-from-
+// Zenith_Asset invariant the cast relies on is enforced by a static_assert in
+// Get() (Zenith_AssetHandle.cpp), checked at each explicit instantiation where T
+// is complete.
 template<typename T>
 class Zenith_AssetHandle
 {

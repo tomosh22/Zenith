@@ -10,9 +10,19 @@
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
+#include <type_traits>
+
 template<typename T>
 T* Zenith_AssetHandle<T>::Get() const
 {
+	// Enforce the invariant the header's reinterpret_cast ref-counting relies on.
+	// Checked here (not in the class body) because Get() is only instantiated at
+	// the explicit instantiations below, where T is complete — a class-body assert
+	// would also fire in TUs that instantiate handle members with a forward-
+	// declared T, which the reinterpret_cast deliberately supports.
+	static_assert(std::is_base_of_v<Zenith_Asset, T>,
+		"Zenith_AssetHandle<T>: T must derive from Zenith_Asset");
+
 	// Cached check must come first: procedural assets have a pointer but no path
 	if (m_pxCached)
 	{
