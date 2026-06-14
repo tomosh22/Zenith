@@ -139,194 +139,99 @@ namespace
 	}
 }
 
-FrameContext& Zenith_Engine::Frame()
-{
-	Zenith_Assert(m_pxFrame != nullptr,
-		"Zenith_Engine::Frame() called before Initialise() or after Shutdown(). "
-		"Frame timing is unavailable outside the engine lifetime.");
-	return *m_pxFrame;
-}
+// -----------------------------------------------------------------------------
+// Subsystem accessors. Two policies, named so the choice is visible at the call
+// instead of buried in per-accessor prose:
+//   ZENITH_ENGINE_ACCESSOR         — asserts the subsystem pointer is non-null.
+//        For lifecycle-bounded subsystems whose accessor can be reached outside
+//        [Initialise, Shutdown]; the assert turns a use-before-init / use-after-
+//        shutdown into a clear message.
+//   ZENITH_ENGINE_ACCESSOR_HOTPATH — NO assert. For accessors on a per-frame /
+//        worker-thread hot path (render record callbacks reach these from worker
+//        threads every frame) that Initialise() guarantees are allocated before
+//        any caller runs — the null branch isn't worth paying there.
+// Per-accessor assert status is UNCHANGED from the hand-written originals; this
+// only makes the existing policy explicit and uniform.
+// -----------------------------------------------------------------------------
+#define ZENITH_ENGINE_ACCESSOR(Type, Name, Member) \
+	Type& Zenith_Engine::Name() \
+	{ \
+		Zenith_Assert(Member != nullptr, \
+			"Zenith_Engine::" #Name "() called before Initialise() or after Shutdown()."); \
+		return *Member; \
+	}
+#define ZENITH_ENGINE_ACCESSOR_HOTPATH(Type, Name, Member) \
+	Type& Zenith_Engine::Name() { return *Member; }
 
-Zenith_Multithreading& Zenith_Engine::Threading()
-{
-	// NOTE: no assert here. Threading() is read on the IsMainThread
-	// hot path (every Zenith_Assert that gates on main-thread fires
-	// it), and the engine guarantees m_pxThreading exists before any
-	// thread can call RegisterThread / IsMainThread (see Initialise).
-	return *m_pxThreading;
-}
+ZENITH_ENGINE_ACCESSOR        (FrameContext,          Frame,        m_pxFrame)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Multithreading, Threading,    m_pxThreading)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_TaskSystem,     Tasks,        m_pxTasks)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Profiling,      Profiling,    m_pxProfiling)
+ZENITH_ENGINE_ACCESSOR        (Zenith_AssetRegistry,  Assets,       m_pxAssets)
+ZENITH_ENGINE_ACCESSOR        (Zenith_Physics,        Physics,      m_pxPhysics)
 
-Zenith_TaskSystem& Zenith_Engine::Tasks()
-{
-	// No assert: SubmitTask is a hot path, and Zenith_Engine::Initialise
-	// allocates m_pxTasks before g_xEngine.Tasks().Initialise() (the
-	// forwarder that brings worker threads online).
-	return *m_pxTasks;
-}
+// EntityStore forwards to the SceneSystem-owned store (not a direct member), so
+// it can't use the macro. No assert: same per-entity hot-path rationale as the
+// HOTPATH accessors; m_pxScenes is allocated very early in Initialise and its
+// ctor allocates the store.
+Zenith_EntityStore& Zenith_Engine::EntityStore() { return m_pxScenes->GetEntityStore(); }
 
-Zenith_Profiling& Zenith_Engine::Profiling()
-{
-	// No assert: BeginProfile / EndProfile sit on the hottest path in
-	// the engine (every ZENITH_PROFILING_FUNCTION_WRAPPER call fires
-	// it). Zenith_Engine::Initialise allocates m_pxProfiling before
-	// g_xEngine.Profiling().Initialise() so the impl is always available
-	// once any thread starts profiling.
-	return *m_pxProfiling;
-}
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_SceneSystem,    Scenes,        m_pxScenes)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_UISystem,       UI,            m_pxUISystem)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Input,          Input,         m_pxInput)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_TouchInput,     Touch,         m_pxTouch)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_RendererImpl,     FluxRenderer,  m_pxFluxRenderer)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GraphicsImpl,     FluxGraphics,  m_pxFluxGraphics)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PlatformAPI,      FluxBackend,   m_pxVulkan)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_MemoryManager,    FluxMemory,    m_pxVulkanMemory)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_Swapchain,        FluxSwapchain, m_pxVulkanSwapchain)
 
-Zenith_AssetRegistry& Zenith_Engine::Assets()
-{
-	Zenith_Assert(m_pxAssets != nullptr,
-		"Zenith_Engine::Assets() called before Initialise() or after Shutdown(). "
-		"AssetRegistry is unavailable outside the engine lifetime.");
-	return *m_pxAssets;
-}
-
-Zenith_Physics& Zenith_Engine::Physics()
-{
-	Zenith_Assert(m_pxPhysics != nullptr,
-		"Zenith_Engine::Physics() called before Initialise() or after Shutdown(). "
-		"Physics is unavailable outside the engine lifetime.");
-	return *m_pxPhysics;
-}
-
-Zenith_EntityStore& Zenith_Engine::EntityStore()
-{
-	// Phase 2.1 (ECS leaf-extraction): the entity store is now OWNED by the
-	// Zenith_SceneSystem (m_pxScenes), not by the engine. This accessor forwards
-	// so every existing g_xEngine.EntityStore() call site keeps compiling and
-	// behaving identically; the bulk repoint of those call sites onto
-	// Zenith_SceneSystem::Get().GetEntityStore() is Phase 2.2.
-	//
-	// No assert (unchanged hot-path rationale): EntityStore is read on the hot
-	// path for every entity access (lifecycle queries, component lookups).
-	// Zenith_Engine::Initialise allocates m_pxScenes very early -- before
-	// Physics init / scene bootstrap -- and the SceneSystem ctor allocates the
-	// store, so it is always available once any subsystem touches entity slots.
-	return m_pxScenes->GetEntityStore();
-}
-
-Zenith_SceneSystem& Zenith_Engine::Scenes()
-{
-	// One scene-system instance. Allocated VERY EARLY in Initialise so it's
-	// live before any subsystem touches scene state. Holds all scene state
-	// directly (registry / operations / lifecycle / callbacks / entity-
-	// ownership all merged in — no per-subsystem pointers any more).
-	return *m_pxScenes;
-}
-
-Zenith_UISystem& Zenith_Engine::UI()
-{
-	// Per-frame UI orchestrator (walks all scenes' Zenith_UIComponents).
-	// Allocated right after the scene system in AllocateCoreState; only
-	// called from the main loop's render-work block, so no null assert
-	// (same steady-state rationale as Scenes() above).
-	return *m_pxUISystem;
-}
-
-Zenith_Input& Zenith_Engine::Input()
-{
-	// No assert: input is read every frame and from GLFW callbacks (mouse
-	// wheel, key down). Allocated EARLY in Initialise -- the window may
-	// dispatch input events before the main loop kicks in.
-	return *m_pxInput;
-}
-
-Zenith_TouchInput& Zenith_Engine::Touch()
-{
-	// No assert: touch state is read every frame from gameplay code.
-	// Allocated alongside m_pxInput.
-	return *m_pxTouch;
-}
-
-Flux_RendererImpl& Zenith_Engine::FluxRenderer()
-{
-	// No assert: render graph + frame counter + pending command lists
-	// are read every frame and from Vulkan worker threads. Allocated
-	// EARLY in Initialise -- before Flux::EarlyInitialise creates the
-	// graph and pipes through OnResChange / SubmitCommandList paths.
-	return *m_pxFluxRenderer;
-}
-
-Flux_GraphicsImpl& Zenith_Engine::FluxGraphics()
-{
-	// No assert: graphics state (samplers, fallback textures, frame
-	// constants, MRT formats) is read from every subsystem during every
-	// frame. Allocated alongside m_pxFluxRenderer.
-	return *m_pxFluxGraphics;
-}
-
-Flux_PlatformAPI& Zenith_Engine::FluxBackend()
-{
-	// No assert: Vulkan instance / device / queues / per-frame state are
-	// read from every frame and from Vulkan worker threads. Allocated
-	// EARLY in Initialise alongside FluxGraphics so the backend has a
-	// live store from Flux::EarlyInitialise onward.
-	return *m_pxVulkan;
-}
-
-Flux_MemoryManager& Zenith_Engine::FluxMemory()
-{
-	return *m_pxVulkanMemory;
-}
-
-Flux_Swapchain& Zenith_Engine::FluxSwapchain()
-{
-	return *m_pxVulkanSwapchain;
-}
-
-Flux_HiZImpl&             Zenith_Engine::HiZ()             { return *m_pxHiZ; }
-Flux_StaticMeshesImpl&    Zenith_Engine::StaticMeshes()    { return *m_pxStaticMeshes; }
-Flux_AnimatedMeshesImpl&  Zenith_Engine::AnimatedMeshes()  { return *m_pxAnimatedMeshes; }
-Flux_AnimationControllerStore& Zenith_Engine::AnimationControllers() { return *m_pxAnimationControllers; }
-Flux_DeferredShadingImpl& Zenith_Engine::DeferredShading() { return *m_pxDeferredShading; }
-Flux_SDFsImpl&            Zenith_Engine::SDFs()            { return *m_pxSDFs; }
-Flux_QuadsImpl&                    Zenith_Engine::Quads()             { return *m_pxQuads; }
-Flux_ShadowsImpl&                  Zenith_Engine::Shadows()           { return *m_pxShadows; }
-Flux_DynamicLightsImpl&            Zenith_Engine::DynamicLights()     { return *m_pxDynamicLights; }
-Flux_LightClusteringImpl&          Zenith_Engine::LightClustering()   { return *m_pxLightClustering; }
-Flux_FroxelFogImpl&                Zenith_Engine::FroxelFog()         { return *m_pxFroxelFog; }
-Flux_GodRaysFogImpl&               Zenith_Engine::GodRaysFog()        { return *m_pxGodRaysFog; }
-Flux_RaymarchFogImpl&              Zenith_Engine::RaymarchFog()       { return *m_pxRaymarchFog; }
-Flux_TerrainStreamingManagerImpl&  Zenith_Engine::TerrainStreaming()  { return *m_pxTerrainStreaming; }
-Flux_SSAOImpl&                     Zenith_Engine::SSAO()              { return *m_pxSSAO; }
-Flux_DecalsImpl&                   Zenith_Engine::Decals()            { return *m_pxDecals; }
-Flux_FogImpl&                      Zenith_Engine::Fog()               { return *m_pxFog; }
-Flux_VolumeFogImpl&                Zenith_Engine::VolumeFog()         { return *m_pxVolumeFog; }
-Flux_ParticlesImpl&                Zenith_Engine::Particles()         { return *m_pxParticles; }
-Flux_ParticleGPUImpl&              Zenith_Engine::ParticleGPU()       { return *m_pxParticleGPU; }
-Flux_TextImpl&                     Zenith_Engine::Text()              { return *m_pxText; }
-Flux_InstancedMeshesImpl&          Zenith_Engine::InstancedMeshes()   { return *m_pxInstancedMeshes; }
-Flux_SSRImpl&                      Zenith_Engine::SSR()               { return *m_pxSSR; }
-Flux_SSGIImpl&                     Zenith_Engine::SSGI()              { return *m_pxSSGI; }
-Flux_IBLImpl&                      Zenith_Engine::IBL()               { return *m_pxIBL; }
-Flux_SkyboxImpl&                   Zenith_Engine::Skybox()            { return *m_pxSkybox; }
-Flux_GrassImpl&                    Zenith_Engine::Grass()             { return *m_pxGrass; }
-Flux_TranslucencyImpl&             Zenith_Engine::Translucency()      { return *m_pxTranslucency; }
-Flux_PrimitivesImpl&               Zenith_Engine::Primitives()        { return *m_pxPrimitives; }
-Flux_HDRImpl&                      Zenith_Engine::HDR()               { return *m_pxHDR; }
-Flux_TerrainImpl&                  Zenith_Engine::Terrain()           { return *m_pxTerrain; }
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_HiZImpl,                      HiZ,                  m_pxHiZ)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_StaticMeshesImpl,            StaticMeshes,         m_pxStaticMeshes)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_AnimatedMeshesImpl,          AnimatedMeshes,       m_pxAnimatedMeshes)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_AnimationControllerStore,    AnimationControllers, m_pxAnimationControllers)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_DeferredShadingImpl,         DeferredShading,      m_pxDeferredShading)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SDFsImpl,                    SDFs,                 m_pxSDFs)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_QuadsImpl,                   Quads,                m_pxQuads)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_ShadowsImpl,                 Shadows,              m_pxShadows)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_DynamicLightsImpl,           DynamicLights,        m_pxDynamicLights)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_LightClusteringImpl,         LightClustering,      m_pxLightClustering)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_FroxelFogImpl,               FroxelFog,            m_pxFroxelFog)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GodRaysFogImpl,              GodRaysFog,           m_pxGodRaysFog)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_RaymarchFogImpl,             RaymarchFog,          m_pxRaymarchFog)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TerrainStreamingManagerImpl, TerrainStreaming,     m_pxTerrainStreaming)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SSAOImpl,                    SSAO,                 m_pxSSAO)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_DecalsImpl,                  Decals,               m_pxDecals)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_FogImpl,                     Fog,                  m_pxFog)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_VolumeFogImpl,               VolumeFog,            m_pxVolumeFog)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_ParticlesImpl,               Particles,            m_pxParticles)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_ParticleGPUImpl,             ParticleGPU,          m_pxParticleGPU)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TextImpl,                    Text,                 m_pxText)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_InstancedMeshesImpl,         InstancedMeshes,      m_pxInstancedMeshes)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SSRImpl,                     SSR,                  m_pxSSR)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SSGIImpl,                    SSGI,                 m_pxSSGI)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_IBLImpl,                     IBL,                  m_pxIBL)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SkyboxImpl,                  Skybox,               m_pxSkybox)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GrassImpl,                   Grass,                m_pxGrass)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TranslucencyImpl,            Translucency,         m_pxTranslucency)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PrimitivesImpl,              Primitives,           m_pxPrimitives)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_HDRImpl,                     HDR,                  m_pxHDR)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TerrainImpl,                 Terrain,              m_pxTerrain)
 #ifdef ZENITH_TOOLS
-Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *m_pxGizmos; }
-Flux_MaterialPreviewImpl&          Zenith_Engine::MaterialPreview()   { return *m_pxMaterialPreview; }
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GizmosImpl,                  Gizmos,               m_pxGizmos)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_MaterialPreviewImpl,         MaterialPreview,      m_pxMaterialPreview)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Editor,                   Editor,               m_pxEditor)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Gizmo,                    Gizmo,                m_pxGizmo)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_SelectionSystem,          Selection,            m_pxSelection)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_UndoSystem,               UndoSystem,           m_pxUndoSystem)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_EditorAutomation,         EditorAutomation,     m_pxEditorAutomation)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_EditorMaterialUI,         EditorMaterialUI,     m_pxEditorMaterialUI)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_TerrainEditor,            TerrainEditor,        m_pxTerrainEditor)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_DebugVariables,           DebugVariables,       m_pxDebugVariables)
 #endif
 
-#ifdef ZENITH_TOOLS
-Zenith_Editor& Zenith_Engine::Editor()
-{
-	// No assert: editor state is read every editor frame and from log
-	// callbacks. Allocated in Initialise.
-	return *m_pxEditor;
-}
-
-Zenith_Gizmo&            Zenith_Engine::Gizmo()              { return *m_pxGizmo; }
-Zenith_SelectionSystem&  Zenith_Engine::Selection()          { return *m_pxSelection; }
-Zenith_UndoSystem&       Zenith_Engine::UndoSystem()         { return *m_pxUndoSystem; }
-Zenith_EditorAutomation& Zenith_Engine::EditorAutomation()   { return *m_pxEditorAutomation; }
-Zenith_EditorMaterialUI& Zenith_Engine::EditorMaterialUI()   { return *m_pxEditorMaterialUI; }
-Zenith_TerrainEditor&    Zenith_Engine::TerrainEditor()      { return *m_pxTerrainEditor; }
-Zenith_DebugVariables&   Zenith_Engine::DebugVariables()     { return *m_pxDebugVariables; }
-#endif
+#undef ZENITH_ENGINE_ACCESSOR
+#undef ZENITH_ENGINE_ACCESSOR_HOTPATH
 
 // Per-frame timing, scene system (brings the entity store online), input, touch.
 void Zenith_Engine::AllocateCoreState()
