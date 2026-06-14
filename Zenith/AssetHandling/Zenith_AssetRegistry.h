@@ -44,10 +44,15 @@ class Zenith_Prefab;
 Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
 
 /**
- * Zenith_AssetRegistry - THE unified asset cache (singleton). Replaced the older
- * Zenith_AssetHandler / Zenith_AssetDatabase / per-type AssetRef / material caches.
+ * Zenith_AssetRegistry - THE unified asset cache (singleton).
  * Path-based IDs with "game:" / "engine:" prefixes for cross-machine portability;
  * ref-counted with UnloadUnused() cleanup; thread-safe.
+ *
+ * The static API (Get<T>(path) / Create<T>() / Save / UnloadUnused / ...) is the
+ * CANONICAL access path — not a transitional forwarder. The engine owns the one
+ * instance (g_xEngine.Assets(), set via s_pxInstance in InitialiseAssets); the
+ * static methods delegate to it. Call sites use the static form throughout; there
+ * is no planned migration to g_xEngine.Assets().X().
  * See AssetHandling/CLAUDE.md for usage and two-phase init order.
  */
 class Zenith_AssetRegistry
@@ -211,8 +216,9 @@ public:
 	template<typename T>
 	static void RegisterAssetType()
 	{
-		T xTemp;  // Create temporary to get type name
-		const char* szTypeName = xTemp.GetTypeName();
+		// Type name from the static accessor (ZENITH_ASSET_TYPE_NAME emits it) —
+		// no throwaway instance constructed just to read a compile-time string.
+		const char* szTypeName = T::StaticTypeName();
 		RegisterSerializableAssetType(szTypeName, []() -> Zenith_Asset* { return new T(); });
 
 		// Also register a loader for this type if instance exists

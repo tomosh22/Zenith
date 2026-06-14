@@ -17,7 +17,11 @@ class Zenith_BehaviourGraphAsset : public Zenith_Asset
 public:
 	Zenith_BehaviourGraphAsset() = default;
 
-	const char* GetTypeName() const override { return "BehaviourGraphAsset"; }
+	// Persisted type-name string — must stay "BehaviourGraphAsset" (it keys the
+	// .bgraph/.zdata type registry). Not via ZENITH_ASSET_TYPE_NAME because that
+	// macro would stringize the C++ class name (Zenith_BehaviourGraphAsset).
+	static constexpr const char* StaticTypeName() { return "BehaviourGraphAsset"; }
+	const char* GetTypeName() const override { return StaticTypeName(); }
 	void WriteToDataStream(Zenith_DataStream& xStream) const override { m_xDefinition.WriteToDataStream(xStream); }
 	void ReadFromDataStream(Zenith_DataStream& xStream) override { m_bLoadedOk = m_xDefinition.ReadFromDataStream(xStream); }
 

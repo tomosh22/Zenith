@@ -106,11 +106,15 @@ private:
 //--------------------------------------------------------------------------
 
 /**
- * Macro to implement GetTypeName() for a serializable asset
+ * Macro to implement the type name for a serializable asset.
  * Usage: ZENITH_ASSET_TYPE_NAME(MyAssetClass)
+ * Emits a compile-time StaticTypeName() (so RegisterAssetType<T> can read the
+ * name with no instance) and the virtual GetTypeName() override that delegates
+ * to it (single source of truth, used on the polymorphic Save path).
  */
 #define ZENITH_ASSET_TYPE_NAME(ClassName) \
-	const char* GetTypeName() const override { return #ClassName; }
+	static constexpr const char* StaticTypeName() { return #ClassName; } \
+	const char* GetTypeName() const override { return StaticTypeName(); }
 
 /**
  * Macro to register a serializable asset type at static initialization time
