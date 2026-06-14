@@ -76,6 +76,21 @@ protected:
 
 // Frame-indexed pattern: MAX_FRAMES_IN_FLIGHT Flux_Buffers + (optional)
 // parallel view array.
+//
+// RENDER-GRAPH CONTRACT (single source of truth — do NOT restate at call sites):
+// A frame-indexed buffer is intentionally INVISIBLE to the render graph. Never
+// declare one via Flux_PassBuilder::ReadsBuffer / WritesBuffer (and never
+// MarkBufferHostWritten it): GetBuffer() returns a DIFFERENT physical Flux_Buffer
+// per frame in flight, so a pointer captured at SetupRenderGraph time would bind
+// the wrong frame's buffer on every later frame. Instead:
+//   - bind per frame via GetSRV() / GetUAV() / GetCBV() (these pick the current
+//     frame's view inside the record callback), and
+//   - order GPU work with DependsOn(...) / the graph's existing barriers.
+// Host-write visibility is covered by vkQueueSubmit's implicit host-write barrier;
+// cross-frame races are eliminated by frame indexing (slot K only ever writes
+// slot K's buffer, which the per-frame fence guarantees the GPU has finished).
+// Subsystems that hold one of these (light clustering, terrain chunk/frustum data,
+// instanced-cull constants, ...) rely on exactly this contract.
 template<typename TView>
 class Flux_FrameIndexedBufferBase
 {

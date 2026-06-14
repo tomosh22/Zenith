@@ -226,15 +226,12 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
-	// Clustered-deferred cluster-output buffers — declaring the reads
-	// here causes the graph to order this pass after Flux_LightClustering's
-	// compute writes, with the necessary UAV→SRV barrier emitted
-	// automatically. The LightBuffer itself is NOT graph-tracked: it's a
-	// frame-indexed Flux_DynamicReadWriteBuffer whose GetBuffer() returns
-	// a different physical pointer each frame, so any pointer captured
-	// here would be stale on subsequent frames. Visibility of its
-	// host-side upload is covered by vkQueueSubmit's implicit host-write
-	// barrier instead.
+	// Clustered-deferred cluster-output buffers — declaring the reads here causes
+	// the graph to order this pass after Flux_LightClustering's compute writes,
+	// with the necessary UAV→SRV barrier emitted automatically. The LightBuffer
+	// itself is a frame-indexed Flux_DynamicReadWriteBuffer and so is NOT
+	// graph-tracked — see the RENDER-GRAPH CONTRACT on Flux_FrameIndexedBufferBase
+	// (Flux_Buffers.h).
 	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
 	if (xLightClustering.IsInitialised())
 	{

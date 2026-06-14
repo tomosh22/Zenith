@@ -336,21 +336,11 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		Flux_TerrainStreamingState* pxState = xTerrains.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
-		// m_xChunkDataBuffer and m_xFrustumPlanesBuffer are intentionally NOT
-		// declared here: both are frame-indexed (Flux_DynamicReadWriteBuffer
-		// and Flux_DynamicConstantBuffer respectively — one Flux_Buffer per
-		// frame in flight). Declaring them via GetBuffer() at compile time
-		// would lock the graph to frame 0's instance, but each frame's
-		// compute dispatch binds a *different* instance via GetSRV() / GetCBV().
-		//
-		// Sync: both buffers live in HOST_VISIBLE | HOST_COHERENT memory so
-		// the CPU memcpy in PreRenderUpdate becomes visible to the GPU read
-		// via vkSubmit's implicit host-write-available barrier — no manual
-		// TransferWrite→ShaderRead barrier is needed (that was only required
-		// for the previous staged-upload path on a single shared buffer).
-		// Cross-frame races on the underlying memory are eliminated by frame
-		// indexing: slot K's write only ever targets slot K's buffer, which
-		// the per-frame fence guarantees the GPU has finished reading.
+		// m_xChunkDataBuffer (frame-indexed RW) and m_xFrustumPlanesBuffer
+		// (frame-indexed constant) are intentionally NOT declared to the graph —
+		// each frame's compute dispatch binds a different instance via
+		// GetSRV()/GetCBV(). See the RENDER-GRAPH CONTRACT on
+		// Flux_FrameIndexedBufferBase (Flux_Buffers.h).
 
 		// Indirect command + visible-count + LOD-level buffers are produced by
 		// this pass. LODLevelBuffer is now a read-modify-write (the GPU LOD
@@ -397,13 +387,10 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	g_xEngine.FluxMemory().UploadBufferData(m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
 	// ========== Per-Terrain Streaming + Chunk Data Upload ==========
-	// Each terrain has its own Flux_TerrainStreamingState, so streaming
-	// runs per-component. Both m_xChunkDataBuffer (frame-indexed
-	// Flux_DynamicReadWriteBuffer) and m_xFrustumPlanesBuffer (frame-indexed
-	// Flux_DynamicConstantBuffer) are host-visible per-frame buffers;
-	// uploads happen here in the Prepare phase and become visible to the
-	// compute pass via vkSubmit's implicit host-write-available barrier.
-	// Frame indexing eliminates cross-frame CPU/GPU races on shared memory.
+	// Each terrain has its own Flux_TerrainStreamingState, so streaming runs
+	// per-component. The chunk-data + frustum-planes buffers are frame-indexed
+	// host-visible buffers uploaded here in the Prepare phase (not graph-tracked —
+	// see the RENDER-GRAPH CONTRACT on Flux_FrameIndexedBufferBase, Flux_Buffers.h).
 	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
@@ -414,11 +401,8 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		xTerrainStreaming.UpdateStreamingForTerrain(pxState, xCameraPos);
 		xTerrainStreaming.UpdateChunkLODAllocations(*pxState);
 		xTerrainStreaming.UploadFrustumPlanesForFrame(*pxState, xViewProj);
-
-		// m_xChunkDataBuffer is now a frame-indexed host-visible buffer; no
-		// MarkBufferHostWritten needed (vkSubmit's implicit host-write barrier
-		// covers visibility, and frame indexing prevents cross-frame races).
-		// See SetupRenderGraph for why it isn't in the graph at all.
+		// No MarkBufferHostWritten: frame-indexed buffers aren't graph-tracked
+		// (see Flux_FrameIndexedBufferBase contract).
 	}
 	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 }

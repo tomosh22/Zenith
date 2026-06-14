@@ -62,8 +62,8 @@ DEBUGVAR bool dbg_bDecalDebugSpheres = false;
 // Pipelines and shaders.
 
 // GPU buffers. The decal SRV is bound at Record time (not via the graph)
-// because frame-indexed dynamic buffers in this renderer are deliberately
-// untracked — same pattern as Flux_DynamicLights' light buffer.
+// because it's a frame-indexed dynamic buffer — see the RENDER-GRAPH CONTRACT
+// on Flux_FrameIndexedBufferBase (Flux_Buffers.h).
 
 // Decal-pass index buffer holding 36 indices (0..35). The Apply VS uses
 // SV_VertexID to look up cube corners from a static const table, but

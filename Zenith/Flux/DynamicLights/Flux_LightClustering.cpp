@@ -97,18 +97,11 @@ void Flux_LightClusteringImpl::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering shut down");
 }
 
-// Prepare callback — runs on the main thread before the GPU pass
-// executes. Walks the ECS and uploads the unified light buffer.
-//
-// The light buffer is intentionally NOT declared as a graph-tracked
-// resource (no .ReadsBuffer / no MarkBufferHostWritten) because it's a
-// frame-indexed Flux_DynamicReadWriteBuffer — its GetBuffer() returns
-// a different physical pointer per frame, so any pointer captured at
-// SetupRenderGraph time would refer to the wrong buffer in subsequent
-// frames. Visibility of the host upload is covered by vkQueueSubmit's
-// implicit host-write barrier, and frame indexing prevents cross-frame
-// races. Same rationale as the terrain chunk-data buffer (see
-// Zenith_TerrainComponent.cpp's MarkBufferHostWritten note).
+// Prepare callback — runs on the main thread before the GPU pass executes.
+// Walks the ECS and uploads the unified light buffer. The light buffer is a
+// frame-indexed Flux_DynamicReadWriteBuffer, so it is deliberately NOT declared
+// to the render graph — see the RENDER-GRAPH CONTRACT on Flux_FrameIndexedBufferBase
+// (Flux_Buffers.h).
 static void PrepareLightClustering(void* /*pUserData*/)
 {
 	// Trampoline (non-capturing graph callback): recover the subsystem singleton
