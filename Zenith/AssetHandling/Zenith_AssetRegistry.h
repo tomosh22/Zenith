@@ -50,9 +50,9 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
  *
  * The static API (Get<T>(path) / Create<T>() / Save / UnloadUnused / ...) is the
  * CANONICAL access path — not a transitional forwarder. The engine owns the one
- * instance (g_xEngine.Assets(), set via s_pxInstance in InitialiseAssets); the
- * static methods delegate to it. Call sites use the static form throughout; there
- * is no planned migration to g_xEngine.Assets().X().
+ * instance (reached via the Assets() accessor, wired through s_pxInstance in
+ * InitialiseAssets); the static methods delegate to it. Call sites use the static
+ * form throughout; there is no planned migration to the per-subsystem accessor form.
  * See AssetHandling/CLAUDE.md for usage and two-phase init order.
  */
 class Zenith_AssetRegistry
