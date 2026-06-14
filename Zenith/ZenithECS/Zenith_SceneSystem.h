@@ -4,13 +4,11 @@
 // Zenith_SceneSystem — the single scene API.
 //
 // Accessed via g_xEngine.Scenes(). Every game, every editor panel, every
-// engine subsystem talks to scenes through this one class. There are no
-// internal subsystem classes any more — Registry / OperationQueue / Lifecycle-
-// Scheduler / CallbackBus / EntityOwnership all merged in.
+// engine subsystem talks to scenes through this one class.
 //
-// Implementation is split across the Internal/ TUs (there is no
-// Zenith_SceneSystem.cpp — bootstrap and LoadScene live in the Lifecycle and
-// Operations files respectively):
+// There is no Zenith_SceneSystem.cpp — the implementation is split across the
+// Internal/ TUs purely for file size (every method is a member of this one
+// class; state lives as private members):
 //   Internal/Zenith_SceneSystem_Registry.cpp        — slot table + queries + path canonicalise
 //   Internal/Zenith_SceneSystem_Operations.cpp      — LoadScene / Unload + render reset
 //   Internal/Zenith_SceneSystem_Lifecycle.cpp       — bootstrap, Update pipeline, RAII guard bodies
@@ -21,19 +19,13 @@
 #include "Collections/Zenith_Vector.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Internal/Zenith_ECSRuntimeHooks.h"
-// Phase 2.1 (ECS leaf-extraction): Zenith_SceneSystem now OWNS the process-wide
-// Zenith_EntityStore (relocated from Zenith_Engine). Include the full type here
-// so GetEntityStore() can return a reference and the ctor/dtor in the Internal
-// TU see the complete type. This header already pulled Zenith_EntityStore.h
-// transitively via Zenith_SceneData.h at the bottom; this just makes the
-// dependency explicit + visible above the class body (no net new include).
+// Zenith_SceneSystem owns the process-wide Zenith_EntityStore. Include the full
+// type here so GetEntityStore() can return a reference and the ctor/dtor see the
+// complete type.
 #include "ZenithECS/Internal/Zenith_EntityStore.h"
 #include <atomic>
 #include <cstdint>
 #include <string>
-// Was Zenith_SceneCallbackTypes.h — the SCENE_LOAD_* enum is inlined below.
-// (The scene-lifecycle Zenith_Event_Scene* structs that briefly lived here were
-// removed as unused.)
 
 struct Zenith_Scene;
 struct Zenith_EntityID;
@@ -42,7 +34,7 @@ class Zenith_SceneData;
 class Zenith_DataStream;
 
 //==============================================================================
-// Scene-load mode (was Zenith_SceneCallbackTypes.h)
+// Scene-load mode
 //==============================================================================
 
 // Scene loading modes (mirrors Unity's LoadSceneMode).
@@ -74,7 +66,7 @@ struct Zenith_SceneInfo
 	bool        m_bLoadedAdditively = false;
 	u_int       m_uRootEntityCount  = 0;
 #ifdef ZENITH_TOOLS
-	// Editor-only dirty flag (was Zenith_Scene::HasUnsavedChanges()).
+	// Editor-only dirty flag.
 	bool        m_bHasUnsavedChanges = false;
 #endif
 };
@@ -82,10 +74,10 @@ struct Zenith_SceneInfo
 class Zenith_SceneSystem
 {
 public:
-	// Phase 2.1: ctor allocates the owned Zenith_EntityStore and publishes the
-	// process-wide instance pointer; dtor frees the store and clears it. Bodies
-	// live in Internal/Zenith_SceneSystem_Registry.cpp alongside the s_pxInstance
-	// definition (they are NOT defaulted any more).
+	// The ctor allocates the owned Zenith_EntityStore and publishes the
+	// process-wide instance pointer; the dtor frees the store and clears it.
+	// Bodies live in Internal/Zenith_SceneSystem_Registry.cpp alongside the
+	// s_pxInstance definition.
 	Zenith_SceneSystem();
 	~Zenith_SceneSystem();
 
@@ -95,12 +87,11 @@ public:
 	Zenith_SceneSystem& operator=(Zenith_SceneSystem&&) = delete;
 
 	//==========================================================================
-	// Process-wide entity-store ownership (Phase 2.1, ECS leaf-extraction).
+	// Process-wide entity-store ownership.
 	//
-	// Zenith_SceneSystem now owns the single Zenith_EntityStore (the three
-	// global entity arrays) that used to be owned by Zenith_Engine. The store's
-	// lifetime is exactly this object's lifetime (allocated in the ctor, freed
-	// in the dtor).
+	// Zenith_SceneSystem owns the single Zenith_EntityStore (the three global
+	// entity arrays). The store's lifetime is exactly this object's lifetime
+	// (allocated in the ctor, freed in the dtor).
 	//
 	// Get(): ECS-internal process-wide accessor returning the single live
 	// instance, set in the ctor. Lets the ECS core reach the store (via the
@@ -191,12 +182,10 @@ public:
 	// does that, with the same scan order + null semantics as before.
 	Zenith_EntityID FindMainCameraEntityAcrossScenes();
 
-	// QueryAllScenes — run a Zenith_Query<Ts...> across every loaded scene.
-	// Replaces the deleted GetAllOfComponentTypeFromAllScenes<T> (which only
-	// gathered single-type component pointers). The returned object iterates each
-	// loaded scene's per-scene Query<Ts...> in slot order, mirroring the per-scene
-	// Query API (ForEach / Count / First / Any). Defined out-of-
-	// line at the bottom of this header (after Zenith_Query is complete).
+	// QueryAllScenes — run a Zenith_Query<Ts...> across every loaded scene. The
+	// returned object iterates each loaded scene's per-scene Query<Ts...> in slot
+	// order, mirroring the per-scene Query API (ForEach / Count / First / Any).
+	// AllScenesQuery is defined in Internal/Zenith_AllScenesQuery.inl.
 	template<typename... Ts>
 	class AllScenesQuery;
 
@@ -385,7 +374,7 @@ private:
 	void DrainPendingLoadIfAny();
 
 	//==========================================================================
-	// Cross-scene entity ownership (was Zenith_SceneEntityOwnership). These are
+	// Cross-scene entity ownership. These are
 	// the implementation bodies behind the PUBLIC Zenith_Entity lifecycle API
 	// (Destroy / DestroyImmediate / DontDestroyOnLoad / MoveToScene). They are
 	// PRIVATE instance methods — Zenith_Entity (a friend) calls them through
@@ -436,12 +425,12 @@ private:
 	// code goes through the public accessors (e.g. MutableLifecycleLoadingFlagForGuard).
 	//==========================================================================
 
-	// Phase 2.1: owned process-wide entity store (relocated from Zenith_Engine).
-	// Heap-allocated in the ctor, freed in the dtor. Reached via GetEntityStore().
+	// Owned process-wide entity store. Heap-allocated in the ctor, freed in the
+	// dtor. Reached via GetEntityStore().
 	Zenith_EntityStore*                  m_pxEntityStore = nullptr;
 
-	// Phase 2.1: the single live Zenith_SceneSystem, published in the ctor and
-	// cleared in the dtor. Backs the static Get() accessor. Defined in
+	// The single live Zenith_SceneSystem, published in the ctor and cleared in
+	// the dtor. Backs the static Get() accessor. Defined in
 	// Internal/Zenith_SceneSystem_Registry.cpp.
 	static Zenith_SceneSystem*           s_pxInstance;
 
@@ -455,7 +444,7 @@ private:
 	Zenith_Vector<std::string>           m_axBuildIndexToPath;
 
 	//==========================================================================
-	// Data members (was Zenith_SceneLifecycleScheduler)
+	// Lifecycle / update-pipeline state
 	//==========================================================================
 
 	bool                          m_bIsLoadingScene          = false;
@@ -507,7 +496,7 @@ private:
 };
 
 //==========================================================================
-// RAII scope guards (was Zenith_SceneSystemGuards.h)
+// RAII scope guards
 //
 // Save-on-construct / restore-on-destruct around the corresponding
 // Zenith_SceneSystem flag, so nested guards stack correctly. The bodies for
@@ -545,11 +534,10 @@ private:
 	bool m_bPrevValue;
 };
 
-// NOTE: Zenith_SceneCreationTargetScope was relocated out of this public header
-// -- no file outside Zenith/ZenithECS/ names it. It now lives in
-// Internal/Zenith_SceneSystem_InternalScopes.h and is used only by the
-// Zenith_SceneSystem Internal/ TUs. The matching `friend` declaration (which
-// doubles as a forward declaration) remains in the class body above.
+// Zenith_SceneCreationTargetScope lives in
+// Internal/Zenith_SceneSystem_InternalScopes.h (used only by the Zenith_SceneSystem
+// Internal/ TUs); the matching `friend` declaration in the class body above
+// doubles as its forward declaration.
 
 // Pull in the complete Zenith_SceneData (for GetLoadedSceneDataAtSlot's result)
 // AND Zenith_Query: the AllScenesQuery member-template bodies below name
@@ -561,79 +549,8 @@ private:
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Query.h"
 
-//==========================================================================
-// Zenith_SceneSystem::AllScenesQuery<Ts...> — the QueryAllScenes result.
-//
-// Mirrors the per-scene Zenith_Query<Ts...> surface (ForEach / Count / First /
-// Any) but spans EVERY loaded scene: it iterates loaded scenes
-// in slot order (GetLoadedSceneDataAtSlot) and forwards to each scene's
-// Query<Ts...>. This replaces the deleted GetAllOfComponentTypeFromAllScenes<T>
-// gather — to collect pointers, callers now do:
-//   g_xEngine.Scenes().QueryAllScenes<T>().ForEach(
-//       [&](Zenith_EntityID, T& xComp) { xOut.PushBack(&xComp); });
-//
-// The callback is passed as an lvalue to each scene's ForEach so it is reused
-// across scenes (never moved-from between iterations).
-//==========================================================================
-template<typename... Ts>
-class Zenith_SceneSystem::AllScenesQuery
-{
-public:
-	explicit AllScenesQuery(Zenith_SceneSystem& xSystem) : m_pxSystem(&xSystem) {}
-
-	template<typename Func>
-	void ForEach(Func&& fn)
-	{
-		const uint32_t uSlotCount = m_pxSystem->GetSceneSlotCount();
-		for (uint32_t uIndex = 0; uIndex < uSlotCount; ++uIndex)
-		{
-			Zenith_SceneData* pxData = m_pxSystem->GetLoadedSceneDataAtSlot(uIndex);
-			if (pxData)
-			{
-				pxData->Query<Ts...>().ForEach(fn);
-			}
-		}
-	}
-
-	u_int Count()
-	{
-		u_int uCount = 0;
-		const uint32_t uSlotCount = m_pxSystem->GetSceneSlotCount();
-		for (uint32_t uIndex = 0; uIndex < uSlotCount; ++uIndex)
-		{
-			Zenith_SceneData* pxData = m_pxSystem->GetLoadedSceneDataAtSlot(uIndex);
-			if (pxData)
-			{
-				uCount += pxData->Query<Ts...>().Count();
-			}
-		}
-		return uCount;
-	}
-
-	// First match across all loaded scenes (slot order), or INVALID_ENTITY_ID.
-	Zenith_EntityID First()
-	{
-		const uint32_t uSlotCount = m_pxSystem->GetSceneSlotCount();
-		for (uint32_t uIndex = 0; uIndex < uSlotCount; ++uIndex)
-		{
-			Zenith_SceneData* pxData = m_pxSystem->GetLoadedSceneDataAtSlot(uIndex);
-			if (pxData)
-			{
-				const Zenith_EntityID xID = pxData->Query<Ts...>().First();
-				if (xID.IsValid()) return xID;
-			}
-		}
-		return INVALID_ENTITY_ID;
-	}
-
-	bool Any() { return First().IsValid(); }
-
-private:
-	Zenith_SceneSystem* m_pxSystem;
-};
-
-template<typename... Ts>
-inline Zenith_SceneSystem::AllScenesQuery<Ts...> Zenith_SceneSystem::QueryAllScenes()
-{
-	return AllScenesQuery<Ts...>(*this);
-}
+// AllScenesQuery<Ts...> member-template bodies + QueryAllScenes — must come after
+// Zenith_SceneData.h + Zenith_Query.h are complete (the bodies name
+// pxData->Query<Ts...>()). Kept out of the header body so the scene API reads as
+// a method list.
+#include "ZenithECS/Internal/Zenith_AllScenesQuery.inl"
