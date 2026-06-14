@@ -37,6 +37,15 @@ private:
 	bool Platform_IsMainThread();
 };
 
+// Bridge free function: lets headers that run on worker threads (e.g. the inline
+// Zenith_Task::DoTask in Zenith_TaskSystem.h) read the current thread ID without
+// including Zenith_Engine.h. Defined in Zenith_Multithreading.cpp; forwards to
+// g_xEngine.Threading().GetCurrentThreadID(). Mirrors Zenith_Profiling_Detail.
+namespace Zenith_Multithreading_Detail
+{
+	u_int GetCurrentThreadID();
+}
+
 template<typename TMutex = Zenith_Mutex>
 class Zenith_ScopedMutexLock_T
 {

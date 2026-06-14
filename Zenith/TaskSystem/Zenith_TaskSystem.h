@@ -1,5 +1,4 @@
 #pragma once
-#include "Core/Zenith_Engine.h"
 
 #include "Collections/Zenith_CircularQueue.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
@@ -33,19 +32,19 @@ public:
 	virtual void DoTask()
 	{
 		Zenith_Assert(m_pfnFunc != nullptr, "DoTask: Task function pointer is null");
-		g_xEngine.Profiling().BeginProfile(m_eProfileIndex);
+		Zenith_Profiling_Detail::BeginProfile(m_eProfileIndex, nullptr);
 		m_pfnFunc(m_pData);
-		g_xEngine.Profiling().EndProfile(m_eProfileIndex);
-		m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
+		Zenith_Profiling_Detail::EndProfile(m_eProfileIndex);
+		m_uCompletedThreadID = Zenith_Multithreading_Detail::GetCurrentThreadID();
 		m_xSemaphore.Signal();
 	}
 
 	void WaitUntilComplete()
 	{
 		if (!m_bSubmitted.load(std::memory_order_acquire)) return;
-		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
+		Zenith_Profiling_Detail::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM, nullptr);
 		m_xSemaphore.Wait();
-		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
+		Zenith_Profiling_Detail::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		MarkRecycled();
 	}
 
@@ -120,15 +119,15 @@ public:
 	{
 		u_int uInvocationIndex = m_uInvocationCounter.fetch_add(1);
 
-		g_xEngine.Profiling().BeginProfile(m_eProfileIndex);
+		Zenith_Profiling_Detail::BeginProfile(m_eProfileIndex, nullptr);
 		m_pfnInvocationFunc(m_pData, uInvocationIndex, m_uNumInvocations);
-		g_xEngine.Profiling().EndProfile(m_eProfileIndex);
+		Zenith_Profiling_Detail::EndProfile(m_eProfileIndex);
 
 		Zenith_Assert(uInvocationIndex < m_uNumInvocations, "We have done this task too many times");
 		u_int uCompletedCount = m_uCompletionCounter.fetch_add(1) + 1;
 		if (uCompletedCount == m_uNumInvocations)
 		{
-			m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
+			m_uCompletedThreadID = Zenith_Multithreading_Detail::GetCurrentThreadID();
 			m_xSemaphore.Signal();
 		}
 	}

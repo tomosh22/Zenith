@@ -20,6 +20,11 @@ u_int Zenith_Multithreading::GetCurrentThreadID()
 	return Platform_GetCurrentThreadID();
 }
 
+namespace Zenith_Multithreading_Detail
+{
+	u_int GetCurrentThreadID() { return g_xEngine.Threading().GetCurrentThreadID(); }
+}
+
 bool Zenith_Multithreading::IsMainThread()
 {
 	return Platform_IsMainThread();
