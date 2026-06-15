@@ -3529,6 +3529,7 @@
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Procedural.cpp" />
     <ClCompile Include="..\Zenith\Editor\TerrainEditor\Zenith_TerrainEditor_Trees.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_SceneOps.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorAutomation.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorCamera.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorQuery.cpp" />

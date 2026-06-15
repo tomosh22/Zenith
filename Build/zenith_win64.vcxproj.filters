@@ -700,6 +700,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_SceneOps.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorAutomation.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
