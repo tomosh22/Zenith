@@ -66,6 +66,21 @@ public:
 	// The wrapper exists so callers never need Jolt's BodyInterface.
 	void TeleportBody(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xPosition);
 
+	// Direct body pose set/get (activate on set). These keep the body the
+	// authoritative pose when one exists, while letting components
+	// (Zenith_TransformComponent) stay free of Jolt headers — the Jolt
+	// BodyInterface access lives here. Set uses the locking interface; Get uses
+	// the no-lock interface (read-only, render-task safe), matching the prior
+	// in-component behaviour. No-op / identity when there's no live simulation.
+	void SetBodyPosition(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xPosition);
+	void SetBodyRotation(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Quat& xRotation);
+	Zenith_Maths::Vector3 GetBodyPosition(Zenith_PhysicsBodyID xBodyID);
+	Zenith_Maths::Quat GetBodyRotation(Zenith_PhysicsBodyID xBodyID);
+
+	// True once Initialise has created the Jolt system and before Shutdown frees
+	// it. Lets callers gate body reads/writes without naming Jolt.
+	bool HasActiveSimulation() const { return m_pxPhysicsSystem != nullptr; }
+
 	struct RaycastInfo
 	{
 		Zenith_Maths::Vector3 m_xOrigin;

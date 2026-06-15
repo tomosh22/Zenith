@@ -1,21 +1,18 @@
-// This file uses Jolt Physics - disable memory tracking macro to avoid conflicts
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
-#define ZENITH_PLACEMENT_NEW_ZONE
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Physics/Zenith_Physics.h"
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Body/Body.h>
+// No Jolt headers: physics-body pose access goes through Zenith_Physics
+// (Set/GetBodyPosition/Rotation), so this component names no JPH:: type.
 
 void Zenith_TransformComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
 	// Use SETTER form — Transform's setters are STATEFUL:
-	//   - SetPosition / SetRotation route through Jolt BodyInterface when a
-	//     ColliderComponent is present, so the physics body stays in sync.
+	//   - SetPosition / SetRotation mirror the pose onto the physics body (via
+	//     Zenith_Physics) when a ColliderComponent has a live body, keeping it in sync.
 	//   - SetScale regenerates the physics mesh and rebuilds the collider
 	//     when ModelComponent / ColliderComponent are present.
 	// A raw field write would leave physics + cached collider geometry pointing
@@ -103,47 +100,49 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 // position/rotation/scale pose, BuildModelMatrix (slot-walking), and the
 // serialization parent bridge remain below.
 
+// If the owning entity has a collider with a live body, hand back its body ID.
+// One place for the "is there an authoritative physics body?" test the pose
+// getters/setters share. Names no Jolt type — the body is a Zenith_PhysicsBodyID.
+bool Zenith_TransformComponent::TryGetColliderBody(Zenith_PhysicsBodyID& xOutBodyID)
+{
+	if (!m_xOwningEntity.HasComponent<Zenith_ColliderComponent>())
+	{
+		return false;
+	}
+	Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
+	if (!xCollider.HasValidBody())
+	{
+		return false;
+	}
+	xOutBodyID = xCollider.GetBodyID();
+	return true;
+}
+
 void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 {
-	// Always keep the cached transform in sync, even when a physics body is
-	// authoritative. Otherwise a later body teardown (e.g. RebuildCollider,
-	// which reads GetPosition AFTER destroying the body) falls back to a stale
-	// m_xPosition and snaps the rebuilt body to the wrong place.
+	// The physics body is the authoritative pose when one exists; the cache is a
+	// write-through mirror that also serves bodyless entities. (RebuildCollider
+	// commits the live body pose back into the cache before teardown, so the
+	// cache is never stale even after physics-driven motion.)
 	m_xPosition = xPos;
 
-	// Mirror the move onto the Jolt body when one exists.
-	// Use BodyInterface with BodyID for thread-safe access.
 	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.GetJoltSystem() != nullptr)
+	Zenith_PhysicsBodyID xBodyID;
+	if (xPhysics.HasActiveSimulation() && TryGetColliderBody(xBodyID))
 	{
-		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
-		if (xCollider.HasValidBody())
-		{
-			JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterface();
-			JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
-			xBodyInterface.SetPosition(JPH::BodyID(xCollider.GetBodyID().m_uID), xJoltPos, JPH::EActivation::Activate);
-		}
+		xPhysics.SetBodyPosition(xBodyID, xPos);
 	}
 }
 
 void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 {
-	// Always keep the cached transform in sync (see SetPosition) so a later
-	// body teardown/rebuild reads the correct rotation rather than a stale one.
 	m_xRotation = xRot;
 
-	// Mirror the move onto the Jolt body when one exists.
-	// Use BodyInterface with BodyID for thread-safe access.
 	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.GetJoltSystem() != nullptr)
+	Zenith_PhysicsBodyID xBodyID;
+	if (xPhysics.HasActiveSimulation() && TryGetColliderBody(xBodyID))
 	{
-		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
-		if (xCollider.HasValidBody())
-		{
-			JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterface();
-			JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
-			xBodyInterface.SetRotation(JPH::BodyID(xCollider.GetBodyID().m_uID), xJoltRot, JPH::EActivation::Activate);
-		}
+		xPhysics.SetBodyRotation(xBodyID, xRot);
 	}
 }
 
@@ -177,49 +176,26 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
 
 void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
-	// Check if entity has a physics body via ColliderComponent
-	// Use BodyInterface with BodyID for thread-safe access
+	// Body authoritative when present (reads the live simulation pose); otherwise
+	// the cached pose (bodyless entities, or before/after the simulation exists).
 	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.GetJoltSystem() != nullptr)
+	Zenith_PhysicsBodyID xBodyID;
+	if (xPhysics.HasActiveSimulation() && TryGetColliderBody(xBodyID))
 	{
-		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
-		if (xCollider.HasValidBody())
-		{
-			// Use BodyInterface for safe access - never access Body pointer directly
-			JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterfaceNoLock();
-			JPH::Vec3 xJoltPos = xBodyInterface.GetPosition(JPH::BodyID(xCollider.GetBodyID().m_uID));
-			xPos.x = xJoltPos.GetX();
-			xPos.y = xJoltPos.GetY();
-			xPos.z = xJoltPos.GetZ();
-			return;
-		}
-		else
-		{
-			// Collider exists but body is invalid - fall through to m_xPosition
-		}
+		xPos = xPhysics.GetBodyPosition(xBodyID);
+		return;
 	}
 	xPos = m_xPosition;
 }
 
 void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 {
-	// Check if entity has a physics body via ColliderComponent
-	// Use BodyInterface with BodyID for thread-safe access
 	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && xPhysics.GetJoltSystem() != nullptr)
+	Zenith_PhysicsBodyID xBodyID;
+	if (xPhysics.HasActiveSimulation() && TryGetColliderBody(xBodyID))
 	{
-		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
-		if (xCollider.HasValidBody())
-		{
-			// Use BodyInterface for safe access - never access Body pointer directly
-			JPH::BodyInterface& xBodyInterface = xPhysics.GetJoltSystem()->GetBodyInterfaceNoLock();
-			JPH::Quat xJoltRot = xBodyInterface.GetRotation(JPH::BodyID(xCollider.GetBodyID().m_uID));
-			xRot.x = xJoltRot.GetX();
-			xRot.y = xJoltRot.GetY();
-			xRot.z = xJoltRot.GetZ();
-			xRot.w = xJoltRot.GetW();
-			return;
-		}
+		xRot = xPhysics.GetBodyRotation(xBodyID);
+		return;
 	}
 	xRot = m_xRotation;
 }

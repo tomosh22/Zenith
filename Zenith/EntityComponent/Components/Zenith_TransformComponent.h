@@ -2,6 +2,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Maths/Zenith_Maths.h"
+#include "Physics/Zenith_Physics_Fwd.h"   // Zenith_PhysicsBodyID (value type) — no Jolt
 
 // Forward declarations for RegisterProperties() — full definition lives in
 // Zenith_ComponentMeta.h, which we cannot include here without a cycle
@@ -126,6 +127,11 @@ public:
 #endif
 
 private:
+	// If the owning entity has a collider with a live physics body, return its
+	// body ID. Single source of the "does this transform have an authoritative
+	// physics body?" check the pose getters/setters share. Names no Jolt type.
+	bool TryGetColliderBody(Zenith_PhysicsBodyID& xOutBodyID);
+
 	Zenith_Maths::Vector3 m_xPosition = { 0.0, 0.0, 0.0 };
 	Zenith_Maths::Quat m_xRotation = { 1.0, 0.0, 0.0, 0.0 };
 

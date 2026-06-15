@@ -758,6 +758,37 @@ void Zenith_Physics::TeleportBody(Zenith_PhysicsBodyID xBodyID, const Zenith_Mat
 	xBodyInterface.SetLinearVelocity(ToJolt(xBodyID), JPH::Vec3::sZero());
 }
 
+void Zenith_Physics::SetBodyPosition(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xPosition)
+{
+	if (xBodyID.IsInvalid() || m_pxPhysicsSystem == nullptr) return;
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetPosition(ToJolt(xBodyID), JPH::RVec3(xPosition.x, xPosition.y, xPosition.z), JPH::EActivation::Activate);
+}
+
+void Zenith_Physics::SetBodyRotation(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Quat& xRotation)
+{
+	if (xBodyID.IsInvalid() || m_pxPhysicsSystem == nullptr) return;
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetRotation(ToJolt(xBodyID), JPH::Quat(xRotation.x, xRotation.y, xRotation.z, xRotation.w), JPH::EActivation::Activate);
+}
+
+Zenith_Maths::Vector3 Zenith_Physics::GetBodyPosition(Zenith_PhysicsBodyID xBodyID)
+{
+	if (xBodyID.IsInvalid() || m_pxPhysicsSystem == nullptr) return Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterfaceNoLock();
+	JPH::Vec3 xJoltPos = xBodyInterface.GetPosition(ToJolt(xBodyID));
+	return Zenith_Maths::Vector3(xJoltPos.GetX(), xJoltPos.GetY(), xJoltPos.GetZ());
+}
+
+Zenith_Maths::Quat Zenith_Physics::GetBodyRotation(Zenith_PhysicsBodyID xBodyID)
+{
+	if (xBodyID.IsInvalid() || m_pxPhysicsSystem == nullptr) return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterfaceNoLock();
+	JPH::Quat xJoltRot = xBodyInterface.GetRotation(ToJolt(xBodyID));
+	// glm::quat ctor is (w, x, y, z).
+	return Zenith_Maths::Quat(xJoltRot.GetW(), xJoltRot.GetX(), xJoltRot.GetY(), xJoltRot.GetZ());
+}
+
 // Shared implementation. The body filter is supplied by the caller; passing the
 // default-constructed JPH::BodyFilter() makes this equivalent to an unfiltered cast.
 static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xOrigin,
