@@ -1,0 +1,8 @@
+# Auto-generated ratchet baseline (analyze_code_complexity.py).
+# Regenerate: py -3 Tools/analyze_code_complexity.py . --profile engine-ci --update-architecture-allowlist
+# One wire key per line; '#'/blank lines ignored. A NEW key not listed here fails
+# the gate; a removed finding leaves a stale line (INFO only). Shrink, don't grow.
+#
+# ZenithPhysics leaf forbidden-include allowlist. EMPTY = zero coupling: the
+# Physics leaf includes no Flux / UI / Editor / AssetHandling / AI / concrete
+# component / Core/Zenith_Engine.h (proven by SentinelPhysics + dumpbin FORBIDDEN=NONE).

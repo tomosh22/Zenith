@@ -1001,3 +1001,13 @@ void Zenith_ColliderComponent::RenderPropertiesPanel()
 }
 
 #endif // ZENITH_TOOLS
+
+// Physics unit tests live aggregate-side: the Zenith_Physics leaf must name no
+// concrete component, and these tests exercise Zenith_ColliderComponent /
+// Zenith_TransformComponent. Hosted here (rather than in Zenith_PhysicsQuery.cpp)
+// because this TU is ALWAYS linked — the component registrar references
+// Zenith_ColliderComponent's ctor/dtor/serialize — so the ZENITH_TEST registrars
+// survive /OPT:REF in every config. Relocated from Physics/Zenith_Physics.Tests.inl.
+#ifdef ZENITH_TESTING
+#include "EntityComponent/Zenith_Physics.Tests.inl"
+#endif

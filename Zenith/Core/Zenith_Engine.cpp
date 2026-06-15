@@ -491,7 +491,7 @@ void Zenith_Engine::InitialiseRendererAndPhysics()
 	// piece of state it used to keep as Zenith_Physics::s_*.
 	Zenith_Assert(m_pxPhysics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxPhysics = new Zenith_Physics();
-	g_xEngine.Physics().Initialise(g_xEngine.Input());
+	g_xEngine.Physics().Initialise();
 }
 
 // Component registrar install + verification, scene bootstrap, runtime hooks.
@@ -566,6 +566,15 @@ void Zenith_Engine::InitialiseECS()
 	// ECS leaf never names the component type.
 	xHooks.m_pfnAddDefaultComponents = [](Zenith_Entity& xEntity) { xEntity.AddComponent<Zenith_TransformComponent>(); };
 	g_xEngine.Scenes().SetRuntimeHooks(xHooks);
+
+	// Install the AI-leaf world hooks (see AI/Zenith_AIWorldHooks.h): the AI core's
+	// engine-side needs — entity transform read/write, collider body, NavMeshAgent
+	// resolution, and TOOLS debug-draw — are forwarded through captureless function
+	// pointers so the AI leaf never names a concrete component / Flux / g_xEngine.
+	// Same inversion as the component registrar; the pointers are data (not invoked
+	// here), so install order only needs to precede the first AI tick.
+	extern void Zenith_AI_InstallWorldHooks();
+	Zenith_AI_InstallWorldHooks();
 }
 
 // GPU-dependent assets + pinned textures, then Flux LateInitialise.

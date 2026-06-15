@@ -44,5 +44,6 @@ Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp => Flux/Terrain/Fl
 Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Flux/MeshGeometry/Flux_MeshGeometry.h
 Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Flux/Terrain/Flux_TerrainImpl.h
 Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => Flux/Terrain/Flux_TerrainStreamingManagerImpl.h
+Zenith/EntityComponent/Zenith_AIWorldHooksInstall.cpp => Flux/Primitives/Flux_PrimitivesImpl.h
 Zenith/EntityComponent/Zenith_PhysicsDebugDraw.cpp => Flux/MeshGeometry/Flux_MeshGeometry.h
 Zenith/EntityComponent/Zenith_PhysicsDebugDraw.cpp => Flux/Primitives/Flux_PrimitivesImpl.h

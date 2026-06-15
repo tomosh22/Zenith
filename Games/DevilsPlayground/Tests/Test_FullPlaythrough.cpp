@@ -12,7 +12,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "Maths/Zenith_Maths.h"
 #include "UI/Zenith_UIText.h"

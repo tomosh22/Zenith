@@ -12,6 +12,7 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Physics/Zenith_Physics.h"
+#include "EntityComponent/Zenith_PhysicsQuery.h"
 #include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -760,7 +761,7 @@ private:
 
 		// Hitscan: raycast from the barrel along the camera forward. Ignore
 		// the player's own collider per the IK precedent in UpdateFootIK.
-		const Zenith_Physics::RaycastResult xHit = g_xEngine.Physics().Raycast(
+		const Zenith_Physics::RaycastResult xHit = Zenith_PhysicsQuery::RaycastIgnoring(
 			xBarrel, xFwd, k_fMaxRange, m_xParentEntity.GetEntityID());
 
 		if (xHit.m_bHit)
@@ -907,7 +908,7 @@ private:
 			const Zenith_Maths::Vector3 xOrigin = xFootPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
 			// Ignore the player's own capsule. Without this, the foot ray (origin
 			// inside the capsule) hits self and the helper clears IK every frame.
-			const Zenith_Physics::RaycastResult xHit = g_xEngine.Physics().Raycast(
+			const Zenith_Physics::RaycastResult xHit = Zenith_PhysicsQuery::RaycastIgnoring(
 				xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1.5f,
 				m_xParentEntity.GetEntityID());
 

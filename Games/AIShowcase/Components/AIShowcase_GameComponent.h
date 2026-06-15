@@ -38,6 +38,7 @@
 // AI System includes
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "EntityComponent/Zenith_AINavGeometry.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
@@ -49,7 +50,7 @@
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_Formation.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -682,7 +683,7 @@ private:
 		xConfig.m_fMaxStepHeight = 0.3f;
 		xConfig.m_fCellSize = 0.3f;
 
-		AIShowcase::Resources().m_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxSceneData, xConfig);
+		AIShowcase::Resources().m_pxArenaNavMesh = Zenith_AINavGeometry::GenerateFromScene(*pxSceneData, xConfig);
 
 		if (AIShowcase::Resources().m_pxArenaNavMesh)
 		{

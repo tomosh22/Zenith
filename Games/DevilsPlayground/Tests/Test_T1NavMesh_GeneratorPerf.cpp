@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "EntityComponent/Zenith_AINavGeometry.h"
 #include "Profiling/Zenith_Profiling.h"
 
 #include <chrono>
@@ -20,7 +21,7 @@
 //
 // Loads the ProcLevel scene (build index 1, the only gameplay scene since
 // 2026-05-19), scans every static collider for its world-space AABB, then
-// calls Zenith_NavMeshGenerator::GenerateFromScene under the profiling
+// calls Zenith_AINavGeometry::GenerateFromScene under the profiling
 // system and dumps a per-stage report.
 //
 // Surfaces:
@@ -134,7 +135,7 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 
 		NavMeshGenerationConfig xCfg{};
 		const auto xStart = std::chrono::high_resolution_clock::now();
-		Zenith_NavMesh* pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xCfg);
+		Zenith_NavMesh* pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(*pxScene, xCfg);
 		const auto xEnd = std::chrono::high_resolution_clock::now();
 
 		const std::chrono::duration<float, std::milli> xMs = xEnd - xStart;

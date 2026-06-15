@@ -9,7 +9,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 
 #include "Source/PublicInterfaces.h"

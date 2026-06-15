@@ -1,9 +1,8 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Collections/Zenith_HashMap.h"
 #include <queue>
 #include <algorithm>
@@ -514,18 +513,8 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 		return;
 	}
 
-	Zenith_DataParallelTask xPathTask(
-		ZENITH_PROFILE_INDEX__AI_PATHFINDING,
-		PathfindingTaskFunc,
-		pxRequests,
-		uNumRequests,
-		true  // Submitting thread joins - main thread helps process tasks
-	);
-
-	g_xEngine.Tasks().SubmitDataParallelTask(&xPathTask);
-	xPathTask.WaitUntilComplete();
+	// Run each request's pathfind data-parallel via the engine task system (or
+	// synchronously when none is wired — Zenith_AI_RunDataParallel). Routing through
+	// the seam keeps the AI leaf free of Zenith_TaskSystem (which reaches g_xEngine).
+	Zenith_AI_RunDataParallel(&PathfindingTaskFunc, pxRequests, uNumRequests);
 }
-
-#ifdef ZENITH_TESTING
-#include "AI/Navigation/Zenith_Pathfinding.Tests.inl"
-#endif

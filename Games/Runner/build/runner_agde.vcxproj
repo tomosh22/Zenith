@@ -114,7 +114,7 @@
       <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\librunner.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
-      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;-l:libzenithecs.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <AdditionalDependencies>-l:libzenith.a;-l:libzenithai.a;-l:libzenithbase.a;-l:libzenithecs.a;-l:libzenithphysics.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\librunner.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
@@ -153,7 +153,7 @@
       <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\librunner.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\vulkan_arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
-      <AdditionalDependencies>-l:libzenith.a;-l:libzenithbase.a;-l:libzenithecs.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <AdditionalDependencies>-l:libzenith.a;-l:libzenithai.a;-l:libzenithbase.a;-l:libzenithecs.a;-l:libzenithphysics.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\librunner.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
@@ -182,8 +182,18 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\build\zenithai_agde.vcxproj">
+      <Project>{31D5278F-5C65-6B7E-4972-9D3CFD7A64E1}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\build\zenithecs_agde.vcxproj">
       <Project>{893FFFA3-F1C1-876E-31C8-A4844FAEE75C}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\zenithphysics_agde.vcxproj">
+      <Project>{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>

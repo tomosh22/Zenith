@@ -16,6 +16,7 @@
 #include "AI/Zenith_AI.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
+#include "EntityComponent/Zenith_PhysicsDebugDraw.h"
 #include "EntityComponent/Zenith_UISystem.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -149,6 +150,11 @@ static void PumpAutomatedTest(bool& bShouldUpdateGameLogic)
 	Zenith_AutomatedTestRunner::Tick();
 	#ifdef ZENITH_TOOLS
 	bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
+	#else
+	// Non-tools (_False): no editor mode to re-read, so the gate is unchanged.
+	// Mark used to silence C4100 (ZENITH_INPUT_SIMULATOR is defined unconditionally,
+	// so this branch compiles in every _False config). Pre-existing warning.
+	(void)bShouldUpdateGameLogic;
 	#endif
 #else
 	(void)bShouldUpdateGameLogic;
@@ -196,7 +202,7 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 	#ifdef ZENITH_TOOLS
 	if (g_xEngine.Editor().GetEditorMode() == EditorMode::Stopped)
 	{
-		Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws();
+		Zenith_PhysicsDebugDraw::QueueAll();
 	}
 	#endif
 

@@ -700,6 +700,7 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_AllScenesQuery.inl" />
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta_Detail.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentPool.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ECSRuntimeHooks.h" />

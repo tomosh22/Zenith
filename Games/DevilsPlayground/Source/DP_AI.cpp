@@ -12,7 +12,8 @@
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Zenith_AINavGeometry.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "../Components/Priest_Component.h"
@@ -23,7 +24,7 @@
 namespace
 {
 	// MVP-1.2.2: real navmesh generated from active-scene collider geometry
-	// via Zenith_NavMeshGenerator::GenerateFromScene. Cache key is the active
+	// via Zenith_AINavGeometry::GenerateFromScene. Cache key is the active
 	// scene's build index, stable across handle reuse so batched tests
 	// reloading the same scene share one ~850ms generation. Cache invalidation
 	// is the explicit ResetLevelNavMesh call.
@@ -183,7 +184,7 @@ namespace DP_AI
 				// every authored doorway passable.
 				xCfg.m_fAgentRadius = 0.2f;
 				Zenith_NavMesh* pxGenerated =
-					Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xCfg);
+					Zenith_AINavGeometry::GenerateFromScene(*pxScene, xCfg);
 				if (pxGenerated != nullptr && pxGenerated->GetPolygonCount() > 0)
 				{
 					g_pxLevelNavMesh = pxGenerated;

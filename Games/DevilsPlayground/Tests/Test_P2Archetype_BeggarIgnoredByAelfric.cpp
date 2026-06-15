@@ -6,7 +6,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "Source/PublicInterfaces.h"

@@ -1,0 +1,996 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
+      <Configuration>Vulkan_arm64_v8a_vs2022_Debug_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
+      <Configuration>Vulkan_arm64_v8a_vs2022_Release_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>ZenithPhysics</RootNamespace>
+    <ProjectName>ZenithPhysics</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals" Condition="'$(Platform)'=='Android-arm64-v8a' Or '$(Platform)'=='Android-x86_64' Or '$(Platform)'=='Android-armeabi-v7a' Or '$(Platform)'=='Android-x86'">
+    <AndroidMinSdkVersion>30</AndroidMinSdkVersion>
+    <PlatformToolset>Clang</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <TargetName>libzenithphysics</TargetName>
+    <OutDir>$(ProjectDir)output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</OutDir>
+    <IntDir>obj\zenithphysics\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</IntDir>
+    <TargetExt>.a</TargetExt>
+    <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libzenithphysics.a</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <TargetName>libzenithphysics</TargetName>
+    <OutDir>$(ProjectDir)output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</OutDir>
+    <IntDir>obj\zenithphysics\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</IntDir>
+    <TargetExt>.a</TargetExt>
+    <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libzenithphysics.a</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithphysics\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Lib>
+      <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_debug_agde_false\libzenithphysics.a</OutputFile>
+      <NoWarnOnCreate>true</NoWarnOnCreate>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>-Wno-nonportable-include-path</AdditionalOptions>
+      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\zenithphysics\agde\vulkan_arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Lib>
+      <OutputFile>output\agde\vulkan_arm64_v8a_vs2022_release_agde_false\libzenithphysics.a</OutputFile>
+      <NoWarnOnCreate>true</NoWarnOnCreate>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeToBuffer.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec\NodeCodecQuadTreeHalfFloat.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\TriangleCodec\TriangleCodecIndexed8BitPackSOA4Flags.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ConfigurationString.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ARMNeon.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Array.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Atomics.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\BinaryHeap.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ByteBuffer.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Color.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Core.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Factory.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPControlWord.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPException.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPFlushDenormals.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\HashCombine.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\HashTable.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\InsertionSort.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\IssueReporting.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemThreadPool.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemWithBarrier.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LinearCurve.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Mutex.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\MutexArray.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\NonCopyable.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\QuickSort.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Reference.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Result.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\RTTI.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ScopeExit.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Semaphore.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StaticArray.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLAlignedAllocator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLAllocator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLLocalAllocator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLTempAllocator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamIn.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamOut.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamUtils.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamWrapper.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StridedPtr.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StringTools.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TempAllocator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TickCounter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\UnorderedMap.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\UnorderedSet.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\AABox.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\AABox4.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ClipPoly.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ClosestPoint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder2D.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexSupport.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Ellipse.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\EPAConvexHullBuilder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\EPAPenetrationDepth.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\GJKClosestPoint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\IndexedTriangle.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Indexify.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\MortonCode.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\OrientedBox.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Plane.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayAABox.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayCapsule.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayCylinder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RaySphere.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayTriangle.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Sphere.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Triangle.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Double3.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DynMatrix.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\EigenValueSymmetric.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\FindRoot.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float2.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float3.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float4.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\GaussianElimination.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\HalfFloat.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Math.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\MathTypes.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Matrix.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Real.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Swizzle.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Trigonometry.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vector.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\GetPrimitiveTypeOfType.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStream.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryIn.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryOut.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamIn.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamOut.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextIn.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextOut.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTypes.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttribute.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttributeEnum.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttributeTyped.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableObject.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\TypeDeclarations.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\AllowedDOFs.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyAccess.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyActivationListener.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyCreationSettings.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyFilter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyID.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyInterface.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLock.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLockInterface.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLockMulti.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyManager.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyPair.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyType.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MassProperties.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.inl" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionQuality.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionType.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\Character.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterBase.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterID.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterVirtual.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\AABoxCast.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ActiveEdgeMode.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ActiveEdges.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BackFaceMode.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhase.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseBruteForce.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayer.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayerInterfaceMask.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayerInterfaceTable.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuadTree.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuery.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\ObjectVsBroadPhaseLayerFilterMask.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\ObjectVsBroadPhaseLayerFilterTable.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\QuadTree.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastConvexVsTriangles.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastResult.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastSphereVsTriangles.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollectFacesMode.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideConvexVsTriangles.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollidePointResult.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideShapeVsShapePerLeaf.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSoftBodyVertexIterator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSoftBodyVerticesVsTriangles.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSphereVsTriangles.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionCollector.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionCollectorImpl.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionDispatch.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionGroup.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ContactListener.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\EstimateCollisionResponse.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilterTable.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\InternalEdgeRemovingCollector.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ManifoldBetweenTwoFaces.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseQuery.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseStats.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayer.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayerPairFilterMask.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayerPairFilterTable.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterial.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterialSimple.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\RayCast.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ShapeCast.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ShapeFilter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\BoxShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CapsuleShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShapeVisitors.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexHullShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CylinderShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\DecoratedShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\EmptyShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\GetTrianglesContext.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\HeightFieldShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MeshShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MutableCompoundShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\OffsetCenterOfMassShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PlaneShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PolyhedronSubmergedVolumeCalculator.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\RotatedTranslatedShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaledShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaleHelpers.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\Shape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SphereShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\StaticCompoundShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SubShapeID.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SubShapeIDPair.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCapsuleShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCylinderShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TriangleShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SimShapeFilter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SimShapeFilterWrapper.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SortReverseAndStore.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\TransformedShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\CalculateSolverSteps.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConeConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\Constraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintManager.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\AngleConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\AxisConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\DualAxisConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\GearConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\HingeRotationConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\IndependentAxisConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\PointConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RackAndPinionConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RotationEulerConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RotationQuatConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\SpringPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\SwingTwistConstraintPart.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ContactConstraintManager.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\DistanceConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\FixedConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\GearConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\HingeConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\MotorSettings.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPath.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPathHermite.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PointConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PulleyConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\RackAndPinionConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SixDOFConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SliderConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SpringSettings.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SwingTwistConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\TwoBodyConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\DeterminismLog.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\EActivation.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\EPhysicsUpdateError.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\IslandBuilder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\LargeIslandSplitter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsLock.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsScene.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSettings.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsStepListener.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSystem.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsUpdateContext.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll\Ragdoll.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyContactListener.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyCreationSettings.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyManifold.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyMotionProperties.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyShape.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodySharedSettings.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyUpdateContext.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyVertex.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorderImpl.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\MotorcycleController.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\TrackedVehicleController.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleAntiRollBar.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleCollisionTester.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleConstraint.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleController.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleDifferential.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleEngine.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTrack.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTransmission.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\Wheel.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\WheeledVehicleController.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\RegisterTypes.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRenderer.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererPlayback.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererRecorder.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererSimple.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletalAnimation.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\Skeleton.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonMapper.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonPose.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Color.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Factory.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\IssueReporting.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemThreadPool.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemWithBarrier.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LinearCurve.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\RTTI.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Semaphore.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StringTools.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TickCounter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder2D.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Indexify.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\OrientedBox.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStream.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryIn.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryOut.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamIn.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamOut.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextIn.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextOut.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableObject.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\TypeDeclarations.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyCreationSettings.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyInterface.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyManager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MassProperties.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\Character.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterBase.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterVirtual.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhase.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseBruteForce.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuadTree.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\QuadTree.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastConvexVsTriangles.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastSphereVsTriangles.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideConvexVsTriangles.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSphereVsTriangles.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionDispatch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionGroup.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\EstimateCollisionResponse.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilterTable.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ManifoldBetweenTwoFaces.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseQuery.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseStats.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterial.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterialSimple.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\BoxShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CapsuleShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexHullShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CylinderShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\DecoratedShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\EmptyShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\HeightFieldShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MeshShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MutableCompoundShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\OffsetCenterOfMassShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PlaneShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\RotatedTranslatedShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaledShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\Shape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SphereShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\StaticCompoundShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCapsuleShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCylinderShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TriangleShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\TransformedShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConeConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\Constraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintManager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ContactConstraintManager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\DistanceConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\FixedConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\GearConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\HingeConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\MotorSettings.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPath.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPathHermite.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PointConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PulleyConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\RackAndPinionConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SixDOFConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SliderConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SpringSettings.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SwingTwistConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\TwoBodyConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\DeterminismLog.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\IslandBuilder.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\LargeIslandSplitter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsScene.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsUpdateContext.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll\Ragdoll.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyCreationSettings.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyMotionProperties.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodySharedSettings.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorderImpl.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\MotorcycleController.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\TrackedVehicleController.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleAntiRollBar.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleCollisionTester.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleConstraint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleController.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleDifferential.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleEngine.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTrack.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTransmission.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\Wheel.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\WheeledVehicleController.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\RegisterTypes.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRenderer.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererPlayback.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererRecorder.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererSimple.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletalAnimation.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\Skeleton.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonMapper.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonPose.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Physics\Internal\Zenith_PhysicsPCH.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Physics\Zenith_Physics.cpp" />
+    <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

@@ -30,7 +30,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
 #include "AI/BehaviorTree/Zenith_BTNode.h"
 #include "AI/BehaviorTree/Zenith_BTComposites.h"

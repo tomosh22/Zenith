@@ -11,6 +11,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "EntityComponent/Zenith_AINavGeometry.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 
 #include <cmath>
@@ -145,7 +146,7 @@ static bool Step_P1NavMeshClosedDoorBlocksPath(int /*iFrame*/)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kCD_Done; return false; }
 		NavMeshGenerationConfig xCfg{}; // engine defaults match production
-		g_pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xCfg);
+		g_pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(*pxScene, xCfg);
 		g_bGenerateOK = (g_pxNavMesh != nullptr) && (g_pxNavMesh->GetPolygonCount() > 0);
 		std::printf("[P1NavMeshDoor] GenerateFromScene: %s (polys=%u)\n",
 			g_bGenerateOK ? "OK" : "FAIL",

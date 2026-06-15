@@ -1,11 +1,10 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "AI/BehaviorTree/Zenith_BTConditions.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include <random>
 
 // ========== Zenith_BTCondition_HasTarget ==========
@@ -24,7 +23,7 @@ BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity&, Zenith_Blackb
 		// Audit §3.18 fix: resolve target's OWN scene so cross-scene targets
 		// (persistent entity, additive-scene boss, etc.) are validated correctly.
 		// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xTarget);
+		Zenith_SceneData* pxSceneData = Zenith_SceneSystem::Get().GetSceneDataForEntity(xTarget);
 		if (pxSceneData)
 		{
 			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);
@@ -64,13 +63,12 @@ Zenith_BTCondition_InRange::Zenith_BTCondition_InRange(float fRange, const std::
 BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float)
 {
 	// Get agent position
-	if (!xAgent.HasComponent<Zenith_TransformComponent>())
+	Zenith_Maths::Vector3 xAgentPos;
+	if (!Zenith_AI_GetEntityPosition(xAgent.GetEntityID(), xAgentPos))
 	{
 		m_eLastStatus = BTNodeStatus::FAILURE;
 		return m_eLastStatus;
 	}
-	Zenith_Maths::Vector3 xAgentPos;
-	xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
 
 	// Get target position
 	Zenith_Maths::Vector3 xTargetPos;
@@ -81,20 +79,7 @@ BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_B
 	{
 		// Audit §3.18 fix: resolve the target's OWN scene — supports cross-scene
 		// range checks (agent in scene A vs target in scene B / persistent scene).
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xTargetID);
-		if (!pxSceneData)
-		{
-			m_eLastStatus = BTNodeStatus::FAILURE;
-			return m_eLastStatus;
-		}
-
-		Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTargetID);
-
-		if (xTargetEntity.IsValid() && xTargetEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			xTargetEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xTargetPos);
-		}
-		else
+		if (!Zenith_AI_GetEntityPosition(xTargetID, xTargetPos))
 		{
 			m_eLastStatus = BTNodeStatus::FAILURE;
 			return m_eLastStatus;

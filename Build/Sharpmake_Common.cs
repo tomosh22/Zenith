@@ -272,6 +272,18 @@ public class ZenithSolution : Solution
 		// it, so it too would arrive transitively — added explicitly to keep it
 		// visible/buildable on its own.
 		conf.AddProject<ZenithECSLibProject>(target);
+		// ZenithPhysics: Physics leaf static lib (Jolt-backed simulation + collision
+		// mesh gen), carved out of the aggregate. Depends on ZenithBase + ZenithECS;
+		// ZenithProject publicly depends on it (wired in Sharpmake_Zenith.cs at the
+		// Phase-3 partition), so it would arrive transitively — added explicitly to
+		// keep it visible/buildable on its own.
+		conf.AddProject<ZenithPhysicsLibProject>(target);
+		// ZenithAI: AI leaf static lib (behaviour trees, navigation, perception,
+		// squad), carved out of the aggregate. Depends on ZenithBase + ZenithECS +
+		// ZenithPhysics; ZenithProject publicly depends on it (wired in
+		// Sharpmake_Zenith.cs at the Phase-A4 partition), so it would arrive
+		// transitively — added explicitly to keep it visible/buildable on its own.
+		conf.AddProject<ZenithAILibProject>(target);
 		conf.AddProject<ZenithProject>(target);
 		// SentinelECS: ECS leaf-proof EXE (Phase 9b). Links ONLY zenithecs.lib +
 		// zenithbase.lib; building it green proves the ECS core has no undefined
@@ -283,6 +295,15 @@ public class ZenithSolution : Solution
 		if (target.Platform == Platform.win64 && target.ToolsEnabled == ToolsEnabled.False)
 		{
 			conf.AddProject<SentinelECSProject>(target);
+			// SentinelPhysics: Physics leaf-proof EXE. Links ONLY zenithphysics.lib +
+			// zenithecs.lib + zenithbase.lib (Physics owns Jolt); building it green
+			// proves the Physics core has no undefined engine externals. Same
+			// win64 + ToolsEnabled.False-only guard as SentinelECS.
+			conf.AddProject<SentinelPhysicsProject>(target);
+			// SentinelAI: AI leaf-proof EXE. Links ONLY zenithai + zenithphysics +
+			// zenithecs + zenithbase; building it green proves the AI core has no
+			// undefined engine externals.
+			conf.AddProject<SentinelAIProject>(target);
 		}
 		conf.AddProject<SokobanGameProject>(target);
 		conf.AddProject<TestGameProject>(target);

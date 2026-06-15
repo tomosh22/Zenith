@@ -222,8 +222,12 @@ public class ZenithProject : ZenithBaseProject
 
 		SourceFilesExcludeRegex.Add(@".*cmake.*");
 
-		// Include Jolt Physics and ImGui source directories
-		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
+		// ImGui source directory. (Jolt Physics moved to the ZenithPhysics leaf lib at
+		// the Physics-leaf partition — the aggregate keeps only the Jolt INCLUDE path
+		// below, for its PCH + ColliderComponent/TransformComponent Jolt-header use;
+		// the Jolt SYMBOLS resolve from zenithphysics.lib at the consuming exe link.
+		// The now-moot Jolt source-excludes above are harmless no-ops with no Jolt
+		// source root here.)
 		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/imgui-docking");
 
 		// Include Tools source directory (compiled as part of engine, not separate library)
@@ -302,6 +306,21 @@ public class ZenithProject : ZenithBaseProject
 		// live in a DIFFERENT directory and so are never matched here.
 		conf.SourceFilesBuildExcludeRegex.Add(@".*\\ZenithECS\\.*\.cpp$");
 
+		// Physics-leaf partition: the engine root glob still SEES Zenith/Physics/*.cpp,
+		// so build-EXCLUDE the whole subtree — every Physics TU is compiled by
+		// ZenithPhysicsLibProject (which also now owns the Jolt sources). The engine-side
+		// physics glue (Zenith_PhysicsQuery, Zenith_PhysicsDebugDraw) lives under
+		// EntityComponent\ and is never matched here. Anchored on \Physics\ so it does
+		// NOT touch Middleware\JoltPhysics-5.4.0\ (no \Physics\ path segment there).
+		conf.SourceFilesBuildExcludeRegex.Add(@".*\\Physics\\.*\.cpp$");
+
+		// AI-leaf partition: the engine root glob still SEES Zenith/AI/*.cpp, so
+		// build-EXCLUDE the whole subtree — every AI TU is compiled by ZenithAILibProject.
+		// The engine-side AI glue (Zenith_AIWorldHooksInstall, Zenith_AINavGeometry,
+		// Zenith_AIDebugVarsRegistration, the relocated Zenith_AIAgentComponent) lives
+		// under EntityComponent\ and is never matched here (no \AI\ path segment).
+		conf.SourceFilesBuildExcludeRegex.Add(@".*\\AI\\.*\.cpp$");
+
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
 
@@ -355,6 +374,23 @@ public class ZenithProject : ZenithBaseProject
 		// a clean complement. PUBLIC so the edge re-exports to dependents, like
 		// the ZenithBase edge above.
 		conf.AddPublicDependency<ZenithECSLibProject>(target);
+
+		// Depend on the ZenithPhysics leaf lib (Physics core + the Jolt backend it now
+		// owns). PUBLIC so the edge re-exports to the games/tools that
+		// AddPublicDependency<ZenithProject> — they transitively link zenithphysics.lib,
+		// resolving ColliderComponent/TransformComponent's Zenith_Physics:: + JPH::
+		// references, with no change to their own .cs files. The reverse edge does not
+		// exist: after the Physics-leaf severance the Physics core names only
+		// ZenithBase/ZenithECS/Jolt, so this is a clean one-way dependency (no cycle).
+		conf.AddPublicDependency<ZenithPhysicsLibProject>(target);
+
+		// Depend on the ZenithAI leaf lib (behaviour trees / navigation / perception /
+		// squad). PUBLIC so games/tools that AddPublicDependency<ZenithProject>
+		// transitively link zenithai.lib (resolving the engine-side AI glue's calls
+		// into the leaf). The leaf reaches the engine only through the
+		// Zenith_AIWorldHooks function-pointer seam (data, not link-time symbols), so
+		// this is a clean one-way dependency (no cycle).
+		conf.AddPublicDependency<ZenithAILibProject>(target);
 
 		// Additional include paths
 		conf.IncludePaths.Add(RootPath + "/Middleware/vma");

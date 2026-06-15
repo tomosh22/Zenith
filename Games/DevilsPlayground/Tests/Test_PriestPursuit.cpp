@@ -11,7 +11,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Components/Priest_Component.h"
 #include "Components/DPVillager_Component.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"

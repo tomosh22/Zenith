@@ -2,8 +2,18 @@
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 
-// Forward declarations
-class Zenith_MeshGeometryAsset;
+// Renderer-neutral generated collision geometry. The leaf generator fills this
+// (positions + smooth normals + indices); the engine-side caller turns it into a
+// Zenith_MeshGeometryAsset (the asset side owns the Flux_MeshGeometry build), so
+// the Physics leaf names no renderer / asset type.
+struct Zenith_GeneratedPhysicsMesh
+{
+	Zenith_Vector<Zenith_Maths::Vector3> m_xPositions;
+	Zenith_Vector<Zenith_Maths::Vector3> m_xNormals;
+	Zenith_Vector<uint32_t> m_xIndices;
+
+	bool IsValid() const { return m_xPositions.GetSize() >= 3 && m_xIndices.GetSize() >= 3; }
+};
 
 /**
  * Zenith_PhysicsMeshGenerator - Generates approximate physics collision geometry
@@ -15,8 +25,9 @@ class Zenith_MeshGeometryAsset;
  * Input is renderer-neutral: callers describe each source mesh as a
  * Zenith_PhysicsMeshView (positions + indices spans). This keeps the generator
  * free of any Flux/renderer type so Physics names no renderer symbol. The output
- * is a registry-managed Zenith_MeshGeometryAsset (the asset side owns the
- * Flux_MeshGeometry construction).
+ * is a renderer-neutral Zenith_GeneratedPhysicsMesh POD (positions/normals/indices);
+ * the engine-side caller turns it into the Zenith_MeshGeometryAsset, so the leaf
+ * names no renderer / asset type.
  *
  * Quality Levels:
  * - LOW: Axis-aligned bounding box (fastest, least accurate)
@@ -25,7 +36,7 @@ class Zenith_MeshGeometryAsset;
  *
  * Usage:
  *   Zenith_Vector<Zenith_PhysicsMeshView> xViews; // built by the caller from its geometry
- *   Zenith_MeshGeometryAsset* pxPhysicsMesh = Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
+ *   Zenith_GeneratedPhysicsMesh xMesh = Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
  *       xViews, PHYSICS_MESH_QUALITY_MEDIUM);
  */
 
@@ -81,27 +92,18 @@ public:
 	 *
 	 * @param xMeshViews Views of the source meshes (positions + indices spans)
 	 * @param eQuality Quality level for generation (overrides global config)
-	 * @return Registry-managed asset containing the physics mesh, or nullptr on failure
+	 * @return Zenith_GeneratedPhysicsMesh POD (returned by value); check IsValid() for failure
 	 */
-	static Zenith_MeshGeometryAsset* GeneratePhysicsMesh(
+	static Zenith_GeneratedPhysicsMesh GeneratePhysicsMesh(
 		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
 		PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
 
 	/**
 	 * Generate a physics mesh using the global configuration
 	 */
-	static Zenith_MeshGeometryAsset* GeneratePhysicsMeshWithConfig(
+	static Zenith_GeneratedPhysicsMesh GeneratePhysicsMeshWithConfig(
 		const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
 		const PhysicsMeshConfig& xConfig);
-
-	/**
-	 * Queue physics debug visualization for model physics meshes and collider
-	 * volumes in all loaded scenes. Call this once per frame from tools/editor
-	 * stopped mode. Renderer-free: it only queries components and forwards to
-	 * their debug-draw hooks (the actual wireframe rendering lives in
-	 * Zenith_PhysicsDebugDraw, engine-side, so Physics stays renderer-neutral).
-	 */
-	static void QueuePhysicsDebugDraws();
 
 	/**
 	 * Get a string description of the quality level

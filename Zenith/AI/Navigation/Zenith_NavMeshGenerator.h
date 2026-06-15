@@ -3,8 +3,6 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Collections/Zenith_HashMap.h"
 
-class Zenith_SceneData;
-
 /**
  * NavMeshGenerationConfig - Parameters for navmesh generation
  */
@@ -54,14 +52,6 @@ class Zenith_NavMeshGenerator
 	friend class Zenith_UnitTests;
 
 public:
-	/**
-	 * Generate a navigation mesh from scene static geometry
-	 * @param xScene Scene containing ColliderComponents
-	 * @param xConfig Generation parameters
-	 * @return Newly allocated NavMesh (caller owns), or nullptr on failure
-	 */
-	static Zenith_NavMesh* GenerateFromScene(Zenith_SceneData& xScene, const NavMeshGenerationConfig& xConfig);
-
 	/**
 	 * Generate a navigation mesh from explicit geometry
 	 * @param axVertices Vertex positions
@@ -146,10 +136,6 @@ private:
 	};
 
 	// Pipeline stages
-	static bool CollectGeometryFromScene(Zenith_SceneData& xScene,
-		Zenith_Vector<Zenith_Maths::Vector3>& axVerticesOut,
-		Zenith_Vector<uint32_t>& axIndicesOut);
-
 	static bool ComputeBounds(
 		const Zenith_Vector<Zenith_Maths::Vector3>& axVertices,
 		GenerationContext& xContext);

@@ -21,11 +21,11 @@
 #include "Collections/Zenith_Vector.h"
 #include "ZenithECS/Zenith_Entity.h"
 
-class Zenith_CameraComponent;
-class Zenith_Input;
-
-// State + behaviour for the Physics subsystem. Held on g_xEngine and
-// accessed via g_xEngine.Physics().
+// State + behaviour for the Physics subsystem. The engine owns the single
+// instance; the leaf chain reaches it via the engine-free Zenith_Physics::Get()
+// accessor (NOT g_xEngine). The class is a strict leaf: it names no concrete
+// component, no Flux type, and never reaches g_xEngine — collider / camera / input
+// glue lives engine-side in Zenith_PhysicsQuery.
 class Zenith_Physics
 {
 public:
@@ -35,7 +35,7 @@ public:
 	Zenith_Physics(const Zenith_Physics&) = delete;
 	Zenith_Physics& operator=(const Zenith_Physics&) = delete;
 
-	void Initialise(Zenith_Input& xInput);
+	void Initialise();
 	void Update(float fDt);
 	void Reset();
 	void Shutdown();
@@ -81,12 +81,11 @@ public:
 	// it. Lets callers gate body reads/writes without naming Jolt.
 	bool HasActiveSimulation() const { return m_pxPhysicsSystem != nullptr; }
 
-	struct RaycastInfo
-	{
-		Zenith_Maths::Vector3 m_xOrigin;
-		Zenith_Maths::Vector3 m_xDirection;
-	};
-	RaycastInfo BuildRayFromMouse(Zenith_CameraComponent& xCam);
+	// Engine-free access to the single per-engine instance (Initialise sets it,
+	// Shutdown clears it). Lets sibling leaf libs (ZenithAI) reach Physics for
+	// raycasts/body queries WITHOUT going through g_xEngine. Asserts an instance
+	// exists. Mirrors Zenith_SceneSystem::Get().
+	static Zenith_Physics& Get();
 
 	struct RaycastResult
 	{
@@ -97,7 +96,9 @@ public:
 		Zenith_EntityID m_xHitEntity = INVALID_ENTITY_ID;
 	};
 	RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance);
-	RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_EntityID xIgnoreEntity);
+	// Body-id ignore overload — leaf-clean (no concrete-component lookup). The
+	// EntityID convenience form lives engine-side in Zenith_PhysicsQuery::RaycastIgnoring.
+	RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_PhysicsBodyID xIgnoreBody);
 
 	static constexpr double s_fDesiredFramerate = 1.0 / 60.0;
 
@@ -158,11 +159,6 @@ public:
 	uint32_t                              m_uDroppedEventCount = 0;
 
 	bool m_bInitialised = false;
-
-	// Injected cross-subsystem dependency (composition root wires this in
-	// Initialise). Routes mouse-position reads through Zenith_Input so they
-	// respect Zenith_InputSimulator overrides.
-	Zenith_Input* m_pxInput = nullptr;
 
 	friend void QueueCollisionEventInternal(Zenith_EntityID, Zenith_EntityID, CollisionEventType);
 };

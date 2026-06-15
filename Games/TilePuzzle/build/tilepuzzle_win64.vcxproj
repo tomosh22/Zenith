@@ -271,7 +271,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -358,7 +358,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mtd.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;assimp-vc143-mtd.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -445,7 +445,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -532,7 +532,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mt.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;assimp-vc143-mt.lib;d3d12.lib;dbghelp.lib;dxgi.lib;dxguid.lib;glfw3_mt.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -619,7 +619,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -706,7 +706,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -793,7 +793,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;zenithbase.lib;zenithecs.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -880,7 +880,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithbase.lib;zenithecs.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;zenithai.lib;zenithbase.lib;zenithecs.lib;zenithphysics.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -929,6 +929,11 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\build\zenithphysics_win64.vcxproj">
+      <Project>{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\build\msdfgen_win64.vcxproj">
       <Project>{8EC57622-53A0-0F1E-899A-13A5CA34A40A}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
@@ -941,6 +946,11 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\build\msdf-atlas-gen_win64.vcxproj">
       <Project>{CE98799E-A399-5D8C-D6E4-CC12C760014F}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\zenithai_win64.vcxproj">
+      <Project>{D76B6495-720E-E83B-6D69-57E990A6F21F}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>

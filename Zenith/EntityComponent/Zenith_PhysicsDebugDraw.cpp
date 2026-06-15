@@ -1,6 +1,10 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Zenith_PhysicsDebugDraw.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Physics/Zenith_PhysicsMeshGenerator.h"   // g_xPhysicsMeshConfig
+#include "ZenithECS/Zenith_Query.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 
@@ -36,5 +40,40 @@ void Zenith_PhysicsDebugDraw::DrawMesh(
 		g_xEngine.Primitives().AddLine(xV0, xV1, xColor, 0.05f);
 		g_xEngine.Primitives().AddLine(xV1, xV2, xColor, 0.05f);
 		g_xEngine.Primitives().AddLine(xV2, xV0, xColor, 0.05f);
+	}
+}
+
+void Zenith_PhysicsDebugDraw::QueueAll()
+{
+	// Iterate all loaded scenes (not just the active one) so props in additively-
+	// loaded scenes and characters in the persistent scene also surface their
+	// physics-mesh wireframes. Forwards to each component's debug-draw hook; the
+	// actual Flux line rendering happens in DrawMesh above.
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach(
+		[&xModels](Zenith_EntityID, Zenith_ModelComponent& xComp) { xModels.PushBack(&xComp); });
+
+	for (uint32_t i = 0; i < xModels.GetSize(); i++)
+	{
+		Zenith_ModelComponent* pxModel = xModels.Get(i);
+		if (!pxModel || !pxModel->GetDebugDrawPhysicsMesh())
+		{
+			continue;
+		}
+		pxModel->QueueDebugDrawPhysicsMesh(g_xPhysicsMeshConfig.m_xDebugColor);
+	}
+
+	Zenith_Vector<Zenith_ColliderComponent*> xColliders;
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ColliderComponent>().ForEach(
+		[&xColliders](Zenith_EntityID, Zenith_ColliderComponent& xComp) { xColliders.PushBack(&xComp); });
+
+	for (uint32_t i = 0; i < xColliders.GetSize(); i++)
+	{
+		Zenith_ColliderComponent* pxCollider = xColliders.Get(i);
+		if (!pxCollider || !pxCollider->GetDebugDrawPhysicsMesh())
+		{
+			continue;
+		}
+		pxCollider->QueueDebugDraw(g_xPhysicsMeshConfig.m_xDebugColor);
 	}
 }

@@ -1,16 +1,11 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/Zenith_AIDebugVariables.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
-
-#ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
-#endif
 
 // Lookup table for tactical point type properties (color, display score, name)
 struct TacticalPointTypeInfo
@@ -52,20 +47,7 @@ bool Zenith_TacticalPointSystem::GetEntityPosition(Zenith_EntityID xEntity, Zeni
 	// often reference agents and owners that may live in the persistent scene
 	// or additively-loaded scenes.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xEntity);
-	if (!pxSceneData)
-	{
-		return false;
-	}
-
-	Zenith_Entity xEnt = pxSceneData->TryGetEntity(xEntity);
-	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>())
-	{
-		return false;
-	}
-
-	xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOutPos);
-	return true;
+	return Zenith_AI_GetEntityPosition(xEntity, xOutPos);
 }
 
 // ========== Score Context Structs ==========
@@ -144,7 +126,7 @@ static float ScoreOverwatchPoint(const Zenith_TacticalPoint& xPoint, const void*
 	Zenith_Maths::Vector3 xEyeLevel = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f);
 	Zenith_Maths::Vector3 xDirection = pxCtx->m_xAreaToWatch - xEyeLevel;
 	float fCheckDist = Zenith_Maths::Length(xDirection);
-	Zenith_Physics::RaycastResult xRayResult = g_xEngine.Physics().Raycast(xEyeLevel, xDirection, fCheckDist);
+	Zenith_Physics::RaycastResult xRayResult = Zenith_Physics::Get().Raycast(xEyeLevel, xDirection, fCheckDist);
 	float fLOSScore = xRayResult.m_bHit ? 0.0f : 1.0f;  // Full score if clear LOS, zero if blocked
 
 	float fDistFromAgent = Zenith_Maths::Length(xPoint.m_xPosition - pxCtx->m_xAgentPos);
@@ -258,7 +240,7 @@ void Zenith_TacticalPointSystem::Update()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE);
 
-	auto& xScenes = g_xEngine.Scenes();
+	auto& xScenes = Zenith_SceneSystem::Get();
 
 	// Validate owner entities still exist. Audit §3.18 fix: resolve each
 	// referenced entity's OWN scene rather than assuming all tactical points
@@ -577,7 +559,7 @@ void Zenith_TacticalPointSystem::GenerateCoverPointsAround(const Zenith_Maths::V
 	const float fGridSpacing = 3.0f;
 	const int32_t iGridSize = static_cast<int32_t>(fRadius / fGridSpacing);
 
-	auto& xPhysics = g_xEngine.Physics();
+	auto& xPhysics = Zenith_Physics::Get();
 
 	for (int32_t x = -iGridSize; x <= iGridSize; ++x)
 	{
@@ -849,8 +831,6 @@ void Zenith_TacticalPointSystem::DebugDraw()
 
 void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoint)
 {
-	auto& xPrimitives = g_xEngine.Primitives();
-
 	// Color and score from lookup table
 	uint8_t uTypeIndex = static_cast<uint8_t>(xPoint.m_eType);
 	Zenith_Maths::Vector3 xColor = (uTypeIndex < static_cast<uint8_t>(TacticalPointType::COUNT))
@@ -868,17 +848,17 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 	}
 
 	// Draw sphere at position
-	xPrimitives.AddSphere(xPoint.m_xPosition, 0.3f, xColor);
+	Zenith_AI_DebugDrawSphere(xPoint.m_xPosition, 0.3f, xColor);
 
 	// Draw facing direction
 	Zenith_Maths::Vector3 xFacingEnd = xPoint.m_xPosition + xPoint.m_xFacing * 0.8f;
-	xPrimitives.AddLine(xPoint.m_xPosition, xFacingEnd, xColor);
+	Zenith_AI_DebugDrawLine(xPoint.m_xPosition, xFacingEnd, xColor, 0.02f);
 
 	// Draw vertical line for elevated points
 	if (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED)
 	{
 		Zenith_Maths::Vector3 xTop = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
-		xPrimitives.AddLine(xPoint.m_xPosition, xTop, Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f));
+		Zenith_AI_DebugDrawLine(xPoint.m_xPosition, xTop, Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f), 0.02f);
 	}
 
 	// Draw score if enabled
@@ -915,10 +895,10 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 		// Visual indicator of score (taller = higher score)
 		float fScoreHeight = fDisplayScore * 0.3f;
 		Zenith_Maths::Vector3 xScoreTop = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f + fScoreHeight, 0.0f);
-		xPrimitives.AddLine(xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xScoreTop, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f), 0.03f);
+		Zenith_AI_DebugDrawLine(xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xScoreTop, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f), 0.03f);
 
 		// Add a small sphere at top to make it more visible
-		xPrimitives.AddSphere(xScoreTop, 0.08f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
+		Zenith_AI_DebugDrawSphere(xScoreTop, 0.08f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
 	}
 }
 #endif
@@ -974,7 +954,7 @@ float Zenith_TacticalPointSystem::EvaluateCoverFromThreat(
 
 	if (fCheckDist > 0.001f)
 	{
-		Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(xEyeLevel, xDirection, fCheckDist);
+		Zenith_Physics::RaycastResult xResult = Zenith_Physics::Get().Raycast(xEyeLevel, xDirection, fCheckDist);
 		if (xResult.m_bHit)
 		{
 			// Something is blocking line of sight to threat
@@ -1020,7 +1000,3 @@ const char* GetTacticalPointTypeName(TacticalPointType eType)
 	default:                                 return "Unknown";
 	}
 }
-
-#ifdef ZENITH_TESTING
-#include "AI/Squad/Zenith_TacticalPoint.Tests.inl"
-#endif

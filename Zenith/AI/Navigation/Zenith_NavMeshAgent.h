@@ -1,10 +1,9 @@
 #pragma once
 
 #include "AI/Navigation/Zenith_Pathfinding.h"
+#include "ZenithECS/Zenith_Entity.h"   // Zenith_EntityID
 
 class Zenith_NavMesh;
-class Zenith_TransformComponent;
-class Zenith_ColliderComponent;
 
 /**
  * Zenith_NavMeshAgent - Agent movement controller on navigation mesh
@@ -122,31 +121,22 @@ public:
 	/**
 	 * Update agent movement for one frame.
 	 *
-	 * When pxCollider is non-null and references a dynamic Jolt body,
-	 * the agent drives motion via Zenith_Physics::SetLinearVelocity so
-	 * Jolt resolves wall collisions and integrates Y naturally. The
-	 * agent's current Jolt Y velocity is preserved (gravity, falls,
-	 * impulses survive each tick). This is the production path for
-	 * any AI agent on a physics-backed entity.
+	 * Leaf-clean: takes only the agent's Zenith_EntityID and resolves its
+	 * transform + collider body through the engine-installed world hooks
+	 * (Zenith_AIWorldHooks), so this leaf names no concrete component.
 	 *
-	 * When pxCollider is null OR the body is non-dynamic, falls back to
-	 * direct xTransform.SetPosition writes. This is the legacy path,
-	 * used by transform-only unit tests where physics isn't wired up.
+	 * When the entity has a dynamic collider body, the agent drives motion via
+	 * Zenith_Physics::SetLinearVelocity so Jolt resolves wall collisions and
+	 * integrates Y naturally (gravity / falls / impulses survive each tick) --
+	 * the production path. Otherwise it falls back to writing the entity transform
+	 * directly (Zenith_AI_SetEntityPosition) -- the legacy path for transform-only
+	 * unit tests + non-physics agents. A non-physics SetPosition path on a dynamic
+	 * body would fight Jolt's collision response every frame, hence the split.
 	 *
-	 * Rationale: a non-physics SetPosition path on a dynamic body
-	 * fights Jolt's collision response every frame -- written Y gets
-	 * popped back, written XZ can push through walls, the navmesh
-	 * agent and Jolt argue indefinitely about where the entity sits.
-	 *
-	 * @param fDt        Delta time
-	 * @param xTransform Transform component (used for position read +
-	 *                   the SetPosition fallback)
-	 * @param pxCollider Optional collider for the physics-velocity
-	 *                   path. Pass nullptr to force SetPosition mode.
+	 * @param fDt     Delta time
+	 * @param xEntity The agent entity (transform + collider resolved via hooks)
 	 */
-	void Update(float fDt,
-	            Zenith_TransformComponent& xTransform,
-	            Zenith_ColliderComponent* pxCollider = nullptr);
+	void Update(float fDt, Zenith_EntityID xEntity);
 
 	/**
 	 * Update agent and return desired velocity (without modifying transform)

@@ -28,405 +28,6 @@
     <ClCompile Include="..\Middleware\imgui-docking\imgui_widgets.cpp">
       <Filter>Middleware\imgui-docking</Filter>
     </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Color.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Factory.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\IssueReporting.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemThreadPool.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemWithBarrier.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LinearCurve.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\RTTI.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Semaphore.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StringTools.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TickCounter.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder2D.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Indexify.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\OrientedBox.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStream.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryIn.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryOut.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamIn.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamOut.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextIn.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextOut.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableObject.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\TypeDeclarations.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyCreationSettings.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyInterface.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyManager.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MassProperties.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\Character.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterBase.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterVirtual.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhase.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseBruteForce.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuadTree.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\QuadTree.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastConvexVsTriangles.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastSphereVsTriangles.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideConvexVsTriangles.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSphereVsTriangles.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionDispatch.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionGroup.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\EstimateCollisionResponse.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilter.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilterTable.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ManifoldBetweenTwoFaces.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseQuery.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseStats.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterial.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterialSimple.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\BoxShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CapsuleShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexHullShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CylinderShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\DecoratedShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\EmptyShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\HeightFieldShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MeshShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MutableCompoundShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\OffsetCenterOfMassShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PlaneShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\RotatedTranslatedShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaledShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\Shape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SphereShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\StaticCompoundShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCapsuleShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCylinderShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TriangleShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\TransformedShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConeConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\Constraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintManager.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ContactConstraintManager.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\DistanceConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\FixedConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\GearConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\HingeConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\MotorSettings.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPath.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPathHermite.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PointConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PulleyConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\RackAndPinionConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SixDOFConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SliderConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SpringSettings.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SwingTwistConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\TwoBodyConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\DeterminismLog.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\IslandBuilder.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\LargeIslandSplitter.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsScene.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSystem.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsUpdateContext.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll\Ragdoll.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyCreationSettings.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyMotionProperties.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyShape.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodySharedSettings.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorderImpl.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\MotorcycleController.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\TrackedVehicleController.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleAntiRollBar.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleCollisionTester.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleConstraint.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleController.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleDifferential.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleEngine.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTrack.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTransmission.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\Wheel.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\WheeledVehicleController.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\RegisterTypes.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRenderer.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererPlayback.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererRecorder.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererSimple.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletalAnimation.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\Skeleton.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonMapper.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonPose.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.cpp">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_AssimpConvert.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
@@ -472,8 +73,8 @@
     <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.cpp">
       <Filter>AI\BehaviorTree</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\AI\Components\Zenith_AIAgentComponent.cpp">
-      <Filter>AI\Components</Filter>
+    <ClCompile Include="..\Zenith\AI\Internal\Zenith_AIPCH.cpp">
+      <Filter>AI\Internal</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMesh.cpp">
       <Filter>AI\Navigation</Filter>
@@ -503,6 +104,9 @@
       <Filter>AI</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AI\Zenith_AIDebugVariables.cpp">
+      <Filter>AI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Zenith_AIWorldHooks.cpp">
       <Filter>AI</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.cpp">
@@ -703,9 +307,6 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_SceneOps.cpp">
-      <Filter>Editor</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorAutomation.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -721,6 +322,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor_Menu.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_SceneOps.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -732,6 +336,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_UndoSystem.cpp">
       <Filter>Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AIAgentComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
@@ -775,6 +382,15 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_AIDebugVarsRegistration.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_AINavGeometry.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_AIWorldHooksInstall.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_CameraResolve.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
@@ -791,6 +407,9 @@
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp">
@@ -1018,6 +637,9 @@
     <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp">
       <Filter>Maths</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Physics\Internal\Zenith_PhysicsPCH.cpp">
+      <Filter>Physics\Internal</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Physics\Zenith_Physics.cpp">
       <Filter>Physics</Filter>
     </ClCompile>
@@ -1232,933 +854,6 @@
     </ClInclude>
     <ClInclude Include="..\Middleware\imgui-docking\imstb_truetype.h">
       <Filter>Middleware\imgui-docking</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeToBuffer.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec\NodeCodecQuadTreeHalfFloat.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\TriangleCodec\TriangleCodecIndexed8BitPackSOA4Flags.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\TriangleCodec</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ConfigurationString.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ARMNeon.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Array.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Atomics.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\BinaryHeap.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ByteBuffer.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Color.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Core.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Factory.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPControlWord.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPException.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPFlushDenormals.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\HashCombine.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\HashTable.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\InsertionSort.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\IssueReporting.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemThreadPool.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemWithBarrier.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LinearCurve.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Mutex.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\MutexArray.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\NonCopyable.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\QuickSort.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Reference.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Result.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\RTTI.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ScopeExit.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Semaphore.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StaticArray.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLAlignedAllocator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLAllocator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLLocalAllocator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLTempAllocator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamIn.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamOut.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamUtils.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamWrapper.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StridedPtr.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StringTools.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TempAllocator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TickCounter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\UnorderedMap.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\UnorderedSet.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\AABox.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\AABox4.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ClipPoly.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ClosestPoint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder2D.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexSupport.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Ellipse.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\EPAConvexHullBuilder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\EPAPenetrationDepth.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\GJKClosestPoint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\IndexedTriangle.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Indexify.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\MortonCode.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\OrientedBox.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Plane.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayAABox.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayCapsule.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayCylinder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RaySphere.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayTriangle.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Sphere.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Triangle.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Geometry</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Double3.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DynMatrix.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\EigenValueSymmetric.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\FindRoot.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float2.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float3.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float4.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\GaussianElimination.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\HalfFloat.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Math.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\MathTypes.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Matrix.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Real.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Swizzle.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Trigonometry.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vector.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\GetPrimitiveTypeOfType.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStream.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryIn.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryOut.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamIn.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamOut.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextIn.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextOut.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTypes.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttribute.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttributeEnum.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttributeTyped.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableObject.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\TypeDeclarations.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\AllowedDOFs.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyAccess.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyActivationListener.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyCreationSettings.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyFilter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyID.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyInterface.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLock.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLockInterface.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLockMulti.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyManager.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyPair.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyType.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MassProperties.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.inl">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionQuality.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionType.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\Character.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterBase.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterID.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterVirtual.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\AABoxCast.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ActiveEdgeMode.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ActiveEdges.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BackFaceMode.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhase.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseBruteForce.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayer.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayerInterfaceMask.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayerInterfaceTable.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuadTree.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuery.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\ObjectVsBroadPhaseLayerFilterMask.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\ObjectVsBroadPhaseLayerFilterTable.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\QuadTree.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastConvexVsTriangles.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastResult.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastSphereVsTriangles.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollectFacesMode.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideConvexVsTriangles.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollidePointResult.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideShapeVsShapePerLeaf.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSoftBodyVertexIterator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSoftBodyVerticesVsTriangles.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSphereVsTriangles.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionCollector.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionCollectorImpl.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionDispatch.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionGroup.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ContactListener.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\EstimateCollisionResponse.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilterTable.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\InternalEdgeRemovingCollector.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ManifoldBetweenTwoFaces.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseQuery.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseStats.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayer.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayerPairFilterMask.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayerPairFilterTable.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterial.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterialSimple.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\RayCast.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ShapeCast.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ShapeFilter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\BoxShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CapsuleShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShapeVisitors.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexHullShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CylinderShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\DecoratedShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\EmptyShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\GetTrianglesContext.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\HeightFieldShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MeshShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MutableCompoundShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\OffsetCenterOfMassShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PlaneShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PolyhedronSubmergedVolumeCalculator.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\RotatedTranslatedShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaledShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaleHelpers.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\Shape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SphereShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\StaticCompoundShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SubShapeID.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SubShapeIDPair.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCapsuleShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCylinderShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TriangleShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SimShapeFilter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SimShapeFilterWrapper.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SortReverseAndStore.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\TransformedShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\CalculateSolverSteps.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConeConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\Constraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintManager.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\AngleConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\AxisConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\DualAxisConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\GearConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\HingeRotationConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\IndependentAxisConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\PointConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RackAndPinionConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RotationEulerConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RotationQuatConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\SpringPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\SwingTwistConstraintPart.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ContactConstraintManager.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\DistanceConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\FixedConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\GearConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\HingeConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\MotorSettings.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPath.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPathHermite.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PointConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PulleyConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\RackAndPinionConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SixDOFConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SliderConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SpringSettings.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SwingTwistConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\TwoBodyConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\DeterminismLog.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\EActivation.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\EPhysicsUpdateError.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\IslandBuilder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\LargeIslandSplitter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsLock.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsScene.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSettings.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsStepListener.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSystem.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsUpdateContext.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll\Ragdoll.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyContactListener.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyCreationSettings.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyManifold.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyMotionProperties.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyShape.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodySharedSettings.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyUpdateContext.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyVertex.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorderImpl.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\MotorcycleController.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\TrackedVehicleController.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleAntiRollBar.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleCollisionTester.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleConstraint.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleController.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleDifferential.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleEngine.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTrack.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTransmission.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\Wheel.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\WheeledVehicleController.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\RegisterTypes.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRenderer.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererPlayback.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererRecorder.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererSimple.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletalAnimation.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\Skeleton.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonMapper.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonPose.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Skeleton</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\aabb.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
@@ -3279,9 +1974,6 @@
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.h">
       <Filter>AI\BehaviorTree</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\AI\Components\Zenith_AIAgentComponent.h">
-      <Filter>AI\Components</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
@@ -3333,10 +2025,16 @@
     <ClInclude Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.Tests.inl">
       <Filter>AI\Squad</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Zenith_AI.h">
+      <Filter>AI</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.h">
       <Filter>AI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.Tests.inl">
+      <Filter>AI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Zenith_AIWorldHooks.h">
       <Filter>AI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.h">
@@ -3642,6 +2340,9 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AIAgentComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
@@ -3684,6 +2385,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_AINavGeometry.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -3693,7 +2397,13 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_GraphReload.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Physics.Tests.inl">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h">
@@ -3768,6 +2478,9 @@
     <ClInclude Include="..\Zenith\Flux\Flux_GraphicsImpl.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_GraphResource.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -3780,7 +2493,13 @@
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_RenderResources.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h">
@@ -3792,7 +2511,13 @@
     <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_TransientDesc.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_WorkDistribution.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h">
@@ -3898,6 +2623,9 @@
       <Filter>Flux\Quads</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h">
+      <Filter>Flux\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Internal.h">
       <Filter>Flux\RenderGraph</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h">
@@ -4287,9 +3015,6 @@
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h">
       <Filter>Physics</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl">
-      <Filter>Physics</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
       <Filter>Physics</Filter>
     </ClInclude>
@@ -4422,6 +3147,9 @@
     <ClInclude Include="..\Zenith\Windows\Zenith_Windows_Window.h">
       <Filter>Windows</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_AllScenesQuery.inl">
+      <Filter>ZenithECS\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_ComponentMeta_Detail.h">
       <Filter>ZenithECS\Internal</Filter>
     </ClInclude>
@@ -4473,19 +3201,14 @@
     <ClInclude Include="..\Zenith\Zenith_DebugBreak.h" />
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis">
-      <Filter>Middleware\JoltPhysics-5.4.0\Jolt</Filter>
-    </Natvis>
-  </ItemGroup>
-  <ItemGroup>
     <Filter Include="AI">
       <UniqueIdentifier>{c9e3400a-3a1a-c955-a374-28c6d194d0e5}</UniqueIdentifier>
     </Filter>
     <Filter Include="AI\BehaviorTree">
       <UniqueIdentifier>{7163b185-7f4c-c3e7-fde6-a2288cdd461d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="AI\Components">
-      <UniqueIdentifier>{11af2d90-91c5-f0d5-0b4e-0ab6a50f7092}</UniqueIdentifier>
+    <Filter Include="AI\Internal">
+      <UniqueIdentifier>{96cb6c6b-c7db-c467-5493-9203c26e76e9}</UniqueIdentifier>
     </Filter>
     <Filter Include="AI\Navigation">
       <UniqueIdentifier>{40600597-204a-f544-a038-f54fac0f4daf}</UniqueIdentifier>
@@ -4748,90 +3471,6 @@
     <Filter Include="Middleware">
       <UniqueIdentifier>{eebf12a1-b020-34d6-90e9-3e7c687338df}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0">
-      <UniqueIdentifier>{28d59694-f7eb-5f2a-988d-245669d0d02d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets">
-      <UniqueIdentifier>{fd3572a1-8e8f-db55-3195-b627a00aedc8}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders">
-      <UniqueIdentifier>{4a196956-3f69-2b1a-5b8e-e667a3948a07}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX">
-      <UniqueIdentifier>{7cdbb2ec-b33f-425c-bfeb-4155d00486df}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL">
-      <UniqueIdentifier>{7283c8ca-48e0-6a9a-c0a6-a7cfb52f4fd1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK">
-      <UniqueIdentifier>{29841488-3bfc-3d5d-2765-383d7c9905ec}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt">
-      <UniqueIdentifier>{850f62c6-7919-d563-7aa8-d889c6dd20a9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\AABBTree">
-      <UniqueIdentifier>{42aaaa9f-6014-8fb0-b36e-910d790744a7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec">
-      <UniqueIdentifier>{195496fb-4438-c0ca-29c0-73e931135e44}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\TriangleCodec">
-      <UniqueIdentifier>{f93c7ebd-6e45-63ef-faf5-561606e856ac}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Core">
-      <UniqueIdentifier>{a430cdb9-de36-2788-b711-dfc1ed83646b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Geometry">
-      <UniqueIdentifier>{84e46df8-4d3e-bcb1-e7bb-4616391274f7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Math">
-      <UniqueIdentifier>{47d4e35e-2144-086e-8f09-7cb2b2dcfeed}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream">
-      <UniqueIdentifier>{5147c72d-70b5-beec-5734-6a93edffdf4b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics">
-      <UniqueIdentifier>{9a4a3596-981f-8e61-2534-56433fab797f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body">
-      <UniqueIdentifier>{1fb0826b-f9e2-7395-859a-f09bc7c7084b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character">
-      <UniqueIdentifier>{447587bc-8cd6-1458-093f-6727347b4409}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision">
-      <UniqueIdentifier>{10511ad7-9d5f-e182-ac9a-030bdf898dd7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase">
-      <UniqueIdentifier>{1fe4504d-b606-1735-ae21-4757393bb51e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape">
-      <UniqueIdentifier>{2c87a278-592f-cfc2-301a-77dc479549d6}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints">
-      <UniqueIdentifier>{e2fa0f1a-26f1-b00c-24f9-b69c1f20eb5b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart">
-      <UniqueIdentifier>{c8ba6147-f1bd-1770-b984-2e368b7d2258}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll">
-      <UniqueIdentifier>{1a7e8836-2eea-b894-b8d7-4bf1aff2750f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody">
-      <UniqueIdentifier>{cece5a09-d45b-f0f9-32fe-18c263f01ab5}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle">
-      <UniqueIdentifier>{e0f84d05-85df-045a-4903-a4efc5c99dcf}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Renderer">
-      <UniqueIdentifier>{a5df5c9f-ea54-9866-9bfa-8e3e6d9f04ba}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\Skeleton">
-      <UniqueIdentifier>{20ccbd46-55f6-85d2-5ea4-92cd4a5ab842}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter">
-      <UniqueIdentifier>{1741e319-fb73-c1aa-e09b-692e7a4ab3e4}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Middleware\imgui-docking">
       <UniqueIdentifier>{c71024a9-54bf-8bd8-8d53-59ca9d1086ab}</UniqueIdentifier>
     </Filter>
@@ -4840,6 +3479,9 @@
     </Filter>
     <Filter Include="Physics">
       <UniqueIdentifier>{e999ae50-54c3-c246-580e-4b540b0fd104}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Physics\Internal">
+      <UniqueIdentifier>{a0c8a369-a74a-8c72-fdb5-1f9265a597b0}</UniqueIdentifier>
     </Filter>
     <Filter Include="Prefab">
       <UniqueIdentifier>{519314fc-8dd9-f1cb-7361-c6a449e6355e}</UniqueIdentifier>

@@ -1,13 +1,11 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "AI/BehaviorTree/Zenith_BTActions.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 // ========== Zenith_BTAction_Wait ==========
 
@@ -72,14 +70,10 @@ void Zenith_BTAction_MoveTo::OnEnter(Zenith_Entity&, Zenith_Blackboard&)
 void Zenith_BTAction_MoveTo::OnExit(Zenith_Entity& xAgent, Zenith_Blackboard&)
 {
 	// Stop movement
-	if (xAgent.HasComponent<Zenith_AIAgentComponent>())
+	Zenith_NavMeshAgent* pxNav = Zenith_AI_GetNavMeshAgent(xAgent.GetEntityID());
+	if (pxNav)
 	{
-		Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
-		Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent();
-		if (pxNav)
-		{
-			pxNav->Stop();
-		}
+		pxNav->Stop();
 	}
 }
 
@@ -94,14 +88,7 @@ BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Black
 	Zenith_Maths::Vector3 xTargetPos = xBlackboard.GetVector3(m_strTargetKey);
 
 	// Get nav agent
-	if (!xAgent.HasComponent<Zenith_AIAgentComponent>())
-	{
-		m_eLastStatus = BTNodeStatus::FAILURE;
-		return m_eLastStatus;
-	}
-
-	Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
-	Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent();
+	Zenith_NavMeshAgent* pxNav = Zenith_AI_GetNavMeshAgent(xAgent.GetEntityID());
 
 	if (pxNav == nullptr)
 	{
@@ -137,10 +124,9 @@ BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Black
 	// the parent Selector falls through to a lower-priority branch.
 	if (pxNav->HasReachedDestination())
 	{
-		if (xAgent.HasComponent<Zenith_TransformComponent>())
+		Zenith_Maths::Vector3 xAgentPos;
+		if (Zenith_AI_GetEntityPosition(xAgent.GetEntityID(), xAgentPos))
 		{
-			Zenith_Maths::Vector3 xAgentPos;
-			xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
 			const float fDist = Zenith_Maths::Length(xTargetPos - xAgentPos);
 			if (fDist > m_fAcceptanceRadius)
 			{
@@ -202,14 +188,10 @@ void Zenith_BTAction_MoveToEntity::OnEnter(Zenith_Entity&, Zenith_Blackboard&)
 
 void Zenith_BTAction_MoveToEntity::OnAbort(Zenith_Entity& xAgent, Zenith_Blackboard&)
 {
-	if (xAgent.HasComponent<Zenith_AIAgentComponent>())
+	Zenith_NavMeshAgent* pxNav = Zenith_AI_GetNavMeshAgent(xAgent.GetEntityID());
+	if (pxNav)
 	{
-		Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
-		Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent();
-		if (pxNav)
-		{
-			pxNav->Stop();
-		}
+		pxNav->Stop();
 	}
 }
 
@@ -226,32 +208,15 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 	// Get target position. Audit §3.18 fix: resolve target's OWN scene so
 	// MoveToEntity works for targets in persistent or additively-loaded scenes.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xTargetID);
-	if (!pxSceneData)
-	{
-		m_eLastStatus = BTNodeStatus::FAILURE;
-		return m_eLastStatus;
-	}
-
-	Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTargetID);
-	if (!xTargetEntity.IsValid() || !xTargetEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		m_eLastStatus = BTNodeStatus::FAILURE;
-		return m_eLastStatus;
-	}
-
 	Zenith_Maths::Vector3 xTargetPos;
-	xTargetEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xTargetPos);
+	if (!Zenith_AI_GetEntityPosition(xTargetID, xTargetPos))
+	{
+		m_eLastStatus = BTNodeStatus::FAILURE;
+		return m_eLastStatus;
+	}
 
 	// Get nav agent
-	if (!xAgent.HasComponent<Zenith_AIAgentComponent>())
-	{
-		m_eLastStatus = BTNodeStatus::FAILURE;
-		return m_eLastStatus;
-	}
-
-	Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
-	Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent();
+	Zenith_NavMeshAgent* pxNav = Zenith_AI_GetNavMeshAgent(xAgent.GetEntityID());
 
 	if (pxNav == nullptr)
 	{
@@ -260,10 +225,9 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 	}
 
 	// Check current distance
-	if (xAgent.HasComponent<Zenith_TransformComponent>())
+	Zenith_Maths::Vector3 xAgentPos;
+	if (Zenith_AI_GetEntityPosition(xAgent.GetEntityID(), xAgentPos))
 	{
-		Zenith_Maths::Vector3 xAgentPos;
-		xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
 		float fDist = Zenith_Maths::Length(xTargetPos - xAgentPos);
 
 		if (fDist <= m_fAcceptanceRadius)
@@ -441,16 +405,10 @@ BTNodeStatus Zenith_BTAction_FindPrimaryTarget::Execute(Zenith_Entity& xAgent, Z
 		xBlackboard.SetEntityID(m_strOutputKey, xTarget);
 
 		// Also store target position. Audit §3.18 fix: resolve target's OWN scene.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xTarget);
-		if (pxSceneData)
+		Zenith_Maths::Vector3 xPos;
+		if (Zenith_AI_GetEntityPosition(xTarget, xPos))
 		{
-			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);
-			if (xTargetEntity.IsValid() && xTargetEntity.HasComponent<Zenith_TransformComponent>())
-			{
-				Zenith_Maths::Vector3 xPos;
-				xTargetEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-				xBlackboard.SetVector3("TargetPosition", xPos);
-			}
+			xBlackboard.SetVector3("TargetPosition", xPos);
 		}
 
 		m_eLastStatus = BTNodeStatus::SUCCESS;

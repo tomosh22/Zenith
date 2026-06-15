@@ -172,10 +172,10 @@ private:
 	void UpdateMemberAliveStatus(Zenith_EntityID xEntity, bool bAlive);
 
 #ifdef ZENITH_TOOLS
-	void DebugDrawSquadLinks(class Zenith_SceneData* pxSceneData, const Zenith_Maths::Vector3& xLeaderPos) const;
+	void DebugDrawSquadLinks(const Zenith_Maths::Vector3& xLeaderPos) const;
 	void DebugDrawFormationPositions() const;
 	void DebugDrawSharedTargets() const;
-	void DebugDrawRoleLabels(class Zenith_SceneData* pxSceneData) const;
+	void DebugDrawRoleLabels() const;
 #endif
 };
 

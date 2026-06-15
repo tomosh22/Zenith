@@ -49,7 +49,7 @@
 #include "Components/DPDoor_Component.h"
 #include "Components/DPForge_Component.h"
 #include "Components/Priest_Component.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "Components/DPHUDController_Component.h"
 #include "Components/DPPauseMenuController_Component.h"
 #include "Components/DPFogPass_Component.h"

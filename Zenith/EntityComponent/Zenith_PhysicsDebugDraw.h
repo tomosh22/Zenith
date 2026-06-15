@@ -22,4 +22,9 @@ public:
 		const Flux_MeshGeometry* pxMesh,
 		const Zenith_Maths::Matrix4& xTransform,
 		const Zenith_Maths::Vector3& xColor);
+
+	// Queue physics-mesh debug visualisation for every Model/Collider component in
+	// all loaded scenes (editor / stopped mode, once per frame). Relocated out of
+	// Zenith_PhysicsMeshGenerator so the Physics leaf names no concrete component.
+	static void QueueAll();
 };

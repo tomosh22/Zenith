@@ -24,7 +24,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RenderTest", "..\Games\Rend
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Runner", "..\Games\Runner\build\runner_win64.vcxproj", "{565A18B3-933D-983B-7814-D98F99B39CC7}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SentinelAI", "sentinelai_win64.vcxproj", "{B52E84D3-9096-BA01-9255-B62610F34FC8}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SentinelECS", "sentinelecs_win64.vcxproj", "{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SentinelPhysics", "sentinelphysics_win64.vcxproj", "{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sokoban", "..\Games\Sokoban\Build\sokoban_win64.vcxproj", "{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}"
 EndProject
@@ -40,9 +44,13 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzleRegistryViewer", 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxproj", "{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithAI", "zenithai_win64.vcxproj", "{D76B6495-720E-E83B-6D69-57E990A6F21F}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithBase", "zenithbase_win64.vcxproj", "{04AE3503-34B5-40D1-B5EA-687E4EBDA542}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithECS", "zenithecs_win64.vcxproj", "{C835B780-6023-6555-CFB0-241C3E2F54EC}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithPhysics", "zenithphysics_win64.vcxproj", "{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -232,6 +240,18 @@ Global
 		{565A18B3-933D-983B-7814-D98F99B39CC7}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
 		{565A18B3-933D-983B-7814-D98F99B39CC7}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_True|x64
 		{565A18B3-933D-983B-7814-D98F99B39CC7}.Vulkan_vs2022_Release_Win64_True|x64.Build.0 = Vulkan_vs2022_Release_Win64_True|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.D3D12_vs2022_Release_Win64_False|x64.ActiveCfg = D3D12_vs2022_Release_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.D3D12_vs2022_Release_Win64_False|x64.Build.0 = D3D12_vs2022_Release_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.D3D12_vs2022_Release_Win64_True|x64.ActiveCfg = D3D12_vs2022_Release_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.Vulkan_vs2022_Debug_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.Vulkan_vs2022_Debug_Win64_False|x64.Build.0 = Vulkan_vs2022_Debug_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.Vulkan_vs2022_Debug_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.Vulkan_vs2022_Release_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
+		{B52E84D3-9096-BA01-9255-B62610F34FC8}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
 		{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
 		{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
 		{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
@@ -244,6 +264,18 @@ Global
 		{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}.Vulkan_vs2022_Release_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
 		{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
 		{B5B68B48-36E6-D4B7-11E3-DD6C7EC58FC9}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.D3D12_vs2022_Release_Win64_False|x64.ActiveCfg = D3D12_vs2022_Release_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.D3D12_vs2022_Release_Win64_False|x64.Build.0 = D3D12_vs2022_Release_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.D3D12_vs2022_Release_Win64_True|x64.ActiveCfg = D3D12_vs2022_Release_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.Vulkan_vs2022_Debug_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.Vulkan_vs2022_Debug_Win64_False|x64.Build.0 = Vulkan_vs2022_Debug_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.Vulkan_vs2022_Debug_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.Vulkan_vs2022_Release_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
+		{78F199D5-24B7-5F0E-BF80-4E15ABA6725D}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_True|x64
@@ -348,6 +380,22 @@ Global
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_True|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.Vulkan_vs2022_Release_Win64_True|x64.Build.0 = Vulkan_vs2022_Release_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Debug_Win64_True|x64.Build.0 = D3D12_vs2022_Debug_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Release_Win64_False|x64.ActiveCfg = D3D12_vs2022_Release_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Release_Win64_False|x64.Build.0 = D3D12_vs2022_Release_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Release_Win64_True|x64.ActiveCfg = D3D12_vs2022_Release_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.D3D12_vs2022_Release_Win64_True|x64.Build.0 = D3D12_vs2022_Release_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Debug_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Debug_Win64_False|x64.Build.0 = Vulkan_vs2022_Debug_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Debug_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Debug_Win64_True|x64.Build.0 = Vulkan_vs2022_Debug_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Release_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_True|x64
+		{D76B6495-720E-E83B-6D69-57E990A6F21F}.Vulkan_vs2022_Release_Win64_True|x64.Build.0 = Vulkan_vs2022_Release_Win64_True|x64
 		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
 		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
 		{04AE3503-34B5-40D1-B5EA-687E4EBDA542}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_True|x64
@@ -380,6 +428,22 @@ Global
 		{C835B780-6023-6555-CFB0-241C3E2F54EC}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
 		{C835B780-6023-6555-CFB0-241C3E2F54EC}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_True|x64
 		{C835B780-6023-6555-CFB0-241C3E2F54EC}.Vulkan_vs2022_Release_Win64_True|x64.Build.0 = Vulkan_vs2022_Release_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Debug_Win64_False|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Debug_Win64_False|x64.Build.0 = D3D12_vs2022_Debug_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Debug_Win64_True|x64.ActiveCfg = D3D12_vs2022_Debug_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Debug_Win64_True|x64.Build.0 = D3D12_vs2022_Debug_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Release_Win64_False|x64.ActiveCfg = D3D12_vs2022_Release_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Release_Win64_False|x64.Build.0 = D3D12_vs2022_Release_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Release_Win64_True|x64.ActiveCfg = D3D12_vs2022_Release_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.D3D12_vs2022_Release_Win64_True|x64.Build.0 = D3D12_vs2022_Release_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Debug_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Debug_Win64_False|x64.Build.0 = Vulkan_vs2022_Debug_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Debug_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Debug_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Debug_Win64_True|x64.Build.0 = Vulkan_vs2022_Debug_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Release_Win64_False|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Release_Win64_False|x64.Build.0 = Vulkan_vs2022_Release_Win64_False|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Release_Win64_True|x64.ActiveCfg = Vulkan_vs2022_Release_Win64_True|x64
+		{509CB2A3-B253-9F2A-DEC3-964A1F3C294A}.Vulkan_vs2022_Release_Win64_True|x64.Build.0 = Vulkan_vs2022_Release_Win64_True|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

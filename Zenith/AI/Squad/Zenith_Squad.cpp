@@ -1,15 +1,12 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Zenith_AIDebugVariables.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
-
 static Zenith_Maths::Vector3 RoleToDebugColor(SquadRole eRole)
 {
 	switch (eRole)
@@ -175,23 +172,14 @@ void Zenith_Squad::UpdateFormationPositions()
 	// scene. Squads whose leader was moved to the persistent scene (or any
 	// non-active scene) must still compute formation positions.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xLeaderID);
-	if (!pxSceneData)
-	{
-		return;
-	}
-
-	Zenith_Entity xLeaderEntity = pxSceneData->TryGetEntity(m_xLeaderID);
-	if (!xLeaderEntity.IsValid() || !xLeaderEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		return;
-	}
-
-	Zenith_TransformComponent& xLeaderTransform = xLeaderEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xLeaderPos;
-	xLeaderTransform.GetPosition(xLeaderPos);
+	if (!Zenith_AI_GetEntityPosition(m_xLeaderID, xLeaderPos))
+	{
+		return;
+	}
+
 	Zenith_Maths::Quaternion xLeaderRot;
-	xLeaderTransform.GetRotation(xLeaderRot);
+	Zenith_AI_GetEntityRotation(m_xLeaderID, xLeaderRot);
 
 	// Update each member's target formation position
 	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
@@ -435,7 +423,7 @@ void Zenith_Squad::Update(float fDt)
 	for (int32_t i = static_cast<int32_t>(m_axMembers.GetSize()) - 1; i >= 0; --i)
 	{
 		Zenith_EntityID xMemberID = m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID;
-		Zenith_SceneData* pxMemberScene = g_xEngine.Scenes().GetSceneDataForEntity(xMemberID);
+		Zenith_SceneData* pxMemberScene = Zenith_SceneSystem::Get().GetSceneDataForEntity(xMemberID);
 		if (!pxMemberScene)
 		{
 			RemoveMember(xMemberID);
@@ -537,37 +525,28 @@ void Zenith_Squad::DebugDraw() const
 		return;
 	}
 
-	// Audit §3.18 fix: resolve leader's OWN scene for debug draw.
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xLeaderID);
-	if (!pxSceneData)
-	{
-		return;
-	}
-
-	Zenith_Entity xLeaderEntity = pxSceneData->TryGetEntity(m_xLeaderID);
-	if (!xLeaderEntity.IsValid() || !xLeaderEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		return;
-	}
-
+	// Audit §3.18 fix: resolve leader's OWN scene for debug draw (the world-hook
+	// thunk resolves the leader's owning scene + transform).
 	Zenith_Maths::Vector3 xLeaderPos;
-	xLeaderEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xLeaderPos);
+	if (!Zenith_AI_GetEntityPosition(m_xLeaderID, xLeaderPos))
+	{
+		return;
+	}
 	xLeaderPos.y += 2.0f;
 
-	DebugDrawSquadLinks(pxSceneData, xLeaderPos);
+	DebugDrawSquadLinks(xLeaderPos);
 	DebugDrawFormationPositions();
 	DebugDrawSharedTargets();
-	DebugDrawRoleLabels(pxSceneData);
+	DebugDrawRoleLabels();
 }
 
-void Zenith_Squad::DebugDrawSquadLinks(Zenith_SceneData* pxSceneData, const Zenith_Maths::Vector3& xLeaderPos) const
+void Zenith_Squad::DebugDrawSquadLinks(const Zenith_Maths::Vector3& xLeaderPos) const
 {
 	if (!Zenith_AIDebugVariables::s_bDrawSquadLinks)
 	{
 		return;
 	}
 
-	auto& xPrims = g_xEngine.Primitives();
 	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
 	{
 		const Zenith_SquadMember& xMember = m_axMembers.Get(u);
@@ -576,21 +555,18 @@ void Zenith_Squad::DebugDrawSquadLinks(Zenith_SceneData* pxSceneData, const Zeni
 			continue;
 		}
 
-		Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
-		if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Maths::Vector3 xMemberPos;
+		if (!Zenith_AI_GetEntityPosition(xMember.m_xEntityID, xMemberPos))
 		{
 			continue;
 		}
-
-		Zenith_Maths::Vector3 xMemberPos;
-		xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
 		xMemberPos.y += 2.0f;
 
-		xPrims.AddLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole));
+		Zenith_AI_DebugDrawLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole), 0.02f);
 	}
 
 	// Draw leader marker (gold crown)
-	xPrims.AddSphere(xLeaderPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), 0.2f, Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f));
+	Zenith_AI_DebugDrawSphere(xLeaderPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), 0.2f, Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f));
 }
 
 void Zenith_Squad::DebugDrawFormationPositions() const
@@ -608,7 +584,7 @@ void Zenith_Squad::DebugDrawFormationPositions() const
 			continue;
 		}
 
-		g_xEngine.Primitives().AddSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
+		Zenith_AI_DebugDrawSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
 	}
 }
 
@@ -626,11 +602,11 @@ void Zenith_Squad::DebugDrawSharedTargets() const
 			? Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)
 			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
 
-		g_xEngine.Primitives().AddCross(xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.5f, xTargetColor);
+		Zenith_AI_DebugDrawCross(xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.5f, xTargetColor);
 	}
 }
 
-void Zenith_Squad::DebugDrawRoleLabels(Zenith_SceneData* pxSceneData) const
+void Zenith_Squad::DebugDrawRoleLabels() const
 {
 	if (!Zenith_AIDebugVariables::s_bDrawRoleLabels)
 	{
@@ -645,56 +621,79 @@ void Zenith_Squad::DebugDrawRoleLabels(Zenith_SceneData* pxSceneData) const
 			continue;
 		}
 
-		Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
-		if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Maths::Vector3 xMemberPos;
+		if (!Zenith_AI_GetEntityPosition(xMember.m_xEntityID, xMemberPos))
 		{
 			continue;
 		}
-
-		Zenith_Maths::Vector3 xMemberPos;
-		xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
 		Zenith_Maths::Vector3 xLabelPos = xMemberPos + Zenith_Maths::Vector3(0.0f, 2.5f, 0.0f);
 
 		Zenith_Maths::Vector3 xRoleColor = RoleToDebugColor(xMember.m_eRole);
-		auto& xPrims = g_xEngine.Primitives();
 		switch (xMember.m_eRole)
 		{
 		case SquadRole::LEADER:
-			xPrims.AddSphere(xLabelPos, 0.15f, xRoleColor);
-			xPrims.AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor);
-			xPrims.AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor);
-			xPrims.AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor);
+			Zenith_AI_DebugDrawSphere(xLabelPos, 0.15f, xRoleColor);
+			Zenith_AI_DebugDrawLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor, 0.02f);
+			Zenith_AI_DebugDrawLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor, 0.02f);
+			Zenith_AI_DebugDrawLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor, 0.02f);
 			break;
 		case SquadRole::ASSAULT:
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
 			break;
 		case SquadRole::SUPPORT:
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
 				xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
 			break;
 		case SquadRole::FLANKER:
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
 			break;
 		case SquadRole::OVERWATCH:
-			xPrims.AddCircle(xLabelPos, 0.12f, xRoleColor);
-			xPrims.AddSphere(xLabelPos, 0.05f, xRoleColor);
+		{
+			// Equivalent of the engine debug-primitive AddCircle(xLabelPos, 0.12f,
+			// xRoleColor) (default up-normal, 32 segments, default 0.02f line
+			// thickness) drawn via the leaf debug-draw seam, which has no native
+			// circle primitive.
+			const float fPI = 3.14159265359f;
+			const float fRadius = 0.12f;
+			const uint32_t uSegments = 32;
+			const Zenith_Maths::Vector3 xNormal(0.0f, 1.0f, 0.0f);
+			Zenith_Maths::Vector3 xCircleUp = (fabsf(xNormal.y) < 0.999f)
+				? Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)
+				: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+			Zenith_Maths::Vector3 xRight = Zenith_Maths::Normalize(Zenith_Maths::Cross(xCircleUp, xNormal));
+			Zenith_Maths::Vector3 xForward = Zenith_Maths::Cross(xNormal, xRight);
+			Zenith_Maths::Vector3 xPrevPoint;
+			for (uint32_t uSeg = 0; uSeg <= uSegments; ++uSeg)
+			{
+				float fAngle = (static_cast<float>(uSeg) / static_cast<float>(uSegments)) * 2.0f * fPI;
+				float fCos = cosf(fAngle);
+				float fSin = sinf(fAngle);
+				Zenith_Maths::Vector3 xPoint = xLabelPos + (xRight * fCos + xForward * fSin) * fRadius;
+				if (uSeg > 0)
+				{
+					Zenith_AI_DebugDrawLine(xPrevPoint, xPoint, xRoleColor, 0.02f);
+				}
+				xPrevPoint = xPoint;
+			}
+			Zenith_AI_DebugDrawSphere(xLabelPos, 0.05f, xRoleColor);
 			break;
+		}
 		case SquadRole::MEDIC:
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
 				xLabelPos + Zenith_Maths::Vector3(0.12f, 0.0f, 0.0f), xRoleColor, 0.04f);
-			xPrims.AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
+			Zenith_AI_DebugDrawLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.12f), xRoleColor, 0.04f);
 			break;
 		default:
-			xPrims.AddSphere(xLabelPos, 0.1f, xRoleColor);
+			Zenith_AI_DebugDrawSphere(xLabelPos, 0.1f, xRoleColor);
 			break;
 		}
 	}
@@ -980,8 +979,4 @@ void Zenith_SquadManager::DebugDrawAllSquads()
 		s_axSquads.Get(u)->DebugDraw();
 	}
 }
-#endif
-
-#ifdef ZENITH_TESTING
-#include "AI/Squad/Zenith_Squad.Tests.inl"
 #endif

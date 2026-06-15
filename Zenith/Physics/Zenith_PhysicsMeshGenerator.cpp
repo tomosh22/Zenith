@@ -1,10 +1,5 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
-#include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "ZenithECS/Zenith_Query.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -24,17 +19,10 @@ PhysicsMeshConfig g_xPhysicsMeshConfig = {
 
 namespace
 {
-	// Renderer-neutral generated collision geometry. The generation helpers below
-	// produce this; the asset side (Zenith_MeshGeometryAsset::CreateFromGeometryData)
-	// turns it into the engine's Flux_MeshGeometry, so this TU names no renderer type.
-	struct GeneratedMeshData
-	{
-		Zenith_Vector<Zenith_Maths::Vector3> m_xPositions;
-		Zenith_Vector<Zenith_Maths::Vector3> m_xNormals;
-		Zenith_Vector<uint32_t> m_xIndices;
-
-		bool IsValid() const { return m_xPositions.GetSize() >= 3 && m_xIndices.GetSize() >= 3; }
-	};
+	// The generation helpers fill the public renderer-neutral POD declared in the
+	// header (positions + normals + indices). Local alias keeps the helper bodies
+	// unchanged; the engine-side caller turns the POD into a Zenith_MeshGeometryAsset.
+	using GeneratedMeshData = Zenith_GeneratedPhysicsMesh;
 
 	struct DecimationCellKey
 	{
@@ -547,7 +535,7 @@ const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQual
 	}
 }
 
-Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
+Zenith_GeneratedPhysicsMesh Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
 	const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
 	PhysicsMeshQuality eQuality)
 {
@@ -556,7 +544,7 @@ Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
 	return GeneratePhysicsMeshWithConfig(xMeshViews, xConfig);
 }
 
-Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
+Zenith_GeneratedPhysicsMesh Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
 	const Zenith_Vector<Zenith_PhysicsMeshView>& xMeshViews,
 	const PhysicsMeshConfig& xConfig)
 {
@@ -564,7 +552,7 @@ Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithCo
 	if (xMeshViews.GetSize() == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " No meshes provided for physics mesh generation");
-		return nullptr;
+		return Zenith_GeneratedPhysicsMesh{};
 	}
 
 	// Count total triangles and vertices for logging
@@ -619,14 +607,12 @@ Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithCo
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " Generated physics mesh: %u verts, %u tris",
 			xData.m_xPositions.GetSize(),
 			xData.m_xIndices.GetSize() / 3);
-
-		// The asset side owns the renderer-mesh (Flux_MeshGeometry) construction, so
-		// this TU stays renderer-neutral.
-		return Zenith_MeshGeometryAsset::CreateFromGeometryData(
-			xData.m_xPositions, xData.m_xNormals, xData.m_xIndices);
 	}
 
-	return nullptr;
+	// Return the neutral geometry POD (empty / !IsValid on failure). The engine-side
+	// caller (Zenith_ModelComponent) builds the Zenith_MeshGeometryAsset from it, so
+	// this TU names no renderer / asset type.
+	return xData;
 }
 
 void Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(
@@ -703,40 +689,3 @@ void Zenith_PhysicsMeshGenerator::ComputeVertexNormals(
 	}
 }
 
-void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()
-{
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	xModels.Clear();
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach([&xModels](Zenith_EntityID, Zenith_ModelComponent& xComp) { xModels.PushBack(&xComp); });
-
-	for (uint32_t i = 0; i < xModels.GetSize(); i++)
-	{
-		Zenith_ModelComponent* pxModel = xModels.Get(i);
-		if (!pxModel || !pxModel->GetDebugDrawPhysicsMesh())
-		{
-			continue;
-		}
-
-		pxModel->QueueDebugDrawPhysicsMesh(g_xPhysicsMeshConfig.m_xDebugColor);
-	}
-	// Audit §3.18 fix: iterate all loaded scenes, not just the active one.
-	// Physics debug visualisation should surface every loaded scene's model
-	// components — e.g. props in additively-loaded scenes, characters in the
-	// persistent scene. Ref: Unity's GameObject.scene contract —
-	// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-
-	Zenith_Vector<Zenith_ColliderComponent*> xColliders;
-	xColliders.Clear();
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ColliderComponent>().ForEach([&xColliders](Zenith_EntityID, Zenith_ColliderComponent& xComp) { xColliders.PushBack(&xComp); });
-
-	for (uint32_t i = 0; i < xColliders.GetSize(); i++)
-	{
-		Zenith_ColliderComponent* pxCollider = xColliders.Get(i);
-		if (!pxCollider || !pxCollider->GetDebugDrawPhysicsMesh())
-		{
-			continue;
-		}
-
-		pxCollider->QueueDebugDraw(g_xPhysicsMeshConfig.m_xDebugColor);
-	}
-}

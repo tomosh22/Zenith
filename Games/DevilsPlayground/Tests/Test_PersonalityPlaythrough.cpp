@@ -21,7 +21,7 @@
 // don't include the win64-specific header directly or the Android build
 // of this test would pull in GLFW/Win32 declarations that clash with
 // Zenith_Android_Window.
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"

@@ -86,7 +86,9 @@ xConfig.m_fAgentRadius = 0.4f;  // Match your agent size
 xConfig.m_fAgentHeight = 1.8f;
 xConfig.m_fMaxSlope = 45.0f;
 
-Zenith_NavMesh* pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(xScene, xConfig);
+// Engine-side collector (names Collider/Transform): scene geometry -> navmesh.
+Zenith_NavMesh* pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(xScene, xConfig);
+// Pure-leaf path (raw geometry, no scene): Zenith_NavMeshGenerator::GenerateFromGeometry(verts, indices, xConfig).
 ```
 
 ### Pathfinding Query

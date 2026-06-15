@@ -11,6 +11,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "EntityComponent/Zenith_AINavGeometry.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 
 #include <cmath>
@@ -20,7 +21,7 @@
 // Test_P1NavMesh_PathRespectsWalls (MVP-1.2.0 / 1.2.1)
 //
 // Builds a tiny scene with a floor + a single wall box collider, calls
-// Zenith_NavMeshGenerator::GenerateFromScene, and asserts that
+// Zenith_AINavGeometry::GenerateFromScene, and asserts that
 // Zenith_Pathfinding::FindPath routes a path AROUND the wall (not through).
 //
 // Layout (top-down, y up, +x right, +z forward):
@@ -123,7 +124,7 @@ static bool Step_P1NavMeshPathRespectsWalls(int iFrame)
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(g_xScene);
 		if (pxScene == nullptr) { g_iPhase = kNW_Done; return false; }
 		NavMeshGenerationConfig xConfig{}; // engine defaults
-		g_pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xConfig);
+		g_pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(*pxScene, xConfig);
 		g_bGenerateSucceeded = (g_pxNavMesh != nullptr);
 		std::printf("[P1NavMeshWalls] GenerateFromScene returned %s (frame %d)\n",
 			g_bGenerateSucceeded ? "non-null" : "NULL", iFrame);

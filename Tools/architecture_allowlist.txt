@@ -30,12 +30,15 @@ layer-up: Zenith/EntityComponent/Components/Zenith_UIComponent.h => UI/Zenith_UI
 layer-up: Zenith/Flux/Flux_Graphics.cpp => Editor/Zenith_Editor.h
 layer-up: Zenith/Windows/Zenith_Windows_Window.cpp => Input/Zenith_Input.h
 layer-up: Zenith/Windows/Zenith_Windows_Window.h => Input/Zenith_KeyCodes.h
-module-fanout: AI
 module-fanout: Editor
 module-fanout: EngineComposition
 module-fanout: EntityComponent
 module-fanout: Flux
 unmapped: Docs/design/constinit_prototype.cpp
 unmapped: FluxCompiler/FluxCompiler.cpp
+unmapped: Tests/SentinelAI/main.cpp
+unmapped: Tests/SentinelAI/sentinel_platform.cpp
 unmapped: Tests/SentinelECS/main.cpp
 unmapped: Tests/SentinelECS/sentinel_platform.cpp
+unmapped: Tests/SentinelPhysics/main.cpp
+unmapped: Tests/SentinelPhysics/sentinel_platform.cpp

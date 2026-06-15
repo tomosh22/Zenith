@@ -159,10 +159,6 @@ void Zenith_Blackboard::IterateEntries(EntryDisplayFunc pfnCallback, void* pUser
 	}
 }
 
-#ifdef ZENITH_TESTING
-#include "AI/BehaviorTree/Zenith_Blackboard.Tests.inl"
-#endif
-
 // ========== Serialization ==========
 
 void Zenith_Blackboard::WriteToDataStream(Zenith_DataStream& xStream) const

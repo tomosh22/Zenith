@@ -487,7 +487,14 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			xScale.x, xScale.y, xScale.z);
 	}
 
-	if (Zenith_MeshGeometryAsset* pxPhysicsAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xViews, xConfig))
+	// The leaf generator returns renderer-neutral geometry; build the asset here
+	// (the asset side owns the Flux_MeshGeometry construction), so Physics names no
+	// renderer / asset type.
+	Zenith_GeneratedPhysicsMesh xGenerated = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xViews, xConfig);
+	Zenith_MeshGeometryAsset* pxPhysicsAsset = xGenerated.IsValid()
+		? Zenith_MeshGeometryAsset::CreateFromGeometryData(xGenerated.m_xPositions, xGenerated.m_xNormals, xGenerated.m_xIndices)
+		: nullptr;
+	if (pxPhysicsAsset)
 	{
 		m_xPhysicsMeshAsset.Set(pxPhysicsAsset);
 		Flux_MeshGeometry* pxGeometry = pxPhysicsAsset->GetGeometry();

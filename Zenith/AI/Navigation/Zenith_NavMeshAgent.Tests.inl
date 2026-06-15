@@ -39,7 +39,7 @@ void Zenith_UnitTests::TestNavAgentSetDestination(){
 	xAgent.SetDestination(Zenith_Maths::Vector3(9.0f, 0.0f, 9.0f));
 
 	// Update once to trigger pathfinding
-	xAgent.Update(0.016f, xTransform);
+	xAgent.Update(0.016f, xEntity.GetEntityID());
 
 	ZENITH_ASSERT_TRUE(xAgent.HasPath(), "Agent should have path after SetDestination and Update");
 
@@ -79,7 +79,7 @@ void Zenith_UnitTests::TestNavAgentMovement(){
 	xAgent.SetDestination(Zenith_Maths::Vector3(5.0f, 0.0f, 1.0f));
 
 	// Update for 0.5 seconds
-	xAgent.Update(0.5f, xTransform);
+	xAgent.Update(0.5f, xEntity.GetEntityID());
 
 	Zenith_Maths::Vector3 xNewPos;
 	xTransform.GetPosition(xNewPos);
@@ -122,7 +122,7 @@ void Zenith_UnitTests::TestNavAgentArrival(){
 	// Update for enough time to reach destination
 	for (int i = 0; i < 10; ++i)
 	{
-		xAgent.Update(0.1f, xTransform);
+		xAgent.Update(0.1f, xEntity.GetEntityID());
 	}
 
 	ZENITH_ASSERT_TRUE(xAgent.HasReachedDestination(), "Agent should have reached destination");
@@ -160,7 +160,7 @@ void Zenith_UnitTests::TestNavAgentStop(){
 	xAgent.SetDestination(Zenith_Maths::Vector3(9.0f, 0.0f, 9.0f));
 
 	// Update once to trigger pathfinding
-	xAgent.Update(0.016f, xTransform);
+	xAgent.Update(0.016f, xEntity.GetEntityID());
 
 	ZENITH_ASSERT_TRUE(xAgent.HasPath(), "Should have path");
 
@@ -225,7 +225,7 @@ void Zenith_UnitTests::TestNavAgentRemainingDistanceBounds(){
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
 	// Update to compute path
-	xAgent.Update(0.016f, xTransform);
+	xAgent.Update(0.016f, xEntity.GetEntityID());
 
 	// Now GetRemainingDistance should work without crashing
 	fDist = xAgent.GetRemainingDistance();

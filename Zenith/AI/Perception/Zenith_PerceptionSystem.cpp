@@ -1,15 +1,10 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_Physics.h"
-
-#ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
-#endif
+#include "Physics/Zenith_Physics.h"  // AI->Physics: sibling leaf
 
 Zenith_HashMap<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData;
 Zenith_HashMap<uint64_t, Zenith_PerceptionSystem::TargetInfo> Zenith_PerceptionSystem::s_xTargets;
@@ -124,20 +119,12 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 		pxTarget->m_uStimulusMask |= PERCEPTION_STIMULUS_DAMAGE;
 		pxTarget->m_bHostile = true;
 
-		// Audit §3.18 fix: resolve attacker's OWN scene via GetSceneDataForEntity.
+		// Audit §3.18 fix: resolve attacker's OWN scene via the AI world-hooks seam.
 		// Previously used GetActiveScene which silently dropped attacker-position
 		// updates when the attacker lived in a non-active scene (persistent entity,
 		// additively-loaded scene, etc.). Ref: Unity's GameObject.scene contract —
 		// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xAttacker);
-		if (pxSceneData)
-		{
-			Zenith_Entity xAttackerEntity = pxSceneData->TryGetEntity(xAttacker);
-			if (xAttackerEntity.IsValid() && xAttackerEntity.HasComponent<Zenith_TransformComponent>())
-			{
-				xAttackerEntity.GetComponent<Zenith_TransformComponent>().GetPosition(pxTarget->m_xLastKnownPosition);
-			}
-		}
+		Zenith_AI_GetEntityPosition(xAttacker, pxTarget->m_xLastKnownPosition);
 
 		UpdatePrimaryTarget(*pxData);
 	}
@@ -261,8 +248,7 @@ Zenith_PerceptionSystem::SightEvaluation Zenith_PerceptionSystem::EvaluateSightF
 {
 	SightEvaluation xResult;
 
-	Zenith_TransformComponent& xTargetTransform = xTargetEntity.GetComponent<Zenith_TransformComponent>();
-	xTargetTransform.GetPosition(xResult.m_xTargetPos);
+	Zenith_AI_GetEntityPosition(xTargetEntity.GetEntityID(), xResult.m_xTargetPos);
 	xResult.m_xTargetPos.y += 1.0f;  // Target center height
 
 	// Squared distance early-out (avoids sqrt for out-of-range targets)
@@ -305,27 +291,19 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xAgentIt.GetKey());
 		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
 
-		// Audit §3.18 fix: resolve agent's OWN scene — supports agents in any
-		// loaded scene, not just the active one.
-		Zenith_SceneData* pxAgentScene = g_xEngine.Scenes().GetSceneDataForEntity(xAgentID);
-		if (!pxAgentScene)
-		{
-			continue;
-		}
-		Zenith_Entity xAgentEntity = pxAgentScene->TryGetEntity(xAgentID);
-		if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			continue;
-		}
-
-		Zenith_TransformComponent& xAgentTransform = xAgentEntity.GetComponent<Zenith_TransformComponent>();
+		// Audit §3.18 fix: resolve agent's OWN transform via the AI world-hooks
+		// seam — supports agents in any loaded scene, not just the active one.
+		// A false return covers no-scene / stale-handle / no-transform — skip.
 		Zenith_Maths::Vector3 xAgentPos;
-		xAgentTransform.GetPosition(xAgentPos);
+		if (!Zenith_AI_GetEntityPosition(xAgentID, xAgentPos))
+		{
+			continue;
+		}
 		xAgentPos.y += xData.m_xSightConfig.m_fEyeHeight;
 
 		// Calculate forward direction from rotation
 		Zenith_Maths::Quaternion xQuat;
-		xAgentTransform.GetRotation(xQuat);
+		Zenith_AI_GetEntityRotation(xAgentID, xQuat);
 		Zenith_Maths::Vector3 xRot = glm::eulerAngles(xQuat);
 		float fYaw = xRot.y;
 		Zenith_Maths::Vector3 xForward(std::sin(fYaw), 0.0f, std::cos(fYaw));
@@ -350,13 +328,16 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			// Audit §3.18 fix: resolve each target's own scene — cross-scene
 			// perception (e.g. a persistent player entity, or a target in an
 			// additively-loaded scene) now works as Unity would expect.
-			Zenith_SceneData* pxTargetScene = g_xEngine.Scenes().GetSceneDataForEntity(xTargetID);
+			Zenith_SceneData* pxTargetScene = Zenith_SceneSystem::Get().GetSceneDataForEntity(xTargetID);
 			if (!pxTargetScene)
 			{
 				continue;
 			}
 			Zenith_Entity xTargetEntity = pxTargetScene->TryGetEntity(xTargetID);
-			if (!xTargetEntity.IsValid() || !xTargetEntity.HasComponent<Zenith_TransformComponent>())
+			// A false position probe covers stale-handle / no-transform — skip,
+			// matching the prior IsValid() + transform-component gate.
+			Zenith_Maths::Vector3 xTargetProbe;
+			if (!Zenith_AI_GetEntityPosition(xTargetID, xTargetProbe))
 			{
 				continue;
 			}
@@ -431,19 +412,13 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xAgentIt.GetKey());
 		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
 
-		Zenith_SceneData* pxAgentScene = g_xEngine.Scenes().GetSceneDataForEntity(xAgentID);
-		if (!pxAgentScene)
-		{
-			continue;
-		}
-		Zenith_Entity xAgentEntity = pxAgentScene->TryGetEntity(xAgentID);
-		if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			continue;
-		}
-
+		// Resolve the agent's OWN transform via the AI world-hooks seam. A false
+		// return covers no-scene / stale-handle / no-transform — skip.
 		Zenith_Maths::Vector3 xAgentPos;
-		xAgentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+		if (!Zenith_AI_GetEntityPosition(xAgentID, xAgentPos))
+		{
+			continue;
+		}
 
 		// Check each active sound
 		for (uint32_t u = 0; u < s_axActiveSounds.GetSize(); ++u)
@@ -536,7 +511,7 @@ bool Zenith_PerceptionSystem::CheckLineOfSight(const Zenith_Maths::Vector3& xFro
 		return true;  // Same position, assume clear LOS
 	}
 
-	Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(xFrom, xDirection, fDistance);
+	Zenith_Physics::RaycastResult xResult = Zenith_Physics::Get().Raycast(xFrom, xDirection, fDistance);
 
 	// If we didn't hit anything, line of sight is clear
 	if (!xResult.m_bHit)
@@ -635,8 +610,6 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	float fFOVRad = xConfig.m_fFOVAngle * 0.5f * (3.14159265f / 180.0f);
 	float fPeriphRad = xConfig.m_fPeripheralAngle * 0.5f * (3.14159265f / 180.0f);
 
-	Flux_PrimitivesImpl& xPrims = g_xEngine.Primitives();
-
 	// Draw FOV lines
 	auto DrawConeEdge = [&](float fAngle, const Zenith_Maths::Vector3& xColor)
 	{
@@ -650,7 +623,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 		xDir.z = xForward.x * fSin + xForward.z * fCos;
 		xDir = Zenith_Maths::Normalize(xDir);
 
-		xPrims.AddLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
+		Zenith_AI_DebugDrawLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
 	};
 
 	DrawConeEdge(fFOVRad, xFOVColor);
@@ -659,7 +632,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	DrawConeEdge(-fPeriphRad, xPeripheralColor);
 
 	// Draw forward direction
-	xPrims.AddLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
+	Zenith_AI_DebugDrawLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
 
 	// Draw perceived targets
 	for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); ++u)
@@ -670,14 +643,10 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 		Zenith_Maths::Vector3 xColor(xTarget.m_fAwareness, 1.0f - xTarget.m_fAwareness, 0.0f);
 
 		// Line to last known position
-		xPrims.AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
+		Zenith_AI_DebugDrawLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
 
 		// Sphere at last known position
-		xPrims.AddSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
+		Zenith_AI_DebugDrawSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
 	}
 }
-#endif
-
-#ifdef ZENITH_TESTING
-#include "AI/Perception/Zenith_PerceptionSystem.Tests.inl"
 #endif

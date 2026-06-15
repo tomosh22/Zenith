@@ -1,5 +1,5 @@
 #include "Zenith.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
@@ -116,24 +116,14 @@ void Zenith_AIAgentComponent::OnUpdate(float fDt)
 		m_fTimeSinceLastUpdate = 0.0f;
 	}
 
-	// Update navigation (runs every frame for smooth movement). The
-	// NavMeshAgent prefers the physics path -- SetLinearVelocity on a
-	// dynamic Jolt body -- when the entity has one. Pass through the
-	// collider so the agent can dispatch to that path; absent a
-	// collider it falls back to direct transform writes for transform-
-	// only test fixtures.
+	// Update navigation (runs every frame for smooth movement). The agent now
+	// takes only the entity id and resolves its transform + collider body through
+	// the AI world hooks (engine-side): it prefers the physics path
+	// (SetLinearVelocity on a dynamic Jolt body) when the entity has one, else
+	// falls back to direct transform writes for transform-only test fixtures.
 	if (m_pxNavMeshAgent != nullptr && m_xParentEntity.IsValid())
 	{
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-			Zenith_ColliderComponent* pxCollider = nullptr;
-			if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
-			{
-				pxCollider = &m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-			}
-			m_pxNavMeshAgent->Update(fDt, xTransform, pxCollider);
-		}
+		m_pxNavMeshAgent->Update(fDt, m_xParentEntity.GetEntityID());
 	}
 }
 
@@ -222,4 +212,22 @@ void Zenith_AIAgentComponent::RenderPropertiesPanel()
 			nullptr);
 	}
 }
+#endif
+
+// AI unit tests are hosted here (engine-side) rather than in their sibling AI-leaf
+// .cpp: the tests exercise g_xEngine / concrete components, which the AI leaf must
+// not name. This TU is always linked (the component registrar references
+// Zenith_AIAgentComponent), so the ZENITH_TEST registrars survive /OPT:REF.
+#ifdef ZENITH_TESTING
+#include "AI/Zenith_AIDebugVariables.Tests.inl"
+#include "AI/BehaviorTree/Zenith_BehaviorTree.Tests.inl"
+#include "AI/BehaviorTree/Zenith_Blackboard.Tests.inl"
+#include "AI/Navigation/Zenith_NavMesh.Tests.inl"
+#include "AI/Navigation/Zenith_NavMeshAgent.Tests.inl"
+#include "AI/Navigation/Zenith_NavMeshGenerator.Tests.inl"
+#include "AI/Navigation/Zenith_Pathfinding.Tests.inl"
+#include "AI/Perception/Zenith_PerceptionSystem.Tests.inl"
+#include "AI/Squad/Zenith_Formation.Tests.inl"
+#include "AI/Squad/Zenith_Squad.Tests.inl"
+#include "AI/Squad/Zenith_TacticalPoint.Tests.inl"
 #endif

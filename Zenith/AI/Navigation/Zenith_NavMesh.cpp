@@ -1,13 +1,9 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Zenith_AIDebugVariables.h"
+#include "AI/Zenith_AIWorldHooks.h"
 
 #include <random>
-
-#ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
-#endif
 
 // ========== Zenith_NavMeshPolygon ==========
 
@@ -1140,7 +1136,7 @@ void Zenith_NavMesh::DebugDrawEdges(const Zenith_NavMeshPolygon& xPoly, const Ze
 		const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
 		const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get((u + 1) % xPoly.m_axVertexIndices.GetSize()));
 
-		g_xEngine.Primitives().AddLine(xV1 + xOffset, xV2 + xOffset, xEdgeColor, 0.02f);
+		Zenith_AI_DebugDrawLine(xV1 + xOffset, xV2 + xOffset, xEdgeColor, 0.02f);
 	}
 }
 
@@ -1162,7 +1158,7 @@ void Zenith_NavMesh::DebugDrawBoundaryEdges(const Zenith_NavMeshPolygon& xPoly, 
 		{
 			const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
 			const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get((u + 1) % xPoly.m_axVertexIndices.GetSize()));
-			g_xEngine.Primitives().AddLine(xV1 + xOffset, xV2 + xOffset, xBoundaryColor, 0.04f);
+			Zenith_AI_DebugDrawLine(xV1 + xOffset, xV2 + xOffset, xBoundaryColor, 0.04f);
 		}
 	}
 }
@@ -1181,7 +1177,7 @@ void Zenith_NavMesh::DebugDrawPolygonFill(const Zenith_NavMeshPolygon& xPoly, co
 			const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(v)) + xOffset;
 			const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(v + 1)) + xOffset;
 
-			g_xEngine.Primitives().AddTriangle(xV0, xV1, xV2, xWalkableColor);
+			Zenith_AI_DebugDrawTriangle(xV0, xV1, xV2, xWalkableColor);
 		}
 	}
 }
@@ -1198,7 +1194,7 @@ void Zenith_NavMesh::DebugDrawNeighborConnections(uint32_t uPoly, const Zenith_N
 			if (uPoly < uNeighborIdx)
 			{
 				const Zenith_NavMeshPolygon& xNeighbor = m_axPolygons.Get(uNeighborIdx);
-				g_xEngine.Primitives().AddLine(
+				Zenith_AI_DebugDrawLine(
 					xPoly.m_xCenter + xOffset,
 					xNeighbor.m_xCenter + xNeighbor.m_xNormal * 0.05f,
 					xNeighborColor, 0.01f);
@@ -1276,8 +1272,4 @@ void Zenith_NavMesh::DebugDraw() const
 		}
 	}
 }
-#endif
-
-#ifdef ZENITH_TESTING
-#include "AI/Navigation/Zenith_NavMesh.Tests.inl"
 #endif

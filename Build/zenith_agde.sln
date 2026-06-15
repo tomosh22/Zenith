@@ -26,9 +26,13 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzle", "..\Games\Tile
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_agde.vcxproj", "{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithAI", "zenithai_agde.vcxproj", "{31D5278F-5C65-6B7E-4972-9D3CFD7A64E1}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithBase", "zenithbase_agde.vcxproj", "{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithECS", "zenithecs_agde.vcxproj", "{893FFFA3-F1C1-876E-31C8-A4844FAEE75C}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithPhysics", "zenithphysics_agde.vcxproj", "{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -88,6 +92,10 @@ Global
 		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{31D5278F-5C65-6B7E-4972-9D3CFD7A64E1}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{31D5278F-5C65-6B7E-4972-9D3CFD7A64E1}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{31D5278F-5C65-6B7E-4972-9D3CFD7A64E1}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{31D5278F-5C65-6B7E-4972-9D3CFD7A64E1}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{E9FD0043-AAEC-3AFE-E3C9-0A98C4515637}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
@@ -96,6 +104,10 @@ Global
 		{893FFFA3-F1C1-876E-31C8-A4844FAEE75C}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{893FFFA3-F1C1-876E-31C8-A4844FAEE75C}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{893FFFA3-F1C1-876E-31C8-A4844FAEE75C}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}.Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{C208AC1F-1AF8-81A7-1BB2-F37BEFC77125}.Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

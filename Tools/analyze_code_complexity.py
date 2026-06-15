@@ -2696,9 +2696,16 @@ class CppAnalyzer:
                                            'line': 0, 'detail': norm, 'allowlisted': key in allow,
                                            'basename_resolved': False})
 
-        # --- subsumed ratchet B kind-1: ECS-leaf forbidden includes (NOT de-duped) ---
-        leaf = cfg.get('leaf_ratchet')
-        if leaf and leaf.get('glob'):
+        # --- subsumed ratchet B kind-1: leaf forbidden includes (NOT de-duped) ---
+        # Supports MULTIPLE leaves via `leaf_ratchets` (a list), with fallback to the
+        # legacy singular `leaf_ratchet`. Each leaf has its own glob / forbidden
+        # prefixes / forbidden exacts / allowlist (e.g. ZenithECS, ZenithPhysics,
+        # ZenithAI). A file matching a leaf glob may not include any forbidden prefix
+        # nor any forbidden-exact header (unless allowlisted in that leaf's file).
+        leaf_ratchets = cfg.get('leaf_ratchets') or ([cfg['leaf_ratchet']] if cfg.get('leaf_ratchet') else [])
+        for leaf in leaf_ratchets:
+            if not (leaf and leaf.get('glob')):
+                continue
             leaf_allow = self._load_allowlist(leaf.get('allowlist_file'))
             leaf_glob = leaf['glob']
             prefixes = tuple(leaf.get('forbidden_prefixes', []))
@@ -2890,9 +2897,12 @@ class CppAnalyzer:
         scope_globs = cfg.get('scope_globs') if cfg else None
         exclude_generated = bool(cfg.get('exclude_generated', True)) if cfg else True
         lint_allow = self._load_allowlist(cfg.get('allowlist_file') or 'Tools/lints_allowlist.txt')
-        leaf_cfg = (self._arch_config or {}).get('leaf_ratchet', {}) or {}
-        leaf_glob = leaf_cfg.get('glob', '')
-        leaf_allow = self._load_allowlist(leaf_cfg.get('allowlist_file')) if leaf_glob else set()
+        arch_cfg = self._arch_config or {}
+        leaf_ratchets = arch_cfg.get('leaf_ratchets') or ([arch_cfg['leaf_ratchet']] if arch_cfg.get('leaf_ratchet') else [])
+        # (glob, allow-set) per leaf for the g_xEngine leaf-token check below — a
+        # leaf file may not reach g_xEngine at all (zero, not ratcheted-count).
+        leaf_specs = [(lr['glob'], self._load_allowlist(lr.get('allowlist_file')))
+                      for lr in leaf_ratchets if lr and lr.get('glob')]
 
         def in_scope(posix: str) -> bool:
             return True if not scope_globs else any(fnmatch.fnmatch(posix, g) for g in scope_globs)
@@ -2905,9 +2915,11 @@ class CppAnalyzer:
                 rec = dict(f)
                 rec['file'] = fm.filepath
                 if rec['kind'] == 'engine-singleton':
-                    # Leaf token: a violation only inside the leaf glob; uses leaf allowlist.
-                    rec['in_scope'] = bool(leaf_glob) and fnmatch.fnmatch(posix, leaf_glob)
-                    rec['allowlisted'] = rec['key'] in leaf_allow
+                    # Leaf token: g_xEngine is a violation inside ANY leaf glob; uses
+                    # that leaf's allowlist.
+                    matched = next(((g, a) for (g, a) in leaf_specs if fnmatch.fnmatch(posix, g)), None)
+                    rec['in_scope'] = matched is not None
+                    rec['allowlisted'] = (rec['key'] in matched[1]) if matched else False
                 else:
                     rec['in_scope'] = scoped
                     rec['allowlisted'] = rec['key'] in lint_allow
@@ -5555,7 +5567,18 @@ def update_architecture_allowlists(analyzer: 'CppAnalyzer') -> None:
     arch_cfg = analyzer._arch_config or {}
     lint_cfg = analyzer._lint_config or {}
     ecf_file = (arch_cfg.get('ec_flux_ratchet', {}) or {}).get('allowlist_file', 'Tools/layering_allowlist.txt')
-    leaf_file = (arch_cfg.get('leaf_ratchet', {}) or {}).get('allowlist_file', 'Tools/ecs_leaf_allowlist.txt')
+    # Per-leaf allowlist routing (supports the leaf_ratchets list + legacy singular).
+    _leaf_ratchets = arch_cfg.get('leaf_ratchets') or ([arch_cfg['leaf_ratchet']] if arch_cfg.get('leaf_ratchet') else [])
+    leaf_specs = [(lr['glob'], lr.get('allowlist_file')) for lr in _leaf_ratchets
+                  if lr and lr.get('glob') and lr.get('allowlist_file')]
+    leaf_files = [f for (_, f) in leaf_specs]
+    default_leaf_file = leaf_files[0] if leaf_files else 'Tools/ecs_leaf_allowlist.txt'
+    def leaf_file_for(filepath: str) -> str:
+        p = Path(filepath).as_posix()
+        for (g, f) in leaf_specs:
+            if fnmatch.fnmatch(p, g):
+                return f
+        return default_leaf_file
     arch_file = arch_cfg.get('allowlist_file', 'Tools/architecture_allowlist.txt')
     lint_file = lint_cfg.get('allowlist_file', 'Tools/lints_allowlist.txt')
     fail_basename = bool(arch_cfg.get('fail_on_basename_resolved', False))
@@ -5566,12 +5589,17 @@ def update_architecture_allowlists(analyzer: 'CppAnalyzer') -> None:
     # Only ratcheted (gate-eligible) kinds are written. zone-of-pain / module-cycle are
     # report-only (noisy / one giant SCC on a tightly-coupled engine).
     kind_file = {
-        'ec-flux': ecf_file, 'leaf-include': leaf_file,
+        'ec-flux': ecf_file,
         'layer-up': arch_file, 'forbidden-edge': arch_file, 'encapsulation': arch_file,
         'hub': arch_file, 'module-fanout': arch_file, 'unmapped': arch_file,
     }
     buckets: Dict[str, Set[str]] = defaultdict(set)
     for v in analyzer.architecture_violations:
+        if v['kind'] == 'leaf-include':
+            # Route each leaf-include to the matching leaf's allowlist (multi-leaf aware).
+            if keep(v):
+                buckets[leaf_file_for(v['file'])].add(v['key'])
+            continue
         dest = kind_file.get(v['kind'])
         if dest and keep(v):
             buckets[dest].add(v['key'])
@@ -5579,13 +5607,13 @@ def update_architecture_allowlists(analyzer: 'CppAnalyzer') -> None:
         if not v.get('in_scope'):
             continue
         if v['kind'] == 'engine-singleton':
-            buckets[leaf_file].add(v['key'])
+            buckets[leaf_file_for(v['file'])].add(v['key'])
         elif v['kind'] in ('token', 'pch', 'pragma', 'static'):
             buckets[lint_file].add(v['key'])
 
     # Always (re)write the four canonical files, even when empty, so a cleared ratchet
     # round-trips to an empty list rather than leaving a stale file.
-    for dest in (ecf_file, leaf_file, arch_file, lint_file):
+    for dest in [ecf_file, arch_file, lint_file] + leaf_files:
         buckets.setdefault(dest, set())
 
     default_header = (

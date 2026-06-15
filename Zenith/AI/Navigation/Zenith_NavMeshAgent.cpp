@@ -1,16 +1,10 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Zenith_AIDebugVariables.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_Physics.h"
-
-#ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_PrimitivesImpl.h"
-#endif
+#include "AI/Zenith_AIWorldHooks.h"
+#include "Physics/Zenith_Physics.h"  // AI->Physics: sibling leaf, reached via Zenith_Physics::Get()
 
 bool Zenith_NavMeshAgent::SetDestination(const Zenith_Maths::Vector3& xDestination)
 {
@@ -106,20 +100,18 @@ float Zenith_NavMeshAgent::GetRemainingDistance() const
 	return fDistance;
 }
 
-void Zenith_NavMeshAgent::Update(float fDt,
-                                 Zenith_TransformComponent& xTransform,
-                                 Zenith_ColliderComponent* pxCollider)
+void Zenith_NavMeshAgent::Update(float fDt, Zenith_EntityID xEntity)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_AGENT_UPDATE);
 
-	// Decide once whether this agent drives motion through Jolt or via
-	// direct transform writes. The physics path is preferred whenever a
-	// dynamic body is present; the legacy SetPosition path is only used
-	// for transform-only test fixtures + non-physics agents.
-	const bool bUsePhysics =
-		pxCollider != nullptr
-		&& pxCollider->HasValidBody()
-		&& pxCollider->GetRigidBodyType() == RIGIDBODY_TYPE_DYNAMIC;
+	// Decide once whether this agent drives motion through Jolt or via direct
+	// transform writes. The physics path is preferred whenever a dynamic body is
+	// present; the legacy transform-write path is only used for transform-only test
+	// fixtures + non-physics agents. The collider body is resolved engine-side
+	// (Zenith_AIWorldHooks) so this leaf names no Zenith_ColliderComponent.
+	Zenith_PhysicsBodyID xBodyID;
+	bool bDynamicBody = false;
+	const bool bUsePhysics = Zenith_AI_GetEntityColliderBody(xEntity, xBodyID, bDynamicBody) && bDynamicBody;
 
 	if (m_bReachedDestination || m_pxNavMesh == nullptr)
 	{
@@ -133,8 +125,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		// driven intent is zeroed.
 		if (bUsePhysics)
 		{
-			Zenith_Physics& xPhysics = g_xEngine.Physics();
-			const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
+			Zenith_Physics& xPhysics = Zenith_Physics::Get();
 			const Zenith_Maths::Vector3 xCurVel = xPhysics.GetLinearVelocity(xBodyID);
 			xPhysics.SetLinearVelocity(xBodyID,
 				Zenith_Maths::Vector3(0.0f, xCurVel.y, 0.0f));
@@ -143,7 +134,11 @@ void Zenith_NavMeshAgent::Update(float fDt,
 	}
 
 	Zenith_Maths::Vector3 xCurrentPos;
-	xTransform.GetPosition(xCurrentPos);
+	if (!Zenith_AI_GetEntityPosition(xEntity, xCurrentPos))
+	{
+		// No transform to read (stale/missing) — nothing to steer this frame.
+		return;
+	}
 
 	// Store current position for batch pathfinding requests
 	m_xPathStartPos = xCurrentPos;
@@ -205,7 +200,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		// is supposed to be authoritative for the agent's intent;
 		// gravity + collision response handle the rest of the physics
 		// story.
-		g_xEngine.Physics().SetLinearVelocity(pxCollider->GetBodyID(), xNewVelocity);
+		Zenith_Physics::Get().SetLinearVelocity(xBodyID, xNewVelocity);
 	}
 	else
 	{
@@ -214,7 +209,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		// a runtime agent's body is non-dynamic (kinematic colliders
 		// don't accept SetLinearVelocity from gameplay).
 		const Zenith_Maths::Vector3 xNewPos = xCurrentPos + xNewVelocity * fDt;
-		xTransform.SetPosition(xNewPos);
+		Zenith_AI_SetEntityPosition(xEntity, xNewPos);
 	}
 
 	// Update facing direction (rotate towards movement direction)
@@ -227,7 +222,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 
 		// Get current rotation as Euler angles
 		Zenith_Maths::Quaternion xCurrentQuat;
-		xTransform.GetRotation(xCurrentQuat);
+		Zenith_AI_GetEntityRotation(xEntity, xCurrentQuat);
 		Zenith_Maths::Vector3 xCurrentEuler = glm::eulerAngles(xCurrentQuat);
 		float fCurrentYaw = xCurrentEuler.y;
 
@@ -241,7 +236,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 
 		float fRotation = std::max(-fMaxRotation, std::min(fMaxRotation, fDiff));
 		xCurrentEuler.y = fCurrentYaw + fRotation;
-		xTransform.SetRotation(Zenith_Maths::Quaternion(xCurrentEuler));
+		Zenith_AI_SetEntityRotation(xEntity, Zenith_Maths::Quaternion(xCurrentEuler));
 	}
 }
 
@@ -397,8 +392,6 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		return;
 	}
 
-	Flux_PrimitivesImpl& xPrims = g_xEngine.Primitives();
-
 	const Zenith_Maths::Vector3 xPathColor(1.0f, 1.0f, 0.0f);      // Yellow
 	const Zenith_Maths::Vector3 xWaypointColor(1.0f, 0.5f, 0.0f);  // Orange
 	const Zenith_Maths::Vector3 xTargetColor(0.0f, 1.0f, 0.0f);    // Green
@@ -409,7 +402,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		// Draw line from agent to current waypoint
 		if (m_uCurrentWaypoint < m_xCurrentPath.m_axWaypoints.GetSize())
 		{
-			xPrims.AddLine(xAgentPosition,
+			Zenith_AI_DebugDrawLine(xAgentPosition,
 				m_xCurrentPath.m_axWaypoints.Get(m_uCurrentWaypoint),
 				xPathColor, 0.03f);
 		}
@@ -417,7 +410,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		// Draw remaining path
 		for (uint32_t u = m_uCurrentWaypoint; u + 1 < m_xCurrentPath.m_axWaypoints.GetSize(); ++u)
 		{
-			xPrims.AddLine(m_xCurrentPath.m_axWaypoints.Get(u),
+			Zenith_AI_DebugDrawLine(m_xCurrentPath.m_axWaypoints.Get(u),
 				m_xCurrentPath.m_axWaypoints.Get(u + 1),
 				xPathColor, 0.02f);
 		}
@@ -430,15 +423,11 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		{
 			Zenith_Maths::Vector3 xColor = (u == m_xCurrentPath.m_axWaypoints.GetSize() - 1)
 				? xTargetColor : xWaypointColor;
-			xPrims.AddSphere(m_xCurrentPath.m_axWaypoints.Get(u), 0.1f, xColor);
+			Zenith_AI_DebugDrawSphere(m_xCurrentPath.m_axWaypoints.Get(u), 0.1f, xColor);
 		}
 
 		// Draw destination marker
-		xPrims.AddSphere(m_xDestination, 0.15f, xTargetColor);
+		Zenith_AI_DebugDrawSphere(m_xDestination, 0.15f, xTargetColor);
 	}
 }
-#endif
-
-#ifdef ZENITH_TESTING
-#include "AI/Navigation/Zenith_NavMeshAgent.Tests.inl"
 #endif

@@ -159,7 +159,3 @@ void Zenith_BehaviorTree::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	m_bFirstTick = true;
 }
-
-#ifdef ZENITH_TESTING
-#include "AI/BehaviorTree/Zenith_BehaviorTree.Tests.inl"
-#endif

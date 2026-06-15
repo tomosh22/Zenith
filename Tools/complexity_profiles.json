@@ -77,9 +77,9 @@
                 { "name": "Vulkan", "layer": 2, "globs": ["Zenith/Vulkan/**"] },
                 { "name": "Flux", "layer": 2, "globs": ["Zenith/Flux/**"] },
                 { "name": "EntityComponent", "layer": 2, "globs": ["Zenith/EntityComponent/**"] },
-                { "name": "Physics", "layer": 2, "globs": ["Zenith/Physics/**"] },
+                { "name": "Physics", "layer": 2, "globs": ["Zenith/Physics/**"], "public_headers": ["Zenith/Physics/*.h"], "leaf": true },
                 { "name": "AssetHandling", "layer": 2, "globs": ["Zenith/AssetHandling/**"] },
-                { "name": "AI", "layer": 2, "globs": ["Zenith/AI/**"] },
+                { "name": "AI", "layer": 2, "globs": ["Zenith/AI/**"], "public_headers": ["Zenith/AI/*.h", "Zenith/AI/Navigation/*.h", "Zenith/AI/BehaviorTree/*.h", "Zenith/AI/Perception/*.h", "Zenith/AI/Squad/*.h"], "leaf": true },
                 { "name": "Prefab", "layer": 2, "globs": ["Zenith/Prefab/**"] },
                 { "name": "UI", "layer": 3, "globs": ["Zenith/UI/**"] },
                 { "name": "Editor", "layer": 4, "globs": ["Zenith/Editor/**"] }
@@ -89,7 +89,8 @@
                 "forbidden_edges": [
                     { "from": "ZenithECS", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab"] },
                     { "from": "Scripting", "to": ["Flux", "Physics", "UI", "Editor", "AssetHandling", "AI", "EntityComponent", "Prefab", "Vulkan"] },
-                    { "from": "Physics", "to": ["Flux"] }
+                    { "from": "Physics", "to": ["Flux"] },
+                    { "from": "AI", "to": ["Flux", "EntityComponent", "AssetHandling", "Prefab"] }
                 ],
                 "allowed_edges": [],
                 "ignore_module_cycles": [ ["EntityComponent", "Flux"] ]
@@ -99,12 +100,26 @@
                 "flux_glob": "Zenith/Flux/**",
                 "allowlist_file": "Tools/layering_allowlist.txt"
             },
-            "leaf_ratchet": {
-                "glob": "Zenith/ZenithECS/**",
-                "forbidden_prefixes": ["Flux/", "Physics/", "UI/", "Editor/", "AssetHandling/", "AI/", "Components/", "EntityComponent/Components/"],
-                "forbidden_exact": ["Core/Zenith_Engine.h"],
-                "allowlist_file": "Tools/ecs_leaf_allowlist.txt"
-            },
+            "leaf_ratchets": [
+                {
+                    "glob": "Zenith/ZenithECS/**",
+                    "forbidden_prefixes": ["Flux/", "Physics/", "UI/", "Editor/", "AssetHandling/", "AI/", "Components/", "EntityComponent/Components/"],
+                    "forbidden_exact": ["Core/Zenith_Engine.h"],
+                    "allowlist_file": "Tools/ecs_leaf_allowlist.txt"
+                },
+                {
+                    "glob": "Zenith/Physics/**",
+                    "forbidden_prefixes": ["Flux/", "Vulkan/", "UI/", "Editor/", "AssetHandling/", "AI/", "Components/", "EntityComponent/", "Prefab/", "Scripting/", "TaskSystem/", "Input/", "Telemetry/", "SaveData/"],
+                    "forbidden_exact": ["Core/Zenith_Engine.h"],
+                    "allowlist_file": "Tools/physics_leaf_allowlist.txt"
+                },
+                {
+                    "glob": "Zenith/AI/**",
+                    "forbidden_prefixes": ["Flux/", "Vulkan/", "UI/", "Editor/", "AssetHandling/", "Components/", "EntityComponent/", "Prefab/", "Scripting/", "TaskSystem/", "Input/", "Telemetry/", "SaveData/"],
+                    "forbidden_exact": ["Core/Zenith_Engine.h"],
+                    "allowlist_file": "Tools/ai_leaf_allowlist.txt"
+                }
+            ],
             "singleton_ratchet": {
                 "_doc": "Engine-wide g_xEngine reach as a per-file COUNT ratchet (shrink-only). Distinct from the leaf_ratchet (which gates g_xEngine to ZERO inside the ECS leaf only). Baseline counts in Tools/engine_singleton_allowlist.txt; a file's count may never exceed its baseline, and a new in-scope file (no entry => 0) fails. The composition root that legitimately wires the global (EngineComposition TUs + the engine header) is excluded. This is the measurement spine for the Wave-4 de-globalisation effort.",
                 "glob": "Zenith/**",

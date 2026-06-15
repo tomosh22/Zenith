@@ -11,7 +11,7 @@
 #include "Components/DPVillager_Component.h"
 #include "Components/Priest_Component.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include <cstdio>

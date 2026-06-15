@@ -13,7 +13,7 @@
 
 #include "AI/BehaviorTree/Zenith_BTNode.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
-#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "ZenithECS/Zenith_Entity.h"

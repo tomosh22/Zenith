@@ -41,9 +41,11 @@
 // dead-strip; the engine-installed registrar is immune.
 //------------------------------------------------------------------------------
 
-// Forward declaration of the AI module's component registrar. Defined in
-// AI/Components/Zenith_AIAgentComponent.cpp; declared here (not via an include)
-// to avoid creating an EntityComponent -> AI module dependency.
+// Forward declaration of the AIAgent component registrar. Defined engine-side in
+// EntityComponent/Components/Zenith_AIAgentComponent.cpp (same aggregate lib as this
+// TU); declared here rather than via an #include to avoid pulling the heavy AIAgent
+// header -- which transitively drags in the AI BehaviorTree/Navigation/Perception
+// headers -- into this registration TU.
 void Zenith_AI_RegisterComponents();
 
 void Zenith_RegisterEngineComponents()
@@ -73,9 +75,9 @@ void Zenith_RegisterEngineComponents()
 	xRegistry.RegisterComponent<Zenith_InstancedMeshComponent>("InstancedMesh", 80);
 	xRegistry.RegisterComponent<Zenith_ParticleEmitterComponent>("ParticleEmitter", 85);
 
-	// AIAgent lives in the AI module; register it via the forwarder (order 90 is
-	// passed inside Zenith_AI_RegisterComponents) so we don't pull an AI include
-	// into EntityComponent.
+	// AIAgent (Zenith_AIAgentComponent, engine-side) registers via the forwarder
+	// (order 90 is passed inside Zenith_AI_RegisterComponents) so we don't pull the
+	// heavy AIAgent header into this TU.
 	Zenith_AI_RegisterComponents();
 
 #ifdef ZENITH_TOOLS

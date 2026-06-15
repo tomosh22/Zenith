@@ -31,9 +31,20 @@ AI/
 │   ├── Zenith_Squad.h/cpp
 │   ├── Zenith_Formation.h/cpp
 │   └── Zenith_TacticalPoint.h/cpp
-└── Components/          # ECS integration
-    └── Zenith_AIAgentComponent.h/cpp
+└── Zenith_AIWorldHooks.h/cpp   # leaf->engine DI seam (entity pos/rot, collider
+                                #   body, nav agent, parallel-for, TOOLS debug-draw)
 ```
+
+> **`Zenith/AI/` is the strict-leaf `ZenithAI` static library** (over
+> ZenithBase + ZenithECS + ZenithPhysics). It names no concrete component, no Flux
+> type, no `g_xEngine`, and no `TaskSystem` — it reaches the engine only through the
+> `Zenith_AIWorldHooks` function-pointer seam (wired engine-side by
+> `EntityComponent/Zenith_AIWorldHooksInstall.cpp`). The concrete
+> **`Zenith_AIAgentComponent`** ECS component (which names Transform/Collider) now
+> lives **engine-side** in `EntityComponent/Components/`, NOT here. Scene→navmesh
+> collection lives engine-side too (`EntityComponent/Zenith_AINavGeometry`); the leaf
+> generator only takes raw geometry. Proven a clean leaf by `SentinelAI` +
+> `dumpbin FORBIDDEN_EXTERNALS=NONE`.
 
 ## Subsystem Overview
 
@@ -130,7 +141,10 @@ xConfig.m_fAgentRadius = 0.4f;
 xConfig.m_fAgentHeight = 1.8f;
 xConfig.m_fMaxSlope = 45.0f;
 
-Zenith_NavMesh* pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(xScene, xConfig);
+// Engine-side collector (EntityComponent/) gathers scene collider geometry and
+// calls the leaf generator. The pure leaf entry point is
+// Zenith_NavMeshGenerator::GenerateFromGeometry(verts, indices, xConfig).
+Zenith_NavMesh* pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(xScene, xConfig);
 pxNavMesh->SaveToFile("navmesh.znavmesh");
 ```
 

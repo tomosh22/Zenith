@@ -11,6 +11,7 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "EntityComponent/Zenith_AINavGeometry.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 
 #include <cstdio>
@@ -120,7 +121,7 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 		if (pxScene == nullptr) { g_iPhase = kBT_Done; return false; }
 		NavMeshGenerationConfig xCfg{};
 		xCfg.m_fAgentRadius = 0.2f;
-		g_pxNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xCfg);
+		g_pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(*pxScene, xCfg);
 		g_bGenerateOK = (g_pxNavMesh != nullptr) && (g_pxNavMesh->GetPolygonCount() > 100);
 		std::printf("[T1BTUnits] GenerateFromScene: %s (polys=%u)\n",
 			g_bGenerateOK ? "OK" : "FAIL",
@@ -165,10 +166,9 @@ static bool Step_T1BTUnitsCanFollowRealPath(int /*iFrame*/)
 	case kBT_RunFrames:
 	{
 		// Tick the NavMeshAgent every frame -- this is what
-		// AIAgentComponent::OnUpdate does in production.
-		Zenith_TransformComponent& xT =
-			g_xAgentEntity.GetComponent<Zenith_TransformComponent>();
-		g_xAgent.Update(0.01666f, xT);
+		// AIAgentComponent::OnUpdate does in production. The agent resolves the
+		// entity's transform via the engine-installed AI world hooks.
+		g_xAgent.Update(0.01666f, g_xAgentEntity.GetEntityID());
 		++g_iRunFrames;
 		if (g_iRunFrames >= 60)
 		{
