@@ -176,10 +176,181 @@ void Flux_MeshGeometry::GenerateUnitCube(Flux_MeshGeometry& xGeometryOut)
 	);
 
 	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.UploadToGPU();
+}
 
-	// Upload to GPU
-	g_xEngine.FluxMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-	g_xEngine.FluxMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+// Single GPU-upload path shared by every generator + LoadFromFile.
+void Flux_MeshGeometry::UploadToGPU()
+{
+	g_xEngine.FluxMemory().InitialiseVertexBuffer(GetVertexData(), GetVertexDataSize(), m_xVertexBuffer);
+	g_xEngine.FluxMemory().InitialiseIndexBuffer(GetIndexData(), GetIndexDataSize(), m_xIndexBuffer);
+}
+
+// Capsule = sphere stretched along Y by fHeight (cylinder body + hemisphere caps
+// approximated by stretching). Moved verbatim from Combat game code.
+void Flux_MeshGeometry::GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices, uint32_t uStacks)
+{
+	float fCylinderHalfHeight = fHeight * 0.5f;
+
+	uint32_t uNumVerts = (uStacks + 1) * (uSlices + 1);
+	uint32_t uNumIndices = uStacks * uSlices * 6;
+
+	xGeometryOut.m_uNumVerts = uNumVerts;
+	xGeometryOut.m_uNumIndices = uNumIndices;
+	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+
+	uint32_t uVertIdx = 0;
+
+	// Capsule vertices (sphere stretched along Y)
+	for (uint32_t uStack = 0; uStack <= uStacks; uStack++)
+	{
+		float fPhi = static_cast<float>(uStack) / static_cast<float>(uStacks) * 3.14159265f;
+		float fSphereY = cos(fPhi);  // -1 to 1
+		float fStackRadius = sin(fPhi) * fRadius;
+
+		// Stretch Y based on hemisphere, inserting the cylinder half-height gap.
+		float fY = (fSphereY > 0.0f)
+			? fSphereY * fRadius + fCylinderHalfHeight
+			: fSphereY * fRadius - fCylinderHalfHeight;
+
+		for (uint32_t uSlice = 0; uSlice <= uSlices; uSlice++)
+		{
+			float fTheta = static_cast<float>(uSlice) / static_cast<float>(uSlices) * 2.0f * 3.14159265f;
+			float fX = cos(fTheta) * fStackRadius;
+			float fZ = sin(fTheta) * fStackRadius;
+
+			Zenith_Maths::Vector3 xPos(fX, fY, fZ);
+
+			// Normal is the un-stretched sphere normal.
+			Zenith_Maths::Vector3 xNormal(fX, cos(fPhi) * fRadius, fZ);
+			if (glm::length(xNormal) > 0.001f)
+			{
+				xNormal = glm::normalize(xNormal);
+			}
+			else
+			{
+				xNormal = Zenith_Maths::Vector3(0.0f, fSphereY > 0.0f ? 1.0f : -1.0f, 0.0f);
+			}
+
+			xGeometryOut.m_pxPositions[uVertIdx] = xPos;
+			xGeometryOut.m_pxNormals[uVertIdx] = xNormal;
+			xGeometryOut.m_pxUVs[uVertIdx] = Zenith_Maths::Vector2(
+				static_cast<float>(uSlice) / static_cast<float>(uSlices),
+				static_cast<float>(uStack) / static_cast<float>(uStacks)
+			);
+
+			Zenith_Maths::Vector3 xTangent(-sin(fTheta), 0.0f, cos(fTheta));
+			xGeometryOut.m_pxTangents[uVertIdx] = xTangent;
+			xGeometryOut.m_pxBitangents[uVertIdx] = glm::cross(xNormal, xTangent);
+			xGeometryOut.m_pxColors[uVertIdx] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+			uVertIdx++;
+		}
+	}
+
+	uint32_t uIdxIdx = 0;
+	for (uint32_t uStack = 0; uStack < uStacks; uStack++)
+	{
+		for (uint32_t uSlice = 0; uSlice < uSlices; uSlice++)
+		{
+			uint32_t uCurrent = uStack * (uSlices + 1) + uSlice;
+			uint32_t uNext = uCurrent + uSlices + 1;
+
+			// Counter-clockwise winding for Vulkan.
+			xGeometryOut.m_puIndices[uIdxIdx++] = uCurrent;
+			xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+			xGeometryOut.m_puIndices[uIdxIdx++] = uCurrent + 1;
+
+			xGeometryOut.m_puIndices[uIdxIdx++] = uCurrent + 1;
+			xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+			xGeometryOut.m_puIndices[uIdxIdx++] = uNext + 1;
+		}
+	}
+
+	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.UploadToGPU();
+}
+
+// Cone = base ring + apex + base centre. Moved verbatim from Combat game code.
+void Flux_MeshGeometry::GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices)
+{
+	uint32_t uNumVerts = uSlices + 2;     // base ring + apex + base centre
+	uint32_t uNumIndices = uSlices * 6;   // side triangles + base triangles
+
+	xGeometryOut.m_uNumVerts = uNumVerts;
+	xGeometryOut.m_uNumIndices = uNumIndices;
+	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+
+	// Base ring vertices (indices 0 .. uSlices-1).
+	for (uint32_t i = 0; i < uSlices; i++)
+	{
+		float fTheta = static_cast<float>(i) / static_cast<float>(uSlices) * 2.0f * 3.14159265f;
+		float fX = cos(fTheta) * fRadius;
+		float fZ = sin(fTheta) * fRadius;
+
+		xGeometryOut.m_pxPositions[i] = Zenith_Maths::Vector3(fX, 0.0f, fZ);
+
+		// Normal points outward and slightly up.
+		float fNormalY = fRadius / fHeight;
+		Zenith_Maths::Vector3 xNormal = glm::normalize(Zenith_Maths::Vector3(cos(fTheta), fNormalY, sin(fTheta)));
+		xGeometryOut.m_pxNormals[i] = xNormal;
+
+		xGeometryOut.m_pxUVs[i] = Zenith_Maths::Vector2(static_cast<float>(i) / static_cast<float>(uSlices), 0.0f);
+		xGeometryOut.m_pxTangents[i] = Zenith_Maths::Vector3(-sin(fTheta), 0.0f, cos(fTheta));
+		xGeometryOut.m_pxBitangents[i] = glm::cross(xNormal, xGeometryOut.m_pxTangents[i]);
+		xGeometryOut.m_pxColors[i] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	// Apex (index uSlices).
+	uint32_t uApexIdx = uSlices;
+	xGeometryOut.m_pxPositions[uApexIdx] = Zenith_Maths::Vector3(0.0f, fHeight, 0.0f);
+	xGeometryOut.m_pxNormals[uApexIdx] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	xGeometryOut.m_pxUVs[uApexIdx] = Zenith_Maths::Vector2(0.5f, 1.0f);
+	xGeometryOut.m_pxTangents[uApexIdx] = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	xGeometryOut.m_pxBitangents[uApexIdx] = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	xGeometryOut.m_pxColors[uApexIdx] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// Base centre (index uSlices+1).
+	uint32_t uBaseCenterIdx = uSlices + 1;
+	xGeometryOut.m_pxPositions[uBaseCenterIdx] = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+	xGeometryOut.m_pxNormals[uBaseCenterIdx] = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+	xGeometryOut.m_pxUVs[uBaseCenterIdx] = Zenith_Maths::Vector2(0.5f, 0.5f);
+	xGeometryOut.m_pxTangents[uBaseCenterIdx] = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	xGeometryOut.m_pxBitangents[uBaseCenterIdx] = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	xGeometryOut.m_pxColors[uBaseCenterIdx] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+	uint32_t uIdxIdx = 0;
+	// Side triangles (base ring -> apex), counter-clockwise from outside.
+	for (uint32_t i = 0; i < uSlices; i++)
+	{
+		uint32_t uNext = (i + 1) % uSlices;
+		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uApexIdx;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+	}
+	// Base triangles (base ring -> centre), counter-clockwise from below.
+	for (uint32_t i = 0; i < uSlices; i++)
+	{
+		uint32_t uNext = (i + 1) % uSlices;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenterIdx;
+		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+	}
+
+	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.UploadToGPU();
 }
 
 ShaderDataType StringToShaderDataType(const std::string& strString)
@@ -265,8 +436,7 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 
 	if(bUploadToGPU)
 	{
-		g_xEngine.FluxMemory().InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
-		g_xEngine.FluxMemory().InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+		xGeometryOut.UploadToGPU();
 	}
 }
 

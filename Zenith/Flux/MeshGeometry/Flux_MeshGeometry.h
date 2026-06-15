@@ -84,6 +84,13 @@ public:
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
 	static void GenerateUnitCube(Flux_MeshGeometry& xGeometryOut);
+	// Procedural primitives. GenerateCapsule builds a sphere stretched along Y by
+	// fHeight (a true cylinder+hemispheres capsule is approximated); GenerateCone
+	// builds a base ring + apex + base centre. Both fill the geometry, build the
+	// layout, and upload to the GPU — same contract as GenerateUnitCube. Moved out
+	// of per-game code so any game can reuse them.
+	static void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices, uint32_t uStacks);
+	static void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices);
 	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 	static void Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry& xSrc);
 
@@ -110,6 +117,10 @@ public:
 	friend class Zenith_ColliderComponent;
 	friend class Zenith_PhysicsMeshGenerator;
 	void GenerateLayoutAndVertexData();
+	// Upload this geometry's current vertex/index data to GPU buffers. Single
+	// upload path shared by every generator + LoadFromFile (keeps the g_xEngine
+	// reach in one place).
+	void UploadToGPU();
 
 	uint32_t m_uNumVerts = 0;
 	uint32_t m_uNumIndices = 0;
