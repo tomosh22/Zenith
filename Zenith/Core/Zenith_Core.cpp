@@ -13,6 +13,7 @@
 #endif
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "AI/Zenith_AI.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Zenith_UISystem.h"
@@ -163,6 +164,14 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 	{
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Scenes().Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
+
+		// Optional engine-driven AI manager tick (opt-in, default off). Most games
+		// drive the AI managers from their own components in a game-specific order;
+		// a game with no such constraint opts in via Zenith_AI::SetEngineTickEnabled.
+		if (Zenith_AI::IsEngineTickEnabled())
+		{
+			Zenith_AI::Update(g_xEngine.Frame().GetDt());
+		}
 	}
 #ifdef ZENITH_INPUT_SIMULATOR
 	Zenith_InputSimulator::EndOfFrameTickComplete();

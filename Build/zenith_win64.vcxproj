@@ -3313,6 +3313,7 @@
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_Formation.cpp" />
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_Squad.cpp" />
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.cpp" />
+    <ClCompile Include="..\Zenith\AI\Zenith_AI.cpp" />
     <ClCompile Include="..\Zenith\AI\Zenith_AIDebugVariables.cpp" />
     <ClCompile Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>

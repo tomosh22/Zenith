@@ -1847,6 +1847,7 @@
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_Formation.cpp" />
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_Squad.cpp" />
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.cpp" />
+    <ClCompile Include="..\Zenith\AI\Zenith_AI.cpp" />
     <ClCompile Include="..\Zenith\AI\Zenith_AIDebugVariables.cpp" />
     <ClCompile Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.cpp" />
     <ClCompile Include="..\Zenith\Android\FileAccess\Zenith_Android_FileAccess.cpp" />

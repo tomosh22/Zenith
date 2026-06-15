@@ -166,13 +166,28 @@ In `Zenith_Core.cpp`:
 4. NavMesh generated or loaded
 5. AI components initialize
 
-## Update Order
+## Update Order — who ticks the AI managers
 
-Per frame:
+**The AI manager systems are GAME-driven by default, not engine-driven.**
+`Zenith_PerceptionSystem::Update()`, `Zenith_SquadManager::Update()`, and
+`Zenith_TacticalPointSystem::Update()` are NOT called by `Zenith_Core::Zenith_MainLoop`
+out of the box — each game ticks them from its own component, in a game-specific
+order relative to its per-agent AI step (e.g. `AIShowcase_GameComponent::UpdateAISystems`
+ticks perception → squad → tactical-point BEFORE its enemy-AI loop, so agents act
+on fresh perception). That ordering is intentional and is why the engine does not
+tick them unconditionally — a newcomer must drive them (or opt in below) for
+perception to run.
+
+**Opt-in engine tick:** a game with no such ordering constraint can call
+`Zenith_AI::SetEngineTickEnabled(true)` once at init; the main loop then calls
+`Zenith_AI::Update(dt)` (perception → squad → tactical-point) each game-logic frame,
+after the scene update. Do not also tick the managers from game code when enabled.
+
+The typical per-frame sequence (whichever drives the managers):
 1. Physics update (provides collision data)
-2. PerceptionSystem::Update() - processes senses
-3. AIAgentComponent::OnUpdate() - ticks behavior trees
-4. NavMeshAgent::Update() - moves agents
+2. AI managers: `PerceptionSystem::Update()` (+ squad / tactical-point) — game-driven, or the opt-in engine tick
+3. `AIAgentComponent::OnUpdate()` - ticks behavior trees
+4. `NavMeshAgent::Update()` - moves agents
 
 ## Debug Visualization
 

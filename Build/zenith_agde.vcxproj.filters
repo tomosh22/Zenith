@@ -499,6 +499,9 @@
     <ClCompile Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.cpp">
       <Filter>AI\Squad</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Zenith_AI.cpp">
+      <Filter>AI</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AI\Zenith_AIDebugVariables.cpp">
       <Filter>AI</Filter>
     </ClCompile>
