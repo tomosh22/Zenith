@@ -2851,6 +2851,395 @@ static Flux_AnimationClip* CreateJumpAnimation()
 }
 
 //------------------------------------------------------------------------------
+// Tennis stroke clips (RenderTest tennis testbed).
+//
+// Right-handed player; the racket is attached to RightHand by the engine
+// attachment system. Authored anticipation -> contact -> follow-through; every
+// channel returns to identity so the tennis state machine blends cleanly back to
+// ReadyStance. The arm-IK pass in the tennis player component refines the racket
+// hand onto the ball during the contact window, so these clips supply the
+// readable swing shape rather than a frame-perfect contact point.
+//------------------------------------------------------------------------------
+
+static Flux_AnimationClip* CreateServeAnimation()
+{
+	// Overhead serve: knees load, left arm tosses, right arm cocks into the
+	// "trophy" behind the head, then drives up through an overhead contact and
+	// pronates down across the body. Modelled on the Attack3 smash, one-handed.
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Serve");
+	pxClip->SetDuration(1.25f);          // 30 ticks @ 24 TPS
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
+
+	{
+		// Racket arm: down -> trophy behind head -> reach to contact -> pronate down.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 6.0f,  HumanRotX(-45.0f) },                          // start the take-back up
+			{ 12.0f, HumanRotX(-140.0f) * HumanRotZ(18.0f) },      // trophy (elbow cocked behind head)
+			{ 16.0f, HumanRotX(-165.0f) },                         // reach up to contact
+			{ 19.0f, HumanRotX(-95.0f) },                          // pronate forward through the ball
+			{ 23.0f, HumanRotX(40.0f) },                           // follow-through down across the body
+			{ 30.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  HumanRotX(-10.0f) },
+			{ 12.0f, HumanRotX(-90.0f) },                          // elbow cocked in the trophy
+			{ 16.0f, HumanRotX(-15.0f) },                          // snaps straight at contact
+			{ 19.0f, HumanRotX(-5.0f) },
+			{ 23.0f, HumanRotX(-35.0f) },
+			{ 30.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		// Toss arm: raises straight up to the toss apex, then lowers.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 8.0f,  HumanRotX(-120.0f) * HumanRotZ(-10.0f) },     // raise to release the toss
+			{ 14.0f, HumanRotX(-150.0f) },                         // toss apex, arm pointing up
+			{ 20.0f, HumanRotX(-40.0f) },                          // lower out of the way
+			{ 30.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  HumanRotX(-10.0f) },
+			{ 8.0f,  HumanRotX(-18.0f) },                          // near-straight for the toss
+			{ 14.0f, HumanRotX(-8.0f) },
+			{ 30.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		// Spine arches back into the trophy, crunches forward through contact.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 10.0f, HumanRotX(-12.0f) },                          // arch back under the toss
+			{ 16.0f, HumanRotX(14.0f) },                           // crunch forward at contact
+			{ 22.0f, HumanRotX(6.0f) },
+			{ 30.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 12.0f, HumanRotX(-16.0f) },                          // eyes up on the toss
+			{ 16.0f, HumanRotX(-8.0f) },
+			{ 30.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	// Legs load the crouch then drive up at contact.
+	for (u_int uSide = 0; uSide < 2; uSide++)
+	{
+		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
+		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
+		{
+			const HumanRotKey ax[] = {
+				{ 0.0f,  xId },
+				{ 10.0f, HumanRotX(10.0f) },
+				{ 16.0f, HumanRotX(-8.0f) },                       // hip extension drive
+				{ 30.0f, xId },
+			};
+			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
+		}
+		{
+			const HumanRotKey ax[] = {
+				{ 0.0f,  xId },
+				{ 10.0f, HumanRotX(30.0f) },                       // load crouch
+				{ 16.0f, HumanRotX(4.0f) },                        // extend up into contact
+				{ 20.0f, HumanRotX(20.0f) },                       // land
+				{ 30.0f, xId },
+			};
+			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
+		}
+	}
+	{
+		const HumanPosKey ax[] = {
+			{ 0.0f,  { 0.0f, 0.0f, 0.0f } },
+			{ 10.0f, { 0.0f, -0.06f, -0.02f } },                  // load down/back
+			{ 16.0f, { 0.0f, 0.05f, 0.04f } },                    // rise onto toes into contact
+			{ 22.0f, { 0.0f, -0.02f, 0.05f } },
+			{ 30.0f, { 0.0f, 0.0f, 0.0f } },
+		};
+		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+
+	return pxClip;
+}
+
+static Flux_AnimationClip* CreateForehandAnimation()
+{
+	// Forehand drive: torso coils away (right shoulder back), then uncoils
+	// through a contact in front, racket arm sweeping right-to-left up over the
+	// left shoulder. The spine rotation carries the whole arm horizontally.
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Forehand");
+	pxClip->SetDuration(0.75f);          // 18 ticks @ 24 TPS
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
+
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotY(28.0f) },                          // coil: right shoulder back
+			{ 10.0f, HumanRotY(-30.0f) * HumanRotX(6.0f) },       // uncoil through contact, lean in
+			{ 14.0f, HumanRotY(-18.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		// Racket arm: take-back out to the right, sweep across to a high finish.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotX(-50.0f) * HumanRotZ(20.0f) },      // take-back (arm out/back to the right)
+			{ 10.0f, HumanRotX(-85.0f) },                         // contact in front
+			{ 13.0f, HumanRotX(-100.0f) * HumanRotZ(-12.0f) },    // follow-through up over the left shoulder
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  HumanRotX(-12.0f) },
+			{ 4.0f,  HumanRotX(-55.0f) },                         // cocked on the take-back
+			{ 10.0f, HumanRotX(-12.0f) },                         // extends at contact
+			{ 13.0f, HumanRotX(-30.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		// Off arm balances out to the left.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotX(-30.0f) * HumanRotZ(-20.0f) },
+			{ 10.0f, HumanRotX(-10.0f) * HumanRotZ(-25.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  HumanRotX(-10.0f) },
+			{ 4.0f,  HumanRotX(-40.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 10.0f, HumanRotY(-8.0f) },                          // eyes follow across
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	// Light knee load through the stroke.
+	for (u_int uSide = 0; uSide < 2; uSide++)
+	{
+		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotX(18.0f) },
+			{ 10.0f, HumanRotX(8.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanPosKey ax[] = {
+			{ 0.0f,  { 0.0f, 0.0f, 0.0f } },
+			{ 4.0f,  { 0.03f, -0.02f, -0.02f } },                 // load onto the right foot
+			{ 10.0f, { -0.02f, -0.01f, 0.04f } },                 // drive forward/through
+			{ 18.0f, { 0.0f, 0.0f, 0.0f } },
+		};
+		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+
+	return pxClip;
+}
+
+static Flux_AnimationClip* CreateBackhandAnimation()
+{
+	// Two-handed backhand: torso coils the other way (right shoulder forward),
+	// both arms take the racket back across to the left, then sweep out to the
+	// right through contact.
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Backhand");
+	pxClip->SetDuration(0.75f);          // 18 ticks @ 24 TPS
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
+
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotY(-26.0f) },                         // coil: right shoulder forward
+			{ 10.0f, HumanRotY(26.0f) * HumanRotX(6.0f) },        // uncoil out to the right
+			{ 14.0f, HumanRotY(16.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		// Racket arm: taken back across to the left, sweeps out to the right.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotX(-80.0f) * HumanRotZ(-18.0f) },     // take-back across to the left
+			{ 10.0f, HumanRotX(-70.0f) * HumanRotZ(15.0f) },      // contact out in front-right
+			{ 13.0f, HumanRotX(-75.0f) * HumanRotZ(25.0f) },      // follow-through to the right
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  HumanRotX(-12.0f) },
+			{ 4.0f,  HumanRotX(-45.0f) },
+			{ 10.0f, HumanRotX(-15.0f) },                         // extends through contact
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		// Off hand stays on the racket and mirrors the swing.
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotX(-70.0f) * HumanRotZ(-22.0f) },
+			{ 10.0f, HumanRotX(-60.0f) * HumanRotZ(10.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  HumanRotX(-10.0f) },
+			{ 4.0f,  HumanRotX(-50.0f) },
+			{ 10.0f, HumanRotX(-20.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 10.0f, HumanRotY(8.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	for (u_int uSide = 0; uSide < 2; uSide++)
+	{
+		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
+		const HumanRotKey ax[] = {
+			{ 0.0f,  xId },
+			{ 4.0f,  HumanRotX(18.0f) },
+			{ 10.0f, HumanRotX(8.0f) },
+			{ 18.0f, xId },
+		};
+		HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
+	}
+	{
+		const HumanPosKey ax[] = {
+			{ 0.0f,  { 0.0f, 0.0f, 0.0f } },
+			{ 4.0f,  { -0.03f, -0.02f, -0.02f } },                // load onto the left foot
+			{ 10.0f, { 0.03f, -0.01f, 0.04f } },                  // drive forward/through to the right
+			{ 18.0f, { 0.0f, 0.0f, 0.0f } },
+		};
+		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
+	}
+
+	return pxClip;
+}
+
+static Flux_AnimationClip* CreateReadyStanceAnimation()
+{
+	// Looping tennis ready stance: knees bent, slight forward lean, both arms
+	// held forward and inward (racket out front in both hands), with a gentle
+	// split-step bounce. Continuous sin/cos curves so key 0 == key N.
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("ReadyStance");
+	pxClip->SetDuration(1.5f);           // 36 ticks @ 24 TPS
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(true);
+
+	constexpr float fTICKS = 36.0f;
+	constexpr u_int uKEYS = 25;
+
+	// Pelvis: low crouch with a two-per-cycle split-step bounce + small sway.
+	HumanAddPosCurve(pxClip, "Root", fTICKS, uKEYS, [](float fT)
+	{
+		const float fP = fT * fHUMAN_TWO_PI;
+		return Zenith_Maths::Vector3(0.012f * sinf(fP), -0.05f + 0.025f * cosf(2.0f * fP), 0.0f);
+	});
+
+	// Bent knees with a small bob; balls-of-feet stance.
+	for (u_int uSide = 0; uSide < 2; uSide++)
+	{
+		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
+		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
+		const char* szFoot  = (uSide == 0) ? "LeftFoot" : "RightFoot";
+		HumanAddRotCurve(pxClip, szUpper, fTICKS, uKEYS, [](float fT)
+		{
+			return HumanRotX(-6.0f + 2.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
+		});
+		HumanAddRotCurve(pxClip, szLower, fTICKS, uKEYS, [](float fT)
+		{
+			return HumanRotX(30.0f + 5.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
+		});
+		HumanAddRotCurve(pxClip, szFoot, fTICKS, uKEYS, [](float fT)
+		{
+			return HumanRotX(8.0f + 2.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
+		});
+	}
+
+	// Forward lean with a small lateral rock.
+	HumanAddRotCurve(pxClip, "Spine", fTICKS, uKEYS, [](float fT)
+	{
+		return HumanRotX(12.0f) * HumanRotZ(1.5f * sinf(fT * fHUMAN_TWO_PI));
+	});
+
+	// Both arms forward and inward so the hands meet on the racket out front,
+	// with a light ready-bounce on the elbows.
+	for (u_int uSide = 0; uSide < 2; uSide++)
+	{
+		const float fIn = (uSide == 0) ? 12.0f : -12.0f;   // bring both arms toward centre
+		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
+		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
+		HumanAddRotCurve(pxClip, szUpper, fTICKS, uKEYS, [=](float fT)
+		{
+			return HumanRotX(-40.0f + 2.5f * cosf(2.0f * fT * fHUMAN_TWO_PI)) * HumanRotZ(fIn);
+		});
+		HumanAddRotCurve(pxClip, szLower, fTICKS, uKEYS, [](float fT)
+		{
+			return HumanRotX(-55.0f + 3.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
+		});
+	}
+
+	// Head: attentive, watching the ball.
+	HumanAddRotCurve(pxClip, "Head", fTICKS, uKEYS, [](float fT)
+	{
+		return HumanRotX(-4.0f) * HumanRotY(1.5f * sinf(fT * fHUMAN_TWO_PI));
+	});
+
+	return pxClip;
+}
+
+//------------------------------------------------------------------------------
 // Bullet sphere mesh
 //
 // Generates a unit sphere into a Zenith_MeshAsset. Used by GenerateRenderTestAssets
@@ -2919,6 +3308,10 @@ void GenerateStickFigureAssets()
 	Flux_AnimationClip* pxFireClip = CreateFireAnimation();
 	Flux_AnimationClip* pxReloadClip = CreateReloadAnimation();
 	Flux_AnimationClip* pxJumpClip = CreateJumpAnimation();
+	Flux_AnimationClip* pxServeClip = CreateServeAnimation();
+	Flux_AnimationClip* pxForehandClip = CreateForehandAnimation();
+	Flux_AnimationClip* pxBackhandClip = CreateBackhandAnimation();
+	Flux_AnimationClip* pxReadyStanceClip = CreateReadyStanceAnimation();
 
 	// Create output directory
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
@@ -2969,6 +3362,8 @@ void GenerateStickFigureAssets()
 		{ pxDodgeClip, "Dodge" }, { pxHitClip, "Hit" }, { pxDeathClip, "Death" },
 		{ pxAimClip, "Aim" }, { pxFireClip, "Fire" }, { pxReloadClip, "Reload" },
 		{ pxJumpClip, "Jump" },
+		{ pxServeClip, "Serve" }, { pxForehandClip, "Forehand" },
+		{ pxBackhandClip, "Backhand" }, { pxReadyStanceClip, "ReadyStance" },
 	};
 	for (const ClipExport& xExport : axClips)
 	{
@@ -2982,7 +3377,8 @@ void GenerateStickFigureAssets()
 		std::vector<const Flux_AnimationClip*> axGltfClips = {
 			pxIdleClip, pxWalkClip, pxRunClip, pxAttack1Clip, pxAttack2Clip,
 			pxAttack3Clip, pxDodgeClip, pxHitClip, pxDeathClip,
-			pxAimClip, pxFireClip, pxReloadClip, pxJumpClip
+			pxAimClip, pxFireClip, pxReloadClip, pxJumpClip,
+			pxServeClip, pxForehandClip, pxBackhandClip, pxReadyStanceClip
 		};
 		std::string strGltfPath = strOutputDir + "StickFigure.gltf";
 		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axGltfClips))
@@ -2992,6 +3388,10 @@ void GenerateStickFigureAssets()
 	}
 
 	// Cleanup
+	delete pxReadyStanceClip;
+	delete pxBackhandClip;
+	delete pxForehandClip;
+	delete pxServeClip;
 	delete pxJumpClip;
 	delete pxReloadClip;
 	delete pxFireClip;

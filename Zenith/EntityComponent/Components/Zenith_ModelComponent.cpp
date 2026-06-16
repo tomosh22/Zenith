@@ -7,6 +7,7 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
@@ -265,6 +266,21 @@ Flux_SkeletonInstance* Zenith_ModelComponent::GetSkeletonInstance() const
 		return m_pxModelInstance->GetSkeletonInstance();
 	}
 	return nullptr;
+}
+
+bool Zenith_ModelComponent::GetBoneModelMatrix(const std::string& strBoneName, Zenith_Maths::Matrix4& xOut) const
+{
+	Flux_SkeletonInstance* pxSkel = GetSkeletonInstance();
+	if (!pxSkel)
+		return false;
+	Zenith_SkeletonAsset* pxAsset = pxSkel->GetSourceSkeleton();
+	if (!pxAsset)
+		return false;
+	const int32_t iBone = pxAsset->GetBoneIndex(strBoneName);
+	if (iBone < 0)
+		return false;
+	xOut = pxSkel->GetBoneModelTransform(static_cast<uint32_t>(iBone));
+	return true;
 }
 
 //=============================================================================

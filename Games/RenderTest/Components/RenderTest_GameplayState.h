@@ -26,6 +26,32 @@ namespace RenderTest_GameplayState
 	inline float s_fPhotoPitch   = 0.0f;
 	inline float s_fPhotoYaw     = 0.0f;   // pi = parked in front, looking back at the player
 
+	// Tennis spectator camera (capture aid for the tennis-court testbed). When
+	// active the follow camera ignores the player and parks at a fixed
+	// world-space vantage overlooking the floating court — so the autonomous NPC
+	// match (which runs in Play mode) can be framed/screenshotted. Set by the
+	// --rendertest-tennis-spectator flag in the tennis spawn. Intentionally NOT
+	// cleared by Reset(): it's a process-level capture mode, not per-scene state.
+	inline bool  s_bTennisSpectatorActive = false;
+	inline float s_fTennisCamX = 0.0f;
+	inline float s_fTennisCamY = 0.0f;
+	inline float s_fTennisCamZ = 0.0f;
+	inline float s_fTennisCamYaw = 0.0f;
+	inline float s_fTennisCamPitch = 0.0f;
+
+	// Follow-cam sub-mode: when active, the spectator camera tracks one NPC up
+	// close (a 3/4 view) so the strokes, foot/arm IK and racket read clearly,
+	// instead of the fixed court overlook. s_iTennisFollowSide: 0 = near, 1 = far.
+	inline bool s_bTennisFollowActive = false;
+	inline int  s_iTennisFollowSide = 0;
+
+	// IK-showcase mode: instead of the normal match, the near player repeatedly
+	// performs ONE stroke against a ball frozen at the contact point, so the
+	// arm-IK visibly places the racket on the ball. s_iTennisShowcaseStroke:
+	// 0 = serve, 1 = forehand, 2 = backhand.
+	inline bool s_bTennisIkShowcase = false;
+	inline int  s_iTennisShowcaseStroke = 0;
+
 	inline float GetCameraYaw()        { return s_fCameraYaw; }
 	inline float GetCameraPitch()      { return s_fCameraPitch; }
 	inline bool  IsLocalPlayerAiming() { return s_bLocalPlayerAiming; }

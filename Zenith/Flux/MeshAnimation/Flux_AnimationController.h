@@ -168,6 +168,10 @@ public:
 	// space and don't want Solve to apply the inverse world transform. See the
 	// m_bIsModelSpace comment in Flux_IKTarget for why this exists.
 	void SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePosition, float fWeight = 1.0f);
+	// Variant that also drives the END-EFFECTOR (tip-bone) orientation so a
+	// rigidly-attached tool (racket / weapon) can be aimed, not just reached.
+	// Both position and rotation are expected already in model (skeleton) space.
+	void SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePosition, const Zenith_Maths::Quat& xModelSpaceRotation, float fWeight = 1.0f);
 	void ClearIKTarget(const std::string& strChainName);
 
 	//=========================================================================
@@ -363,6 +367,22 @@ inline void Flux_AnimationController::SetIKTargetModelSpace(const std::string& s
 	xTarget.m_xPosition = xModelSpacePosition;
 	xTarget.m_fWeight = fWeight;
 	xTarget.m_bEnabled = true;
+	xTarget.m_bIsModelSpace = true;
+
+	GetIKSolver().SetTarget(strChainName, xTarget);
+}
+
+inline void Flux_AnimationController::SetIKTargetModelSpace(const std::string& strChainName,
+	const Zenith_Maths::Vector3& xModelSpacePosition,
+	const Zenith_Maths::Quat& xModelSpaceRotation,
+	float fWeight)
+{
+	Flux_IKTarget xTarget;
+	xTarget.m_xPosition = xModelSpacePosition;
+	xTarget.m_xRotation = xModelSpaceRotation;
+	xTarget.m_fWeight = fWeight;
+	xTarget.m_bEnabled = true;
+	xTarget.m_bUseRotation = true;
 	xTarget.m_bIsModelSpace = true;
 
 	GetIKSolver().SetTarget(strChainName, xTarget);

@@ -84,6 +84,40 @@ public:
 		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
 			return;
 
+		// Runtime toggle: press T to cycle the tennis camera (off -> court overlook
+		// -> follow near player -> follow far player -> off), so the autonomous
+		// match can be watched up close without relaunching with a flag.
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_T))
+		{
+			CycleTennisCameraMode();
+		}
+
+		// --- Tennis spectator camera (capture aid) ---
+		// Fixed world-space vantage overlooking the floating tennis court so the
+		// autonomous NPC match can be framed in Play mode. Independent of the main
+		// player, so it short-circuits before any main-player resolution.
+		if (RenderTest_GameplayState::s_bTennisSpectatorActive)
+		{
+			Zenith_CameraComponent& xSpecCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+
+			// Follow sub-mode: track one NPC up close in a 3/4 view so the strokes
+			// + IK + racket are clearly visible (instead of the fixed overlook).
+			if (RenderTest_GameplayState::s_bTennisFollowActive
+				&& UpdateTennisFollowCamera(xSpecCam))
+			{
+				return;
+			}
+
+			xSpecCam.SetPosition(Zenith_Maths::Vector3(
+				RenderTest_GameplayState::s_fTennisCamX,
+				RenderTest_GameplayState::s_fTennisCamY,
+				RenderTest_GameplayState::s_fTennisCamZ));
+			xSpecCam.SetYaw(RenderTest_GameplayState::s_fTennisCamYaw);
+			xSpecCam.SetPitch(RenderTest_GameplayState::s_fTennisCamPitch);
+			xSpecCam.SetFOV(glm::radians(70.0f));
+			return;
+		}
+
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
 		if (!pxSceneData)
 			return;
@@ -220,6 +254,74 @@ public:
 #endif
 
 private:
+	// Tennis follow-cam: place the camera in a close 3/4 view that tracks the
+	// chosen NPC so its strokes + arm/foot IK + racket read clearly. Returns false
+	// (caller falls back to the fixed court overlook) until the NPC exists.
+	bool UpdateTennisFollowCamera(Zenith_CameraComponent& xCam)
+	{
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+		if (!pxSceneData)
+			return false;
+		const int iSide = RenderTest_GameplayState::s_iTennisFollowSide;
+		const char* szName = (iSide == 0) ? "Tennis_NPC_Near" : "Tennis_NPC_Far";
+		Zenith_Entity xNpc = pxSceneData->FindEntityByName(szName);
+		if (!xNpc.IsValid() || !xNpc.HasComponent<Zenith_TransformComponent>())
+			return false;
+
+		Zenith_Maths::Vector3 xNpcPos;
+		xNpc.GetComponent<Zenith_TransformComponent>().GetPosition(xNpcPos);
+
+		// World-space 3/4 offset from the player's front side (near faces +Z, far
+		// faces -Z), lifted to shoulder height; aim at the chest. Constant offset →
+		// the camera tracks footwork smoothly without spinning.
+		const float fFrontSign = (iSide == 0) ? 1.0f : -1.0f;
+		const Zenith_Maths::Vector3 xCamPos = xNpcPos + Zenith_Maths::Vector3(2.6f, 0.8f, 2.6f * fFrontSign);
+		const Zenith_Maths::Vector3 xLookAt = xNpcPos + Zenith_Maths::Vector3(0.0f, 0.35f, 0.0f);
+
+		const Zenith_Maths::Vector3 xDir = xLookAt - xCamPos;
+		const float fHoriz = sqrtf(xDir.x * xDir.x + xDir.z * xDir.z);
+		// Engine camera forward = (-sin yaw, sin pitch, cos yaw)
+		// (Zenith_CameraComponent.cpp:135-136), so solve yaw from -dirX/dirZ.
+		const float fYaw   = atan2f(-xDir.x, xDir.z);
+		const float fPitch = (fHoriz > 1e-4f) ? atan2f(xDir.y, fHoriz) : 0.0f;
+
+		xCam.SetPosition(xCamPos);
+		xCam.SetYaw(fYaw);
+		xCam.SetPitch(fPitch);
+		xCam.SetFOV(glm::radians(55.0f));   // tighter for the close framing
+		return true;
+	}
+
+	// Cycle: off -> court overlook -> follow near -> follow far -> off.
+	void CycleTennisCameraMode()
+	{
+		const char* szMode;
+		if (!RenderTest_GameplayState::s_bTennisSpectatorActive)
+		{
+			RenderTest_GameplayState::s_bTennisSpectatorActive = true;
+			RenderTest_GameplayState::s_bTennisFollowActive = false;
+			szMode = "court overlook";
+		}
+		else if (!RenderTest_GameplayState::s_bTennisFollowActive)
+		{
+			RenderTest_GameplayState::s_bTennisFollowActive = true;
+			RenderTest_GameplayState::s_iTennisFollowSide = 0;
+			szMode = "follow near player";
+		}
+		else if (RenderTest_GameplayState::s_iTennisFollowSide == 0)
+		{
+			RenderTest_GameplayState::s_iTennisFollowSide = 1;
+			szMode = "follow far player";
+		}
+		else
+		{
+			RenderTest_GameplayState::s_bTennisSpectatorActive = false;
+			RenderTest_GameplayState::s_bTennisFollowActive = false;
+			szMode = "off (player camera)";
+		}
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[Tennis] camera mode -> %s", szMode);
+	}
+
 	// Cursor capture policy:
 	//
 	// In tools builds the cursor is NEVER captured. The editor needs the

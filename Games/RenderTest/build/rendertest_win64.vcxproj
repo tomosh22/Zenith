@@ -896,9 +896,11 @@
     <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
+    <ClInclude Include="..\RenderTest_Tennis.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
+    <ClCompile Include="..\RenderTest_Tennis.cpp" />
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp" />
     <ClCompile Include="..\Tests\HumanShowcase.cpp" />
     <ClCompile Include="..\Tests\MaterialBattleTest.cpp" />

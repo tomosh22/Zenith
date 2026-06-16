@@ -280,6 +280,16 @@ void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
 			Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorldMatrix);
 			Zenith_Maths::Vector4 xTargetWorld = Zenith_Maths::Vector4(xModelSpaceTarget.m_xPosition, 1.0f);
 			xModelSpaceTarget.m_xPosition = Zenith_Maths::Vector3(xInvWorld * xTargetWorld);
+
+			// Mirror the position's world->model conversion for the end-effector
+			// orientation so a world-space target rotation lands in skeleton space
+			// (assumes a roughly-orthonormal world matrix; entities driving IK are
+			// unit-scaled).
+			if (xModelSpaceTarget.m_bUseRotation)
+			{
+				const Zenith_Maths::Quat xWorldRot = glm::quat_cast(Zenith_Maths::Matrix3(xWorldMatrix));
+				xModelSpaceTarget.m_xRotation = glm::normalize(glm::inverse(xWorldRot) * xModelSpaceTarget.m_xRotation);
+			}
 		}
 
 		// Solve the chain
@@ -404,7 +414,7 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 	}
 
 	// Convert positions back to bone rotations
-	ConvertPositionsToRotations(xPose, xChain, xBonePositions, xSkeleton, xTarget.m_fWeight);
+	ConvertPositionsToRotations(xPose, xChain, xBonePositions, xSkeleton, xTarget);
 }
 
 void Flux_IKSolver::ForwardReaching(Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
@@ -626,11 +636,12 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 	const Flux_IKChain& xChain,
 	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 	const Zenith_SkeletonAsset& xSkeleton,
-	float fWeight)
+	const Flux_IKTarget& xTarget)
 {
 	if (xChain.m_xBoneIndices.GetSize() < 2)
 		return;
 
+	const float fWeight = xTarget.m_fWeight;
 	const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
 
 	// For each bone (except the last), compute the rotation needed to point
@@ -696,6 +707,44 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		// model-space reads (and the children's positions) reflect the just-applied
 		// rotation. Cheap on small skeletons; trivial relative to the FABRIK iters.
 		xPose.ComputeModelSpaceMatricesFromSkeleton(xSkeleton);
+	}
+
+	// End-effector orientation. The loop above only orients each bone toward the
+	// NEXT joint, so the tip bone (hand/wrist) keeps whatever orientation the
+	// animation left it with. When the target requests an explicit end-effector
+	// orientation, drive the tip bone's local rotation so its model-space
+	// orientation matches the (model-space) target rotation, blended by the same
+	// weight. This is what lets a rigidly-attached tool (e.g. a racket blade) be
+	// squared to a chosen direction rather than wherever the swing clip left the
+	// wrist. Applied after the position pass so the parent chain is already posed.
+	if (xTarget.m_bUseRotation && fWeight > 0.0f)
+	{
+		const uint32_t uEndIndex = xChain.m_xBoneIndices.Get(xChain.m_xBoneIndices.GetSize() - 1);
+		if (uEndIndex != ~0u && uEndIndex < xPose.GetNumBones())
+		{
+			// Parent model-space rotation (freshly recomputed by the loop above).
+			Zenith_Maths::Quat xParentModelRotation = xIdentity;
+			if (uEndIndex < xSkeleton.GetNumBones())
+			{
+				const int32_t iParent = xSkeleton.GetBone(uEndIndex).m_iParentIndex;
+				if (iParent != Zenith_SkeletonAsset::INVALID_BONE_INDEX
+					&& static_cast<uint32_t>(iParent) < xPose.GetNumBones())
+				{
+					xParentModelRotation = glm::quat_cast(
+						Zenith_Maths::Matrix3(xPose.GetModelSpaceMatrix(static_cast<uint32_t>(iParent))));
+				}
+			}
+
+			// Local rotation that yields the desired model-space orientation:
+			//   parentModel * localDesired = targetModel
+			//   => localDesired = inverse(parentModel) * targetModel
+			const Zenith_Maths::Quat xDesiredLocal =
+				glm::normalize(glm::inverse(xParentModelRotation) * xTarget.m_xRotation);
+
+			Flux_BoneLocalPose& xEndLocal = xPose.GetLocalPose(uEndIndex);
+			xEndLocal.m_xRotation = glm::slerp(xEndLocal.m_xRotation, xDesiredLocal, fWeight);
+			xPose.ComputeModelSpaceMatricesFromSkeleton(xSkeleton);
+		}
 	}
 }
 

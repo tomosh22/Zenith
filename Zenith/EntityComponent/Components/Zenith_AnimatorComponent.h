@@ -140,6 +140,10 @@ public:
 	// ========== IK ==========
 	void SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPos, float fWeight = 1.0f);
 	void SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePos, float fWeight = 1.0f);
+	// Variant that also drives the end-effector (tip-bone) orientation — both
+	// position and rotation in model (skeleton) space. Used for tool aiming
+	// (e.g. squaring a racket blade to the ball).
+	void SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePos, const Zenith_Maths::Quat& xModelSpaceRot, float fWeight = 1.0f);
 	void ClearIKTarget(const std::string& strChainName);
 
 	// ========== Update Mode ==========

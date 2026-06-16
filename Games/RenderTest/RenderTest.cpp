@@ -47,6 +47,13 @@
 #include "RenderTest/Components/RenderTest_PlayerComponent.h"
 #include "RenderTest/Components/RenderTest_FollowCameraComponent.h"
 
+// Tennis-court testbed (third platform): court/net/ball/NPCs/match, spawned
+// procedurally post-load (see RenderTest_Tennis.cpp). Component headers are
+// included here so the ZENITH_REGISTER_COMPONENT thunks below name the types.
+#include "RenderTest/RenderTest_Tennis.h"
+#include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
+#include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
+
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -753,6 +760,8 @@ private:
 ZENITH_REGISTER_COMPONENT(RenderTest_FollowCameraComponent, "RenderTestFollowCamera", 100u)
 ZENITH_REGISTER_COMPONENT(RenderTest_PlayerComponent, "RenderTestPlayer", 101u)
 ZENITH_REGISTER_COMPONENT(RenderTest_SmokeRunnerComponent, "RenderTestSmokeRunner", 102u)
+ZENITH_REGISTER_COMPONENT(RenderTest_TennisPlayerComponent, "RenderTestTennisPlayer", 120u)
+ZENITH_REGISTER_COMPONENT(RenderTest_TennisMatchComponent, "RenderTestTennisMatch", 130u)
 
 // (ExportColoredTexture/CreateFlatColorMaterial used to live here for the
 // flat-teal player material — the StickFigure .zmodel now bundles its own
@@ -1202,6 +1211,8 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_FollowCameraComponent>("RenderTestFollowCamera");
 	xEditorRegistry.RegisterComponent<RenderTest_PlayerComponent>("RenderTestPlayer");
 	xEditorRegistry.RegisterComponent<RenderTest_SmokeRunnerComponent>("RenderTestSmokeRunner");
+	xEditorRegistry.RegisterComponent<RenderTest_TennisPlayerComponent>("RenderTestTennisPlayer");
+	xEditorRegistry.RegisterComponent<RenderTest_TennisMatchComponent>("RenderTestTennisMatch");
 #endif
 
 	s_uRenderTestSmokeFrameLimit = RenderTest_GetCommandLineUInt("--rendertest-smoke-frames=", 240);
@@ -1235,6 +1246,10 @@ void Project_Shutdown()
 	RenderTest::Resources().m_xCubeModelAsset        = ModelHandle{};
 	RenderTest::Resources().m_xStickFigureModelAsset = ModelHandle{};
 	RenderTest::Resources().m_xCubeMaterial          = MaterialHandle{};
+
+	// Release the tennis-testbed material/texture handles before the registry
+	// tears down (otherwise their static destructors assert on a freed registry).
+	RenderTest_TennisShutdown();
 }
 
 void Project_LoadInitialScene();
@@ -1563,6 +1578,11 @@ void Project_RegisterEditorAutomationSteps()
 	// meshes don't serialize, so it can't go in the saved scene).
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnMaterialShowcase);
 
+	// Tennis-court testbed (third platform) — likewise procedural, spawned
+	// post-load. Tools path is this automation step; the non-tools windowed path
+	// calls it from Project_LoadInitialScene below.
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnTennisCourt);
+
 	// Smoke play-mode entry LAST — by this step the deferred load has
 	// completed, so the smoke runner's first tick probes the fully loaded
 	// terrain (see the note in Project_LoadInitialScene).
@@ -1873,6 +1893,11 @@ void Project_LoadInitialScene()
 	// Tools builds defer the load to the next editor Update — there the grass
 	// is applied by the automation step queued after LOAD_INITIAL_SCENE.
 	RenderTest_ApplyGrassDensityFromDisk();
+
+	// Tennis-court testbed (third platform). Tools builds spawn it via the
+	// AddStep_Custom queued in Project_RegisterEditorAutomationSteps; the
+	// non-tools windowed path spawns it here (post synchronous scene load).
+	RenderTest_SpawnTennisCourt();
 #endif
 
 	// Tools builds: smoke play-mode entry is queued as the FINAL automation

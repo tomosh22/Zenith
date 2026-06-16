@@ -112,6 +112,14 @@ public:
 	 */
 	Flux_SkeletonInstance* GetSkeletonInstance() const;
 
+	/**
+	 * Resolve a named bone's current model-space matrix from the posed skeleton
+	 * instance. Returns false if there is no skeleton or the bone is unknown.
+	 * Lets non-Flux callers (e.g. Zenith_AttachmentComponent) read a posed bone
+	 * without including the Flux skeleton headers themselves.
+	 */
+	bool GetBoneModelMatrix(const std::string& strBoneName, Zenith_Maths::Matrix4& xOut) const;
+
 	//=========================================================================
 	// Serialization
 	//=========================================================================

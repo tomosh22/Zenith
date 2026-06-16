@@ -16,6 +16,7 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 #ifdef ZENITH_TOOLS
@@ -74,6 +75,11 @@ void Zenith_RegisterEngineComponents()
 	// orders them deterministically. All depend only on lower-ordered components.
 	xRegistry.RegisterComponent<Zenith_InstancedMeshComponent>("InstancedMesh", 80);
 	xRegistry.RegisterComponent<Zenith_ParticleEmitterComponent>("ParticleEmitter", 85);
+	// Reusable bone-attachment (racket-on-hand / FPS weapon). Order 95 sits after
+	// AIAgent(90) and before game components (100+); its OnLateUpdate follow runs
+	// after every OnUpdate regardless of order, so the value is just a stable,
+	// distinct serialization slot.
+	xRegistry.RegisterComponent<Zenith_AttachmentComponent>("Attachment", 95);
 
 	// AIAgent (Zenith_AIAgentComponent, engine-side) registers via the forwarder
 	// (order 90 is passed inside Zenith_AI_RegisterComponents) so we don't pull the
@@ -108,5 +114,6 @@ void Zenith_RegisterEngineComponents()
 	xEditorRegistry.RegisterComponent<Zenith_ParticleEmitterComponent>("ParticleEmitter");
 	xEditorRegistry.RegisterComponent<Zenith_GraphComponent>("Graph");
 	xEditorRegistry.RegisterComponent<Zenith_UIComponent>("UI");
+	xEditorRegistry.RegisterComponent<Zenith_AttachmentComponent>("Attachment");
 #endif
 }

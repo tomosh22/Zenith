@@ -6044,6 +6044,90 @@ void Zenith_UnitTests::TestStickFigureArmIK(){
 	delete pxSkel;
 }
 
+// End-effector orientation extension (RenderTest tennis testbed). The arm-IK
+// chain positions the hand; with m_bUseRotation the solver also drives the tip
+// bone's orientation so a rigidly-attached racket can be squared to the ball.
+ZENITH_TEST(Core, StickFigureArmIKEndEffectorOrientation) { Zenith_UnitTests::TestStickFigureArmIKEndEffectorOrientation(); }
+
+void Zenith_UnitTests::TestStickFigureArmIKEndEffectorOrientation(){
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_IKSolver xSolver;
+	Flux_IKChain xArm = Flux_IKSolver::CreateArmChain("RightArm", "RightUpperArm", "RightLowerArm", "RightHand");
+	xArm.m_uMaxIterations = 30;
+	xArm.m_fTolerance = 0.0005f;
+	xSolver.AddChain(xArm);
+
+	const int32_t iHand = pxSkel->GetBoneIndex("RightHand");
+	ZENITH_ASSERT_TRUE(iHand >= 0, "RightHand bone should exist");
+
+	const Zenith_Maths::Matrix4 xWorld(1.0f);   // identity world matrix
+	// Desired model-space end-effector orientation: 90 deg about Y.
+	const Zenith_Maths::Quat xDesired = glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+	// --- Weight 1: the hand adopts the requested orientation regardless of where
+	// FABRIK leaves the rest of the arm. ---
+	{
+		Flux_SkeletonPose xPose;
+		xPose.Initialize(STICK_BONE_COUNT);
+		xPose.InitFromBindPose(*pxSkel);
+		xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+
+		// Reachable position target = the hand's current model-space position, so
+		// FABRIK barely moves the chain and the assertion is purely on orientation.
+		const Zenith_Maths::Vector3 xHandPos =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix((uint32_t)iHand)[3]);
+
+		Flux_IKTarget xTarget;
+		xTarget.m_xPosition = xHandPos;
+		xTarget.m_xRotation = xDesired;
+		xTarget.m_fWeight = 1.0f;
+		xTarget.m_bEnabled = true;
+		xTarget.m_bUseRotation = true;
+		xTarget.m_bIsModelSpace = true;
+		xSolver.SetTarget("RightArm", xTarget);
+
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Quat xHandRot =
+			glm::quat_cast(Zenith_Maths::Matrix3(xPose.GetModelSpaceMatrix((uint32_t)iHand)));
+		ZENITH_ASSERT_TRUE(QuatEquals(xHandRot, xDesired, 0.02f),
+			"Hand model-space orientation should match the target at weight 1");
+	}
+
+	// --- Weight 0: the solver stands down (target ignored) and the hand keeps its
+	// animation/bind orientation. ---
+	{
+		Flux_SkeletonPose xPose;
+		xPose.Initialize(STICK_BONE_COUNT);
+		xPose.InitFromBindPose(*pxSkel);
+		xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+
+		const Zenith_Maths::Quat xBindHandRot =
+			glm::quat_cast(Zenith_Maths::Matrix3(xPose.GetModelSpaceMatrix((uint32_t)iHand)));
+		const Zenith_Maths::Vector3 xHandPos =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix((uint32_t)iHand)[3]);
+
+		Flux_IKTarget xTarget;
+		xTarget.m_xPosition = xHandPos;
+		xTarget.m_xRotation = xDesired;
+		xTarget.m_fWeight = 0.0f;
+		xTarget.m_bEnabled = true;
+		xTarget.m_bUseRotation = true;
+		xTarget.m_bIsModelSpace = true;
+		xSolver.SetTarget("RightArm", xTarget);
+
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Quat xHandRot =
+			glm::quat_cast(Zenith_Maths::Matrix3(xPose.GetModelSpaceMatrix((uint32_t)iHand)));
+		ZENITH_ASSERT_TRUE(QuatEquals(xHandRot, xBindHandRot, 0.001f),
+			"Hand orientation should be unchanged at weight 0 (animation-driven)");
+	}
+
+	delete pxSkel;
+}
+
 ZENITH_TEST(Core, StickFigureLegIK) { Zenith_UnitTests::TestStickFigureLegIK(); }
 
 void Zenith_UnitTests::TestStickFigureLegIK(){

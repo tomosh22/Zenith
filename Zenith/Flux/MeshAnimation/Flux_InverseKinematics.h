@@ -247,12 +247,15 @@ private:
 		const Flux_IKChain& xChain,
 		const Zenith_Maths::Vector3& xPolePosition);
 
-	// Convert final positions back to bone rotations
+	// Convert final positions back to bone rotations. xTarget supplies the blend
+	// weight and, when m_bUseRotation is set, the desired model-space orientation
+	// of the END-EFFECTOR (tip) bone — applied after the position pass so an
+	// attached tool (racket / weapon) can be aimed, not just reached.
 	void ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		const Flux_IKChain& xChain,
 		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 		const Zenith_SkeletonAsset& xSkeleton,
-		float fWeight);
+		const Flux_IKTarget& xTarget);
 
 	//=========================================================================
 	// Data
