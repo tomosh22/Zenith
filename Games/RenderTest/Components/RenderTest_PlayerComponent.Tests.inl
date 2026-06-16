@@ -540,4 +540,73 @@ void Zenith_UnitTests::TestRenderTestIKHelperEarlyOutsWithoutAnimator()
 	ZENITH_ASSERT_TRUE(true, "UpdateFootIK with no animator must not crash");
 }
 
+// ----- Jetpack thrust -------------------------------------------------------
+
+ZENITH_TEST(RenderTestInput, JetpackThrustRaisesAndCapsVy)
+{
+	// Exercise the pure thrust integrator directly. (A full in-engine thrust test
+	// is impossible from this fixture for TWO reasons: the Player here has a
+	// ColliderComponent with NO valid body — OnStart, which adds the capsule, is
+	// never called — so every SetLinearVelocity is a no-op; and no jetpack entity
+	// exists so the gating predicate is false. The decision logic is covered
+	// separately by JetpackGatingRequiresEquipAndInput below.)
+	const float fDt = 1.0f / 60.0f;
+
+	const float fCap  = RenderTest_PlayerComponent::GetJetpackMaxAscent();
+	const float fJump = RenderTest_PlayerComponent::GetJumpVelocity();
+
+	// From rest, one thrust frame adds upward velocity.
+	const float fAfterOne = RenderTest_PlayerComponent::ApplyJetpackThrust(0.0f, fDt);
+	ZENITH_ASSERT_TRUE(fAfterOne > 0.0f,
+		"Jetpack thrust must raise vertical velocity from rest");
+
+	// A falling player (negative vy) is pulled back upward by thrust.
+	const float fFromFall = RenderTest_PlayerComponent::ApplyJetpackThrust(-5.0f, fDt);
+	ZENITH_ASSERT_TRUE(fFromFall > -5.0f,
+		"Jetpack thrust must add upward velocity even while falling");
+
+	// Sustained thrust converges to — and is capped at — the ascent ceiling, so
+	// the climb is controlled rather than runaway. Assert convergence to the REAL
+	// constant (not a literal) so a retune of the cap can't silently invalidate it.
+	float fVy = 0.0f;
+	for (int i = 0; i < 600; ++i)   // ~10s of held thrust
+		fVy = RenderTest_PlayerComponent::ApplyJetpackThrust(fVy, fDt);
+	ZENITH_ASSERT_TRUE(fVy <= fCap + 1e-4f,
+		"Ascent velocity must be capped at the jetpack ceiling");
+	ZENITH_ASSERT_TRUE(std::abs(fVy - fCap) < 1e-3f,
+		"Sustained thrust must converge to the ascent ceiling");
+
+	// The load-bearing invariant: the cap MUST sit strictly above the jump pop.
+	// The jetpack thrust block runs the same frame as a grounded jump (held Space
+	// satisfies both), so if the cap were <= the jump velocity the pop would be
+	// clamped flat. Asserting the RELATIONSHIP between the real constants (not a
+	// stale literal) makes any future retune that violates it fail loudly.
+	ZENITH_ASSERT_TRUE(fCap > fJump,
+		"Ascent ceiling must exceed the jump velocity so the jump pop is preserved");
+}
+
+ZENITH_TEST(RenderTestInput, JetpackGatingRequiresEquipAndInput)
+{
+	// The pure gating predicate is the "ground movement unchanged" guard: without a
+	// jetpack equipped, NOTHING the player does (including holding Space) may engage
+	// thrust. This is exactly the condition the OnUpdate thrust block evaluates.
+	using P = RenderTest_PlayerComponent;
+
+	// No jetpack worn => never thrust, regardless of Space / showcase.
+	ZENITH_ASSERT_FALSE(P::ShouldEngageJetpack(false, false, false),
+		"Unequipped + no input must not thrust");
+	ZENITH_ASSERT_FALSE(P::ShouldEngageJetpack(false, true, false),
+		"Unequipped + Space held must NOT thrust (ground movement unchanged)");
+	ZENITH_ASSERT_FALSE(P::ShouldEngageJetpack(false, true, true),
+		"Unequipped must not thrust even under the showcase force");
+
+	// Equipped: thrust requires Space held OR the showcase force.
+	ZENITH_ASSERT_FALSE(P::ShouldEngageJetpack(true, false, false),
+		"Equipped but no input must not thrust");
+	ZENITH_ASSERT_TRUE(P::ShouldEngageJetpack(true, true, false),
+		"Equipped + Space held must thrust");
+	ZENITH_ASSERT_TRUE(P::ShouldEngageJetpack(true, false, true),
+		"Equipped + showcase force must thrust (capture path)");
+}
+
 #endif // ZENITH_INPUT_SIMULATOR

@@ -35,6 +35,8 @@
 #include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "RenderTest/RenderTest_Guns.h"
 #include "RenderTest/Components/RenderTest_GunComponent.h"
+#include "RenderTest/RenderTest_Jetpack.h"
+#include "RenderTest/Components/RenderTest_JetpackComponent.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -79,6 +81,31 @@ public:
 	float    GetFireCooldown() const { return m_fFireCooldown; }
 	float    GetAimLayerWeight() const { return m_fAimLayerWeight; }
 	bool     IsReloading()    const { return m_fReloadTimer > 0.0f; }
+
+	// Pure jetpack thrust integrator: accelerate the vertical velocity upward by
+	// one frame's thrust, capped at the ascent ceiling. Gravity is applied
+	// separately by the physics step, so the net climb is (thrust accel -
+	// gravity). Static + side-effect-free so it can be unit-tested without a
+	// physics body / entity; the in-engine call site is the jetpack-thrust block
+	// in OnUpdate.
+	static float ApplyJetpackThrust(float fVyIn, float fDt)
+	{
+		return glm::min(fVyIn + k_fJetpackThrustAccel * fDt, k_fJetpackMaxAscent);
+	}
+
+	// Pure thrust-gating predicate (extracted so the "no jetpack => no thrust =>
+	// ground movement unchanged" guarantee is unit-testable without a physics body):
+	// the jetpack fires only when one is worn AND (Space is held OR the showcase
+	// forces it). This is the exact condition the OnUpdate thrust block uses.
+	static bool ShouldEngageJetpack(bool bEquipped, bool bSpaceHeld, bool bShowcaseForced)
+	{
+		return bEquipped && (bSpaceHeld || bShowcaseForced);
+	}
+
+	// Design constants exposed for the invariant test (the ascent cap must stay
+	// above the jump pop so a jetpack-equipped jump isn't clamped flat).
+	static constexpr float GetJetpackMaxAscent() { return k_fJetpackMaxAscent; }
+	static constexpr float GetJumpVelocity()     { return k_fJumpVelocity; }
 
 	// Single-player game; the smoke runner uses this to drive a test shot
 	// from outside the input system. nullptr until OnAwake fires.
@@ -132,6 +159,12 @@ public:
 		// (gunless) input-simulator fire/reload tests are unaffected.
 		m_uCurrentMagSize = k_uMagSize;
 		m_fCurrentFireInterval = k_fFireInterval;
+
+		// Jetpack state. Resolved lazily once the procedural jetpack has spawned;
+		// stays unequipped (a no-op) in the input-sim tests / showcases that have
+		// no jetpack entity.
+		m_xJetpack = Zenith_Entity();
+		m_uJetNozzleAlt = 0;
 	}
 
 	void OnStart()
@@ -286,6 +319,26 @@ public:
 			}
 		}
 
+		// --- Jetpack thrust ---
+		// Holding Space fires the jetpack (when one is worn), accelerating the
+		// player upward up to a capped ascent speed. Mid-air horizontal control
+		// comes for free: the camera-relative move block above is NOT grounded-
+		// gated, so the arrow keys steer while airborne. Ground movement and the
+		// jump above are untouched — without a jetpack equipped this is a no-op,
+		// so the gunless/jetpack-less input-simulator tests are unaffected. The
+		// showcase capture forces thrust so the rising player + trail can be shot.
+		ResolveJetpack();
+		const bool bJetpackThrust = ShouldEngageJetpack(
+			IsJetpackEquipped(),
+			g_xEngine.Input().IsKeyDown(ZENITH_KEY_SPACE),
+			RenderTest_JetpackTuning::s_bShowcaseActive);
+		if (bJetpackThrust && xCollider.HasValidBody())
+		{
+			Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
+			xVelocity.y = ApplyJetpackThrust(xVelocity.y, fDt);
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+		}
+
 		// --- Reload input ---
 		// R + need ammo + have reserve + can act -> start reload. Ammo transfer
 		// is deferred to the gated "just finished" block below — without the
@@ -420,6 +473,12 @@ public:
 		// the foot IK; the arm chains are independent of the leg chains so the two
 		// solves don't interact.
 		UpdateGunIK(fDt);
+
+		// Jet trail: emit from the jetpack's nozzles while thrusting, off
+		// otherwise. Runs last so it reads the player's settled state this frame.
+		UpdateJetpack(fDt, bJetpackThrust);
+		if (RenderTest_JetpackTuning::s_bShowcaseActive)
+			AssertJetpackShowcaseCamera();
 	}
 
 	// Component contract. Ammo/cooldown/aim state is runtime-only and reset on
@@ -1357,9 +1416,111 @@ private:
 		RenderTest_GameplayState::s_fPhotoPitch = asinf(glm::clamp(xDir.y, -1.0f, 1.0f));
 	}
 
+	//=========================================================================
+	// Jetpack
+	//=========================================================================
+
+	bool IsJetpackEquipped() const
+	{
+		return m_xJetpack.IsValid() && m_xJetpack.HasComponent<RenderTest_JetpackComponent>();
+	}
+
+	// Lazily resolve the procedural jetpack (spawned post scene-load, possibly
+	// after the player's OnStart). Cheap once found — early-outs thereafter.
+	// QueryAllScenes on a registered-but-instance-less type is a no-op, so this
+	// is safe in the jetpack-less input-simulator tests (same pattern as the
+	// gun handling's FindNearestGun).
+	void ResolveJetpack()
+	{
+		if (IsJetpackEquipped())
+			return;
+		g_xEngine.Scenes().QueryAllScenes<RenderTest_JetpackComponent>().ForEach(
+			[&](Zenith_EntityID, RenderTest_JetpackComponent& xJet)
+			{
+				if (!m_xJetpack.IsValid())
+					m_xJetpack = xJet.GetParentEntity();
+			});
+	}
+
+	// Drive the jetpack's jet-trail emitter. While thrusting it streams from the
+	// two nozzles (alternating each frame for a twin-exhaust look), aimed along
+	// the jetpack's local exhaust direction in world space; otherwise the emitter
+	// is switched off and the in-flight particles fade out. The jetpack transform
+	// is one frame stale (updated by the attachment in OnLateUpdate) — negligible
+	// for a trail, same as the foot/gun IK.
+	void UpdateJetpack(float fDt, bool bThrust)
+	{
+		(void)fDt;
+		if (!IsJetpackEquipped())
+			return;
+		Zenith_Entity xJet = m_xJetpack;
+		xJet.GetComponent<RenderTest_JetpackComponent>().SetThrusting(bThrust);
+
+		if (!xJet.HasComponent<Zenith_ParticleEmitterComponent>()
+			|| !xJet.HasComponent<Zenith_TransformComponent>())
+			return;
+		Zenith_ParticleEmitterComponent& xEmitter = xJet.GetComponent<Zenith_ParticleEmitterComponent>();
+
+		if (!bThrust)
+		{
+			xEmitter.SetEmitting(false);
+			return;
+		}
+
+		const RenderTest_JetpackComponent::Spec& xSpec =
+			xJet.GetComponent<RenderTest_JetpackComponent>().GetSpec();
+
+		Zenith_Maths::Matrix4 xJetWorld;
+		xJet.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xJetWorld);
+
+		const Zenith_Maths::Vector3& xNozzleLocal = xSpec.m_axNozzleLocal[m_uJetNozzleAlt & 1u];
+		m_uJetNozzleAlt++;
+
+		const Zenith_Maths::Vector3 xNozzleWorld(
+			xJetWorld * Zenith_Maths::Vector4(xNozzleLocal, 1.0f));
+		Zenith_Maths::Vector3 xExhaustDir(
+			xJetWorld * Zenith_Maths::Vector4(xSpec.m_xExhaustLocalDir, 0.0f));
+		if (glm::length(xExhaustDir) < 1e-4f)
+			xExhaustDir = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+		xExhaustDir = glm::normalize(xExhaustDir);
+
+		xEmitter.SetEmitting(true);
+		xEmitter.SetEmitPosition(xNozzleWorld);
+		xEmitter.SetEmitDirection(xExhaustDir);
+	}
+
+	// Park a back-3/4 photo camera on the rising player for the
+	// --rendertest-jetpack-showcase capture. The offset is world-space relative
+	// to the player origin (so it tracks the player upward); yaw/pitch are derived
+	// to look at the torso/back where the jetpack + trail are. Re-asserted every
+	// frame so it survives GameplayState::Reset.
+	void AssertJetpackShowcaseCamera()
+	{
+		RenderTest_GameplayState::s_bPhotoModeActive = true;
+		const Zenith_Maths::Vector3 xOffset(1.6f, 1.3f, -3.0f);   // right + up + behind the back
+		const Zenith_Maths::Vector3 xLook(0.0f, 0.4f, -0.1f);     // torso/back
+		const Zenith_Maths::Vector3 xDir = glm::normalize(xLook - xOffset);
+		RenderTest_GameplayState::s_fPhotoOffsetX = xOffset.x;
+		RenderTest_GameplayState::s_fPhotoOffsetY = xOffset.y;
+		RenderTest_GameplayState::s_fPhotoOffsetZ = xOffset.z;
+		RenderTest_GameplayState::s_fPhotoYaw = atan2f(-xDir.x, xDir.z);
+		RenderTest_GameplayState::s_fPhotoPitch = asinf(glm::clamp(xDir.y, -1.0f, 1.0f));
+	}
+
 	static constexpr uint32_t k_uMagSize        = 30;
 	static constexpr float    k_fFireInterval   = 0.12f;  // ~500 RPM
 	static constexpr float    k_fReloadDuration = 1.5f;
+
+	// Jetpack tuning. Thrust accel exceeds gravity (~9.8) so a held Space climbs;
+	// the ascent cap sits above the jump velocity so the initial jump pop is
+	// preserved when leaving the ground (the cap > jump invariant — when thrust
+	// engages on the same grounded frame as the jump it must not clamp the pop
+	// away; enforced by the JetpackThrustRaisesAndCapsVy unit test).
+	static constexpr float k_fJetpackThrustAccel = 22.0f;  // m/s^2 upward while held
+	static constexpr float k_fJetpackMaxAscent   = 8.0f;   // m/s ascent ceiling
+	// Jump pop velocity. Also the default for the m_fJumpVelocity member below;
+	// co-located here so the cap > jump relationship reads as one design unit.
+	static constexpr float k_fJumpVelocity       = 6.0f;
 
 	// Hitscan tuning. k_fMaxRange covers the central platform and the
 	// surrounding terrain at RenderTest's playable scale. The decal lifetime
@@ -1379,7 +1540,7 @@ private:
 
 	float    m_fMoveSpeed       = 5.0f;
 	float    m_fSprintMultiplier = 1.7f;
-	float    m_fJumpVelocity    = 6.0f;
+	float    m_fJumpVelocity    = k_fJumpVelocity;
 	float    m_fRotationSpeed   = 10.0f;
 	float    m_fAimLayerWeight  = 0.0f;
 	float    m_fForceAimTimer   = 0.0f;
@@ -1401,6 +1562,10 @@ private:
 	uint32_t m_uCurrentMagSize  = k_uMagSize;
 	float    m_fCurrentFireInterval = k_fFireInterval;
 	Zenith_UI::Zenith_UIText* m_pxGunPromptText = nullptr;
+
+	// --- Jetpack state ---
+	Zenith_Entity m_xJetpack;          // resolved lazily; invalid == no jetpack worn
+	uint32_t      m_uJetNozzleAlt = 0; // frame counter to alternate the two nozzles
 
 	inline static RenderTest_PlayerComponent* s_pxActiveInstance = nullptr;
 };

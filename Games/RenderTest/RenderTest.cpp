@@ -61,6 +61,13 @@
 #include "RenderTest/RenderTest_Guns.h"
 #include "RenderTest/Components/RenderTest_GunComponent.h"
 
+// Jetpack testbed (backpack worn on the player's back; Space fires it to lift
+// the player + steer mid-air; particle jet trail). Header included so the
+// ZENITH_REGISTER_COMPONENT thunk below names the type; the spawn lives in
+// RenderTest_Jetpack.cpp.
+#include "RenderTest/RenderTest_Jetpack.h"
+#include "RenderTest/Components/RenderTest_JetpackComponent.h"
+
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -120,6 +127,7 @@ namespace RenderTest
 		std::string                 m_strStickFigureModelPath;
 		MaterialHandle              m_xCubeMaterial;
 		Flux_ParticleEmitterConfig* m_pxMuzzleConfig = nullptr;
+		Flux_ParticleEmitterConfig* m_pxJetTrailConfig = nullptr;
 	};
 
 	static RenderTestResources g_xResources;
@@ -788,6 +796,7 @@ ZENITH_REGISTER_COMPONENT(RenderTest_SmokeRunnerComponent, "RenderTestSmokeRunne
 ZENITH_REGISTER_COMPONENT(RenderTest_GunComponent, "RenderTestGun", 110u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisPlayerComponent, "RenderTestTennisPlayer", 120u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisMatchComponent, "RenderTestTennisMatch", 130u)
+ZENITH_REGISTER_COMPONENT(RenderTest_JetpackComponent, "RenderTestJetpack", 140u)
 
 // (ExportColoredTexture/CreateFlatColorMaterial used to live here for the
 // flat-teal player material — the StickFigure .zmodel now bundles its own
@@ -974,6 +983,35 @@ static void InitializeRenderTestResources()
 		RenderTest::Resources().m_pxMuzzleConfig->m_bAdditiveBlending     = true;
 		RenderTest::Resources().m_pxMuzzleConfig->m_bUseGPUCompute        = false;
 		Flux_ParticleEmitterConfig::Register("RenderTest_MuzzleFlash", RenderTest::Resources().m_pxMuzzleConfig);
+	}
+
+	// --- Jetpack jet-trail particle config ---
+	// Continuous, additive, hot-flame-to-smoke exhaust. The jetpack emitter's
+	// position/direction are overridden per-frame by the player while thrusting;
+	// here we only set the look (the player toggles SetEmitting).
+	if (!RenderTest::Resources().m_pxJetTrailConfig)
+	{
+		RenderTest::Resources().m_pxJetTrailConfig = new Flux_ParticleEmitterConfig();
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSpawnRate          = 90.0f;     // dense continuous stream
+		RenderTest::Resources().m_pxJetTrailConfig->m_uBurstCount         = 0;
+		RenderTest::Resources().m_pxJetTrailConfig->m_uMaxParticles       = 256;
+		RenderTest::Resources().m_pxJetTrailConfig->m_fLifetimeMin        = 0.22f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_fLifetimeMax        = 0.50f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSpawnRadius        = 0.03f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_xEmitDirection      = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSpreadAngleDegrees = 12.0f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSpeedMin           = 6.0f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSpeedMax           = 11.0f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_xGravity            = Zenith_Maths::Vector3(0.0f, -2.0f, 0.0f);
+		RenderTest::Resources().m_pxJetTrailConfig->m_fDrag              = 2.5f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_xColorStart         = { 1.0f, 0.85f, 0.35f, 1.0f };  // hot yellow-orange
+		RenderTest::Resources().m_pxJetTrailConfig->m_xColorEnd           = { 0.5f, 0.12f, 0.02f, 0.0f };  // dark red, fades out
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSizeStart          = 0.18f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_fSizeEnd            = 0.45f;   // expands as it cools (smoke)
+		RenderTest::Resources().m_pxJetTrailConfig->m_fTurbulence         = 1.5f;
+		RenderTest::Resources().m_pxJetTrailConfig->m_bAdditiveBlending   = true;
+		RenderTest::Resources().m_pxJetTrailConfig->m_bUseGPUCompute      = false;
+		Flux_ParticleEmitterConfig::Register("RenderTest_JetTrail", RenderTest::Resources().m_pxJetTrailConfig);
 	}
 
 	s_bResourcesInitialized = true;
@@ -1240,6 +1278,7 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_GunComponent>("RenderTestGun");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisPlayerComponent>("RenderTestTennisPlayer");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisMatchComponent>("RenderTestTennisMatch");
+	xEditorRegistry.RegisterComponent<RenderTest_JetpackComponent>("RenderTestJetpack");
 #endif
 
 	s_uRenderTestSmokeFrameLimit = RenderTest_GetCommandLineUInt("--rendertest-smoke-frames=", 240);
@@ -1256,6 +1295,12 @@ void Project_Shutdown()
 		Flux_ParticleEmitterConfig::Unregister("RenderTest_MuzzleFlash");
 		delete RenderTest::Resources().m_pxMuzzleConfig;
 		RenderTest::Resources().m_pxMuzzleConfig = nullptr;
+	}
+	if (RenderTest::Resources().m_pxJetTrailConfig)
+	{
+		Flux_ParticleEmitterConfig::Unregister("RenderTest_JetTrail");
+		delete RenderTest::Resources().m_pxJetTrailConfig;
+		RenderTest::Resources().m_pxJetTrailConfig = nullptr;
 	}
 
 	// Release file-scope asset handles BEFORE AssetRegistry::Shutdown
@@ -1280,6 +1325,9 @@ void Project_Shutdown()
 
 	// Likewise the gun-testbed material handle.
 	RenderTest_GunsShutdown();
+
+	// Likewise the jetpack-testbed material handle.
+	RenderTest_JetpackShutdown();
 }
 
 void Project_LoadInitialScene();
@@ -1625,6 +1673,10 @@ void Project_RegisterEditorAutomationSteps()
 	// procedural, spawned post-load.
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnGuns);
 
+	// Jetpack testbed (backpack attached to the player's back) — likewise
+	// procedural, spawned post-load (after the player exists in the loaded scene).
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnJetpack);
+
 	// Smoke play-mode entry LAST — by this step the deferred load has
 	// completed, so the smoke runner's first tick probes the fully loaded
 	// terrain (see the note in Project_LoadInitialScene).
@@ -1633,11 +1685,13 @@ void Project_RegisterEditorAutomationSteps()
 		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_EnterSmokePlayMode);
 	}
 
-	// Gun-showcase capture (no smoke): enter Play so the player ticks (auto-equips
-	// the chosen gun + holds the IK pose for a front-camera screenshot). Skipped
-	// when --rendertest-smoke is set (that path already enters Play, and its
-	// player-teleporting smoke runner would fight the showcase pose).
-	else if (RenderTest_HasCommandLineFlagPrefix("--rendertest-gun-showcase"))
+	// Gun/jetpack-showcase capture (no smoke): enter Play so the player ticks
+	// (auto-equips the chosen gun + holds the IK pose, or forces jetpack thrust +
+	// frames the rising player for a screenshot). Skipped when --rendertest-smoke
+	// is set (that path already enters Play, and its player-teleporting smoke
+	// runner would fight the showcase pose).
+	else if (RenderTest_HasCommandLineFlagPrefix("--rendertest-gun-showcase")
+		|| RenderTest_HasCommandLineFlagPrefix("--rendertest-jetpack-showcase"))
 	{
 		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_EnterSmokePlayMode);
 	}
@@ -1953,6 +2007,9 @@ void Project_LoadInitialScene()
 	// FPS gun pickup/drop testbed (guns on the spawn platform). Same split as the
 	// tennis court: tools via the automation step, non-tools here.
 	RenderTest_SpawnGuns();
+
+	// Jetpack testbed (backpack on the player's back). Same split.
+	RenderTest_SpawnJetpack();
 #endif
 
 	// Tools builds: smoke play-mode entry is queued as the FINAL automation

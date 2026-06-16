@@ -169,13 +169,16 @@
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
     <ClInclude Include="..\Components\RenderTest_GunComponent.h" />
+    <ClInclude Include="..\Components\RenderTest_JetpackComponent.h" />
     <ClInclude Include="..\RenderTest_Tennis.h" />
     <ClInclude Include="..\RenderTest_Guns.h" />
+    <ClInclude Include="..\RenderTest_Jetpack.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
     <ClCompile Include="..\RenderTest_Tennis.cpp" />
     <ClCompile Include="..\RenderTest_Guns.cpp" />
+    <ClCompile Include="..\RenderTest_Jetpack.cpp" />
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp" />
     <ClCompile Include="..\Tests\HumanShowcase.cpp" />
     <ClCompile Include="..\Tests\MaterialBattleTest.cpp" />
