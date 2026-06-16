@@ -144,6 +144,7 @@ public:
 	// Stick figure IK tests
 	static void TestStickFigureArmIK();
 	static void TestStickFigureArmIKEndEffectorOrientation();
+	static void TestStickFigureSupportHandIKReachesForegrip();
 	static void TestStickFigureLegIK();
 	static void TestStickFigureIKWithAnimation();
 

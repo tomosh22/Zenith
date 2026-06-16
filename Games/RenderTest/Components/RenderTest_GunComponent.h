@@ -1,0 +1,86 @@
+#pragma once
+#include "ZenithECS/Zenith_Entity.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "RenderTest/RenderTest_Guns.h"
+
+#ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+#include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
+#endif
+
+// Per-gun-entity data for the FPS pickup/drop testbed. A gun entity carries this
+// alongside a Zenith_ModelComponent (its mesh), a Zenith_TransformComponent, and a
+// Zenith_AttachmentComponent (idle until picked up). The component is passive — it
+// holds the gun's spec (mount/foregrip/muzzle/ammo) plus runtime ammo + held flag.
+// The player component owns the pickup/drop/IK/fire logic and reads this for the
+// held gun. See RenderTest_Guns.h for the design overview.
+//
+// The guns are spawned procedurally post scene-load (like the tennis court), so
+// this component is never serialized into a saved scene in practice; the
+// stream methods only round-trip a version tag to satisfy the component concept.
+class RenderTest_GunComponent
+{
+public:
+	RenderTest_GunComponent(Zenith_Entity& xEntity)
+		: m_xParentEntity(xEntity)
+	{
+	}
+
+	// Seed the gun from its type spec. Called by the spawn right after the
+	// component is added.
+	void Init(const RenderTest_Guns::GunSpec& xSpec)
+	{
+		m_xSpec = xSpec;
+		m_uAmmoInClip = xSpec.m_uMagSize;
+		m_uReserve = xSpec.m_uReserve;
+		m_bHeld = false;
+	}
+
+	const RenderTest_Guns::GunSpec& GetSpec() const { return m_xSpec; }
+	RenderTest_Guns::GunType GetType() const { return m_xSpec.m_eType; }
+	const char* GetName() const { return m_xSpec.m_szName; }
+	bool IsTwoHanded() const { return m_xSpec.m_bTwoHanded; }
+
+	bool IsHeld() const { return m_bHeld; }
+	void SetHeld(bool bHeld) { m_bHeld = bHeld; }
+
+	// Ammo lives on the gun so picking the same gun back up resumes its state.
+	uint32_t GetAmmoInClip() const { return m_uAmmoInClip; }
+	uint32_t GetReserve() const { return m_uReserve; }
+	void SetAmmo(uint32_t uClip, uint32_t uReserve) { m_uAmmoInClip = uClip; m_uReserve = uReserve; }
+
+	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		const u_int uVersion = 1;
+		xStream << uVersion;
+	}
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0;
+		xStream >> uVersion;
+		m_bHeld = false;
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		if (ImGui::CollapsingHeader("Gun", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Text("Type: %s", m_xSpec.m_szName);
+			ImGui::Text("Two-handed: %s", m_xSpec.m_bTwoHanded ? "true" : "false");
+			ImGui::Text("Held: %s", m_bHeld ? "true" : "false");
+			ImGui::Text("Ammo: %u / %u", m_uAmmoInClip, m_uReserve);
+		}
+	}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
+	RenderTest_Guns::GunSpec m_xSpec;
+	uint32_t m_uAmmoInClip = 0;
+	uint32_t m_uReserve = 0;
+	bool m_bHeld = false;
+};

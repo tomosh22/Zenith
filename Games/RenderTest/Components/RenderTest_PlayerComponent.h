@@ -32,6 +32,9 @@
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Decals/Flux_DecalsImpl.h"
+#include "EntityComponent/Components/Zenith_AttachmentComponent.h"
+#include "RenderTest/RenderTest_Guns.h"
+#include "RenderTest/Components/RenderTest_GunComponent.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -116,6 +119,19 @@ public:
 		m_fReloadTimer = 0.0f;
 		m_uAmmoInClip = k_uMagSize;
 		m_uReserveAmmo = 90;
+
+		// Gun pickup/drop state. Empty-handed at spawn; the guns are on the floor.
+		m_xHeldGun = Zenith_Entity();
+		m_xNearestGun = Zenith_Entity();
+		m_fNearestGunDist = 1e30f;
+		m_bGunAutoEquipped = false;
+		m_fGunIKWeight = 0.0f;
+		m_fGunRecoilKick = 0.0f;
+		m_pxGunPromptText = nullptr;
+		// Empty-handed weapon params == the historical baseline so the existing
+		// (gunless) input-simulator fire/reload tests are unaffected.
+		m_uCurrentMagSize = k_uMagSize;
+		m_fCurrentFireInterval = k_fFireInterval;
 	}
 
 	void OnStart()
@@ -175,6 +191,7 @@ public:
 			if (xHUD.IsValid() && xHUD.HasComponent<Zenith_UIComponent>())
 			{
 				m_pxAmmoText = xHUD.GetComponent<Zenith_UIComponent>().FindElement<Zenith_UI::Zenith_UIText>("AmmoText");
+				m_pxGunPromptText = xHUD.GetComponent<Zenith_UIComponent>().FindElement<Zenith_UI::Zenith_UIText>("GunPrompt");
 			}
 		}
 	}
@@ -199,6 +216,11 @@ public:
 		{
 			g_xEngine.Physics().EnforceUpright(xCollider.GetBodyID());
 		}
+
+		// Gun pickup/drop (E), proximity prompt, and showcase auto-equip. All gun
+		// behaviour is gated on actually holding/seeing a gun, so the gunless
+		// input-simulator tests (which never spawn a gun) are unaffected.
+		UpdateGunHandling(fDt);
 
 		// Camera-relative basis. Sign convention matches the Test game's
 		// PlayerController (Test/Components/PlayerController_Behaviour.cpp:185)
@@ -270,7 +292,7 @@ public:
 		// gate the clip would refill every frame after the timer crossed 0.
 		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R)
 			&& bCanAct
-			&& m_uAmmoInClip < k_uMagSize
+			&& m_uAmmoInClip < m_uCurrentMagSize
 			&& m_uReserveAmmo > 0)
 		{
 			StartReload();
@@ -300,7 +322,9 @@ public:
 				}
 				Shoot();
 				m_uAmmoInClip--;
-				m_fFireCooldown = k_fFireInterval;
+				m_fFireCooldown = m_fCurrentFireInterval;
+				if (IsHoldingGun())
+					m_fGunRecoilKick = 1.0f;   // brief anchor pull-back (visible recoil)
 			}
 		}
 
@@ -375,7 +399,7 @@ public:
 		m_fReloadTimer -= fDt;
 		if (bWasReloading && m_fReloadTimer <= 0.0f)
 		{
-			const uint32_t uTake = std::min(k_uMagSize - m_uAmmoInClip, m_uReserveAmmo);
+			const uint32_t uTake = std::min(m_uCurrentMagSize - m_uAmmoInClip, m_uReserveAmmo);
 			m_uAmmoInClip += uTake;
 			m_uReserveAmmo -= uTake;
 		}
@@ -391,6 +415,11 @@ public:
 		// there's always one frame of latency. Setting them at the end uses the
 		// freshest position; setting at the start uses last frame's position.
 		UpdateFootIK();
+
+		// Arm IK that puts the hands ON the held gun (see UpdateGunIK). Runs after
+		// the foot IK; the arm chains are independent of the leg chains so the two
+		// solves don't interact.
+		UpdateGunIK(fDt);
 	}
 
 	// Component contract. Ammo/cooldown/aim state is runtime-only and reset on
@@ -635,6 +664,29 @@ private:
 			xRight.m_fTolerance = 0.0005f;
 			xIK.AddChain(xRight);
 		}
+
+		// Arm IK chains for holding a gun. The RIGHT arm is driven to a body-anchored
+		// hold (with an end-effector orientation that squares the gun barrel forward);
+		// the LEFT arm reaches the gun's foregrip for a two-handed weapon. Both have
+		// NO target until a gun is picked up, so an unused chain is a no-op in Solve
+		// (the foot-IK demo and the gunless tests are unaffected). Tuned like the
+		// leg chains for clean convergence near full extension.
+		if (!xIK.HasChain("RightArm"))
+		{
+			Flux_IKChain xRightArm = Flux_IKSolver::CreateArmChain("RightArm",
+				"RightUpperArm", "RightLowerArm", "RightHand");
+			xRightArm.m_uMaxIterations = 30;
+			xRightArm.m_fTolerance = 0.0005f;
+			xIK.AddChain(xRightArm);
+		}
+		if (!xIK.HasChain("LeftArm"))
+		{
+			Flux_IKChain xLeftArm = Flux_IKSolver::CreateArmChain("LeftArm",
+				"LeftUpperArm", "LeftLowerArm", "LeftHand");
+			xLeftArm.m_uMaxIterations = 30;
+			xLeftArm.m_fTolerance = 0.0005f;
+			xIK.AddChain(xLeftArm);
+		}
 	}
 
 	static void AddClipState(Flux_AnimationStateMachine* pxSM,
@@ -756,8 +808,21 @@ private:
 
 		Zenith_Maths::Vector3 xPlayerPos;
 		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
-		const Zenith_Maths::Vector3 xBarrel =
+
+		// Muzzle origin. When a gun is held, fire from its (mesh-local) muzzle point
+		// transformed into world space — the gun rides the right hand, so this is
+		// where the barrel actually is. Otherwise fall back to the historical
+		// hand-relative barrel offset (keeps the gunless smoke/decal path identical).
+		Zenith_Maths::Vector3 xBarrel =
 			xPlayerPos + xRgt * 0.3f + Zenith_Maths::Vector3(0.0f, 1.4f, 0.0f) + xFwd * 1.0f;
+		if (IsHoldingGun() && m_xHeldGun.HasComponent<Zenith_TransformComponent>())
+		{
+			Zenith_Maths::Matrix4 xGunWorld;
+			m_xHeldGun.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xGunWorld);
+			const Zenith_Maths::Vector3 xMuzzleLocal =
+				m_xHeldGun.GetComponent<RenderTest_GunComponent>().GetSpec().m_xMuzzleLocal;
+			xBarrel = Zenith_Maths::Vector3(xGunWorld * Zenith_Maths::Vector4(xMuzzleLocal, 1.0f));
+		}
 
 		// Hitscan: raycast from the barrel along the camera forward. Ignore
 		// the player's own collider per the IK precedent in UpdateFootIK.
@@ -937,6 +1002,361 @@ private:
 		SolveOneFoot("RightLeg", "RightFoot");
 	}
 
+	//=========================================================================
+	// Gun pickup / drop / hold
+	//=========================================================================
+
+	bool IsHoldingGun() const
+	{
+		return m_xHeldGun.IsValid() && m_xHeldGun.HasComponent<RenderTest_GunComponent>();
+	}
+
+	// Per-frame: showcase auto-equip + camera, nearest-gun proximity, E pickup/drop,
+	// and the HUD prompt. Cheap and fully gated — does nothing useful (and never
+	// queries) for an empty-handed player with no guns in the scene, so the
+	// gunless input-simulator tests are unaffected.
+	void UpdateGunHandling(float)
+	{
+		// Showcase capture mode: re-assert the front photo camera every frame (it
+		// survives the Play->Stop->Play GameplayState::Reset) and auto-equip the
+		// chosen gun once the animator is up.
+		if (RenderTest_GunTuning::s_bShowcaseActive)
+		{
+			AssertShowcaseCamera();
+			// Sentinel COUNT == "floor" mode: leave the guns on the deck (no equip)
+			// so the spawned row can be screenshotted.
+			const bool bFloorMode =
+				RenderTest_GunTuning::s_uShowcaseType >= static_cast<uint32_t>(RenderTest_Guns::GunType::COUNT);
+			if (!bFloorMode && !m_bGunAutoEquipped && m_pxAnimator)
+			{
+				Zenith_Entity xGun = FindGunByType(
+					static_cast<RenderTest_Guns::GunType>(RenderTest_GunTuning::s_uShowcaseType));
+				if (xGun.IsValid())
+				{
+					EquipGun(xGun);
+					m_bGunAutoEquipped = true;
+				}
+			}
+		}
+
+		// Nearest free gun (only relevant when empty-handed).
+		m_xNearestGun = Zenith_Entity();
+		m_fNearestGunDist = 1e30f;
+		if (!IsHoldingGun())
+			m_xNearestGun = FindNearestGun(m_fNearestGunDist);
+
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E))
+		{
+			if (IsHoldingGun())
+				DropHeldGun();
+			else if (m_xNearestGun.IsValid() && m_fNearestGunDist <= RenderTest_Guns::fPICKUP_RADIUS)
+				EquipGun(m_xNearestGun);
+		}
+
+		UpdateGunPrompt();
+	}
+
+	Zenith_Entity FindNearestGun(float& fOutDist)
+	{
+		fOutDist = 1e30f;
+		Zenith_Entity xBest;
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+			return xBest;
+		Zenith_Maths::Vector3 xPlayerPos;
+		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
+		g_xEngine.Scenes().QueryAllScenes<RenderTest_GunComponent>().ForEach(
+			[&](Zenith_EntityID, RenderTest_GunComponent& xGun)
+			{
+				if (xGun.IsHeld())
+					return;
+				Zenith_Entity xEnt = xGun.GetParentEntity();
+				if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>())
+					return;
+				Zenith_Maths::Vector3 xPos;
+				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+				const float fD = glm::length(xPos - xPlayerPos);
+				if (fD < fOutDist) { fOutDist = fD; xBest = xEnt; }
+			});
+		return xBest;
+	}
+
+	Zenith_Entity FindGunByType(RenderTest_Guns::GunType eType)
+	{
+		Zenith_Entity xBest;
+		g_xEngine.Scenes().QueryAllScenes<RenderTest_GunComponent>().ForEach(
+			[&](Zenith_EntityID, RenderTest_GunComponent& xGun)
+			{
+				if (!xBest.IsValid() && !xGun.IsHeld() && xGun.GetType() == eType)
+					xBest = xGun.GetParentEntity();
+			});
+		return xBest;
+	}
+
+	void EquipGun(Zenith_Entity xGun)
+	{
+		if (!xGun.IsValid()
+			|| !xGun.HasComponent<RenderTest_GunComponent>()
+			|| !xGun.HasComponent<Zenith_AttachmentComponent>())
+			return;
+		RenderTest_GunComponent& xGunComp = xGun.GetComponent<RenderTest_GunComponent>();
+		if (xGunComp.IsHeld())
+			return;
+
+		// Attach to the right hand. Mount is identity: the gun mesh is built with the
+		// barrel along +Z, and the right-arm end-effector IK (UpdateGunIK) orients
+		// the hand — and thus the gun — so no bone-local rotation is baked in here.
+		xGun.GetComponent<Zenith_AttachmentComponent>().AttachToBone(
+			m_xParentEntity, "RightHand", Zenith_Maths::Matrix4(1.0f));
+		xGunComp.SetHeld(true);
+		m_xHeldGun = xGun;
+
+		// Adopt the gun's weapon params + persisted ammo.
+		const RenderTest_Guns::GunSpec& xSpec = xGunComp.GetSpec();
+		m_uCurrentMagSize = xSpec.m_uMagSize;
+		m_fCurrentFireInterval = xSpec.m_fFireInterval;
+		m_uAmmoInClip = xGunComp.GetAmmoInClip();
+		m_uReserveAmmo = xGunComp.GetReserve();
+		m_fReloadTimer = 0.0f;
+		m_fFireCooldown = 0.0f;
+		m_fGunIKWeight = 0.0f;
+		m_fGunRecoilKick = 0.0f;
+		m_bLoggedGunHold = false;   // re-arm the one-shot hold diagnostic for this pickup
+
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[Guns] picked up %s", xGunComp.GetName());
+	}
+
+	void DropHeldGun()
+	{
+		if (!IsHoldingGun())
+			return;
+		Zenith_Entity xGun = m_xHeldGun;
+		RenderTest_GunComponent& xGunComp = xGun.GetComponent<RenderTest_GunComponent>();
+
+		// Persist ammo so picking the same gun back up resumes its state.
+		xGunComp.SetAmmo(m_uAmmoInClip, m_uReserveAmmo);
+		xGunComp.SetHeld(false);
+		if (xGun.HasComponent<Zenith_AttachmentComponent>())
+			xGun.GetComponent<Zenith_AttachmentComponent>().Detach();
+		PlaceGunOnFloor(xGun);
+
+		m_xHeldGun = Zenith_Entity();
+		// Restore the empty-handed baseline (matches OnAwake / the gunless tests).
+		m_uCurrentMagSize = k_uMagSize;
+		m_fCurrentFireInterval = k_fFireInterval;
+		m_uAmmoInClip = k_uMagSize;
+		m_uReserveAmmo = 90;
+
+		if (m_pxAnimator)
+		{
+			m_pxAnimator->ClearIKTarget("RightArm");
+			m_pxAnimator->ClearIKTarget("LeftArm");
+		}
+		m_fGunIKWeight = 0.0f;
+
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[Guns] dropped %s", xGunComp.GetName());
+	}
+
+	// Settle a dropped gun on the floor a metre in front of the player (the
+	// attachment is already detached, so its OnLateUpdate leaves this transform
+	// alone). Lies the gun flat — same rest pose as the spawn.
+	void PlaceGunOnFloor(Zenith_Entity xGun)
+	{
+		if (!xGun.HasComponent<Zenith_TransformComponent>()
+			|| !m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+			return;
+		Zenith_TransformComponent& xPT = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_Maths::Vector3 xPlayerPos; xPT.GetPosition(xPlayerPos);
+		Zenith_Maths::Quat xPlayerRot; xPT.GetRotation(xPlayerRot);
+		const Zenith_Maths::Vector3 xFwd =
+			glm::normalize(xPlayerRot * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+
+		const Zenith_Maths::Vector3 xProbe =
+			xPlayerPos + xFwd * 1.0f + Zenith_Maths::Vector3(0.0f, 0.6f, 0.0f);
+		const Zenith_Physics::RaycastResult xHit = Zenith_PhysicsQuery::RaycastIgnoring(
+			xProbe, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 4.0f, m_xParentEntity.GetEntityID());
+		// On a hit, rest on the floor; on a miss (dropped over an edge with no floor
+		// within range) fall back to roughly feet level rather than the player origin
+		// (which sits ~1 m above the feet) so the gun doesn't hover in mid-air.
+		const Zenith_Maths::Vector3 xRestPos = xHit.m_bHit
+			? xHit.m_xHitPoint + Zenith_Maths::Vector3(0.0f, 0.05f, 0.0f)
+			: xPlayerPos + xFwd * 1.0f - Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+
+		const float fYaw = atan2f(xFwd.x, xFwd.z);
+		const Zenith_Maths::Quat xRest =
+			glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f))
+			* glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+
+		Zenith_TransformComponent& xGT = xGun.GetComponent<Zenith_TransformComponent>();
+		xGT.SetPosition(xRestPos);
+		xGT.SetRotation(xRest);
+	}
+
+	void UpdateGunPrompt()
+	{
+		if (!m_pxGunPromptText)
+			return;
+		if (IsHoldingGun())
+		{
+			m_pxGunPromptText->SetText(std::string("[E] drop ")
+				+ m_xHeldGun.GetComponent<RenderTest_GunComponent>().GetName());
+		}
+		else if (m_xNearestGun.IsValid()
+			&& m_fNearestGunDist <= RenderTest_Guns::fPICKUP_RADIUS
+			&& m_xNearestGun.HasComponent<RenderTest_GunComponent>())
+		{
+			m_pxGunPromptText->SetText(std::string("[E] pick up ")
+				+ m_xNearestGun.GetComponent<RenderTest_GunComponent>().GetName());
+		}
+		else
+		{
+			m_pxGunPromptText->SetText("");
+		}
+	}
+
+	// Arm IK that places the hands ON the held gun. The right arm is driven to a
+	// body-anchored hold (with an end-effector orientation squaring the gun barrel
+	// to model +Z); for a two-handed gun the left (support) arm reaches the gun's
+	// foregrip. The gun rides the right hand via the attachment, so the right hand
+	// is always on the grip by construction — the right-arm IK just chooses WHERE,
+	// keeping the hold within both arms' reach (see RenderTest_Guns.h). A pistol
+	// uses only the right hand (no left-arm target). Weight ramps to 0 during a
+	// reload so the reload clip plays.
+	void UpdateGunIK(float fDt)
+	{
+		if (!m_pxAnimator)
+			return;
+
+		if (!IsHoldingGun())
+		{
+			if (m_fGunIKWeight > 0.0f)
+			{
+				m_pxAnimator->ClearIKTarget("RightArm");
+				m_pxAnimator->ClearIKTarget("LeftArm");
+				m_fGunIKWeight = 0.0f;
+			}
+			return;
+		}
+
+		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+			return;
+		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		if (!xModel.HasSkeleton())
+			return;
+
+		const RenderTest_Guns::GunSpec& xSpec =
+			m_xHeldGun.GetComponent<RenderTest_GunComponent>().GetSpec();
+
+		const bool bReloading = (m_fReloadTimer > 0.0f);
+		const float fTarget = bReloading ? 0.0f : 1.0f;
+		m_fGunIKWeight = glm::mix(m_fGunIKWeight, fTarget, glm::clamp(fDt * 10.0f, 0.0f, 1.0f));
+		if (m_fGunIKWeight < 0.02f)
+		{
+			m_pxAnimator->ClearIKTarget("RightArm");
+			m_pxAnimator->ClearIKTarget("LeftArm");
+			return;
+		}
+
+		m_fGunRecoilKick = glm::max(0.0f, m_fGunRecoilKick - fDt * 6.0f);
+
+		// Right-hand grip anchor (player model space) + live CLI overrides + recoil.
+		Zenith_Maths::Vector3 xAnchor = xSpec.m_xHoldAnchorModel;
+		if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fAnchorX)) xAnchor.x = RenderTest_GunTuning::s_fAnchorX;
+		if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fAnchorY)) xAnchor.y = RenderTest_GunTuning::s_fAnchorY;
+		if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fAnchorZ)) xAnchor.z = RenderTest_GunTuning::s_fAnchorZ;
+		xAnchor.z -= m_fGunRecoilKick * 0.08f;
+
+		// Desired gun orientation (model space): (0,0,0) => barrel along model +Z.
+		Zenith_Maths::Vector3 xAimDeg = xSpec.m_xAimEulerDeg;
+		if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fAimPitchDeg)) xAimDeg.x = RenderTest_GunTuning::s_fAimPitchDeg;
+		if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fAimYawDeg))   xAimDeg.y = RenderTest_GunTuning::s_fAimYawDeg;
+		if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fAimRollDeg))  xAimDeg.z = RenderTest_GunTuning::s_fAimRollDeg;
+		const Zenith_Maths::Quat xAimRot = EulerDegToQuat(xAimDeg);
+
+		m_pxAnimator->SetIKTargetModelSpace("RightArm", xAnchor, xAimRot, m_fGunIKWeight);
+
+		if (xSpec.m_bTwoHanded)
+		{
+			// Foregrip is a GUN-local point; the gun rides the right hand with an
+			// identity mount, so its model-space position is RightHandBoneModel *
+			// foregripLocal. Reading the posed hand bone tracks the actual gun (one
+			// frame stale, like the foot/tennis IK).
+			Zenith_Maths::Matrix4 xHandModel;
+			if (xModel.GetBoneModelMatrix("RightHand", xHandModel))
+			{
+				Zenith_Maths::Vector3 xFg = xSpec.m_xForegripLocal;
+				if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fForegripY)) xFg.y = RenderTest_GunTuning::s_fForegripY;
+				if (RenderTest_GunTuning::IsSet(RenderTest_GunTuning::s_fForegripZ)) xFg.z = RenderTest_GunTuning::s_fForegripZ;
+				const Zenith_Maths::Vector4 xFgModel = xHandModel * Zenith_Maths::Vector4(xFg, 1.0f);
+				m_pxAnimator->SetIKTargetModelSpace("LeftArm", Zenith_Maths::Vector3(xFgModel), m_fGunIKWeight);
+			}
+		}
+		else
+		{
+			m_pxAnimator->ClearIKTarget("LeftArm");
+		}
+
+		// One-shot diagnostic once the hold has settled: log the world positions of
+		// the hands, the gun, and the anchor so hands-on-gun can be confirmed
+		// numerically (independent of the capture camera).
+		if (!m_bLoggedGunHold && m_fGunIKWeight > 0.9f
+			&& m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			m_bLoggedGunHold = true;
+			Zenith_Maths::Matrix4 xPlayerW;
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xPlayerW);
+			Zenith_Maths::Matrix4 xRH(1.0f), xLH(1.0f);
+			xModel.GetBoneModelMatrix("RightHand", xRH);
+			xModel.GetBoneModelMatrix("LeftHand", xLH);
+			const Zenith_Maths::Vector3 xRHw(xPlayerW * xRH * Zenith_Maths::Vector4(0, 0, 0, 1));
+			const Zenith_Maths::Vector3 xLHw(xPlayerW * xLH * Zenith_Maths::Vector4(0, 0, 0, 1));
+			const Zenith_Maths::Vector3 xAnchorW(xPlayerW * Zenith_Maths::Vector4(xAnchor, 1.0f));
+			Zenith_Maths::Vector3 xGunW(0.0f);
+			if (m_xHeldGun.HasComponent<Zenith_TransformComponent>())
+				m_xHeldGun.GetComponent<Zenith_TransformComponent>().GetPosition(xGunW);
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[GunIK] %s held: RightHand=(%.2f,%.2f,%.2f) gun=(%.2f,%.2f,%.2f) anchorW=(%.2f,%.2f,%.2f) LeftHand=(%.2f,%.2f,%.2f)",
+				m_xHeldGun.GetComponent<RenderTest_GunComponent>().GetName(),
+				xRHw.x, xRHw.y, xRHw.z, xGunW.x, xGunW.y, xGunW.z,
+				xAnchorW.x, xAnchorW.y, xAnchorW.z, xLHw.x, xLHw.y, xLHw.z);
+		}
+	}
+
+	// Euler (degrees, pitch/X yaw/Y roll/Z) -> quat, composed yaw * pitch * roll.
+	static Zenith_Maths::Quat EulerDegToQuat(const Zenith_Maths::Vector3& xDeg)
+	{
+		return glm::angleAxis(glm::radians(xDeg.y), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f))
+		     * glm::angleAxis(glm::radians(xDeg.x), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f))
+		     * glm::angleAxis(glm::radians(xDeg.z), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	}
+
+	// Park a front 3/4 photo camera on the player for the --rendertest-gun-showcase
+	// capture. Re-asserted every frame so it survives GameplayState::Reset.
+	void AssertShowcaseCamera()
+	{
+		// The offset is world-space relative to the player entity origin; yaw/pitch
+		// are DERIVED so the camera looks at the chosen point, independent of the
+		// player's world position. Camera-component forward = (-sin yaw, sin pitch,
+		// cos yaw), so yaw = atan2(-dir.x, dir.z), pitch = asin(dir.y).
+		RenderTest_GameplayState::s_bPhotoModeActive = true;
+		const bool bFloorMode =
+			RenderTest_GunTuning::s_uShowcaseType >= static_cast<uint32_t>(RenderTest_Guns::GunType::COUNT);
+		// Floor mode: an elevated vantage behind the player looking forward+down at
+		// the gun row (the guns spawn ~5 m ahead at Z=261, the player faces +Z).
+		// Held mode: a front 3/4 vantage looking at the chest where the gun is held.
+		const Zenith_Maths::Vector3 xOffset = bFloorMode
+			? Zenith_Maths::Vector3(0.0f, 2.0f, 2.2f)
+			: Zenith_Maths::Vector3(1.8f, 0.9f, 2.8f);
+		const Zenith_Maths::Vector3 xLook = bFloorMode
+			? Zenith_Maths::Vector3(0.0f, -0.9f, 5.2f)    // close overhead view of the gun row
+			: Zenith_Maths::Vector3(0.0f, 1.1f, 0.4f);    // chest/gun
+		const Zenith_Maths::Vector3 xDir = glm::normalize(xLook - xOffset);
+		RenderTest_GameplayState::s_fPhotoOffsetX = xOffset.x;
+		RenderTest_GameplayState::s_fPhotoOffsetY = xOffset.y;
+		RenderTest_GameplayState::s_fPhotoOffsetZ = xOffset.z;
+		RenderTest_GameplayState::s_fPhotoYaw = atan2f(-xDir.x, xDir.z);
+		RenderTest_GameplayState::s_fPhotoPitch = asinf(glm::clamp(xDir.y, -1.0f, 1.0f));
+	}
+
 	static constexpr uint32_t k_uMagSize        = 30;
 	static constexpr float    k_fFireInterval   = 0.12f;  // ~500 RPM
 	static constexpr float    k_fReloadDuration = 1.5f;
@@ -967,6 +1387,20 @@ private:
 	float    m_fReloadTimer     = 0.0f;
 	uint32_t m_uAmmoInClip      = k_uMagSize;
 	uint32_t m_uReserveAmmo     = 90;
+
+	// --- Gun pickup/drop/hold state ---
+	Zenith_Entity m_xHeldGun;                 // invalid == empty-handed
+	Zenith_Entity m_xNearestGun;              // nearest free gun (refreshed each frame, empty-handed)
+	float    m_fNearestGunDist  = 1e30f;
+	bool     m_bGunAutoEquipped = false;      // showcase one-shot
+	bool     m_bLoggedGunHold   = false;      // one-shot diagnostic latch (per pickup)
+	float    m_fGunIKWeight     = 0.0f;       // arm-IK blend (0 while reloading/empty)
+	float    m_fGunRecoilKick   = 0.0f;       // decaying anchor pull-back on fire
+	// Active weapon params: the held gun's, or the historical baseline when
+	// empty-handed (so the gunless input-simulator tests are unaffected).
+	uint32_t m_uCurrentMagSize  = k_uMagSize;
+	float    m_fCurrentFireInterval = k_fFireInterval;
+	Zenith_UI::Zenith_UIText* m_pxGunPromptText = nullptr;
 
 	inline static RenderTest_PlayerComponent* s_pxActiveInstance = nullptr;
 };

@@ -54,6 +54,13 @@
 #include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
 #include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
 
+// FPS gun pickup/drop testbed (guns lying on the spawn platform; player picks
+// them up, shoots, drops; arm IK keeps the hands on the gun). Header included so
+// the ZENITH_REGISTER_COMPONENT thunk below names the type; the spawn lives in
+// RenderTest_Guns.cpp.
+#include "RenderTest/RenderTest_Guns.h"
+#include "RenderTest/Components/RenderTest_GunComponent.h"
+
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -132,6 +139,24 @@ static bool RenderTest_HasCommandLineFlag(const char* szFlag)
 	}
 #else
 	(void)szFlag;
+#endif
+	return false;
+}
+
+// True if any CLI arg STARTS WITH szPrefix (so "--rendertest-gun-showcase=rifle"
+// matches "--rendertest-gun-showcase"). RenderTest_HasCommandLineFlag is exact-match.
+// [[maybe_unused]]: only referenced from the ZENITH_TOOLS automation path.
+[[maybe_unused]] static bool RenderTest_HasCommandLineFlagPrefix(const char* szPrefix)
+{
+#ifdef ZENITH_WINDOWS
+	const size_t ulLen = std::strlen(szPrefix);
+	for (int i = 1; i < __argc; i++)
+	{
+		if (std::strncmp(__argv[i], szPrefix, ulLen) == 0)
+			return true;
+	}
+#else
+	(void)szPrefix;
 #endif
 	return false;
 }
@@ -760,6 +785,7 @@ private:
 ZENITH_REGISTER_COMPONENT(RenderTest_FollowCameraComponent, "RenderTestFollowCamera", 100u)
 ZENITH_REGISTER_COMPONENT(RenderTest_PlayerComponent, "RenderTestPlayer", 101u)
 ZENITH_REGISTER_COMPONENT(RenderTest_SmokeRunnerComponent, "RenderTestSmokeRunner", 102u)
+ZENITH_REGISTER_COMPONENT(RenderTest_GunComponent, "RenderTestGun", 110u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisPlayerComponent, "RenderTestTennisPlayer", 120u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisMatchComponent, "RenderTestTennisMatch", 130u)
 
@@ -1211,6 +1237,7 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_FollowCameraComponent>("RenderTestFollowCamera");
 	xEditorRegistry.RegisterComponent<RenderTest_PlayerComponent>("RenderTestPlayer");
 	xEditorRegistry.RegisterComponent<RenderTest_SmokeRunnerComponent>("RenderTestSmokeRunner");
+	xEditorRegistry.RegisterComponent<RenderTest_GunComponent>("RenderTestGun");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisPlayerComponent>("RenderTestTennisPlayer");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisMatchComponent>("RenderTestTennisMatch");
 #endif
@@ -1250,6 +1277,9 @@ void Project_Shutdown()
 	// Release the tennis-testbed material/texture handles before the registry
 	// tears down (otherwise their static destructors assert on a freed registry).
 	RenderTest_TennisShutdown();
+
+	// Likewise the gun-testbed material handle.
+	RenderTest_GunsShutdown();
 }
 
 void Project_LoadInitialScene();
@@ -1556,6 +1586,14 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("AmmoText", 32.0f);
 	g_xEngine.EditorAutomation().AddStep_SetUIColor("AmmoText", 1.0f, 1.0f, 1.0f, 1.0f);
 
+	// Gun pickup/drop prompt — bottom-centre, empty until the player nears or
+	// holds a gun (the player fills it via the "GunPrompt" element).
+	g_xEngine.EditorAutomation().AddStep_CreateUIText("GunPrompt", "");
+	g_xEngine.EditorAutomation().AddStep_SetUIAnchor("GunPrompt", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	g_xEngine.EditorAutomation().AddStep_SetUIPosition("GunPrompt", 0.0f, -80.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("GunPrompt", 26.0f);
+	g_xEngine.EditorAutomation().AddStep_SetUIColor("GunPrompt", 1.0f, 0.95f, 0.6f, 1.0f);
+
 	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
 	if (RenderTest_IsSmokeMode())
 	{
@@ -1583,10 +1621,23 @@ void Project_RegisterEditorAutomationSteps()
 	// calls it from Project_LoadInitialScene below.
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnTennisCourt);
 
+	// FPS gun pickup/drop testbed (guns on the spawn platform) — likewise
+	// procedural, spawned post-load.
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnGuns);
+
 	// Smoke play-mode entry LAST — by this step the deferred load has
 	// completed, so the smoke runner's first tick probes the fully loaded
 	// terrain (see the note in Project_LoadInitialScene).
 	if (RenderTest_IsSmokeMode())
+	{
+		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_EnterSmokePlayMode);
+	}
+
+	// Gun-showcase capture (no smoke): enter Play so the player ticks (auto-equips
+	// the chosen gun + holds the IK pose for a front-camera screenshot). Skipped
+	// when --rendertest-smoke is set (that path already enters Play, and its
+	// player-teleporting smoke runner would fight the showcase pose).
+	else if (RenderTest_HasCommandLineFlagPrefix("--rendertest-gun-showcase"))
 	{
 		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_EnterSmokePlayMode);
 	}
@@ -1898,6 +1949,10 @@ void Project_LoadInitialScene()
 	// AddStep_Custom queued in Project_RegisterEditorAutomationSteps; the
 	// non-tools windowed path spawns it here (post synchronous scene load).
 	RenderTest_SpawnTennisCourt();
+
+	// FPS gun pickup/drop testbed (guns on the spawn platform). Same split as the
+	// tennis court: tools via the automation step, non-tools here.
+	RenderTest_SpawnGuns();
 #endif
 
 	// Tools builds: smoke play-mode entry is queued as the FINAL automation

@@ -6128,6 +6128,87 @@ void Zenith_UnitTests::TestStickFigureArmIKEndEffectorOrientation(){
 	delete pxSkel;
 }
 
+// Support-hand IK reach (RenderTest FPS gun testbed). A two-handed gun is held in
+// the right hand (the attachment), and the LEFT arm IK reaches a foregrip point on
+// the gun. This characterizes that mechanism on the StickFigure rig: a LeftArm
+// chain driven to a reachable foregrip-like model-space target lands the LeftHand
+// on it, and stands down at weight 0. Mirrors UpdateGunIK's left-arm target.
+ZENITH_TEST(Core, StickFigureSupportHandIKReachesForegrip) { Zenith_UnitTests::TestStickFigureSupportHandIKReachesForegrip(); }
+
+void Zenith_UnitTests::TestStickFigureSupportHandIKReachesForegrip(){
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_IKSolver xSolver;
+	Flux_IKChain xArm = Flux_IKSolver::CreateArmChain("LeftArm", "LeftUpperArm", "LeftLowerArm", "LeftHand");
+	xArm.m_uMaxIterations = 30;
+	xArm.m_fTolerance = 0.0005f;
+	xSolver.AddChain(xArm);
+
+	const int32_t iHand = pxSkel->GetBoneIndex("LeftHand");
+	ZENITH_ASSERT_TRUE(iHand >= 0, "LeftHand bone should exist");
+
+	const Zenith_Maths::Matrix4 xWorld(1.0f);
+	// Foregrip-like point: forward of the chest, near the centreline, inside the
+	// left arm's ~0.7 m reach (left shoulder at model (-0.3, 1.1, 0)). This is the
+	// gun-hold support-hand case (RenderTest_PlayerComponent::UpdateGunIK).
+	const Zenith_Maths::Vector3 xForegrip(-0.1f, 0.8f, 0.4f);
+
+	// --- Weight 1: the support hand pulls onto the foregrip. ---
+	{
+		Flux_SkeletonPose xPose;
+		xPose.Initialize(STICK_BONE_COUNT);
+		xPose.InitFromBindPose(*pxSkel);
+		xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+
+		const Zenith_Maths::Vector3 xBindHand =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix((uint32_t)iHand)[3]);
+		const float fBindDist = glm::length(xBindHand - xForegrip);
+
+		Flux_IKTarget xTarget;
+		xTarget.m_xPosition = xForegrip;
+		xTarget.m_fWeight = 1.0f;
+		xTarget.m_bEnabled = true;
+		xTarget.m_bIsModelSpace = true;
+		xSolver.SetTarget("LeftArm", xTarget);
+
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Vector3 xHandPos =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix((uint32_t)iHand)[3]);
+		const float fDist = glm::length(xHandPos - xForegrip);
+		ZENITH_ASSERT_TRUE(fDist < 0.10f,
+			"Support hand should land on the (reachable) foregrip at weight 1");
+		ZENITH_ASSERT_TRUE(fDist < fBindDist * 0.5f,
+			"Support hand should move substantially toward the foregrip");
+	}
+
+	// --- Weight 0: the solver stands down; the hand keeps its bind position. ---
+	{
+		Flux_SkeletonPose xPose;
+		xPose.Initialize(STICK_BONE_COUNT);
+		xPose.InitFromBindPose(*pxSkel);
+		xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		const Zenith_Maths::Vector3 xBindHand =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix((uint32_t)iHand)[3]);
+
+		Flux_IKTarget xTarget;
+		xTarget.m_xPosition = xForegrip;
+		xTarget.m_fWeight = 0.0f;
+		xTarget.m_bEnabled = true;
+		xTarget.m_bIsModelSpace = true;
+		xSolver.SetTarget("LeftArm", xTarget);
+
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Vector3 xHandPos =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix((uint32_t)iHand)[3]);
+		ZENITH_ASSERT_TRUE(Vec3Equals(xHandPos, xBindHand, 0.001f),
+			"Support hand should be unchanged at weight 0 (animation-driven)");
+	}
+
+	delete pxSkel;
+}
+
 ZENITH_TEST(Core, StickFigureLegIK) { Zenith_UnitTests::TestStickFigureLegIK(); }
 
 void Zenith_UnitTests::TestStickFigureLegIK(){
