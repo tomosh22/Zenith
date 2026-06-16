@@ -1137,20 +1137,6 @@ static std::vector<uint8_t> RenderTest_DecodeBC1Image(const uint8_t* pxBC1, int3
 	return xResult;
 }
 
-// Read a .ztxtr header into out-params and return a pointer to the start of
-// the pixel data. The DataStream is left positioned just after the header.
-static bool RenderTest_ReadZtxtrHeader(Zenith_DataStream& xStream,
-	int32_t& iWidthOut, int32_t& iHeightOut, int32_t& iDepthOut,
-	TextureFormat& eFormatOut, size_t& ulDataSizeOut)
-{
-	xStream >> iWidthOut;
-	xStream >> iHeightOut;
-	xStream >> iDepthOut;
-	xStream.ReadData(&eFormatOut, sizeof(eFormatOut));
-	xStream >> ulDataSizeOut;
-	return iWidthOut > 0 && iHeightOut > 0;
-}
-
 // Pack a roughness texture and a metallic texture (both BC1_RGB grayscale) into
 // a single uncompressed RGBA8 texture where G = roughness and B = metallic —
 // the channels the terrain shader samples (`xRM.gb` in Flux_Terrain_ToGBuffer).
@@ -1182,22 +1168,23 @@ static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 	auto LoadAndDecodeBC1 = [](const std::string& strPath, int32_t& iWidthOut, int32_t& iHeightOut)
 		-> std::vector<uint8_t>
 	{
-		Zenith_DataStream xStream;
-		xStream.ReadFromFile(strPath.c_str());
-		int32_t iDepth = 0;
-		TextureFormat eFormat = TEXTURE_FORMAT_NONE;
-		size_t ulDataSize = 0;
-		if (!RenderTest_ReadZtxtrHeader(xStream, iWidthOut, iHeightOut, iDepth, eFormat, ulDataSize)
-			|| eFormat != TEXTURE_FORMAT_BC1_RGB_UNORM)
+		// Use the single .ztxtr parser (legacy/v1/v2 aware) rather than hand-
+		// parsing the header — the source roughness/metallic maps are BC1 and now
+		// ship as v2 mip chains. mip 0 is the first bytes of the returned buffer,
+		// which is all RenderTest_DecodeBC1Image reads.
+		Flux_SurfaceInfo xInfo;
+		std::vector<uint8_t> xBytes;
+		Zenith_Status xStatus = Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes);
+		if (!xStatus.IsOk() || xInfo.m_eFormat != TEXTURE_FORMAT_BC1_RGB_UNORM)
 		{
 			Zenith_Error(LOG_CATEGORY_TERRAIN,
 				"[RenderTest] %s is not BC1_RGB (got fmt=%d) — RM packer expects user PBR maps to be BC1.",
-				strPath.c_str(), static_cast<int>(eFormat));
+				strPath.c_str(), static_cast<int>(xInfo.m_eFormat));
 			return {};
 		}
-		std::vector<uint8_t> xBC1(ulDataSize);
-		xStream.ReadData(xBC1.data(), ulDataSize);
-		return RenderTest_DecodeBC1Image(xBC1.data(), iWidthOut, iHeightOut);
+		iWidthOut = static_cast<int32_t>(xInfo.m_uWidth);
+		iHeightOut = static_cast<int32_t>(xInfo.m_uHeight);
+		return RenderTest_DecodeBC1Image(xBytes.data(), iWidthOut, iHeightOut);
 	};
 
 	int32_t iRWidth = 0, iRHeight = 0;
@@ -1720,24 +1707,20 @@ static void RenderTest_ApplyGrassDensityFromDisk()
 		return;
 	}
 
-	Zenith_DataStream xIn;
-	xIn.ReadFromFile(strPath.c_str());
-	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
-	TextureFormat eFormat = TEXTURE_FORMAT_NONE;
-	size_t ulDataSize = 0;
-	xIn >> iWidth;
-	xIn >> iHeight;
-	xIn >> iDepth;
-	xIn.ReadData(&eFormat, sizeof(eFormat));
-	xIn >> ulDataSize;
-	if (eFormat != TEXTURE_FORMAT_R32_SFLOAT || iWidth <= 0 || iHeight <= 0 ||
-		ulDataSize != static_cast<size_t>(iWidth) * iHeight * sizeof(float))
+	// Read through the single .ztxtr parser (no GPU upload) — never hand-parse.
+	Flux_SurfaceInfo xInfo;
+	std::vector<uint8_t> xBytes;
+	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk()
+		|| xInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT
+		|| xBytes.size() != static_cast<size_t>(xInfo.m_uWidth) * xInfo.m_uHeight * sizeof(float))
 	{
 		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] GrassDensity%s has unexpected layout - skipping grass", ZENITH_TEXTURE_EXT);
 		return;
 	}
+	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
+	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
 	std::vector<float> xDensity(static_cast<size_t>(iWidth) * iHeight);
-	xIn.ReadData(xDensity.data(), ulDataSize);
+	memcpy(xDensity.data(), xBytes.data(), xBytes.size());
 
 	Zenith_TerrainComponent* pxTerrain = nullptr;
 	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(

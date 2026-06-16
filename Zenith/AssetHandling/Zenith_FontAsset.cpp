@@ -137,65 +137,57 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	}
 
 	// --- Load the atlas .ztxtr as a procedural texture (no mips). ---
+	// Route through the single .ztxtr parser (no GPU upload) rather than
+	// hand-parsing the stream: there is exactly one .ztxtr parser engine-wide, and
+	// it reads the envelope header (if any) before the payload. Hand-parsing would
+	// misread the envelope magic as iWidth/iHeight if the font-atlas exporter ever
+	// adopts the enveloped v1/v2 format. Today the atlas is headerless single-mip,
+	// which LoadCPUData reads via its legacy branch (identical byte layout).
 	const std::string strAtlasAbsPath = Zenith_AssetRegistry::ResolvePath(strAtlasPrefixedPath);
-	Zenith_DataStream xAtlasStream;
-	xAtlasStream.ReadFromFile(strAtlasAbsPath.c_str());
-	if (!xAtlasStream.IsValid())
+	Flux_SurfaceInfo xAtlasInfo;
+	std::vector<uint8_t> xAtlasBytes;
+	if (!Zenith_TextureAsset::LoadCPUData(strAtlasAbsPath, xAtlasInfo, xAtlasBytes).IsOk())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to read atlas '%s'", strAtlasAbsPath.c_str());
 		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
-	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
-	TextureFormat eFormat = TEXTURE_FORMAT_NONE;
-	size_t ulDataSize = 0;
-	xAtlasStream >> iWidth;
-	xAtlasStream >> iHeight;
-	xAtlasStream >> iDepth;
-	xAtlasStream >> eFormat;
-	xAtlasStream >> ulDataSize;
-
 	// MSDF atlas MUST be RGBA8 with the exact dimensions in the .zfont metadata.
 	// Catches stale-artefact mismatches at load instead of as garbled text on screen.
-	Zenith_Assert(eFormat == TEXTURE_FORMAT_RGBA8_UNORM,
-		"font atlas '%s' must be RGBA8 (got format %d)", strAtlasAbsPath.c_str(), static_cast<int>(eFormat));
-	Zenith_Assert(static_cast<float>(iWidth) == m_fAtlasW && static_cast<float>(iHeight) == m_fAtlasH,
-		"font atlas dims (%dx%d) don't match .zfont metadata (%.0fx%.0f)",
-		iWidth, iHeight, m_fAtlasW, m_fAtlasH);
+	Zenith_Assert(xAtlasInfo.m_eFormat == TEXTURE_FORMAT_RGBA8_UNORM,
+		"font atlas '%s' must be RGBA8 (got format %d)", strAtlasAbsPath.c_str(), static_cast<int>(xAtlasInfo.m_eFormat));
+	Zenith_Assert(static_cast<float>(xAtlasInfo.m_uWidth) == m_fAtlasW && static_cast<float>(xAtlasInfo.m_uHeight) == m_fAtlasH,
+		"font atlas dims (%ux%u) don't match .zfont metadata (%.0fx%.0f)",
+		xAtlasInfo.m_uWidth, xAtlasInfo.m_uHeight, m_fAtlasW, m_fAtlasH);
 
-	const size_t ulExpected = static_cast<size_t>(iWidth) * static_cast<size_t>(iHeight) * 4;
-	const size_t ulRead     = (ulDataSize > 0) ? ulDataSize : ulExpected;
-	void* pData = Zenith_MemoryManagement::Allocate(ulRead);
-	if (!pData)
+	const size_t ulExpected = static_cast<size_t>(xAtlasInfo.m_uWidth) * static_cast<size_t>(xAtlasInfo.m_uHeight) * 4;
+	if (xAtlasBytes.size() < ulExpected)
 	{
-		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: alloc fail for atlas data (%zu bytes)", ulRead);
-		return Zenith_ErrorCode::OUT_OF_MEMORY;
+		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: atlas '%s' payload too small (%zu < %zu bytes)",
+			strAtlasAbsPath.c_str(), xAtlasBytes.size(), ulExpected);
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
-	memset(pData, 0, ulRead);
-	xAtlasStream.ReadData(pData, ulRead);
 
 	Flux_SurfaceInfo xSurfaceInfo{};
-	xSurfaceInfo.m_uWidth        = static_cast<uint32_t>(iWidth);
-	xSurfaceInfo.m_uHeight       = static_cast<uint32_t>(iHeight);
+	xSurfaceInfo.m_uWidth        = xAtlasInfo.m_uWidth;
+	xSurfaceInfo.m_uHeight       = xAtlasInfo.m_uHeight;
 	xSurfaceInfo.m_uDepth        = 1;
 	xSurfaceInfo.m_uNumLayers    = 1;
 	xSurfaceInfo.m_uNumMips      = 1;
-	xSurfaceInfo.m_eFormat       = eFormat;
+	xSurfaceInfo.m_eFormat       = xAtlasInfo.m_eFormat;
 	xSurfaceInfo.m_eTextureType  = TEXTURE_TYPE_2D;
 	xSurfaceInfo.m_uMemoryFlags  = 1 << MEMORY_FLAGS__SHADER_READ;
 
 	Zenith_TextureAsset* pxAtlas = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 	if (!pxAtlas)
 	{
-		Zenith_MemoryManagement::Deallocate(pData);
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to create procedural atlas");
 		return Zenith_ErrorCode::GPU_UPLOAD_FAILED;
 	}
 
 	// MSDF mips generated naïvely break the median reconstruction. Disable mips;
 	// the fwidth-based AA shader handles minification correctly without them.
-	const bool bCreated = pxAtlas->CreateFromData(pData, xSurfaceInfo, /*bCreateMips=*/false);
-	Zenith_MemoryManagement::Deallocate(pData);
+	const bool bCreated = pxAtlas->CreateFromData(xAtlasBytes.data(), xSurfaceInfo, /*bCreateMips=*/false);
 
 	if (!bCreated)
 	{

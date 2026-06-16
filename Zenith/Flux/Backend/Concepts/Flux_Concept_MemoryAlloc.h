@@ -33,6 +33,7 @@ concept FluxBackendMemoryAlloc = requires(
 	uint32_t uMip,
 	uint32_t uLayer,
 	uint32_t uMipCount,
+	TextureUploadMipMode eMipMode,
 	MemoryFlags eFlags,
 	MemoryResidency eResidency,
 	Flux_VertexBuffer& xVB,
@@ -55,7 +56,7 @@ concept FluxBackendMemoryAlloc = requires(
 	// actually verifies the backend's signature — narrowing casts here would
 	// let an incompatibly-widened or -narrowed backend satisfy the check.
 	{ t.CreateRenderTargetVRAM(xInfo)                                         } -> std::same_as<Flux_VRAMHandle>;
-	{ t.CreateTextureVRAM(pData, xInfo, b)                                    } -> std::same_as<Flux_VRAMHandle>;
+	{ t.CreateTextureVRAM(pData, xInfo, eMipMode)                             } -> std::same_as<Flux_VRAMHandle>;
 	{ t.CreateBufferVRAM(uInt32Size, eFlags, eResidency)                      } -> std::same_as<Flux_VRAMHandle>;
 
 	// View creation. Each returns the engine-typed view struct that wraps

@@ -20,6 +20,11 @@ static std::string GetEngineAssetsDirectory()
 	return std::string(ZENITH_ROOT) + "Zenith/Assets/";
 }
 #include "Flux/Flux.h"
+#include "AssetHandling/Zenith_TextureAsset.h"   // .ztxtr envelope id/schema constants
+#include "DataStream/Zenith_StreamEnvelope.h"    // Zenith_WriteStreamHeader
+#include <vector>
+#include <algorithm>
+#include <cmath>
 #define STB_IMAGE_IMPLEMENTATION
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #pragma warning(push, 0)
@@ -169,6 +174,139 @@ static void CompressToBC3(const uint8_t* pRGBAData, uint8_t* pOutputData, int32_
 	}
 }
 
+// Compress RGBA data to BC5 (two-channel, R+G) — the right format for tangent-
+// space normal maps. Each 4x4 block is two BC4 blocks back to back: red (bytes
+// 0..7) then green (bytes 8..15), matching VK_FORMAT_BC5_UNORM_BLOCK. The shader
+// reconstructs Z from RG (see Common/Material.slang SampleNormalMap).
+static void CompressToBC5(const uint8_t* pRGBAData, uint8_t* pOutputData, int32_t iWidth, int32_t iHeight)
+{
+	const int32_t iBlocksX = (iWidth + 3) / 4;
+	const int32_t iBlocksY = (iHeight + 3) / 4;
+
+	uint8_t rBlock[16];
+	uint8_t gBlock[16];
+
+	for (int32_t by = 0; by < iBlocksY; by++)
+	{
+		for (int32_t bx = 0; bx < iBlocksX; bx++)
+		{
+			for (int32_t py = 0; py < 4; py++)
+			{
+				for (int32_t px = 0; px < 4; px++)
+				{
+					int32_t srcX = bx * 4 + px;
+					int32_t srcY = by * 4 + py;
+					srcX = (srcX < iWidth) ? srcX : (iWidth - 1);   // edge-clamp sub-4x4 mips
+					srcY = (srcY < iHeight) ? srcY : (iHeight - 1);
+
+					const uint8_t* pSrcPixel = pRGBAData + (static_cast<size_t>(srcY) * iWidth + srcX) * 4;
+					rBlock[py * 4 + px] = pSrcPixel[0]; // R
+					gBlock[py * 4 + px] = pSrcPixel[1]; // G
+				}
+			}
+
+			uint8_t* pDstBlock = pOutputData + (static_cast<size_t>(by) * iBlocksX + bx) * 16;
+			stb_compress_bc4_block(pDstBlock, rBlock);     // red  -> bytes 0..7
+			stb_compress_bc4_block(pDstBlock + 8, gBlock); // green-> bytes 8..15
+		}
+	}
+}
+
+// Box-downsample an RGBA8 image to half size (min 1px each axis). Linear-space
+// 2x2 average — correct for linear data (normal/roughness/AO). TODO: sRGB-correct
+// downsample for albedo (decode sRGB -> average -> re-encode); the byte average
+// below matches the current (pre-mip) albedo look.
+static void DownsampleBoxRGBA8(const uint8_t* pSrc, int32_t iSrcW, int32_t iSrcH,
+	std::vector<uint8_t>& xDst, int32_t& iDstW, int32_t& iDstH)
+{
+	iDstW = std::max(1, iSrcW / 2);
+	iDstH = std::max(1, iSrcH / 2);
+	xDst.resize(static_cast<size_t>(iDstW) * iDstH * 4);
+
+	for (int32_t y = 0; y < iDstH; y++)
+	{
+		for (int32_t x = 0; x < iDstW; x++)
+		{
+			const int32_t sx0 = std::min(x * 2, iSrcW - 1);
+			const int32_t sy0 = std::min(y * 2, iSrcH - 1);
+			const int32_t sx1 = std::min(sx0 + 1, iSrcW - 1);
+			const int32_t sy1 = std::min(sy0 + 1, iSrcH - 1);
+			for (int32_t c = 0; c < 4; c++)
+			{
+				const uint32_t uSum =
+					pSrc[(static_cast<size_t>(sy0) * iSrcW + sx0) * 4 + c] +
+					pSrc[(static_cast<size_t>(sy0) * iSrcW + sx1) * 4 + c] +
+					pSrc[(static_cast<size_t>(sy1) * iSrcW + sx0) * 4 + c] +
+					pSrc[(static_cast<size_t>(sy1) * iSrcW + sx1) * 4 + c];
+				xDst[(static_cast<size_t>(y) * iDstW + x) * 4 + c] = static_cast<uint8_t>((uSum + 2) / 4);
+			}
+		}
+	}
+}
+
+// Generate a full mip chain from an RGBA8 mip 0, (optionally BC-)compress each
+// level, and write the .ztxtr v2 layout (envelope + header + uNumMips +
+// total-size + packed mip0..mipN-1). Per-mip byte sizes come from the shared
+// CalculateMipDataSize — the SAME function the loader validates against
+// (CalculateTotalMipChainSize) and the GPU upload offsets from — so the packed
+// layout is in lockstep with both by construction, not by a parallel table.
+static void ExportV2(const uint8_t* pRGBA0, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat)
+{
+	const bool bCompressed = IsCompressedFormat(eFormat);
+	const uint32_t uNumMips = static_cast<uint32_t>(std::floor(std::log2(static_cast<double>(std::max(iWidth, iHeight)))) + 1);
+
+	// Build the RGBA8 mip chain in memory (mip 0 = input).
+	std::vector<std::vector<uint8_t>> xMipRGBA(uNumMips);
+	std::vector<int32_t> aiMipW(uNumMips), aiMipH(uNumMips);
+	aiMipW[0] = iWidth;
+	aiMipH[0] = iHeight;
+	xMipRGBA[0].assign(pRGBA0, pRGBA0 + static_cast<size_t>(iWidth) * iHeight * 4);
+	for (uint32_t m = 1; m < uNumMips; m++)
+	{
+		DownsampleBoxRGBA8(xMipRGBA[m - 1].data(), aiMipW[m - 1], aiMipH[m - 1], xMipRGBA[m], aiMipW[m], aiMipH[m]);
+	}
+
+	// Compress (or copy) each mip and concatenate, tightly packed mip0..mipN-1.
+	std::vector<uint8_t> xPacked;
+	for (uint32_t m = 0; m < uNumMips; m++)
+	{
+		if (bCompressed)
+		{
+			// Single source of truth for the per-mip byte count (shared with the
+			// loader + GPU upload). The BC compressors below fill exactly
+			// ceil(w/4)*ceil(h/4) blocks, which is what this returns.
+			std::vector<uint8_t> xMipC(CalculateMipDataSize(eFormat, iWidth, iHeight, m));
+			switch (eFormat)
+			{
+			case TEXTURE_FORMAT_BC1_RGB_UNORM:  CompressToBC1(xMipRGBA[m].data(), xMipC.data(), aiMipW[m], aiMipH[m], false); break;
+			case TEXTURE_FORMAT_BC1_RGBA_UNORM: CompressToBC1(xMipRGBA[m].data(), xMipC.data(), aiMipW[m], aiMipH[m], true);  break;
+			case TEXTURE_FORMAT_BC3_RGBA_UNORM: CompressToBC3(xMipRGBA[m].data(), xMipC.data(), aiMipW[m], aiMipH[m]);        break;
+			case TEXTURE_FORMAT_BC5_RG_UNORM:   CompressToBC5(xMipRGBA[m].data(), xMipC.data(), aiMipW[m], aiMipH[m]);        break;
+			default: Zenith_Assert(false, "ExportV2: unsupported compressed format %d", static_cast<int>(eFormat)); break;
+			}
+			xPacked.insert(xPacked.end(), xMipC.begin(), xMipC.end());
+		}
+		else
+		{
+			xPacked.insert(xPacked.end(), xMipRGBA[m].begin(), xMipRGBA[m].end());
+		}
+	}
+
+	Zenith_DataStream xStream;
+	Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
+	xStream << iWidth;
+	xStream << iHeight;
+	xStream << static_cast<int32_t>(1); // depth
+	xStream << eFormat;
+	xStream << uNumMips;
+	xStream << static_cast<size_t>(xPacked.size());
+	xStream.WriteData(xPacked.data(), xPacked.size());
+	xStream.WriteToFile(strFilename.c_str());
+
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Exported v2 texture %s: %dx%d fmt %d, %u mips, %zu bytes",
+		strFilename.c_str(), iWidth, iHeight, static_cast<int>(eFormat), uNumMips, xPacked.size());
+}
+
 void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const char* szExtension, TextureCompressionMode eCompression)
 {
 	int32_t iWidth, iHeight, iNumChannels;
@@ -221,56 +359,12 @@ void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::st
 
 void Zenith_Tools_TextureExport::ExportFromDataCompressed(const void* pRGBAData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureCompressionMode eCompression)
 {
-	TextureFormat eFormat = CompressionModeToFormat(eCompression);
-	
-	// Calculate compressed data size
-	const int32_t iBlocksX = (iWidth + 3) / 4;
-	const int32_t iBlocksY = (iHeight + 3) / 4;
-	const uint32_t uBytesPerBlock = GetBytesPerBlockOrPixel(eFormat);
-	const size_t ulCompressedSize = iBlocksX * iBlocksY * uBytesPerBlock;
-	
-	// Allocate compressed data buffer
-	uint8_t* pCompressedData = new uint8_t[ulCompressedSize];
-	
-	// Compress based on format
-	switch (eCompression)
-	{
-	case TextureCompressionMode::BC1:
-		CompressToBC1(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight, false);
-		break;
-	case TextureCompressionMode::BC1_Alpha:
-		CompressToBC1(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight, true);
-		break;
-	case TextureCompressionMode::BC3:
-		CompressToBC3(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight);
-		break;
-	case TextureCompressionMode::BC5:
-		// BC5 not yet implemented - fall through to BC1 for now
-		CompressToBC1(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight, false);
-		Zenith_Warning(LOG_CATEGORY_TOOLS, "BC5 compression not yet implemented, using BC1");
-		eFormat = TEXTURE_FORMAT_BC1_RGB_UNORM;
-		break;
-	default:
-		Zenith_Assert(false, "Unknown compression mode");
-		break;
-	}
-	
-	// Write to file
-	Zenith_DataStream xStream;
-	xStream << iWidth;
-	xStream << iHeight;
-	xStream << 1; // depth
-	xStream << eFormat;
-	xStream << ulCompressedSize;
-	xStream.WriteData(pCompressedData, ulCompressedSize);
-	xStream.WriteToFile(strFilename.c_str());
-	
-	delete[] pCompressedData;
-	
-	// Log compression stats
-	const size_t ulUncompressedSize = iWidth * iHeight * 4;
-	const float fCompressionRatio = static_cast<float>(ulUncompressedSize) / static_cast<float>(ulCompressedSize);
-	Zenith_Log(LOG_CATEGORY_TOOLS, "Compressed texture %s: %dx%d, %.1f:1 compression ratio", strFilename.c_str(), iWidth, iHeight, fCompressionRatio);
+	// All compressed textures ship as .ztxtr v2 with a full, offline-baked mip
+	// chain — BC formats can't be runtime blit-generated, so the mips MUST be in
+	// the asset. ExportV2 owns mip generation, per-level BC compression (incl.
+	// real BC5 for normal maps), and the v2 on-disk layout.
+	const TextureFormat eFormat = CompressionModeToFormat(eCompression);
+	ExportV2(static_cast<const uint8_t*>(pRGBAData), strFilename, iWidth, iHeight, eFormat);
 }
 
 void Zenith_Tools_TextureExport::ExportFromDataWithFormat(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat, size_t ulBytesPerPixel)

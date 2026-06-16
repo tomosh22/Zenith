@@ -215,6 +215,31 @@ uint32_t ColourFormatBitsPerPixel(TextureFormat eFormat);
 uint32_t ColourFormatBytesPerPixel(TextureFormat eFormat);
 uint32_t DepthStencilFormatBitsPerPixel(TextureFormat eFormat);
 
+// Per-mip / mip-chain byte-size helpers. SINGLE SOURCE OF TRUTH for the packed
+// mip-chain layout shared by the .ztxtr exporter, the loader, and the GPU upload
+// path (the exporter packs in this order, the loader allocates this total, the
+// upload computes per-mip buffer offsets from these). Per-mip dimensions are
+// max(1, dim >> uMip). Depth is treated as 1 (these cover 2D / compressed-2D;
+// the only textures that carry a pre-baked chain).
+size_t CalculateMipDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uMip);
+size_t CalculateTotalMipChainSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips);
+
+// How CreateTextureVRAM should populate the texture's mip chain. Replaces the
+// old bool bCreateMips, which conflated "allocate a mip chain" with "blit-
+// generate it after uploading mip 0" — the source of the BC-mips-black bug.
+//   NONE             : single mip (mip 0 only); no chain.
+//   GENERATE_RUNTIME : allocate a full chain, upload mip 0, blit-generate 1..N
+//                      (uncompressed only — Vulkan can't blit-write BC images).
+//   PREBAKED         : allocate a full chain; pData already holds every mip
+//                      packed contiguously (CalculateTotalMipChainSize); upload
+//                      all mips, NO blit. The only correct mode for BC textures.
+enum TextureUploadMipMode
+{
+	TEXTURE_MIPS_NONE,
+	TEXTURE_MIPS_GENERATE_RUNTIME,
+	TEXTURE_MIPS_PREBAKED,
+};
+
 struct Flux_BlendState
 {
 	BlendFactor m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;

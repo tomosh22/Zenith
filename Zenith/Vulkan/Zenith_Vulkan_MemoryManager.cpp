@@ -379,6 +379,61 @@ void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMem
 		}
 	}
 
+	if (xMeta.m_bPreBakedMips)
+	{
+		// Pre-baked: the staging data holds every mip packed contiguously (mip 0
+		// first, per CalculateTotalMipChainSize). Copy one region per mip at its
+		// own buffer offset/extent, then transition all mips to shader-read — NO
+		// blit generation (BC formats can't be blitted and the data is already
+		// correct). Single-layer only; multi-layer pre-baked is out of scope.
+		Zenith_Assert(xMeta.m_uNumLayers == 1, "Pre-baked mip upload supports a single layer only");
+
+		const uint32_t uBlockOrPixel = IsCompressedFormat(xMeta.m_eFormat)
+			? CompressedFormatBytesPerBlock(xMeta.m_eFormat)
+			: ColourFormatBytesPerPixel(xMeta.m_eFormat);
+
+		size_t ulMipOffset = 0;
+		for (uint32_t uMip = 0; uMip < xMeta.m_uNumMips; uMip++)
+		{
+			const uint32_t uMipW = std::max(1u, xMeta.m_uWidth >> uMip);
+			const uint32_t uMipH = std::max(1u, xMeta.m_uHeight >> uMip);
+			const uint32_t uMipD = std::max(1u, xMeta.m_uDepth >> uMip);
+			const uint64_t ulBufferOffset = static_cast<uint64_t>(xAlloc.m_uOffset) + ulMipOffset;
+
+			// vkCmdCopyBufferToImage requires bufferOffset be a multiple of the
+			// texel block size. The staging base is 16-aligned and every prior
+			// mip is a whole number of blocks, so this holds — assert to catch a
+			// future format/packing that breaks the invariant.
+			Zenith_Assert((ulBufferOffset % uBlockOrPixel) == 0,
+				"Pre-baked mip %u buffer offset %llu is not a multiple of block/pixel size %u",
+				uMip, ulBufferOffset, uBlockOrPixel);
+
+			vk::ImageSubresourceLayers xMipSubresource = vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(uMip)
+				.setBaseArrayLayer(0)
+				.setLayerCount(1);
+
+			vk::BufferImageCopy xMipRegion = vk::BufferImageCopy()
+				.setBufferOffset(ulBufferOffset)
+				.setBufferRowLength(0)
+				.setBufferImageHeight(0)
+				.setImageSubresource(xMipSubresource)
+				.setImageOffset({ 0, 0, 0 })
+				.setImageExtent({ uMipW, uMipH, uMipD });
+
+			m_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(CurrentStaging().m_xBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xMipRegion);
+
+			ulMipOffset += CalculateMipDataSize(xMeta.m_eFormat, xMeta.m_uWidth, xMeta.m_uHeight, uMip);
+		}
+
+		for (uint32_t uMip = 0; uMip < xMeta.m_uNumMips; uMip++)
+		{
+			m_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, 0);
+		}
+		return;
+	}
+
 	// Copy staging buffer to image
 	vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -524,9 +579,20 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked buffer upload complete");
 }
 
-void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers)
+void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers, bool bPreBakedMips)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+
+	// The chunked path scanline-copies into mip 0 only and then runtime-generates
+	// the rest — it cannot honour a pre-baked multi-mip chain. Fail loudly in ALL
+	// builds rather than silently mis-uploading a chain bigger than the staging
+	// pool. (Material BC textures are far below the pool and never reach here.)
+	if (bPreBakedMips)
+	{
+		Zenith_Error(LOG_CATEGORY_VULKAN, "Pre-baked multi-mip texture (%llu bytes) exceeds the staging pool — chunked pre-baked upload is unsupported; texture skipped", uSize);
+		return;
+	}
+
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Uploading large texture in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();

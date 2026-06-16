@@ -153,7 +153,7 @@ public:
 	void DestroyDynamicReadWriteBuffer(Flux_DynamicReadWriteBuffer& xBuffer);
 
 	Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
-	Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, TextureUploadMipMode eMipMode);
 	// Full-image in-place re-upload of an existing texture created via
 	// CreateTextureVRAM (terrain-editor live splatmap painting). xInfo MUST be
 	// the surface info the texture was created with (same extents / format /
@@ -260,16 +260,17 @@ private:
 
 	// Helper for chunked staging uploads when data exceeds staging buffer size
 	void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);
-	void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers);
+	void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers, bool bPreBakedMips);
 
 	// CreateTextureVRAM helpers — extracted to keep the orchestrator small and
 	// to give the s_xMutex invariant a single named owner. Allocation runs
 	// pre-lock; only UploadTextureData acquires/releases s_xMutex.
 
-	// Patch defaults onto a Flux_SurfaceInfo: derive mip count from extents
-	// when bCreateMips is true, clamp depth/layers to a min of 1 to keep
-	// downstream byte calculations honest.
-	void NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	// Patch defaults onto a Flux_SurfaceInfo: derive a full mip count from the
+	// extents for GENERATE_RUNTIME, leave the caller-supplied m_uNumMips intact
+	// for PREBAKED (the loader already set it from the file), force 1 for NONE;
+	// always clamp depth/layers to a min of 1 to keep downstream byte math honest.
+	void NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, TextureUploadMipMode eMipMode);
 
 	// Pure: produce a vk::ImageCreateInfo from the (already normalized) surface
 	// info. Picks 2D vs 3D type, derives the usage mask from the memory flags,
@@ -287,7 +288,7 @@ private:
 	// (host-visible direct copy / chunked / staging-pool bump-allocate).
 	// Acquires s_xMutex internally; caller MUST NOT hold it on entry.
 	void UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
-		const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize);
+		const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize, bool bPreBaked);
 
 	struct StagingTextureMetadata {
 		vk::Image m_xImage;
@@ -297,6 +298,10 @@ private:
 		uint32_t m_uNumMips;
 		uint32_t m_uNumLayers;
 		TextureFormat m_eFormat;
+		// True when pData already holds every mip packed contiguously (PREBAKED):
+		// the flush copies one region per mip and does NO blit generation. False
+		// = legacy single-mip-copy + (optional) runtime blit-generate path.
+		bool m_bPreBakedMips = false;
 	};
 
 	struct StagingBufferMetadata {

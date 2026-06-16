@@ -120,9 +120,9 @@ public:
 		(void)uSize; (void)eFlags; (void)eResidency;
 		Flux_VRAMHandle x; x.SetValue(ms_uDummyHandle++); return x;
 	}
-	Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+	Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, TextureUploadMipMode eMipMode)
 	{
-		(void)pData; (void)xInfo; (void)bCreateMips;
+		(void)pData; (void)xInfo; (void)eMipMode;
 		Flux_VRAMHandle x; x.SetValue(ms_uDummyHandle++); return x;
 	}
 	void UpdateTextureVRAM(Flux_VRAMHandle xHandle, const void* pData, const Flux_SurfaceInfo& xInfo) { (void)xHandle; (void)pData; (void)xInfo; }

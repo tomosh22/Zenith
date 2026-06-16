@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "Flux/Flux_Types.h"
 
+#include <algorithm>  // std::max — PCH slim does not guarantee it
+
 bool IsCompressedFormat(TextureFormat eFormat)
 {
 	return eFormat == TEXTURE_FORMAT_BC1_RGB_UNORM ||
@@ -85,4 +87,28 @@ uint32_t DepthStencilFormatBitsPerPixel(TextureFormat eFormat)
 		Zenith_Assert(false, "Unrecognised depth/stencil format");
 		return 0u;
 	}
+}
+
+size_t CalculateMipDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uMip)
+{
+	const uint32_t uMipW = std::max(1u, uWidth >> uMip);
+	const uint32_t uMipH = std::max(1u, uHeight >> uMip);
+	if (IsCompressedFormat(eFormat))
+	{
+		// Block-compressed: (ceil(w/4) * ceil(h/4)) blocks. A sub-4x4 mip still
+		// occupies one full 4x4 block, which is exactly what the BC encoder emits
+		// (edge-clamped) and what the GPU expects for that mip's extent.
+		return CalculateCompressedTextureSize(eFormat, uMipW, uMipH);
+	}
+	return static_cast<size_t>(ColourFormatBytesPerPixel(eFormat)) * uMipW * uMipH;
+}
+
+size_t CalculateTotalMipChainSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips)
+{
+	size_t ulTotal = 0;
+	for (uint32_t uMip = 0; uMip < uNumMips; uMip++)
+	{
+		ulTotal += CalculateMipDataSize(eFormat, uWidth, uHeight, uMip);
+	}
+	return ulTotal;
 }

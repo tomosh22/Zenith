@@ -714,8 +714,12 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		strExportFile += std::string("_") + std::to_string(uIndex);
 		strExportFile += ZENITH_TEXTURE_EXT;
 
-		// Use BC1 compression for better GPU performance
-		Zenith_Tools_TextureExport::ExportFromDataCompressed(pData, strExportFile, iWidth, iHeight, TextureCompressionMode::BC1);
+		// Per-slot compression: tangent-space normal maps use BC5 (two-channel
+		// R+G, Z reconstructed in-shader) — BC1 visibly mangles normals. All other
+		// slots (albedo / roughness / metallic / occlusion / emissive) use BC1.
+		const bool bIsNormalMap = (uType == aiTextureType_NORMALS) || (uType == aiTextureType_NORMAL_CAMERA);
+		const TextureCompressionMode eCompression = bIsNormalMap ? TextureCompressionMode::BC5 : TextureCompressionMode::BC1;
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(pData, strExportFile, iWidth, iHeight, eCompression);
 		stbi_image_free(pData);
 	}
 }

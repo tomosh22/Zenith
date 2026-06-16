@@ -124,11 +124,25 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	return xHandle;
 }
 
-void Zenith_Vulkan_MemoryManager::NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, bool bCreateMips)
+void Zenith_Vulkan_MemoryManager::NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, TextureUploadMipMode eMipMode)
 {
-	xInfo.m_uNumMips = bCreateMips
-		? static_cast<u_int>(std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1)
-		: 1;
+	switch (eMipMode)
+	{
+	case TEXTURE_MIPS_GENERATE_RUNTIME:
+		// Allocate a full chain from the extents; mips 1..N are blit-generated.
+		xInfo.m_uNumMips = static_cast<u_int>(std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1);
+		break;
+	case TEXTURE_MIPS_PREBAKED:
+		// Trust the caller's m_uNumMips — pData already holds exactly this many
+		// mips packed contiguously. Must NOT be recomputed here: that fabricated
+		// chain (ignoring the actual data) was the original BC-mips-black bug.
+		xInfo.m_uNumMips = std::max(1u, xInfo.m_uNumMips);
+		break;
+	case TEXTURE_MIPS_NONE:
+	default:
+		xInfo.m_uNumMips = 1;
+		break;
+	}
 	// Clamp depth/layers to a min of 1 so the downstream byte-size math doesn't
 	// silently produce zero (which would mask uninitialised input fields).
 	xInfo.m_uDepth = std::max(1u, xInfo.m_uDepth);
@@ -205,7 +219,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::
 }
 
 void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
-	const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize)
+	const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize, bool bPreBaked)
 {
 	// Headless guard: see CreateBufferVRAM for rationale.
 	if (m_xAllocator == VK_NULL_HANDLE)
@@ -232,7 +246,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 	{
 		// Allocation larger than the staging buffer — unlock and chunk.
 		m_xMutex.Unlock();
-		UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uNumMips, xInfo.m_uNumLayers);
+		UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uNumMips, xInfo.m_uNumLayers, bPreBaked);
 		return;
 	}
 	else
@@ -263,6 +277,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfo.m_uNumMips;
 		xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfo.m_uNumLayers;
 		xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfo.m_eFormat;
+		xStagingAlloc.m_xTextureMetadata.m_bPreBakedMips = bPreBaked;
 		xStagingAlloc.m_uSize = ulDataSize;
 		// Re-resolve staging slot in case HandleStagingBufferFull recycled it
 		// (m_uNextFreeOffset is back to 0 if so).
@@ -286,10 +301,10 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 	m_xMutex.Unlock();
 }
 
-Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, TextureUploadMipMode eMipMode)
 {
 	Flux_SurfaceInfo xInfoCopy = xInfo;
-	NormalizeTextureInfo(xInfoCopy, bCreateMips);
+	NormalizeTextureInfo(xInfoCopy, eMipMode);
 
 	const vk::ImageCreateInfo xImageInfo = BuildImageCreateInfo(xInfoCopy);
 
@@ -303,8 +318,16 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 
 	if (pData)
 	{
+		const bool bPreBaked = (eMipMode == TEXTURE_MIPS_PREBAKED);
 		size_t ulDataSize;
-		if (IsCompressedFormat(xInfoCopy.m_eFormat))
+		if (bPreBaked)
+		{
+			// pData holds the whole packed mip chain — its length is the chain
+			// total (NOT mip 0 only) and MUST match the bytes the exporter wrote
+			// (see CalculateTotalMipChainSize, the shared layout contract).
+			ulDataSize = CalculateTotalMipChainSize(xInfoCopy.m_eFormat, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uNumMips) * xInfoCopy.m_uNumLayers;
+		}
+		else if (IsCompressedFormat(xInfoCopy.m_eFormat))
 		{
 			ulDataSize = CalculateCompressedTextureSize(xInfoCopy.m_eFormat, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight) * xInfoCopy.m_uNumLayers;
 		}
@@ -312,7 +335,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		{
 			ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
 		}
-		UploadTextureData(xImage, xAllocation, pData, xInfoCopy, ulDataSize);
+		UploadTextureData(xImage, xAllocation, pData, xInfoCopy, ulDataSize, bPreBaked);
 	}
 	else
 	{
@@ -361,7 +384,7 @@ void Zenith_Vulkan_MemoryManager::UpdateTextureVRAM(Flux_VRAMHandle xHandle, con
 		ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
 	}
 
-	UploadTextureData(static_cast<VkImage>(pxVRAM->GetImage()), pxVRAM->GetAllocation(), pData, xInfoCopy, ulDataSize);
+	UploadTextureData(static_cast<VkImage>(pxVRAM->GetImage()), pxVRAM->GetAllocation(), pData, xInfoCopy, ulDataSize, /*bPreBaked*/ false);
 }
 
 void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed)
@@ -377,9 +400,12 @@ void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::I
 	{
 		for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
 		{
+			// Clamp every mip extent to >=1: a non-square texture's narrow axis
+			// reaches 1 before the wide axis, and a bare shift would yield a 0
+			// extent (an invalid blit) for the remaining levels.
 			std::array<vk::Offset3D, 2> axSrcOffsets;
 			axSrcOffsets.at(0) = vk::Offset3D(0, 0, 0);
-			axSrcOffsets.at(1) = vk::Offset3D(uWidth >> (uMip - 1), uHeight >> (uMip - 1), 1);
+			axSrcOffsets.at(1) = vk::Offset3D(static_cast<int32_t>(std::max(1u, uWidth >> (uMip - 1))), static_cast<int32_t>(std::max(1u, uHeight >> (uMip - 1))), 1);
 
 			vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
 				.setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -389,7 +415,7 @@ void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::I
 
 			std::array<vk::Offset3D, 2> axDstOffsets;
 			axDstOffsets.at(0) = vk::Offset3D(0, 0, 0);
-			axDstOffsets.at(1) = vk::Offset3D(uWidth >> uMip, uHeight >> uMip, 1);
+			axDstOffsets.at(1) = vk::Offset3D(static_cast<int32_t>(std::max(1u, uWidth >> uMip)), static_cast<int32_t>(std::max(1u, uHeight >> uMip)), 1);
 
 			vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
 				.setAspectMask(vk::ImageAspectFlagBits::eColor)

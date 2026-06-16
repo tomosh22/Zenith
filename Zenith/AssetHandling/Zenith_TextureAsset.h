@@ -3,6 +3,17 @@
 #include "AssetHandling/Zenith_Asset.h"
 #include "Flux/Flux.h"
 
+#include <vector>
+
+class Zenith_DataStream;
+
+// .ztxtr envelope identity — shared by the loader (Zenith_TextureAsset) and the
+// exporter (Zenith_Tools_TextureExport) so the asset-type-id and the current
+// payload schema version have ONE definition. Schema <=1 == legacy single-mip;
+// schema 2 == uNumMips field + a packed full mip chain (see Zenith_TextureAsset.cpp).
+inline constexpr u_int uZENITH_TEXTURE_ASSET_TYPE_ID = 1;
+inline constexpr u_int uZENITH_TEXTURE_SCHEMA_V2 = 2;
+
 /**
  * Zenith_TextureAsset - GPU texture asset
  *
@@ -63,6 +74,23 @@ public:
 		const char* szPathPY, const char* szPathNY,
 		const char* szPathPZ, const char* szPathNZ);
 
+	/**
+	 * Load a .ztxtr's pixel data into a CPU buffer WITHOUT any GPU upload.
+	 * Shares the single .ztxtr parser with LoadFromFile (legacy/v1/v2 aware),
+	 * so non-renderer consumers (e.g. the RenderTest roughness/metallic packer,
+	 * the terrain heightmap readers) must use this instead of hand-parsing the
+	 * file — there is exactly one .ztxtr parser engine-wide. Safe in tools /
+	 * headless (no device required).
+	 * @param strPath    Path to the .ztxtr file.
+	 * @param xOutInfo    Receives format/dims and m_uNumMips as stored in the file
+	 *                    (1 for legacy single-mip files, N for a v2 mip chain).
+	 * @param xOutBytes   Receives the stored bytes: mip 0 for legacy, or the full
+	 *                    chain packed mip0..mipN-1 for v2 (mip M starts at the
+	 *                    prefix sum of CalculateMipDataSize for mips < M).
+	 * @return SUCCESS, or an error code (FILE_NOT_FOUND / CORRUPT_DATA / ...).
+	 */
+	static Zenith_Status LoadCPUData(const std::string& strPath, Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes);
+
 	//--------------------------------------------------------------------------
 	// Accessors
 	//--------------------------------------------------------------------------
@@ -116,6 +144,14 @@ private:
 	 * @return SUCCESS, or an error code on failure
 	 */
 	Zenith_Status LoadFromFile(const std::string& strPath, bool bCreateMips = true);
+
+	// The single .ztxtr parser. Reads the envelope (if any) + header, then either
+	// the legacy single-mip payload or the v2 multi-mip chain (strictly validated),
+	// into xOutBytes. Sets xOutInfo (format/dims/type/layers + m_uNumMips = mips
+	// actually present in the file) and bOutIsV2 (true => xOutBytes holds a packed
+	// chain). Used by both LoadFromFile (then GPU-uploads) and LoadCPUData.
+	static Zenith_Status ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
+		Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes, bool& bOutIsV2);
 
 	bool m_bGPUResourcesAllocated = false;
 };

@@ -9,11 +9,16 @@
 // Asset-type id for the .ztxtr envelope. No engine-wide numeric asset-type-id
 // enum exists (assets are keyed by string type name), so a small local constant
 // suffices — it only needs to be stable within the texture read/write pair.
-// Writers (Tools/Zenith_Tools_TextureExport.cpp and the inline game exporters)
-// should pass this id and schema version 1 to Zenith_WriteStreamHeader when they
-// adopt the envelope; until then the read path's BAD_MAGIC branch loads the
-// historical headerless files unchanged (schema 0).
-static constexpr u_int uTEXTURE_ASSET_TYPE_ID = 1;
+// Current contract: the exporter (Tools/Zenith_Tools_TextureExport.cpp ExportV2)
+// emits the envelope at schema 2 (uNumMips + a packed full mip chain), which
+// ParseZtxtr reads via its schema>=2 branch. Schema <=1 and pre-envelope
+// (headerless) files still load as single-mip via the legacy branch
+// (Zenith_ReadStreamHeader returns BAD_MAGIC and restores the cursor).
+// Envelope identity is shared with the exporter via Zenith_TextureAsset.h
+// (uZENITH_TEXTURE_ASSET_TYPE_ID / uZENITH_TEXTURE_SCHEMA_V2). Local aliases keep
+// the existing call sites terse.
+static constexpr u_int uTEXTURE_ASSET_TYPE_ID = uZENITH_TEXTURE_ASSET_TYPE_ID;
+static constexpr u_int uTEXTURE_SCHEMA_VERSION_V2 = uZENITH_TEXTURE_SCHEMA_V2;
 
 // Unified data size calculation for both compressed and uncompressed textures
 static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uDepth = 1)
@@ -23,19 +28,6 @@ static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, u
 		return CalculateCompressedTextureSize(eFormat, uWidth, uHeight);
 	}
 	return static_cast<size_t>(ColourFormatBytesPerPixel(eFormat)) * uWidth * uHeight * uDepth;
-}
-
-// Free an array of allocated cubemap face data up to uCount entries
-static void FreeCubemapFaceData(void* apDatas[6], uint32_t uCount)
-{
-	for (uint32_t u = 0; u < uCount; u++)
-	{
-		if (apDatas[u])
-		{
-			Zenith_MemoryManagement::Deallocate(apDatas[u]);
-			apDatas[u] = nullptr;
-		}
-	}
 }
 
 Zenith_TextureAsset::Zenith_TextureAsset()
@@ -64,92 +56,177 @@ void Zenith_TextureAsset::MarkAsBindless()
 	}
 }
 
-Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
+Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
+	Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes, bool& bOutIsV2)
 {
-	// Load texture data from file
-	size_t ulDataSize;
-	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
-	TextureFormat eFormat;
-
-	Zenith_DataStream xStream;
-	xStream.ReadFromFile(strPath.c_str());
+	bOutIsV2 = false;
 
 	if (!xStream.IsValid())
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to read file '%s'", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: stream invalid for '%s'", strPath.c_str());
 		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
-	// Envelope-aware read with back-compat (wave8.5):
-	//   - v1 file  : Zenith_ReadStreamHeader succeeds and advances the cursor
-	//                past the header; the payload below reads as normal.
-	//   - legacy   : no envelope -> BAD_MAGIC. ReadStreamHeader is non-destructive
-	//                (it restores the cursor to 0), so the same payload reads pick
-	//                up the historical headerless layout (treated as schema 0).
-	//   - future   : a newer envelope version is a hard fail (VERSION_MISMATCH).
+	// Envelope-aware read with back-compat:
+	//   - v2 file  : header OK, m_uSchemaVersion >= 2 -> multi-mip chain payload.
+	//   - v1 file  : header OK, schema <= 1 -> legacy single-mip payload.
+	//   - legacy   : no envelope -> BAD_MAGIC; ReadStreamHeader is non-destructive
+	//                (restores cursor to 0) so the headerless single-mip layout reads.
+	//   - future   : newer envelope version -> hard fail (VERSION_MISMATCH).
 	Zenith_Result<Zenith_StreamHeader> xHeaderResult = Zenith_ReadStreamHeader(xStream, uTEXTURE_ASSET_TYPE_ID);
 	if (!xHeaderResult.IsOk() && xHeaderResult.Error() != Zenith_ErrorCode::BAD_MAGIC)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Unsupported envelope in '%s'", strPath.c_str());
 		return xHeaderResult.Error();
 	}
+	const bool bV2 = xHeaderResult.IsOk() && xHeaderResult.Value().m_uSchemaVersion >= uTEXTURE_SCHEMA_VERSION_V2;
 
+	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
+	TextureFormat eFormat = TEXTURE_FORMAT_NONE;
 	xStream >> iWidth;
 	xStream >> iHeight;
 	xStream >> iDepth;
 	xStream >> eFormat;
+
+	if (iWidth <= 0 || iHeight <= 0)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: invalid dims %dx%d in '%s'", iWidth, iHeight, strPath.c_str());
+		return Zenith_ErrorCode::CORRUPT_DATA;
+	}
+
+	const int32_t iCorrectedDepth = std::max(1, iDepth);
+
+	xOutInfo = Flux_SurfaceInfo();
+	xOutInfo.m_uWidth = static_cast<uint32_t>(iWidth);
+	xOutInfo.m_uHeight = static_cast<uint32_t>(iHeight);
+	xOutInfo.m_uDepth = static_cast<uint32_t>(iCorrectedDepth);
+	xOutInfo.m_uNumLayers = 1;
+	xOutInfo.m_eFormat = eFormat;
+	xOutInfo.m_eTextureType = TEXTURE_TYPE_2D;
+
+	if (bV2)
+	{
+		uint32_t uNumMips = 0;
+		size_t ulTotalDataSize = 0;
+		xStream >> uNumMips;
+		xStream >> ulTotalDataSize;
+
+		// STRICT validation — v2 is a new, tightly-packed format with no slack.
+		// The stored count and total must exactly match the shared layout contract.
+		const uint32_t uExpectedMips = static_cast<uint32_t>(std::floor(std::log2((std::max)(iWidth, iHeight))) + 1);
+		const size_t ulExpectedTotal = CalculateTotalMipChainSize(eFormat, xOutInfo.m_uWidth, xOutInfo.m_uHeight, uNumMips);
+		if (uNumMips == 0 || uNumMips != uExpectedMips || ulTotalDataSize != ulExpectedTotal)
+		{
+			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: v2 mip-chain mismatch in '%s' (mips=%u expected=%u, size=%zu expected=%zu)",
+				strPath.c_str(), uNumMips, uExpectedMips, ulTotalDataSize, ulExpectedTotal);
+			return Zenith_ErrorCode::CORRUPT_DATA;
+		}
+		// Bounds-check BEFORE ReadData: ReadData only logs on overflow (no status
+		// return), so the loader must verify the stream actually holds the payload.
+		if (xStream.GetCapacity() - xStream.GetCursor() < ulTotalDataSize)
+		{
+			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: v2 payload truncated in '%s' (need %zu, have %llu)",
+				strPath.c_str(), ulTotalDataSize, static_cast<unsigned long long>(xStream.GetCapacity() - xStream.GetCursor()));
+			return Zenith_ErrorCode::CORRUPT_DATA;
+		}
+
+		// v2 is 2D-only by contract: CalculateTotalMipChainSize (validated above)
+		// and the pre-baked upload's per-mip math treat depth as 1, so pin it here
+		// rather than trust a stored depth the rest of the v2 path would ignore.
+		xOutInfo.m_uDepth = 1;
+		xOutInfo.m_uNumMips = uNumMips;
+		xOutBytes.resize(ulTotalDataSize);
+		xStream.ReadData(xOutBytes.data(), ulTotalDataSize);
+		bOutIsV2 = true;
+		return true;
+	}
+
+	// Legacy / v1 single-mip payload (back-compat: matches the historical layout).
+	size_t ulDataSize = 0;
 	xStream >> ulDataSize;
 
-	// Ensure depth is at least 1 for 2D textures (file may store 0 for non-3D textures)
-	// Also recalculate expected data size since file may have stored wrong size
-	const int32_t iCorrectedDepth = std::max(1, iDepth);
-	const bool bIsCompressed = IsCompressedFormat(eFormat);
 	const size_t ulExpectedDataSize = CalculateTextureDataSize(eFormat, iWidth, iHeight, iCorrectedDepth);
-
-	// Use the larger of file-stored size or expected size for safety
-	// If file stored size 0 but we expect data, use expected size
-	// If file stored larger size, use that (might have extra padding)
-	size_t ulAllocSize = std::max(ulDataSize, ulExpectedDataSize);
-
+	// Use the larger of file-stored size or expected size for safety (some legacy
+	// files stored 0 for the size but still carry pixel data).
+	const size_t ulAllocSize = std::max(ulDataSize, ulExpectedDataSize);
 	if (ulAllocSize == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Zero data size for texture '%s' (dims: %dx%dx%d)", strPath.c_str(), iWidth, iHeight, iDepth);
 		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
-	void* pData = Zenith_MemoryManagement::Allocate(ulAllocSize);
-	if (!pData)
-	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to allocate %zu bytes for texture '%s'", ulAllocSize, strPath.c_str());
-		return Zenith_ErrorCode::OUT_OF_MEMORY;
-	}
-
-	// Initialize to zero in case file has less data than expected
-	memset(pData, 0, ulAllocSize);
-
-	// Read actual data from file
-	// If file stored ulDataSize=0 but dimensions are valid, use expected size for reading
-	// (some files incorrectly store 0 for data size but still have pixel data)
-	size_t ulReadSize = (ulDataSize > 0) ? ulDataSize : ulExpectedDataSize;
+	xOutInfo.m_uNumMips = 1;
+	xOutBytes.assign(ulAllocSize, 0);  // zero-init in case the file has less than expected
+	const size_t ulReadSize = (ulDataSize > 0) ? ulDataSize : ulExpectedDataSize;
 	if (ulReadSize > 0)
 	{
-		xStream.ReadData(pData, ulReadSize);
+		if (xStream.GetCapacity() - xStream.GetCursor() < ulReadSize)
+		{
+			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: legacy payload truncated in '%s'", strPath.c_str());
+			return Zenith_ErrorCode::CORRUPT_DATA;
+		}
+		xStream.ReadData(xOutBytes.data(), ulReadSize);
+	}
+	return true;
+}
+
+Zenith_Status Zenith_TextureAsset::LoadCPUData(const std::string& strPath, Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes)
+{
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(strPath.c_str());
+	if (!xStream.IsValid())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset::LoadCPUData: Failed to read file '%s'", strPath.c_str());
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
+	}
+	bool bV2 = false;
+	return ParseZtxtr(strPath, xStream, xOutInfo, xOutBytes, bV2);
+}
+
+Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
+{
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(strPath.c_str());
+	if (!xStream.IsValid())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to read file '%s'", strPath.c_str());
+		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
-	// Determine mip count
-	const uint32_t uNumMips = (bCreateMips && !bIsCompressed)
-		? static_cast<uint32_t>(std::floor(std::log2((std::max)(iWidth, iHeight))) + 1)
-		: 1;
+	Flux_SurfaceInfo xFileInfo;
+	std::vector<uint8_t> xBytes;
+	bool bV2 = false;
+	Zenith_Status xParseStatus = ParseZtxtr(strPath, xStream, xFileInfo, xBytes, bV2);
+	if (!xParseStatus.IsOk())
+	{
+		return xParseStatus;
+	}
 
-	// Set up surface info
-	m_xSurfaceInfo.m_uWidth = static_cast<uint32_t>(iWidth);
-	m_xSurfaceInfo.m_uHeight = static_cast<uint32_t>(iHeight);
-	m_xSurfaceInfo.m_uDepth = static_cast<uint32_t>(iCorrectedDepth);
-	m_xSurfaceInfo.m_uNumLayers = 1;
-	m_xSurfaceInfo.m_eFormat = eFormat;
-	m_xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_2D;
-	m_xSurfaceInfo.m_uNumMips = uNumMips;
+	m_xSurfaceInfo = xFileInfo;
 	m_xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	// Resolve how the GPU populates the mip chain, and the final mip count the
+	// IMAGE (and therefore the SRV) will have. This must be set before BOTH the
+	// upload and the SRV creation so the view exposes exactly the image's mips.
+	const bool bIsCompressed = IsCompressedFormat(m_xSurfaceInfo.m_eFormat);
+	TextureUploadMipMode eMipMode;
+	if (bV2)
+	{
+		// File already carries the full chain (m_uNumMips set by ParseZtxtr).
+		eMipMode = TEXTURE_MIPS_PREBAKED;
+	}
+	else if (bCreateMips && !bIsCompressed)
+	{
+		// Legacy uncompressed: allocate a chain and blit-generate at runtime.
+		eMipMode = TEXTURE_MIPS_GENERATE_RUNTIME;
+		m_xSurfaceInfo.m_uNumMips = static_cast<uint32_t>(std::floor(std::log2((std::max)(m_xSurfaceInfo.m_uWidth, m_xSurfaceInfo.m_uHeight))) + 1);
+	}
+	else
+	{
+		// Legacy compressed (or mips not requested): single mip, no fake chain.
+		eMipMode = TEXTURE_MIPS_NONE;
+		m_xSurfaceInfo.m_uNumMips = 1;
+	}
 
 	// Create GPU resources. Surface an invalid VRAM handle via the release-
 	// survivable check tier (WS8.3) for diagnosability, but DO NOT fail the load:
@@ -158,13 +235,10 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	// would be a behaviour change. Hard-failing on genuine GPU-OOM is Wave-9
 	// error-handling scope, where the tolerant-caller contract is revisited.
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
-	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(xBytes.data(), m_xSurfaceInfo, eMipMode);
 	Zenith_Check(m_xVRAMHandle.IsValid(), "Zenith_TextureAsset: GPU upload returned an invalid handle for '%s'", strPath.c_str());
-	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo, 0, m_xSurfaceInfo.m_uNumMips);
 	m_bGPUResourcesAllocated = true;
-
-	// Free the staging data
-	Zenith_MemoryManagement::Deallocate(pData);
 
 	// SUCCESS — payload is the legacy "true" bool carried by Zenith_Status.
 	return true;
@@ -185,10 +259,23 @@ bool Zenith_TextureAsset::CreateFromData(const void* pData, const Flux_SurfaceIn
 		m_xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 	}
 
-	// Create GPU resources
+	// Create GPU resources. CreateFromData keeps its bool API; translate to the
+	// mip mode. Procedural callers never supply a pre-baked chain, so bCreateMips
+	// maps to runtime generation (uncompressed) or none.
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
-	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, bCreateMips);
-	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	const TextureUploadMipMode eMipMode = bCreateMips ? TEXTURE_MIPS_GENERATE_RUNTIME : TEXTURE_MIPS_NONE;
+	if (eMipMode == TEXTURE_MIPS_GENERATE_RUNTIME)
+	{
+		// Match the mip count CreateTextureVRAM/NormalizeTextureInfo will allocate,
+		// so the SRV below exposes the whole chain.
+		m_xSurfaceInfo.m_uNumMips = static_cast<uint32_t>(std::floor(std::log2((std::max)(m_xSurfaceInfo.m_uWidth, m_xSurfaceInfo.m_uHeight))) + 1);
+	}
+	else
+	{
+		m_xSurfaceInfo.m_uNumMips = 1;
+	}
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pData, m_xSurfaceInfo, eMipMode);
+	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo, 0, m_xSurfaceInfo.m_uNumMips);
 	m_bGPUResourcesAllocated = true;
 
 	return m_xVRAMHandle.IsValid();
@@ -228,10 +315,12 @@ bool Zenith_TextureAsset::CreateCubemap(const void* apFaceData[6], const Flux_Su
 		m_xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 	}
 
-	// Create GPU resources
+	// Create GPU resources. Cubemap faces are single-mip; pin m_uNumMips to 1 so
+	// the image (TEXTURE_MIPS_NONE) and the SRV agree exactly.
+	m_xSurfaceInfo.m_uNumMips = 1;
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
-	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pAllData, m_xSurfaceInfo, false);
-	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo);
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(pAllData, m_xSurfaceInfo, TEXTURE_MIPS_NONE);
+	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo, 0, m_xSurfaceInfo.m_uNumMips);
 	m_bGPUResourcesAllocated = true;
 
 	Zenith_MemoryManagement::Deallocate(pAllData);
@@ -245,43 +334,41 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 	const char* szPathPZ, const char* szPathNZ)
 {
 	const char* aszPaths[6] = { szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ };
-	void* apDatas[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-	size_t aulDataSizes[6] = { 0, 0, 0, 0, 0, 0 };
+	std::vector<uint8_t> axFaceBytes[6];   // mip 0 of each face
 	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
 	TextureFormat eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 
 	for (uint32_t u = 0; u < 6; u++)
 	{
-		Zenith_DataStream xStream;
-		xStream.ReadFromFile(aszPaths[u]);
-
-		if (!xStream.IsValid())
+		// Route through the single .ztxtr parser (no GPU upload). Cubemaps are
+		// built single-mip, so take mip 0 of each face — the whole buffer for a
+		// legacy file, or the first mip of a v2 chain. Never hand-parse here:
+		// the engine cubemap faces are re-exported by ExportAllTextures and may
+		// be v2, which the old per-face header read could not parse.
+		Flux_SurfaceInfo xFaceInfo;
+		std::vector<uint8_t> xFaceBytes;
+		if (!LoadCPUData(aszPaths[u], xFaceInfo, xFaceBytes).IsOk())
 		{
 			Zenith_Error(LOG_CATEGORY_ASSET, "LoadCubemapFromFiles: Failed to read face %u from '%s'", u, aszPaths[u]);
-			FreeCubemapFaceData(apDatas, u);
 			return false;
 		}
 
-		TextureFormat eFaceFormat;
-		xStream >> uWidth;
-		xStream >> uHeight;
-		xStream >> uDepth;
-		xStream >> eFaceFormat;
-		xStream >> aulDataSizes[u];
+		const size_t ulMip0Size = CalculateMipDataSize(xFaceInfo.m_eFormat, xFaceInfo.m_uWidth, xFaceInfo.m_uHeight, 0);
+		if (xFaceBytes.size() < ulMip0Size)
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET, "LoadCubemapFromFiles: face %u from '%s' is too small (%zu < %zu)", u, aszPaths[u], xFaceBytes.size(), ulMip0Size);
+			return false;
+		}
+		xFaceBytes.resize(ulMip0Size);   // drop any lower mips — cubemap is single-mip
+		axFaceBytes[u] = std::move(xFaceBytes);
 
 		if (u == 0)
 		{
-			eFormat = eFaceFormat;
+			uWidth = xFaceInfo.m_uWidth;
+			uHeight = xFaceInfo.m_uHeight;
+			uDepth = xFaceInfo.m_uDepth;
+			eFormat = xFaceInfo.m_eFormat;
 		}
-
-		apDatas[u] = Zenith_MemoryManagement::Allocate(aulDataSizes[u]);
-		if (!apDatas[u])
-		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "ERROR: Failed to allocate cubemap face %u", u);
-			FreeCubemapFaceData(apDatas, u);
-			return false;
-		}
-		xStream.ReadData(apDatas[u], aulDataSizes[u]);
 	}
 
 	// Set up surface info
@@ -294,14 +381,9 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 	xInfo.m_uNumMips = 1;
 	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	// Create cubemap from face data
-	const void* apFaceData[6] = { apDatas[0], apDatas[1], apDatas[2], apDatas[3], apDatas[4], apDatas[5] };
-	bool bSuccess = CreateCubemap(apFaceData, xInfo);
-
-	// Free staging data
-	FreeCubemapFaceData(apDatas, 6);
-
-	return bSuccess;
+	// Create cubemap from face data (mip 0 of each face)
+	const void* apFaceData[6] = { axFaceBytes[0].data(), axFaceBytes[1].data(), axFaceBytes[2].data(), axFaceBytes[3].data(), axFaceBytes[4].data(), axFaceBytes[5].data() };
+	return CreateCubemap(apFaceData, xInfo);
 }
 
 void Zenith_TextureAsset::ReleaseGPU()

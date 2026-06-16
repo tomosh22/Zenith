@@ -14,6 +14,7 @@ static std::string GetGameAssetsDirectory()
 	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
 }
 #include "AssetHandling/Zenith_Image.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 // stb_image declarations only — the single STB_IMAGE_IMPLEMENTATION lives in
 // Zenith_Tools_TextureExport.cpp; these calls resolve to it at link time.
 #pragma warning(push, 0)
@@ -136,30 +137,22 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 //-----------------------------------------------------------------------------
 static Zenith_Image LoadHeightmapFromZtxtr(const std::string& strPath)
 {
-	Zenith_DataStream xStream;
-	xStream.ReadFromFile(strPath.c_str());
-	if (!xStream.IsValid())
+	// Single .ztxtr parser (no GPU upload). Heightmaps are single-mip R32/R16/RGBA8.
+	Flux_SurfaceInfo xInfo;
+	std::vector<uint8_t> xBytes;
+	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk())
 	{
 		Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load .ztxtr file: %s", strPath.c_str());
 		return Zenith_Image();
 	}
 
-	int32_t iWidth, iHeight, iDepth;
-	TextureFormat eFormat;
-	uint64_t ulDataSize;
+	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
+	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
+	const TextureFormat eFormat = xInfo.m_eFormat;
+	const void* pData = xBytes.data();
 
-	xStream >> iWidth;
-	xStream >> iHeight;
-	xStream >> iDepth;
-	xStream >> eFormat;
-	xStream >> ulDataSize;
-
-	Zenith_Log(LOG_CATEGORY_TOOLS, "Loading .ztxtr heightmap: %dx%d, format=%d, size=%llu",
-		iWidth, iHeight, static_cast<int>(eFormat), ulDataSize);
-
-	// Allocate and read data
-	void* pData = Zenith_MemoryManagement::Allocate(ulDataSize);
-	xStream.ReadData(pData, ulDataSize);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Loading .ztxtr heightmap: %dx%d, format=%d, size=%zu",
+		iWidth, iHeight, static_cast<int>(eFormat), xBytes.size());
 
 	// Build a float image based on the source format
 	Zenith_Image xResult;
@@ -195,11 +188,9 @@ static Zenith_Image LoadHeightmapFromZtxtr(const std::string& strPath)
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_TOOLS, "Unsupported texture format for heightmap: %d", static_cast<int>(eFormat));
-		Zenith_MemoryManagement::Deallocate(pData);
 		return Zenith_Image();
 	}
 
-	Zenith_MemoryManagement::Deallocate(pData);
 	return xResult;
 }
 

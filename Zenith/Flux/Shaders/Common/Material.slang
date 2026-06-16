@@ -21,9 +21,14 @@ public float4 SampleDiffuseWithBaseColor(Sampler2D xTex, float2 xUV, float4 xBas
 }
 
 // Sample tangent-space normal map and transform to world-space using TBN.
+// Normal maps are BC5 (two-channel R+G), so only X,Y are stored; reconstruct
+// Z = sqrt(1 - x^2 - y^2). This is also correct for the RGBA8 default-normal
+// fallback (its stored B is simply ignored and rebuilt to ~1).
 public float3 SampleNormalMap(Sampler2D xTex, float2 xUV, float3x3 xTBN)
 {
-	float3 xNormalTangent = xTex.Sample(xUV).xyz * 2.0 - 1.0;
+	float2 xXY = xTex.Sample(xUV).xy * 2.0 - 1.0;
+	float fZ = sqrt(saturate(1.0 - dot(xXY, xXY)));
+	float3 xNormalTangent = float3(xXY, fZ);
 	return normalize(mul(xTBN, xNormalTangent));
 }
 

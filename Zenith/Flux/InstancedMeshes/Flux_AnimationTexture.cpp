@@ -438,7 +438,7 @@ void Flux_AnimationTexture::CreateGPUResources()
 	m_xPositionTexture.m_xVRAMHandle = g_xEngine.FluxMemory().CreateTextureVRAM(
 		m_axTextureData.GetDataPointer(),
 		xSurfaceInfo,
-		false  // No mipmaps
+		TEXTURE_MIPS_NONE  // No mipmaps
 	);
 
 	// Create shader resource view for sampling

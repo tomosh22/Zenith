@@ -108,7 +108,10 @@ public MaterialSurface EvaluateMaterialSurface(
 	if (fAlphaCutoff > 0.0 && xAlbedo.a < fAlphaCutoff) discard;
 
 	// --- Normal (strength-scaled, optionally detail-blended) ---
-	float3 xNormalTS = xNormalTex.Sample(xUV).xyz * 2.0 - 1.0;
+	// The primary normal slot is BC5 (R+G only); reconstruct Z = sqrt(1 - x^2 - y^2).
+	// Correct for the RGBA8 default-normal too (its stored B is ignored/rebuilt).
+	float2 xNormalXY = xNormalTex.Sample(xUV).xy * 2.0 - 1.0;
+	float3 xNormalTS = float3(xNormalXY, sqrt(saturate(1.0 - dot(xNormalXY, xNormalXY))));
 	xNormalTS.xy *= GetNormalStrength();
 
 	if ((uFlags & MATERIAL_FLAG_DETAIL_MAPS) != 0u)
@@ -116,10 +119,11 @@ public MaterialSurface EvaluateMaterialSurface(
 		float2 xDetailUV = xUV * GetDetailTiling();
 		float fDetailMask = xDetailMaskTex.Sample(xUV).r;
 
-		// UDN-blend the detail normal on top of the base normal.
-		float3 xDetailTS = xDetailNormalTex.Sample(xDetailUV).xyz * 2.0 - 1.0;
-		xDetailTS.xy *= GetDetailNormalStrength() * fDetailMask;
-		xNormalTS = float3(xNormalTS.xy + xDetailTS.xy, xNormalTS.z);
+		// UDN-blend the detail normal on top of the base normal. Only X/Y are used
+		// (Z stays the base normal's), so sample R/G directly — format-agnostic.
+		float2 xDetailXY = xDetailNormalTex.Sample(xDetailUV).xy * 2.0 - 1.0;
+		xDetailXY *= GetDetailNormalStrength() * fDetailMask;
+		xNormalTS = float3(xNormalTS.xy + xDetailXY, xNormalTS.z);
 
 		// x2 multiply detail albedo around mid-grey (Unity convention).
 		float3 xDetailAlbedo = xDetailAlbedoTex.Sample(xDetailUV).rgb;
