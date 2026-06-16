@@ -343,6 +343,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AttachmentComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
@@ -2344,6 +2347,9 @@
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AttachmentComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h">

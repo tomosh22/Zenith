@@ -2,6 +2,8 @@
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
+    <ClCompile Include="..\RenderTest_Tennis.cpp" />
+    <ClCompile Include="..\RenderTest_Guns.cpp" />
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -31,6 +33,11 @@
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_GunComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\RenderTest_Tennis.h" />
+    <ClInclude Include="..\RenderTest_Guns.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Components">

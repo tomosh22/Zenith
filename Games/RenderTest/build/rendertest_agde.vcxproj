@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -168,9 +168,14 @@
     <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
+    <ClInclude Include="..\Components\RenderTest_GunComponent.h" />
+    <ClInclude Include="..\RenderTest_Tennis.h" />
+    <ClInclude Include="..\RenderTest_Guns.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
+    <ClCompile Include="..\RenderTest_Tennis.cpp" />
+    <ClCompile Include="..\RenderTest_Guns.cpp" />
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp" />
     <ClCompile Include="..\Tests\HumanShowcase.cpp" />
     <ClCompile Include="..\Tests\MaterialBattleTest.cpp" />
