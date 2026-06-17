@@ -39,6 +39,7 @@ public static const uint MATERIAL_FLAG_TWO_SIDED_NORMAL_FLIP = 1u << 1;
 public static const uint MATERIAL_FLAG_POM                   = 1u << 2;
 public static const uint MATERIAL_FLAG_DETAIL_MAPS           = 1u << 3;
 public static const uint MATERIAL_FLAG_CLEARCOAT             = 1u << 4;
+public static const uint MATERIAL_FLAG_SKIN                  = 1u << 5;
 
 // Material parameter accessors — shorter call sites, matching the
 // GLSL macros from MaterialCommon.fxh.

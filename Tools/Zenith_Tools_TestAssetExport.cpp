@@ -48,9 +48,11 @@
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "Zenith_Tools_GltfExport.h"
 #include "Zenith_Tools_TestAssetExport.h"
+#include "Zenith_Tools_TextureExport.h"   // v2 BC / offline-mip texture export
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <unordered_map>
 
 //------------------------------------------------------------------------------
 // Bone indices for stick figure skeleton
@@ -71,13 +73,55 @@ static constexpr uint32_t STICK_BONE_LEFT_FOOT = 12;
 static constexpr uint32_t STICK_BONE_RIGHT_UPPER_LEG = 13;
 static constexpr uint32_t STICK_BONE_RIGHT_LOWER_LEG = 14;
 static constexpr uint32_t STICK_BONE_RIGHT_FOOT = 15;
-static constexpr uint32_t STICK_BONE_COUNT = 16;
+// UE5-class additions (appended so the original 16 keep their indices/names —
+// the authored clips, foot-IK and unit tests reference those by name/index).
+static constexpr uint32_t STICK_BONE_JAW = 16;
+static constexpr uint32_t STICK_BONE_LEFT_EYE = 17;
+static constexpr uint32_t STICK_BONE_RIGHT_EYE = 18;
+static constexpr uint32_t STICK_BONE_LEFT_TOE = 19;
+static constexpr uint32_t STICK_BONE_RIGHT_TOE = 20;
+// Finger bones (3 per digit: proximal/middle/distal), thumb + 4 fingers per hand.
+static constexpr uint32_t STICK_BONE_FINGERS_BEGIN = 21;
+static constexpr uint32_t STICK_BONE_FINGERS_PER_HAND = 15;   // 5 digits x 3
+static constexpr uint32_t STICK_BONE_LEFT_FINGERS_BEGIN = STICK_BONE_FINGERS_BEGIN;                              // 21..35
+static constexpr uint32_t STICK_BONE_RIGHT_FINGERS_BEGIN = STICK_BONE_FINGERS_BEGIN + STICK_BONE_FINGERS_PER_HAND; // 36..50
+static constexpr uint32_t STICK_BONE_COUNT = STICK_BONE_FINGERS_BEGIN + 2 * STICK_BONE_FINGERS_PER_HAND;          // 51
+
+// Shared finger layout (world-space at bind), used by BOTH the skeleton bind
+// pose and the hand mesh so the finger bones and the finger geometry stay in
+// lockstep. 5 digits per hand: index, middle, ring, pinky, thumb.
+struct HumanDigitDef { Zenith_Maths::Vector3 xRoot; Zenith_Maths::Vector3 xTip; float fRootR; };
+static void GetHumanHandDigits(float fSide, HumanDigitDef axOut[5])
+{
+	const float fCx = fSide * 0.302f;
+	const float fBaseZ = 0.006f;
+	const float afZ[4]    = { fBaseZ - 0.031f, fBaseZ - 0.010f, fBaseZ + 0.011f, fBaseZ + 0.032f };
+	const float afTipY[4] = { 0.226f, 0.205f, 0.210f, 0.230f };
+	const float afR[4]    = { 0.0092f, 0.0100f, 0.0098f, 0.0084f };
+	for (int i = 0; i < 4; i++)
+	{
+		axOut[i].xRoot  = Zenith_Maths::Vector3(fCx, 0.318f, afZ[i]);
+		axOut[i].xTip   = Zenith_Maths::Vector3(fCx, afTipY[i], afZ[i]);
+		axOut[i].fRootR = afR[i];
+	}
+	axOut[4].xRoot  = Zenith_Maths::Vector3(fCx - fSide * 0.006f, 0.356f, fBaseZ + 0.038f);
+	axOut[4].xTip   = Zenith_Maths::Vector3(fCx - fSide * 0.020f, 0.322f, fBaseZ + 0.066f);
+	axOut[4].fRootR = 0.0120f;
+}
+
+// Finger bone index for hand (0=left,1=right), digit (0..4), phalanx (0..2).
+static u_int HumanFingerBone(int iHand, int iDigit, int iPhalanx)
+{
+	const u_int uBase = (iHand == 0) ? STICK_BONE_LEFT_FINGERS_BEGIN : STICK_BONE_RIGHT_FINGERS_BEGIN;
+	return uBase + static_cast<u_int>(iDigit) * 3u + static_cast<u_int>(iPhalanx);
+}
 
 //------------------------------------------------------------------------------
-// Skeleton — UNCHANGED from the original cube figure. The bind positions are a
-// contract: RenderTest's capsule/foot-IK constants assume feet at Y=-1.0 and
-// the engine unit tests pin head Y=1.4 and the parent hierarchy. All visual
-// quality comes from the mesh/textures/animations built around this rig.
+// Skeleton. The first 16 bones (indices 0-15, names unchanged) are a frozen
+// contract: RenderTest's capsule/foot-IK assume feet at Y=-1.0, the engine unit
+// tests pin head Y=1.4 and the parent hierarchy, and the 13 authored clips bind
+// to these names. UE5-class bones (jaw, eyes, toes, articulated fingers) are
+// APPENDED after them so all of that keeps working.
 //------------------------------------------------------------------------------
 static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 {
@@ -116,6 +160,38 @@ static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 	pxSkel->AddBone("RightUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(0.15f, 0, 0), xIdentity, xUnitScale);
 	pxSkel->AddBone("RightLowerLeg", STICK_BONE_RIGHT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
 	pxSkel->AddBone("RightFoot", STICK_BONE_RIGHT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
+
+	// --- UE5-class additions (indices 16+; the 16 core bones above are unchanged) ---
+	// Jaw + eyes hang off the head (world: head at (0,1.4,0)); toes off the feet.
+	pxSkel->AddBone("Jaw",      STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.0f, -0.050f, -0.020f), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftEye",  STICK_BONE_HEAD,       Zenith_Maths::Vector3(-0.034f, 0.029f, 0.060f), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightEye", STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.034f, 0.029f, 0.060f), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftToe",  STICK_BONE_LEFT_FOOT,  Zenith_Maths::Vector3(0.0f, -0.010f, 0.100f), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightToe", STICK_BONE_RIGHT_FOOT, Zenith_Maths::Vector3(0.0f, -0.010f, 0.100f), xIdentity, xUnitScale);
+
+	// Articulated fingers: 5 digits x 3 phalanges per hand, chained off the hand.
+	const char* aszDigit[5] = { "Index", "Middle", "Ring", "Pinky", "Thumb" };
+	for (int iHand = 0; iHand < 2; iHand++)
+	{
+		const float fSide = (iHand == 0) ? -1.0f : 1.0f;
+		const u_int uHandBone = (iHand == 0) ? STICK_BONE_LEFT_HAND : STICK_BONE_RIGHT_HAND;
+		const Zenith_Maths::Vector3 xHandWorld(fSide * 0.3f, 0.4f, 0.0f);   // hand bone bind-pose world position
+		const std::string strPrefix = (iHand == 0) ? "L_" : "R_";
+		HumanDigitDef axDigits[5];
+		GetHumanHandDigits(fSide, axDigits);
+		for (int d = 0; d < 5; d++)
+		{
+			const Zenith_Maths::Vector3& xR = axDigits[d].xRoot;
+			const Zenith_Maths::Vector3& xT = axDigits[d].xTip;
+			const Zenith_Maths::Vector3 xJ0 = xR;
+			const Zenith_Maths::Vector3 xJ1 = xR + (xT - xR) * 0.40f;
+			const Zenith_Maths::Vector3 xJ2 = xR + (xT - xR) * 0.70f;
+			const std::string strBase = strPrefix + aszDigit[d];
+			const uint32_t uProx = pxSkel->AddBone((strBase + "_01").c_str(), uHandBone, xJ0 - xHandWorld, xIdentity, xUnitScale);
+			const uint32_t uMid  = pxSkel->AddBone((strBase + "_02").c_str(), uProx, xJ1 - xJ0, xIdentity, xUnitScale);
+			pxSkel->AddBone((strBase + "_03").c_str(), uMid, xJ2 - xJ1, xIdentity, xUnitScale);
+		}
+	}
 
 	pxSkel->ComputeBindPoseMatrices();
 	return pxSkel;
@@ -315,29 +391,141 @@ void CapHumanRing(Zenith_MeshAsset* pxMesh, uint32_t uRing, u_int uSegs,
 	}
 }
 
+// High-poly knobs. uHUMAN_RING_SUBDIV inserts (N-1) Catmull-Rom interpolated
+// rings between each authored ring pair (1 = authored rings only); the per-part
+// uSEGS constants set the around-resolution. Together they take the body from
+// the original ~1.7k verts to a smooth, AAA-grade ~10k. The 16-bone rig, bind
+// pose and UV islands are untouched — only tessellation changes.
+constexpr u_int uHUMAN_RING_SUBDIV = 4;
+
+// Uniform Catmull-Rom through p1..p2 (neighbours p0, p3), fT in [0,1]. fT==0
+// returns p1 exactly, so authored rings survive subdivision byte-for-byte.
+float HumanCatmullRom(float fP0, float fP1, float fP2, float fP3, float fT)
+{
+	const float fT2 = fT * fT;
+	const float fT3 = fT2 * fT;
+	return 0.5f * ((2.0f * fP1)
+		+ (-fP0 + fP2) * fT
+		+ (2.0f * fP0 - 5.0f * fP1 + 4.0f * fP2 - fP3) * fT2
+		+ (-fP0 + 3.0f * fP1 - 3.0f * fP2 + fP3) * fT3);
+}
+
+// Skin weight for a ring interpolated between rings A and B at parameter fT.
+// Each authored ring carries at most two bone influences; we lerp in per-bone
+// weight space and keep the two heaviest, renormalized to sum to 1 (matching the
+// <=2-influence authored data the rig + unit tests expect). For this rig no A/B
+// pair ever spans more than two distinct bones, so this is exact, never lossy.
+// At fT==0 it reproduces ring A's skinning exactly (bones may be reordered, which
+// is deformation-identical — skinning is a weighted sum, order-independent).
+void LerpHumanRingSkin(const HumanRing& xA, const HumanRing& xB, float fT,
+                       u_int& uOutBoneA, u_int& uOutBoneB, float& fOutBlendB)
+{
+	u_int auBone[4];
+	float afWeight[4];
+	int iCount = 0;
+	auto Accumulate = [&](u_int uBone, float fW)
+	{
+		if (fW <= 0.0f) { return; }
+		for (int i = 0; i < iCount; i++)
+		{
+			if (auBone[i] == uBone) { afWeight[i] += fW; return; }
+		}
+		auBone[iCount] = uBone;
+		afWeight[iCount] = fW;
+		iCount++;
+	};
+	Accumulate(xA.uBoneA, (1.0f - xA.fBlendB) * (1.0f - fT));
+	Accumulate(xA.uBoneB, xA.fBlendB * (1.0f - fT));
+	Accumulate(xB.uBoneA, (1.0f - xB.fBlendB) * fT);
+	Accumulate(xB.uBoneB, xB.fBlendB * fT);
+
+	if (iCount == 0)
+	{
+		uOutBoneA = uOutBoneB = xA.uBoneA;
+		fOutBlendB = 0.0f;
+		return;
+	}
+
+	int iTop0 = 0;
+	for (int i = 1; i < iCount; i++) { if (afWeight[i] > afWeight[iTop0]) { iTop0 = i; } }
+	int iTop1 = -1;
+	for (int i = 0; i < iCount; i++)
+	{
+		if (i == iTop0) { continue; }
+		if (iTop1 < 0 || afWeight[i] > afWeight[iTop1]) { iTop1 = i; }
+	}
+
+	const float fW0 = afWeight[iTop0];
+	const float fW1 = (iTop1 >= 0) ? afWeight[iTop1] : 0.0f;
+	const float fSum = fW0 + fW1;
+	uOutBoneA = auBone[iTop0];
+	uOutBoneB = (iTop1 >= 0) ? auBone[iTop1] : auBone[iTop0];
+	fOutBlendB = (fSum > 1e-6f) ? (fW1 / fSum) : 0.0f;
+}
+
+// Expand authored rings into a denser list: for each gap emit the authored ring
+// plus (uSub-1) Catmull-Rom interpolated rings (geometry smooth, skinning lerped
+// per-bone). uSub<=1 returns a verbatim copy. Result count = (N-1)*uSub + 1.
+Zenith_Vector<HumanRing> SubdivideHumanRings(const HumanRing* pxRings, u_int uNumRings, u_int uSub)
+{
+	Zenith_Vector<HumanRing> xOut;
+	if (uNumRings == 0) { return xOut; }
+	if (uSub <= 1 || uNumRings < 2)
+	{
+		for (u_int u = 0; u < uNumRings; u++) { xOut.PushBack(pxRings[u]); }
+		return xOut;
+	}
+	auto At = [&](int i) -> const HumanRing& { return pxRings[std::clamp(i, 0, static_cast<int>(uNumRings) - 1)]; };
+	for (u_int u = 0; u + 1 < uNumRings; u++)
+	{
+		const HumanRing& xP0 = At(static_cast<int>(u) - 1);
+		const HumanRing& xP1 = pxRings[u];
+		const HumanRing& xP2 = pxRings[u + 1];
+		const HumanRing& xP3 = At(static_cast<int>(u) + 2);
+		for (u_int s = 0; s < uSub; s++)
+		{
+			const float fT = static_cast<float>(s) / static_cast<float>(uSub);
+			HumanRing xR;
+			xR.fY  = HumanCatmullRom(xP0.fY,  xP1.fY,  xP2.fY,  xP3.fY,  fT);
+			xR.fCx = HumanCatmullRom(xP0.fCx, xP1.fCx, xP2.fCx, xP3.fCx, fT);
+			xR.fCz = HumanCatmullRom(xP0.fCz, xP1.fCz, xP2.fCz, xP3.fCz, fT);
+			xR.fRx = std::max(0.0f, HumanCatmullRom(xP0.fRx, xP1.fRx, xP2.fRx, xP3.fRx, fT));
+			xR.fRz = std::max(0.0f, HumanCatmullRom(xP0.fRz, xP1.fRz, xP2.fRz, xP3.fRz, fT));
+			LerpHumanRingSkin(xP1, xP2, fT, xR.uBoneA, xR.uBoneB, xR.fBlendB);
+			xOut.PushBack(xR);
+		}
+	}
+	xOut.PushBack(pxRings[uNumRings - 1]);
+	return xOut;
+}
+
 // Loft a full part: rings stitched in order, with V coordinates spread by
 // cumulative vertical distance so the painted texture doesn't stretch.
 // Returns the first ring's first vertex index.
 uint32_t AddHumanLoft(Zenith_MeshAsset* pxMesh, const HumanRing* pxRings, u_int uNumRings,
                       u_int uSegs, const HumanUVIsland& xIsland)
 {
+	// Densify with smooth interpolated rings so limbs read high-poly, not faceted.
+	const Zenith_Vector<HumanRing> xRings = SubdivideHumanRings(pxRings, uNumRings, uHUMAN_RING_SUBDIV);
+	const u_int uDense = xRings.GetSize();
+
 	float fTotal = 0.0f;
-	for (u_int u = 1; u < uNumRings; u++)
+	for (u_int u = 1; u < uDense; u++)
 	{
-		fTotal += fabsf(pxRings[u].fY - pxRings[u - 1].fY);
+		fTotal += fabsf(xRings.Get(u).fY - xRings.Get(u - 1).fY);
 	}
 	fTotal = std::max(fTotal, 0.0001f);
 
 	uint32_t uFirst = 0;
 	uint32_t uPrev = 0;
 	float fAccum = 0.0f;
-	for (u_int u = 0; u < uNumRings; u++)
+	for (u_int u = 0; u < uDense; u++)
 	{
 		if (u > 0)
 		{
-			fAccum += fabsf(pxRings[u].fY - pxRings[u - 1].fY);
+			fAccum += fabsf(xRings.Get(u).fY - xRings.Get(u - 1).fY);
 		}
-		const uint32_t uRing = AddHumanRing(pxMesh, pxRings[u], uSegs, xIsland, fAccum / fTotal);
+		const uint32_t uRing = AddHumanRing(pxMesh, xRings.Get(u), uSegs, xIsland, fAccum / fTotal);
 		if (u == 0)
 		{
 			uFirst = uRing;
@@ -391,30 +579,67 @@ uint32_t AddHumanShoeRing(Zenith_MeshAsset* pxMesh, float fSide, const HumanShoe
 	return uFirst;
 }
 
+// Shoe-ring densifier (geometry-only; the shoe is rigidly skinned to one foot
+// bone). Same Catmull-Rom scheme as SubdivideHumanRings.
+Zenith_Vector<HumanShoeRing> SubdivideShoeRings(const HumanShoeRing* pxRings, u_int uNumRings, u_int uSub)
+{
+	Zenith_Vector<HumanShoeRing> xOut;
+	if (uNumRings == 0) { return xOut; }
+	if (uSub <= 1 || uNumRings < 2)
+	{
+		for (u_int u = 0; u < uNumRings; u++) { xOut.PushBack(pxRings[u]); }
+		return xOut;
+	}
+	auto At = [&](int i) -> const HumanShoeRing& { return pxRings[std::clamp(i, 0, static_cast<int>(uNumRings) - 1)]; };
+	for (u_int u = 0; u + 1 < uNumRings; u++)
+	{
+		const HumanShoeRing& xP0 = At(static_cast<int>(u) - 1);
+		const HumanShoeRing& xP1 = pxRings[u];
+		const HumanShoeRing& xP2 = pxRings[u + 1];
+		const HumanShoeRing& xP3 = At(static_cast<int>(u) + 2);
+		for (u_int s = 0; s < uSub; s++)
+		{
+			const float fT = static_cast<float>(s) / static_cast<float>(uSub);
+			HumanShoeRing xR;
+			xR.fZ  = HumanCatmullRom(xP0.fZ,  xP1.fZ,  xP2.fZ,  xP3.fZ,  fT);
+			xR.fCy = HumanCatmullRom(xP0.fCy, xP1.fCy, xP2.fCy, xP3.fCy, fT);
+			xR.fWx = std::max(0.0f, HumanCatmullRom(xP0.fWx, xP1.fWx, xP2.fWx, xP3.fWx, fT));
+			xR.fHy = std::max(0.0f, HumanCatmullRom(xP0.fHy, xP1.fHy, xP2.fHy, xP3.fHy, fT));
+			xOut.PushBack(xR);
+		}
+	}
+	xOut.PushBack(pxRings[uNumRings - 1]);
+	return xOut;
+}
+
 void BuildHumanShoe(Zenith_MeshAsset* pxMesh, float fSide, u_int uFootBone, const HumanUVIsland& xIsland)
 {
-	// Sole bottoms sit at ~-1.038, comfortably inside the RenderTest capsule's
+	// Sole bottoms sit at ~-1.04, comfortably inside the RenderTest capsule's
 	// 1.05 total half-extent; the foot pivot is at Y=-1.0.
-	const HumanShoeRing axRings[] = {
+	const HumanShoeRing axAuthored[] = {
 		{ -0.075f, -0.984f, 0.040f, 0.050f },   // heel (rounded)
 		{ -0.030f, -0.984f, 0.047f, 0.056f },
 		{  0.030f, -0.990f, 0.051f, 0.050f },   // instep
 		{  0.090f, -1.000f, 0.051f, 0.040f },
 		{  0.150f, -1.013f, 0.044f, 0.027f },   // toe
 	};
-	constexpr u_int uNUM = sizeof(axRings) / sizeof(axRings[0]);
-	constexpr u_int uSEGS = 14;
+	constexpr u_int uNUM = sizeof(axAuthored) / sizeof(axAuthored[0]);
+	constexpr u_int uSEGS = 28;
+
+	const Zenith_Vector<HumanShoeRing> xRings = SubdivideShoeRings(axAuthored, uNUM, uHUMAN_RING_SUBDIV);
+	const u_int uDense = xRings.GetSize();
 
 	float fTotal = 0.0f;
-	for (u_int u = 1; u < uNUM; u++) { fTotal += fabsf(axRings[u].fZ - axRings[u - 1].fZ); }
+	for (u_int u = 1; u < uDense; u++) { fTotal += fabsf(xRings.Get(u).fZ - xRings.Get(u - 1).fZ); }
+	fTotal = std::max(fTotal, 0.0001f);
 
 	uint32_t uPrev = 0;
 	uint32_t uFirstRing = 0;
 	float fAccum = 0.0f;
-	for (u_int u = 0; u < uNUM; u++)
+	for (u_int u = 0; u < uDense; u++)
 	{
-		if (u > 0) { fAccum += fabsf(axRings[u].fZ - axRings[u - 1].fZ); }
-		const uint32_t uRing = AddHumanShoeRing(pxMesh, fSide, axRings[u], uSEGS, xIsland, fAccum / fTotal, uFootBone);
+		if (u > 0) { fAccum += fabsf(xRings.Get(u).fZ - xRings.Get(u - 1).fZ); }
+		const uint32_t uRing = AddHumanShoeRing(pxMesh, fSide, xRings.Get(u), uSEGS, xIsland, fAccum / fTotal, uFootBone);
 		if (u == 0)
 		{
 			uFirstRing = uRing;
@@ -427,12 +652,14 @@ void BuildHumanShoe(Zenith_MeshAsset* pxMesh, float fSide, u_int uFootBone, cons
 		uPrev = uRing;
 	}
 
+	const HumanShoeRing& xHeel = xRings.Get(0);
+	const HumanShoeRing& xToe = xRings.Get(uDense - 1);
 	// Heel cap (faces -Z) and toe cap (faces +Z).
 	CapHumanRing(pxMesh, uFirstRing, uSEGS,
-		Zenith_Maths::Vector3(fSide * 0.15f, axRings[0].fCy, axRings[0].fZ - 0.012f),
+		Zenith_Maths::Vector3(fSide * 0.15f, xHeel.fCy, xHeel.fZ - 0.012f),
 		Zenith_Maths::Vector3(0, 0, -1), xIsland, 0.5f, 0.0f, uFootBone, uFootBone, 0.0f, true);
 	CapHumanRing(pxMesh, uPrev, uSEGS,
-		Zenith_Maths::Vector3(fSide * 0.15f, axRings[uNUM - 1].fCy, axRings[uNUM - 1].fZ + 0.012f),
+		Zenith_Maths::Vector3(fSide * 0.15f, xToe.fCy, xToe.fZ + 0.012f),
 		Zenith_Maths::Vector3(0, 0, 1), xIsland, 0.5f, 1.0f, uFootBone, uFootBone, 0.0f, false);
 }
 
@@ -447,19 +674,19 @@ void BuildHumanTorso(Zenith_MeshAsset* pxMesh)
 	const u_int S = STICK_BONE_SPINE;
 	const HumanRing axRings[] = {
 		//   y      cx     cz      rx      rz      boneA boneB blend
-		{ 1.140f, 0.0f, -0.004f, 0.095f, 0.075f,  S, S, 0.0f },   // trap/neck base
-		{ 1.060f, 0.0f, -0.006f, 0.200f, 0.105f,  S, S, 0.0f },   // shoulder line
-		{ 0.950f, 0.0f, -0.005f, 0.190f, 0.118f,  S, S, 0.0f },   // upper chest
-		{ 0.800f, 0.0f,  0.002f, 0.178f, 0.120f,  S, S, 0.0f },   // chest
-		{ 0.620f, 0.0f,  0.004f, 0.160f, 0.110f,  S, S, 0.0f },   // lower ribs
-		{ 0.450f, 0.0f,  0.002f, 0.146f, 0.101f,  R, S, 0.80f },  // upper waist
-		{ 0.300f, 0.0f,  0.000f, 0.140f, 0.097f,  R, S, 0.50f },  // waist (narrowest)
-		{ 0.180f, 0.0f,  0.000f, 0.152f, 0.105f,  R, S, 0.22f },  // belt line
-		{ 0.060f, 0.0f,  0.000f, 0.170f, 0.115f,  R, R, 0.0f },   // hips
-		{ -0.040f, 0.0f, 0.000f, 0.172f, 0.118f,  R, R, 0.0f },   // widest (seat)
-		{ -0.120f, 0.0f, 0.000f, 0.150f, 0.106f,  R, R, 0.0f },   // pelvis bottom
+		{ 1.140f, 0.0f, -0.004f, 0.140f, 0.088f,  S, S, 0.0f },   // trap (wide enough for the deltoid to overlap)
+		{ 1.060f, 0.0f, -0.006f, 0.235f, 0.112f,  S, S, 0.0f },   // shoulder line (broad)
+		{ 0.950f, 0.0f, -0.005f, 0.212f, 0.124f,  S, S, 0.0f },   // upper chest (pecs)
+		{ 0.800f, 0.0f,  0.002f, 0.188f, 0.124f,  S, S, 0.0f },   // chest
+		{ 0.620f, 0.0f,  0.004f, 0.164f, 0.111f,  S, S, 0.0f },   // lower ribs
+		{ 0.450f, 0.0f,  0.002f, 0.150f, 0.101f,  R, S, 0.80f },  // upper waist
+		{ 0.300f, 0.0f,  0.000f, 0.144f, 0.097f,  R, S, 0.50f },  // waist (narrowest)
+		{ 0.180f, 0.0f,  0.000f, 0.160f, 0.108f,  R, S, 0.22f },  // belt line
+		{ 0.060f, 0.0f,  0.000f, 0.190f, 0.118f,  R, R, 0.0f },   // hips (wide to cover the thigh tops)
+		{ -0.040f, 0.0f, 0.000f, 0.196f, 0.120f,  R, R, 0.0f },   // widest (seat)
+		{ -0.120f, 0.0f, 0.000f, 0.172f, 0.110f,  R, R, 0.0f },   // pelvis bottom
 	};
-	constexpr u_int uSEGS = 24;
+	constexpr u_int uSEGS = 48;
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xUV_TORSO);
 
 	// Close the trunk: shoulder cap up top (the neck loft overlaps it), crotch
@@ -490,7 +717,7 @@ void BuildHumanHeadNeck(Zenith_MeshAsset* pxMesh)
 		{ 1.200f, 0.0f,  0.000f, 0.057f, 0.058f,  N, N, 0.0f },   // neck
 		{ 1.130f, 0.0f, -0.002f, 0.062f, 0.062f,  S, N, 0.60f },  // neck base (into torso)
 	};
-	constexpr u_int uSEGS = 24;
+	constexpr u_int uSEGS = 64;   // dense enough for sculpted facial features
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xUV_HEAD);
 
 	CapHumanRing(pxMesh, uFirst, uSEGS,
@@ -506,43 +733,87 @@ void BuildHumanArm(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 	// Shoulder pivot is at (side*0.3, 1.1); elbow at y 0.7; wrist at y 0.4.
 	const HumanRing axRings[] = {
 		//   y       cx            cz      rx      rz      boneA  boneB  blend
-		{ 1.155f, fSide * 0.270f, 0.000f, 0.088f, 0.076f,  S,     uUpper, 0.35f },  // deltoid top (overlaps torso)
-		{ 1.100f, fSide * 0.285f, 0.000f, 0.074f, 0.066f,  S,     uUpper, 0.70f },
-		{ 1.020f, fSide * 0.295f, 0.000f, 0.059f, 0.055f,  uUpper, uUpper, 0.0f },  // biceps
-		{ 0.920f, fSide * 0.300f, 0.000f, 0.052f, 0.049f,  uUpper, uUpper, 0.0f },
-		{ 0.790f, fSide * 0.300f, 0.000f, 0.044f, 0.043f,  uUpper, uUpper, 0.0f },
-		{ 0.715f, fSide * 0.300f, 0.000f, 0.040f, 0.040f,  uUpper, uLower, 0.50f }, // elbow
-		{ 0.640f, fSide * 0.300f, 0.000f, 0.043f, 0.042f,  uLower, uLower, 0.0f },  // forearm bulge
-		{ 0.520f, fSide * 0.300f, 0.000f, 0.035f, 0.034f,  uLower, uLower, 0.0f },
-		{ 0.435f, fSide * 0.300f, 0.000f, 0.027f, 0.029f,  uLower, uHand, 0.45f },  // wrist
+		{ 1.150f, fSide * 0.205f, -0.004f, 0.102f, 0.094f,  S,     uUpper, 0.15f },  // deltoid cap — sits over the shoulder, well inside the torso
+		{ 1.095f, fSide * 0.248f, 0.000f, 0.096f, 0.086f,  S,     uUpper, 0.50f },  // deltoid — bridges torso to arm (no gap)
+		{ 1.020f, fSide * 0.290f, 0.000f, 0.080f, 0.072f,  uUpper, uUpper, 0.0f },  // biceps peak
+		{ 0.920f, fSide * 0.300f, 0.000f, 0.066f, 0.061f,  uUpper, uUpper, 0.0f },  // mid upper arm
+		{ 0.790f, fSide * 0.300f, 0.000f, 0.053f, 0.050f,  uUpper, uUpper, 0.0f },  // above elbow
+		{ 0.748f, fSide * 0.300f, 0.000f, 0.049f, 0.047f,  uUpper, uLower, 0.20f }, // elbow upper loop
+		{ 0.715f, fSide * 0.300f, 0.000f, 0.046f, 0.045f,  uUpper, uLower, 0.50f }, // elbow (graduated loops bend cleanly)
+		{ 0.682f, fSide * 0.300f, 0.000f, 0.049f, 0.047f,  uUpper, uLower, 0.80f }, // elbow lower loop
+		{ 0.640f, fSide * 0.300f, 0.000f, 0.055f, 0.053f,  uLower, uLower, 0.0f },  // forearm bulge
+		{ 0.520f, fSide * 0.300f, 0.000f, 0.044f, 0.043f,  uLower, uLower, 0.0f },  // forearm
+		{ 0.435f, fSide * 0.300f, 0.000f, 0.031f, 0.033f,  uLower, uHand, 0.45f },  // wrist
 	};
-	constexpr u_int uSEGS = 14;
+	constexpr u_int uSEGS = 28;
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xIsland);
 
-	// Shoulder cap — visible from above.
+	// Shoulder cap — closes the top of the deltoid (its inner half is inside the torso).
 	CapHumanRing(pxMesh, uFirst, uSEGS,
-		Zenith_Maths::Vector3(fSide * 0.268f, 1.172f, 0.0f), Zenith_Maths::Vector3(0, 1, 0),
-		xIsland, 0.5f, 0.0f, S, uUpper, 0.35f, true);
+		Zenith_Maths::Vector3(fSide * 0.205f, 1.166f, -0.004f), Zenith_Maths::Vector3(0, 1, 0),
+		xIsland, 0.5f, 0.0f, S, uUpper, 0.15f, true);
+}
+
+// Loft a tapered digit articulated over THREE phalanx bones (proximal/middle/
+// distal) so it bends like a real finger. Rings stay horizontal (the digit is
+// mostly vertical) and the per-ring skin transitions across the two knuckles.
+void BuildHumanDigit(Zenith_MeshAsset* pxMesh, const Zenith_Maths::Vector3& xRoot,
+                     const Zenith_Maths::Vector3& xTip, float fRootR, float fTipR,
+                     u_int uProx, u_int uMid, u_int uDist, const HumanUVIsland& xIsland)
+{
+	constexpr u_int uNUM = 4;
+	constexpr u_int uSEGS = 10;
+	// ring0 proximal, ring1 prox/mid knuckle, ring2 mid/distal knuckle, ring3 distal.
+	const u_int auBoneA[uNUM] = { uProx, uProx, uMid,  uDist };
+	const u_int auBoneB[uNUM] = { uProx, uMid,  uDist, uDist };
+	const float afBlend[uNUM] = { 0.0f,  0.5f,  0.5f,  0.0f  };
+	HumanRing axRings[uNUM];
+	for (u_int i = 0; i < uNUM; i++)
+	{
+		const float fT = static_cast<float>(i) / static_cast<float>(uNUM - 1);
+		const Zenith_Maths::Vector3 xC = xRoot + (xTip - xRoot) * fT;
+		const float fR = (fRootR + (fTipR - fRootR) * fT) * (1.0f + 0.18f * sinf(fT * fHUMAN_PI));
+		axRings[i] = { xC.y, xC.x, xC.z, fR, fR, auBoneA[i], auBoneB[i], afBlend[i] };
+	}
+	AddHumanLoft(pxMesh, axRings, uNUM, uSEGS, xIsland);
+	const uint32_t uLast = pxMesh->GetNumVerts() - (uSEGS + 1);
+	const Zenith_Maths::Vector3 xCap = xTip + (xTip - xRoot) * 0.12f;
+	CapHumanRing(pxMesh, uLast, uSEGS, xCap, Zenith_Maths::Vector3(0, -1, 0),
+		xIsland, 0.5f, 1.0f, uDist, uDist, 0.0f, false);
 }
 
 void BuildHumanHand(Zenith_MeshAsset* pxMesh, float fSide, u_int uLower, u_int uHand,
                     const HumanUVIsland& xIsland)
 {
-	// Mitt hand: thin across X (palm faces the thigh), broad front-to-back.
-	const HumanRing axRings[] = {
-		//   y       cx            cz      rx      rz      boneA  boneB blend
-		{ 0.425f, fSide * 0.300f, 0.000f, 0.026f, 0.030f,  uLower, uHand, 0.65f },  // wrist overlap
-		{ 0.360f, fSide * 0.302f, 0.004f, 0.026f, 0.044f,  uHand, uHand, 0.0f },    // palm
-		{ 0.285f, fSide * 0.303f, 0.006f, 0.024f, 0.043f,  uHand, uHand, 0.0f },    // knuckles
-		{ 0.235f, fSide * 0.302f, 0.004f, 0.018f, 0.032f,  uHand, uHand, 0.0f },    // finger taper
+	const float fCx = fSide * 0.302f;
+	// Palm: flattened (thin across X, broad front-to-back in Z), wrist -> knuckles.
+	const HumanRing axPalm[] = {
+		//   y       cx     cz      rx      rz      boneA  boneB  blend
+		{ 0.425f, fSide * 0.300f, 0.000f, 0.026f, 0.030f,  uLower, uHand, 0.65f },  // wrist
+		{ 0.380f, fCx,            0.004f, 0.024f, 0.044f,  uHand, uHand, 0.0f },     // mid-palm
+		{ 0.330f, fCx,            0.006f, 0.022f, 0.050f,  uHand, uHand, 0.0f },     // knuckle line
+		{ 0.305f, fCx,            0.006f, 0.020f, 0.048f,  uHand, uHand, 0.0f },     // knuckle base
 	};
-	constexpr u_int uSEGS = 10;
-	AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xIsland);
-
+	constexpr u_int uSEGS = 24;
+	AddHumanLoft(pxMesh, axPalm, sizeof(axPalm) / sizeof(axPalm[0]), uSEGS, xIsland);
 	const uint32_t uLastRing = pxMesh->GetNumVerts() - (uSEGS + 1);
 	CapHumanRing(pxMesh, uLastRing, uSEGS,
-		Zenith_Maths::Vector3(fSide * 0.302f, 0.222f, 0.004f), Zenith_Maths::Vector3(0, -1, 0),
+		Zenith_Maths::Vector3(fCx, 0.300f, 0.006f), Zenith_Maths::Vector3(0, -1, 0),
 		xIsland, 0.5f, 1.0f, uHand, uHand, 0.0f, false);
+
+	// Five articulated digits (index, middle, ring, pinky, thumb), each skinned to
+	// its three phalanx bones. The shared layout (GetHumanHandDigits) matches the
+	// finger bones added in CreateStickFigureSkeleton, so the bind pose lines up.
+	const int iHand = (fSide < 0.0f) ? 0 : 1;
+	HumanDigitDef axDigits[5];
+	GetHumanHandDigits(fSide, axDigits);
+	for (int d = 0; d < 5; d++)
+	{
+		BuildHumanDigit(pxMesh, axDigits[d].xRoot, axDigits[d].xTip,
+			axDigits[d].fRootR, axDigits[d].fRootR * 0.72f,
+			HumanFingerBone(iHand, d, 0), HumanFingerBone(iHand, d, 1), HumanFingerBone(iHand, d, 2),
+			xIsland);
+	}
 }
 
 void BuildHumanLeg(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uLower, u_int uFoot,
@@ -552,18 +823,21 @@ void BuildHumanLeg(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 	// Hip pivot at (side*0.15, 0); knee at y -0.5; ankle at y -1.0.
 	const HumanRing axRings[] = {
 		//   y       cx            cz      rx      rz      boneA  boneB  blend
-		{ -0.020f, fSide * 0.143f, 0.004f, 0.090f, 0.099f,  R,     uUpper, 0.50f }, // thigh top (in pelvis)
-		{ -0.120f, fSide * 0.149f, 0.004f, 0.087f, 0.096f,  R,     uUpper, 0.88f },
-		{ -0.250f, fSide * 0.150f, 0.002f, 0.078f, 0.086f,  uUpper, uUpper, 0.0f },
-		{ -0.400f, fSide * 0.150f, 0.000f, 0.066f, 0.072f,  uUpper, uUpper, 0.0f },
-		{ -0.480f, fSide * 0.150f, 0.000f, 0.058f, 0.063f,  uUpper, uLower, 0.50f }, // knee
-		{ -0.560f, fSide * 0.150f, -0.002f, 0.056f, 0.061f, uLower, uLower, 0.0f },
-		{ -0.660f, fSide * 0.150f, -0.006f, 0.060f, 0.067f, uLower, uLower, 0.0f },  // calf bulge
-		{ -0.800f, fSide * 0.150f, -0.004f, 0.046f, 0.051f, uLower, uLower, 0.0f },
-		{ -0.920f, fSide * 0.150f, 0.000f, 0.036f, 0.040f,  uLower, uFoot, 0.40f },  // ankle
-		{ -0.975f, fSide * 0.150f, 0.000f, 0.034f, 0.038f,  uFoot, uFoot, 0.0f },    // into the shoe
+		{  0.075f, fSide * 0.130f, 0.004f, 0.060f, 0.068f,  R,     uUpper, 0.18f }, // thigh root — tucked inside the pelvis so the seam is hidden
+		{ -0.020f, fSide * 0.143f, 0.004f, 0.101f, 0.109f,  R,     uUpper, 0.50f }, // hip
+		{ -0.120f, fSide * 0.149f, 0.004f, 0.099f, 0.107f,  R,     uUpper, 0.88f }, // quad
+		{ -0.250f, fSide * 0.150f, 0.002f, 0.089f, 0.096f,  uUpper, uUpper, 0.0f }, // mid thigh
+		{ -0.400f, fSide * 0.150f, 0.000f, 0.073f, 0.080f,  uUpper, uUpper, 0.0f }, // above knee
+		{ -0.445f, fSide * 0.150f, 0.000f, 0.066f, 0.071f,  uUpper, uLower, 0.20f }, // knee upper loop
+		{ -0.480f, fSide * 0.150f, 0.000f, 0.063f, 0.068f,  uUpper, uLower, 0.50f }, // knee (graduated loops bend cleanly)
+		{ -0.515f, fSide * 0.150f, -0.001f, 0.064f, 0.070f, uUpper, uLower, 0.80f }, // knee lower loop
+		{ -0.560f, fSide * 0.150f, -0.002f, 0.064f, 0.070f, uLower, uLower, 0.0f },  // upper calf
+		{ -0.660f, fSide * 0.150f, -0.008f, 0.071f, 0.079f, uLower, uLower, 0.0f },  // calf belly
+		{ -0.800f, fSide * 0.150f, -0.004f, 0.052f, 0.058f, uLower, uLower, 0.0f },  // lower calf
+		{ -0.920f, fSide * 0.150f, 0.000f, 0.040f, 0.044f,  uLower, uFoot, 0.40f },  // ankle
+		{ -0.975f, fSide * 0.150f, 0.000f, 0.037f, 0.041f,  uFoot, uFoot, 0.0f },    // into the shoe
 	};
-	constexpr u_int uSEGS = 18;
+	constexpr u_int uSEGS = 36;
 	AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xIsland);
 	// No caps: the top ends inside the pelvis, the bottom inside the shoe.
 }
@@ -572,32 +846,265 @@ void BuildHumanLeg(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 // Post-assembly passes.
 //------------------------------------------------------------------------------
 
-// Sculpt facial landmarks the ring loft can't express: nose, chin and brow
-// are pushed out of the front of the head with gaussian falloffs.
+// Sculpt real facial anatomy the ring loft can't express. Feature centres are
+// aligned to the painted atlas features (PaintHumanHead) — model Y derived from
+// the head loft's cumulative-distance V-spread — so the 3D relief reinforces the
+// painted eyes/nose/lips instead of fighting them. Front features are gated to
+// the front hemisphere; ears are separate lateral protrusions near z~0.
 void SculptHumanFace(Zenith_MeshAsset* pxMesh)
 {
 	for (uint32_t u = 0; u < pxMesh->GetNumVerts(); u++)
 	{
 		Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(u);
-		if (xPos.y < 1.26f || xPos.y > 1.60f || xPos.z < 0.035f)
+		const float x = xPos.x;
+		const float y = xPos.y;
+		const float z = xPos.z;
+		if (y < 1.255f || y > 1.605f)
 		{
-			continue;   // only the front of the head
+			continue;   // head region only
 		}
 
-		// Nose: forward bump centred just below the eye line, slightly drooped.
-		const float fNose = HumanGauss(xPos.x, xPos.y - 1.405f, 0.024f, 0.034f);
-		xPos.z += 0.022f * fNose;
-		xPos.y -= 0.004f * fNose;
+		// Front-hemisphere weight so the sides/back of the skull stay untouched.
+		const float fFront = std::clamp(z / 0.04f, 0.0f, 1.0f);
 
-		// Chin: subtle forward push at the jaw centre.
-		xPos.z += 0.008f * HumanGauss(xPos.x, xPos.y - 1.298f, 0.030f, 0.022f);
+		float fDZ = 0.0f;   // forward (+z) relief, applied with fFront
 
-		// Brow ridge: wide shallow band above the eyes.
-		xPos.z += 0.006f * HumanGauss(xPos.x * 0.55f, xPos.y - 1.462f, 0.050f, 0.018f);
+		// Brow ridge — protrudes above the eyes, widest at centre.
+		fDZ += 0.013f * HumanGauss(x * 0.7f, y - 1.454f, 0.056f, 0.013f);
 
-		// Eye sockets: slight recess either side of the nose bridge.
-		xPos.z -= 0.006f * (HumanGauss(xPos.x - 0.034f, xPos.y - 1.442f, 0.020f, 0.016f)
-		                  + HumanGauss(xPos.x + 0.034f, xPos.y - 1.442f, 0.020f, 0.016f));
+		// Eye sockets (recessed) each with an eyeball dome and an upper-lid fold.
+		for (int s = -1; s <= 1; s += 2)
+		{
+			const float fEX = x - static_cast<float>(s) * 0.034f;
+			fDZ -= 0.019f * HumanGauss(fEX, y - 1.429f, 0.026f, 0.020f);   // socket recess (deeper)
+			fDZ += 0.010f * HumanGauss(fEX, y - 1.426f, 0.014f, 0.012f);   // eyeball dome
+			fDZ += 0.006f * HumanGauss(fEX, y - 1.438f, 0.020f, 0.006f);   // upper-lid fold
+		}
+
+		// Nose — narrow bridge ridge, rounded tip, nostril wings, sub-nose scoop.
+		fDZ += 0.022f * HumanGauss(x, y - 1.418f, 0.012f, 0.040f);        // bridge
+		fDZ += 0.017f * HumanGauss(x, y - 1.388f, 0.015f, 0.014f);        // tip ball
+		for (int s = -1; s <= 1; s += 2)
+		{
+			fDZ += 0.009f * HumanGauss(x - static_cast<float>(s) * 0.012f, y - 1.382f, 0.010f, 0.012f);  // wings
+		}
+		fDZ -= 0.006f * HumanGauss(x, y - 1.360f, 0.020f, 0.009f);        // under the nose
+
+		// Cheekbones (zygomatic).
+		for (int s = -1; s <= 1; s += 2)
+		{
+			fDZ += 0.009f * HumanGauss(x - static_cast<float>(s) * 0.046f, y - 1.396f, 0.028f, 0.024f);
+		}
+
+		// Lips: fuller and closed (the gap/seam used to read as an open mouth).
+		fDZ += 0.013f * HumanGauss(x, y - 1.338f, 0.030f, 0.011f);        // upper lip
+		fDZ += 0.015f * HumanGauss(x, y - 1.325f, 0.029f, 0.012f);        // lower lip (fuller)
+		fDZ -= 0.0025f * HumanGauss(x, y - 1.332f, 0.032f, 0.0035f);     // mouth seam (subtle)
+		fDZ -= 0.004f * HumanGauss(x, y - 1.351f, 0.006f, 0.010f);        // philtrum
+
+		// Chin (mental protrusion) + mentolabial crease above it.
+		fDZ += 0.013f * HumanGauss(x, y - 1.300f, 0.026f, 0.018f);
+		fDZ -= 0.005f * HumanGauss(x, y - 1.316f, 0.024f, 0.008f);
+
+		// Jawline — define the mandible corners for a sharper jaw.
+		for (int s = -1; s <= 1; s += 2)
+		{
+			fDZ += 0.007f * HumanGauss(x - static_cast<float>(s) * 0.058f, y - 1.306f, 0.022f, 0.026f);
+		}
+
+		xPos.z += fDZ * fFront;
+		// The nose tip droops a touch.
+		xPos.y -= 0.004f * HumanGauss(x, y - 1.388f, 0.015f, 0.014f) * fFront;
+
+		// Ears — lateral protrusions at the temple line with a helix rim and a
+		// recessed concha bowl, near z~0 on both sides.
+		const float fEarZ = std::clamp(1.0f - std::abs(z + 0.004f) / 0.042f, 0.0f, 1.0f);
+		for (int s = -1; s <= 1; s += 2)
+		{
+			const float fEar = HumanGauss(x - static_cast<float>(s) * 0.085f, y - 1.418f, 0.019f, 0.034f) * fEarZ;
+			xPos.x += static_cast<float>(s) * 0.024f * fEar;   // push outward (helix rim)
+			xPos.z -= 0.006f * fEar;                           // and slightly back
+			const float fConcha = HumanGauss(x - static_cast<float>(s) * 0.088f, y - 1.416f, 0.008f, 0.014f) * fEarZ;
+			xPos.x -= static_cast<float>(s) * 0.012f * fConcha;  // concha bowl indent
+		}
+		// (Hair is now real geometry — see BuildHumanHair — so the scalp is no
+		// longer inflated here.)
+	}
+}
+
+// Subtle muscular / skeletal surface definition on the trunk and bare arms.
+// Gentle on the clothed torso/legs (cloth drapes over muscle) and a touch
+// stronger on the bare upper arms. Runs before normal computation so shading
+// follows the relief.
+void SculptHumanBody(Zenith_MeshAsset* pxMesh)
+{
+	for (uint32_t u = 0; u < pxMesh->GetNumVerts(); u++)
+	{
+		Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(u);
+		const float x = xPos.x;
+		const float y = xPos.y;
+		const float z = xPos.z;
+		if (y > 1.16f)
+		{
+			continue;   // head/neck handled by SculptHumanFace
+		}
+
+		const float fFront = std::clamp(z / 0.06f, 0.0f, 1.0f);
+		const float fBack = std::clamp(-z / 0.06f, 0.0f, 1.0f);
+
+		// Trunk (clothed -> subtle): pecs, sternum groove, clavicles on the front;
+		// spine groove + shoulder blades on the back.
+		if (std::abs(x) < 0.24f && y > -0.10f)
+		{
+			float fF = 0.0f;
+			for (int s = -1; s <= 1; s += 2) { fF += 0.011f * HumanGauss(x - static_cast<float>(s) * 0.078f, y - 0.93f, 0.058f, 0.075f); }   // pecs
+			fF -= 0.006f * HumanGauss(x, y - 0.88f, 0.012f, 0.100f);                                                                          // sternum groove
+			for (int s = -1; s <= 1; s += 2) { fF += 0.007f * HumanGauss(x - static_cast<float>(s) * 0.085f, y - 1.045f, 0.058f, 0.015f); }  // clavicles
+			xPos.z += fF * fFront;
+
+			float fScap = 0.0f;
+			for (int s = -1; s <= 1; s += 2) { fScap += 0.008f * HumanGauss(x - static_cast<float>(s) * 0.100f, y - 0.98f, 0.060f, 0.055f); }
+			xPos.z += 0.009f * HumanGauss(x, y - 0.62f, 0.020f, 0.420f) * fBack;   // spine groove (inward)
+			xPos.z -= fScap * fBack;                                              // scapulae (outward)
+		}
+
+		// Bare upper-arm biceps (front) / triceps (back).
+		for (int s = -1; s <= 1; s += 2)
+		{
+			const float fArm = HumanGauss(x - static_cast<float>(s) * 0.300f, y - 0.95f, 0.045f, 0.085f);
+			xPos.z += 0.011f * fArm * fFront;
+			xPos.z -= 0.006f * fArm * fBack;
+		}
+
+		// Kneecaps (front of the knee).
+		for (int s = -1; s <= 1; s += 2)
+		{
+			xPos.z += 0.008f * HumanGauss(x - static_cast<float>(s) * 0.150f, y + 0.480f, 0.045f, 0.045f) * fFront;
+		}
+	}
+}
+
+// Real hair geometry: a layered shell of stacked rings over the crown/back/sides
+// that snaps to an around-the-head hairline (high at the front so the face stays
+// open, lower over the sides/back), with a scalloped/strandy outer surface for a
+// hair-like silhouette rather than a smooth helmet. Rigidly skinned to the head
+// bone and UV-mapped into the painted hair region so it reads dark. Built AFTER
+// the face sculpt so the sculpt never deforms it.
+void BuildHumanHair(Zenith_MeshAsset* pxMesh)
+{
+	const u_int H = STICK_BONE_HEAD;
+	constexpr u_int uSEGS = 56;
+	constexpr u_int uRINGS = 16;
+
+	// Head surface radius/centre over the hair band (piecewise-linear, y 1.40..1.60).
+	auto HeadProfile = [](float fY, float& fRx, float& fRz, float& fCz)
+	{
+		struct P { float fY, fRx, fRz, fCz; };
+		static const P aP[] = {
+			{ 1.600f, 0.050f, 0.058f, -0.008f },
+			{ 1.520f, 0.085f, 0.093f, -0.004f },
+			{ 1.460f, 0.087f, 0.097f,  0.000f },
+			{ 1.400f, 0.081f, 0.093f,  0.006f },
+		};
+		const float fC = std::clamp(fY, aP[3].fY, aP[0].fY);
+		for (int i = 0; i < 3; i++)
+		{
+			if (fC <= aP[i].fY && fC >= aP[i + 1].fY)
+			{
+				const float fF = (aP[i].fY - fC) / (aP[i].fY - aP[i + 1].fY);
+				fRx = aP[i].fRx + (aP[i + 1].fRx - aP[i].fRx) * fF;
+				fRz = aP[i].fRz + (aP[i + 1].fRz - aP[i].fRz) * fF;
+				fCz = aP[i].fCz + (aP[i + 1].fCz - aP[i].fCz) * fF;
+				return;
+			}
+		}
+		fRx = aP[0].fRx; fRz = aP[0].fRz; fCz = aP[0].fCz;
+	};
+
+	uint32_t uPrevRow = 0;
+	uint32_t uFirstRow = 0;
+	for (u_int r = 0; r < uRINGS; r++)
+	{
+		const float fT = static_cast<float>(r) / static_cast<float>(uRINGS - 1);
+		const float fY = 1.605f - fT * 0.215f;   // ~1.605 (crown) -> 1.39
+		const uint32_t uRow = pxMesh->GetNumVerts();
+		for (u_int s = 0; s <= uSEGS; s++)
+		{
+			const float fAng = fHUMAN_TWO_PI * static_cast<float>(s) / static_cast<float>(uSEGS);
+			const float fSin = sinf(fAng);
+			const float fCos = cosf(fAng);
+			const float fFrontness = (-fCos) * 0.5f + 0.5f;             // 1 at front (ang=pi), 0 at back
+			const float fHairline = 1.392f + 0.094f * powf(fFrontness, 1.7f);   // high front, low back/sides
+			const float fVY = std::max(fY, fHairline);
+			float fRx, fRz, fCz;
+			HeadProfile(fVY, fRx, fRz, fCz);
+			// Hair thickness with a strandy/scalloped outer surface.
+			const float fStrand = HumanValueNoise2D(fAng * 4.0f, fT * 7.0f, 71u) - 0.5f;
+			const float fOff = 0.022f + 0.011f * fStrand + 0.006f * sinf(fAng * 9.0f);
+			const Zenith_Maths::Vector3 xPos((fRx + fOff) * fSin, fVY, fCz - (fRz + fOff) * fCos);
+			const Zenith_Maths::Vector3 xNrm = glm::normalize(Zenith_Maths::Vector3(fSin, 0.25f, -fCos));
+			const float fVN = 0.03f + fT * 0.16f;   // map into the painted hair region (dark)
+			pxMesh->AddVertex(xPos, xNrm, Zenith_Maths::Vector2(xUV_HEAD.U(static_cast<float>(s) / static_cast<float>(uSEGS)), xUV_HEAD.V(fVN)));
+			pxMesh->SetVertexSkinning(pxMesh->GetNumVerts() - 1, glm::uvec4(H, H, 0, 0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+		}
+		if (r == 0) { uFirstRow = uRow; }
+		else { StitchHumanRings(pxMesh, uPrevRow, uRow, uSEGS); }
+		uPrevRow = uRow;
+	}
+
+	// Crown cap closes the top of the hair.
+	CapHumanRing(pxMesh, uFirstRow, uSEGS,
+		Zenith_Maths::Vector3(0.0f, 1.628f, -0.010f), Zenith_Maths::Vector3(0, 1, 0),
+		xUV_HEAD, 0.5f, 0.0f, H, H, 0.0f, true);
+}
+
+// Separate eyeball geometry (like the UE5 mannequin): a small sphere per eye,
+// skinned rigidly to its eye bone so it can later be aimed, and UV-projected onto
+// the painted eye in the atlas (sclera/iris/pupil/catchlight) — the sphere's front
+// pole lands on the iris and the surface fans out to the sclera. Sits ~3mm proud
+// of the sculpted socket so it reads as a real eyeball. Built after the sculpt.
+void BuildHumanEyes(Zenith_MeshAsset* pxMesh)
+{
+	struct EyeDef { float fCx; u_int uBone; float fUNorm; };
+	const EyeDef axEyes[2] = {
+		{ -0.034f, STICK_BONE_LEFT_EYE,  0.563f },
+		{  0.034f, STICK_BONE_RIGHT_EYE, 0.437f },
+	};
+	const float fCy = 1.429f;
+	const float fCz = 0.062f;
+	const float fR = 0.018f;
+	const float fEyeVN = 0.328f;
+	constexpr u_int uLAT = 8;
+	constexpr u_int uLON = 12;
+
+	for (const EyeDef& xE : axEyes)
+	{
+		const float fU0 = xUV_HEAD.U(xE.fUNorm);
+		const float fV0 = xUV_HEAD.V(fEyeVN);
+		const float fHalfU = xUV_HEAD.U(xE.fUNorm + 0.027f) - fU0;   // almond half-extents in atlas UV
+		const float fHalfV = xUV_HEAD.V(fEyeVN + 0.016f) - fV0;
+		uint32_t uPrevRow = 0;
+		for (u_int la = 0; la <= uLAT; la++)
+		{
+			const float fTheta = fHUMAN_PI * static_cast<float>(la) / static_cast<float>(uLAT);   // 0 = front pole (+z, iris)
+			const float fSinT = sinf(fTheta);
+			const float fCosT = cosf(fTheta);
+			const uint32_t uRow = pxMesh->GetNumVerts();
+			for (u_int lo = 0; lo <= uLON; lo++)
+			{
+				const float fPhi = fHUMAN_TWO_PI * static_cast<float>(lo) / static_cast<float>(uLON);
+				const float fDx = fR * fSinT * cosf(fPhi);
+				const float fDy = fR * fSinT * sinf(fPhi);
+				const float fDz = fR * fCosT;
+				const Zenith_Maths::Vector3 xPos(xE.fCx + fDx, fCy + fDy, fCz + fDz);
+				const Zenith_Maths::Vector3 xNrm = glm::normalize(Zenith_Maths::Vector3(fDx, fDy, fDz) + Zenith_Maths::Vector3(0, 0, 1e-4f));
+				const Zenith_Maths::Vector2 xUV(fU0 + (fDx / fR) * fHalfU, fV0 - (fDy / fR) * fHalfV);
+				pxMesh->AddVertex(xPos, xNrm, xUV);
+				pxMesh->SetVertexSkinning(pxMesh->GetNumVerts() - 1, glm::uvec4(xE.uBone, xE.uBone, 0, 0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+			}
+			if (la > 0) { StitchHumanRings(pxMesh, uPrevRow, uRow, uLON); }
+			uPrevRow = uRow;
+		}
 	}
 }
 
@@ -607,24 +1114,39 @@ void ComputeHumanSmoothNormals(Zenith_MeshAsset* pxMesh)
 {
 	const uint32_t uNumVerts = pxMesh->GetNumVerts();
 
-	// Weld map: weld[i] = lowest vertex index sharing (quantized) position.
+	// Weld map: weld[i] = lowest vertex index sharing (quantized) position. Built
+	// via a hash on the packed quantized position so the pass is O(N), not the
+	// original O(N^2) nested scan — the body is now ~10k verts and this runs on
+	// every tools boot. Iterating i ascending means the first index stored for a
+	// key is its lowest index (== the old "lowest matching j" root), so the result
+	// is identical to the nested-scan version.
 	Zenith_Vector<uint32_t> xWeld(uNumVerts);
 	auto Quantize = [](float f) { return static_cast<int>(std::floor(f * 4096.0f + 0.5f)); };
+	auto Pack = [](int iX, int iY, int iZ) -> int64_t
+	{
+		// Quantized body coords sit well inside +/-2^20; offset to non-negative and
+		// pack three 21-bit fields into one 63-bit key (collision-free for the rig).
+		constexpr int64_t kOffset = 1ll << 20;
+		return (static_cast<int64_t>(iX) + kOffset)
+			| ((static_cast<int64_t>(iY) + kOffset) << 21)
+			| ((static_cast<int64_t>(iZ) + kOffset) << 42);
+	};
+	std::unordered_map<int64_t, uint32_t> xPosToRoot;
+	xPosToRoot.reserve(uNumVerts);
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		const Zenith_Maths::Vector3& xPi = pxMesh->m_xPositions.Get(i);
-		const int iX = Quantize(xPi.x), iY = Quantize(xPi.y), iZ = Quantize(xPi.z);
-		uint32_t uRoot = i;
-		for (uint32_t j = 0; j < i; j++)
+		const int64_t iKey = Pack(Quantize(xPi.x), Quantize(xPi.y), Quantize(xPi.z));
+		const auto xIt = xPosToRoot.find(iKey);
+		if (xIt != xPosToRoot.end())
 		{
-			const Zenith_Maths::Vector3& xPj = pxMesh->m_xPositions.Get(j);
-			if (Quantize(xPj.x) == iX && Quantize(xPj.y) == iY && Quantize(xPj.z) == iZ)
-			{
-				uRoot = xWeld.Get(j);
-				break;
-			}
+			xWeld.PushBack(xIt->second);
 		}
-		xWeld.PushBack(uRoot);
+		else
+		{
+			xPosToRoot.emplace(iKey, i);
+			xWeld.PushBack(i);
+		}
 	}
 
 	Zenith_Vector<Zenith_Maths::Vector3> xAccum(uNumVerts);
@@ -713,10 +1235,12 @@ void SanitizeHumanTangents(Zenith_MeshAsset* pxMesh)
 //------------------------------------------------------------------------------
 static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
 {
-	Zenith_Assert(pxSkeleton->GetNumBones() == STICK_BONE_COUNT, "StickFigure rig changed — body proportions are authored against the 16-bone layout");
+	Zenith_Assert(pxSkeleton->GetNumBones() == STICK_BONE_COUNT, "StickFigure rig changed — body proportions are authored against the 16-core + UE5-additions layout");
 
 	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
-	pxMesh->Reserve(2048, 12288);
+	// High-poly: ~10k verts after segment + Catmull-Rom ring subdivision. Reserve
+	// generously so the per-part lofts don't trigger repeated vector reallocations.
+	pxMesh->Reserve(16384, 98304);
 
 	BuildHumanTorso(pxMesh);
 	BuildHumanHeadNeck(pxMesh);
@@ -730,12 +1254,21 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	BuildHumanShoe(pxMesh, 1.0f, STICK_BONE_RIGHT_FOOT, xUV_FOOT_R);
 
 	SculptHumanFace(pxMesh);
+	SculptHumanBody(pxMesh);
+	BuildHumanHair(pxMesh);   // real hair geometry, after sculpt so it isn't deformed
+	const uint32_t uEyeIndexStart = pxMesh->GetNumIndices();
+	BuildHumanEyes(pxMesh);   // separate eyeball geometry skinned to the eye bones
 	ComputeHumanSmoothNormals(pxMesh);
 	pxMesh->GenerateTangents();
 	SanitizeHumanTangents(pxMesh);
 	BakeHumanVertexAO(pxMesh);
 
-	pxMesh->AddSubmesh(0, pxMesh->GetNumIndices(), 0);
+	// Two submeshes: body (material 0 — skin/cloth, subsurface) and the eyeballs
+	// (material 1 — a glossy clear-coat cornea). The eye verts are the contiguous
+	// tail added by BuildHumanEyes; the post-passes don't change topology so the
+	// index range is stable.
+	pxMesh->AddSubmesh(0, uEyeIndexStart, 0);
+	pxMesh->AddSubmesh(uEyeIndexStart, pxMesh->GetNumIndices() - uEyeIndexStart, 1);
 	pxMesh->ComputeBounds();
 	return pxMesh;
 }
@@ -959,7 +1492,7 @@ Flux_MeshGeometry* Zenith_Tools_CreateStaticFluxMeshGeometry(const Zenith_MeshAs
 namespace
 {
 
-constexpr int32_t iHUMAN_ATLAS_SIZE = 1024;
+constexpr int32_t iHUMAN_ATLAS_SIZE = 2048;
 
 struct HumanAtlas
 {
@@ -1032,14 +1565,19 @@ void PaintHumanIsland(HumanAtlas& xAtlas, const HumanUVIsland& xIsland, TFn&& xF
 //------------------------------------------------------------------------------
 void HumanSkinBase(float fUN, float fVN, u_int uSeed, HumanPixel& xP)
 {
-	// Warm skin with low-frequency tonal mottle and faint pores.
+	// Warm skin: low-frequency tonal mottle + a subtle subsurface-red undertone +
+	// faint pores. Slightly brighter, warmer and more saturated than before so it
+	// reads as living skin rather than grey clay, with a touch of sheen.
 	const float fMottle = HumanFBM2D(fUN * 18.0f, fVN * 18.0f, 3, uSeed) - 0.5f;
+	const float fUnder = HumanFBM2D(fUN * 7.0f, fVN * 7.0f, 3, uSeed + 3u) - 0.5f;        // blotchy undertone
 	const float fPores = HumanValueNoise2D(fUN * 160.0f, fVN * 160.0f, uSeed + 7u) - 0.5f;
-	xP.fR = 0.80f + fMottle * 0.07f;
-	xP.fG = 0.605f + fMottle * 0.055f;
-	xP.fB = 0.50f + fMottle * 0.04f;
-	xP.fHeight = 0.5f + fPores * 0.06f;
-	xP.fRough = 0.55f + fMottle * 0.06f;
+	const float fMicro = HumanValueNoise2D(fUN * 380.0f, fVN * 380.0f, uSeed + 9u) - 0.5f; // fine pore grain
+	const float fFreckle = HumanSmoothStep(0.80f, 0.93f, HumanValueNoise2D(fUN * 300.0f, fVN * 300.0f, uSeed + 13u));
+	xP.fR = 0.870f + fMottle * 0.075f + fUnder * 0.045f - fFreckle * 0.10f;
+	xP.fG = 0.620f + fMottle * 0.060f - fUnder * 0.010f - fFreckle * 0.085f;
+	xP.fB = 0.500f + fMottle * 0.040f - fUnder * 0.020f - fFreckle * 0.060f;
+	xP.fHeight = 0.5f + fPores * 0.06f + fMicro * 0.03f;
+	xP.fRough = 0.58f + fMottle * 0.06f + fMicro * 0.05f;   // matte skin (avoids a blue sky-specular sheen)
 	xP.fMetal = 0.0f;
 }
 
@@ -1048,13 +1586,14 @@ void HumanShirtCloth(float fU, float fV, HumanPixel& xP)
 	// Heathered slate-blue jersey: fbm tone + fine knit rows.
 	const float fHeather = HumanFBM2D(fU * 34.0f, fV * 34.0f, 3, 901u) - 0.5f;
 	const float fKnit = sinf(fV * fHUMAN_TWO_PI * 180.0f) * 0.5f + sinf(fU * fHUMAN_TWO_PI * 90.0f) * 0.25f;
+	const float fThread = (sinf(fU * fHUMAN_TWO_PI * 300.0f) + sinf(fV * fHUMAN_TWO_PI * 320.0f)) * 0.5f;   // fine weave
 	const float fWrinkle = HumanFBM2D(fU * 6.0f, fV * 6.0f, 3, 911u) - 0.5f;
-	const float fShade = 1.0f + fHeather * 0.22f + fWrinkle * 0.10f;
-	xP.fR = 0.285f * fShade;
-	xP.fG = 0.345f * fShade;
-	xP.fB = 0.455f * fShade;
-	xP.fHeight = 0.5f + fKnit * 0.05f + fWrinkle * 0.22f;
-	xP.fRough = 0.92f;
+	const float fShade = 1.0f + fHeather * 0.24f + fWrinkle * 0.12f;
+	xP.fR = 0.215f * fShade;
+	xP.fG = 0.310f * fShade;
+	xP.fB = 0.480f * fShade;   // richer, more saturated denim-blue jersey
+	xP.fHeight = 0.5f + fKnit * 0.05f + fThread * 0.02f + fWrinkle * 0.24f;
+	xP.fRough = 0.90f;
 	xP.fMetal = 0.0f;
 }
 
@@ -1154,8 +1693,10 @@ void PaintHumanHead(HumanAtlas& xAtlas)
 					}
 				}
 				// Catchlight.
+				// Faint painted catchlight only — the live clear-coat cornea highlight
+				// (StickFigure_Eye material) now provides the view-dependent glint.
 				const float fCatch = HumanGauss(fEX - 0.004f, fEY + 0.005f, 0.0035f, 0.0035f);
-				fER += 0.85f * fCatch; fEG += 0.85f * fCatch; fEB += 0.85f * fCatch;
+				fER += 0.25f * fCatch; fEG += 0.25f * fCatch; fEB += 0.25f * fCatch;
 
 				xP.fR = glm::mix(xP.fR, fER, fEdge);
 				xP.fG = glm::mix(xP.fG, fEG, fEdge);
@@ -1203,18 +1744,18 @@ void PaintHumanHead(HumanAtlas& xAtlas)
 
 		// --- Mouth ---
 		const float fMouthMask = HumanSmoothStep(0.052f, 0.030f, fabsf(fSide));
-		const float fLipUp = fMouthMask * HumanLine(fVN - 0.532f, 0.016f);
-		const float fLipLo = fMouthMask * HumanLine(fVN - 0.556f, 0.020f);
+		const float fLipUp = fMouthMask * HumanLine(fVN - 0.536f, 0.018f);
+		const float fLipLo = fMouthMask * HumanLine(fVN - 0.551f, 0.020f);   // lips meet (closed mouth)
 		xP.fR = glm::mix(xP.fR, 0.585f, fLipUp * 0.85f);
 		xP.fG = glm::mix(xP.fG, 0.345f, fLipUp * 0.85f);
 		xP.fB = glm::mix(xP.fB, 0.330f, fLipUp * 0.85f);
 		xP.fR = glm::mix(xP.fR, 0.700f, fLipLo * 0.80f);
 		xP.fG = glm::mix(xP.fG, 0.430f, fLipLo * 0.80f);
 		xP.fB = glm::mix(xP.fB, 0.405f, fLipLo * 0.80f);
-		const float fLipLine = fMouthMask * HumanLine(fVN - 0.543f, 0.005f);
-		xP.fR *= 1.0f - 0.50f * fLipLine; xP.fG *= 1.0f - 0.52f * fLipLine; xP.fB *= 1.0f - 0.50f * fLipLine;
-		xP.fRough -= 0.18f * (fLipUp + fLipLo);
-		xP.fHeight += 0.05f * fLipLo - 0.06f * fLipLine;
+		const float fLipLine = fMouthMask * HumanLine(fVN - 0.543f, 0.004f);
+		xP.fR *= 1.0f - 0.28f * fLipLine; xP.fG *= 1.0f - 0.30f * fLipLine; xP.fB *= 1.0f - 0.28f * fLipLine;
+		xP.fRough -= 0.10f * (fLipUp + fLipLo);   // lips a touch glossier than skin, not mirror-wet
+		xP.fHeight += 0.05f * fLipLo - 0.03f * fLipLine;
 		// Philtrum groove.
 		const float fPhiltrum = HumanLine(fSide, 0.006f) * HumanSmoothStep(0.535f, 0.50f, fVN) * HumanSmoothStep(0.455f, 0.49f, fVN);
 		xP.fHeight -= 0.05f * fPhiltrum;
@@ -1544,7 +2085,9 @@ void PaintHumanFoot(HumanAtlas& xAtlas, const HumanUVIsland& xIsland, bool bLeft
 void DilateHumanAtlas(HumanAtlas& xAtlas)
 {
 	constexpr int32_t iS = iHUMAN_ATLAS_SIZE;
-	for (u_int uPass = 0; uPass < 10; uPass++)
+	// Bleed is measured in texels, so doubling the atlas resolution needs ~2x the
+	// passes to fill the same physical gutter between islands.
+	for (u_int uPass = 0; uPass < 16; uPass++)
 	{
 		Zenith_Vector<u_int8> xNewMask(iS * iS);
 		for (int32_t i = 0; i < iS * iS; i++) { xNewMask.PushBack(xAtlas.xPainted.Get(i)); }
@@ -1584,19 +2127,64 @@ void DilateHumanAtlas(HumanAtlas& xAtlas)
 	}
 }
 
-// Same .ztxtr layout as the tree exporter: w, h, depth(1), format, size, pixels.
-// The runtime texture loader generates the full mip chain at upload.
-void WriteHumanZtxtr(const std::string& strPath, int32_t iSize, TextureFormat eFormat,
-                     const Zenith_Vector<u_int8>& xPixels)
+// Tiling micro-detail maps (skin pores / fabric weave): a BC5 detail normal plus
+// a neutral detail albedo. Integer-frequency sine products tile seamlessly over
+// [0,1) and the height->normal step wraps, so the material repeats them across
+// the body via detail-UV tiling with no visible seams — the close-up surface
+// "AAA" detail the macro atlas can't carry at body scale.
+//
+// The detail albedo is stored LINEAR (UNORM) centred on 0.5: the shader applies
+// detail albedo as "x2 around mid-grey" (xAlbedo * detail * 2), so a 0.5 sample
+// is an identity. The slot's default is white (1.0), which would DOUBLE albedo;
+// supplying a neutral map (with only a faint tonal ripple) keeps base colour intact.
+void GenerateStickFigureDetailMaps(const std::string& strDir)
 {
-	Zenith_DataStream xStream;
-	xStream << iSize;
-	xStream << iSize;
-	xStream << static_cast<int32_t>(1);
-	xStream << eFormat;
-	xStream << static_cast<u_int64>(xPixels.GetSize());
-	xStream.WriteData(xPixels.GetDataPointer(), xPixels.GetSize());
-	xStream.WriteToFile(strPath.c_str());
+	constexpr int32_t iN = 512;
+	std::vector<float> xHeight(static_cast<size_t>(iN) * iN, 0.0f);
+	for (int32_t iY = 0; iY < iN; iY++)
+	{
+		for (int32_t iX = 0; iX < iN; iX++)
+		{
+			const float fU = static_cast<float>(iX) / static_cast<float>(iN);
+			const float fV = static_cast<float>(iY) / static_cast<float>(iN);
+			float fH = 0.0f;
+			fH += sinf(fU * fHUMAN_TWO_PI * 17.0f) * sinf(fV * fHUMAN_TWO_PI * 13.0f) * 0.50f;
+			fH += sinf(fU * fHUMAN_TWO_PI * 31.0f + 1.7f) * sinf(fV * fHUMAN_TWO_PI * 29.0f) * 0.30f;
+			fH += sinf(fU * fHUMAN_TWO_PI * 53.0f) * cosf(fV * fHUMAN_TWO_PI * 61.0f + 0.4f) * 0.20f;
+			xHeight[static_cast<size_t>(iY) * iN + iX] = fH;
+		}
+	}
+
+	Zenith_Vector<u_int8> xNormal(iN * iN * 4);
+	Zenith_Vector<u_int8> xAlbedo(iN * iN * 4);
+	for (int32_t iY = 0; iY < iN; iY++)
+	{
+		for (int32_t iX = 0; iX < iN; iX++)
+		{
+			const int32_t iXP = (iX + 1) % iN, iXM = (iX + iN - 1) % iN;   // wrap for tiling
+			const int32_t iYP = (iY + 1) % iN, iYM = (iY + iN - 1) % iN;
+			// Keep the slope small: at full strength the regular sine lattice reads
+			// as an artificial cross-hatch on skin. This is a faint micro-break-up.
+			const float fDX = (xHeight[static_cast<size_t>(iY) * iN + iXP] - xHeight[static_cast<size_t>(iY) * iN + iXM]) * 0.35f;
+			const float fDY = (xHeight[static_cast<size_t>(iYP) * iN + iX] - xHeight[static_cast<size_t>(iYM) * iN + iX]) * 0.35f;
+			const Zenith_Maths::Vector3 xNN = glm::normalize(Zenith_Maths::Vector3(-fDX, -fDY, 1.0f));
+			xNormal.PushBack(static_cast<u_int8>((xNN.x * 0.5f + 0.5f) * 255.0f));
+			xNormal.PushBack(static_cast<u_int8>((xNN.y * 0.5f + 0.5f) * 255.0f));
+			xNormal.PushBack(static_cast<u_int8>((xNN.z * 0.5f + 0.5f) * 255.0f));
+			xNormal.PushBack(255);
+
+			// Neutral 0.5 (linear) +/- a faint tonal ripple — mean-neutral so the
+			// x2 overlay is ~identity, with a touch of micro tonal variation.
+			const float fTone = std::clamp(0.5f + xHeight[static_cast<size_t>(iY) * iN + iX] * 0.02f, 0.0f, 1.0f);
+			const u_int8 uTone = static_cast<u_int8>(fTone * 255.0f);
+			xAlbedo.PushBack(uTone); xAlbedo.PushBack(uTone); xAlbedo.PushBack(uTone); xAlbedo.PushBack(255);
+		}
+	}
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "StickFigure_DetailNormal" ZENITH_TEXTURE_EXT, iN, iN, TextureCompressionMode::BC5);
+	// Linear (UNORM), NOT sRGB — this is an overlay multiplier, not a displayed colour.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAlbedo.GetDataPointer(), strDir + "StickFigure_DetailAlbedo" ZENITH_TEXTURE_EXT, iN, iN, TEXTURE_FORMAT_RGBA8_UNORM);
 }
 
 void GenerateStickFigureTextures(const std::string& strDir)
@@ -1616,20 +2204,26 @@ void GenerateStickFigureTextures(const std::string& strDir)
 
 	constexpr int32_t iS = iHUMAN_ATLAS_SIZE;
 
-	// Albedo (sRGB) — cavity-shaded slightly by the height field so seams and
-	// grooves read even before normal mapping kicks in.
+	// Albedo (sRGB). The cavity term now lives in the dedicated AO map (slot 3)
+	// rather than being pre-multiplied into albedo — physically cleaner, lets the
+	// lighting carry occlusion. Uncompressed sRGB with an offline mip chain (there
+	// is no BC sRGB format in the pipeline, and 2048^2 RGBA8 is fine for one hero).
 	Zenith_Vector<u_int8> xAlbedo(iS * iS * 4);
 	for (int32_t i = 0; i < iS * iS; i++)
 	{
-		const float fCavity = 1.0f - 0.25f * std::clamp(0.5f - xAtlas.xHeight.Get(i), 0.0f, 0.5f);
-		xAlbedo.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xR.Get(i) * fCavity, 0.0f, 1.0f) * 255.0f));
-		xAlbedo.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xG.Get(i) * fCavity, 0.0f, 1.0f) * 255.0f));
-		xAlbedo.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xB.Get(i) * fCavity, 0.0f, 1.0f) * 255.0f));
+		xAlbedo.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xR.Get(i), 0.0f, 1.0f) * 255.0f));
+		xAlbedo.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xG.Get(i), 0.0f, 1.0f) * 255.0f));
+		xAlbedo.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xB.Get(i), 0.0f, 1.0f) * 255.0f));
 		xAlbedo.PushBack(255);
 	}
-	WriteHumanZtxtr(strDir + "StickFigure_Albedo" ZENITH_TEXTURE_EXT, iS, TEXTURE_FORMAT_RGBA8_SRGB, xAlbedo);
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAlbedo.GetDataPointer(), strDir + "StickFigure_Albedo" ZENITH_TEXTURE_EXT, iS, iS, TEXTURE_FORMAT_RGBA8_SRGB);
 
-	// Normal map from the height field (central differences, clamped edges).
+	// Normal map from the height field (central differences). The gradient scale
+	// tracks the atlas resolution so apparent bump strength is independent of texel
+	// size (smaller texels => smaller per-texel delta). Exported as BC5: only R,G
+	// survive and the shader reconstructs Z (Common/Material.slang SampleNormalMap).
+	const float fNormalScale = 2.2f * (static_cast<float>(iS) / 1024.0f);
 	Zenith_Vector<u_int8> xNormal(iS * iS * 4);
 	for (int32_t iY = 0; iY < iS; iY++)
 	{
@@ -1637,8 +2231,8 @@ void GenerateStickFigureTextures(const std::string& strDir)
 		{
 			const int32_t iXP = std::min(iX + 1, iS - 1), iXM = std::max(iX - 1, 0);
 			const int32_t iYP = std::min(iY + 1, iS - 1), iYM = std::max(iY - 1, 0);
-			const float fDX = (xAtlas.xHeight.Get(iY * iS + iXP) - xAtlas.xHeight.Get(iY * iS + iXM)) * 2.2f;
-			const float fDY = (xAtlas.xHeight.Get(iYP * iS + iX) - xAtlas.xHeight.Get(iYM * iS + iX)) * 2.2f;
+			const float fDX = (xAtlas.xHeight.Get(iY * iS + iXP) - xAtlas.xHeight.Get(iY * iS + iXM)) * fNormalScale;
+			const float fDY = (xAtlas.xHeight.Get(iYP * iS + iX) - xAtlas.xHeight.Get(iYM * iS + iX)) * fNormalScale;
 			const Zenith_Maths::Vector3 xN = glm::normalize(Zenith_Maths::Vector3(-fDX, -fDY, 1.0f));
 			xNormal.PushBack(static_cast<u_int8>((xN.x * 0.5f + 0.5f) * 255.0f));
 			xNormal.PushBack(static_cast<u_int8>((xN.y * 0.5f + 0.5f) * 255.0f));
@@ -1646,31 +2240,98 @@ void GenerateStickFigureTextures(const std::string& strDir)
 			xNormal.PushBack(255);
 		}
 	}
-	WriteHumanZtxtr(strDir + "StickFigure_Normal" ZENITH_TEXTURE_EXT, iS, TEXTURE_FORMAT_RGBA8_UNORM, xNormal);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "StickFigure_Normal" ZENITH_TEXTURE_EXT, iS, iS, TextureCompressionMode::BC5);
 
-	// Roughness/metallic — glTF packing read by SampleRoughnessMetallic: G=rough, B=metal.
+	// Roughness/metallic — glTF packing read by SampleRoughnessMetallic: G=rough,
+	// B=metal. BC3 (BC1 colour block + BC4 alpha); G/B ride the colour block.
 	Zenith_Vector<u_int8> xRM(iS * iS * 4);
 	for (int32_t i = 0; i < iS * iS; i++)
 	{
-		xRM.PushBack(255);   // R unused (occlusion lives in its own slot)
-		xRM.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xRough.Get(i), 0.0f, 1.0f) * 255.0f));
+		const float fRough = std::clamp(xAtlas.xRough.Get(i), 0.0f, 1.0f);
+		// R = per-texel specular (read by the skin shader path): glossy regions
+		// (wet lips/eyes, low roughness) get higher F0, matte cheeks/cloth lower.
+		const float fSpec = std::clamp(0.32f + (1.0f - fRough) * 0.58f, 0.0f, 1.0f);
+		xRM.PushBack(static_cast<u_int8>(fSpec * 255.0f));
+		xRM.PushBack(static_cast<u_int8>(fRough * 255.0f));
 		xRM.PushBack(static_cast<u_int8>(std::clamp(xAtlas.xMetal.Get(i), 0.0f, 1.0f) * 255.0f));
 		xRM.PushBack(255);
 	}
-	WriteHumanZtxtr(strDir + "StickFigure_RM" ZENITH_TEXTURE_EXT, iS, TEXTURE_FORMAT_RGBA8_UNORM, xRM);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xRM.GetDataPointer(), strDir + "StickFigure_RM" ZENITH_TEXTURE_EXT, iS, iS, TextureCompressionMode::BC3);
+
+	// Ambient occlusion (slot 3, shader reads .r) — the soft cavity term albedo
+	// used to bake in, now a proper map so lighting carries it. BC1 grayscale.
+	Zenith_Vector<u_int8> xAO(iS * iS * 4);
+	for (int32_t i = 0; i < iS * iS; i++)
+	{
+		const float fCavity = 1.0f - 0.25f * std::clamp(0.5f - xAtlas.xHeight.Get(i), 0.0f, 0.5f);
+		const u_int8 uAO = static_cast<u_int8>(std::clamp(fCavity, 0.0f, 1.0f) * 255.0f);
+		xAO.PushBack(uAO); xAO.PushBack(uAO); xAO.PushBack(uAO); xAO.PushBack(255);
+	}
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xAO.GetDataPointer(), strDir + "StickFigure_AO" ZENITH_TEXTURE_EXT, iS, iS, TextureCompressionMode::BC1);
+
+	// Height (slot 5, shader reads .r) — drives subtle parallax-occlusion mapping
+	// on cloth/leather. Same field the normal map derives from. BC1 grayscale.
+	Zenith_Vector<u_int8> xHeightTex(iS * iS * 4);
+	for (int32_t i = 0; i < iS * iS; i++)
+	{
+		const u_int8 uH = static_cast<u_int8>(std::clamp(xAtlas.xHeight.Get(i), 0.0f, 1.0f) * 255.0f);
+		xHeightTex.PushBack(uH); xHeightTex.PushBack(uH); xHeightTex.PushBack(uH); xHeightTex.PushBack(255);
+	}
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xHeightTex.GetDataPointer(), strDir + "StickFigure_Height" ZENITH_TEXTURE_EXT, iS, iS, TextureCompressionMode::BC1);
+
+	// Tiling micro-detail maps (slots 6/7) for close-up pore/weave surface.
+	GenerateStickFigureDetailMaps(strDir);
 }
 
 void GenerateStickFigureMaterial(const std::string& strDir)
 {
 	Zenith_MaterialAsset* pxBody = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxBody->SetName("StickFigureBody");
-	pxBody->SetDiffuseTexture(TextureHandle("engine:Meshes/StickFigure/StickFigure_Albedo" ZENITH_TEXTURE_EXT));
-	pxBody->SetNormalTexture(TextureHandle("engine:Meshes/StickFigure/StickFigure_Normal" ZENITH_TEXTURE_EXT));
-	pxBody->SetRoughnessMetallicTexture(TextureHandle("engine:Meshes/StickFigure/StickFigure_RM" ZENITH_TEXTURE_EXT));
-	// Multipliers stay 1.0 so the RM texture's per-region values pass through.
+	const std::string strBase = "engine:Meshes/StickFigure/";
+	pxBody->SetDiffuseTexture(TextureHandle(strBase + "StickFigure_Albedo" ZENITH_TEXTURE_EXT));
+	pxBody->SetNormalTexture(TextureHandle(strBase + "StickFigure_Normal" ZENITH_TEXTURE_EXT));
+	pxBody->SetRoughnessMetallicTexture(TextureHandle(strBase + "StickFigure_RM" ZENITH_TEXTURE_EXT));
+	pxBody->SetTexture(MATERIAL_TEXTURE_OCCLUSION, TextureHandle(strBase + "StickFigure_AO" ZENITH_TEXTURE_EXT));
+	pxBody->SetTexture(MATERIAL_TEXTURE_HEIGHT, TextureHandle(strBase + "StickFigure_Height" ZENITH_TEXTURE_EXT));
+	pxBody->SetTexture(MATERIAL_TEXTURE_DETAIL_NORMAL, TextureHandle(strBase + "StickFigure_DetailNormal" ZENITH_TEXTURE_EXT));
+	pxBody->SetTexture(MATERIAL_TEXTURE_DETAIL_ALBEDO, TextureHandle(strBase + "StickFigure_DetailAlbedo" ZENITH_TEXTURE_EXT));
+
+	// RM multipliers stay 1.0 so the texture's per-region values pass through.
 	pxBody->SetRoughness(1.0f);
 	pxBody->SetMetallic(1.0f);
+	pxBody->SetShadingModel(MATERIAL_SHADING_SUBSURFACE);   // skin: wrap diffuse + warm scatter terminator
+	pxBody->SetSpecular(1.0f);            // multiplier=1: the per-texel specular in RM.R passes through
+	pxBody->SetNormalStrength(1.0f);
+	pxBody->SetOcclusionStrength(1.0f);
+	// Parallax-occlusion mapping, kept SUBTLE on a skinned body to avoid limb-bend
+	// / seam artefacts. POM auto-enables once a height texture + non-zero height
+	// scale are set (Flux_MaterialBinding::BuildMaterialDrawFlags). POM step counts
+	// keep their defaults (8/32).
+	pxBody->SetHeightScale(0.02f);
+	// Detail maps auto-enable on detail-texture presence; repeat the micro-surface
+	// several times across each UV island.
+	pxBody->SetDetailTiling(Zenith_Maths::Vector2(10.0f, 10.0f));
+
 	pxBody->SaveToFile(strDir + "StickFigure_Body.zmtrl");
+
+	// --- Eye material: a glossy clear-coat cornea (default-lit, NOT subsurface).
+	// The eyeball geometry's UVs sample the painted iris/sclera from the shared
+	// albedo atlas; a low base roughness + a sharp clear-coat lobe give a live,
+	// view-dependent cornea highlight from the sun + IBL instead of a flat painted
+	// catchlight. ---
+	Zenith_MaterialAsset* pxEye = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	pxEye->SetName("StickFigureEye");
+	pxEye->SetDiffuseTexture(TextureHandle(strBase + "StickFigure_Albedo" ZENITH_TEXTURE_EXT));
+	pxEye->SetRoughness(0.10f);             // wet glossy sphere (default-white RM * 0.10)
+	pxEye->SetMetallic(0.0f);
+	pxEye->SetSpecular(0.55f);
+	pxEye->SetClearCoatStrength(0.9f);      // sharp cornea highlight
+	pxEye->SetClearCoatRoughness(0.04f);
+	pxEye->SaveToFile(strDir + "StickFigure_Eye.zmtrl");
 }
 
 // The canonical model bundle: mesh + skeleton + body material. Exported every
@@ -1684,7 +2345,8 @@ void ExportStickFigureModel(const std::string& strDir, const std::string& strSke
 	pxModel->SetSkeletonPath(strSkelPath);
 
 	Zenith_Vector<std::string> xMaterials;
-	xMaterials.PushBack("engine:Meshes/StickFigure/StickFigure_Body.zmtrl");
+	xMaterials.PushBack("engine:Meshes/StickFigure/StickFigure_Body.zmtrl");   // submesh 0: body
+	xMaterials.PushBack("engine:Meshes/StickFigure/StickFigure_Eye.zmtrl");    // submesh 1: eyeballs
 	pxModel->AddMeshByPath(strMeshAssetPath, xMaterials);
 	pxModel->Export((strDir + "StickFigure" ZENITH_MODEL_EXT).c_str());
 }

@@ -12,7 +12,7 @@
 namespace
 {
 	static const char* const ls_aszBlendModeLabels[] = { "Opaque", "Masked", "Translucent", "Additive" };
-	static const char* const ls_aszShadingModelLabels[] = { "Default Lit", "Unlit" };
+	static const char* const ls_aszShadingModelLabels[] = { "Default Lit", "Unlit", "Subsurface" };
 
 	static const Zenith_MaterialParamDesc ls_axParams[] =
 	{

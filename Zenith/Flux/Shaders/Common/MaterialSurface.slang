@@ -150,12 +150,18 @@ public MaterialSurface EvaluateMaterialSurface(
 	s.worldNormal   = xWorldNormal;
 	s.roughness     = fRoughness;
 	s.metallic      = fMetallic;
-	s.specular      = GetSpecular();
+	// Skin carries a per-texel specular map in RM.R (wet lips/eyes glossy, matte
+	// cheeks/cloth). Other materials leave RM.R unused, so gate on the skin flag
+	// and pass 1.0 through for them → uniform GetSpecular() unchanged (regression-safe).
+	float fSpecTexel = ((uFlags & MATERIAL_FLAG_SKIN) != 0u) ? xRoughnessMetallicTex.Sample(xUV).r : 1.0;
+	s.specular      = fSpecTexel * GetSpecular();
 	s.ao            = SampleOcclusion(xOcclusionTex, xUV, GetOcclusionStrength());
 	s.emissive      = SampleEmissiveRGB(xEmissiveTex, xUV, GetEmissiveColor(), GetEmissiveIntensity());
 	s.ccStrength    = ((uFlags & MATERIAL_FLAG_CLEARCOAT) != 0u) ? GetClearCoatStrength() : 0.0;
 	s.ccRoughness   = GetClearCoatRoughness();
-	s.uShadingModel = ((uFlags & MATERIAL_FLAG_UNLIT) != 0u) ? GBUFFER_SHADING_UNLIT : GBUFFER_SHADING_DEFAULT_LIT;
+	s.uShadingModel = ((uFlags & MATERIAL_FLAG_UNLIT) != 0u) ? GBUFFER_SHADING_UNLIT
+					: ((uFlags & MATERIAL_FLAG_SKIN) != 0u)  ? GBUFFER_SHADING_SUBSURFACE
+					: GBUFFER_SHADING_DEFAULT_LIT;
 	return s;
 }
 

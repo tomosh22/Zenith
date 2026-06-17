@@ -152,7 +152,7 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 	// alpha blending enabled, which for passes like SSR RayMarch would blend
 	// the new output into stale last-frame contents (alpha < 1 preserves old
 	// pixels, producing ghosting). Callers that actually want a blend mode
-	// (e.g. SSAO Upsample, Skybox Aerial Perspective) override this explicitly.
+	// (e.g. Skybox Aerial Perspective) override this explicitly.
 	for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 	{
 		xBlendState.m_bBlendEnabled = false;

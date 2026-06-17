@@ -29,6 +29,12 @@ namespace Zenith_Tools_TextureExport
 	// Export raw texture data with compression
 	void ExportFromDataCompressed(const void* pRGBAData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureCompressionMode eCompression);
 
+	// Export raw RGBA8 data as a .ztxtr v2 with a full offline-baked mip chain but
+	// NO BC compression — keeps an explicit (e.g. sRGB) format while still shipping
+	// prebaked mips. For colour/albedo maps that must stay sRGB, since there is no
+	// BC sRGB format in the pipeline.
+	void ExportFromDataV2Uncompressed(const void* pRGBAData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat);
+
 	// Helper to determine if a format is BC compressed
 	bool IsCompressedFormat(TextureFormat eFormat);
 

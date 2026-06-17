@@ -200,8 +200,10 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 		m_xFrameConstants.m_xInvProjMat = glm::inverse(m_xFrameConstants.m_xProjMat);
 	}
 
-	m_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
-	m_xFrameConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, dbg_SunColour.w };
+	const Zenith_Maths::Vector3 xSunDir = m_bSunOverride ? m_xSunDirOverride : Zenith_Maths::Vector3(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z);
+	const Zenith_Maths::Vector4 xSunCol = m_bSunOverride ? m_xSunColourOverride : dbg_SunColour;
+	m_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(xSunDir.x, xSunDir.y, xSunDir.z, 0.));
+	m_xFrameConstants.m_xSunColour_Pad = { xSunCol.x, xSunCol.y, xSunCol.z, xSunCol.w };
 	int32_t iWidth, iHeight;
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
 	m_xFrameConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };

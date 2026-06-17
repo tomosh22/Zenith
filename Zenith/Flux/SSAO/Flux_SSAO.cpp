@@ -86,16 +86,10 @@ void Flux_SSAOImpl::BuildPipelines()
 		m_xBlurShader, m_xBlurPipeline,
 		FluxShaderProgram::SSAO_Blur, SSAO_FORMAT);
 
-	{
-		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			m_xUpsampleShader, FluxShaderProgram::SSAO_Upsample, HDR_SCENE_FORMAT);
-
-		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
-		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ZERO;
-		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_SRCALPHA;
-
-		Flux_PipelineBuilder::FromSpecification(m_xUpsamplePipeline, xSpec);
-	}
+	// The old post-lighting upsample pipeline (multiplicative composite onto the
+	// HDR scene) is retired: SSAO is now folded into the deferred ambient term
+	// (see Flux_DeferredShading), so it darkens only ambient/IBL — never direct
+	// light. The blurred (or raw) half-res target is sampled there directly.
 }
 
 void Flux_SSAOImpl::Initialise()
@@ -106,7 +100,6 @@ void Flux_SSAOImpl::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::SSAO_Main,
 		FluxShaderProgram::SSAO_Blur,
-		FluxShaderProgram::SSAO_Upsample,
 	};
 	// Non-capturing fn-pointer trampoline: re-enters via g_xEngine.SSAO() to
 	// reach the singleton instance (it cannot capture `this`).
@@ -189,30 +182,6 @@ static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
-{
-	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-	if (!xOpts.m_bSSAOEnabled)
-		return;
-
-	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSAO.m_xUpsamplePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-
-	Flux_ShaderBinder xBinder(*pxCommandList);
-	if (xOpts.m_bSSAOBlurEnabled)
-		xBinder.BindSRV(xSSAO.m_xUpsampleShader, "g_xOcclusionTex", &xSSAO.GetBlurred().SRV());
-	else
-		xBinder.BindSRV(xSSAO.m_xUpsampleShader, "g_xOcclusionTex", &xSSAO.GetRawOcclusion().SRV());
-
-	xBinder.BindSRV(xSSAO.m_xUpsampleShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
-
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
-}
-
 // ---- Render graph setup (chooses transient vs owned based on toggle) ----
 
 void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -245,10 +214,8 @@ void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsTransient (m_xRawOcclusionHandle,                               RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_xBlurredHandle,                                    RESOURCE_ACCESS_WRITE_RTV);
 
-	// Upsample pass — writes AO factor onto the HDR scene via multiplicative blend.
-	xGraph.AddPass("SSAO Upsample", ExecuteSSAOUpsample)
-		.Reads         (xGraphics.GetDepthAttachment(),     RESOURCE_ACCESS_READ_SRV)
-		.Writes        (g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
-		.ReadsTransient(m_xBlurredHandle,                   RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(m_xRawOcclusionHandle,              RESOURCE_ACCESS_READ_SRV);
+	// No upsample/composite pass: DeferredShading reads m_xBlurredHandle (or the
+	// raw handle when the blur is toggled off) and multiplies the AO into its
+	// ambient term. The graph orders these passes before DeferredShading via that
+	// read; SSAO registers ahead of DeferredShading in the feature setup walk.
 }

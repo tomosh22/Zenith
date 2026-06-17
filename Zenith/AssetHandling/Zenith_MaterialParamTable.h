@@ -33,6 +33,7 @@ enum MaterialShadingModel : u_int8
 {
 	MATERIAL_SHADING_DEFAULT_LIT = 0,
 	MATERIAL_SHADING_UNLIT,
+	MATERIAL_SHADING_SUBSURFACE,   // skin: wrapped diffuse + warm scatter terminator
 	MATERIAL_SHADING_COUNT
 };
 

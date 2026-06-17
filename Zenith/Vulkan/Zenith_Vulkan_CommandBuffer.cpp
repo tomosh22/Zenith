@@ -443,7 +443,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRendering(const Flux_RenderingBeginInfo& 
 
 	// #TODO: expose DONT_CARE LoadOp as a third option. Today a pass that
 	// fully overwrites its target (e.g. HDR_ToneMapping, Apply Lighting,
-	// SSR RayMarch, SSAO Upsample) has to ClearTargets() because the
+	// SSR RayMarch, SSAO Blur) has to ClearTargets() because the
 	// alternative is LOAD_ACTION_LOAD — which on tiled GPUs costs a bandwidth-
 	// heavy tile-init read the pass doesn't need. Adding a third state to
 	// Flux_RenderGraph_Pass (e.g. m_bDontCareLoad) and plumbing it here would

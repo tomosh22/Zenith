@@ -14,6 +14,7 @@ enum MaterialDrawFlags : u_int
 	MATERIAL_DRAW_FLAG_POM                   = 1u << 2,
 	MATERIAL_DRAW_FLAG_DETAIL_MAPS           = 1u << 3,
 	MATERIAL_DRAW_FLAG_CLEARCOAT             = 1u << 4,
+	MATERIAL_DRAW_FLAG_SKIN                  = 1u << 5,   // subsurface shading model
 };
 
 // ============================================================================
@@ -75,6 +76,10 @@ inline u_int BuildMaterialDrawFlags(const Zenith_MaterialResolved& xResolved)
 	if (xParams.m_eShadingModel == MATERIAL_SHADING_UNLIT)
 	{
 		uFlags |= MATERIAL_DRAW_FLAG_UNLIT;
+	}
+	else if (xParams.m_eShadingModel == MATERIAL_SHADING_SUBSURFACE)
+	{
+		uFlags |= MATERIAL_DRAW_FLAG_SKIN;
 	}
 	if (xParams.m_bTwoSided)
 	{

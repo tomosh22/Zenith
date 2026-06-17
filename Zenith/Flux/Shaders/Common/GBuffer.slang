@@ -27,6 +27,7 @@ public struct GBufferOut
 // Shading-model tags carried in the packed-flags channel (bits 0-1).
 public static const uint GBUFFER_SHADING_DEFAULT_LIT = 0u;
 public static const uint GBUFFER_SHADING_UNLIT       = 1u;
+public static const uint GBUFFER_SHADING_SUBSURFACE  = 2u;   // skin (wrap diffuse + warm scatter)
 
 // Pack the shading model (2 bits) + clear-coat strength (6 bits, quantized
 // x63) into one UNORM8 channel.

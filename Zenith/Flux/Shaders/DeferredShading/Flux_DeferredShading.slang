@@ -34,6 +34,7 @@ struct DeferredShadingConstantsLayout
 	uint  g_bSSREnabled;
 	uint  g_bSSGIEnabled;
 	float g_fAmbientFallbackIntensity;
+	uint  g_bSSAOEnabled;          // screen-space AO modulates the ambient term only
 };
 [[vk::binding( 1, 0)]] ConstantBuffer<DeferredShadingConstantsLayout> DeferredShadingConstants;
 
@@ -72,6 +73,10 @@ struct ShadowMatrixLayout { float4x4 m_xMat; };
 // 4th G-buffer target: HDR emissive RGB + clear-coat roughness in A.
 [[vk::binding(22, 0)]] Sampler2D   g_xGBufferEmissiveTex;
 
+// Screen-space ambient occlusion (half-res R8). Applied to the ambient/IBL
+// term only — direct sun + dynamic lights are physically unoccluded by SSAO.
+[[vk::binding(23, 0)]] Sampler2D   g_xSSAOTex;
+
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
@@ -84,6 +89,10 @@ static const float PCF_OFFSET_INNER        = 0.5;
 static const float PCF_OFFSET_OUTER        = 1.5;
 static const float PCF_SAMPLE_COUNT        = 16.0;
 static const float CASCADE_BLEND_DISTANCE  = 0.15;
+// PCSS-lite penumbra: how much wider the PCF kernel grows on the farthest
+// cascade vs the nearest. Distant shadows soften toward an area-light look
+// while contact shadows stay crisp.
+static const float PCF_FAR_PENUMBRA_SCALE  = 2.2;
 
 // PCF16 cascade sample. Four 4-tap textureGather calls (16 comparisons
 // total) at offset corners; comparison vs biased depth → average.
@@ -91,11 +100,18 @@ float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, f
 {
 	float fShadow = 0.0;
 
+	// Widen the kernel on farther cascades for soft distant penumbrae. Cascade 0
+	// resolves to scale 1.0 → the original fixed kernel exactly, so near-field
+	// contact shadows (and their bias) are unchanged.
+	float fPenumbra = 1.0 + (float(iCascade) / 3.0) * (PCF_FAR_PENUMBRA_SCALE - 1.0);
+	float fOuter = PCF_OFFSET_OUTER * fPenumbra;
+	float fInner = PCF_OFFSET_INNER * fPenumbra;
+
 	float2 axOffsets[4] = {
-		float2(-PCF_OFFSET_OUTER, -PCF_OFFSET_OUTER) * texelSize,
-		float2( PCF_OFFSET_INNER, -PCF_OFFSET_OUTER) * texelSize,
-		float2(-PCF_OFFSET_OUTER,  PCF_OFFSET_INNER) * texelSize,
-		float2( PCF_OFFSET_INNER,  PCF_OFFSET_INNER) * texelSize,
+		float2(-fOuter, -fOuter) * texelSize,
+		float2( fInner, -fOuter) * texelSize,
+		float2(-fOuter,  fInner) * texelSize,
+		float2( fInner,  fInner) * texelSize,
 	};
 
 	for (int i = 0; i < 4; i++)
@@ -237,13 +253,15 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 								float3 xWorldPos,
 								float fSpecularParam,
 								float fClearCoat,
-								float fClearCoatRoughness)
+								float fClearCoatRoughness,
+								uint  uShadingModel)
 {
 	float3 xLightDir = normalize(xLight.m_xDirection.xyz);
 	float3 xViewDir  = normalize(FrameConstants.g_xCamPos_Pad.xyz - xWorldPos);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
-	float NdotL = max(dot(xNormal, xLightDir), 0.0);
+	float fRawNdotL = dot(xNormal, xLightDir);
+	float NdotL = max(fRawNdotL, 0.0);
 	float NdotV = max(dot(xNormal, xViewDir),  DEFERRED_EPSILON);
 	float NdotH = max(dot(xNormal, xHalfDir),  0.0);
 	float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
@@ -279,7 +297,20 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 	}
 
 	float3 radiance = xLight.m_xColour.rgb * xLight.m_xColour.a;
-	xFinalColor.rgb += Lo * radiance * NdotL;
+	if (uShadingModel == GBUFFER_SHADING_SUBSURFACE)
+	{
+		// Cheap subsurface: the diffuse term wraps past the terminator and shifts
+		// warm where light grazes (red scatter under thin skin); specular keeps the
+		// hard NdotL. No extra G-buffer target. Default-lit path is untouched.
+		const float fWrap = 0.5;
+		float  fWrapNdotL   = saturate((fRawNdotL + fWrap) / (1.0 + fWrap));
+		float3 xScatterTint = lerp(float3(0.80, 0.32, 0.24), float3(1.0, 1.0, 1.0), saturate(fRawNdotL * 1.4 + 0.30));
+		xFinalColor.rgb += (diffuse * fWrapNdotL * xScatterTint + specular * NdotL) * radiance;
+	}
+	else
+	{
+		xFinalColor.rgb += Lo * radiance * NdotL;
+	}
 	xFinalColor.a    = 1.0;
 }
 
@@ -340,6 +371,12 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	float4 xEmissiveCC    = g_xGBufferEmissiveTex.Sample(input.uv);
 	float3 xNormal        = normalize(xNormalAmbient.xyz);
 	float  fAmbient       = xNormalAmbient.w;
+
+	// Fold screen-space AO into the baked ambient term so it darkens ONLY the
+	// ambient/IBL contribution (ComputeIBLAmbient below), never direct light.
+	// Half-res R8; a bilinear tap is plenty given the blur already smoothed it.
+	if (DeferredShadingConstants.g_bSSAOEnabled != 0u)
+		fAmbient *= g_xSSAOTex.Sample(input.uv).r;
 
 	float3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, input.uv);
 
@@ -453,7 +490,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	{
 		if (xLight.m_xColour.a > LIGHT_INTENSITY_THRESHOLD)
 			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xWorldPos,
-									  fSpecular, fClearCoat, fClearCoatRoughness);
+									  fSpecular, fClearCoat, fClearCoatRoughness, uShadingModel);
 		xColour.rgb = xIBLAmbient + (xColour.rgb - xIBLAmbient) * fShadowFactor;
 	}
 

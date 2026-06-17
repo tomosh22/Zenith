@@ -367,6 +367,17 @@ void Zenith_Tools_TextureExport::ExportFromDataCompressed(const void* pRGBAData,
 	ExportV2(static_cast<const uint8_t*>(pRGBAData), strFilename, iWidth, iHeight, eFormat);
 }
 
+void Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(const void* pRGBAData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat)
+{
+	// Same v2 offline-mip pipeline as the compressed path, but the format stays
+	// uncompressed: ExportV2's non-compressed branch copies each box-downsampled
+	// mip verbatim and writes the v2 envelope the loader validates + the PREBAKED
+	// upload reads (it handles uncompressed formats via ColourFormatBytesPerPixel).
+	// Used for the sRGB albedo, which has no BC sRGB equivalent.
+	Zenith_Assert(!Zenith_Tools_TextureExport::IsCompressedFormat(eFormat), "ExportFromDataV2Uncompressed: format must be uncompressed");
+	ExportV2(static_cast<const uint8_t*>(pRGBAData), strFilename, iWidth, iHeight, eFormat);
+}
+
 void Zenith_Tools_TextureExport::ExportFromDataWithFormat(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat, size_t ulBytesPerPixel)
 {
 	const size_t ulDataSize = static_cast<size_t>(iWidth) * iHeight * ulBytesPerPixel;

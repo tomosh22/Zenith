@@ -37,10 +37,8 @@ public:
 
 	Flux_Shader   m_xGenerateShader;
 	Flux_Shader   m_xBlurShader;
-	Flux_Shader   m_xUpsampleShader;
 	Flux_Pipeline m_xGeneratePipeline;
 	Flux_Pipeline m_xBlurPipeline;
-	Flux_Pipeline m_xUpsamplePipeline;
 
 	Flux_TransientHandle m_xRawOcclusionHandle;
 	Flux_TransientHandle m_xBlurredHandle;

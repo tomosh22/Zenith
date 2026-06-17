@@ -13,8 +13,10 @@
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
+#include "Flux/SSAO/Flux_SSAOImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #ifdef ZENITH_TOOLS
@@ -89,6 +91,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
 	Flux_SSRImpl& xSSR = g_xEngine.SSR();
 	Flux_SSGIImpl& xSSGI = g_xEngine.SSGI();
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_DynamicLightsImpl& xDynamicLights = g_xEngine.DynamicLights();
 	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
 
@@ -153,6 +156,17 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 		xBinder.BindSRV(xDS.m_xShader, "g_xSSGITex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
+	// SSAO modulates the ambient term inside the shader (g_bSSAOEnabled gates the
+	// sample). The transient slot is always live post-compile, so bind the map
+	// that the live toggles produced: blurred when the blur pass ran, else raw.
+	// When SSAO is off the bind is just a descriptor-validity placeholder.
+	{
+		const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+		const bool bUseBlurred = !xOpts.m_bSSAOEnabled || xOpts.m_bSSAOBlurEnabled;
+		xBinder.BindSRV(xDS.m_xShader, "g_xSSAOTex",
+			bUseBlurred ? &xSSAO.GetBlurred().SRV() : &xSSAO.GetRawOcclusion().SRV());
+	}
+
 	// Clustered dynamic lights — buffers populated by Flux_LightClustering.
 	// All three are statically referenced by the shader, so all must be
 	// bound regardless of whether dynamic lights exist this frame (the
@@ -179,6 +193,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 		u_int m_bSSREnabled;
 		u_int m_bSSGIEnabled;
 		float m_fAmbientFallbackIntensity;  // Configurable ambient when IBL disabled
+		u_int m_bSSAOEnabled;               // gate the ambient-only SSAO sample
 	};
 	DeferredShadingConstants xConstants;
 	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
@@ -194,6 +209,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	xConstants.m_bSSREnabled = xSSR.IsEnabled() ? 1 : 0;
 	xConstants.m_bSSGIEnabled = xSSGI.IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
+	xConstants.m_bSSAOEnabled = Zenith_GraphicsOptions::Get().m_bSSAOEnabled ? 1 : 0;
 
 	xBinder.BindDrawConstants(xDS.m_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
 
@@ -216,6 +232,15 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		xGraph.Read(xPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
 
 	xGraph.Read(xPass, xFluxGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+
+	// SSAO feeds the ambient term in-shader. Reading both transients orders the
+	// SSAO Generate/Blur passes before this one (SSAO registers ahead of
+	// DeferredShading in the setup walk so its handles are already created), and
+	// covers both the blur-on (blurred) and blur-off (raw) bind paths. The passes
+	// clear-only when SSAO is disabled — harmless, the shader gate skips the tap.
+	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
+	xGraph.ReadTransient(xPass, xSSAO.m_xRawOcclusionHandle, RESOURCE_ACCESS_READ_SRV);
+	xGraph.ReadTransient(xPass, xSSAO.m_xBlurredHandle, RESOURCE_ACCESS_READ_SRV);
 
 	// Shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)

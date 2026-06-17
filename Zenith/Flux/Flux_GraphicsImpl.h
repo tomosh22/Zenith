@@ -84,6 +84,17 @@ public:
 	float GetFOV();
 	float GetAspectRatio();
 
+	// Opt-in per-scene directional-sun override (default OFF → games use the global
+	// dbg_SunDir/dbg_SunColour unchanged). xColourRadiance.w is the HDR radiance
+	// scalar. Lets a scene pose a real cinematic key/fill without changing globals.
+	void SetSunOverride(const Zenith_Maths::Vector3& xDir, const Zenith_Maths::Vector4& xColourRadiance)
+	{
+		m_bSunOverride = true;
+		m_xSunDirOverride = xDir;
+		m_xSunColourOverride = xColourRadiance;
+	}
+	void ClearSunOverride() { m_bSunOverride = false; }
+
 	bool BuildCameraMatrices(FrameConstants& xConstants);
 
 	// Samplers (initialised in InitialiseSamplers).
@@ -110,6 +121,10 @@ public:
 
 	// Per-frame CPU-side constants struct + binding-group layout.
 	FrameConstants              m_xFrameConstants;
+	// Per-scene sun override (see SetSunOverride). Default OFF.
+	bool                        m_bSunOverride = false;
+	Zenith_Maths::Vector3       m_xSunDirOverride = { 0.0f, -1.0f, 0.0f };
+	Zenith_Maths::Vector4       m_xSunColourOverride = { 1.0f, 1.0f, 1.0f, 1.0f };
 	Flux_BindingGroupLayout     m_xFrameConstantsLayout;
 
 	// Graph-owned transient render-target handles + graph back-ref.

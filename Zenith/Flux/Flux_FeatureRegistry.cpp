@@ -274,6 +274,11 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddToSetupWalk("HiZ");
 	xReg.AddToSetupWalk("SSR");
 	xReg.AddToSetupWalk("SSGI");
+	// SSAO now feeds the DeferredShading ambient term (it no longer composites
+	// post-lighting), so it must register BEFORE DeferredShading: its transient
+	// handles must exist when DeferredShading's setup reads them, and the screen-
+	// space-effects group is its natural home alongside HiZ/SSR/SSGI.
+	xReg.AddToSetupWalk("SSAO");
 	xReg.AddToSetupWalk("LightClustering");
 	xReg.AddToSetupWalk("DeferredShading");
 	// Grass is a FORWARD pass over the lit HDR scene (depth-tested, read-only
@@ -284,9 +289,9 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// Before Fog/Particles so atmosphere + effects composite over the blades.
 	xReg.AddToSetupWalk("Grass");
 	xReg.AddSetupStep("@Skybox:AerialPerspective", +[](Flux_RenderGraph& xGraph){ g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(xGraph); });
-	xReg.AddToSetupWalk("SSAO");
-	// Forward translucency between SSAO and Fog: glass must not be darkened
-	// by SSAO's post-hoc multiply, and fog must composite over it.
+	// Forward translucency after lighting and before Fog: glass is lit in its own
+	// forward pass and fog must composite over it. (SSAO no longer darkens it —
+	// it's an ambient-only term in DeferredShading now, applied before this.)
 	xReg.AddToSetupWalk("Translucency");
 	xReg.AddToSetupWalk("Fog");
 	xReg.AddToSetupWalk("SDFs");
