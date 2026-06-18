@@ -1160,8 +1160,14 @@ void ComputeHumanSmoothNormals(Zenith_MeshAsset* pxMesh)
 		const Zenith_Maths::Vector3& xA = pxMesh->m_xPositions.Get(uA);
 		const Zenith_Maths::Vector3& xB = pxMesh->m_xPositions.Get(uB);
 		const Zenith_Maths::Vector3& xC = pxMesh->m_xPositions.Get(uC);
-		// Length = 2*area, so this is the area-weighted face normal.
-		const Zenith_Maths::Vector3 xFace = glm::cross(xB - xA, xC - xA);
+		// Area-weighted face normal (length = 2*area). The triangle winding from
+		// StitchHumanRings is front-facing in the engine's left-handed convention,
+		// for which the OUTWARD normal is cross(C-A, B-A) — glm::cross is the
+		// right-handed product, so the operands are ordered to match LH outward.
+		// (Using cross(B-A, C-A) here pointed every smooth normal INWARD, which made
+		// the whole figure read as a near-black silhouette: N·L clamped to 0 on
+		// every lit surface and the IBL ambient sampled the wrong hemisphere.)
+		const Zenith_Maths::Vector3 xFace = glm::cross(xC - xA, xB - xA);
 		xAccum.Get(xWeld.Get(uA)) += xFace;
 		xAccum.Get(xWeld.Get(uB)) += xFace;
 		xAccum.Get(xWeld.Get(uC)) += xFace;
