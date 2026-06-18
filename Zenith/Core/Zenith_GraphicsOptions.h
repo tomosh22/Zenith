@@ -36,8 +36,16 @@ struct Zenith_GraphicsOptions
 	bool m_bHDRAutoExposureEnabled = true;
 	bool m_bIBLDiffuseEnabled = true;
 	bool m_bIBLSpecularEnabled = true;
-	bool m_bSkyboxAtmosphereEnabled = false;
-	bool m_bSkyboxAerialPerspectiveEnabled = true;
+	// Atmosphere on by default: the IBL ambient already bakes from the physically
+	// based atmosphere (sun-intensity 20), so a flat cubemap sky was incoherent
+	// with the lighting. Drawing the atmosphere makes sky + ambient one coherent
+	// system -- the strongest single outdoor photoreal cue, and it already runs.
+	bool m_bSkyboxAtmosphereEnabled = true;
+	// Aerial perspective OFF for now: the simplified overlay (strength 1.0,
+	// inscatter x sunIntensity 20) veils the whole frame on elevated/long-range
+	// cameras. Re-enable once retuned to a subtle strength (or replaced by the
+	// ray-marched + ozone version) so distance haze reads without washing out.
+	bool m_bSkyboxAerialPerspectiveEnabled = false;
 	bool m_bSSAOBlurEnabled = true;
 	bool m_bSSRRoughnessBlurEnabled = true;
 	bool m_bSSGIDenoiseEnabled = true;
@@ -47,5 +55,7 @@ struct Zenith_GraphicsOptions
 
 	uint32_t m_uVolFogTechnique = 0;
 
-	Zenith_Maths::Vector3 m_xSkyboxColour = Zenith_Maths::Vector3(0.f);
+	// Fallback solid-sky colour (used only when the skybox is disabled). A
+	// plausible daylight blue so IBL/ambient gets a real sky instead of black.
+	Zenith_Maths::Vector3 m_xSkyboxColour = Zenith_Maths::Vector3(0.35f, 0.55f, 0.85f);
 };

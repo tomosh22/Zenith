@@ -31,7 +31,15 @@ Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewMatrix()        { return m_xFram
 Zenith_Maths::Vector3 Flux_GraphicsImpl::GetSunDir()            { return m_xFrameConstants.m_xSunDir_Pad; }
 
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.1,-1.0, 0.1 };
-DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.9, 0.8,0.7, 1.f };
+// Sun radiance (.a) is the direct key-light illuminance. It was 1.0 while the
+// sky/IBL ambient bakes from the atmosphere at sun-intensity 20 (see
+// Flux_SkyboxImpl::fSUN_INTENSITY + Flux_IBL irradiance/prefilter capture),
+// so ambient fill drowned the key -> flat, washed "ambient soup" with no
+// form-defining contrast or visible shadows. Raising it to ~12 makes the sun
+// the dominant key (auto-exposure normalises absolute brightness; what matters
+// is the key:fill ratio). The chromaticity is warm ~5500K daylight white; the
+// cool-blue sky ambient stays cool, giving a realistic warm-key/cool-fill split.
+DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 1.0, 0.94, 0.86, 3.4f };
 
 DEBUGVAR bool dbg_bQuadUtilisationAnalysis = false;
 DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;

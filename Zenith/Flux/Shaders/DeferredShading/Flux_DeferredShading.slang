@@ -314,6 +314,48 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 	xFinalColor.a    = 1.0;
 }
 
+// ----- Screen-space contact shadows -----
+// Short view-space ray-march from the surface toward the sun. Catches small-
+// scale occlusion (foot-meets-ground, prop-on-surface, normal-mapped detail)
+// that CSM texels (~cm near, ~dm far) cannot resolve -- the "floating object"
+// tell. Reuses the already-bound scene depth; min()'d into the CSM factor.
+float ScreenSpaceContactShadow(float3 xWorldPos, float3 xLightDir)
+{
+	// Deliberately SHORT range: a tight feet-meets-ground contact darken, not a
+	// full character shadow (CSM does the big shadow). The march is also applied
+	// on the character's own surface, so it self-occludes (arm under shoulder);
+	// kept short + soft + UN-jittered so that self-occlusion reads as smooth AO
+	// rather than the speckly noise a per-pixel jitter produced (no TAA to
+	// denoise it). The big silhouette artifact is solved by the short range, so
+	// the jitter is no longer needed.
+	const int   iSteps   = 10;
+	const float fMaxDist = 0.10;   // ~10cm: immediate contact only
+	const float fThick   = 0.05;   // thin occluder window (don't grab the whole body)
+	const float fBias    = 0.025;  // skip very-close self-occlusion (acne + limb seams)
+
+	float fStepLen = fMaxDist / float(iSteps);
+	float3 xStepW  = xLightDir * fStepLen;
+	float3 xPosW   = xWorldPos + xLightDir * 0.02; // fixed lift off the surface
+	[unroll]
+	for (int i = 0; i < iSteps; ++i)
+	{
+		xPosW += xStepW;
+		float3 xViewPos = mul(FrameConstants.g_xViewMat, float4(xPosW, 1.0)).xyz;
+		if (xViewPos.z <= 0.0) break;               // behind camera (+Z forward)
+		float3 xScreen = ViewToScreen(xViewPos);    // .xy = UV
+		float2 xUV = xScreen.xy;
+		if (xUV.x < 0.0 || xUV.x > 1.0 || xUV.y < 0.0 || xUV.y > 1.0) break;
+
+		float fSceneViewZ = DepthToViewZ(xUV, g_xDepthTex.Sample(xUV).r);
+		float fDelta = xViewPos.z - fSceneViewZ;    // >0: ray sample is behind scene geometry
+		if (fDelta > fBias && fDelta < fThick)
+			// Soft + distance-faded: nearer contact darker, capped at 55% so it
+			// reads as gentle grounding AO, never a hard black silhouette.
+			return 1.0 - 0.55 * (1.0 - float(i) / float(iSteps));
+	}
+	return 1.0;
+}
+
 // ----- Main composite -----
 
 static const float BRDF_LUT_DISPLAY_SIZE   = 0.2;
@@ -482,6 +524,11 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 		break;
 	}
+
+	// Screen-space contact shadows refine the CSM result for small-scale
+	// occlusion. Only meaningful on lit surfaces; take the darker of the two.
+	if (fNdotL > 0.0)
+		fShadowFactor = min(fShadowFactor, ScreenSpaceContactShadow(xWorldPos, xLightDir));
 
 	// Direct light contribution + shadow blend. Shadow attenuates ONLY
 	// the direct term — IBL ambient stays unchanged so shadowed pixels

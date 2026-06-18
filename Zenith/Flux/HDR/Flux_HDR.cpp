@@ -36,13 +36,21 @@ static constexpr TextureFormat BLOOM_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT
 DEBUGVAR u_int dbg_uHDRDebugMode = HDR_DEBUG_NONE;
 DEBUGVAR float dbg_fHDRExposure = 1.0f;
 DEBUGVAR float dbg_fHDRBloomIntensity = 0.5f;
-DEBUGVAR float dbg_fHDRBloomThreshold = 1.0f;
-DEBUGVAR u_int dbg_uHDRToneMappingOperator = TONEMAPPING_ACES;
+// HDR (pre-exposure) luminance above which bloom is extracted. Raised 1.0 -> 3.0
+// for the brighter sun calibration: a near-white DIFFUSE surface (e.g. the grid-
+// textured platform) now reaches HDR ~2-3 under direct sun and was lens-blooming,
+// which is non-physical. 3.0 keeps bloom on genuine sources (sky ~7, sun disk,
+// emissive, hot speculars) while white diffuse surfaces stop glowing.
+DEBUGVAR float dbg_fHDRBloomThreshold = 3.0f;
+DEBUGVAR u_int dbg_uHDRToneMappingOperator = TONEMAPPING_AGX;
 DEBUGVAR bool dbg_bHDRShowHistogram = false;
 DEBUGVAR bool dbg_bHDRFreezeExposure = false;
-DEBUGVAR float dbg_fHDRAdaptationSpeed = 2.0f;
-DEBUGVAR float dbg_fHDRTargetLuminance = 0.18f;
-DEBUGVAR float dbg_fHDRMinExposure = 0.1f;
+DEBUGVAR float dbg_fHDRAdaptationSpeed = 4.0f;
+// Auto-exposure key (target geometric-mean luminance). Slightly below the 0.18
+// linear-average mid-grey convention because log-average metering on outdoor
+// scenes (bright sky + shadows) reads low and the standard key over-exposes.
+DEBUGVAR float dbg_fHDRTargetLuminance = 0.14f;
+DEBUGVAR float dbg_fHDRMinExposure = 0.05f;
 DEBUGVAR float dbg_fHDRMaxExposure = 10.0f;
 
 // GPU constant buffer layouts (defined here rather than inline in render functions)
@@ -167,7 +175,10 @@ void Flux_HDRImpl::Initialise()
 			"Flux_HDR: Failed to create histogram buffer");
 
 		// Exposure buffer (4 floats: avgLum, currentExp, targetExp, pad).
-		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
+		// Seed exposure near a daylight value (0.4), not 1.0, so the scene is
+		// well-exposed immediately and stays close across the smoke runner's
+		// scene reloads (which re-fire this seed).
+		float afInitialExposure[4] = { 0.4f, 0.4f, 0.4f, 0.0f };
 		xVulkanMemory.InitialiseReadWriteBuffer(afInitialExposure, 4 * sizeof(float), m_xExposureBuffer);
 		Zenith_Assert(m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
 			"Flux_HDR: Failed to create exposure buffer");
@@ -226,7 +237,10 @@ void Flux_HDRImpl::Reset()
 	// Reset exposure buffer to default values
 	if (m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
+		// Seed exposure near a daylight value (0.4), not 1.0, so the scene is
+		// well-exposed immediately and stays close across the smoke runner's
+		// scene reloads (which re-fire this seed).
+		float afInitialExposure[4] = { 0.4f, 0.4f, 0.4f, 0.0f };
 		g_xEngine.FluxMemory().UploadBufferData(
 			m_xExposureBuffer.GetBuffer().m_xVRAMHandle,
 			afInitialExposure,
@@ -259,7 +273,10 @@ static void PreExecuteLuminanceHistogram(void* pUserData)
 	xHDR.m_bAutoExposureWasEnabled = bAutoExposure;
 	if (bAutoExposureJustEnabled && xHDR.m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
+		// Seed exposure near a daylight value (0.4), not 1.0, so the scene is
+		// well-exposed immediately and stays close across the smoke runner's
+		// scene reloads (which re-fire this seed).
+		float afInitialExposure[4] = { 0.4f, 0.4f, 0.4f, 0.0f };
 		g_xEngine.FluxMemory().UploadBufferData(
 			xHDR.m_xExposureBuffer.GetBuffer().m_xVRAMHandle,
 			afInitialExposure,
@@ -454,11 +471,14 @@ static void ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserD
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
 
-	Flux_RenderAttachment& xTarget = xHDR.GetBloomChainAttachment(uMipIndex);
+	// The 13-tap downsample samples the SOURCE mip, so its tap offsets must be in
+	// SOURCE-texel units. Using the destination (half-res) texel size spread the
+	// taps 2x too far -> over-blurred + aliased bloom chain. Use the source mip.
+	Flux_RenderAttachment& xSource = xHDR.GetBloomChainAttachment(uMipIndex - 1);
 	BloomConstants xBloomConsts;
 	xBloomConsts.m_fThreshold = xHDR.m_fBloomThreshold;
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
-	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xTarget.m_xSurfaceInfo.m_uWidth, 1.0f / xTarget.m_xSurfaceInfo.m_uHeight);
+	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xSource.m_xSurfaceInfo.m_uWidth, 1.0f / xSource.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xHDR.m_xBloomDownsamplePipeline);
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());

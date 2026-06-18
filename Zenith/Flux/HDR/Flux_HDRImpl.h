@@ -11,6 +11,7 @@ enum ToneMappingOperator : u_int
 	TONEMAPPING_REINHARD,
 	TONEMAPPING_UNCHARTED2,
 	TONEMAPPING_NEUTRAL,
+	TONEMAPPING_AGX,        // modern filmic default (matches shader case 5)
 	TONEMAPPING_COUNT
 };
 
@@ -119,7 +120,7 @@ public:
 	float                     m_fExposure          = 1.0f;
 	float                     m_fBloomIntensity    = 0.5f;
 	float                     m_fBloomThreshold    = 1.0f;
-	ToneMappingOperator       m_eToneMappingOperator = TONEMAPPING_ACES;
+	ToneMappingOperator       m_eToneMappingOperator = TONEMAPPING_AGX;
 
 	float                     m_fCurrentExposure   = 1.0f;
 	float                     m_fAverageLuminance  = 0.18f;

@@ -136,8 +136,12 @@ public:
 	Flux_Shader                m_xIrradianceConvolveShader;
 	Flux_Shader                m_xPrefilterShader;
 
-	// Configuration.
-	float                      m_fIntensity = 1.0f;
+	// Configuration. IBL ambient trimmed to 0.5 so the sky-derived ambient is a
+	// FILL, not the dominant term -- the sun key now defines form/contrast
+	// instead of being drowned by ambient (the old flat "ambient soup" look).
+	// (Trimming further deepens shadows but makes log-average auto-exposure
+	// over-expose bright-foreground compositions until metering is improved.)
+	float                      m_fIntensity = 0.5f;
 
 	// Regen state machine.
 	IBL_RegenState             m_eRegenState = IBL_REGEN_IDLE;

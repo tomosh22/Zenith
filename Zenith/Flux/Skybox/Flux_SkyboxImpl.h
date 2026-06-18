@@ -21,7 +21,11 @@ namespace AtmosphereConfig
 	constexpr float fMIE_G = 0.76f;
 
 	constexpr float fSUN_ANGULAR_RADIUS = 0.00935f;
-	constexpr float fSUN_INTENSITY = 20.0f;
+	// 20 -> 7: at 20 the atmosphere sky luminance (~20) massively exceeds the
+	// auto-exposure histogram's top bin (luminance 4.0) and, combined with deep
+	// shadows, broke log-average metering (chronic over-exposure). 7 keeps a
+	// bright daylight sky while staying in a range the exposure system handles.
+	constexpr float fSUN_INTENSITY = 7.0f;
 
 	constexpr u_int uDEFAULT_SKY_SAMPLES = 16;
 	constexpr u_int uDEFAULT_LIGHT_SAMPLES = 8;

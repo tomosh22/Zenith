@@ -145,6 +145,20 @@ public MaterialSurface EvaluateMaterialSurface(
 							 GetRoughnessMultiplier(), GetMetallicMultiplier(),
 							 fRoughness, fMetallic);
 
+	// --- Geometric specular anti-aliasing (Kaplanyan/Tokuyoshi) ---
+	// Sub-pixel normal variation from 2K + detail normal maps produces specular
+	// sparkle / crawling highlights that edge-AA can't fix. Widen the GGX alpha
+	// (roughness^2) by the screen-space normal-derivative variance so glints
+	// average into the rough lobe. Applied once at the G-buffer write, on the
+	// FINAL shading normal (not inside the POM march). Filament's defaults.
+	{
+		float3 dNdx = ddx(xWorldNormal);
+		float3 dNdy = ddy(xWorldNormal);
+		float  fVariance     = 0.25 * (dot(dNdx, dNdx) + dot(dNdy, dNdy));
+		float  fKernelRough2 = min(2.0 * fVariance, 0.18);
+		fRoughness = sqrt(saturate(fRoughness * fRoughness + fKernelRough2));
+	}
+
 	MaterialSurface s;
 	s.albedo        = xAlbedo;
 	s.worldNormal   = xWorldNormal;

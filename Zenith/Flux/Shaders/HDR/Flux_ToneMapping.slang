@@ -118,6 +118,62 @@ float3 NeutralToneMapping(float3 colour)
 	return saturate(lerp(colour, float3(newPeak, newPeak, newPeak), g));
 }
 
+// ---------- AgX (Troy Sobotka / Benjamin Wrensch "Minimal AgX") ----------
+// Modern filmic transform and the new photoreal default. Versus ACES-Narkowicz
+// it keeps hue stable across the exposure range (no blue->cyan / skin->orange
+// skew) and desaturates highlights gracefully toward white, reading as
+// photographic film rather than CG. The sigmoid runs in a log2-encoded space;
+// the final pow(2.2) returns ~linear so the sRGB swapchain applies the true
+// OETF on write (no double-encode). Matrices are filled row-major and used with
+// mul(M, v) — mathematically M*v — matching the engine's mul(invProj, clip).
+float3 AgX_DefaultContrastApprox(float3 x)
+{
+	float3 x2 = x * x;
+	float3 x4 = x2 * x2;
+	return 15.5    * x4 * x2
+		 - 40.14   * x4 * x
+		 + 31.96   * x4
+		 - 6.868   * x2 * x
+		 + 0.4298  * x2
+		 + 0.1191  * x
+		 - 0.00232;
+}
+
+float3 AgX_LookPunchy(float3 val)
+{
+	const float3 lw = float3(0.2126, 0.7152, 0.0722);
+	float luma = dot(val, lw);
+	// Gentle default grade: a touch of contrast (power) + saturation. Kept
+	// subtle so the look stays neutral/photographic, not stylised.
+	const float3 power = float3(1.05, 1.05, 1.05);
+	const float  sat   = 1.10;
+	val = pow(max(val, float3(0.0, 0.0, 0.0)), power);
+	return luma + sat * (val - luma);
+}
+
+float3 AgXToneMapping(float3 colour)
+{
+	const float3x3 agx_mat = float3x3(
+		0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+		0.0784335999999992, 0.878468636469772, 0.0784336,
+		0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+	const float3x3 agx_mat_inv = float3x3(
+		 1.19687900512017,  -0.0528968517574562, -0.0529716355144438,
+		-0.0980208811401368, 1.15190312990417,   -0.0980434501171241,
+		-0.0990297440797205,-0.0989611768448433,  1.15107367264116);
+	const float min_ev = -12.47393;
+	const float max_ev = 4.026069;
+
+	colour = mul(agx_mat, colour);
+	colour = clamp(log2(max(colour, float3(1e-10, 1e-10, 1e-10))), min_ev, max_ev);
+	colour = (colour - min_ev) / (max_ev - min_ev);
+	colour = AgX_DefaultContrastApprox(colour);
+	colour = AgX_LookPunchy(colour);
+	colour = mul(agx_mat_inv, colour);
+	colour = pow(max(colour, float3(0.0, 0.0, 0.0)), float3(2.2, 2.2, 2.2));
+	return colour;
+}
+
 float3 ApplyToneMapping(float3 xHDR, uint uOperator)
 {
 	switch (uOperator)
@@ -127,13 +183,58 @@ float3 ApplyToneMapping(float3 xHDR, uint uOperator)
 		case 2: return ReinhardToneMapping(xHDR);
 		case 3: return Uncharted2ToneMapping(xHDR);
 		case 4: return NeutralToneMapping(xHDR);
-		default: return ACESFilmicToneMapping(xHDR);
+		case 5: return AgXToneMapping(xHDR);
+		default: return AgXToneMapping(xHDR);
 	}
+}
+
+// ---------- Output dithering (anti-banding) ----------
+// Approximate sRGB OETF/EOTF so the triangular dither lands in the perceptual
+// domain where the 8-bit quantization actually happens (the swapchain is sRGB).
+// Gamma-2.2 approximation of the sRGB transfer (component-wise, no vector
+// ternary). Exact sRGB is unnecessary here — the dither only needs roughly
+// perceptual spacing so ~1 LSB lands evenly across the tonal range.
+float3 LinearToSRGBApprox(float3 c)
+{
+	return pow(saturate(c), float3(1.0/2.2, 1.0/2.2, 1.0/2.2));
+}
+float3 SRGBToLinearApprox(float3 c)
+{
+	return pow(max(c, float3(0.0, 0.0, 0.0)), float3(2.2, 2.2, 2.2));
+}
+float Hash12(float2 p)
+{
+	float3 p3 = frac(float3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return frac((p3.x + p3.y) * p3.z);
+}
+// TPDF (triangular) dither of ~1 LSB, applied in sRGB space then converted back
+// to linear so the sRGB swapchain re-encodes correctly. Breaks up Mach banding
+// in skies / volumetrics / gradients before the 8-bit write.
+float3 ApplyOutputDither(float3 xLinear, float2 xPixel)
+{
+	float3 xS = LinearToSRGBApprox(xLinear);
+	float r0 = Hash12(xPixel);
+	float r1 = Hash12(xPixel + float2(17.0, 23.0));
+	float r2 = Hash12(xPixel + float2(101.0, 53.0));
+	float3 xTri = float3(r0, r1, r2) + float3(Hash12(xPixel + 7.0), Hash12(xPixel + 41.0), Hash12(xPixel + 71.0)) - 1.0;
+	xS += xTri * (1.0 / 255.0);
+	return SRGBToLinearApprox(xS);
 }
 
 float Luminance(float3 colour)
 {
 	return dot(colour, float3(0.2126, 0.7152, 0.0722));
+}
+
+// Exposed + bloomed + tonemapped colour at an arbitrary UV. Used by the inline
+// FXAA below to evaluate neighbour pixels. SampleLevel(0) so it is safe inside
+// the (non-uniform) FXAA edge branch.
+float3 ToneAt(float2 xUV, float fExposure, uint uOperator)
+{
+	float3 xHDR = g_xHDRTex.SampleLevel(xUV, 0).rgb * fExposure;
+	xHDR += g_xBloomTex.SampleLevel(xUV, 0).rgb * ToneMappingConstants.g_fBloomIntensity;
+	return ApplyToneMapping(xHDR, uOperator);
 }
 
 float3 DebugHeatmap(float fValue)
@@ -307,5 +408,47 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		if (RenderHistogramOverlay(input.uv, xOverlay)) return float4(xOverlay, 1.0);
 	}
 
+	// --- FXAA (luma edge anti-aliasing on the tonemapped 3D scene) ---
+	// Stopgap edge AA until the TAA temporal foundation lands. Runs here, before
+	// UI/text/gizmos draw onto the final target, so overlays stay razor-sharp.
+	// Classic FXAA-console: detect a luma edge from the 4 diagonals, then blend
+	// along the gradient. Neighbours are re-tonemapped via ToneAt (a few extra
+	// samples on edge pixels). texel size comes from screen-space derivatives.
+	{
+		uint  uOp   = ToneMappingConstants.g_uToneMappingOperator;
+		float2 xTexel = float2(abs(ddx(input.uv.x)), abs(ddy(input.uv.y)));
+
+		float fLumaC  = Luminance(xToneMapped);
+		float fLumaNW = Luminance(ToneAt(input.uv + float2(-xTexel.x, -xTexel.y), fExposure, uOp));
+		float fLumaNE = Luminance(ToneAt(input.uv + float2( xTexel.x, -xTexel.y), fExposure, uOp));
+		float fLumaSW = Luminance(ToneAt(input.uv + float2(-xTexel.x,  xTexel.y), fExposure, uOp));
+		float fLumaSE = Luminance(ToneAt(input.uv + float2( xTexel.x,  xTexel.y), fExposure, uOp));
+
+		float fLumaMin = min(fLumaC, min(min(fLumaNW, fLumaNE), min(fLumaSW, fLumaSE)));
+		float fLumaMax = max(fLumaC, max(max(fLumaNW, fLumaNE), max(fLumaSW, fLumaSE)));
+		float fRange   = fLumaMax - fLumaMin;
+
+		// Only touch pixels with a meaningful local edge (relative + absolute floor).
+		if (fRange >= max(0.0312, fLumaMax * 0.125))
+		{
+			float2 xDir;
+			xDir.x = -((fLumaNW + fLumaNE) - (fLumaSW + fLumaSE));
+			xDir.y =  ((fLumaNW + fLumaSW) - (fLumaNE + fLumaSE));
+
+			float fDirReduce = max((fLumaNW + fLumaNE + fLumaSW + fLumaSE) * 0.25 * 0.125, 0.0078125);
+			float fRcpMin    = 1.0 / (min(abs(xDir.x), abs(xDir.y)) + fDirReduce);
+			xDir = clamp(xDir * fRcpMin, float2(-8.0, -8.0), float2(8.0, 8.0)) * xTexel;
+
+			float3 xRgbA = 0.5 * (ToneAt(input.uv + xDir * (1.0/3.0 - 0.5), fExposure, uOp)
+								+ ToneAt(input.uv + xDir * (2.0/3.0 - 0.5), fExposure, uOp));
+			float3 xRgbB = xRgbA * 0.5 + 0.25 * (ToneAt(input.uv + xDir * -0.5, fExposure, uOp)
+											   + ToneAt(input.uv + xDir *  0.5, fExposure, uOp));
+			float fLumaB = Luminance(xRgbB);
+			xToneMapped = (fLumaB < fLumaMin || fLumaB > fLumaMax) ? xRgbA : xRgbB;
+		}
+	}
+
+	// Anti-banding dither in perceptual space, keyed on the pixel coordinate.
+	xToneMapped = ApplyOutputDither(xToneMapped, input.position.xy);
 	return float4(xToneMapped, 1.0);
 }
