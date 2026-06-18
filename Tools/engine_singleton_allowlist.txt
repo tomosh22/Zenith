@@ -66,7 +66,6 @@ Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => g_xEngine | 5
 Zenith/Flux/DynamicLights/Flux_LightClustering.cpp => g_xEngine | 9
 Zenith/Flux/Flux.cpp => g_xEngine | 45
 Zenith/Flux/Flux_Buffers.h => g_xEngine | 1
-Zenith/Flux/Flux_CommandList.h => g_xEngine | 2
 Zenith/Flux/Flux_FeatureRegistry.cpp => g_xEngine | 11
 Zenith/Flux/Flux_Graphics.cpp => g_xEngine | 17
 Zenith/Flux/Flux_PerFrame.cpp => g_xEngine | 2

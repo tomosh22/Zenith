@@ -52,8 +52,6 @@ class Zenith_Multithreading;
 	X(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME, "Flux Swapchain End Frame") \
 	X(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME, "Flux PlatformAPI Begin Frame") \
 	X(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, "Flux PlatformAPI End Frame") \
-	X(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS, "Flux Iterate Commands") \
-	X(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, "Flux Record Command Buffers") \
 	/* FLUX_RECORD_PASS is per-pass: used with a runtime label argument to BeginProfile */ \
 	X(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS, "Flux Record Pass") \
 	X(ZENITH_PROFILE_INDEX__FLUX_MESH_GEOMETRY_LOAD_FROM_FILE, "Flux Mesh Geometry Load From File") \

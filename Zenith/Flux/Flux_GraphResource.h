@@ -2,14 +2,14 @@
 
 // Render-graph resource tagging: the tagged-pointer wrapper the graph uses to
 // uniformly track 2D images, cubemap images, and buffers, plus the per-pass
-// attachment ref / begin-info carriers and the recorded command-list entry.
+// attachment ref / begin-info carriers and the queued render-pass entry.
 //
-// Lives separately from Flux_RenderGraph.h so Flux_CommandListEntry can embed a
+// Lives separately from Flux_RenderGraph.h so Flux_RenderPassEntry can embed a
 // Flux_RenderGraph_AttachmentRef without a circular dependency on the graph header.
 #include "Flux/Flux_RenderResources.h"  // Flux_RenderAttachmentCube, Flux_Buffer (+ Flux_RenderAttachment via Flux_Types.h)
 
-class Flux_CommandList;
 struct Flux_RenderGraph_Pass;
+class Flux_RenderGraph;
 
 enum class Flux_GraphResourceKind : u_int
 {
@@ -110,7 +110,7 @@ private:
 	};
 };
 
-// Carrier used by pass metadata and Flux_CommandListEntry to identify which
+// Carrier used by pass metadata and Flux_RenderPassEntry to identify which
 // single subresource of an attachment gets bound as a render target for this
 // pass. For 2D attachments, m_uLayer is always 0.
 struct Flux_RenderGraph_AttachmentRef
@@ -142,13 +142,19 @@ struct Flux_RenderingBeginInfo
 	bool m_bDepthReadOnly = false;
 };
 
-struct Flux_CommandListEntry
+// One queued render-graph pass awaiting backend recording. Carries the pass
+// (its record callback + user data + synthesized prologue barriers), the owning
+// graph (for the record-time TLS resource-validation), and the resolved
+// attachment / clear / depth-read-only state. Filled by Flux_RenderGraph::
+// SubmitRecordedLists in topological order; drained by the backend's worker
+// recording (Flux_RenderGraph::RecordPassInto).
+struct Flux_RenderPassEntry
 {
-	const Flux_CommandList* m_pxCmdList = nullptr;
+	const Flux_RenderGraph_Pass* m_pxPass = nullptr;
+	const Flux_RenderGraph* m_pxGraph = nullptr;
 	Flux_RenderGraph_AttachmentRef m_axColourAttachments[FLUX_MAX_TARGETS];
 	uint32_t m_uNumColourAttachments = 0;
 	Flux_RenderGraph_AttachmentRef m_xDepthStencil;
-	const Flux_RenderGraph_Pass* m_pxPass = nullptr;
 	bool m_bClearTargets = false;
 	bool m_bDepthIsReadOnly = false;
 };

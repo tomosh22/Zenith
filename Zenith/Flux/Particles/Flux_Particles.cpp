@@ -32,7 +32,7 @@ static constexpr uint32_t s_uMaxParticles = 4096;
 
 // Pinned via TextureHandle so UnloadUnused never frees the particle atlas mid-frame.
 
-static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_ParticlesImpl::BuildPipelines()
 {
@@ -199,7 +199,7 @@ void Flux_ParticlesImpl::Render(void*)
 	UploadInstanceData();
 }
 
-static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
@@ -212,7 +212,7 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 	// commands from the already-populated instance counts/buffers — no ECS
 	// mutation (xEmitter.Update) on the worker thread.
 
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Particles() to reach the singleton
 	// instance; other cross-subsystem deps are reached via g_xEngine at point of
 	// use (mirrors ExecuteSSAOGenerate / ExecuteQuads).
@@ -225,36 +225,36 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 		// Alpha-blended particles
 		if (xParticles.m_uAlphaInstanceCount > 0)
 		{
-			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xParticles.m_xPipelineAlpha);
+			pxCommandList->SetPipeline(&xParticles.m_xPipelineAlpha);
 
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
-			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_xInstanceBufferAlpha, 1);
+			pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAlpha, 1);
 
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
+			pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+			pxCommandList->BindSRV(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xParticles.m_uAlphaInstanceCount);
+			pxCommandList->DrawIndexed(6, xParticles.m_uAlphaInstanceCount);
 		}
 
 		// Additive particles
 		if (xParticles.m_uAdditiveInstanceCount > 0)
 		{
-			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xParticles.m_xPipelineAdditive);
+			pxCommandList->SetPipeline(&xParticles.m_xPipelineAdditive);
 
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
-			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xParticles.m_xInstanceBufferAdditive, 1);
+			pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAdditive, 1);
 
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
+			pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+			pxCommandList->BindSRV(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xParticles.m_uAdditiveInstanceCount);
+			pxCommandList->DrawIndexed(6, xParticles.m_uAdditiveInstanceCount);
 		}
 	}
 }
 
-static void ExecuteParticleCompute(Flux_CommandList* pxCmdList, void*)
+static void ExecuteParticleCompute(Flux_CommandBuffer* pxCmdList, void*)
 {
 	// Non-capturing graph callback: ParticleGPU is reached via g_xEngine at
 	// point of use (mirrors ExecuteParticles).

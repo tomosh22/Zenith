@@ -68,8 +68,8 @@ static_assert(sizeof(InstancedMeshPushConstants) == sizeof(MaterialDrawConstants
 // Initialise / Shutdown
 //=============================================================================
 
-static void ExecuteCulling(Flux_CommandList* pxCmdList, void* pUserData);
-static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
+static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void* pUserData);
+static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
 void Flux_InstancedMeshesImpl::BuildPipelines()
 {
@@ -360,7 +360,7 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 	}
 }
 
-static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
+static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 {
 	// PURE READER (worker thread). All CPU/GPU-sync mutation — UpdateGPUBuffers,
 	// ResetVisibleCount, and the culling-constants upload — was relocated to
@@ -382,7 +382,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xZZ.m_xCullingPipeline);
+	pxCmdList->BindComputePipeline(&xZZ.m_xCullingPipeline);
 
 	// Create binder for compute shader bindings
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -412,7 +412,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 
 		// Dispatch compute shader: 64 threads per workgroup
 		uint32_t uNumWorkgroups = (pxGroup->GetInstanceCount() + 63) / 64;
-		pxCmdList->AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
+		pxCmdList->Dispatch(uNumWorkgroups, 1, 1);
 	}
 }
 
@@ -505,13 +505,13 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 // Emit the draw call(s) for one instance group. GPU-culling path uses an
 // indirect draw whose count was written by ExecuteCulling; CPU fallback
 // uses a direct instanced draw sized by the CPU-built visible list.
-static void IssueBatchDraw(Flux_CommandList* pxCmdList, Flux_InstanceGroup* pxGroup, Flux_MeshInstance* pxMesh, bool bUseGPUCulling)
+static void IssueBatchDraw(Flux_CommandBuffer* pxCmdList, Flux_InstanceGroup* pxGroup, Flux_MeshInstance* pxMesh, bool bUseGPUCulling)
 {
 	if (bUseGPUCulling)
 	{
 		// GPU culling: use indirect draw with count from visible count buffer
 		// The culling compute shader wrote the visible instance count to the indirect buffer
-		pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirect>(
+		pxCmdList->DrawIndexedIndirect(
 			&pxGroup->GetIndirectBuffer(),
 			1,   // drawCount = 1 (single draw call)
 			0,   // offset = 0
@@ -524,11 +524,11 @@ static void IssueBatchDraw(Flux_CommandList* pxCmdList, Flux_InstanceGroup* pxGr
 	uint32_t uVisibleCount = pxGroup->GetVisibleCount();
 	if (uVisibleCount > 0)
 	{
-		pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMesh->GetNumIndices(), uVisibleCount);
+		pxCmdList->DrawIndexed(pxMesh->GetNumIndices(), uVisibleCount);
 	}
 }
 
-static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	// PURE READER (worker thread). The CPU-fallback UpdateGPUBuffers and the
 	// per-group stat writes were relocated to GatherInstancedPacket (.Prepare,
@@ -549,7 +549,7 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xGBufferPipeline);
+	pxCmdList->SetPipeline(&xZZ.m_xGBufferPipeline);
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -574,15 +574,15 @@ static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 		}
 
 		// Set vertex and index buffers from mesh
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMesh->GetVertexBuffer());
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
+		pxCmdList->SetVertexBuffer(pxMesh->GetVertexBuffer());
+		pxCmdList->SetIndexBuffer(pxMesh->GetIndexBuffer());
 
 		xZZ.BindBatchDescriptors(xBinder, pxGroup);
 		IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
 	}
 }
 
-void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	// C2 audit: PURE READER. Called from the shadow cascades' record path; it only
 	// reads frozen group state (GetMesh / GetTransformBuffer / GetVisibleIndexBuffer
@@ -620,8 +620,8 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, cons
 		}
 
 		// Set vertex and index buffers
-		xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMesh->GetVertexBuffer());
-		xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
+		xCmdBuf.SetVertexBuffer(pxMesh->GetVertexBuffer());
+		xCmdBuf.SetIndexBuffer(pxMesh->GetIndexBuffer());
 
 		// Bind shadow matrix
 		Zenith_Maths::Matrix4 xIdentity = glm::identity<glm::mat4>();
@@ -636,7 +636,7 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, cons
 		uint32_t uVisibleCount = pxGroup->GetVisibleCount();
 		if (uVisibleCount > 0)
 		{
-			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMesh->GetNumIndices(), uVisibleCount);
+			xCmdBuf.DrawIndexed(pxMesh->GetNumIndices(), uVisibleCount);
 		}
 	}
 }

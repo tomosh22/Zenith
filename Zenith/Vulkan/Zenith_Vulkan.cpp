@@ -279,8 +279,8 @@ static void ResetRenderPassState(RenderPassRecordingState& xState)
 // One barrier per aliasing entry (not unioned) so stage masks stay tight — a
 // colour→fragment hand-off stays at ColourAttachmentOutput → FragmentShader
 // rather than eAllCommands. xEntry.m_pxPass is asserted non-null in
-// SubmitCommandList; we no-op if absent so this helper is safe to call early.
-static void EmitGraphPrologueBarriers(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_CommandListEntry& xEntry)
+// QueueRenderPass; we no-op if absent so this helper is safe to call early.
+static void EmitGraphPrologueBarriers(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_RenderPassEntry& xEntry)
 {
 	if (!xEntry.m_pxPass) return;
 
@@ -315,9 +315,9 @@ static void EmitGraphPrologueBarriers(Zenith_Vulkan_CommandBuffer& xCommandBuffe
 }
 
 // Compute pass: close any open render pass (compute happens outside one),
-// emit barriers, then iterate the command list (which becomes vkCmdDispatch).
+// emit barriers, then record the pass directly (its callback issues vkCmdDispatch).
 static void ProcessComputePass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, RenderPassRecordingState& xState,
-	const Flux_CommandListEntry& xEntry)
+	const Flux_RenderPassEntry& xEntry)
 {
 	if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 	{
@@ -325,7 +325,7 @@ static void ProcessComputePass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rend
 		ResetRenderPassState(xState);
 	}
 	EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
-	xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
+	Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer);
 }
 
 // Compare attachment lists element-wise (resource pointer + mip + layer).
@@ -356,7 +356,7 @@ static bool RenderTargetsMatch(const Flux_RenderGraph_AttachmentRef* axA, uint32
 // barriers, since vkCmdPipelineBarrier inside a render pass needs subpass
 // self-deps we don't model.
 static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, RenderPassRecordingState& xState,
-	const Flux_CommandListEntry& xEntry, u_int uInvocationIndex, u_int i)
+	const Flux_RenderPassEntry& xEntry, u_int uInvocationIndex, u_int i)
 {
 	const Flux_RenderGraph_AttachmentRef* axColourAttachments = xEntry.m_axColourAttachments;
 	const uint32_t uNumColour = xEntry.m_uNumColourAttachments;
@@ -391,13 +391,13 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 		{
 			xState.m_axColourAttachments[u] = axColourAttachments[u];
 		}
-		xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
+		Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer);
 		return;
 	}
 
 	Zenith_Assert(xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE,
 		"RecordCommandBuffersTask: Attempting to continue render pass for '%s' but no render pass is active (worker %u, index %u)",
-		xEntry.m_pxCmdList->GetName(), uInvocationIndex, i);
+		xEntry.m_pxPass->DebugName(), uInvocationIndex, i);
 
 	// Same target setup as previous pass — but the pass may still READ different
 	// resources as SRVs (e.g. its own dependencies on upstream UAV writes). We
@@ -412,14 +412,15 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 		EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
 		xCommandBuffer.BeginRendering(Flux_RenderingBeginInfo{ axColourAttachments, uNumColour, rxDepthStencil, false, false, false, bDepthIsReadOnly });
 	}
-	xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
+	Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer);
 }
 
 // Data-parallel task function to record command buffers in parallel.
 //
-// W15/W20/W21: consumes the render-graph-produced Flux_CommandListEntry layout.
-// The clear flag and target setup come directly from the entry (populated from
-// the graph pass at submit time); the execution-order field has been removed.
+// Consumes the render-graph-produced Flux_RenderPassEntry layout. The clear flag
+// and target setup come directly from the entry (populated from the graph pass at
+// queue time); each pass's record callback is invoked directly via
+// Flux_RenderGraph::RecordPassInto.
 void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int)
 {
 	const Flux_WorkDistribution* pWorkDistribution = static_cast<const Flux_WorkDistribution*>(pData);
@@ -436,7 +437,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 
 	for (u_int i = uStartIndex; i < uEndIndex; i++)
 	{
-		const Flux_CommandListEntry& xEntry = g_xEngine.FluxRenderer().GetPendingCommandLists().Get(i);
+		const Flux_RenderPassEntry& xEntry = g_xEngine.FluxRenderer().GetPendingRenderPasses().Get(i);
 		const bool bIsComputePass = (xEntry.m_uNumColourAttachments == 0 && !xEntry.m_xDepthStencil.IsValid());
 		if (bIsComputePass)
 		{
@@ -461,9 +462,35 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	VkCheck(xCommandBuffer.GetCurrentCmdBuffer().end());
 }
 
+void Zenith_Vulkan::RecordFrame(const Flux_WorkDistribution& xWorkDistribution)
+{
+	// Record every queued render pass directly into the per-worker command
+	// buffers, in parallel. Each worker records its contiguous topological slice
+	// [auStartIndex, auEndIndex) (RecordCommandBuffersTask → RecordPassInto), so
+	// the worker command buffers — submitted in order by EndFrame — preserve the
+	// graph's dependency ordering. Driven from Flux_RenderGraph::Execute (in the
+	// render-task safe window, before the frame memory submit); the recorded
+	// command buffers are retained until EndFrame submits them. The task only
+	// reads the distribution, so the const_cast to the void* task payload is safe.
+	Zenith_DataParallelTask xRecordingTask(
+		ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS,
+		RecordCommandBuffersTask,
+		const_cast<Flux_WorkDistribution*>(&xWorkDistribution),
+		FLUX_NUM_WORKER_THREADS,
+		true
+	);
+
+	m_pxTasks->SubmitDataParallelTask(&xRecordingTask);
+	xRecordingTask.WaitUntilComplete();
+}
+
 void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 {
-	// Memory update is handled separately before render graph execution
+	// SUBMIT ONLY. This frame's render command buffers (if any) were already
+	// recorded by RecordFrame (driven from Flux_RenderGraph::Execute, before the
+	// frame memory submit). Here we submit the lazily-recorded memory work first
+	// (signalling the memory semaphore), then the pre-recorded worker command
+	// buffers (waiting on it), in worker order.
 
 	vk::PipelineStageFlags eMemWaitStages = vk::PipelineStageFlagBits::eAllCommands;
 	vk::PipelineStageFlags eRenderWaitStages = vk::PipelineStageFlagBits::eAllCommands;
@@ -475,13 +502,15 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	{
 		xPlatformMemoryCmdBufs.push_back(m_pxMemoryUpdateCmdBuf->GetCurrentCmdBuffer());
 		m_pxMemoryUpdateCmdBuf = nullptr;
-
 	}
 
-	// Prepare frame work distribution in platform-independent layer
-	// Do this BEFORE memory submit so we know whether to signal the semaphore
-	Flux_WorkDistribution xWorkDistribution;
-	const bool bHasRenderWork = bSubmitRenderWork && m_pxFluxRenderer->PrepareFrame(xWorkDistribution);
+	// Whether render command buffers were recorded this frame. RecordFrame set
+	// HasRecordedFrameWork() during Execute; combined with bSubmitRenderWork so a
+	// non-rendering frame (headless / scene transition) skips the render submit
+	// and the memory submit doesn't signal a semaphore nobody waits on. The
+	// pending queue was already drained by RecordFrame, so there's nothing to
+	// clear here.
+	const bool bHasRenderWork = bSubmitRenderWork && m_pxFluxRenderer->HasRecordedFrameWork();
 
 	const bool bShouldWait = m_pxVulkanSwapchain->ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
@@ -499,37 +528,19 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 
 	if (!bHasRenderWork)
 	{
-		// CRITICAL: Clear pending command lists even when skipping render work
-		// Without this, stale command list entries accumulate across frames and can
-		// cause access violations when those entries are processed in subsequent frames
-		// after scene resources have been destroyed and recreated
-		m_pxFluxRenderer->ClearPendingCommandLists();
-		return; // No work to do this frame
+		return; // No render work to submit this frame
 	}
-	
-	Zenith_DataParallelTask xRecordingTask(
-		ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS,
-		RecordCommandBuffersTask,
-		&xWorkDistribution,
-		FLUX_NUM_WORKER_THREADS,
-		true
-	);
 
-	m_pxTasks->SubmitDataParallelTask(&xRecordingTask);
-	xRecordingTask.WaitUntilComplete();
-
-	// Clear all pending command lists now that recording is complete
-	m_pxFluxRenderer->ClearPendingCommandLists();
-
-	// Submit all worker command buffers in order (0 to 7)
+	// Submit all worker command buffers in order (0 to N-1).
 	// This maintains correct render order since work is distributed contiguously
+	// in topological order and pipeline barriers synchronise across the boundaries.
 	std::vector<vk::CommandBuffer> xCommandBuffersToSubmit;
 	xCommandBuffersToSubmit.reserve(FLUX_NUM_WORKER_THREADS);
 	for (u_int i = 0; i < FLUX_NUM_WORKER_THREADS; i++)
 	{
 		xCommandBuffersToSubmit.push_back(m_pxCurrentFrame->GetWorkerCommandBuffer(i).GetCurrentCmdBuffer());
 	}
-	
+
 	// Submit all recorded command buffers in correct order
 	if (!xCommandBuffersToSubmit.empty())
 	{
@@ -546,7 +557,6 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 
 		VkCheck(m_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE));
 	}
-
 }
 
 void Zenith_Vulkan::WaitForGPUIdle()

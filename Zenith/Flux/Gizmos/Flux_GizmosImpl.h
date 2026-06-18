@@ -139,7 +139,6 @@ public:
 
 	Flux_Pipeline            m_xPipeline;
 	Flux_Shader              m_xShader;
-	Flux_CommandList         m_xCommandList{"Gizmos"};
 
 	Zenith_Vector<GizmoGeometry> m_xTranslateGeometry;
 	Zenith_Vector<GizmoGeometry> m_xRotateGeometry;

@@ -46,23 +46,23 @@
 // (The frame counter that used to be read from here moved to FrameContext —
 // g_xEngine.Frame().GetFrameIndex().)
 
-void Flux_RendererImpl::SubmitCommandList(const Flux_CommandList* pxCmdList,
+void Flux_RendererImpl::QueueRenderPass(const Flux_RenderGraph* pxGraph,
 	const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
 	const Flux_RenderGraph_AttachmentRef& xDepthStencil,
 	bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass)
 {
-	Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
-	Zenith_Assert(pxPass != nullptr, "SubmitCommandList: pass pointer is null — bypass path no longer supported");
-	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SubmitCommandList: must be called from the main thread (Flux_RenderGraph::Execute Phase 2)");
-	Flux_CommandListEntry xEntry;
-	xEntry.m_pxCmdList = pxCmdList;
+	Zenith_Assert(pxGraph != nullptr, "QueueRenderPass: graph pointer is null");
+	Zenith_Assert(pxPass != nullptr, "QueueRenderPass: pass pointer is null — bypass path no longer supported");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "QueueRenderPass: must be called from the main thread (Flux_RenderGraph::Execute)");
+	Flux_RenderPassEntry xEntry;
+	xEntry.m_pxGraph = pxGraph;
 	for (uint32_t i = 0; i < uNumColour; i++) xEntry.m_axColourAttachments[i] = axColourAttachments[i];
 	xEntry.m_uNumColourAttachments = uNumColour;
 	xEntry.m_xDepthStencil = xDepthStencil;
 	xEntry.m_pxPass = pxPass;
 	xEntry.m_bClearTargets = bClearTargets;
 	xEntry.m_bDepthIsReadOnly = bDepthIsReadOnly;
-	m_xPendingCommandLists.PushBack(xEntry);
+	m_xPendingRenderPasses.PushBack(xEntry);
 }
 
 void Flux_RendererImpl::AddResChangeCallback(void(*pfnCallback)())
@@ -70,11 +70,41 @@ void Flux_RendererImpl::AddResChangeCallback(void(*pfnCallback)())
 	m_xResChangeCallbacks.PushBack(pfnCallback);
 }
 
-void Flux_RendererImpl::ClearPendingCommandLists()
+void Flux_RendererImpl::RecordFrame()
+{
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RecordFrame: must be called from the main thread (Flux_RenderGraph::Execute)");
+
+	// Distribute the queued passes across worker threads. No work this frame →
+	// drain the (already-empty) queue and report no render work so EndFrame skips
+	// the render submit.
+	Flux_WorkDistribution xWorkDistribution;
+	xWorkDistribution.Clear();
+	if (!PrepareFrame(xWorkDistribution))
+	{
+		m_bHasRenderWork = false;
+		ClearPendingRenderPasses();
+		return;
+	}
+
+	// Drive the backend to record every queued pass directly into its worker
+	// command buffers (Vulkan: parallel worker task; D3D12 null backend: serial
+	// callback loop). Runs synchronously inside the render-task safe window and
+	// BEFORE the frame memory submit, so record-callback uploads land this frame
+	// and ECS reads stay inside the window.
+	g_xEngine.FluxBackend().RecordFrame(xWorkDistribution);
+	m_bHasRenderWork = true;
+
+	// The backend has finished recording (command buffers retain the recorded
+	// commands until EndFrame submits them); the queue entries are no longer
+	// needed and the next frame's passes will be queued fresh.
+	ClearPendingRenderPasses();
+}
+
+void Flux_RendererImpl::ClearPendingRenderPasses()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
-		"ClearPendingCommandLists: main-thread only");
-	m_xPendingCommandLists.Clear();
+		"ClearPendingRenderPasses: main-thread only");
+	m_xPendingRenderPasses.Clear();
 }
 
 Flux_RenderGraph& Flux_RendererImpl::GetRenderGraph()    { return *m_pxRenderGraph; }
@@ -88,9 +118,9 @@ bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 	return b;
 }
 
-Zenith_Vector<Flux_CommandListEntry>& Flux_RendererImpl::GetPendingCommandLists()
+Zenith_Vector<Flux_RenderPassEntry>& Flux_RendererImpl::GetPendingRenderPasses()
 {
-	return m_xPendingCommandLists;
+	return m_xPendingRenderPasses;
 }
 
 // Debug-variable backing store for the transient-aliasing runtime toggle.
@@ -355,11 +385,11 @@ void Flux_RendererImpl::SyncRenderGraphDebugToggles()
 void Flux_RendererImpl::SetupRenderGraph()
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
-		"SetupRenderGraph: must run on the main thread; pending command lists are accessed without locking here.");
+		"SetupRenderGraph: must run on the main thread; the pending render-pass queue is accessed without locking here.");
 
-	// Clear pending command lists first — they hold pointers to the graph's command lists
-	// which will be destroyed by Clear(). Caller must have already drained the GPU.
-	ClearPendingCommandLists();
+	// Clear the queued render passes first — they hold pointers to the graph's
+	// passes which will be destroyed by Clear(). Caller must have already drained the GPU.
+	ClearPendingRenderPasses();
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
 	xRenderer.m_pxRenderGraph->Clear();
 
@@ -478,63 +508,49 @@ bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 
 	xOutDistribution.Clear();
 
-	// The render graph submits command lists in topological order — no sort needed here.
-
+	// The render graph queues passes in topological order — no sort needed here.
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
 
-	// Count total commands
-	for (u_int i = 0; i < xRenderer.m_xPendingCommandLists.GetSize(); i++)
-	{
-		xOutDistribution.uTotalCommandCount += xRenderer.m_xPendingCommandLists.Get(i).m_pxCmdList->GetCommandCount();
-	}
-
-	if (xOutDistribution.uTotalCommandCount == 0)
+	const u_int uTotalPasses = xRenderer.m_xPendingRenderPasses.GetSize();
+	xOutDistribution.uTotalPasses = uTotalPasses;
+	if (uTotalPasses == 0)
 	{
 		return false;
 	}
 
-	// Distribute work across threads based on command count
-	const u_int uTargetCommandsPerThread = (xOutDistribution.uTotalCommandCount + FLUX_NUM_WORKER_THREADS - 1) / FLUX_NUM_WORKER_THREADS;
+	// Distribute the passes across worker threads as contiguous, roughly-equal
+	// index ranges. Topological order is preserved within and across workers
+	// (worker i records a lower index range than worker i+1, and the worker
+	// command buffers are submitted in order) — that ordering + the graph's
+	// inline barriers is what enforces dependencies. Per-pass GPU cost is not
+	// known here, so pass-count slicing is the cheap, balanced default.
+	const u_int uTargetPassesPerThread = (uTotalPasses + FLUX_NUM_WORKER_THREADS - 1) / FLUX_NUM_WORKER_THREADS;
 	u_int uCurrentThreadIndex = 0;
-	u_int uCurrentThreadCommandCount = 0;
 
 	xOutDistribution.auStartIndex[0] = 0;
-
-	for (u_int uIndex = 0; uIndex < xRenderer.m_xPendingCommandLists.GetSize(); uIndex++)
+	for (u_int uIndex = 0; uIndex < uTotalPasses; uIndex++)
 	{
-		const u_int uCommandCount = xRenderer.m_xPendingCommandLists.Get(uIndex).m_pxCmdList->GetCommandCount();
-
-		if (uCurrentThreadCommandCount > 0 &&
-			uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread &&
+		const u_int uCountThisThread = uIndex - xOutDistribution.auStartIndex[uCurrentThreadIndex];
+		if (uCountThisThread >= uTargetPassesPerThread &&
 			uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS - 1)
 		{
 			xOutDistribution.auEndIndex[uCurrentThreadIndex] = uIndex;
-
 			uCurrentThreadIndex++;
-			uCurrentThreadCommandCount = 0;
 			xOutDistribution.auStartIndex[uCurrentThreadIndex] = uIndex;
 		}
-
-		uCurrentThreadCommandCount += uCommandCount;
 	}
 
 	Zenith_Assert(uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS,
 		"PrepareFrame: Thread index %u out of bounds (max %u)", uCurrentThreadIndex, FLUX_NUM_WORKER_THREADS);
+	xOutDistribution.auEndIndex[uCurrentThreadIndex] = uTotalPasses;
 
-	if (uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS)
-	{
-		xOutDistribution.auEndIndex[uCurrentThreadIndex] = xRenderer.m_xPendingCommandLists.GetSize();
-	}
-
-	// Explicitly write empty (N, N) ranges for any worker that did not receive
-	// a command-list slice. The invariant is relied on by the consumer; writing
-	// it here defensively protects against xOutDistribution.Clear() behaviour
-	// changing in future.
-	const u_int uPendingSize = xRenderer.m_xPendingCommandLists.GetSize();
+	// Explicitly write empty (N, N) ranges for any worker that did not receive a
+	// slice. The invariant is relied on by the consumer; writing it here
+	// defensively protects against xOutDistribution.Clear() behaviour changing.
 	for (u_int u = uCurrentThreadIndex + 1; u < FLUX_NUM_WORKER_THREADS; u++)
 	{
-		xOutDistribution.auStartIndex[u] = uPendingSize;
-		xOutDistribution.auEndIndex[u] = uPendingSize;
+		xOutDistribution.auStartIndex[u] = uTotalPasses;
+		xOutDistribution.auEndIndex[u] = uTotalPasses;
 	}
 
 	return true;

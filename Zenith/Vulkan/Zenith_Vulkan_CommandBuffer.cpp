@@ -7,6 +7,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_RecordValidation.h"  // shared constructor-era validation (pipeline/view/draw-constant), also called by the D3D12 recorder
 
 //#TO purely for the static assert in SetIndexBuffer
 
@@ -515,6 +516,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRendering(const Flux_RenderingBeginInfo& 
 
 void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
+	FluxAssertPipeline(pxPipeline, "SetPipeline");
 	m_eCurrentBindPoint = vk::PipelineBindPoint::eGraphics;
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
 	m_pxCurrentPipeline = pxPipeline;
@@ -592,8 +594,11 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void*, uint32_t) {
 	STUBBED
 }
 
-void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, const Flux_BindingSlot& xSlot)
+void Zenith_Vulkan_CommandBuffer::BindDrawConstants(const void* pData, size_t uSize, const Flux_BindingSlot& xSlot)
 {
+	// Ceiling that the old Flux_CommandBindDrawConstants inline storage enforced —
+	// kept as a sanity bound on per-draw scratch-UBO payloads.
+	FluxAssertDrawConstantsSize(uSize, 2048);
 	// Allocate from scratch buffer
 	Zenith_Vulkan_PerFrame* pxFrame = m_pxVulkan->m_pxCurrentFrame;
 	u_int uOffset = pxFrame->AllocateScratchBuffer(static_cast<u_int>(uSize), m_uWorkerIndex);
@@ -949,6 +954,7 @@ void Zenith_Vulkan_CommandBuffer::ResourceBarrier(const Flux_GraphResource& xRes
 
 void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
+	FluxAssertPipeline(pxPipeline, "BindComputePipeline");
 	m_eCurrentBindPoint = vk::PipelineBindPoint::eCompute;
 	m_pxCurrentPipeline = pxPipeline;
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pxPipeline->m_xPipeline);

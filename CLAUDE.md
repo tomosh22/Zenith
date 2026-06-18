@@ -64,7 +64,7 @@ Zenith/
 ### Class/Struct Names
 - `PascalCase` with namespace prefix
 - Core engine classes: `Zenith_ClassName` (e.g., `Zenith_Entity`, `Zenith_Scene`)
-- Renderer classes: `Flux_ClassName` (e.g., `Flux_Texture`, `Flux_CommandList`)
+- Renderer classes: `Flux_ClassName` (e.g., `Flux_Texture`, `Flux_RenderGraph`)
 
 ### Variable Scope Prefixes
 | Prefix | Meaning | Example |

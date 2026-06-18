@@ -947,7 +947,7 @@ void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Ma
 	if (m_pxStreamingState) g_xEngine.TerrainStreaming().UploadFrustumPlanesForFrame(*m_pxStreamingState, xViewProjMatrix);
 }
 
-void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
+void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandBuffer& xCmdList)
 {
 	// Wave 3: relocated to Flux_TerrainStreamingManagerImpl. Thin forwarder.
 	if (m_pxStreamingState) g_xEngine.TerrainStreaming().UpdateCullingAndLod(*m_pxStreamingState, xCmdList);

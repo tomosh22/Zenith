@@ -21,6 +21,13 @@ void Flux_RendererImpl::PerFrameShutdown()
 
 void Flux_RendererImpl::BeginFrame()
 {
+	// Default to "no render work this frame". RecordFrame (driven from
+	// Flux_RenderGraph::Execute) sets this true when it records a non-empty
+	// queue; if Execute does not run this frame (headless / scene transition /
+	// !bSubmitRenderWork) the flag stays false so the backend's EndFrame skips
+	// the render submit instead of resubmitting last frame's command buffers.
+	m_bHasRenderWork = false;
+
 	// Issue the backend's per-frame begin work (fence wait, descriptor-pool
 	// reset, typed-deletion-queue drain, scratch-offset reset). Routed through
 	// the neutral Flux_PlatformAPI alias so both the Vulkan and D3D12 backends

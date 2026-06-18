@@ -43,7 +43,7 @@ public:
 	void Shutdown();
 	void BuildPipelines();
 
-	void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
+	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

@@ -25,7 +25,7 @@ In 2026-05, five junior programmers explored the Zenith codebase and reported ar
 | Memory allocation rule claimed only in CLAUDE.md | `Core/Memory/Zenith_MemoryManagement.h` | **false-alarm** — already documented in-header at lines 53-71 with examples | `Zenith_MemoryManagement.h:53-71` |
 | `s_axEntitySlots` global-not-per-scene called surprising | `EntityComponent/Zenith_SceneData.h:446-470` | **false-alarm** — already documented at the declaration and in `EntityComponent/CLAUDE.md` | `Zenith_SceneData.h:446-470`, `EntityComponent/CLAUDE.md` |
 | `Zenith_ComponentMeta.h` dense template metaprogramming | `EntityComponent/Zenith_ComponentMeta.h` | **deferred** — inherent complexity of a reflection-via-concepts system, well-commented; refactoring would not be a net win | n/a |
-| `Flux_CommandList` 16-class command pattern verbose | `Flux/Flux_CommandList.h` | **deferred** — verbosity is documented as intentional (type-safe, debuggable, no metaprogramming). Domain choice. | `Flux/CLAUDE.md` |
+| `Flux_CommandList` 16-class command pattern verbose | (removed) | **resolved** — the deferred command-list DSL was removed entirely; render systems now record the backend command buffer directly (the render graph owns ordering + barriers, so the DSL was pure indirection). | `Flux/CLAUDE.md` |
 | `SceneManager.h` <-> `SceneData.h` include cycle | `EntityComponent/Zenith_SceneManager.h`, `Zenith_SceneData.h` | **deferred** — load-bearing for template instantiation; the documented `T2.4` task to extract `Zenith_ComponentPool*` types is a separate larger refactor | `Zenith_SceneData.h:842-855` |
 
 ## Notes for future newcomers

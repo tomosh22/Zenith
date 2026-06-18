@@ -9,8 +9,14 @@
 #include <string>
 #include <utility>
 
-using Flux_RenderGraph_OnRecordFunc = void(*)(Flux_CommandList*, void*);
+// Record callback. Receives the backend command buffer (aliased Flux_CommandBuffer
+// — Zenith_Vulkan_CommandBuffer in the Vulkan build) and records draws/dispatches/
+// binds directly on it. Invoked inside the dependency-ordered worker recording via
+// Flux_RenderGraph::RecordPassInto (no intermediate command-list DSL).
+using Flux_RenderGraph_OnRecordFunc = void(*)(Flux_CommandBuffer*, void*);
 using Flux_RenderGraph_OnPrepareFunc = void(*)(void*);
+static_assert(std::is_same_v<Flux_RenderGraph_OnRecordFunc, void(*)(Flux_CommandBuffer*, void*)>,
+	"Flux_RenderGraph_OnRecordFunc must take the backend command buffer (Flux_CommandBuffer*) — the cross-backend record contract");
 
 // Sentinel constants for "all mips" / "all layers" when declaring a
 // subresource usage range. Map onto VK_REMAINING_* in the backend.
@@ -40,8 +46,8 @@ struct Flux_RenderGraph_Pass
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xWrites;
     Zenith_Vector<u_int> m_xExplicitDependencies;
     // Subresource transitions to emit BEFORE pfnOnRecord runs. Computed in
-    // Compile()::SynthesizeBarriers; the record task prepends them to the
-    // pass's command list as Flux_CommandImageTransition entries.
+    // Compile()::SynthesizeBarriers; the backend emits them (outside any render
+    // pass) immediately before the pass's record callback runs.
     Zenith_Vector<Flux_RenderGraph_Barrier> m_xPrologueBarriers;
     Flux_RenderGraph_OnRecordFunc m_pfnOnRecord = nullptr;
     Flux_RenderGraph_OnPrepareFunc m_pfnOnPrepare = nullptr;
@@ -61,7 +67,6 @@ struct Flux_RenderGraph_Pass
     Flux_RenderGraph_AttachmentRef m_axColourAttachments[FLUX_MAX_TARGETS];
     uint32_t m_uNumColourAttachments = 0;
     Flux_RenderGraph_AttachmentRef m_xDepthStencil;
-    Flux_CommandList* m_pxCommandList = nullptr;
 
     // Debug-name accessor that compiles in all configurations. Returns the
     // always-on m_szName (the AddPass label), so the name is meaningful in
@@ -70,12 +75,6 @@ struct Flux_RenderGraph_Pass
     // was somehow constructed without a name (should never happen — AddPass
     // asserts a non-empty name).
     const char* DebugName() const { return m_szName ? m_szName : "<unnamed>"; }
-
-    ~Flux_RenderGraph_Pass()
-    {
-        delete m_pxCommandList;
-        m_pxCommandList = nullptr;
-    }
 };
 
 class Flux_RenderGraph;
@@ -210,7 +209,7 @@ public:
     // methods are &&-qualified, so `auto& x = xGraph.AddPass(...).Foo();` is a
     // compile error — use the graph's public Read/Write helpers below for
     // conditional or loop-driven extra declarations.
-    [[nodiscard]] Flux_PassBuilder AddPass(const char* szName, Flux_RenderGraph_OnRecordFunc pfnOnRecord, void* pUserData = nullptr, u_int uInitialCapacity = 4096);
+    [[nodiscard]] Flux_PassBuilder AddPass(const char* szName, Flux_RenderGraph_OnRecordFunc pfnOnRecord, void* pUserData = nullptr);
 
     // Graph-owned resources. Subsystems declare each resource by descriptor in
     // SetupRenderGraph; the graph allocates the backing Flux_RenderAttachment
@@ -300,13 +299,13 @@ public:
     std::string GetPassOrderDescription() const;
 
     // --- Current-pass thread-local context --------------------------------
-    // Set around each pfnOnRecord callback by Flux_RenderGraph_RecordPassTask.
-    // Enables bind-time assertions ("is the resource I'm about to bind declared
-    // as a Read/Write on this pass?") without threading the pass through every
-    // Flux_ShaderBinder call. Null outside a pass's recording window.
+    // Set around each pfnOnRecord callback by RecordPassInto. Enables bind-time
+    // assertions ("is the resource I'm about to bind declared as a Read/Write on
+    // this pass?") without threading the pass through every Flux_ShaderBinder
+    // call. Null outside a pass's recording window.
     static const Flux_RenderGraph_Pass* GetCurrentRecordingPass();
     // Scoped guard — sets TLS to the pass on construction, restores prior value
-    // (usually nullptr) on destruction. Used by the record task.
+    // (usually nullptr) on destruction. Used by RecordPassInto.
     class CurrentPassScope
     {
     public:
@@ -315,6 +314,17 @@ public:
     private:
         const Flux_RenderGraph_Pass* m_pxPrev;
     };
+
+    // Record one pass directly into the backend command buffer. Sets the
+    // current-pass / current-graph TLS (so Flux_ShaderBinder bind-time assertions
+    // can cross-reference this pass's declared Reads/Writes), emits the per-pass
+    // GPU debug marker (profiling builds), wraps the per-pass profiling scope, and
+    // invokes pxPass->m_pfnOnRecord(pxCmdBuf, userData). Backend-neutral: the
+    // backend's worker loop calls this in place of the old command-list replay,
+    // passing its worker command buffer. pxGraph is taken explicitly (not via
+    // g_xEngine) so local/test graphs validate against the right resource set.
+    // No-op if the pass has a null record callback (barrier-only passes).
+    static void RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const Flux_RenderGraph* pxGraph, Flux_CommandBuffer* pxCmdBuf);
 
     // Assert that the bound resource (identified by VRAM handle) appears in the
     // current recording pass's reads or writes with an access compatible with
@@ -547,7 +557,6 @@ private:
     void AssertMutable(const char* szFn);
     void MarkPassesAsComputeOrGraphics();
     void CallPrepareCallbacks();
-    void RecordCommandLists();
     void SubmitRecordedLists();
     void InitAdjacencyData();
     void BuildAdjacencyFromTraffic();
@@ -561,7 +570,6 @@ private:
     void CollectClearRequirements();
     void AssignClearFlags();
 
-    friend void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int uWorkerIndex);
     // Flux_PassBuilder reaches into m_xPasses + the private
     // AssertPassHandleValid helper in its SetUserData path. Scoped friendship
     // keeps the surface narrow.

@@ -25,7 +25,7 @@
 
 
 
-static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteQuads(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_QuadsImpl::BuildPipelines()
 {
@@ -97,10 +97,10 @@ void Flux_QuadsImpl::Render(void*)
 	UploadInstanceData();
 }
 
-static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteQuads(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Quads() to reach the singleton
 	// instance; FluxGraphics is reached via g_xEngine at point of use
 	// (mirrors ExecuteSSAOGenerate).
@@ -113,18 +113,18 @@ static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 
 	xQuads.UploadInstanceData();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xQuads.m_xPipeline);
+	pxCommandList->SetPipeline(&xQuads.m_xPipeline);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xQuads.m_xInstanceBuffer, 1);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xQuads.m_xInstanceBuffer, 1);
 
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 
-	pxCommandList->AddCommand<Flux_CommandUseUnboundedTextures>(1);
+	pxCommandList->UseBindlessTextures(1);
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xQuads.m_uQuadRenderIndex);
+	pxCommandList->DrawIndexed(6, xQuads.m_uQuadRenderIndex);
 
 	xQuads.m_uQuadRenderIndex = 0;
 }

@@ -7,7 +7,6 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 // Wave 3: needed by the relocated per-frame culling/LOD drive (UpdateCullingAndLod records
 // compute commands; UploadFrustumPlanesForFrame extracts the camera frustum).
-#include "Flux/Flux_CommandList.h"
 #include "Flux/Flux_GraphicsImpl.h" // FluxGraphics().GetCameraPosition() in UploadFrustumPlanesForFrame
 #include "Maths/Zenith_FrustumCulling.h"
 #include <algorithm>
@@ -1237,7 +1236,7 @@ void Flux_TerrainStreamingManagerImpl::UploadFrustumPlanesForFrame(Flux_TerrainS
 	g_xEngine.FluxMemory().UploadBufferDataAtOffset(xState.m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
 }
 
-void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandList& xCmdList)
+void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandBuffer& xCmdList)
 {
 	if (!xState.m_bCullingResourcesInitialized)
 	{
@@ -1246,12 +1245,12 @@ void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreaming
 	}
 
 	// Pipeline already bound by Flux_Terrain; frustum/visible-count prepared upstream.
-	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xState.m_xChunkDataBuffer.GetSRV(), Flux_BindingSlot{ 0, 0, true });
-	xCmdList.AddCommand<Flux_CommandBindCBV>(&xState.m_xFrustumPlanesBuffer.GetCBV(), 1);
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xIndirectDrawBuffer.GetUAV(), 2);
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xVisibleCountBuffer.GetUAV(), 3);
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&xState.m_xLODLevelBuffer.GetUAV(), 4);
+	xCmdList.BindSRV_Buffer(xState.m_xChunkDataBuffer.GetSRV(), Flux_BindingSlot{ 0, 0, true });
+	xCmdList.BindCBV(&xState.m_xFrustumPlanesBuffer.GetCBV(), 1);
+	xCmdList.BindUAV_Buffer(&xState.m_xIndirectDrawBuffer.GetUAV(), 2);
+	xCmdList.BindUAV_Buffer(&xState.m_xVisibleCountBuffer.GetUAV(), 3);
+	xCmdList.BindUAV_Buffer(&xState.m_xLODLevelBuffer.GetUAV(), 4);
 
 	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
-	xCmdList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
+	xCmdList.Dispatch(uNumWorkgroups, 1, 1);
 }

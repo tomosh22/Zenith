@@ -135,21 +135,21 @@ void Flux_SSAOImpl::Shutdown()
 
 // ---- Execute callbacks (use GetRawOcclusion/GetBlurred accessors) ----
 
-static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSAOGenerate(Flux_CommandBuffer* pxCommandList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bSSAOEnabled)
 		return;
 
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it
 	// cannot capture, so it re-enters via g_xEngine.SSAO() to reach the singleton
 	// instance; other cross-subsystem deps are reached via g_xEngine at point of
 	// use (mirrors ExecuteHiZMip).
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSAO.m_xGeneratePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xSSAO.m_xGeneratePipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(xSSAO.m_xGenerateShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
@@ -157,10 +157,10 @@ static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xSSAO.m_xGenerateShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
 	xBinder.BindSRV(xSSAO.m_xGenerateShader, "g_xNormalTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSAOBlur(Flux_CommandBuffer* pxCommandList, void*)
 {
 	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
 	if (!xOpts.m_bSSAOEnabled || !xOpts.m_bSSAOBlurEnabled)
@@ -169,9 +169,9 @@ static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSAO.m_xBlurPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xSSAO.m_xBlurPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindDrawConstants(xSSAO.m_xBlurShader, "SSAOBlurConstants", &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
@@ -179,7 +179,7 @@ static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
 	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xNormalTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 // ---- Render graph setup (chooses transient vs owned based on toggle) ----

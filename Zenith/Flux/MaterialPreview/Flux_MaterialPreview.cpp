@@ -37,13 +37,13 @@ struct MaterialPreviewPassConstants
 	float m_fCSMTexelSizeY;
 };
 
-static void ExecutePreviewBackground(Flux_CommandList* pxCmdList, void*);
-static void ExecutePreviewMesh(Flux_CommandList* pxCmdList, void*);
-static void ExecutePreviewTonemap(Flux_CommandList* pxCmdList, void*);
+static void ExecutePreviewBackground(Flux_CommandBuffer* pxCmdList, void*);
+static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*);
+static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCmdList, void*);
 // No-op: exists only so the graph leaves the LDR target in
 // SHADER_READ_ONLY_OPTIMAL for ImGui to sample (same trick as the engine's
 // @FinalRTLayoutTransition pass for the final render target).
-static void ExecutePreviewLayoutTransition(Flux_CommandList*, void*) {}
+static void ExecutePreviewLayoutTransition(Flux_CommandBuffer*, void*) {}
 
 void Flux_MaterialPreviewImpl::BuildPipelines()
 {
@@ -310,14 +310,14 @@ void Flux_MaterialPreviewImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads(m_xPreviewLDR, RESOURCE_ACCESS_READ_SRV);
 }
 
-static void ExecutePreviewBackground(Flux_CommandList* pxCmdList, void*)
+static void ExecutePreviewBackground(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_MaterialPreviewImpl& xZZ = g_xEngine.MaterialPreview();
 	if (!xZZ.IsActive()) return;
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xBackgroundPipeline);
+	pxCmdList->SetPipeline(&xZZ.m_xBackgroundPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	xBinder.BindCBV(xZZ.m_xBackgroundShader, "FrameConstants", &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
@@ -325,12 +325,12 @@ static void ExecutePreviewBackground(Flux_CommandList* pxCmdList, void*)
 	// what you see is exactly what lights the mesh.
 	xBinder.BindSRV(xZZ.m_xBackgroundShader, "g_xCubemap", &g_xEngine.IBL().GetPrefilteredMapSRV());
 
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCmdList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCmdList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCmdList->DrawIndexed(6);
 }
 
-static void ExecutePreviewMesh(Flux_CommandList* pxCmdList, void*)
+static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_MaterialPreviewImpl& xZZ = g_xEngine.MaterialPreview();
 	if (!xZZ.IsActive()) return;
@@ -349,7 +349,7 @@ static void ExecutePreviewMesh(Flux_CommandList* pxCmdList, void*)
 	Flux_Pipeline* pxPipeline = &xZZ.m_xMeshPipelineOpaque;
 	if (eBlend == MATERIAL_BLEND_TRANSLUCENT) pxPipeline = &xZZ.m_xMeshPipelineTranslucent;
 	else if (eBlend == MATERIAL_BLEND_ADDITIVE) pxPipeline = &xZZ.m_xMeshPipelineAdditive;
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(pxPipeline);
+	pxCmdList->SetPipeline(pxPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	xBinder.BindCBV(xZZ.m_xMeshShader, "FrameConstants", &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
@@ -401,19 +401,19 @@ static void ExecutePreviewMesh(Flux_CommandList* pxCmdList, void*)
 		xBinder.BindSRV(xZZ.m_xMeshShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
 	}
 
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxGeometry->GetVertexBuffer());
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxGeometry->GetIndexBuffer());
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxGeometry->GetNumIndices());
+	pxCmdList->SetVertexBuffer(pxGeometry->GetVertexBuffer());
+	pxCmdList->SetIndexBuffer(pxGeometry->GetIndexBuffer());
+	pxCmdList->DrawIndexed(pxGeometry->GetNumIndices());
 }
 
-static void ExecutePreviewTonemap(Flux_CommandList* pxCmdList, void*)
+static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_MaterialPreviewImpl& xZZ = g_xEngine.MaterialPreview();
 	if (!xZZ.IsActive()) return;
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xTonemapPipeline);
+	pxCmdList->SetPipeline(&xZZ.m_xTonemapPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	MaterialPreviewTonemapConstants xConstants;
@@ -421,9 +421,9 @@ static void ExecutePreviewTonemap(Flux_CommandList* pxCmdList, void*)
 	xBinder.BindDrawConstants(xZZ.m_xTonemapShader, "PreviewTonemapConstants", &xConstants, sizeof(xConstants));
 	xBinder.BindSRV(xZZ.m_xTonemapShader, "g_xHDRTex", &xZZ.m_xPreviewHDR.SRV());
 
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCmdList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCmdList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCmdList->DrawIndexed(6);
 }
 
 #endif // ZENITH_TOOLS

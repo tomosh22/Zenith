@@ -36,7 +36,7 @@ struct TranslucencyPassConstants
 	float m_fCSMTexelSizeY;
 };
 
-static void ExecuteTranslucency(Flux_CommandList* pxCmdList, void*);
+static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*);
 
 void Flux_TranslucencyImpl::BuildPipelines()
 {
@@ -220,7 +220,7 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 	}
 }
 
-static void ExecuteTranslucency(Flux_CommandList* pxCmdList, void*)
+static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
 
@@ -259,7 +259,7 @@ static void ExecuteTranslucency(Flux_CommandList* pxCmdList, void*)
 							  : (xItem.m_bTwoSided ? &xZZ.m_xPipelineTranslucentTwoSided : &xZZ.m_xPipelineTranslucent);
 		if (pxPipeline != pxBoundPipeline)
 		{
-			pxCmdList->AddCommand<Flux_CommandSetPipeline>(pxPipeline);
+			pxCmdList->SetPipeline(pxPipeline);
 			pxBoundPipeline = pxPipeline;
 
 			// (Re)bind the per-pass set-0 resources for the new pipeline.
@@ -283,8 +283,8 @@ static void ExecuteTranslucency(Flux_CommandList* pxCmdList, void*)
 			xBinder.BindSRV_Buffer(xZZ.m_xShader, "ClusterLightIndices", g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 		}
 
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xItem.m_pxMeshInstance->GetVertexBuffer());
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xItem.m_pxMeshInstance->GetIndexBuffer());
+		pxCmdList->SetVertexBuffer(xItem.m_pxMeshInstance->GetVertexBuffer());
+		pxCmdList->SetIndexBuffer(xItem.m_pxMeshInstance->GetIndexBuffer());
 
 		MaterialDrawConstants xDrawConstants;
 		BuildMaterialDrawConstants(xDrawConstants, xItem.m_xModelMatrix, xItem.m_pxMaterial);
@@ -296,6 +296,6 @@ static void ExecuteTranslucency(Flux_CommandList* pxCmdList, void*)
 			xBinder.BindSRV(xZZ.m_xShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
 		}
 
-		pxCmdList->AddCommand<Flux_CommandDrawIndexed>(xItem.m_pxMeshInstance->GetNumIndices());
+		pxCmdList->DrawIndexed(xItem.m_pxMeshInstance->GetNumIndices());
 	}
 }

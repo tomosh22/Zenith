@@ -43,12 +43,12 @@ static struct Flux_FogConstants
 	float m_fPad[3] = { 0.f, 0.f, 0.f };
 } dbg_xConstants;
 
-static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteFroxelInject(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteFroxelLight(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteFroxelApply(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteRaymarch(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteGodRays(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_FogImpl::BuildPipelines()
 {
@@ -152,7 +152,7 @@ void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 	xGraph.MarkDirty();
 }
 
-static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -164,20 +164,20 @@ static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
 	Flux_FogImpl& xFog = g_xEngine.Fog();
 	Flux_GraphicsImpl& xGfx = g_xEngine.FluxGraphics();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xFog.m_xPipeline);
+	pxCommandList->SetPipeline(&xFog.m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGfx.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGfx.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGfx.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGfx.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(xFog.m_xShader, "FrameConstants", &xGfx.m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(xFog.m_xShader, "g_xDepthTex", xGfx.GetDepthStencilSRV());
 	xBinder.BindDrawConstants(xFog.m_xShader, "FogConstants", &dbg_xConstants, sizeof(Flux_FogConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteFroxelInject(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -187,7 +187,7 @@ static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData
 	g_xEngine.FroxelFog().RenderInject(pxCommandList);
 }
 
-static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteFroxelLight(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -197,7 +197,7 @@ static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.FroxelFog().RenderLight(pxCommandList);
 }
 
-static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteFroxelApply(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -207,7 +207,7 @@ static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.FroxelFog().RenderApply(pxCommandList);
 }
 
-static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteRaymarch(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -217,7 +217,7 @@ static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.RaymarchFog().Render(pxCommandList);
 }
 
-static void ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteGodRays(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)

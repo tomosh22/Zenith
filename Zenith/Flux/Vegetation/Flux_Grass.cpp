@@ -78,7 +78,7 @@ void Flux_GrassImpl::CreateGrassBladeMesh()
 	g_xEngine.FluxMemory().InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
 }
 
-static void ExecuteRender(Flux_CommandList* pxCmdList, void* pUserData);
+static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
 void Flux_GrassImpl::BuildPipelines()
 {
@@ -181,7 +181,7 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),       RESOURCE_ACCESS_READ_DEPTH);
 }
 
-static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
+static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void*)
 {
 	// Static graph trampoline: recover the subsystem once; other engine reaches
 	// (VulkanMemory / Frame / FluxGraphics) go via g_xEngine at point of use.
@@ -233,9 +233,9 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 
 	g_xEngine.FluxMemory().UploadBufferData(xGrass.m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&xGrass.m_xGrassPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xGrassBladeMesh.m_xVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xGrassBladeMesh.m_xIndexBuffer);
+	pxCmdList->SetPipeline(&xGrass.m_xGrassPipeline);
+	pxCmdList->SetVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
+	pxCmdList->SetIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmdList);
@@ -245,7 +245,7 @@ static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
 	}
 
 	// Draw instanced grass (6 indices per blade, xGrass.m_uVisibleBladeCount instances)
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(6, xGrass.m_uVisibleBladeCount);
+	pxCmdList->DrawIndexed(6, xGrass.m_uVisibleBladeCount);
 }
 
 void Flux_GrassImpl::GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::Vector3& xCenter)

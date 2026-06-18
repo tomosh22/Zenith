@@ -31,7 +31,7 @@ struct SphereData
 } s_axSphereData;
 
 
-static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_SDFsImpl::BuildPipelines()
 {
@@ -108,7 +108,7 @@ void Flux_SDFsImpl::Render(void*)
 	UploadSpheres();
 }
 
-static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bSDFsEnabled)
@@ -116,7 +116,7 @@ static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it
 	// cannot capture, so it re-enters via g_xEngine.SDFs() to reach the singleton
 	// instance; FluxGraphics is reached via g_xEngine at point of use
 	// (mirrors ExecuteSSAOGenerate).
@@ -124,16 +124,16 @@ static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 
 	xSDFs.UploadSpheres();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSDFs.m_xPipeline);
+	pxCommandList->SetPipeline(&xSDFs.m_xPipeline);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSDFs.m_xSpheresBuffer.GetCBV(), 1);
+	pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	pxCommandList->BindCBV(&xSDFs.m_xSpheresBuffer.GetCBV(), 1);
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

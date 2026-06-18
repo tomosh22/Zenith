@@ -80,11 +80,11 @@ public:
 #endif
 
 	// Render-graph execute callbacks -- stay static so they satisfy
-	// Flux_RenderGraph_OnRecordFunc (void(*)(Flux_CommandList*, void*)).
+	// Flux_RenderGraph_OnRecordFunc (void(*)(Flux_CommandBuffer*, void*)).
 	// They reach engine state via g_xEngine.IBL() at call time.
-	static void ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void* pUserData);
-	static void ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData);
-	static void ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData);
+	static void ExecuteBRDFLUTPass(Flux_CommandBuffer* pxCmd, void* pUserData);
+	static void ExecuteIrradianceFacePass(Flux_CommandBuffer* pxCmd, void* pUserData);
+	static void ExecutePrefilterMipFacePass(Flux_CommandBuffer* pxCmd, void* pUserData);
 
 	// Per-pass user data struct -- small POD holding the (mip, face) the pass
 	// targets. Pointer-stable per-pass storage (m_axPrefilterPassData below)

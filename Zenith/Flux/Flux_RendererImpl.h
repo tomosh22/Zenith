@@ -2,7 +2,7 @@
 
 #include "Core/ZenithConfig.h"
 #include "Collections/Zenith_Vector.h"
-#include "Flux/Flux.h"            // Flux_CommandListEntry, Flux_WorkDistribution, Flux_RenderGraph_AttachmentRef/Pass, Flux_CommandList
+#include "Flux/Flux.h"            // Flux_RenderPassEntry, Flux_WorkDistribution, Flux_RenderGraph_AttachmentRef/Pass
 
 class Flux_RenderGraph;
 
@@ -43,24 +43,33 @@ public:
 
 	void Shutdown();
 
-	// Submit a command list for Vulkan recording. Only called from
-	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread.
-	void SubmitCommandList(const Flux_CommandList* pxCmdList,
+	// Queue one render-graph pass for backend recording. Only called from
+	// Flux_RenderGraph::SubmitRecordedLists, sequentially on the main thread.
+	void QueueRenderPass(const Flux_RenderGraph* pxGraph,
 		const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
 		const Flux_RenderGraph_AttachmentRef& xDepthStencil,
 		bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass);
 
-	// Prepare frame for rendering — distributes work across worker threads.
-	// Returns false if there is no work to do.
+	// Record + drain this frame's queued passes. Called synchronously from
+	// Flux_RenderGraph::Execute (in the render-task safe window, before the
+	// frame memory submit). Distributes the queued passes across worker threads
+	// (PrepareFrame), drives the backend to record them directly into its worker
+	// command buffers (FluxBackend().RecordFrame), then clears the queue. Sets
+	// HasRecordedFrameWork() for the subsequent EndFrame submit.
+	void RecordFrame();
+	bool HasRecordedFrameWork() const { return m_bHasRenderWork; }
+
+	// Prepare frame for rendering — distributes the queued passes across worker
+	// threads. Returns false if there is no work to do.
 	bool PrepareFrame(Flux_WorkDistribution& xOutDistribution);
 
 	void AddResChangeCallback(void(*pfnCallback)());
 	void OnResChange();
 
-	// Clear all pending command lists. CALLER GUARANTEES that no worker thread
-	// is currently submitting (i.e. graph Execute is not in flight) and that
-	// the GPU has finished consuming the previous frame's lists.
-	void ClearPendingCommandLists();
+	// Clear all queued render passes. CALLER GUARANTEES that no worker thread
+	// is currently recording (i.e. graph RecordFrame is not in flight) and that
+	// the GPU has finished consuming the previous frame's command buffers.
+	void ClearPendingRenderPasses();
 
 	Flux_RenderGraph& GetRenderGraph();
 	bool IsRenderGraphValid();
@@ -85,8 +94,8 @@ public:
 	void RequestGraphRebuild();
 	bool ConsumeGraphRebuildRequest();
 
-	// Public access to pending command lists for platform layer.
-	Zenith_Vector<Flux_CommandListEntry>& GetPendingCommandLists();
+	// Public access to the queued render passes for the platform layer.
+	Zenith_Vector<Flux_RenderPassEntry>& GetPendingRenderPasses();
 
 	// ===== Per-frame ring scheduler (was class Flux_PerFrame) =====
 	// Names are prefixed `PerFrame` where they would otherwise collide with
@@ -108,9 +117,14 @@ public:
 	// Render graph. Allocated in LateInitialise, freed in Shutdown.
 	Flux_RenderGraph*                     m_pxRenderGraph = nullptr;
 
-	// Pending command-list queue (filled by Phase 2 of graph execution,
-	// drained by the platform layer).
-	Zenith_Vector<Flux_CommandListEntry>  m_xPendingCommandLists;
+	// Queued render passes (filled by Flux_RenderGraph::SubmitRecordedLists,
+	// drained by RecordFrame after the backend records them).
+	Zenith_Vector<Flux_RenderPassEntry>   m_xPendingRenderPasses;
+
+	// Set by RecordFrame each frame: true iff the backend recorded render work
+	// this frame (non-empty queue). Read by the backend's EndFrame to decide
+	// whether to submit render command buffers. Reset to false at frame begin.
+	bool                                  m_bHasRenderWork = false;
 
 	// Resolution-change callback list (subsystems register here at init).
 	Zenith_Vector<void(*)()>              m_xResChangeCallbacks;

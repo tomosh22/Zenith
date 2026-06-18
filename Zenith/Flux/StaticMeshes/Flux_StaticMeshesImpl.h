@@ -7,7 +7,6 @@
 
 class Flux_DynamicConstantBuffer;
 class Flux_ModelInstance;
-class Flux_CommandList;
 class Flux_ShaderBinder;
 class Zenith_MaterialAsset;
 
@@ -42,7 +41,7 @@ public:
 	void Shutdown();
 	void BuildPipelines();
 
-	void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
+	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
@@ -57,10 +56,10 @@ public:
 	// bTwoSidedPass selects which materials this walk draws (meshes whose
 	// material's two-sidedness doesn't match the active cull pipeline are
 	// skipped — ExecuteGBuffer walks the packet once per cull mode).
-	void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderModelInstanceMeshes(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix,
 		bool bTwoSidedPass);
-	void DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void DrawStaticMesh(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Maths::Matrix4& xModelMatrix,
 		Zenith_MaterialAsset* pxMaterial,
 		u_int uIndexCount);

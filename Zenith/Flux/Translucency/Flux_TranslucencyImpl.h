@@ -7,7 +7,6 @@
 
 class Flux_ModelInstance;
 class Flux_MeshInstance;
-class Flux_CommandList;
 class Flux_ShaderBinder;
 class Zenith_MaterialAsset;
 

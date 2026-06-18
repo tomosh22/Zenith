@@ -124,7 +124,7 @@ via `g_xEngine.X()` at point of use — this is the Flux-wide pattern (the
 earlier injected-member-pointer DI seam was reverted in favour of direct
 reaches). Non-capturing fn-pointer trampolines — the resolution-change
 callback, the `ZENITH_TOOLS` hot-reload callback, and the `ExecuteHiZMip`
-graph callback (`void(*)(Flux_CommandList*, void*)`) — cannot capture `this`,
+graph callback (`void(*)(Flux_CommandBuffer*, void*)`) — cannot capture `this`,
 so they likewise re-enter via `g_xEngine.HiZ()` to reach the singleton
 instance.
 

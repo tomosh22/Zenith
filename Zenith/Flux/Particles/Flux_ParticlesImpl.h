@@ -5,7 +5,6 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/Particles/Flux_ParticleData.h"
 
-class Flux_CommandList;
 class Flux_RenderGraph;
 
 // Phase 9: state + behaviour for Particles subsystem.

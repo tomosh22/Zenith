@@ -15,7 +15,6 @@
 // forward-declarations of the Flux buffer-wrapper types (a forward declaration
 // is NOT an #include, so it introduces no cross-layer coupling — the layering
 // gate scans #include edges, not forward decls).
-class Flux_CommandList;
 class Flux_MeshGeometry;
 class Flux_VertexBuffer;
 class Flux_IndexBuffer;
@@ -148,7 +147,7 @@ public:
 	 *
 	 * @param xCmdList Command list to record dispatch commands into
 	 */
-	void UpdateCullingAndLod(Flux_CommandList& xCmdList);
+	void UpdateCullingAndLod(Flux_CommandBuffer& xCmdList);
 
 	/**
 	 * Get the indirect draw buffer for rendering

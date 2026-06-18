@@ -268,7 +268,7 @@ void Flux_TextImpl::Render(void*)
 	UploadChars();
 }
 
-static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bTextEnabled)
@@ -276,7 +276,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Text() to reach the singleton
 	// instance; FluxGraphics is reached via g_xEngine at point of use
 	// (mirrors ExecuteQuads).
@@ -305,16 +305,16 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xText.m_xPipeline);
+	pxCommandList->SetPipeline(&xText.m_xPipeline);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xText.m_xInstanceBuffer, 1);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xText.m_xInstanceBuffer, 1);
 
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
 	// Explicit clamp sampler at the bind site — MSDF AA assumes no wrap.
-	pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxAtlas->m_xSRV, 1);
+	pxCommandList->BindSRV(&pxAtlas->m_xSRV, 1);
 
 	// Build the 32-byte push-constant block. Atlas size + pxRange feed the
 	// shader's fwidth-based ScreenPxRange() helper for derivative-based AA.
@@ -327,23 +327,23 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		// Background text draw: clip rect active.
 		xConstants.m_xClipRect = xText.m_xOverlayClipRect;
-		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xText.m_uBgCharCount, 0, 0, 0);
+		pxCommandList->BindDrawConstants(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
+		pxCommandList->DrawIndexed(6, xText.m_uBgCharCount, 0, 0, 0);
 
 		if (xText.m_uFgCharCount > 0)
 		{
 			// Foreground/overlay text draw: clip off.
 			xConstants.m_xClipRect = { -1.f, -1.f, -1.f, -1.f };
-			pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, xText.m_uFgCharCount, 0, 0, xText.m_uBgCharCount);
+			pxCommandList->BindDrawConstants(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
+			pxCommandList->DrawIndexed(6, xText.m_uFgCharCount, 0, 0, xText.m_uBgCharCount);
 		}
 	}
 	else
 	{
 		// No overlay clipping: single draw, clip off.
 		xConstants.m_xClipRect = { -1.f, -1.f, -1.f, -1.f };
-		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
+		pxCommandList->BindDrawConstants(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
+		pxCommandList->DrawIndexed(6, uNumChars);
 	}
 
 	xText.m_bOverlayClipActive = false;

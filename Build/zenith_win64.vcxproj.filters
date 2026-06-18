@@ -235,6 +235,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12.cpp">
+      <Filter>D3D12</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.cpp">
       <Filter>D3D12</Filter>
     </ClCompile>
@@ -443,9 +446,6 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp">
-      <Filter>Flux</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp">
@@ -2469,9 +2469,6 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h">
       <Filter>Flux</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Flux_CommandList.h">
-      <Filter>Flux</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -2500,6 +2497,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_RecordValidation.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h">

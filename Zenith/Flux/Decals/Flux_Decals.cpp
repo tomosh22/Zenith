@@ -405,12 +405,12 @@ void Flux_DecalsImpl::SetEditorDecal(const Zenith_Maths::Vector3& xCentre,
 
 // ===== RECORD CALLBACKS =====
 
-static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
+static void ExecuteNormalsCopy(Flux_CommandBuffer* pxCommandList, void*)
 {
 	// No logging here — runs on a worker thread at 60Hz; per-frame log
 	// from each of the parallel-recorder threads serialises them on the
 	// logger mutex and starves the engine.
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it
 	// cannot capture, so it re-enters via g_xEngine.Decals() to reach the
 	// singleton instance; FluxGraphics is reached via g_xEngine at point of
 	// use (mirrors ExecuteSSAOGenerate).
@@ -419,18 +419,18 @@ static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
 		return;
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xDecals.m_xNormalsCopyPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xDecals.m_xNormalsCopyPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindSRV(xDecals.m_xNormalsCopyShader, "g_xNormalsTex",
 		xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
+static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 {
 	// Non-capturing graph callback — re-enters via g_xEngine.Decals() to reach
 	// the singleton instance; FluxGraphics is reached via g_xEngine at point
@@ -439,11 +439,11 @@ static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 	if (xDecals.m_uActiveDecalCount == 0)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xDecals.m_xApplyPipeline);
+	pxCommandList->SetPipeline(&xDecals.m_xApplyPipeline);
 	// Index-only draw — VS emits cube corners from SV_VertexID. The IB
 	// values are unused but the command is required (Flux has no
 	// non-indexed instanced draw).
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xDecals.m_xDecalIndexBuffer);
+	pxCommandList->SetIndexBuffer(xDecals.m_xDecalIndexBuffer);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -461,7 +461,7 @@ static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 		: &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
 	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xBrushTex", pxBrushSRV);
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(36, xDecals.m_uActiveDecalCount);
+	pxCommandList->DrawIndexed(36, xDecals.m_uActiveDecalCount);
 }
 
 // ===== PREPARE CALLBACK =====

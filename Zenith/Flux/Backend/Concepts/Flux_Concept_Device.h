@@ -29,12 +29,20 @@
 //     Flux_RendererImpl::BeginFrame.
 //   - InitialiseImGui / ShutdownImGui / ImGuiBeginFrame — tools-only;
 //     conformance-asserted only in tools builds.
+//
+// RecordFrame(workDist) is the direct-recording seam: Flux_RendererImpl::RecordFrame
+// (driven from Flux_RenderGraph::Execute) calls it to record every queued pass's
+// callback directly into the backend's per-worker command buffers. The Vulkan
+// backend records the worker command buffers in parallel; the D3D12 null backend
+// runs the callbacks into a no-op command buffer (so callback side effects still
+// occur). EndFrame then only submits.
 
 template <typename T>
 concept FluxBackendDevice = requires(
 	T t,
 	bool b,
 	uint32_t u,
+	const Flux_WorkDistribution& xWork,
 	const Flux_ShaderResourceView& xView,
 	const Flux_Sampler& xSampler)
 {
@@ -42,6 +50,7 @@ concept FluxBackendDevice = requires(
 	{ t.InitialisePerFrameResources()                                } -> std::same_as<void>;
 	{ t.WaitForGPUIdle()                                             } -> std::same_as<void>;
 	{ t.PerFrameBegin(u)                                             } -> std::same_as<void>;
+	{ t.RecordFrame(xWork)                                           } -> std::same_as<void>;
 	{ t.EndFrame(b)                                                  } -> std::same_as<void>;
 	{ t.WriteBindlessTextureSlot(u, xView, xSampler)                 } -> std::same_as<void>;
 };

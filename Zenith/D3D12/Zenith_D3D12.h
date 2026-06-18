@@ -21,6 +21,7 @@ class Flux_RendererImpl;
 class Zenith_TaskSystem;
 class Zenith_D3D12_Swapchain;
 class Zenith_D3D12_MemoryManager;
+struct Flux_WorkDistribution;   // RecordFrame param (reference — forward decl suffices)
 
 // ----------------------------------------------------------------------------
 // Zenith_D3D12_Sampler — mirrors Zenith_Vulkan_Sampler (alias Flux_Sampler).
@@ -79,13 +80,18 @@ public:
 	// No-op: the null backend has no per-frame GPU state to advance.
 	void PerFrameBegin(u_int /*uRingIndex*/) { }
 
+	// Record every queued render pass by running its callback into a no-op command
+	// buffer, so callback side effects (buffer uploads, ECS reads, draw-list
+	// builds) still occur on the null backend — exactly as they did when the
+	// callbacks ran through the (now removed) Flux_CommandList stage. Out-of-line
+	// (Zenith_D3D12.cpp): the body needs the full render-graph / pass / entry types
+	// which can't be pulled into this seam-reachable header. EndFrame stays a no-op
+	// (the null backend submits nothing).
+	void RecordFrame(const Flux_WorkDistribution& xWorkDistribution);
 	void EndFrame(bool /*bSubmitRenderWork*/) { }
 
 	// Wait for GPU idle — no-op (nothing is in flight in the null backend).
 	void WaitForGPUIdle() { }
-
-	// Task-system entry point (static so it can be a Zenith_DataParallelTaskFunction).
-	static void RecordCommandBuffersTask(void* /*pData*/, u_int /*uInvocationIndex*/, u_int /*uNumInvocations*/) { }
 
 	const uint32_t GetQueueIndex(CommandType /*eType*/) { return 0; }
 

@@ -3,7 +3,6 @@
 #include "Flux/Flux.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-class Flux_CommandList;
 class Flux_RenderGraph;
 
 // Phase 9: state + behaviour for top-level Fog orchestrator subsystem.

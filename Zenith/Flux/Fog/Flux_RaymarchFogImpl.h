@@ -3,8 +3,6 @@
 #include "Flux/Flux.h"
 #include "Maths/Zenith_Maths.h"
 
-class Flux_CommandList;
-
 // Ray march specific parameters
 struct Flux_RaymarchConstants
 {
@@ -35,7 +33,7 @@ public:
 	void Initialise();
 	void BuildPipelines();
 	void Reset();
-	void Render(Flux_CommandList* pxCommandList);
+	void Render(Flux_CommandBuffer* pxCommandList);
 
 	Flux_Shader   m_xShader;
 	Flux_Pipeline m_xPipeline;

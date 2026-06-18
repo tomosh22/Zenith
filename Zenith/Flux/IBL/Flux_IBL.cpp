@@ -275,7 +275,7 @@ void Flux_IBLImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	ApplyResolvedIBLEnables(xGraph, bRunBRDF, abRunIrradiance, abRunPrefilter);
 }
 
-void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
+void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandBuffer* pxCmd, void*)
 {
 	// Trampoline (non-capturing graph callback): recover the singleton first,
 	// then route IBL state through it.
@@ -284,17 +284,17 @@ void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 	// No per-frame gate — disabled passes are skipped before record runs
 	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
 	auto& xFG = g_xEngine.FluxGraphics();
-	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xBRDFLUTPipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&xFG.m_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&xFG.m_xQuadMesh.GetIndexBuffer());
+	pxCmd->SetPipeline(&xIBL.m_xBRDFLUTPipeline);
+	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
+	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	// BRDF integration only reads its UV input; the Slang version exposes no
 	// CBs in reflection so no binder calls are needed before the draw.
-	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCmd->DrawIndexed(6);
 	xIBL.m_bBRDFLUTGenerated = true;
 }
 
-void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData)
+void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandBuffer* pxCmd, void* pUserData)
 {
 	// Trampoline (non-capturing graph callback): recover the singleton first.
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
@@ -309,9 +309,9 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUse
 	xConsts.m_fPad = 0.0f;
 
 	auto& xFG = g_xEngine.FluxGraphics();
-	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xIrradianceConvolvePipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&xFG.m_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&xFG.m_xQuadMesh.GetIndexBuffer());
+	pxCmd->SetPipeline(&xIBL.m_xIrradianceConvolvePipeline);
+	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
+	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
@@ -322,10 +322,10 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUse
 		else if (Zenith_TextureAsset* pxBlack = xFG.m_xBlackTexture.GetDirect())
 			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
-	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCmd->DrawIndexed(6);
 }
 
-void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData)
+void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandBuffer* pxCmd, void* pUserData)
 {
 	// Trampoline (non-capturing graph callback): recover the singleton first.
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
@@ -340,9 +340,9 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pU
 	xConsts.m_uFaceIndex = pxData->m_uFace;
 
 	auto& xFG = g_xEngine.FluxGraphics();
-	pxCmd->AddCommand<Flux_CommandSetPipeline>(&xIBL.m_xPrefilterPipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&xFG.m_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&xFG.m_xQuadMesh.GetIndexBuffer());
+	pxCmd->SetPipeline(&xIBL.m_xPrefilterPipeline);
+	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
+	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
@@ -353,7 +353,7 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pU
 		else if (Zenith_TextureAsset* pxBlack = xFG.m_xBlackTexture.GetDirect())
 			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
-	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCmd->DrawIndexed(6);
 }
 
 void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

@@ -152,12 +152,12 @@ void Flux_HDRImpl::BuildPipelines()
 }
 
 static void PreExecuteLuminanceHistogram(void* pUserData);
-static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteBloomThreshold(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData);
-static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteLuminanceHistogram(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteAdaptation(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserData);
+static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_HDRImpl::Initialise()
 {
@@ -294,7 +294,7 @@ static void PreExecuteLuminanceHistogram(void* pUserData)
 	}
 }
 
-static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteLuminanceHistogram(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 
@@ -309,7 +309,7 @@ static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUs
 
 	// Buffer uploads are handled in PreExecuteLuminanceHistogram
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xHDR.m_xLuminanceHistogramPipeline);
+	pxCommandList->BindComputePipeline(&xHDR.m_xLuminanceHistogramPipeline);
 
 	LuminanceConstants xConsts;
 	xConsts.m_uImageWidth = g_xEngine.FluxSwapchain().GetWidth();
@@ -324,10 +324,10 @@ static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUs
 
 	u_int uGroupsX = (g_xEngine.FluxSwapchain().GetWidth() + 15) / 16;
 	u_int uGroupsY = (g_xEngine.FluxSwapchain().GetHeight() + 15) / 16;
-	pxCommandList->AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
+	pxCommandList->Dispatch(uGroupsX, uGroupsY, 1);
 }
 
-static void ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteAdaptation(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 
@@ -341,7 +341,7 @@ static void ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xHDR.m_xAdaptationPipeline);
+	pxCommandList->BindComputePipeline(&xHDR.m_xAdaptationPipeline);
 
 	AdaptationConstants xConsts;
 	xConsts.m_fMinLogLum = xHDR.m_fMinLogLuminance;
@@ -362,7 +362,7 @@ static void ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData)
 	xBinder.BindUAV_Buffer(xHDR.m_xAdaptationShader, "g_auHistogram", &xHDR.m_xHistogramBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(xHDR.m_xAdaptationShader, "g_afExposureData", &xHDR.m_xExposureBuffer.GetUAV());
 
-	pxCommandList->AddCommand<Flux_CommandDispatch>(1, 1, 1);
+	pxCommandList->Dispatch(1, 1, 1);
 }
 
 static void SubmitHistogramLabels()
@@ -438,7 +438,7 @@ static void SubmitHistogramLabels()
 	}
 }
 
-static void ExecuteBloomThreshold(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 
@@ -452,18 +452,18 @@ static void ExecuteBloomThreshold(Flux_CommandList* pxCommandList, void* pUserDa
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xBloom0.m_xSurfaceInfo.m_uWidth, 1.0f / xBloom0.m_xSurfaceInfo.m_uHeight);
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xHDR.m_xBloomThresholdPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xHDR.m_xBloomThresholdPipeline);
+	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindSRV(xHDR.m_xBloomThresholdShader, "g_xHDRTex", &xHDR.GetHDRSceneTarget().SRV());
 	xBinder.BindDrawConstants(xHDR.m_xBloomThresholdShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	const u_int uMipIndex = *static_cast<const u_int*>(pUserData);
 
@@ -480,18 +480,18 @@ static void ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserD
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xSource.m_xSurfaceInfo.m_uWidth, 1.0f / xSource.m_xSurfaceInfo.m_uHeight);
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xHDR.m_xBloomDownsamplePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xHDR.m_xBloomDownsamplePipeline);
+	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindSRV(xHDR.m_xBloomDownsampleShader, "g_xSourceTex", &xHDR.GetBloomChainAttachment(uMipIndex - 1).SRV());
 	xBinder.BindDrawConstants(xHDR.m_xBloomDownsampleShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	const u_int uIndex = *static_cast<const u_int*>(pUserData);
 	const u_int uTargetMip = 3 - uIndex;
@@ -507,18 +507,18 @@ static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserDat
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xTarget.m_xSurfaceInfo.m_uWidth, 1.0f / xTarget.m_xSurfaceInfo.m_uHeight);
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xHDR.m_xBloomUpsamplePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xHDR.m_xBloomUpsamplePipeline);
+	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindSRV(xHDR.m_xBloomUpsampleShader, "g_xSourceTex", &xHDR.GetBloomChainAttachment(uSourceMip).SRV());
 	xBinder.BindDrawConstants(xHDR.m_xBloomUpsampleShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 
@@ -536,9 +536,9 @@ static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData)
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xHDR.m_xToneMappingPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xHDR.m_xToneMappingPipeline);
+	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
@@ -551,7 +551,7 @@ static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData)
 		xBinder.BindDrawConstants(xHDR.m_xToneMappingShader, "ToneMappingConstants", &xConsts, sizeof(ToneMappingConstants));
 	}
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 
 	// Submit histogram labels if ShowHistogram is enabled
 	if (dbg_bHDRShowHistogram)

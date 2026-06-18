@@ -33,7 +33,7 @@
 // from Zenith_AnimatorComponent), not a render dep.
 
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*);
 
 void Flux_AnimatedMeshesImpl::BuildPipelines()
 {
@@ -194,7 +194,7 @@ void Flux_AnimatedMeshesImpl::GatherDrawPacket(void*)
 	}
 }
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bAnimatedMeshesEnabled)
 	{
@@ -220,7 +220,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	for (u_int uCullPass = 0; uCullPass < 2; uCullPass++)
 	{
 	const bool bTwoSidedPass = (uCullPass == 1);
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
+	pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
 
 	// Bind FrameConstants once per pipeline (set 0 - per-frame data). The
 	// lone FluxGraphics reach-in routes through the recovered instance's
@@ -283,8 +283,8 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			const bool bMaterialTwoSided = xParams.m_bTwoSided;
 			if (bMaterialTwoSided != bTwoSidedPass) continue;
 
-			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+			pxCmdList->SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
+			pxCmdList->SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
 			// Build and push material constants (192 bytes) - uses scratch buffer in set 1
 			MaterialDrawConstants xPushConstants;
@@ -299,13 +299,13 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 				xBinder.BindSRV(xZZ.m_xGBufferShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
 			}
 
-			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+			pxCmdList->DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}
 	}
 }
 
-void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
@@ -339,8 +339,8 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const
 				continue;
 			}
 
-			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+			xCmdBuf.SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
+			xCmdBuf.SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
 			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
 
@@ -348,7 +348,7 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const
 			xBinder.BindCBV(m_xShadowShader, "Bones", &xBoneBuffer.GetCBV());
 			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
-			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}
 }

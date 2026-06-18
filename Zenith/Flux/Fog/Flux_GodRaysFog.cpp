@@ -85,7 +85,7 @@ void Flux_GodRaysFogImpl::Reset()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_GodRaysFogImpl::Reset()");
 }
 
-void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
+void Flux_GodRaysFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 {
 	// Get sun direction from frame constants and project to screen space
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
@@ -127,10 +127,10 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 	extern u_int dbg_uVolFogDebugMode;
 	m_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xPipeline);
+	pxCommandList->SetPipeline(&m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(m_xShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
@@ -138,5 +138,5 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 
 	xBinder.BindDrawConstants(m_xShader, "GodRaysConstants", &m_xConstants, sizeof(Flux_GodRaysConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }

@@ -38,9 +38,6 @@ struct Flux_VertexInputDescription;
 class Flux_BufferLayout;
 struct Flux_BufferElement;
 
-// Command types
-class Flux_CommandList;
-
 // Mesh and material types
 class Flux_MeshGeometry;
 class Zenith_MaterialAsset;

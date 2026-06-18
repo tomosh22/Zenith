@@ -363,7 +363,7 @@ void Flux_SSRImpl::UpdateSSRConstants()
 	}
 }
 
-static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSRRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 {
 	// Non-capturing graph trampoline: recover the singleton instance first;
 	// cross-subsystem deps are reached via g_xEngine at point of use.
@@ -381,10 +381,10 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 		xSSR.m_xSSRConstantsBuffer.GetBuffer().m_xVRAMHandle,
 		&dbg_xSSRConstants, sizeof(SSRConstants));
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSR.m_xRayMarchPipeline);
+	pxCommandList->SetPipeline(&xSSR.m_xRayMarchPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -398,10 +398,10 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xDiffuseTex", xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteSSRUpsample(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSRUpsample(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xSSR = g_xEngine.SSR();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
@@ -409,10 +409,10 @@ static void ExecuteSSRUpsample(Flux_CommandList* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSR.m_xUpsamplePipeline);
+	pxCommandList->SetPipeline(&xSSR.m_xUpsamplePipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -427,10 +427,10 @@ static void ExecuteSSRUpsample(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xNormalsTex",  xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xMaterialTex", xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteSSRDenoiseH(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSRDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xSSR = g_xEngine.SSR();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
@@ -438,10 +438,10 @@ static void ExecuteSSRDenoiseH(Flux_CommandList* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSR.m_xDenoiseHPipeline);
+	pxCommandList->SetPipeline(&xSSR.m_xDenoiseHPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -455,10 +455,10 @@ static void ExecuteSSRDenoiseH(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xMaterialTex",        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
 	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xSSRUpsampledAuxTex", &xSSR.GetUpsampledAuxAttachment().SRV());
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteSSRDenoiseV(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSRDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xSSR = g_xEngine.SSR();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
@@ -466,10 +466,10 @@ static void ExecuteSSRDenoiseV(Flux_CommandList* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSSR.m_xDenoiseVPipeline);
+	pxCommandList->SetPipeline(&xSSR.m_xDenoiseVPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -485,7 +485,7 @@ static void ExecuteSSRDenoiseV(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xSSRDenoiseHConfTex", &xSSR.GetDenoiseHConfAttachment().SRV());
 	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xSSRUpsampledTex",    &xSSR.GetUpsampledAttachment().SRV());
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 // Pass handles so ApplyBlurSelectionToGraph can toggle their enable bits when

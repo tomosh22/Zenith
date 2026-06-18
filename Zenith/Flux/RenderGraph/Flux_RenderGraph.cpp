@@ -334,13 +334,12 @@ void Flux_RenderGraph::TrackResource(const Flux_GraphResource& xResource)
     }
 }
 
-Flux_PassBuilder Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFunc pfnOnRecord, void* pUserData, u_int uInitialCapacity)
+Flux_PassBuilder Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFunc pfnOnRecord, void* pUserData)
 {
     AssertMutable("AddPass");
     Zenith_Assert(szName != nullptr, "Flux_RenderGraph::AddPass: null name");
     Zenith_Assert(szName[0] != '\0', "Flux_RenderGraph::AddPass: empty name — all passes must have a non-empty debug label");
     Zenith_Assert(pfnOnRecord != nullptr, "Flux_RenderGraph::AddPass: null record callback for pass '%s'", szName);
-    Zenith_Assert(uInitialCapacity > 0, "Flux_RenderGraph::AddPass: command-list capacity must be > 0 for pass '%s'", szName);
     Zenith_Assert(m_xPasses.GetSize() < kMaxPassCount, "Flux_RenderGraph::AddPass: exceeded hard pass cap (%u) when adding '%s'", kMaxPassCount, szName);
     Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::AddPass: must be called from main thread ('%s')", szName);
 #ifdef ZENITH_RUNTIME_CHECKS
@@ -367,7 +366,6 @@ Flux_PassBuilder Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_
 #endif
     pxPass->m_pfnOnRecord = pfnOnRecord;
     pxPass->m_pUserData = pUserData;
-    pxPass->m_pxCommandList = new Flux_CommandList(szName, uInitialCapacity);
     m_xPasses.PushBack(pxPass);
     const u_int uIdx = m_xPasses.GetSize() - 1;
     Zenith_Assert(m_xPasses.Get(uIdx) == pxPass, "Flux_RenderGraph::AddPass: pass index mismatch after PushBack ('%s')", szName);

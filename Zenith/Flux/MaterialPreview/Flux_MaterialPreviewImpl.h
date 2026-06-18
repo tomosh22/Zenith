@@ -8,7 +8,6 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"
 
-class Flux_CommandList;
 class Zenith_MaterialAsset;
 class Zenith_MeshGeometryAsset;
 

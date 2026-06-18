@@ -112,7 +112,7 @@ static void PrepareLightClustering(void* /*pUserData*/)
 	g_xEngine.DynamicLights().GatherLightsFromScene();
 }
 
-static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUserData*/)
+static void ExecuteLightClustering(Flux_CommandBuffer* pxCommandList, void* /*pUserData*/)
 {
 	// Trampoline (non-capturing graph callback): recover the subsystem singleton
 	// up front, then route every LightClustering reach through it. DynamicLights
@@ -128,7 +128,7 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	auto& xDynamicLights = g_xEngine.DynamicLights();
 	const u_int uLightCount = xDynamicLights.GetLightCount();
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xLightClustering.m_xComputePipeline);
+	pxCommandList->BindComputePipeline(&xLightClustering.m_xComputePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -156,7 +156,7 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	// kernel declares [numthreads(16, 9, 1)] (= 144 threads / workgroup,
 	// covering one full XY plane of clusters). We dispatch CLUSTER_DIM_Z
 	// = 24 workgroups along Z so each Z slice is its own workgroup.
-	pxCommandList->AddCommand<Flux_CommandDispatch>(1, 1, Flux_LightClusteringImpl::uCLUSTER_DIM_Z);
+	pxCommandList->Dispatch(1, 1, Flux_LightClusteringImpl::uCLUSTER_DIM_Z);
 }
 
 void Flux_LightClusteringImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

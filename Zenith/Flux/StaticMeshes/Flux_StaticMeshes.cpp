@@ -27,7 +27,7 @@
 
 
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*);
 static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance);
 
 void Flux_StaticMeshesImpl::BuildPipelines()
@@ -190,7 +190,7 @@ static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance)
 
 // Per-mesh draw helper. Binds material constants + SRVs, then emits the
 // indexed draw.
-void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	Zenith_MaterialAsset* pxMaterial,
 	u_int uIndexCount)
@@ -205,11 +205,11 @@ void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_Sha
 		xBinder.BindSRV(m_xGBufferShader, GetMaterialTextureBindingName(u), &pxTexture->m_xSRV);
 	}
 
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
+	pxCmdList->DrawIndexed(uIndexCount);
 }
 
 // Called from the recovered instance in ExecuteGBuffer, once per cull pass.
-void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	Flux_ModelInstance* pxModelInstance, const Zenith_Maths::Matrix4& xModelMatrix,
 	bool bTwoSidedPass)
 {
@@ -260,14 +260,14 @@ void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandList* pxCmdLis
 		const bool bMaterialTwoSided = xParams.m_bTwoSided || m_bDbgForceCullNone;
 		if (bMaterialTwoSided != bTwoSidedPass) continue;
 
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+		pxCmdList->SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
+		pxCmdList->SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
 		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());
 	}
 }
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
 
@@ -285,7 +285,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	for (u_int uCullPass = 0; uCullPass < 2; uCullPass++)
 	{
 		const bool bTwoSidedPass = (uCullPass == 1);
-		pxCmdList->AddCommand<Flux_CommandSetPipeline>(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
+		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
 		xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 		for (u_int u = 0; u < xPacket.GetSize(); u++)
@@ -296,7 +296,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 }
 
-void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	// Shadow pass binds only DrawConstants + ShadowMatrix. Slang reflection
@@ -328,12 +328,12 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const F
 				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE) continue;
 			}
 
-			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+			xCmdBuf.SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
+			xCmdBuf.SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
 			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
 			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
-			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}
 }

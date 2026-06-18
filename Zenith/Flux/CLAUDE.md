@@ -64,8 +64,8 @@ For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, t
 ### Core
 - `Flux.h/cpp` - Main rendering infrastructure, pipeline specification, `Flux_SurfaceInfo`
 - `Flux_Buffers.h/cpp` - Buffer management
-- `Flux_CommandList.h/cpp` - Command list recording
-- `Flux_Enums.h` - Rendering enums (CommandType, ResourceAccess, TextureFormat, BlendFactor, DepthCompareFunc, MeshTopology, ShaderDataType, BindingType, LoadAction, StoreAction, MRTIndex, etc.)
+- `Flux_RecordValidation.h` - Shared inline asserts (pipeline/view/draw-constant validity) called by both backends' recorder methods
+- `Flux_Enums.h` - Rendering enums (ResourceAccess, TextureFormat, BlendFactor, DepthCompareFunc, MeshTopology, ShaderDataType, BindingType, LoadAction, StoreAction, MRTIndex, etc.)
 - `Flux_Graphics.h/cpp` - Global graphics state, frame constants
 - `Flux_RenderTargets.h/cpp` - Render target management
 - `Flux_Types.h` - Type definitions, `IsCompressedFormat()` helper
@@ -94,8 +94,17 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 
 ## Architecture
 
-### Command List System
-Platform-agnostic command recording. Commands stored sequentially in dynamically-sized buffer. `AddCommand<T>()` template adds commands, `IterateCommands()` executes them on platform command buffer.
+### Direct command recording
+Render systems record GPU work by calling methods **directly** on the backend command
+buffer (aliased `Flux_CommandBuffer` — `Zenith_Vulkan_CommandBuffer` in the Vulkan build):
+`pxCmdBuf->SetPipeline(...)`, `Draw(...)`, `Dispatch(...)`, plus the named-binding helper
+`Flux_ShaderBinder`. There is no intermediate command-list DSL — a pass's `OnRecord`
+callback receives a `Flux_CommandBuffer*` and emits native draws/dispatches/binds. The
+backend command-recorder surface is the C++20 `FluxBackendCommandRecorder` concept (see
+Backend Abstraction); shared `Flux_RecordValidation.h` helpers carry the validity asserts.
+(Historically this went through a deferred `Flux_CommandList` byte-buffer DSL replayed by
+`IterateCommands` — that abstraction was removed once the render graph owned ordering +
+barriers, leaving the DSL pure indirection.)
 
 ### Pass Execution Order
 There is no `RenderOrder` enum and no caller-supplied ordering token. Pass execution order is computed at frame boundary by `Flux_RenderGraph::Compile()`:
@@ -104,10 +113,7 @@ There is no `RenderOrder` enum and no caller-supplied ordering token. Pass execu
 2. `Compile()` builds a dependency adjacency from those declarations and runs Kahn's topological sort.
 3. Resource transitions (image layout / buffer access) are then synthesized automatically as barriers between consecutive passes.
 
-`Flux::SubmitCommandList()` queues a recorded `Flux_CommandList` for the platform backend's worker-thread iteration; submission order is determined by the topo sort, not by call order at submit time. See `Flux/RenderGraph/CLAUDE.md` for the full graph lifecycle and the **Print Pass Order** debug button which dumps the current frame's resolved order.
-
-### Command List Reset
-`Reset(bool bClearTargets)` clears command list for new frame. Reuses buffer allocation. Parameter controls whether render targets are cleared on render pass begin (true) or contents preserved (false for multi-pass rendering).
+At `Execute()`, the graph queues each enabled pass in topological order (`QueueRenderPass`) and then drives the single direct-recording stage: the backend records each pass's callback (`Flux_RenderGraph::RecordPassInto`) into per-worker command buffers, in topological order, with barriers emitted inline. Worker command buffers are submitted in order, so the topological order + inline barriers are what enforce cross-pass dependencies. See `Flux/RenderGraph/CLAUDE.md` for the full graph lifecycle and the **Print Pass Order** debug button which dumps the current frame's resolved order.
 
 ### Pipeline Specification
 `Flux_PipelineSpecification` struct defines complete graphics pipeline state: shader, blend modes, depth test, vertex input, render targets, load/store actions.
@@ -127,11 +133,9 @@ Key constants in `Core/ZenithConfig.h`:
 
 ## Key Concepts
 
-**Deferred Execution:** Commands recorded into lists, submitted for execution, then iterated on worker threads to build Vulkan command buffers.
+**Single-stage recording:** Each pass's `OnRecord` callback records native commands directly into a per-worker backend command buffer at `Execute()` time, in topological order, with graph-synthesized barriers emitted inline. There is no separate record-to-DSL + replay step.
 
-**Multi-threaded Recording:** Multiple command lists can be recorded in parallel across worker threads.
-
-**Memory Reuse:** Command lists reuse allocations across frames via Reset().
+**Multi-threaded Recording:** Passes are recorded in parallel — each worker records a contiguous topological slice of the pass list into its own command buffer (`FLUX_NUM_WORKER_THREADS`); the worker buffers are submitted in order, so order + inline barriers enforce dependencies.
 
 **View Space Convention:** The engine uses **+Z forward** in view space (not -Z like OpenGL convention). When extracting linear depth from view-space positions, use `viewPos.z` directly without negation. See `Fog/CLAUDE.md` for depth reconstruction details.
 
@@ -153,24 +157,16 @@ The view types (`Flux_ShaderResourceView`, `Flux_RenderTargetView`, `Flux_DepthS
 
 5. **Binding Function Overloads**: The command buffer's `BindSRV()`, `BindUAV()`, `BindRTV()` methods take specific view types, ensuring correct binding at compile time.
 
-### Why Command Classes Are Verbose But Correct
+### Direct recording replaced the command-list DSL
 
-The 16+ command classes in `Flux_CommandList.h` follow an identical pattern. While verbose, this design is appropriate:
-
-1. **Explicit and Debuggable**: Each command class is self-documenting. When debugging, you can set breakpoints in specific command's `operator()` method.
-
-2. **Type-Safe Command Parameters**: Each command's constructor parameters are type-checked at compile time. A `Flux_CommandBindSRV` constructor explicitly requires `Flux_ShaderResourceView*`.
-
-3. **Efficient Binary Storage**: Commands are stored directly in a byte buffer without heap allocation. The switch-case dispatch in `IterateCommands()` compiles to efficient jump tables.
-
-4. **C++ Limitations**: There's no elegant C++ solution that doesn't trade clarity for metaprogramming complexity:
-   - `std::variant` still requires all the struct definitions, plus visitor boilerplate
-   - Macros obscure the code and complicate debugging
-   - Union + type tag loses compile-time type safety
-
-5. **Clear Extension Pattern**: Adding a new command requires: (1) enum value, (2) class definition, (3) switch case. This is predictable and doesn't break existing commands.
-
-The verbosity is the cost of explicit, type-safe, debuggable code in C++ without metaprogramming complexity.
+Render systems used to record into a deferred `Flux_CommandList` byte-buffer DSL
+(`AddCommand<Flux_CommandX>()`) that the backend later replayed via `IterateCommands`.
+That DSL existed to "trivialise multithreading and synthesize barriers" — both of which the
+render graph now owns (topological sort + `SynthesizeBarriers`), making the DSL pure
+indirection. It was removed: passes now call the backend command-recorder methods directly
+(the 1:1 targets the command classes used to forward to), recorded inside the dependency-
+ordered worker stage. To add a new GPU operation, add the method to the
+`FluxBackendCommandRecorder` concept + each backend, and call it from the pass callback.
 
 ### Buffer Wrapper Classes (Candidate for Simplification)
 

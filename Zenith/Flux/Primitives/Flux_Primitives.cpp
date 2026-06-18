@@ -422,7 +422,7 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(m_xPrimitivesWireframePipeline, xPipelineSpec);
 }
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
 void Flux_PrimitivesImpl::Initialise()
 {
@@ -669,7 +669,7 @@ static YAxisAlignment ComputeYAxisAlignment(const Zenith_Maths::Vector3& xStart,
 }
 
 // Push the per-instance constant (model matrix + colour) and emit the indexed draw call.
-void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	const Zenith_Maths::Vector3& xColor,
 	u_int uIndexCount)
@@ -681,17 +681,17 @@ void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_Sh
 
 	// Slang reflection keys on the variable name, not the GLSL block instance.
 	xBinder.BindDrawConstants(m_xPrimitivesShader, "PrimitivePushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
-	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
+	pxCmdList->DrawIndexed(uIndexCount);
 }
 
-void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<SphereInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xSphereVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xSphereIndexBuffer);
+	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetVertexBuffer(m_xSphereVertexBuffer);
+	pxCmdList->SetIndexBuffer(m_xSphereIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -702,7 +702,7 @@ void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandList* pxCmdList, Fl
 	}
 }
 
-void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<CubeInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
@@ -713,10 +713,10 @@ void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux
 		// Wireframe state varies per cube, so set the pipeline inside the loop rather than
 		// pre-sorting by wireframe — wireframe cubes are rare enough that a per-instance
 		// pipeline switch is cheaper than two separate batches.
-		pxCmdList->AddCommand<Flux_CommandSetPipeline>(
+		pxCmdList->SetPipeline(
 			xInstance.m_bWireframe ? &m_xPrimitivesWireframePipeline : &m_xPrimitivesPipeline);
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xCubeVertexBuffer);
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xCubeIndexBuffer);
+		pxCmdList->SetVertexBuffer(m_xCubeVertexBuffer);
+		pxCmdList->SetIndexBuffer(m_xCubeIndexBuffer);
 
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xCenter);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, xInstance.m_xHalfExtents);
@@ -724,14 +724,14 @@ void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux
 	}
 }
 
-void Flux_PrimitivesImpl::RenderLinePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderLinePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<LineInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xLineVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xLineIndexBuffer);
+	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetVertexBuffer(m_xLineVertexBuffer);
+	pxCmdList->SetIndexBuffer(m_xLineIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -746,14 +746,14 @@ void Flux_PrimitivesImpl::RenderLinePrimitives(Flux_CommandList* pxCmdList, Flux
 	}
 }
 
-void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<CapsuleInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xCapsuleVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xCapsuleIndexBuffer);
+	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetVertexBuffer(m_xCapsuleVertexBuffer);
+	pxCmdList->SetIndexBuffer(m_xCapsuleIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -769,14 +769,14 @@ void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandList* pxCmdList, F
 	}
 }
 
-void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<CylinderInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xCylinderVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xCylinderIndexBuffer);
+	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetVertexBuffer(m_xCylinderVertexBuffer);
+	pxCmdList->SetIndexBuffer(m_xCylinderIndexBuffer);
 
 	for (u_int i = 0; i < xInstances.GetSize(); ++i)
 	{
@@ -796,7 +796,7 @@ void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandList* pxCmdList, 
 // uploaded to a dynamic vertex buffer (capped at s_uMaxTriangles per frame). All
 // triangles draw with identity transform — their world-space vertices and per-vertex
 // colour carry the position/colour state.
-void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<TriangleInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0 || !m_bTriangleBuffersInitialised) return;
@@ -842,21 +842,21 @@ void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandList* pxCmdList, 
 	g_xEngine.FluxMemory().UploadBufferData(m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
 		xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int));
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&m_xPrimitivesPipeline);
-	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&m_xTriangleDynamicVertexBuffer);
-	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&m_xTriangleIndexBuffer);
+	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetVertexBuffer(m_xTriangleDynamicVertexBuffer);
+	pxCmdList->SetIndexBuffer(m_xTriangleIndexBuffer);
 
 	EmitPrimitiveDraw(pxCmdList, xBinder, Zenith_Maths::Matrix4(1.0f), Zenith_Maths::Vector3(1.0f), xIndices.GetSize());
 }
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bPrimitivesEnabled)
 	{
 		return;
 	}
 
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Primitives() to reach the singleton
 	// instance FIRST; cross-subsystem deps (FluxGraphics / VulkanMemory) are
 	// reached via g_xEngine at point of use (mirrors ExecuteSSAOGenerate).

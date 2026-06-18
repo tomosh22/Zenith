@@ -16,7 +16,6 @@ using namespace Flux_TerrainConfig;
 // Forward declarations
 class Flux_MeshGeometry;
 class Flux_RendererImpl;
-class Flux_CommandList;
 class FrameContext;
 
 // ========== Residency State ==========
@@ -261,7 +260,7 @@ public:
 	// type, so the renderer can drive them through the state without including the component.
 	void UpdateChunkLODAllocations(Flux_TerrainStreamingState& xState);
 	void UploadFrustumPlanesForFrame(Flux_TerrainStreamingState& xState, const Zenith_Maths::Matrix4& xViewProjMatrix);
-	void UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandList& xCmdList);
+	void UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandBuffer& xCmdList);
 
 	// ========== Stats type alias ==========
 	using StreamingStats = Flux_TerrainStreamingStats;

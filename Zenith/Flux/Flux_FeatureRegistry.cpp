@@ -50,7 +50,7 @@
 // prologue barrier putting the Final RT into SHADER_READ_ONLY_OPTIMAL for the
 // swapchain copy (which lives outside the graph). File-static, not header-exposed;
 // referenced solely by the @FinalRTLayoutTransition setup step below.
-static void Flux_FinalLayoutTransitionNoOp(Flux_CommandList*, void*)
+static void Flux_FinalLayoutTransitionNoOp(Flux_CommandBuffer*, void*)
 {
 }
 

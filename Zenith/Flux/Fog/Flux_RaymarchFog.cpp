@@ -92,7 +92,7 @@ void Flux_RaymarchFogImpl::Reset()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFogImpl::Reset()");
 }
 
-void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
+void Flux_RaymarchFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 {
 	// Get shared fog parameters
 	Flux_VolumeFogImpl& xVolumeFog = g_xEngine.VolumeFog();
@@ -144,10 +144,10 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 	m_xConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 	m_xConstants.m_fNoiseWorldScale = xShared.m_fNoiseWorldScale;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xPipeline);
+	pxCommandList->SetPipeline(&m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(m_xShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
@@ -167,5 +167,5 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 
 	xBinder.BindDrawConstants(m_xShader, "RaymarchConstants", &m_xConstants, sizeof(Flux_RaymarchConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }

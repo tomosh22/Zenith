@@ -13,7 +13,7 @@ There is no caller-supplied ordering token. There is no `RenderOrder` enum. Pass
 | [Flux_RenderGraph.h](Flux_RenderGraph.h) | Public types (`Flux_RenderGraph`, `Flux_PassBuilder`, `Flux_RenderGraph_Pass`, barriers, transient handles); fluent builder API |
 | [Flux_RenderGraph.cpp](Flux_RenderGraph.cpp) | `AddPass`, transient creation, dirty/Clear handling, `GetPassOrderDescription()` |
 | [Flux_RenderGraph_Compilation.cpp](Flux_RenderGraph_Compilation.cpp) | Validation, adjacency building, Kahn's topological sort, barrier synthesis, transient lifetime + aliasing pack |
-| [Flux_RenderGraph_Execution.cpp](Flux_RenderGraph_Execution.cpp) | Prepare callbacks, parallel command-list recording (worker threads), submission to the backend |
+| [Flux_RenderGraph_Execution.cpp](Flux_RenderGraph_Execution.cpp) | Prepare callbacks, queue passes, `RecordPassInto` (per-pass direct recording invoked by the backend worker loop) |
 
 Setup, Compile, and Execute are the three lifecycle phases — kept in separate translation units so each is small enough to read end-to-end.
 
@@ -23,10 +23,10 @@ Setup, Compile, and Execute are the three lifecycle phases — kept in separate 
 Setup    Compile             Execute
 -----    -------             -------
 each     Validate            Prepare callbacks (CPU)
-sub-     BuildAdjacency        |
-system   TopologicalSort     RecordCommandLists (parallel)
-calls    SynthesizeBarriers    |
-AddPass  AllocateTransients  SubmitRecordedLists (main thread)
+sub-     BuildAdjacency      Queue passes (topo order)
+system   TopologicalSort     RecordFrame: backend records each pass's callback
+calls    SynthesizeBarriers    directly into per-worker command buffers
+AddPass  AllocateTransients    (parallel slices; barriers inline)
 ```
 
 ### Setup phase (per frame, after Initialise)
@@ -59,8 +59,8 @@ xGraph.AddPass("HiZ Mip", ExecuteHiZMip)
 `Flux_RenderGraph::Execute()` runs every frame:
 
 1. `CallPrepareCallbacks()` on the main thread — passes that registered a `Prepare(pfn)` get a chance to run CPU work that must happen before recording (e.g., upload uniform buffers, build CPU-side draw lists).
-2. `RecordCommandLists()` dispatches one task per pass to the task system. Each task runs the pass's `pfnOnRecord` against an isolated `Flux_CommandList`, with `CurrentPassScope` setting the recording-pass TLS so `AssertBoundResourceDeclared` can validate every shader binding against the declared Read/Write set.
-3. `SubmitRecordedLists()` on the main thread emits the prologue barriers (image transitions / buffer barriers / aliasing hand-offs) and then iterates each command list into the backend's command buffer. Submission order is `m_xExecutionOrder`, never call-time order.
+2. `SubmitRecordedLists()` queues every enabled pass (with its attachments + synthesized barriers) onto the renderer in `m_xExecutionOrder` — no recording happens here.
+3. `g_xEngine.FluxRenderer().RecordFrame()` drives the single direct-recording stage synchronously (still inside the render-task safe window, before the frame memory submit). The backend distributes the queued passes as contiguous topological slices across worker command buffers and, for each pass, emits the prologue barriers (image / buffer / aliasing) then calls `Flux_RenderGraph::RecordPassInto` — which sets the recording-pass TLS (so `AssertBoundResourceDeclared` validates each shader binding) and runs `pfnOnRecord` directly against the backend command buffer. Worker buffers are later submitted in order, so `m_xExecutionOrder` + inline barriers enforce dependencies. (D3D12 null backend: a serial loop into a no-op command buffer, so callback side effects still run.)
 
 ## Key concepts
 
@@ -74,10 +74,10 @@ xGraph.AddPass("HiZ Mip", ExecuteHiZMip)
 
 ### Prepare vs Record callbacks
 - **Prepare** runs on the main thread before any recording. Use for CPU-side work that must complete before any pass's record callback runs (e.g., uniform buffer uploads via `Flux_MemoryManager::UploadBufferDataAtOffset`, frustum culling, draw-list construction).
-- **Record** runs on a worker thread. The callback receives a `Flux_CommandList*` and the pass's typed `UserData<T>`. Inside the callback, the recording-pass TLS is set so `Flux_ShaderBinder` calls can sanity-check that bound resources were declared.
+- **Record** runs on a worker thread. The callback receives a `Flux_CommandBuffer*` (the backend command buffer — record draws/dispatches/binds directly on it) and the pass's typed `UserData<T>`. Inside the callback, the recording-pass TLS is set so `Flux_ShaderBinder` calls can sanity-check that bound resources were declared.
 
 ### Barriers
-The graph emits three barrier kinds before each pass's command list:
+The graph emits three barrier kinds before each pass's recording (outside any render pass):
 - **Image transitions** — layout + access transitions for any image subresource whose access pattern differs from the previous pass that touched it.
 - **Buffer barriers** — pure memory + execution barriers for buffers; no layout change.
 - **Aliasing hand-offs** — when a transient that previously occupied an aliased pool slot is being reused this frame for a different transient, an aliasing memory barrier is emitted so the new content is published correctly.
@@ -121,6 +121,6 @@ Each pass carries a system-owned base `m_bEnabled` (written only by `SetEnabled`
 
 ## Cross-references
 
-- [Flux/CLAUDE.md](../CLAUDE.md) — high-level Flux architecture, command list system, render pipeline overview.
+- [Flux/CLAUDE.md](../CLAUDE.md) — high-level Flux architecture, direct command recording, render pipeline overview.
 - [Vulkan/CLAUDE.md](../../Vulkan/CLAUDE.md) — backend command buffer, VRAM, deferred deletion.
 - [Docs/Onboarding/NewcomerMap.md](../../../Docs/Onboarding/NewcomerMap.md) — recommended reading path.

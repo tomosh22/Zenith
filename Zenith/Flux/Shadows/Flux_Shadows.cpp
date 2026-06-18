@@ -163,7 +163,7 @@ static void PreExecuteShadowMatrices(void*)
 	g_xEngine.Shadows().UpdateShadowMatrices();
 }
 
-static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
 	{
@@ -181,16 +181,16 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 	// declare depth-bias + dynamic-depth-bias state; this sets it per cascade
 	// command list (dynamic state is per-command-buffer). Bias is applied entirely
 	// by the rasterizer here — never in the sampling shader.
-	pxCommandList->AddCommand<Flux_CommandSetDepthBias>(dbg_fShadowDepthBiasConstant, dbg_fShadowDepthBiasSlope, 0.f);
+	pxCommandList->SetDepthBias(dbg_fShadowDepthBiasConstant, dbg_fShadowDepthBiasSlope, 0.f);
 
 	auto& xStaticMeshes = g_xEngine.StaticMeshes();
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xStaticMeshes.GetShadowPipeline());
+	pxCommandList->SetPipeline(&xStaticMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
 	xStaticMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 
 	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xAnimatedMeshes.GetShadowPipeline());
+	pxCommandList->SetPipeline(&xAnimatedMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
 	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);

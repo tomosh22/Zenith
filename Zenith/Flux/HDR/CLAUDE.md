@@ -138,14 +138,11 @@ Flux_HDR::Initialise();        // Creates HDR targets
 ## Common Operations
 
 ### Render to HDR (no depth):
-```cpp
-Flux::SubmitCommandList(&cmdList, Flux_HDR::GetHDRSceneTargetSetup());
-```
-
-### Render to HDR (with depth):
-```cpp
-Flux::SubmitCommandList(&cmdList, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
-```
+HDR targets are declared as render-graph pass writes; the pass's record callback
+records directly into the supplied `Flux_CommandBuffer*`. Target setup comes from
+`Flux_HDR::GetHDRSceneTargetSetup()` (or `...WithDepth()`), wired via the pass's
+`Writes(...)` declarations in `SetupRenderGraph` — there is no manual command-list
+submission.
 
 ### Access HDR texture for sampling:
 ```cpp

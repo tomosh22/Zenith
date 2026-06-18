@@ -108,7 +108,6 @@ void Flux_ParticleGPUImpl::Shutdown()
 	m_xComputePipeline.Reset();
 	m_xComputeShader.Reset();
 	m_xComputeRootSig = Flux_RootSig();
-	m_xComputeCommandList.Reset();
 
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.DestroyReadWriteBuffer(m_xParticleBufferA);
@@ -135,7 +134,6 @@ void Flux_ParticleGPUImpl::Reset()
 	}
 
 	m_uAliveCount = 0;
-	m_xComputeCommandList.Reset();
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticleGPUImpl::Reset()");
 }
@@ -302,7 +300,7 @@ void Flux_ParticleGPUImpl::PreExecuteCompute()
 	);
 }
 
-void Flux_ParticleGPUImpl::DispatchCompute(Flux_CommandList* pxCmdList)
+void Flux_ParticleGPUImpl::DispatchCompute(Flux_CommandBuffer* pxCmdList)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bGPUParticlesEnabled || m_axEmitters.GetSize() == 0)
 		return;
@@ -312,7 +310,7 @@ void Flux_ParticleGPUImpl::DispatchCompute(Flux_CommandList* pxCmdList)
 	Flux_ReadWriteBuffer& xInputBuffer  = m_bUseBufferA ? m_xParticleBufferA : m_xParticleBufferB;
 	Flux_ReadWriteBuffer& xOutputBuffer = m_bUseBufferA ? m_xParticleBufferB : m_xParticleBufferA;
 
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&m_xComputePipeline);
+	pxCmdList->BindComputePipeline(&m_xComputePipeline);
 
 	ParticleComputeConstants xConstants;
 	xConstants.m_fDeltaTime = fDt;
@@ -337,7 +335,7 @@ void Flux_ParticleGPUImpl::DispatchCompute(Flux_CommandList* pxCmdList)
 	xBinder.BindDrawConstants(m_xComputeShader, "PushConstants", &xConstants, sizeof(xConstants));
 
 	uint32_t uWorkgroups = (m_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;
-	pxCmdList->AddCommand<Flux_CommandDispatch>(uWorkgroups, 1, 1);
+	pxCmdList->Dispatch(uWorkgroups, 1, 1);
 
 	m_bUseBufferA = !m_bUseBufferA;
 

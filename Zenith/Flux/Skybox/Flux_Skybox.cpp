@@ -238,23 +238,23 @@ static void PreExecuteSkybox(void*)
 	}
 }
 
-static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bSkyboxEnabled)
 	{
 		// Solid colour override (buffer uploaded in PreExecuteSkybox)
 
-		// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+		// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it
 		// cannot capture, so it re-enters via g_xEngine.Skybox() to reach the
 		// singleton instance; FluxGraphics is reached via g_xEngine at point of
 		// use (mirrors ExecuteSDFs).
 		Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
 
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xSolidColourPipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xSkybox.m_xSolidColourConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+		pxCommandList->SetPipeline(&xSkybox.m_xSolidColourPipeline);
+		pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+		pxCommandList->BindCBV(&xSkybox.m_xSolidColourConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+		pxCommandList->DrawIndexed(6);
 		return;
 	}
 
@@ -264,9 +264,9 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 	if (xSkybox.IsAtmosphereEnabled())
 	{
 		// Atmosphere sky (constants uploaded in PreExecuteSkybox)
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xAtmospherePipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+		pxCommandList->SetPipeline(&xSkybox.m_xAtmospherePipeline);
+		pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 		{
 			Flux_ShaderBinder xBinder(*pxCommandList);
@@ -274,7 +274,7 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
 		}
 
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+		pxCommandList->DrawIndexed(6);
 	}
 	else
 	{
@@ -285,18 +285,18 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 			return;
 		}
 
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xCubemapPipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-		pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxCubemap->m_xSRV, 1);
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+		pxCommandList->SetPipeline(&xSkybox.m_xCubemapPipeline);
+		pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+		pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+		pxCommandList->BindSRV(&pxCubemap->m_xSRV, 1);
+		pxCommandList->DrawIndexed(6);
 	}
 }
 
-static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
+static void ExecuteAerialPerspective(Flux_CommandBuffer* pxCommandList, void*)
 {
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Skybox() to reach the singleton
 	// instance; FluxGraphics is reached via g_xEngine at point of use.
 	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
@@ -307,9 +307,9 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 	}
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xSkybox.m_xAerialPerspectivePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&xSkybox.m_xAerialPerspectivePipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
@@ -318,7 +318,7 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 		xBinder.BindSRV(xSkybox.m_xAerialPerspectiveShader, "g_xDepthTex", &xGraphics.GetDepthAttachment().SRV());
 	}
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

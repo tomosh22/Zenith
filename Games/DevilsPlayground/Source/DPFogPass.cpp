@@ -36,7 +36,7 @@ namespace
 
 	// Pass record callback: assembles and binds the per-frame fog CBV,
 	// then issues a fullscreen draw against the HDR scene target.
-	void ExecuteDPFog(Flux_CommandList* pxCommandList, void* pUserData);
+	void ExecuteDPFog(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 	// Build / rebuild the DP_Fog pipeline. Hooked into the shader hot-reload
 	// path in tools builds so editing the .slang file refreshes the pipeline.
@@ -216,7 +216,7 @@ namespace
 		s_bPipelineBuilt = false;
 	}
 
-	void ExecuteDPFog(Flux_CommandList* pxCommandList, void* /*pUserData*/)
+	void ExecuteDPFog(Flux_CommandBuffer* pxCommandList, void* /*pUserData*/)
 	{
 		// Lazy pipeline init — keeps Init/Shutdown lightweight and tolerates the
 		// engine still booting Flux_Fog when DPFogPass::Init runs.
@@ -265,16 +265,16 @@ namespace
 		s_xPayload.m_xFogColor_Density = Zenith_Maths::Vector4(
 			s_fDebugColorR, s_fDebugColorG, s_fDebugColorB, s_fDebugDensity);
 
-		pxCommandList->AddCommand<Flux_CommandSetPipeline>(s_pxPipeline);
+		pxCommandList->SetPipeline(s_pxPipeline);
 
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+		pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindCBV(*s_pxShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindSRV(*s_pxShader, "g_xDepthTex",     g_xEngine.FluxGraphics().GetDepthStencilSRV());
 		xBinder.BindDrawConstants(*s_pxShader, "DPFogConstants", &s_xPayload, sizeof(s_xPayload));
 
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+		pxCommandList->DrawIndexed(6);
 	}
 }

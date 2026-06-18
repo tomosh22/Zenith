@@ -2,6 +2,7 @@
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Flux/Flux_BackendTypes.h"   // full Flux_CommandBuffer for the inline BindSRV helpers below
 
 // ============================================================================
 // Material feature flags — packed into MaterialDrawConstants::m_xFlagsParams.x
@@ -240,14 +241,14 @@ inline const char* GetMaterialTextureBindingName(u_int uSlot)
 // Bind all 9 material texture slots (instance-aware: resolves through the
 // parent chain, falling back to the pinned per-slot defaults).
 inline void BindMaterialTextures(
-	Flux_CommandList& xCommandList,
+	Flux_CommandBuffer& xCmdBuf,
 	Zenith_MaterialAsset* pxMaterial,
 	uint32_t uStartBinding = 0)
 {
 	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
 	{
 		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
-		xCommandList.AddCommand<Flux_CommandBindSRV>(&pxTexture->m_xSRV, uStartBinding + u);
+		xCmdBuf.BindSRV(&pxTexture->m_xSRV, uStartBinding + u);
 	}
 }
 
@@ -256,7 +257,7 @@ inline void BindMaterialTextures(
 // height/detail slots — 4 materials x 9 slots would exhaust the binding
 // space for no visual gain (terrain has its own splat detail).
 inline void BindTerrainMaterialTextures(
-	Flux_CommandList& xCommandList,
+	Flux_CommandBuffer& xCmdBuf,
 	Zenith_MaterialAsset* pxMaterial,
 	uint32_t uStartBinding = 0)
 {
@@ -271,6 +272,6 @@ inline void BindTerrainMaterialTextures(
 	for (u_int u = 0; u < sizeof(aeTerrainSlots) / sizeof(aeTerrainSlots[0]); u++)
 	{
 		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(aeTerrainSlots[u]);
-		xCommandList.AddCommand<Flux_CommandBindSRV>(&pxTexture->m_xSRV, uStartBinding + u);
+		xCmdBuf.BindSRV(&pxTexture->m_xSRV, uStartBinding + u);
 	}
 }

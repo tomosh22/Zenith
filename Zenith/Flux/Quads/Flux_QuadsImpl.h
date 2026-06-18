@@ -6,7 +6,6 @@
 
 #define FLUX_MAX_QUADS_PER_FRAME 1024
 
-class Flux_CommandList;
 class Flux_RenderGraph;
 
 // Phase 9: state + behaviour for Quads subsystem -- shader/pipeline/instance

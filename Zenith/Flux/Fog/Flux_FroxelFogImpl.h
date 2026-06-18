@@ -4,7 +4,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Maths/Zenith_Maths.h"
 
-class Flux_CommandList;
 class Flux_RenderGraph;
 
 // Push constant structures (must match shader)
@@ -65,9 +64,9 @@ public:
 
 	void SetupTransients(Flux_RenderGraph& xGraph);
 
-	void RenderInject(Flux_CommandList* pxCommandList);
-	void RenderLight(Flux_CommandList* pxCommandList);
-	void RenderApply(Flux_CommandList* pxCommandList);
+	void RenderInject(Flux_CommandBuffer* pxCommandList);
+	void RenderLight(Flux_CommandBuffer* pxCommandList);
+	void RenderApply(Flux_CommandBuffer* pxCommandList);
 
 	Flux_RenderAttachment& GetDensityGrid();
 	Flux_RenderAttachment& GetLightingGrid();

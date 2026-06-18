@@ -125,9 +125,9 @@ DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 DEBUGVAR bool dbg_bLogTerrainMetrics = false;  // Log terrain performance metrics
 u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals, 3=UVs, etc.)
 
-static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void* pUserData);
-static void ExecuteCulling(Flux_CommandList* pxCmdList, void* pUserData);
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
+static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void* pUserData);
+static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void* pUserData);
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
 void Flux_TerrainImpl::BuildPipelines()
 {
@@ -415,19 +415,19 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 }
 
-static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
+static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled)
 	{
 		return;
 	}
 
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it cannot
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Terrain() to reach the singleton
 	// instance; cross-subsystem deps are reached via g_xEngine at point of use.
 	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
 
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xTerrain.m_xResetCountersPipeline);
+	pxCmdList->BindComputePipeline(&xTerrain.m_xResetCountersPipeline);
 
 	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
 	{
@@ -438,12 +438,12 @@ static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void*)
 		// writes 0u. The graph emits a UAV→UAV barrier between this pass and
 		// the culling pass, so the culling dispatch's atomic increments see
 		// the cleared value.
-		pxCmdList->AddCommand<Flux_CommandBindUAV_Buffer>(&pxState->m_xVisibleCountBuffer.GetUAV(), Flux_BindingSlot{ 0, 0, true });
-		pxCmdList->AddCommand<Flux_CommandDispatch>(1, 1, 1);
+		pxCmdList->BindUAV_Buffer(&pxState->m_xVisibleCountBuffer.GetUAV(), Flux_BindingSlot{ 0, 0, true });
+		pxCmdList->Dispatch(1, 1, 1);
 	}
 }
 
-static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
+static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled)
 	{
@@ -457,7 +457,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 
 	// Bind the terrain culling compute pipeline once (owned by Flux_Terrain)
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&xTerrain.m_xCullingPipeline);
+	pxCmdList->BindComputePipeline(&xTerrain.m_xCullingPipeline);
 
 	// For each terrain component, dispatch culling using its own buffers
 	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
@@ -471,7 +471,7 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 }
 
-static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled)
 	{
@@ -483,7 +483,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	// promoted member helper.
 	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &xTerrain.m_xTerrainWireframePipeline : &xTerrain.m_xTerrainGBufferPipeline);
+	pxCmdList->SetPipeline(dbg_bWireframe ? &xTerrain.m_xTerrainWireframePipeline : &xTerrain.m_xTerrainGBufferPipeline);
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -513,8 +513,8 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		// matches the bind direction.
 		xBinder.BindSRV_Buffer(xTerrain.m_xTerrainGBufferShader, "LODLevelBuffer", pxState->m_xLODLevelBuffer.GetSRV());
 
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxState->m_xUnifiedVertexBuffer);
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxState->m_xUnifiedIndexBuffer);
+		pxCmdList->SetVertexBuffer(pxState->m_xUnifiedVertexBuffer);
+		pxCmdList->SetIndexBuffer(pxState->m_xUnifiedIndexBuffer);
 
 		// Bind splatmap texture — always bound (Vulkan rejects an unbound
 		// SRV slot the shader is declared to read). Falls back to the 1x1
@@ -550,7 +550,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer
-		pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirectCount>(
+		pxCmdList->DrawIndexedIndirectCount(
 			&pxState->m_xIndirectDrawBuffer,  // Per-component indirect buffer with sorted draw commands
 			&pxState->m_xVisibleCountBuffer,   // Per-component count buffer with actual number of visible chunks
 			Flux_TerrainConfig::TOTAL_CHUNKS,          // Max 4096 draws (theoretical maximum)
@@ -562,7 +562,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 }
 
-void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandList&, const Flux_DynamicConstantBuffer&)
+void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, const Flux_DynamicConstantBuffer&)
 {
 	STUBBED
 }

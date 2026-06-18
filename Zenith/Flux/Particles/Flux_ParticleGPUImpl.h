@@ -9,7 +9,6 @@
 #include <random>
 
 class Flux_ParticleEmitterConfig;
-class Flux_CommandList;
 
 /**
  * GPU-based particle compute system.
@@ -74,7 +73,7 @@ public:
 	/**
 	 * Record compute shader commands to update all GPU particles.
 	 */
-	void DispatchCompute(Flux_CommandList* pxCmdList);
+	void DispatchCompute(Flux_CommandBuffer* pxCmdList);
 
 	/**
 	 * Get the instance buffer for rendering GPU particles.
@@ -125,5 +124,4 @@ public:
 	Flux_Pipeline    m_xComputePipeline;
 	Flux_Shader      m_xComputeShader;
 	Flux_RootSig     m_xComputeRootSig;
-	Flux_CommandList m_xComputeCommandList{ "Particle GPU Compute" };
 };

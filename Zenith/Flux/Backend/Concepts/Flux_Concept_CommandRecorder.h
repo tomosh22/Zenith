@@ -4,9 +4,10 @@
 #include "Flux/Flux_Buffers.h"
 
 // Concept: per-worker command recording. Instance methods on the backend
-// command-buffer type (aliased as Flux_CommandBuffer). Each Flux_CommandList
-// command's operator()(Flux_CommandBuffer*) calls these to translate the
-// portable command DSL into native draws/dispatches/binds.
+// command-buffer type (aliased as Flux_CommandBuffer). Render-graph pass record
+// callbacks call these directly on the backend command buffer to emit native
+// draws/dispatches/binds; the graph runs each pass's callback inside the
+// dependency-ordered worker recording (Flux_RenderGraph::RecordPassInto).
 //
 // All inputs are engine-typed. Render-pass / barrier methods that take vk::*
 // types live in the backend-internal surface and are NOT in this concept;
@@ -98,7 +99,7 @@ concept FluxBackendResourceBinding = requires(
 	T& xRec,
 	uint32_t uDescSet,
 	const Flux_BindingSlot& xSlot,
-	void* pData,
+	const void* pData,
 	size_t sz,
 	const Flux_ShaderResourceView* pxSRV,
 	const Flux_ShaderResourceView_Buffer& xSRVBuf,
@@ -129,18 +130,16 @@ concept FluxBackendDynamicState = requires(
 	{ xRec.SetDepthBias(fConstantBias, fSlopeBias, fClampBias)                                 } -> std::same_as<void>;
 };
 
-// GPU debug-marker pair, emitted once per Flux_CommandList from
-// IterateCommands() so RenderDoc / Nsight / PIX show one labelled group per
-// logical pass. Gated on ZENITH_FLUX_PROFILING — the methods, calls, concept
-// and conformance assert all evaporate together in profiling-off builds (same
-// pattern as FluxBackendImGuiTools / ZENITH_TOOLS).
+// GPU debug-marker pair, emitted once per render-graph pass from
+// Flux_RenderGraph::RecordPassInto() so RenderDoc / Nsight / PIX show one
+// labelled group per logical pass. Gated on ZENITH_FLUX_PROFILING — the methods,
+// calls, concept and conformance assert all evaporate together in profiling-off
+// builds (same pattern as FluxBackendImGuiTools / ZENITH_TOOLS).
 //
-// Cross-backend contract: each Flux_CommandList corresponds to one logical
-// pass (one render-graph pass for graphics, one standalone compute list, etc.)
-// and IterateCommands() runs inside whatever pass / encoder scope the backend
-// has open at that point — graphics passes are bracketed by BeginRenderPass /
-// EndRenderPass on the same Flux_CommandBuffer, compute passes have no render
-// pass but are still recorded into the active backend command buffer.
+// Cross-backend contract: RecordPassInto() runs inside whatever pass / encoder
+// scope the backend has open at that point — graphics passes are bracketed by
+// BeginRendering / EndRendering on the same Flux_CommandBuffer, compute passes
+// have no render pass but are still recorded into the active backend command buffer.
 //
 // Vulkan satisfies the contract via vkCmdBegin/EndDebugUtilsLabelEXT (allowed
 // anywhere inside an open command buffer, both in and out of render passes).
@@ -148,7 +147,7 @@ concept FluxBackendDynamicState = requires(
 // A future Metal backend will need to route Begin/EndDebugMarker to the
 // currently-active MTL*CommandEncoder (pushDebugGroup: / popDebugGroup),
 // because Metal markers are encoder-scoped. The "encoder is active when
-// IterateCommands() runs" property holds today, so the Metal mapping is
+// RecordPassInto() runs" property holds today, so the Metal mapping is
 // mechanical.
 #ifdef ZENITH_FLUX_PROFILING
 template <typename T>

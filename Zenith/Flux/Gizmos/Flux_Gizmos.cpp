@@ -43,7 +43,7 @@ DEBUGVAR float dbg_fGizmoAlpha = 1.0f;
 
 
 
-static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteGizmos(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_GizmosImpl::BuildPipelines()
 {
@@ -292,7 +292,7 @@ void Flux_GizmosImpl::GatherGizmoPacket(void*)
 
 // ==================== RENDERING ====================
 
-static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteGizmos(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 
@@ -324,7 +324,7 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 	}
 
 	// Record rendering commands
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xGizmos.m_xPipeline);
+	pxCommandList->SetPipeline(&xGizmos.m_xPipeline);
 
 	// Create binder once - bind frame constants once (same for all gizmo components)
 	Flux_ShaderBinder xBinder(*pxCommandList);
@@ -336,8 +336,8 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 		const Flux_GizmosImpl::GizmoGeometry& xGeom = pxGeometry->Get(i);
 
 		// Set vertex and index buffers
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGeom.m_xVertexBuffer);
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGeom.m_xIndexBuffer);
+		pxCommandList->SetVertexBuffer(xGeom.m_xVertexBuffer);
+		pxCommandList->SetIndexBuffer(xGeom.m_xIndexBuffer);
 
 		// Prepare push constants
 		struct GizmoPushConstants
@@ -359,7 +359,7 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 		xBinder.BindDrawConstants(xGizmos.m_xShader, "GizmoPushConstants", &xPushConstants, sizeof(xPushConstants));
 
 		// Draw
-		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);
+		pxCommandList->DrawIndexed(xGeom.m_uIndexCount);
 	}
 }
 

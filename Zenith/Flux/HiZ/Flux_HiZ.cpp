@@ -99,9 +99,9 @@ void Flux_HiZImpl::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ shut down");
 }
 
-static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteHiZMip(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
-	// Non-capturing graph callback (void(*)(Flux_CommandList*, void*)) — it
+	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it
 	// cannot capture, so it re-enters via g_xEngine.HiZ() to reach the
 	// singleton instance.
 	Flux_HiZImpl& xHiZ = g_xEngine.HiZ();
@@ -116,7 +116,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	//   - Previous mip (read by mip N+1): WRITE_UAV → READ_SRV before that pass
 	// No inline transitions needed here.
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&xHiZ.m_xComputePipeline);
+	pxCommandList->BindComputePipeline(&xHiZ.m_xComputePipeline);
 
 	u_int uWidth = g_xEngine.FluxSwapchain().GetWidth();
 	u_int uHeight = g_xEngine.FluxSwapchain().GetHeight();
@@ -152,7 +152,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	// Workgroup size is 8x16 for better NVIDIA occupancy (4 warps vs 2 warps)
 	u_int uGroupsX = (uMipWidth + 7) / 8;
 	u_int uGroupsY = (uMipHeight + 15) / 16;
-	pxCommandList->AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
+	pxCommandList->Dispatch(uGroupsX, uGroupsY, 1);
 
 	// The "final mip → SHADER_READ_ONLY" transition is now emitted by the
 	// graph as part of the next consumer's prologue (SSR / SSAO / SSGI all

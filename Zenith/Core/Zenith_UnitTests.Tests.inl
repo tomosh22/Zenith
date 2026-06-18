@@ -6692,7 +6692,7 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have the LeftUpperArm core bone");
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("LeftEye"), "Reloaded skeleton should have the added LeftEye bone");
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("L_Index_01"), "Reloaded skeleton should have articulated finger bones");
-	const uint32_t uExpectedBoneCount = pxReloadedSkel->GetNumBones();   // mesh/geometry must agree with the skeleton
+	[[maybe_unused]] const uint32_t uExpectedBoneCount = pxReloadedSkel->GetNumBones();   // mesh/geometry must agree with the skeleton (consumed under ZENITH_TOOLS below)
 
 	// Reload and verify mesh asset format (counts are structural — the lofted
 	// body, not the old 128-vert cube figure; exact counts live with the
@@ -14284,7 +14284,7 @@ void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-static void EmptyRecordCallback(Flux_CommandList*, void*) {}
+static void EmptyRecordCallback(Flux_CommandBuffer*, void*) {}
 
 ZENITH_TEST(Core, RenderGraphEmpty) { Zenith_UnitTests::TestRenderGraphEmpty(); }
 
@@ -15354,8 +15354,8 @@ void Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses(){
 	};
 	PopulateReflection(xReflection, axSpecs, 1);
 
-	Flux_CommandList xCmdList("UnitTest");
-	Flux_ShaderBinder xBinder(xCmdList);
+	Flux_CommandBuffer xCmdBuf;
+	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	// Cache starts empty — every slot's reflection-ptr is null.
 	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE; u++)
@@ -15386,8 +15386,8 @@ void Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits(){
 	};
 	PopulateReflection(xReflection, axSpecs, 1);
 
-	Flux_CommandList xCmdList("UnitTest");
-	Flux_ShaderBinder xBinder(xCmdList);
+	Flux_CommandBuffer xCmdBuf;
+	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	const char* szName = "g_xDepthTex";
 
@@ -15424,8 +15424,8 @@ void Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses(){
 	PopulateReflection(xReflectionA, axSpecs, 1);
 	PopulateReflection(xReflectionB, axSpecs, 1);
 
-	Flux_CommandList xCmdList("UnitTest");
-	Flux_ShaderBinder xBinder(xCmdList);
+	Flux_CommandBuffer xCmdBuf;
+	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	const char* szName = "Shared";
 
@@ -15452,8 +15452,8 @@ void Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses(){
 	};
 	PopulateReflection(xReflection, axSpecs, 2);
 
-	Flux_CommandList xCmdList("UnitTest");
-	Flux_ShaderBinder xBinder(xCmdList);
+	Flux_CommandBuffer xCmdBuf;
+	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	xBinder.ResolveNamedBinding(&xReflection, "First");
 	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "First name occupies slot 0");
@@ -15482,8 +15482,8 @@ void Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement(){
 	}
 	PopulateReflection(xReflection, axSpecs, Flux_ShaderBinder::NAME_CACHE_SIZE);
 
-	Flux_CommandList xCmdList("UnitTest");
-	Flux_ShaderBinder xBinder(xCmdList);
+	Flux_CommandBuffer xCmdBuf;
+	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	// Fill all but the last slot. Each miss increments m_uNextCacheSlot.
 	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE - 1; u++)
@@ -15517,8 +15517,8 @@ void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
 	};
 	PopulateReflection(xReflection, axSpecs, 4);
 
-	Flux_CommandList xCmdList("UnitTest");
-	Flux_ShaderBinder xBinder(xCmdList);
+	Flux_CommandBuffer xCmdBuf;
+	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	const Flux_ShaderBinder::ResolvedBinding xR0 = xBinder.ResolveNamedBinding(&xReflection, "Buf");
 	const Flux_ShaderBinder::ResolvedBinding xR1 = xBinder.ResolveNamedBinding(&xReflection, "Tex");

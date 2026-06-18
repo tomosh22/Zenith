@@ -66,7 +66,7 @@ After those five, you'll be ready for the harder ones in any order:
 |---|---|---|
 | Core / main loop | [Core/CLAUDE.md](../../Zenith/Core/CLAUDE.md) | `Zenith/Core/Zenith_Core.h`, `Zenith.h` |
 | ECS | [EntityComponent/CLAUDE.md](../../Zenith/EntityComponent/CLAUDE.md) | `Zenith_SceneManager.h`, `Zenith_Entity.h`, `Zenith_Scene.h` |
-| Renderer | [Flux/CLAUDE.md](../../Zenith/Flux/CLAUDE.md) | `Flux.h`, `Flux_RenderGraph.h`, `Flux_CommandList.h` |
+| Renderer | [Flux/CLAUDE.md](../../Zenith/Flux/CLAUDE.md) | `Flux.h`, `Flux_RenderGraph.h`, `Flux_ShaderBinder.h` |
 | Vulkan backend | [Vulkan/CLAUDE.md](../../Zenith/Vulkan/CLAUDE.md) | `Zenith_Vulkan.h`, `Zenith_PlatformGraphics_Include.h` |
 | Physics | [Physics/CLAUDE.md](../../Zenith/Physics/CLAUDE.md) | `Zenith_Physics.h`, `Zenith_ColliderComponent.h` |
 | Tasks | [TaskSystem/CLAUDE.md](../../Zenith/TaskSystem/CLAUDE.md) | `Zenith_TaskSystem.h` |

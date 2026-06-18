@@ -236,7 +236,7 @@ void Flux_SSGIImpl::UpdateSSGIConstants()
 		dbg_xSSGIConstants.m_uStartMip = dbg_xSSGIConstants.m_uHiZMipCount - 1;
 }
 
-static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xZZ = g_xEngine.SSGI();
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
@@ -248,10 +248,10 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 
 	xZZ.UpdateSSGIConstants();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xRayMarchPipeline);
+	pxCommandList->SetPipeline(&xZZ.m_xRayMarchPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -272,10 +272,10 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xDiffuseTex", xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
-static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSGIUpsample(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xZZ = g_xEngine.SSGI();
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
@@ -285,23 +285,23 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xUpsamplePipeline);
+	pxCommandList->SetPipeline(&xZZ.m_xUpsamplePipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	xBinder.BindSRV(xZZ.m_xUpsampleShader, "g_xSSGITex", &xZZ.GetRawResultAttachment().SRV());
 	xBinder.BindSRV(xZZ.m_xUpsampleShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 // Horizontal denoise sub-pass — reads the upsampled SSGI, writes the H
 // intermediate. The same constants drive both H and V; the inner loop
 // direction is the only difference between the two shaders.
-static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xZZ = g_xEngine.SSGI();
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
@@ -311,10 +311,10 @@ static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xDenoiseHPipeline);
+	pxCommandList->SetPipeline(&xZZ.m_xDenoiseHPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -326,12 +326,12 @@ static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xZZ.m_xDenoiseHShader, "g_xNormalsTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(xZZ.m_xDenoiseHShader, "g_xAlbedoTex",  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 // Vertical denoise sub-pass — reads the H intermediate, writes the final
 // denoised result that deferred shading consumes.
-static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
+static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 {
 	auto& xZZ = g_xEngine.SSGI();
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
@@ -341,10 +341,10 @@ static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xZZ.m_xDenoiseVPipeline);
+	pxCommandList->SetPipeline(&xZZ.m_xDenoiseVPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -356,7 +356,7 @@ static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(xZZ.m_xDenoiseVShader, "g_xNormalsTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(xZZ.m_xDenoiseVShader, "g_xAlbedoTex",  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 // Handles for the H/V denoise sub-passes so ApplyDenoiseSelectionToGraph can

@@ -3,8 +3,6 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_BackendTypes.h"
 
-class Flux_CommandList;
-
 // Helper class for binding shader resources by name. Looks up the binding
 // slot via the shader's reflection on every call; an internal pointer-identity
 // cache (NAME_CACHE_SIZE entries, no hashing) absorbs the lookup cost when
@@ -14,7 +12,7 @@ class Flux_CommandList;
 // validation-layer error.
 //
 // Usage:
-//   Flux_ShaderBinder xBinder(*pxCommandList);
+//   Flux_ShaderBinder xBinder(*pxCmdBuf);
 //   xBinder.BindCBV(g_xShader, "FrameConstants", &buffer.GetCBV());
 //   xBinder.BindSRV(g_xShader, "g_xDiffuseTex", &texture.GetSRV());
 //   xBinder.BindDrawConstants(g_xShader, "pushConstants", &xData, sizeof(xData));
@@ -38,7 +36,7 @@ class Flux_CommandList;
 class Flux_ShaderBinder
 {
 public:
-	Flux_ShaderBinder(Flux_CommandList& xCmdList);
+	Flux_ShaderBinder(Flux_CommandBuffer& xCmdBuf);
 
 	// Bind a constant-buffer view to a uniform-buffer binding looked up by
 	// name on xShader's reflection. Asserts the reflected binding type is
@@ -88,7 +86,7 @@ private:
 	// the slot-carried replacement for the old EnsureSet/BeginBind clear.
 	Flux_BindingSlot MakeSlot(u_int uSet, u_int uBinding);
 
-	Flux_CommandList& m_xCmdList;
+	Flux_CommandBuffer& m_xCmdBuf;
 	u_int m_uCurrentSet = UINT32_MAX;
 
 	// Pointer-identity name cache. Entries are matched by pointer compare on

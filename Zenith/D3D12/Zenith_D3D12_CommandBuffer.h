@@ -2,6 +2,7 @@
 #include "Zenith.h"            // u_int / u_int64 / Zenith_Assert (defined before Flux.h in the PCH)
 #include "Flux/Flux_Types.h"   // handles, enums, view structs, Flux_BindingSlot/SubresourceRange
 #include "Flux/Flux_Fwd.h"     // the Flux_* aliases + forward decls of the other D3D12 classes
+#include "Flux/Flux_RecordValidation.h"  // shared constructor-era validation (seam-safe: Flux_Types.h only)
 
 // ============================================================================
 // NO-OP D3D12 null backend: per-worker command recorder.
@@ -64,16 +65,18 @@ public:
 	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20) { }
 
 	// ---- FluxBackendPipelineBinding ----------------------------------------
-	void SetPipeline(Flux_Pipeline* pxPipeline) { }
-	void BindComputePipeline(Flux_Pipeline* pxPipeline) { }
+	// No-op recording, but the shared validators run so the null backend keeps the
+	// constructor-era diagnostics the Flux_CommandList DSL used to fire on it.
+	void SetPipeline(Flux_Pipeline* pxPipeline) { FluxAssertPipeline(pxPipeline, "SetPipeline"); }
+	void BindComputePipeline(Flux_Pipeline* pxPipeline) { FluxAssertPipeline(pxPipeline, "BindComputePipeline"); }
 
 	// ---- FluxBackendResourceBinding ----------------------------------------
-	void BindSRV(const Flux_ShaderResourceView* pxSRV, const Flux_BindingSlot& xSlot, Flux_Sampler* pxSampler = nullptr) { }
-	void BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const Flux_BindingSlot& xSlot) { }
-	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, const Flux_BindingSlot& xSlot) { }
-	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, const Flux_BindingSlot& xSlot) { }
-	void BindCBV(const Flux_ConstantBufferView* pxCBV, const Flux_BindingSlot& xSlot) { }
-	void BindDrawConstants(void* pData, size_t uSize, const Flux_BindingSlot& xSlot) { }
+	void BindSRV(const Flux_ShaderResourceView* pxSRV, const Flux_BindingSlot& xSlot, Flux_Sampler* pxSampler = nullptr) { FluxAssertValidSRV(pxSRV); }
+	void BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const Flux_BindingSlot& xSlot) { FluxAssertValidSRVBuffer(xSRV); }
+	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, const Flux_BindingSlot& xSlot) { FluxAssertValidUAVTexture(pxUAV); }
+	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, const Flux_BindingSlot& xSlot) { FluxAssertValidUAVBuffer(pxUAV); }
+	void BindCBV(const Flux_ConstantBufferView* pxCBV, const Flux_BindingSlot& xSlot) { FluxAssertValidCBV(pxCBV); }
+	void BindDrawConstants(const void* pData, size_t uSize, const Flux_BindingSlot& xSlot) { FluxAssertDrawConstantsSize(uSize, 2048); }
 	void UseBindlessTextures(const uint32_t uSet) { }
 
 	// Neutral binding extra (not in the concept, but on the public surface):

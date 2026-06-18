@@ -28,7 +28,7 @@ Selected by the Sharpmake `RenderBackend` fragment (`D3D12_*` configs define
 
 | File | Mirrors (Vulkan) | Concepts satisfied |
 |------|------------------|--------------------|
-| `Zenith_D3D12.h` | `Zenith_Vulkan` + `_Sampler` + `_VRAM` | `FluxBackendDevice` (+ `ImGuiTools` in tools) |
+| `Zenith_D3D12.h` + `Zenith_D3D12.cpp` | `Zenith_Vulkan` + `_Sampler` + `_VRAM` | `FluxBackendDevice` (+ `ImGuiTools` in tools) |
 | `Zenith_D3D12_MemoryManager.h/.cpp` | `Zenith_Vulkan_MemoryManager` | `MemoryAlloc`, `MemoryDelete`, `TransientAliasing` |
 | `Zenith_D3D12_CommandBuffer.h` | `Zenith_Vulkan_CommandBuffer` | `CommandRecorder` (all sub-concepts) + `Sync` |
 | `Zenith_D3D12_Swapchain.h` | `Zenith_Vulkan_Swapchain` | `Presentation` |
@@ -53,6 +53,14 @@ Selected by the Sharpmake `RenderBackend` fragment (`D3D12_*` configs define
 - **No per-frame callbacks needed.** Device `Initialise()` is a pure no-op; the
   engine's per-frame ring advances on its own. `Swapchain::BeginFrame()` returns
   true; `EndFrame()` presents nothing.
+- **`RecordFrame` still runs the pass callbacks.** The one device method that is NOT
+  a no-op: `Zenith_D3D12::RecordFrame` (out-of-line in `Zenith_D3D12.cpp`) iterates the
+  queued render passes and calls `Flux_RenderGraph::RecordPassInto` into a no-op
+  `Zenith_D3D12_CommandBuffer`. No GPU work happens, but the pass record callbacks DO
+  run — so their side effects (buffer uploads, ECS reads, CPU draw-list builds) occur
+  exactly as on Vulkan. This is what lets a full gameplay session run on the null
+  backend. The recorder methods are no-ops but still call the shared
+  `Flux_RecordValidation.h` asserts (null/handle/size checks).
 - **Shaders load reflection only.** `Zenith_D3D12_Shader::Initialise` deserialises
   the checked-in `<program>.spv.refl` via the Slang-free
   `Flux_ShaderReflection::ReadFromDataStream` so the name-based binder resolves —

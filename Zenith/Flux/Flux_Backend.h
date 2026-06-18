@@ -36,7 +36,7 @@
 //
 // ---- Scope of concept-based type checking --------------------------------
 // The concepts below type-check the CURRENT platform's types. The concrete
-// input types (Flux_Pipeline, Flux_Sampler, Flux_CommandList, Flux_*Buffer)
+// input types (Flux_Pipeline, Flux_Sampler, Flux_CommandBuffer, Flux_*Buffer)
 // resolve through Zenith_PlatformGraphics_Include.h macros to backend-
 // specific definitions. In practice this means:
 //
@@ -74,7 +74,7 @@
 // Operations the backend does NOT need to provide (owned by Flux directly,
 // API-neutral):
 //   - Render graph                  (Flux_RenderGraph)
-//   - Command list DSL              (Flux_CommandList)
+//   - Pass record dispatch          (Flux_RenderGraph::RecordPassInto)
 //   - Shader reflection             (Flux_ShaderReflection from Slang)
 //   - Shader binder                 (Flux_ShaderBinder)
 //   - View structs                  (Flux_ShaderResourceView, etc.)

@@ -5,6 +5,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Flux_BackendTypes.h"  // full Flux_CommandBuffer for RecordPassInto's debug-marker + callback dispatch
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 //==========================================================================
@@ -17,8 +18,6 @@
 // Keeps the tls_ state co-located with everyone who reads or writes it so
 // no cross-TU extern declarations are needed.
 //==========================================================================
-
-struct Flux_RenderGraph_RecordTaskData { Flux_RenderGraph* m_pxGraph; u_int m_uPassIndex; };
 
 // ---- Current-pass / current-graph thread-local recording context -------
 // Set around each pfnOnRecord callback so Flux_ShaderBinder can cross-reference
@@ -44,43 +43,40 @@ namespace
 	};
 }
 
-void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int uWorkerIndex)
+void Flux_RenderGraph::RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const Flux_RenderGraph* pxGraph, Flux_CommandBuffer* pxCmdBuf)
 {
-	auto* pxData = static_cast<Flux_RenderGraph_RecordTaskData*>(pData);
-	Flux_RenderGraph* pxGraph = pxData[uInvocationIndex].m_pxGraph;
-	const u_int uPassIndex = pxData[uInvocationIndex].m_uPassIndex;
-	(void)uWorkerIndex;
-	const Zenith_Vector<u_int>& xExecOrder = pxGraph->GetExecutionOrder();
-	const Zenith_Vector<Flux_RenderGraph_Pass*>& xPasses = pxGraph->GetPasses();
-	Flux_RenderGraph_Pass& xPass = *xPasses.Get(xExecOrder.Get(uPassIndex));
-	xPass.m_pxCommandList->Reset();
-	// Friend free function → may call the private effective-enabled predicate on
-	// the graph (this task is declared friend in Flux_RenderGraph.h). Honours both
-	// the per-pass base bit and any game force-disable overlay.
-	if (!pxGraph->IsPassEffectivelyEnabled(&xPass) || !xPass.m_pfnOnRecord) return;
+	// Barrier-only no-op passes (and any pass with no record callback) record
+	// nothing here — the backend has already emitted their prologue barriers
+	// before calling this. Guard so they're a clean no-op.
+	if (!pxPass || !pxPass->m_pfnOnRecord) return;
 
 	// Set the thread-local current-pass and current-graph pointers so
 	// Flux_ShaderBinder bind-time assertions can cross-reference against this
-	// pass's declared Read/Write sets and skip non-tracked static assets.
-	// Scopes restore prior values on exit even if the callback throws.
-	Flux_RenderGraph::CurrentPassScope xPassScope(&xPass);
+	// pass's declared Read/Write sets and skip non-tracked static assets. The
+	// graph is passed explicitly (not pulled from g_xEngine) so local / test /
+	// future-multiple graphs validate against their own resource set. Scopes
+	// restore prior values on exit even if the callback throws.
+	CurrentPassScope xPassScope(pxPass);
 	CurrentGraphScope xGraphScope(pxGraph);
 
-	// Prologue barriers from SynthesizeBarriers are NOT injected into the
-	// command list — that path runs INSIDE the render pass for graphics
-	// passes (vkCmdBeginRenderPass already issued by the backend before
-	// IterateCommands), where vkCmdPipelineBarrier needs subpass self-deps.
-	// The backend reads xPass.m_xPrologueBarriers directly and emits them
-	// right before TransitionTargetsForRenderPass / Dispatch entry, outside
-	// any active render pass. See Zenith_Vulkan.cpp::RecordCommandBuffersTask.
-	//
+	// Prologue barriers from SynthesizeBarriers are emitted by the backend
+	// (outside any render pass) immediately before this call — never inside the
+	// pass's recording. The backend has the render pass / compute scope open at
+	// this point, so the callback's draws/dispatches land correctly.
+#ifdef ZENITH_FLUX_PROFILING
+	// One labelled GPU debug group per logical pass (RenderDoc / Nsight / PIX),
+	// emitted inside whatever render-pass / compute scope the backend has open.
+	pxCmdBuf->BeginDebugMarker(pxPass->DebugName());
+#endif
 	// Per-pass record-cost scope. Runs on a worker thread; the profiler keys
-	// events by thread id (same as the enclosing FLUX_RECORD_COMMAND_BUFFERS
-	// task scope), so the pass's DebugName() label disambiguates which pass
-	// the cost belongs to in the timeline.
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS, xPass.DebugName());
-	xPass.m_pfnOnRecord(xPass.m_pxCommandList, xPass.m_pUserData);
+	// events by thread id, so the pass's DebugName() label disambiguates which
+	// pass the cost belongs to in the timeline.
+	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS, pxPass->DebugName());
+	pxPass->m_pfnOnRecord(pxCmdBuf, pxPass->m_pUserData);
 	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS);
+#ifdef ZENITH_FLUX_PROFILING
+	pxCmdBuf->EndDebugMarker();
+#endif
 }
 
 void Flux_RenderGraph::Execute()
@@ -90,17 +86,16 @@ void Flux_RenderGraph::Execute()
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::Execute: must be called from main thread");
 	if (m_xExecutionOrder.GetSize() == 0) return;
 
-	// Every enabled pass in the execution order must have a valid command list —
-	// a null list means the pass was destroyed without being removed from the
-	// exec order, which corrupts downstream parallel recording.
+	// Every enabled pass in the execution order must have a record callback — a
+	// null callback means the pass was destroyed without being removed from the
+	// exec order, which corrupts downstream recording. (Barrier-only no-op passes
+	// carry an explicit no-op callback, so this holds for them too.)
 	for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
 	{
 		const Flux_RenderGraph_Pass* pxP = m_xPasses.Get(it.GetData());
 		Zenith_Assert(pxP != nullptr,
 			"Flux_RenderGraph::Execute: null pass at execution order index %u", it.GetData());
 		if (!IsPassEffectivelyEnabled(pxP)) continue;
-		Zenith_Assert(pxP->m_pxCommandList != nullptr,
-			"Flux_RenderGraph::Execute: enabled pass '%s' has null command list", pxP->DebugName());
 		Zenith_Assert(pxP->m_pfnOnRecord != nullptr,
 			"Flux_RenderGraph::Execute: enabled pass '%s' has null record callback", pxP->DebugName());
 	}
@@ -132,8 +127,13 @@ void Flux_RenderGraph::Execute()
 		m_bEnabledMaskDirty = false;
 	}
 	CallPrepareCallbacks();
-	RecordCommandLists();
+	// Queue every enabled pass (topological order), then drive the single direct-
+	// recording stage: the backend records each pass's callback into its worker
+	// command buffers (RecordFrame). Both happen here, synchronously, inside the
+	// render-task safe window and before the frame memory submit — so record-
+	// callback uploads land this frame and ECS reads stay inside the window.
 	SubmitRecordedLists();
+	g_xEngine.FluxRenderer().RecordFrame();
 }
 
 void Flux_RenderGraph::CallPrepareCallbacks()
@@ -145,38 +145,20 @@ void Flux_RenderGraph::CallPrepareCallbacks()
 	}
 }
 
-void Flux_RenderGraph::RecordCommandLists()
-{
-	const u_int uNumPasses = m_xExecutionOrder.GetSize();
-	if (uNumPasses == 0) return;
-
-	auto* pxTaskData = static_cast<Flux_RenderGraph_RecordTaskData*>(Zenith_MemoryManagement::Allocate(sizeof(Flux_RenderGraph_RecordTaskData) * uNumPasses));
-	for (u_int i = 0; i < uNumPasses; i++)
-	{
-		pxTaskData[i].m_pxGraph = this;
-		pxTaskData[i].m_uPassIndex = i;
-	}
-
-	Zenith_DataParallelTask xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordPassTask, pxTaskData, uNumPasses, true);
-	g_xEngine.Tasks().SubmitDataParallelTask(&xTasks);
-	xTasks.WaitUntilComplete();
-	Zenith_MemoryManagement::Deallocate(pxTaskData);
-}
-
 void Flux_RenderGraph::SubmitRecordedLists()
 {
 	for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
 	{
 		Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
+		// Queue every effectively-enabled pass with a record callback. Whether the
+		// callback records anything isn't knowable until it runs (no command-list
+		// to count any more), so passes are no longer pruned on command count — a
+		// callback that records nothing costs an empty BeginRendering/EndRendering,
+		// which the backend's render-pass continuation coalesces. Barrier-only
+		// no-op passes (e.g. the "Final RT Layout Transition" pass that flips the
+		// swapchain source into SHADER_READ_ONLY) carry an explicit no-op callback,
+		// so they're queued here and the backend emits their prologue barriers.
 		if (!IsPassEffectivelyEnabled(pxPass) || !pxPass->m_pfnOnRecord) continue;
-		// A pass with zero recorded commands is normally pruned, but if it has
-		// graph-synthesised prologue barriers (e.g. the "Final RT Layout
-		// Transition" no-op pass that exists purely to flip the swapchain
-		// source target into SHADER_READ_ONLY) we MUST submit it so the
-		// backend gets a chance to emit those barriers. Same goes for clear-only
-		// passes that need their target zeroed.
-		const bool bHasBarriers = pxPass->m_xPrologueBarriers.GetSize() > 0;
-		if (pxPass->m_pxCommandList->GetCommandCount() == 0 && !pxPass->m_bClearTargets && !bHasBarriers) continue;
 		bool bDepthReadOnly = false;
 		if (pxPass->m_xDepthStencil.IsValid())
 		{
@@ -186,7 +168,7 @@ void Flux_RenderGraph::SubmitRecordedLists()
 				if (itR.GetData().m_xResource.GetVoidPtr() == pDepthRes) { bDepthReadOnly = true; break; }
 			}
 		}
-		g_xEngine.FluxRenderer().SubmitCommandList(pxPass->m_pxCommandList,
+		g_xEngine.FluxRenderer().QueueRenderPass(this,
 			pxPass->m_axColourAttachments, pxPass->m_uNumColourAttachments,
 			pxPass->m_xDepthStencil,
 			pxPass->m_bClearTargets, bDepthReadOnly, pxPass);

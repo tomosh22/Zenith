@@ -82,7 +82,7 @@ void Flux_DeferredShadingImpl::Shutdown()
 	m_xShader.Reset();
 }
 
-static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
+static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 {
 	Flux_DeferredShadingImpl& xDS = g_xEngine.DeferredShading();
 	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
@@ -94,10 +94,10 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	Flux_DynamicLightsImpl& xDynamicLights = g_xEngine.DynamicLights();
 	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xDS.m_xPipeline);
+	pxCommandList->SetPipeline(&xDS.m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	// Use named bindings via shader binder (auto-manages descriptor set switches)
 	Flux_ShaderBinder xBinder(*pxCommandList);
@@ -234,7 +234,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 
 	xBinder.BindDrawConstants(xDS.m_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }
 
 void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

@@ -5,7 +5,6 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Maths/Zenith_Maths.h"
 
-class Flux_CommandList;
 class Flux_ShaderBinder;
 
 // Per-primitive instance types (file-static before Phase 7g; promoted to
@@ -110,21 +109,21 @@ public:
 	// reaches resolve through `this`. PUBLIC because the non-capturing
 	// ExecuteGBuffer graph trampoline (a free function) calls them on the
 	// singleton instance it recovers via g_xEngine.Primitives().
-	void EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Maths::Matrix4& xModelMatrix,
 		const Zenith_Maths::Vector3& xColor,
 		u_int uIndexCount);
-	void RenderSpherePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesSphereInstance>& xInstances);
-	void RenderCubePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesCubeInstance>& xInstances);
-	void RenderLinePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderLinePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesLineInstance>& xInstances);
-	void RenderCapsulePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesCapsuleInstance>& xInstances);
-	void RenderCylinderPrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesCylinderInstance>& xInstances);
-	void RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	void RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesTriangleInstance>& xInstances);
 
 	Flux_Shader   m_xPrimitivesShader;

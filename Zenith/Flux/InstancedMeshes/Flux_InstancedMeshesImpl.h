@@ -9,7 +9,6 @@ class Flux_DynamicConstantBuffer;
 class Flux_InstanceGroup;
 class Flux_MeshInstance;
 class Flux_ShaderBinder;
-class Flux_CommandList;
 
 // Phase 9: state + behaviour for InstancedMeshes subsystem.
 class Flux_InstancedMeshesImpl
@@ -30,7 +29,7 @@ public:
 	void UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup);
 	void ClearAllGroups();
 
-	void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
+	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

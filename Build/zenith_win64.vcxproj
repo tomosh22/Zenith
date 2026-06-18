@@ -1249,7 +1249,6 @@
     <ClInclude Include="..\Zenith\Flux\Flux_BackendGuard.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_BackendTypes.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h" />
-    <ClInclude Include="..\Zenith\Flux\Flux_CommandList.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_FeatureRegistry.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
@@ -1260,6 +1259,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_RecordValidation.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderResources.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
@@ -2025,6 +2025,12 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_TestFramework.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp" />
+    <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
@@ -2127,7 +2133,6 @@
     <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
-    <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />

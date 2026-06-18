@@ -3,7 +3,6 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 
-class Flux_CommandList;
 class Flux_RenderGraph;
 
 // Phase 9: state + behaviour for SDFs subsystem.

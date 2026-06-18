@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -683,7 +683,6 @@
     <ClInclude Include="..\Zenith\Flux\Flux_BackendGuard.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_BackendTypes.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h" />
-    <ClInclude Include="..\Zenith\Flux\Flux_CommandList.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_FeatureRegistry.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
@@ -694,6 +693,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_RecordValidation.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderResources.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
@@ -1141,6 +1141,10 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_TestFramework.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp" />
+    <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\D3D12\Zenith_D3D12_MemoryManager.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1313,7 +1317,6 @@
     <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
-    <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />

@@ -220,7 +220,7 @@ float Flux_FroxelFogImpl::GetFarZ()
 	return dbg_fFroxelFarZ;
 }
 
-void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
+void Flux_FroxelFogImpl::RenderInject(Flux_CommandBuffer* pxCommandList)
 {
 	// Get shared fog constants
 	const Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
@@ -254,7 +254,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 	m_xInjectConstants.m_fFarZ = dbg_fFroxelFarZ;
 	m_xInjectConstants.m_uFrameIndex = g_xEngine.Frame().GetFrameIndex();
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&m_xInjectPipeline);
+	pxCommandList->BindComputePipeline(&m_xInjectPipeline);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
@@ -262,14 +262,14 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 	xInjectBinder.BindSRV(m_xInjectShader, "u_xNoiseTexture3D", &g_xEngine.VolumeFog().GetNoiseTexture3D()->m_xSRV, &xGraphics.m_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(m_xInjectShader, "u_xDensityGrid", &GetDensityGridInternal().UAV(0));
 	xInjectBinder.BindDrawConstants(m_xInjectShader, "InjectConstants", &m_xInjectConstants, sizeof(InjectConstants));
-	pxCommandList->AddCommand<Flux_CommandDispatch>(
+	pxCommandList->Dispatch(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
 		(FROXEL_DEPTH + 7) / 8
 	);
 }
 
-void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
+void Flux_FroxelFogImpl::RenderLight(Flux_CommandBuffer* pxCommandList)
 {
 	extern u_int dbg_uVolFogDebugMode;
 	const Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
@@ -293,7 +293,7 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
 	m_xLightConstants.m_fVolShadowConeRadius = dbg_fVolShadowConeRadius;
 	m_xLightConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 
-	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&m_xLightPipeline);
+	pxCommandList->BindComputePipeline(&m_xLightPipeline);
 
 	Flux_ShaderBinder xLightBinder(*pxCommandList);
 	xLightBinder.BindCBV(m_xLightShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
@@ -312,14 +312,14 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
 	}
 
 	xLightBinder.BindDrawConstants(m_xLightShader, "LightConstants", &m_xLightConstants, sizeof(LightConstants));
-	pxCommandList->AddCommand<Flux_CommandDispatch>(
+	pxCommandList->Dispatch(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
 		(FROXEL_DEPTH + 7) / 8
 	);
 }
 
-void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
+void Flux_FroxelFogImpl::RenderApply(Flux_CommandBuffer* pxCommandList)
 {
 	extern u_int dbg_uVolFogDebugMode;
 
@@ -330,9 +330,9 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
 	m_xApplyConstants.m_uDebugSliceIndex = dbg_uFroxelDebugSlice;
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&m_xApplyPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGraphics.m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetPipeline(&m_xApplyPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
 	xApplyBinder.BindCBV(m_xApplyShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
@@ -340,5 +340,5 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
 	xApplyBinder.BindSRV(m_xApplyShader, "u_xLightingGrid", &GetLightingGridInternal().SRV());
 	xApplyBinder.BindSRV(m_xApplyShader, "u_xScatteringGrid", &GetScatteringGridInternal().SRV());
 	xApplyBinder.BindDrawConstants(m_xApplyShader, "ApplyConstants", &m_xApplyConstants, sizeof(ApplyConstants));
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->DrawIndexed(6);
 }

@@ -214,7 +214,7 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 	{
 		g_xEngine.FluxMemory().ProcessDeferredDeletions();
 	}
-	g_xEngine.FluxRenderer().ClearPendingCommandLists();
+	g_xEngine.FluxRenderer().ClearPendingRenderPasses();
 }
 
 // Pending scene load: flush GPU; if this is the editor's stop-mode backup

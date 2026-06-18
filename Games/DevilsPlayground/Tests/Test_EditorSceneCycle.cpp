@@ -3,6 +3,7 @@
 #if defined(ZENITH_INPUT_SIMULATOR) && defined(ZENITH_TOOLS)
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_Engine.h"   // g_xEngine (previously reached transitively via the removed Flux_CommandList.h)
 #include "Editor/Zenith_Editor.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 

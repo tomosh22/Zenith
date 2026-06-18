@@ -43,7 +43,7 @@ inline T VkUnwrap(T xValue) { return xValue; }
 
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan_VRAM;
-class Flux_CommandList;
+struct Flux_WorkDistribution;   // RecordFrame param (reference — forward decl suffices)
 // Injected cross-subsystem dependencies (stored as raw pointers, wired in
 // Initialise() by the composition root — see Zenith_Vulkan.cpp::Initialise).
 class Flux_RendererImpl;
@@ -174,6 +174,11 @@ public:
 	// Wraps the wait-fence / reset-pools / drain-typed-deletion-queues logic.
 	// uRingIndex is the current slot from the per-frame ring.
 	void PerFrameBegin(u_int uRingIndex);
+
+	// Record every queued render pass directly into the per-worker command
+	// buffers (parallel worker task). Driven from Flux_RenderGraph::Execute via
+	// the FluxBackendDevice contract, before the frame memory submit.
+	void RecordFrame(const Flux_WorkDistribution& xWorkDistribution);
 
 	void EndFrame(bool bSubmitRenderWork);
 

@@ -4,12 +4,15 @@
 // buffer recording. Split out of Flux.h.
 #include "Core/ZenithConfig.h"   // FLUX_NUM_WORKER_THREADS
 
-// Work distribution indices for parallel Vulkan command buffer recording
+// Work distribution indices for parallel command buffer recording. Each worker
+// records the contiguous pass-index range [auStartIndex[i], auEndIndex[i]) of
+// the queued render passes (topological order) directly into its own command
+// buffer.
 struct Flux_WorkDistribution
 {
 	u_int auStartIndex[FLUX_NUM_WORKER_THREADS];
 	u_int auEndIndex[FLUX_NUM_WORKER_THREADS];
-	u_int uTotalCommandCount;
+	u_int uTotalPasses;
 
 	void Clear()
 	{
@@ -18,6 +21,6 @@ struct Flux_WorkDistribution
 			auStartIndex[i] = 0;
 			auEndIndex[i] = 0;
 		}
-		uTotalCommandCount = 0;
+		uTotalPasses = 0;
 	}
 };
