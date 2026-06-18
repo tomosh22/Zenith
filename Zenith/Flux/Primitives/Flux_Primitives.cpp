@@ -154,17 +154,20 @@ static void GenerateUnitCube(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith_V
 		}
 	}
 
-	// Indices (CCW winding, 6 faces * 2 triangles * 3 indices = 36)
+	// Indices, 6 faces * 2 triangles * 3 indices = 36. Outward winding matching
+	// the engine convention (cross(C-A,B-A) faces out, as GenerateUnitCube uses);
+	// the prior 0-1-2/0-2-3 order was inverted (harmless while two-sided, but a
+	// trap if this debug pipeline ever opts into CULL_MODE_BACK).
 	for (u_int face = 0; face < 6; ++face)
 	{
 		u_int base = face * 4;
 		xIndices.PushBack(base + 0);
-		xIndices.PushBack(base + 1);
 		xIndices.PushBack(base + 2);
+		xIndices.PushBack(base + 1);
 
 		xIndices.PushBack(base + 0);
-		xIndices.PushBack(base + 2);
 		xIndices.PushBack(base + 3);
+		xIndices.PushBack(base + 2);
 	}
 }
 

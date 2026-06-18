@@ -338,10 +338,13 @@ uint32_t AddHumanRing(Zenith_MeshAsset* pxMesh, const HumanRing& xRing, u_int uS
 	return uFirst;
 }
 
-// Stitch two rings of (uSegs+1) verts. Winding follows the engine convention
-// proven by the original cube figure and the tree trunk: the geometric normal
-// cross(v1-v0, v2-v0) points OUTWARD. bFlip reverses it (used by the Z-aligned
-// shoe lofts whose advance axis flips the orientation).
+// Stitch two rings of (uSegs+1) verts. With the rings marching in the body
+// lofts' direction (ring A above ring B), the non-flip order makes each
+// triangle's OUTWARD geometric normal cross(C-A, B-A) (== cross(v2-v0, v1-v0))
+// point away from the surface, matching the engine's proven front-face rule
+// (GenerateUnitCube: front-facing iff cross(C-A,B-A) faces outward). bFlip
+// reverses it, for lofts whose ring march runs opposite (the eye sphere's
+// front->back rows).
 void StitchHumanRings(Zenith_MeshAsset* pxMesh, uint32_t uRingA, uint32_t uRingB, u_int uSegs, bool bFlip = false)
 {
 	for (u_int uSeg = 0; uSeg < uSegs; uSeg++)
@@ -382,11 +385,11 @@ void CapHumanRing(Zenith_MeshAsset* pxMesh, uint32_t uRing, u_int uSegs,
 	{
 		if (bUpward)
 		{
-			pxMesh->AddTriangle(uRing + uSeg, uCentre, uRing + uSeg + 1);
+			pxMesh->AddTriangle(uRing + uSeg, uRing + uSeg + 1, uCentre);
 		}
 		else
 		{
-			pxMesh->AddTriangle(uRing + uSeg, uRing + uSeg + 1, uCentre);
+			pxMesh->AddTriangle(uRing + uSeg, uCentre, uRing + uSeg + 1);
 		}
 	}
 }
@@ -646,8 +649,9 @@ void BuildHumanShoe(Zenith_MeshAsset* pxMesh, float fSide, u_int uFootBone, cons
 		}
 		else
 		{
-			// Z-advance flips orientation relative to the vertical lofts.
-			StitchHumanRings(pxMesh, uPrev, uRing, uSEGS, true);
+			// Same winding as the vertical lofts: the Z-advance does NOT flip
+			// handedness (heel->toe ring march matches the loft's outward rule).
+			StitchHumanRings(pxMesh, uPrev, uRing, uSEGS, false);
 		}
 		uPrev = uRing;
 	}
@@ -1102,7 +1106,9 @@ void BuildHumanEyes(Zenith_MeshAsset* pxMesh)
 				pxMesh->AddVertex(xPos, xNrm, xUV);
 				pxMesh->SetVertexSkinning(pxMesh->GetNumVerts() - 1, glm::uvec4(xE.uBone, xE.uBone, 0, 0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 			}
-			if (la > 0) { StitchHumanRings(pxMesh, uPrevRow, uRow, uLON); }
+			// Rows march +z (front pole) -> -z (back), opposite the body lofts'
+			// vertical march, so the stitch is flipped to keep faces outward.
+			if (la > 0) { StitchHumanRings(pxMesh, uPrevRow, uRow, uLON, true); }
 			uPrevRow = uRow;
 		}
 	}

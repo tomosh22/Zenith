@@ -332,21 +332,22 @@ void Flux_MeshGeometry::GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRad
 	xGeometryOut.m_pxColors[uBaseCenterIdx] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
 
 	uint32_t uIdxIdx = 0;
-	// Side triangles (base ring -> apex), counter-clockwise from outside.
+	// Side triangles (base ring -> apex). Outward winding: cross(C-A,B-A) faces
+	// out+up. The prior i,apex,next order was inverted and back-face culled.
 	for (uint32_t i = 0; i < uSlices; i++)
 	{
 		uint32_t uNext = (i + 1) % uSlices;
 		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uApexIdx;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
 	}
-	// Base triangles (base ring -> centre), counter-clockwise from below.
+	// Base triangles (base ring -> centre), faces -Y (was inverted too).
 	for (uint32_t i = 0; i < uSlices; i++)
 	{
 		uint32_t uNext = (i + 1) % uSlices;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenterIdx;
 		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenterIdx;
 	}
 
 	xGeometryOut.GenerateLayoutAndVertexData();

@@ -270,29 +270,33 @@ void GenerateCylinder(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHei
 		uint32_t uBottom = i;
 		uint32_t uTop = i + uSlices + 1;
 
+		// Outward winding (cross(C-A,B-A) points radially out): the previous
+		// uBottom,uTop,uBottom+1 order was inverted and back-face culled.
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBottom;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uTop;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBottom + 1;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uTop;
 
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBottom + 1;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uTop;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uTop + 1;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uTop;
 	}
 
-	// Top cap indices
+	// Top cap indices. The ring has uSlices distinct verts (0..uSlices-1) with
+	// the centre at uSlices, so the closing wedge must wrap i+1 modulo uSlices —
+	// the old i+1 collapsed the last triangle onto the centre (a missing slice).
 	uint32_t uTopCenter = uTopCapStart + uSlices;
 	for (uint32_t i = 0; i < uSlices; i++)
 	{
 		xGeometryOut.m_puIndices[uIdxIdx++] = uTopCapStart + i;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uTopCapStart + i + 1;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uTopCapStart + ((i + 1) % uSlices);
 		xGeometryOut.m_puIndices[uIdxIdx++] = uTopCenter;
 	}
 
-	// Bottom cap indices (reversed winding)
+	// Bottom cap indices (reversed winding; same modulo wrap fix)
 	uint32_t uBottomCenter = uBottomCapStart + uSlices;
 	for (uint32_t i = 0; i < uSlices; i++)
 	{
-		xGeometryOut.m_puIndices[uIdxIdx++] = uBottomCapStart + i + 1;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uBottomCapStart + ((i + 1) % uSlices);
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBottomCapStart + i;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBottomCenter;
 	}
@@ -361,22 +365,22 @@ void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight,
 	// Generate indices
 	uint32_t uIdxIdx = 0;
 
-	// Side triangles
+	// Side triangles (outward winding: cross(C-A,B-A) faces out+up)
 	for (uint32_t i = 0; i < uSlices; i++)
 	{
 		uint32_t uNext = (i + 1) % uSlices;
 		xGeometryOut.m_puIndices[uIdxIdx++] = i;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uApex;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uApex;
 	}
 
-	// Base triangles (reversed winding)
+	// Base triangles (faces -Y; was inverted despite the old 'reversed' label)
 	for (uint32_t i = 0; i < uSlices; i++)
 	{
 		uint32_t uNext = (i + 1) % uSlices;
 		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
-		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenter;
 		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenter;
 	}
 
 	xGeometryOut.GenerateLayoutAndVertexData();
