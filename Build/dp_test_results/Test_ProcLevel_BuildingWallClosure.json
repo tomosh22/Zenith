@@ -2,7 +2,7 @@
   "name": "Test_ProcLevel_BuildingWallClosure",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.576,
+  "durationMs": 1.062,
   "failures": [],
   "skipped": false
 }

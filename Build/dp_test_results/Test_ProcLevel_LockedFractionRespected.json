@@ -2,7 +2,7 @@
   "name": "Test_ProcLevel_LockedFractionRespected",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.109,
+  "durationMs": 0.157,
   "failures": [],
   "skipped": false
 }

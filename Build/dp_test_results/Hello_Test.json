@@ -2,7 +2,7 @@
   "name": "Hello_Test",
   "passed": true,
   "frames": 11,
-  "durationMs": 0.214,
+  "durationMs": 0.250,
   "failures": [],
   "skipped": false
 }

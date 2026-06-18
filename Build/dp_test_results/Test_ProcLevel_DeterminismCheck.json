@@ -2,7 +2,7 @@
   "name": "Test_ProcLevel_DeterminismCheck",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.331,
+  "durationMs": 0.491,
   "failures": [],
   "skipped": false
 }
