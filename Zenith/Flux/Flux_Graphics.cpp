@@ -30,7 +30,14 @@ Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetInvViewProjMatrix() { return m_xFram
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewMatrix()        { return m_xFrameConstants.m_xViewMat; }
 Zenith_Maths::Vector3 Flux_GraphicsImpl::GetSunDir()            { return m_xFrameConstants.m_xSunDir_Pad; }
 
-DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.1,-1.0, 0.1 };
+// Default sun DIRECTION (the way the light travels, into the scene). Normalised
+// at upload. This was near-vertical { 0.1, -1, 0.1 } — a "high noon" key that
+// fully lights up-facing surfaces (terrain) but leaves vertical surfaces
+// (characters, walls) at NdotL ~= 0, so they fall to ambient-only and read as
+// near-black silhouettes. An angled key (~45 deg elevation, lighting +x/+z-facing
+// surfaces) gives form-defining shading on upright geometry. Games that need a
+// specific sun set their own via SetSunOverride / the Sun Direction debug var.
+DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { -0.4, -0.7, -0.55 };
 // Sun radiance (.a) is the direct key-light illuminance. It was 1.0 while the
 // sky/IBL ambient bakes from the atmosphere at sun-intensity 20 (see
 // Flux_SkyboxImpl::fSUN_INTENSITY + Flux_IBL irradiance/prefilter capture),
