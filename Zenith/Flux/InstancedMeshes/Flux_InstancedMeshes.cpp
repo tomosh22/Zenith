@@ -119,7 +119,12 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &m_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-		xShadowPipelineSpec.m_bDepthBias = false;
+		// Fixed-function slope-scaled depth bias (set per-cascade via vkCmdSetDepthBias
+		// in Flux_Shadows::ExecuteShadowCascade). Dynamic so it is runtime-tunable.
+		xShadowPipelineSpec.m_bDepthBias = true;
+		xShadowPipelineSpec.m_bDynamicDepthBias = true;
+		xShadowPipelineSpec.m_fDepthBiasConstant = 1.75f;
+		xShadowPipelineSpec.m_fDepthBiasSlope = 3.0f;
 
 		m_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 

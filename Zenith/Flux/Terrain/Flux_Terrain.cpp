@@ -183,6 +183,14 @@ void Flux_TerrainImpl::BuildPipelines()
 		xShadowPipelineSpec.m_bDepthWriteEnabled = true;
 		xShadowPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 
+		// Fixed-function slope-scaled depth bias (set per-cascade via vkCmdSetDepthBias
+		// in Flux_Shadows::ExecuteShadowCascade). Dynamic so it is runtime-tunable.
+		// (Inert until terrain shadow casting is enabled — RenderToShadowMap is stubbed.)
+		xShadowPipelineSpec.m_bDepthBias = true;
+		xShadowPipelineSpec.m_bDynamicDepthBias = true;
+		xShadowPipelineSpec.m_fDepthBiasConstant = 1.75f;
+		xShadowPipelineSpec.m_fDepthBiasSlope = 3.0f;
+
 		Flux_PipelineBuilder::FromSpecification(m_xTerrainShadowPipeline, xShadowPipelineSpec);
 	}
 

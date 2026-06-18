@@ -41,6 +41,42 @@ namespace
 {
 	bool s_bHumanShowcaseSawAnimator = false;
 
+	// CLI float override (mirrors RenderTest_Tennis::RT_TennisArgFloat) so the
+	// photo camera can be orbited from the command line for multi-angle shadow
+	// captures: --humancam-x/y/z/yaw/pitch=<float>. Yaw convention (see
+	// Zenith_CameraComponent forward = (-sin yaw, sin pitch, cos yaw)): to look at
+	// the player from offset (ox,oz), yaw = atan2(ox, -oz).
+	float HumanShowcase_ArgFloat(const char* szPrefix, float fDefault)
+	{
+#ifdef ZENITH_WINDOWS
+		const size_t ulLen = std::strlen(szPrefix);
+		for (int i = 1; i < __argc; i++)
+			if (std::strncmp(__argv[i], szPrefix, ulLen) == 0)
+				return static_cast<float>(std::atof(__argv[i] + ulLen));
+#else
+		(void)szPrefix;
+#endif
+		return fDefault;
+	}
+
+	bool HumanShowcase_HasArgPrefix(const char* szPrefix)
+	{
+#ifdef ZENITH_WINDOWS
+		const size_t ulLen = std::strlen(szPrefix);
+		for (int i = 1; i < __argc; i++)
+			if (std::strncmp(__argv[i], szPrefix, ulLen) == 0) return true;
+#else
+		(void)szPrefix;
+#endif
+		return false;
+	}
+
+	// When the camera is driven from the CLI (--humancam-*), the scripted camera
+	// re-parks + locomotion in Step_HumanShowcase are suppressed so the figure
+	// holds an idle pose under the requested camera for the whole run — lets a
+	// capture harness grab any frame from any angle without racing the schedule.
+	bool s_bHumanCamOverride = false;
+
 	void Human_Mark(const char* szName, int iRelFrame)
 	{
 		Zenith_Log(LOG_CATEGORY_ANIMATION, "[RenderTest] HUMAN_MARK %s rel=%d global=%u",
@@ -107,7 +143,16 @@ namespace
 		// at +X+Z looking back (yaw = pi + pi/4) keeps the front lit. Photo
 		// mode also freezes the player component's animation parameters and ground IK.
 		RenderTest_GameplayState::s_bPhotoModeActive = true;
-		Human_SetCamera(2.1f, 0.4f, 2.1f, 2.3562f, -0.04f);
+		s_bHumanCamOverride = HumanShowcase_HasArgPrefix("--humancam-");
+		// Default is the front-3/4 lit view; overridable per-run from the CLI so a
+		// capture harness can orbit the camera for multi-angle shadow proofs. When
+		// overridden the figure holds idle under this camera all run (see Step).
+		Human_SetCamera(
+			HumanShowcase_ArgFloat("--humancam-x=",     2.1f),
+			HumanShowcase_ArgFloat("--humancam-y=",     0.4f),
+			HumanShowcase_ArgFloat("--humancam-z=",     2.1f),
+			HumanShowcase_ArgFloat("--humancam-yaw=",   2.3562f),
+			HumanShowcase_ArgFloat("--humancam-pitch=", -0.04f));
 
 		// Cinematic lighting for the capture. The global default sun is a weak,
 		// near-overhead key (dim/flat 'CG' look); pose a real warm key from the
@@ -127,6 +172,14 @@ namespace
 
 	bool Step_HumanShowcase(int iFrame)
 	{
+		// CLI camera override: hold idle + the requested camera for the whole run
+		// (return true = keep the test/scene alive so any frame can be captured).
+		if (s_bHumanCamOverride)
+		{
+			if (iFrame == 30) Human_Mark("idle_override", iFrame);
+			return true;
+		}
+
 		switch (iFrame)
 		{
 		case 30:

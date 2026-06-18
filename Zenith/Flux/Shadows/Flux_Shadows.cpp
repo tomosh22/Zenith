@@ -23,7 +23,45 @@
 
 
 
-DEBUGVAR float dbg_fZMultiplier = 8.f;
+// ---------------------------------------------------------------------------
+// Cascade-fit + sampling tunables. The cascade fit is a stabilised
+// bounding-sphere scheme (rotation/translation invariant) with texel snapping;
+// the sampling tunables are mirrored into the deferred lighting shader.
+// ---------------------------------------------------------------------------
+
+// PSSM practical-split blend: 0 = uniform splits, 1 = logarithmic. ~0.85 is the
+// usual sweet spot (tight near cascades, coarse far ones).
+DEBUGVAR float dbg_fSplitLambda        = 0.85f;
+// Far end of the shadowed range (m). Cascades pack their resolution into
+// [camera-near, this], capped by the camera far plane. Concentrating cascades
+// near the viewer is what makes 2048² maps look high-res up close.
+DEBUGVAR float dbg_fShadowDistance     = 300.f;
+// How far (in cascade radii) to push the light origin back past the bounding
+// sphere so off-frustum occluders still rasterise in. Replaces the old 17x
+// depth-range inflation that destroyed depth precision.
+DEBUGVAR float dbg_fCasterExtendRadii  = 1.0f;
+// Acne control is split between two mechanisms:
+//  - Fixed-function slope-scaled depth bias on the caster pipelines (the actual
+//    "depth bias", applied by the rasterizer via vkCmdSetDepthBias). Slope-scaled
+//    bias works on D32 float depth where a constant bias is unreliable, so it
+//    carries the load; the constant term is a small top-up.
+//  - Normal-offset (texels of world-space push along the surface normal, in the
+//    receiver). This is NOT depth bias — it shifts the sample position, has no
+//    fixed-function equivalent, and handles grazing-angle acne without the
+//    peter-panning a large depth bias would cause.
+DEBUGVAR float dbg_fNormalOffsetTexels      = 2.5f;
+DEBUGVAR float dbg_fShadowDepthBiasConstant = 1.75f; // vkCmdSetDepthBias constant factor
+DEBUGVAR float dbg_fShadowDepthBiasSlope    = 3.0f;  // vkCmdSetDepthBias slope factor
+// Base PCF kernel radius (texels) and tap count of the Vogel disk.
+DEBUGVAR float dbg_fPCFRadiusTexels    = 2.0f;
+DEBUGVAR uint32_t dbg_uPCFTapCount     = 16u;
+// PCSS contact hardening: estimate penumbra from a blocker search so shadows
+// sharpen at contact and soften with distance. Sun half-angle drives the width.
+DEBUGVAR bool  dbg_bPCSSEnabled        = true;
+DEBUGVAR float dbg_fSunAngularRadius   = 0.013f;
+// Fraction of a cascade's far split over which it cross-fades into the next
+// cascade, hiding the seam.
+DEBUGVAR float dbg_fCascadeBlendFraction = 0.12f;
 
 Flux_RenderAttachment& Flux_ShadowsImpl::GetCSM(u_int uIndex)
 {
@@ -42,28 +80,6 @@ struct FrustumCorners
 	}
 	Zenith_Maths::Vector3 m_axCorners[8];
 };
-
-struct AABB3D
-{
-	Zenith_Maths::Vector3 m_xMin = Zenith_Maths::Vector3(FLT_MAX);
-	Zenith_Maths::Vector3 m_xMax = Zenith_Maths::Vector3(-FLT_MAX);
-
-	void Expand(const Zenith_Maths::Vector3& xPoint)
-	{
-		m_xMin = glm::min(m_xMin, xPoint);
-		m_xMax = glm::max(m_xMax, xPoint);
-	}
-};
-
-static AABB3D ComputeAABBFromTransformedPoints(const Zenith_Maths::Vector3* pxPoints, uint32_t uCount, const Zenith_Maths::Matrix4& xTransform)
-{
-	AABB3D xAABB;
-	for (uint32_t u = 0; u < uCount; u++)
-	{
-		xAABB.Expand(xTransform * Zenith_Maths::Vector4(pxPoints[u], 1));
-	}
-	return xAABB;
-}
 
 static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Zenith_Maths::Matrix4& xInvViewProjMat)
 {
@@ -90,9 +106,24 @@ void Flux_ShadowsImpl::Initialise()
 	{
 		g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), m_xShadowMatrixBuffers[u]);
 	}
+	// Seed with sane defaults (not nullptr): a shadows-disabled boot never runs
+	// UpdateShadowMatrices, and the deferred shader still reads the tap count from
+	// this CB to bound its PCF loop. Garbage VRAM there = unbounded loop / 0-divide.
+	const Flux_ShadowSamplingGPU xDefaultSampling;
+	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&xDefaultSampling, sizeof(Flux_ShadowSamplingGPU), m_xShadowSamplingBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Split Lambda"},        dbg_fSplitLambda,        0.f, 1.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Shadow Distance"},     dbg_fShadowDistance,     10.f, 2000.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Caster Extend Radii"}, dbg_fCasterExtendRadii,  0.f, 8.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Normal Offset Texels"},dbg_fNormalOffsetTexels, 0.f, 8.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Depth Bias Constant"}, dbg_fShadowDepthBiasConstant, 0.f, 16.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Depth Bias Slope"},    dbg_fShadowDepthBiasSlope,    0.f, 16.f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "PCF Radius Texels"},   dbg_fPCFRadiusTexels,    0.f, 8.f);
+	g_xEngine.DebugVariables().AddUInt32 ({"Render", "Shadows", "PCF Tap Count"},       dbg_uPCFTapCount,        1u, 32u);
+	g_xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "PCSS Enabled"},        dbg_bPCSSEnabled);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Sun Angular Radius"},  dbg_fSunAngularRadius,   0.f, 0.1f);
+	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Cascade Blend Frac"},  dbg_fCascadeBlendFraction, 0.f, 0.5f);
 #endif
 }
 
@@ -102,6 +133,7 @@ void Flux_ShadowsImpl::Shutdown()
 	{
 		g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowMatrixBuffers[u]);
 	}
+	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowSamplingBuffer);
 
 	m_pxGraph = nullptr;
 }
@@ -144,6 +176,12 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 	// own state (matrix buffers) through xZZ. Sibling subsystems (StaticMeshes /
 	// AnimatedMeshes) are recovered as their own singletons.
 	Flux_ShadowsImpl& xZZ = g_xEngine.Shadows();
+
+	// Fixed-function slope-scaled depth bias for shadow acne. The caster pipelines
+	// declare depth-bias + dynamic-depth-bias state; this sets it per cascade
+	// command list (dynamic state is per-command-buffer). Bias is applied entirely
+	// by the rasterizer here — never in the sampling shader.
+	pxCommandList->AddCommand<Flux_CommandSetDepthBias>(dbg_fShadowDepthBiasConstant, dbg_fShadowDepthBiasSlope, 0.f);
 
 	auto& xStaticMeshes = g_xEngine.StaticMeshes();
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&xStaticMeshes.GetShadowPipeline());
@@ -225,32 +263,114 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	const Zenith_Maths::Matrix4& xViewMat = xGraphics.GetViewMatrix();
 
+	// GetFOV() returns radians for the game camera but DEGREES for the editor
+	// camera while Stopped/Paused (Zenith_Editor::GetCameraFOV). PerspectiveProjection
+	// expects radians; feeding it 45 "radians" makes the reconstructed frustum (and
+	// every cascade derived from it) garbage. Normalise defensively: a real vertical
+	// FOV is always < PI radians, so anything larger must be degrees.
+	float fFOV = xGraphics.GetFOV();
+	if (fFOV > 3.14159265f) fFOV = glm::radians(fFOV);
+	const float fAspect   = xGraphics.GetAspectRatio();
+	const float fCamNear  = xGraphics.GetNearPlane();
+	const float fCamFar   = xGraphics.GetFarPlane();
+	const float fResolution = float(ZENITH_FLUX_CSM_RESOLUTION);
+
+	// Pack cascade resolution into [near, shadow-distance] (capped by far plane).
+	const float fShadowNear = fCamNear;
+	const float fShadowFar  = glm::max(fShadowNear + 1.f, glm::min(fCamFar, dbg_fShadowDistance));
+
+	// ---- Practical split scheme (Zhang et al.): blend logarithmic + uniform. ----
+	float afSplits[ZENITH_FLUX_NUM_CSMS + 1];
+	afSplits[0] = fShadowNear;
+	afSplits[ZENITH_FLUX_NUM_CSMS] = fShadowFar;
+	for (uint32_t i = 1; i < ZENITH_FLUX_NUM_CSMS; i++)
+	{
+		const float fSI  = float(i) / float(ZENITH_FLUX_NUM_CSMS);
+		const float fLog = fShadowNear * powf(fShadowFar / fShadowNear, fSI);
+		const float fUni = fShadowNear + (fShadowFar - fShadowNear) * fSI;
+		afSplits[i] = glm::mix(fUni, fLog, glm::clamp(dbg_fSplitLambda, 0.f, 1.f));
+	}
+
+	// Sun direction points light -> scene; the light sits opposite. Guard the
+	// up-vector so a near-vertical sun doesn't degenerate glm::lookAt.
+	const Zenith_Maths::Vector3 xSunDir = glm::normalize(xGraphics.GetSunDir());
+	const Zenith_Maths::Vector3 xUp = (fabsf(xSunDir.y) > 0.99f) ? Zenith_Maths::Vector3(0, 0, 1)
+																  : Zenith_Maths::Vector3(0, 1, 0);
+
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		const float fNearPlane = xGraphics.GetFarPlane() / s_afCSMLevels[u];
-		const float fFarPlane = xGraphics.GetFarPlane() / s_afCSMLevels[u + 1];
+		const float fSliceNear = afSplits[u];
+		const float fSliceFar  = afSplits[u + 1];
 
-		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(xGraphics.GetFOV(), xGraphics.GetAspectRatio(), fNearPlane, fFarPlane);
-		const Zenith_Maths::Matrix4 xInvViewProjMat = glm::inverse(xProjMat * xViewMat);
+		// World-space corners of this frustum slice.
+		const Zenith_Maths::Matrix4 xSliceProj    = Zenith_Maths::PerspectiveProjection(fFOV, fAspect, fSliceNear, fSliceFar);
+		const Zenith_Maths::Matrix4 xInvViewProj  = glm::inverse(xSliceProj * xViewMat);
+		const FrustumCorners        xCorners      = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProj);
 
-		const FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
-		const Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
+		// Bounding sphere of the slice. Its RADIUS depends only on FOV/aspect/split
+		// (not on camera orientation or position), so the cascade extent — and
+		// therefore the texel footprint — is invariant as the camera turns. This is
+		// what eliminates the edge shimmer the AABB-in-light-space fit suffered.
+		const Zenith_Maths::Vector3 xCenter = xCorners.GetCenter();
+		float fRadius = 0.f;
+		for (uint32_t c = 0; c < 8; c++)
+			fRadius = glm::max(fRadius, glm::length(xCorners.m_axCorners[c] - xCenter));
+		// Quantise the radius so sub-pixel float wobble in the corner positions
+		// can't perturb world-units-per-texel between frames.
+		fRadius = ceilf(fRadius * 16.f) / 16.f;
 
-		const Zenith_Maths::Vector3& xSunDir = xGraphics.GetSunDir();
-		const Zenith_Maths::Vector3 xUp(0, 1, 0);
+		const float fWorldPerTexel = (2.f * fRadius) / fResolution;
 
-		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir, xFrustumCenter, xUp);
+		// Push the light origin back past the sphere by a bounded margin so
+		// occluders between the light and the slice still rasterise into the map.
+		const float fCasterExtend = fRadius * glm::max(0.f, dbg_fCasterExtendRadii);
+		const float fBackDist     = fRadius + fCasterExtend;
+		const float fDepthRange   = 2.f * fRadius + fCasterExtend;
 
-		const AABB3D xLightAABB = ComputeAABBFromTransformedPoints(xFrustumCorners.m_axCorners, 8, xSunViewMat);
+		const Zenith_Maths::Vector3 xLightEye  = xCenter - xSunDir * fBackDist;
+		const Zenith_Maths::Matrix4 xLightView = glm::lookAt(xLightEye, xCenter, xUp);
+		Zenith_Maths::Matrix4 xLightProj = Zenith_Maths::OrthographicProjection(-fRadius, fRadius, -fRadius, fRadius, 0.f, fDepthRange);
 
-		const float fZRange = xLightAABB.m_xMax.z - xLightAABB.m_xMin.z;
+		// ---- Texel snapping: lock the sampling grid to whole shadow texels in
+		// world space so the shadow pattern doesn't crawl as the camera moves. ----
+		const Zenith_Maths::Matrix4 xUnsnapped = xLightProj * xLightView;
+		Zenith_Maths::Vector4 xOrigin = xUnsnapped * Zenith_Maths::Vector4(0.f, 0.f, 0.f, 1.f);
+		xOrigin *= fResolution * 0.5f;
+		const Zenith_Maths::Vector2 xRounded(glm::round(xOrigin.x), glm::round(xOrigin.y));
+		const Zenith_Maths::Vector2 xSnapOffset = (xRounded - Zenith_Maths::Vector2(xOrigin.x, xOrigin.y)) * (2.f / fResolution);
+		xLightProj[3][0] += xSnapOffset.x;
+		xLightProj[3][1] += xSnapOffset.y;
 
-		xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir * (xLightAABB.m_xMax.z + fZRange * dbg_fZMultiplier), xFrustumCenter, xUp);
+		m_axSunViewProjMats[u] = xLightProj * xLightView;
 
-		m_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
+		// Sampling data consumed by the deferred lighting pass.
+		m_xCascadeSamplingData.m_xCascadeSplitViewDepth[u] = fSliceFar;
+		m_xCascadeSamplingData.m_xCascadeWorldPerTexel[u]  = fWorldPerTexel;
+		m_xCascadeSamplingData.m_xCascadeDepthRange[u]     = fDepthRange;
 
 		g_xEngine.FluxMemory().UploadBufferData(m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &m_axSunViewProjMats[u], sizeof(m_axSunViewProjMats[u]));
 	}
+
+	// Mirror runtime-tunable sampling config for the shader (cheap; lets the
+	// debug variables take effect live).
+	m_xSamplingConfig.m_fResolution           = fResolution;
+	m_xSamplingConfig.m_fRcpResolution        = 1.f / fResolution;
+	m_xSamplingConfig.m_fNormalOffsetTexels   = dbg_fNormalOffsetTexels;
+	m_xSamplingConfig.m_fPCFRadiusTexels      = dbg_fPCFRadiusTexels;
+	m_xSamplingConfig.m_fSunAngularRadius     = dbg_fSunAngularRadius;
+	m_xSamplingConfig.m_fCascadeBlendFraction = dbg_fCascadeBlendFraction;
+	m_xSamplingConfig.m_uPCFTapCount          = glm::clamp(dbg_uPCFTapCount, 1u, 32u);
+	m_xSamplingConfig.m_bPCSSEnabled          = dbg_bPCSSEnabled ? 1u : 0u;
+
+	// Pack + upload the GPU mirror for the deferred lighting pass.
+	Flux_ShadowSamplingGPU xGPU;
+	xGPU.m_xCascadeSplitViewDepth = m_xCascadeSamplingData.m_xCascadeSplitViewDepth;
+	xGPU.m_xCascadeWorldPerTexel  = m_xCascadeSamplingData.m_xCascadeWorldPerTexel;
+	xGPU.m_xCascadeDepthRange     = m_xCascadeSamplingData.m_xCascadeDepthRange;
+	xGPU.m_xParams0 = Zenith_Maths::Vector4(m_xSamplingConfig.m_fResolution, m_xSamplingConfig.m_fRcpResolution, m_xSamplingConfig.m_fNormalOffsetTexels, 0.f);
+	xGPU.m_xParams1 = Zenith_Maths::Vector4(m_xSamplingConfig.m_fPCFRadiusTexels, m_xSamplingConfig.m_fSunAngularRadius, m_xSamplingConfig.m_fCascadeBlendFraction, float(m_xSamplingConfig.m_uPCFTapCount));
+	xGPU.m_xParams2 = Zenith_Maths::Vector4(float(m_xSamplingConfig.m_bPCSSEnabled), 0.f, 0.f, 0.f);
+	g_xEngine.FluxMemory().UploadBufferData(m_xShadowSamplingBuffer.GetBuffer().m_xVRAMHandle, &xGPU, sizeof(xGPU));
 
 	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 }

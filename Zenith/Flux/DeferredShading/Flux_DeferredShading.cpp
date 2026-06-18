@@ -25,7 +25,6 @@
 
 // Phase 7b: state on Flux_DeferredShadingImpl held by Zenith_Engine.
 
-DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
 DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
 DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disabled (0.01-0.1 typical)
@@ -128,6 +127,11 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 		xBinder.BindCBV(xDS.m_xShader, s_aszShadowMatrixNames[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
 	}
 
+	// Shadow sampling parameters (per-cascade splits / texel sizes / depth ranges
+	// + global filtering config). Packed + uploaded by Flux_Shadows; bound here as
+	// a regular CBV (mirrors ShadowSamplingLayout in Flux_DeferredShading.slang).
+	xBinder.BindCBV(xDS.m_xShader, "ShadowSampling", &xShadows.GetShadowSamplingBuffer().GetCBV());
+
 	// Bind IBL textures
 	xBinder.BindSRV(xDS.m_xShader, "g_xBRDFLUT", &xIBL.GetBRDFLUTSRV());
 	xBinder.BindSRV(xDS.m_xShader, "g_xIrradianceMap", &xIBL.GetIrradianceMapSRV());
@@ -196,10 +200,27 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 		u_int m_bSSAOEnabled;               // gate the ambient-only SSAO sample
 	};
 	DeferredShadingConstants xConstants;
-	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
+	xConstants.m_bVisualiseCSMs = dbg_bVisualiseCSMs ? 1u : 0u;
 	// Only enable IBL if both enabled AND ready (textures have been generated)
 	xConstants.m_bIBLEnabled = (xIBL.IsEnabled() && xIBL.IsReady()) ? 1 : 0;
 	xConstants.m_uDebugMode = dbg_uDeferredShadingDebugMode;
+#ifdef ZENITH_WINDOWS
+	// Diagnostic CLI override: --ds-debug=N forces the deferred debug view
+	// (0=normal 2=depth 3=albedo 4=metallic 5=roughness 6=AO 7=normal 8=NdotL
+	// 9=shadowFactor 10=shadingModel 11=IBLambient). Lets a capture harness dump
+	// any G-buffer channel without a debug-panel toggle.
+	{
+		static int s_iDsDebugOverride = -2;
+		if (s_iDsDebugOverride == -2)
+		{
+			s_iDsDebugOverride = -1;
+			for (int i = 1; i < __argc; i++)
+				if (std::strncmp(__argv[i], "--ds-debug=", 11) == 0)
+					s_iDsDebugOverride = std::atoi(__argv[i] + 11);
+		}
+		if (s_iDsDebugOverride >= 0) xConstants.m_uDebugMode = (u_int)s_iDsDebugOverride;
+	}
+#endif
 	xConstants.m_bIBLDiffuseEnabled = xIBL.IsDiffuseEnabled() ? 1 : 0;
 	xConstants.m_bIBLSpecularEnabled = xIBL.IsSpecularEnabled() ? 1 : 0;
 	xConstants.m_fIBLIntensity = xIBL.GetIntensity();
