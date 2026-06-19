@@ -238,7 +238,7 @@ void Zenith_TacticalPointSystem::Shutdown()
 
 void Zenith_TacticalPointSystem::Update()
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Tactical Update"));
 
 	auto& xScenes = Zenith_SceneSystem::Get();
 

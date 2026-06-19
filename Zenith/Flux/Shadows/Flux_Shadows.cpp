@@ -259,7 +259,7 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	const Zenith_Maths::Matrix4& xViewMat = xGraphics.GetViewMatrix();
 
@@ -372,5 +372,5 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 	xGPU.m_xParams2 = Zenith_Maths::Vector4(float(m_xSamplingConfig.m_bPCSSEnabled), 0.f, 0.f, 0.f);
 	g_xEngine.FluxMemory().UploadBufferData(m_xShadowSamplingBuffer.GetBuffer().m_xVRAMHandle, &xGPU, sizeof(xGPU));
 
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
+	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
 }

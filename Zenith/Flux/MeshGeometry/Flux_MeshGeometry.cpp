@@ -411,7 +411,7 @@ else\
 
 void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, u_int uRetainAttributeBits /*= 0*/, const bool bUploadToGPU /*= true*/)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_MESH_GEOMETRY_LOAD_FROM_FILE);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Flux Mesh Geometry Load From File"));
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 

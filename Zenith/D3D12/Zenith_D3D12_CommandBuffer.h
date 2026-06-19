@@ -119,6 +119,9 @@ public:
 #ifdef ZENITH_FLUX_PROFILING
 	void BeginDebugMarker(const char* szName) { }
 	void EndDebugMarker() { }
+	// GPU per-pass timestamps: no GPU on the null backend, so no timing.
+	u_int BeginGPUTimer(const char* szName, u_int uExecutionIndex) { return ~0u; }
+	void  EndGPUTimer(u_int uTimerIdx) { }
 #endif
 
 private:

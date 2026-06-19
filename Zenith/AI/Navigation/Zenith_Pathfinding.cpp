@@ -129,7 +129,7 @@ Zenith_PathResult Zenith_Pathfinding::FindPath(const Zenith_NavMesh& xNavMesh,
 	const Zenith_Maths::Vector3& xStart,
 	const Zenith_Maths::Vector3& xEnd)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PATHFINDING);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Pathfinding"));
 #ifdef ZENITH_INPUT_SIMULATOR
 	// MVP-0.4.4: count every public FindPath call so tests can assert
 	// query-volume contracts (e.g. "priest issued <= N path queries
@@ -498,7 +498,7 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 	// Single request - just do it directly (no task-system overhead)
 	if (uNumRequests == 1)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PATHFINDING);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Pathfinding"));
 		if (pxRequests[0].m_pxNavMesh != nullptr)
 		{
 			pxRequests[0].m_xResult = FindPathInternal(

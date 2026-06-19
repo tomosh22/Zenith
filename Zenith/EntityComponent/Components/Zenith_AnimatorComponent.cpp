@@ -4,6 +4,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Core/Zenith_Engine.h"   // g_xEngine.AnimationControllers() — EC->Core, not a layering edge.
+#include "Profiling/Zenith_Profiling.h"   // "Animation Update" zone — surfaces skeletal/IK/skinning cost hidden in Scene Update
 // Flux animation types are resolved HERE (the forwarding-handle .cpp), not in
 // the component header. These .cpp -> Flux edges are allow-listed; the header
 // itself is now Flux-include-free (Wave-19 decouple).
@@ -168,6 +169,12 @@ void Zenith_AnimatorComponent::OnStart()
 
 void Zenith_AnimatorComponent::OnUpdate(float fDt)
 {
+	// Per-character animation cost (state-machine eval, clip sampling/blending, IK,
+	// skinning-matrix compute, GPU bone upload). Fires once per animated entity; the
+	// profiler aggregates by zone id, so the report shows total + count. This is the
+	// largest engine-side sub-cost that was previously hidden inside "Scene Update".
+	ZENITH_PROFILE_SCOPE("Animation Update");
+
 	// Hot path: dereference the CACHED controller pointer directly (O(1), no
 	// store lookup, no hash). Primed by the ctor and re-primed by OnStart.
 	Flux_AnimationController& xController = *m_pxController;

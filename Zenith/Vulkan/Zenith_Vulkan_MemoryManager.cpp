@@ -461,7 +461,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMem
 
 void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Vulkan Memory Manager Flush"));
 
 	EnsureRecording();
 
@@ -517,7 +517,7 @@ void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 
 void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Vulkan Memory Manager Upload"));
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Uploading large buffer in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
@@ -581,7 +581,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 
 void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers, bool bPreBakedMips)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Vulkan Memory Manager Upload"));
 
 	// The chunked path scanline-copies into mip 0 only and then runtime-generates
 	// the rest — it cannot honour a pre-baked multi-mip chain. Fail loudly in ALL

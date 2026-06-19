@@ -43,7 +43,7 @@ namespace
 	};
 }
 
-void Flux_RenderGraph::RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const Flux_RenderGraph* pxGraph, Flux_CommandBuffer* pxCmdBuf)
+void Flux_RenderGraph::RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const Flux_RenderGraph* pxGraph, Flux_CommandBuffer* pxCmdBuf, u_int uExecutionIndex)
 {
 	// Barrier-only no-op passes (and any pass with no record callback) record
 	// nothing here — the backend has already emitted their prologue barriers
@@ -67,14 +67,25 @@ void Flux_RenderGraph::RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const
 	// One labelled GPU debug group per logical pass (RenderDoc / Nsight / PIX),
 	// emitted inside whatever render-pass / compute scope the backend has open.
 	pxCmdBuf->BeginDebugMarker(pxPass->DebugName());
+	// GPU per-pass timing: bracket the pass with two timestamp writes into the
+	// frame's query pool. DebugName() is a static-lifetime literal, so the GPU
+	// readback can store the pointer and resolve the pass name a few frames later.
+	// uExecutionIndex (the pass's place in the topological order) is stored with the
+	// timer so the readback can present passes in execution order, not record-race
+	// order.
+	const u_int uGPUTimer = pxCmdBuf->BeginGPUTimer(pxPass->DebugName(), uExecutionIndex);
 #endif
 	// Per-pass record-cost scope. Runs on a worker thread; the profiler keys
 	// events by thread id, so the pass's DebugName() label disambiguates which
-	// pass the cost belongs to in the timeline.
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS, pxPass->DebugName());
+	// pass the cost belongs to in the timeline. DebugName() is a static-lifetime
+	// string literal (RenderGraph stores only the pointer), so it is safe as the
+	// event label. The "Flux Record Pass" zone id is cached once via the macro's
+	// static-local -- no per-frame zone interning.
+	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Record Pass"), pxPass->DebugName());
 	pxPass->m_pfnOnRecord(pxCmdBuf, pxPass->m_pUserData);
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS);
+	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Record Pass"));
 #ifdef ZENITH_FLUX_PROFILING
+	pxCmdBuf->EndGPUTimer(uGPUTimer);
 	pxCmdBuf->EndDebugMarker();
 #endif
 }

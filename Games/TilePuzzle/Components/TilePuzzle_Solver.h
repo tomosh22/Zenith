@@ -156,7 +156,7 @@ public:
 	 */
 	static int32_t SolveLevel(const TilePuzzleLevelData& xLevel, uint32_t uMaxStates = s_uTilePuzzleMaxSolverStates, int32_t* piLowerBoundOut = nullptr)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("TilePuzzle Solver"));
 		// Pre-build cat state array once (cats never move)
 		uint32_t uNumCats = static_cast<uint32_t>(xLevel.axCats.size());
 		Zenith_Assert(uNumCats <= s_uMaxSolverCats, "Too many cats for solver (%u > %u)", uNumCats, s_uMaxSolverCats);
@@ -301,7 +301,7 @@ public:
 
 		while (!axCurrentLevel.empty() && xOuterVisited.Size() < uMaxStates)
 		{
-			Zenith_Profiling::Scope xDepthScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_BFS_DEPTH);
+			Zenith_Profiling::ScopeZone xDepthScope(ZENITH_PROFILE_ZONE("TilePuzzle Solver BFS Depth"));
 			axNextLevel.clear();
 
 			for (size_t uStateIdx = 0; uStateIdx < axCurrentLevel.size(); ++uStateIdx)
@@ -611,7 +611,7 @@ public:
 		std::vector<TilePuzzleSolutionMove>& axPathOut,
 		uint32_t uMaxStates = s_uTilePuzzleMaxSolverStates)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("TilePuzzle Solver With Path"));
 		axPathOut.clear();
 
 		// ================================================================
@@ -774,7 +774,7 @@ public:
 
 		while (!axCurrentLevel.empty() && axAllStates.size() < uMaxStates)
 		{
-			Zenith_Profiling::Scope xDepthScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_BFS_DEPTH);
+			Zenith_Profiling::ScopeZone xDepthScope(ZENITH_PROFILE_ZONE("TilePuzzle Solver BFS Depth"));
 			axNextLevel.clear();
 
 			for (size_t uIdx = 0; uIdx < axCurrentLevel.size(); ++uIdx)

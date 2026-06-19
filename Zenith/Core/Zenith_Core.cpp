@@ -94,13 +94,13 @@ static void ExecuteRenderGraph()
 static void BeginFrame_Platform()
 {
 	{
-		Zenith_Profiling::Scope xBeginFrameProfile(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
+		Zenith_Profiling::ScopeZone xBeginFrameProfile(ZENITH_PROFILE_ZONE("Flux PlatformAPI Begin Frame"));
 		g_xEngine.FluxRenderer().BeginFrame();
 	}
 	Zenith_Core::UpdateTimers();
 	g_xEngine.Input().BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
-	g_xEngine.Touch().Update();
+	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Touch().Update, ZENITH_PROFILE_ZONE("Touch Update"));
 }
 
 // Acquire the swapchain image (windowed only). Returns true to proceed (always
@@ -126,15 +126,20 @@ static bool AcquireSwapchainOrSkip()
 static void UpdateEditorAndTuning(bool& bSubmitRenderWork, bool& bShouldUpdateGameLogic)
 {
 #ifdef ZENITH_TOOLS
-	const bool bEditorWantsRender = g_xEngine.Editor().Update();
+	bool bEditorWantsRender;
+	{
+		// Editor update (deferred scene loads, editor state, gizmo/selection logic).
+		Zenith_Profiling::ScopeZone xEditorUpdateProfile(ZENITH_PROFILE_ZONE("Editor Update"));
+		bEditorWantsRender = g_xEngine.Editor().Update();
+	}
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		bSubmitRenderWork = bEditorWantsRender;
 	}
 	bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
 
-	Zenith_PropertyTuning::Update();
-	Zenith_GraphReload::Update();
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_PropertyTuning::Update, ZENITH_PROFILE_ZONE("Property Tuning"));
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_GraphReload::Update, ZENITH_PROFILE_ZONE("Graph Reload"));
 #else
 	(void)bSubmitRenderWork;
 	(void)bShouldUpdateGameLogic;
@@ -168,15 +173,15 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 {
 	if (bShouldUpdateGameLogic)
 	{
-		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
-		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Scenes().Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_ZONE("Physics"), g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Scenes().Update, ZENITH_PROFILE_ZONE("Scene Update"), g_xEngine.Frame().GetDt());
 
 		// Optional engine-driven AI manager tick (opt-in, default off). Most games
 		// drive the AI managers from their own components in a game-specific order;
 		// a game with no such constraint opts in via Zenith_AI::SetEngineTickEnabled.
 		if (Zenith_AI::IsEngineTickEnabled())
 		{
-			Zenith_AI::Update(g_xEngine.Frame().GetDt());
+			ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_AI::Update, ZENITH_PROFILE_ZONE("AI Update"), g_xEngine.Frame().GetDt());
 		}
 	}
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -209,11 +214,11 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 	// UI frame (quad/text submission) must precede ExecuteRenderGraph, which
 	// consumes the submissions. The two-pass structure + deferred-LoadScene drain
 	// lives inside Zenith_UISystem::Update.
-	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.UI().Update, ZENITH_PROFILE_INDEX__UI_UPDATE, g_xEngine.Frame().GetDt());
+	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.UI().Update, ZENITH_PROFILE_ZONE("UI Update"), g_xEngine.Frame().GetDt());
 
 	// W22: ordering constraint documented on Flux_RenderGraph::Execute.
 	#ifdef ZENITH_TOOLS
-	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Editor().RenderImGuiFrame, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Editor().RenderImGuiFrame, ZENITH_PROFILE_ZONE("ImGUI"));
 	#endif
 
 	g_xEngine.Scenes().SetRenderTasksActive(true);
@@ -230,7 +235,7 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 {
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Zenith_Profiling::Scope xMemMgrProfile(ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
+		Zenith_Profiling::ScopeZone xMemMgrProfile(ZENITH_PROFILE_ZONE("Flux Memory Manager"));
 		g_xEngine.FluxMemory().SubmitFrameMemoryWork();
 	}
 
@@ -239,11 +244,11 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		{
-			Zenith_Profiling::Scope xEndFrameProfile(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
+			Zenith_Profiling::ScopeZone xEndFrameProfile(ZENITH_PROFILE_ZONE("Flux PlatformAPI End Frame"));
 			g_xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
 		}
 		{
-			Zenith_Profiling::Scope xSwapchainEndFrameProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+			Zenith_Profiling::ScopeZone xSwapchainEndFrameProfile(ZENITH_PROFILE_ZONE("Flux Swapchain End Frame"));
 			g_xEngine.FluxSwapchain().EndFrame();
 		}
 	}

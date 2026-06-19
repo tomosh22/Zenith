@@ -106,7 +106,7 @@ namespace
 	{
 		// Run the batch on the engine task system (calling thread joins). Used by
 		// batch pathfinding. The profile index tags the work as AI pathfinding.
-		Zenith_DataParallelTask xTask(ZENITH_PROFILE_INDEX__AI_PATHFINDING, pfnInvoke, pUserData, uCount, /*bCallingThreadJoins=*/true);
+		Zenith_DataParallelTask xTask(ZENITH_PROFILE_ZONE("AI Pathfinding"), pfnInvoke, pUserData, uCount, /*bCallingThreadJoins=*/true);
 		g_xEngine.Tasks().SubmitDataParallelTask(&xTask);
 		xTask.WaitUntilComplete();
 	}

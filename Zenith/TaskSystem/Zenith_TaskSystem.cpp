@@ -39,6 +39,13 @@ void Zenith_TaskSystem::RunWorkerLoop()
 
 	} while (!m_bTerminateThreads.load(std::memory_order_acquire));
 
+	// Thread-exit unregister: free this worker's profiling ring + clear its TLS
+	// before signalling termination, so Profiling::Shutdown (which runs after the
+	// main thread observes all workers terminated) only has the main + any
+	// non-joining producer (e.g. FileWatcher) left in the table. Routed through the
+	// _Detail bridge so this TU stays off the engine-singleton ratchet.
+	Zenith_Profiling_Detail::UnregisterThread();
+
 	m_pxThreadsTerminatedSem->Signal();
 }
 

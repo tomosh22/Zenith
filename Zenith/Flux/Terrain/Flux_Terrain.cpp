@@ -399,7 +399,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// per-component. The chunk-data + frustum-planes buffers are frame-indexed
 	// host-visible buffers uploaded here in the Prepare phase (not graph-tracked —
 	// see the RENDER-GRAPH CONTRACT on Flux_FrameIndexedBufferBase, Flux_Buffers.h).
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
+	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Terrain Streaming"));
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
 	Flux_TerrainStreamingManagerImpl& xTerrainStreaming = g_xEngine.TerrainStreaming();
@@ -412,7 +412,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		// No MarkBufferHostWritten: frame-indexed buffers aren't graph-tracked
 		// (see Flux_FrameIndexedBufferBase contract).
 	}
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
+	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Terrain Streaming"));
 }
 
 static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void*)
@@ -454,7 +454,7 @@ static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 	// is reached via g_xEngine at point of use.
 	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
 
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Terrain Culling"));
 
 	// Bind the terrain culling compute pipeline once (owned by Flux_Terrain)
 	pxCmdList->BindComputePipeline(&xTerrain.m_xCullingPipeline);
@@ -468,7 +468,7 @@ static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 		g_xEngine.TerrainStreaming().UpdateCullingAndLod(*pxState, *pxCmdList);
 	}
 
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Terrain Culling"));
 }
 
 static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)

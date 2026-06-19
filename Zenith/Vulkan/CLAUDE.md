@@ -127,6 +127,18 @@ s_xCommandBuffer.ImageTransitionBarrier(
 s_xCommandBuffer.Dispatch(uGroupsX, uGroupsY, uGroupsZ);
 ```
 
+### GPU per-pass timestamps (profiling)
+
+`Zenith_Vulkan_PerFrame` owns a per-frame-in-flight `VkQueryPool` (timestamp). Each
+`Flux_RenderGraph` pass is bracketed by `Zenith_Vulkan_CommandBuffer::Begin/EndGPUTimer`
+(`vkCmdWriteTimestamp`, bottom-of-pipe) from `RecordPassInto`. Query slots are claimed
+atomically across recording workers (`ClaimGPUTimer`); worker 0 cmd-resets the pool at the
+head of its first-submitted buffer (`CmdResetGPUTimers`). Results are read back deferred in
+`BeginFrame` once the slot fence signals (`ReadbackGPUTimers`), scaled by
+`limits.timestampPeriod`, and handed to the CPU profiler's GPU channel. Gated on
+`ZENITH_FLUX_PROFILING`; auto-disabled when the graphics queue's `timestampValidBits == 0`.
+See `Profiling/CLAUDE.md`.
+
 ## Pipeline Construction
 
 ### Graphics Pipeline

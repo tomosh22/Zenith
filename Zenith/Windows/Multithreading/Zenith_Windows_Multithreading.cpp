@@ -57,9 +57,9 @@ void Zenith_Windows_Mutex_T<bEnableProfiling>::Unlock()
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
 {
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
+	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Wait for Mutex"));
 	EnterCriticalSection(ZENITH_MUTEX_CS(*this));
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
+	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Wait for Mutex"));
 }
 
 template<>

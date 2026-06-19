@@ -119,7 +119,7 @@ public:
 
 		// Create and submit task
 		s_pxWorldUpdateTask = new Zenith_Task(
-			ZENITH_PROFILE_INDEX__SCENE_UPDATE,  // Use scene update profile index
+			ZENITH_PROFILE_ZONE("Scene Update"),  // Use scene update profile index
 			WorldUpdateTaskFunction,
 			&s_xWorldUpdateData
 		);
@@ -180,7 +180,7 @@ public:
 		// Create data-parallel task with one invocation per node
 		// Worker threads will each grab work items atomically
 		s_pxNodeUpdateTask = new Zenith_DataParallelTask(
-			ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+			ZENITH_PROFILE_ZONE("Scene Update"),
 			ParallelNodeUpdateFunction,
 			&s_xNodeUpdateData,
 			uNumNodes,

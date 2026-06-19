@@ -304,7 +304,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 
 void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 {
-	m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
+	m_pxProfiling->BeginProfileZone(ZENITH_PROFILE_ZONE("Vulkan Update Descriptor Sets"));
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS,
@@ -373,7 +373,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
 		m_uDescriptorDirty &= ~(1 << uDescSet);
 	}
-	m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
+	m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Vulkan Update Descriptor Sets"));
 }
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
@@ -1043,5 +1043,34 @@ void Zenith_Vulkan_CommandBuffer::BeginDebugMarker(const char* szName)
 void Zenith_Vulkan_CommandBuffer::EndDebugMarker()
 {
 	m_xCurrentCmdBuffer.endDebugUtilsLabelEXT(m_pxVulkan->GetDispatchLoader());
+}
+
+u_int Zenith_Vulkan_CommandBuffer::BeginGPUTimer(const char* szName, u_int uExecutionIndex)
+{
+	if (!m_pxVulkan->IsGPUTimestampsSupported())
+	{
+		return UINT32_MAX;
+	}
+	Zenith_Vulkan_PerFrame* pxFrame = m_pxVulkan->GetCurrentFrame();
+	const u_int uIdx = pxFrame->ClaimGPUTimer(szName, uExecutionIndex);
+	if (uIdx == UINT32_MAX)
+	{
+		return UINT32_MAX;
+	}
+	// Bottom-of-pipe for both brackets: the start fires when all prior commands
+	// have drained, the end when this pass has — so the delta is the pass's GPU
+	// span and consecutive passes' spans tile the frame without gaps or overlap.
+	m_xCurrentCmdBuffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pxFrame->GetTimestampQueryPool(), uIdx * 2 + 0);
+	return uIdx;
+}
+
+void Zenith_Vulkan_CommandBuffer::EndGPUTimer(u_int uTimerIdx)
+{
+	if (uTimerIdx == UINT32_MAX)
+	{
+		return;
+	}
+	Zenith_Vulkan_PerFrame* pxFrame = m_pxVulkan->GetCurrentFrame();
+	m_xCurrentCmdBuffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pxFrame->GetTimestampQueryPool(), uTimerIdx * 2 + 1);
 }
 #endif

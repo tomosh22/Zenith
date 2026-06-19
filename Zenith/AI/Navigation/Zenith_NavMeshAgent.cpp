@@ -102,7 +102,7 @@ float Zenith_NavMeshAgent::GetRemainingDistance() const
 
 void Zenith_NavMeshAgent::Update(float fDt, Zenith_EntityID xEntity)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_AGENT_UPDATE);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI NavMesh Agent Update"));
 
 	// Decide once whether this agent drives motion through Jolt or via direct
 	// transform writes. The physics path is preferred whenever a dynamic body is

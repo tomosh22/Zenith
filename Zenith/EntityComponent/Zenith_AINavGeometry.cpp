@@ -219,7 +219,7 @@ Zenith_NavMesh* Zenith_AINavGeometry::GenerateFromScene(Zenith_SceneData& xScene
 	Zenith_Vector<uint32_t> axIndices;
 
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COLLECT_GEOMETRY);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Collect Geometry"));
 		if (!CollectGeometryFromScene(xScene, axVertices, axIndices))
 		{
 			Zenith_Log(LOG_CATEGORY_AI, "Failed to collect geometry from scene");

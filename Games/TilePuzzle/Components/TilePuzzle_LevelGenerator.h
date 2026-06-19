@@ -303,7 +303,7 @@ public:
 	 */
 	static bool GenerateLevel(TilePuzzleLevelData& xLevelOut, std::mt19937& /*xRng*/, uint32_t uLevelNumber, GenerationStats* pxStatsOut = nullptr, uint32_t uSeedOffset = 0, const DifficultyParams* pxParamsOverride = nullptr)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_LEVEL);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("TilePuzzle Generate Level"));
 		DifficultyParams xParams = pxParamsOverride ? *pxParamsOverride : GetDifficultyForLevel(uLevelNumber);
 
 		uint32_t uNumWorkers = std::max(1u, static_cast<uint32_t>(std::thread::hardware_concurrency()));
@@ -319,7 +319,7 @@ public:
 		xData.uSeedOffset = uSeedOffset;
 
 		Zenith_DataParallelTask xGenTask(
-			ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+			ZENITH_PROFILE_ZONE("Scene Update"),
 			&ParallelGenerateTask,
 			&xData,
 			static_cast<u_int>(uNumWorkers),
@@ -839,7 +839,7 @@ private:
 		std::mt19937& xRng,
 		uint32_t& uBFSDepthOut)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_REVERSE_BFS_SCRAMBLE);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("TilePuzzle Reverse BFS Scramble"));
 		Zenith_Assert(uNumDraggable <= s_uMaxSolverShapes, "Too many draggable shapes for reverse BFS");
 		Zenith_Assert(uNumCats <= s_uMaxSolverCats, "Too many cats for reverse BFS");
 
@@ -1207,13 +1207,13 @@ private:
 		uint32_t& uSuccessfulMovesOut,
 		std::vector<TilePuzzleShapeDefinition>& axShapeDefsOut)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_ATTEMPT);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("TilePuzzle Generate Attempt"));
 		axShapeDefsOut.clear();
 		axShapeDefsOut.reserve(
 			xParams.uNumBlockers +
 			xParams.uNumColors * xParams.uNumShapesPerColor);
 
-		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+		g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 
 		// ---- Phase 1: Grid + static blockers ----
 
@@ -1251,7 +1251,7 @@ private:
 
 		if (axFloorPositions.size() < 3)
 		{
-			g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+			g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 			return false;
 		}
 
@@ -1361,7 +1361,7 @@ private:
 
 			if (!bPlaced)
 			{
-				g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+				g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 				return false;
 			}
 		}
@@ -1401,7 +1401,7 @@ private:
 				}
 				if (!bPlaced)
 				{
-					g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+					g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 					return false;
 				}
 			}
@@ -1427,7 +1427,7 @@ private:
 			}
 			if (eColor == TILEPUZZLE_COLOR_NONE)
 			{
-				g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+				g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 				return false;
 			}
 
@@ -1467,7 +1467,7 @@ private:
 				}
 				if (iTargetCatIdx < 0)
 				{
-					g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+					g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 					return false;
 				}
 
@@ -1599,10 +1599,10 @@ private:
 			}
 		}
 
-		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+		g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Grid Setup"));
 
 		// ---- Phase 4: Scramble ----
-		g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+		g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Scramble"));
 
 		// Build draggable shape state arrays
 		std::vector<size_t> axDraggableIndices;
@@ -1624,7 +1624,7 @@ private:
 
 		if (axDraggableIndices.empty())
 		{
-			g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+			g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Scramble"));
 			return false;
 		}
 
@@ -1666,10 +1666,10 @@ private:
 				uBFSDepth);
 			if (!bOK)
 			{
-				g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+				g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Scramble"));
 				return false;
 			}
-			g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+			g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Scramble"));
 			uSuccessfulMovesOut = uBFSDepth;
 			return true;
 		}
@@ -1934,7 +1934,7 @@ private:
 			}
 		} // end multi-start restarts
 
-		g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+		g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("TilePuzzle Scramble"));
 
 		if (!bAnyScrambleSuccess)
 			return false;

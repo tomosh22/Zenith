@@ -317,7 +317,7 @@ static void EmitGraphPrologueBarriers(Zenith_Vulkan_CommandBuffer& xCommandBuffe
 // Compute pass: close any open render pass (compute happens outside one),
 // emit barriers, then record the pass directly (its callback issues vkCmdDispatch).
 static void ProcessComputePass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, RenderPassRecordingState& xState,
-	const Flux_RenderPassEntry& xEntry)
+	const Flux_RenderPassEntry& xEntry, u_int i)
 {
 	if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 	{
@@ -325,7 +325,7 @@ static void ProcessComputePass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rend
 		ResetRenderPassState(xState);
 	}
 	EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
-	Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer);
+	Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer, i);
 }
 
 // Compare attachment lists element-wise (resource pointer + mip + layer).
@@ -391,7 +391,7 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 		{
 			xState.m_axColourAttachments[u] = axColourAttachments[u];
 		}
-		Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer);
+		Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer, i);
 		return;
 	}
 
@@ -412,7 +412,7 @@ static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, Rende
 		EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
 		xCommandBuffer.BeginRendering(Flux_RenderingBeginInfo{ axColourAttachments, uNumColour, rxDepthStencil, false, false, false, bDepthIsReadOnly });
 	}
-	Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer);
+	Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xCommandBuffer, i);
 }
 
 // Data-parallel task function to record command buffers in parallel.
@@ -430,6 +430,16 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	Zenith_Vulkan_CommandBuffer& xCommandBuffer = xSelf.m_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
 	xCommandBuffer.BeginRecording();
 
+#ifdef ZENITH_FLUX_PROFILING
+	// GPU profiler: worker 0's command buffer is submitted first, so resetting the
+	// timestamp pool here (before any pass records) guarantees the reset precedes
+	// every pass's timestamp writes on the GPU timeline. Outside any render pass.
+	if (uInvocationIndex == 0)
+	{
+		xSelf.m_pxCurrentFrame->CmdResetGPUTimers(xCommandBuffer);
+	}
+#endif
+
 	RenderPassRecordingState xState;
 
 	const u_int uStartIndex = pWorkDistribution->auStartIndex[uInvocationIndex];
@@ -441,7 +451,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 		const bool bIsComputePass = (xEntry.m_uNumColourAttachments == 0 && !xEntry.m_xDepthStencil.IsValid());
 		if (bIsComputePass)
 		{
-			ProcessComputePass(xCommandBuffer, xState, xEntry);
+			ProcessComputePass(xCommandBuffer, xState, xEntry, i);
 		}
 		else
 		{
@@ -473,7 +483,7 @@ void Zenith_Vulkan::RecordFrame(const Flux_WorkDistribution& xWorkDistribution)
 	// command buffers are retained until EndFrame submits them. The task only
 	// reads the distribution, so the const_cast to the void* task payload is safe.
 	Zenith_DataParallelTask xRecordingTask(
-		ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS,
+		ZENITH_PROFILE_ZONE("Vulkan Record Command Buffers"),
 		RecordCommandBuffersTask,
 		const_cast<Flux_WorkDistribution*>(&xWorkDistribution),
 		FLUX_NUM_WORKER_THREADS,
@@ -511,6 +521,15 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	// pending queue was already drained by RecordFrame, so there's nothing to
 	// clear here.
 	const bool bHasRenderWork = bSubmitRenderWork && m_pxFluxRenderer->HasRecordedFrameWork();
+
+#ifdef ZENITH_FLUX_PROFILING
+	// Remember how many GPU timers this slot recorded so the deferred readback
+	// (when this slot is reused MAX_FRAMES_IN_FLIGHT frames hence) knows the count.
+	// Only count it when render work is actually submitted — otherwise the
+	// timestamp writes never execute on the GPU and the readback must skip.
+	m_pxCurrentFrame->m_uGPUTimerReadbackCount = bHasRenderWork
+		? m_pxCurrentFrame->m_uGPUTimerCount.load(std::memory_order_relaxed) : 0;
+#endif
 
 	const bool bShouldWait = m_pxVulkanSwapchain->ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
@@ -728,6 +747,14 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 	m_xGPUCapabilities.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
 	m_xGPUCapabilities.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
 
+#ifdef ZENITH_FLUX_PROFILING
+	// GPU profiler: nanoseconds-per-tick for timestamp queries. A device that
+	// reports 0 here can't produce meaningful timestamps; CreateQueueFamilies
+	// completes the support decision with the graphics queue's validBits.
+	m_fTimestampPeriod = xProps.limits.timestampPeriod;
+	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU timestamp period: %f ns/tick", m_fTimestampPeriod);
+#endif
+
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU: %s", xProps.deviceName);
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU API version: %u.%u.%u",
 		VK_API_VERSION_MAJOR(xProps.apiVersion),
@@ -825,6 +852,16 @@ void Zenith_Vulkan::CreateQueueFamilies()
 	{
 		Zenith_Assert(m_auQueueIndices[uType] != UINT32_MAX, "Couldn't find queue index");
 	}
+
+#ifdef ZENITH_FLUX_PROFILING
+	// GPU profiler: the graphics queue family must support timestamp writes
+	// (timestampValidBits > 0) and the device must report a non-zero period.
+	// Both true => GPU per-pass profiling is live; otherwise it's a clean no-op.
+	m_uTimestampValidBits = xQueueFamilyProperties[m_auQueueIndices[COMMANDTYPE_GRAPHICS]].timestampValidBits;
+	m_bGPUTimestampsSupported = (m_uTimestampValidBits > 0) && (m_fTimestampPeriod > 0.0f);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU timestamp profiling: %s (validBits=%u)",
+		m_bGPUTimestampsSupported ? "ENABLED" : "disabled", m_uTimestampValidBits);
+#endif
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan queue families created");
 }
@@ -1260,7 +1297,108 @@ void Zenith_Vulkan_PerFrame::Initialise()
 
 	// Create persistent semaphore for memory submit synchronization (fixes per-frame semaphore leak)
 	m_xMemorySemaphore = VkUnwrap(xVulkan.GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
+
+#ifdef ZENITH_FLUX_PROFILING
+	CreateTimestampQueryPool();
+#endif
 }
+
+#ifdef ZENITH_FLUX_PROFILING
+void Zenith_Vulkan_PerFrame::CreateTimestampQueryPool()
+{
+	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
+	if (!xVulkan.IsGPUTimestampsSupported())
+	{
+		return; // graphics queue can't timestamp — GPU profiling stays a no-op
+	}
+
+	vk::QueryPoolCreateInfo xQueryInfo = vk::QueryPoolCreateInfo()
+		.setQueryType(vk::QueryType::eTimestamp)
+		.setQueryCount(uMAX_GPU_TIMERS * 2);   // a start + end query per timer
+	m_xTimestampQueryPool = VkUnwrap(xVulkan.GetDevice().createQueryPool(xQueryInfo));
+}
+
+// Claim one timer slot for a pass (called concurrently from recording workers).
+// Returns the timer index, or UINT32_MAX if the per-frame budget is exhausted —
+// in which case the caller skips its timestamp writes (that pass goes untimed).
+u_int Zenith_Vulkan_PerFrame::ClaimGPUTimer(const char* szName, u_int uExecutionIndex)
+{
+	const u_int uIdx = m_uGPUTimerCount.fetch_add(1, std::memory_order_relaxed);
+	if (uIdx >= uMAX_GPU_TIMERS)
+	{
+		return UINT32_MAX;
+	}
+	m_aszGPUTimerNames[uIdx] = szName;            // static-lifetime DebugName() literal — pointer is safe
+	m_auGPUTimerExecIndex[uIdx] = uExecutionIndex; // for execution-order sort at readback
+	return uIdx;
+}
+
+// Reset the whole pool to its initial state at the head of worker 0's command
+// buffer. Worker 0 is submitted first (EndFrame submits 0..N-1 in order), so on
+// the GPU timeline this reset precedes every pass's timestamp writes this frame.
+// Must be outside any render pass — it runs right after BeginRecording.
+void Zenith_Vulkan_PerFrame::CmdResetGPUTimers(Zenith_Vulkan_CommandBuffer& xCmd)
+{
+	if (!m_xTimestampQueryPool)
+	{
+		return;
+	}
+	xCmd.GetCurrentCmdBuffer().resetQueryPool(m_xTimestampQueryPool, 0, uMAX_GPU_TIMERS * 2);
+}
+
+// Deferred read of this slot's previous-frame timestamps (the fence waited in
+// BeginFrame guarantees that GPU work is complete), converted to per-pass
+// milliseconds and pushed into the CPU profiler's GPU channel. Runs on the main
+// thread, so the profiler's GPU lists are touched single-threaded.
+void Zenith_Vulkan_PerFrame::ReadbackGPUTimers()
+{
+	if (!m_xTimestampQueryPool || m_uGPUTimerReadbackCount == 0)
+	{
+		return;
+	}
+
+	// Clamp to the budget: ClaimGPUTimer keeps fetch_add-ing past the cap (only the
+	// first uMAX_GPU_TIMERS claims actually wrote queries), so a frame with more
+	// passes than the budget must never read past the pool / the stack buffer.
+	const u_int uTimers = (m_uGPUTimerReadbackCount < uMAX_GPU_TIMERS) ? m_uGPUTimerReadbackCount : uMAX_GPU_TIMERS;
+	const u_int uQueries = uTimers * 2;
+	u_int64 auResults[uMAX_GPU_TIMERS * 2];
+
+	const vk::Device& xDevice = g_xEngine.FluxBackend().GetDevice();
+	const vk::Result eResult = xDevice.getQueryPoolResults(
+		m_xTimestampQueryPool, 0, uQueries,
+		uQueries * sizeof(u_int64), auResults, sizeof(u_int64),
+		vk::QueryResultFlagBits::e64);
+	// eSuccess = all available (fence guaranteed). Anything else: skip this frame.
+	if (eResult != vk::Result::eSuccess)
+	{
+		return;
+	}
+
+	// Order the claimed timer slots by their pass execution index. Slots are claimed
+	// in record-race order (whichever worker fetch_add'd first), so without this the
+	// report/timeline would shuffle every frame; sorting on the stable topological
+	// index presents passes in Flux_RenderGraph execution order.
+	u_int auOrder[uMAX_GPU_TIMERS];
+	for (u_int i = 0; i < uTimers; i++) auOrder[i] = i;
+	std::sort(auOrder, auOrder + uTimers, [this](u_int a, u_int b)
+		{ return m_auGPUTimerExecIndex[a] < m_auGPUTimerExecIndex[b]; });
+
+	const double fPeriodNs = static_cast<double>(g_xEngine.FluxBackend().GetTimestampPeriod());
+	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
+	xProfiling.BeginGPUCapture();
+	for (u_int u = 0; u < uTimers; u++)
+	{
+		const u_int i = auOrder[u];
+		const u_int64 uBegin = auResults[i * 2 + 0];
+		const u_int64 uEnd   = auResults[i * 2 + 1];
+		// Monotonic within a frame; guard against an unwritten/duplicate pair.
+		const double fMs = (uEnd > uBegin) ? (static_cast<double>(uEnd - uBegin) * fPeriodNs * 1e-6) : 0.0;
+		xProfiling.AddGPUPass(m_aszGPUTimerNames[i], fMs, m_auGPUTimerExecIndex[i]);
+	}
+	xProfiling.EndGPUCapture();
+}
+#endif
 
 void Zenith_Vulkan_PerFrame::InitialisePerFrameResources()
 {
@@ -1318,19 +1456,27 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 
 	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
 
-	xProfiling.BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
+	xProfiling.BeginProfileZone(ZENITH_PROFILE_ZONE("Vulkan Wait For GPU"));
 	vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
-	xProfiling.EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
+	xProfiling.EndProfileZone(ZENITH_PROFILE_ZONE("Vulkan Wait For GPU"));
 	eResult = xDevice.resetFences(1, &m_xFence);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to reset fence");
 
-	xProfiling.BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+#ifdef ZENITH_FLUX_PROFILING
+	// GPU profiler: the fence is now signalled, so this slot's previous-frame
+	// timestamps are readable. Read them (→ profiler GPU channel) BEFORE worker 0
+	// cmd-resets the pool for the new frame, then reset the claim counter.
+	ReadbackGPUTimers();
+	m_uGPUTimerCount.store(0, std::memory_order_relaxed);
+#endif
+
+	xProfiling.BeginProfileZone(ZENITH_PROFILE_ZONE("Vulkan Reset Descriptor Pools"));
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
 		xDevice.resetDescriptorPool(xPool);
 	}
-	xProfiling.EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+	xProfiling.EndProfileZone(ZENITH_PROFILE_ZONE("Vulkan Reset Descriptor Pools"));
 	// Destroy framebuffers and render passes from the previous use of this frame slot
 	for (vk::Framebuffer& xFB : m_axPendingFramebuffers)
 	{

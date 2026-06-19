@@ -20,7 +20,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 	// scopes below let WriteTextReport pinpoint which Recast-style phase
 	// dominates the total (collect / voxelize / filter / regions / contours
 	// / polygon mesh / final navmesh assembly).
-	Zenith_Profiling::Scope xGenerateScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE);
+	Zenith_Profiling::ScopeZone xGenerateScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate"));
 
 	if (axVertices.GetSize() == 0 || axIndices.GetSize() < 3)
 	{
@@ -35,7 +35,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Compute bounds
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COMPUTE_BOUNDS);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Compute Bounds"));
 		if (!ComputeBounds(axVertices, xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -44,7 +44,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Voxelize
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_VOXELIZE);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Voxelize"));
 		if (!VoxelizeTriangles(axVertices, axIndices, xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -53,7 +53,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Filter walkable
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_FILTER_WALKABLE);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Filter Walkable"));
 		if (!FilterWalkableSpans(xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -62,7 +62,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Build compact heightfield
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_COMPACT_HF);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Build Compact HF"));
 		if (!BuildCompactHeightfield(xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -71,7 +71,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Build regions
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_REGIONS);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Build Regions"));
 		if (!BuildRegions(xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -80,7 +80,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Trace contours
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_TRACE_CONTOURS);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Trace Contours"));
 		if (!TraceContours(xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -89,7 +89,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 
 	// Build polygon mesh
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_POLY_MESH);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Build Poly Mesh"));
 		if (!BuildPolygonMesh(xContext))
 		{
 			return nullptr;  // RAII: xContext destructor cleans up
@@ -99,7 +99,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 	// Build final NavMesh
 	Zenith_NavMesh* pxNavMesh = nullptr;
 	{
-		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_NAVMESH);
+		Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("AI NavMesh Generate / Build NavMesh"));
 		pxNavMesh = BuildNavMesh(xContext);
 	}
 

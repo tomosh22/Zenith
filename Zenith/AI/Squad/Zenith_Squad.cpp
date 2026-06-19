@@ -887,7 +887,7 @@ void Zenith_SquadManager::Update(float fDt)
 {
 	Zenith_Assert(s_bInitialised, "SquadManager::Update called before Initialise()");
 
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_SQUAD_UPDATE);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Squad Update"));
 
 	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{

@@ -242,7 +242,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
@@ -281,7 +281,7 @@ static void ExecuteSSGIUpsample(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
@@ -307,7 +307,7 @@ static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
@@ -337,7 +337,7 @@ static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 

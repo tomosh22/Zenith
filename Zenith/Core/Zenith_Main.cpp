@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
@@ -88,10 +89,34 @@ void Zenith_Core::Zenith_Main()
 	// bootstrap (Zenith_Init or earlier), never from gameplay code.
 	g_xEngine.Scenes().SetMainLoopRunning(true);
 
+	// --profiling-dump: every N frames, dump the live profiling report (CPU zones
+	// across all threads + per-pass GPU timings) both to stdout and to a truncated
+	// "zenith_profiling_dump.txt" in the working dir (the file is fflush/fclose'd so
+	// it survives even a hard process kill, unlike block-buffered stdout). The dump
+	// runs BEFORE EndFrame, so it drains the in-flight frame's completed zones; the
+	// drain is non-destructive (the events still publish at EndFrame), so the
+	// in-engine timeline is unaffected.
+	bool bProfilingDump = false;
+	for (int i = 1; i < __argc; ++i)
+		if (std::strcmp(__argv[i], "--profiling-dump") == 0) { bProfilingDump = true; break; }
+	u_int uProfilingDumpFrame = 0;
+
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{
 		g_xEngine.Profiling().BeginFrame();
 		Zenith_Core::Zenith_MainLoop();
+		if (bProfilingDump && (++uProfilingDumpFrame % 120u) == 0u)
+		{
+			g_xEngine.Profiling().WriteTextReport(stdout);
+			fflush(stdout);
+			FILE* pxDumpFile = nullptr;
+			fopen_s(&pxDumpFile, "zenith_profiling_dump.txt", "w");
+			if (pxDumpFile)
+			{
+				g_xEngine.Profiling().WriteTextReport(pxDumpFile);
+				fclose(pxDumpFile);
+			}
+		}
 		g_xEngine.Profiling().EndFrame();
 	}
 

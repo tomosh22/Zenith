@@ -28,6 +28,6 @@ void Zenith_D3D12::RecordFrame(const Flux_WorkDistribution& xWorkDistribution)
 	for (u_int i = 0; i < xPending.GetSize(); i++)
 	{
 		const Flux_RenderPassEntry& xEntry = xPending.Get(i);
-		Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xNoOpCmdBuf);
+		Flux_RenderGraph::RecordPassInto(xEntry.m_pxPass, xEntry.m_pxGraph, &xNoOpCmdBuf, i);
 	}
 }

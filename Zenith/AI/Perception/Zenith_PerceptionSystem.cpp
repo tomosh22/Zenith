@@ -42,7 +42,7 @@ void Zenith_PerceptionSystem::Update(float fDt)
 	// what Scenes are rendered" (and by extension, no impact on which entities
 	// are queried).
 	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_UPDATE);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Perception Update"));
 
 	if (s_xAgentData.IsEmpty())
 	{
@@ -284,7 +284,7 @@ Zenith_PerceptionSystem::SightEvaluation Zenith_PerceptionSystem::EvaluateSightF
 
 void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Perception Sight"));
 
 	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
 	{

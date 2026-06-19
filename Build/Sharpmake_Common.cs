@@ -146,6 +146,17 @@ public abstract class ZenithBaseProject : Project
 		{
 			conf.Defines.Add("ZENITH_DEBUG");
 		}
+
+		// CPU profiler master switch. Enabled in every config that exists today
+		// (Debug/Release x Tools/non-tools x win64/agde). A future shipping/Retail axis
+		// flips this to 0 here to strip the profiler for zero overhead -- the header
+		// (Zenith_Profiling.h) defaults the macro to 1 when undefined, and the hot path
+		// (Scope + ZENITH_PROFILING_FUNCTION_WRAPPER) + every subsystem method then
+		// compile to nothing. Must be set identically on the base/PCH lib and the
+		// engine/game/tool projects (same lockstep rule as ZENITH_TOOLS). NOTE: a
+		// Sharpmake regen is required for this define to materialise in the .vcxproj; the
+		// header default keeps current (already-generated) builds at 1 until then.
+		conf.Defines.Add("ZENITH_PROFILING_ENABLED=1");
 	}
 
 	protected void ConfigureCommonIncludePaths(Configuration conf, ZenithTarget target)

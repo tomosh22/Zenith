@@ -225,7 +225,7 @@ static void GenerateProceduralSplatmap(const Zenith_Image& xHeightmap, const std
 	xSlopeData.pfPerInvocationMaxSlope = xPerInvocationMaxSlope.data();
 	xSlopeData.iSize = iSize;
 
-	Zenith_DataParallelTask xSlopeTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, ComputeSlopesTask, &xSlopeData, uNumInvocations, true);
+	Zenith_DataParallelTask xSlopeTask(ZENITH_PROFILE_ZONE("Flux Terrain"), ComputeSlopesTask, &xSlopeData, uNumInvocations, true);
 	g_xEngine.Tasks().SubmitDataParallelTask(&xSlopeTask);
 	xSlopeTask.WaitUntilComplete();
 
@@ -245,7 +245,7 @@ static void GenerateProceduralSplatmap(const Zenith_Image& xHeightmap, const std
 	xWeightData.dRange = dRange;
 	xWeightData.fMaxSlope = fMaxSlope;
 
-	Zenith_DataParallelTask xWeightTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, GenerateWeightsTask, &xWeightData, uNumInvocations, true);
+	Zenith_DataParallelTask xWeightTask(ZENITH_PROFILE_ZONE("Flux Terrain"), GenerateWeightsTask, &xWeightData, uNumInvocations, true);
 	g_xEngine.Tasks().SubmitDataParallelTask(&xWeightTask);
 	xWeightTask.WaitUntilComplete();
 
@@ -321,7 +321,7 @@ static Zenith_Image GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWo
 	xData.fTerrainWorldSize = fTerrainWorldSize;
 
 	u_int uNumInvocations = std::min(static_cast<u_int>(64), uSize);
-	Zenith_DataParallelTask xTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, GenerateHeightmapRowsTask, &xData, uNumInvocations, true);
+	Zenith_DataParallelTask xTask(ZENITH_PROFILE_ZONE("Flux Terrain"), GenerateHeightmapRowsTask, &xData, uNumInvocations, true);
 	g_xEngine.Tasks().SubmitDataParallelTask(&xTask);
 	xTask.WaitUntilComplete();
 

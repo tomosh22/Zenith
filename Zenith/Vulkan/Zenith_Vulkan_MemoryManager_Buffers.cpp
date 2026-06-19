@@ -319,7 +319,7 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 
 void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Vulkan Memory Manager Upload"));
 
 	// Headless guard: see CreateBufferVRAM for rationale. With no allocator, all
 	// upstream CreateBufferVRAM calls returned invalid handles, so GetVRAM would
@@ -482,7 +482,7 @@ void Zenith_Vulkan_MemoryManager::DestroyDynamicReadWriteBuffer(Flux_DynamicRead
 
 void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Vulkan Memory Manager Upload"));
 
 	// Headless guard: see CreateBufferVRAM for rationale.
 	if (m_xAllocator == VK_NULL_HANDLE)

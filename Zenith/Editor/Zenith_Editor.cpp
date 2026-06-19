@@ -527,7 +527,7 @@ void Zenith_Editor::RenderImGuiFrame()
 	// FUNCTION_WRAPPER macro) because RenderToImGui is a member
 	// function and can't be passed as a free-function-style callable.
 	{
-		Zenith_Profiling::Scope xRenderProfileScope(ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
+		Zenith_Profiling::ScopeZone xRenderProfileScope(ZENITH_PROFILE_ZONE("ImGUI Profiling"));
 		m_pxProfiling->RenderToImGui();
 	}
 

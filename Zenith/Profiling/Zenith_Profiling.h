@@ -4,128 +4,81 @@
 #include "Collections/Zenith_HashMap.h"
 
 #include <chrono>
+#include <atomic>
+
+// Compile-time master switch. Default ON; a shipping/Retail config defines this to 0
+// to strip the profiler. When 0: the hot path (ZENITH_PROFILE_SCOPE / ScopeZone +
+// ZENITH_PROFILING_FUNCTION_WRAPPER) compiles to nothing, the per-task profiling calls
+// drop out, and every subsystem method becomes a no-op stub (see the #else block in
+// Zenith_Profiling.cpp). The subsystem object is still allocated (a few hundred bytes,
+// inert) so engine/editor wiring needs no gating — true zero-cost for the per-zone /
+// per-frame hot path, near-zero elsewhere.
+#ifndef ZENITH_PROFILING_ENABLED
+#define ZENITH_PROFILING_ENABLED 1
+#endif
 
 class Zenith_Multithreading;
 
-// Single source of truth for the profile indices: each X(enumerator, display name)
-// generates both the Zenith_ProfileIndex enum and g_aszProfileNames below.
-#define ZENITH_PROFILE_INDEX_LIST_COMMON(X) \
-	X(ZENITH_PROFILE_INDEX__TOTAL_FRAME, "Total Frame") \
-	X(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM, "Wait for Task System") \
-	X(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX, "Wait for Mutex") \
-	X(ZENITH_PROFILE_INDEX__ANIMATION, "Animation") \
-	X(ZENITH_PROFILE_INDEX__SCENE_UPDATE, "Scene Update") \
-	X(ZENITH_PROFILE_INDEX__UI_UPDATE, "UI Update") \
-	X(ZENITH_PROFILE_INDEX__PHYSICS, "Physics") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, "Flux Shadows") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES, "Flux Shadows Update Matrices") \
-	X(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, "Flux Deferred Shading") \
-	X(ZENITH_PROFILE_INDEX__FLUX_DYNAMIC_LIGHTS, "Flux Dynamic Lights") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, "Flux Skybox") \
-	X(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, "Flux Static Meshes") \
-	X(ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES, "Flux Animated Meshes") \
-	X(ZENITH_PROFILE_INDEX__FLUX_INSTANCED_MESHES, "Flux Instanced Meshes") \
-	X(ZENITH_PROFILE_INDEX__FLUX_COMPUTE, "Flux Compute") \
-	X(ZENITH_PROFILE_INDEX__FLUX_GRASS, "Flux Grass") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, "Flux Terrain") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING, "Flux Terrain Culling") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING, "Flux Terrain Streaming") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_STREAM_IN_LOD, "Flux Terrain Streaming Stream In LOD") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_EVICT, "Flux Terrain Streaming Evict") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_ALLOCATE, "Flux Terrain Streaming Allocate") \
-	X(ZENITH_PROFILE_INDEX__FLUX_PRIMITIVES, "Flux Primitives") \
-	X(ZENITH_PROFILE_INDEX__FLUX_WATER, "Flux Water") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SSAO, "Flux SSAO") \
-	X(ZENITH_PROFILE_INDEX__FLUX_HIZ, "Flux HiZ") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SSR, "Flux SSR") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SSGI, "Flux SSGI") \
-	X(ZENITH_PROFILE_INDEX__FLUX_FOG, "Flux Fog") \
-	X(ZENITH_PROFILE_INDEX__FLUX_HDR, "Flux HDR") \
-	X(ZENITH_PROFILE_INDEX__FLUX_ATMOSPHERE, "Flux Atmosphere") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SDFS, "Flux SDFs") \
-	X(ZENITH_PROFILE_INDEX__FLUX_PFX, "Flux PFX") \
-	X(ZENITH_PROFILE_INDEX__FLUX_TEXT, "Flux Text") \
-	X(ZENITH_PROFILE_INDEX__FLUX_QUADS, "Flux Quads") \
-	X(ZENITH_PROFILE_INDEX__FLUX_GIZMOS, "Flux Gizmos") \
-	X(ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER, "Flux Memory Manager") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME, "Flux Swapchain Begin Frame") \
-	X(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME, "Flux Swapchain End Frame") \
-	X(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME, "Flux PlatformAPI Begin Frame") \
-	X(ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, "Flux PlatformAPI End Frame") \
-	/* FLUX_RECORD_PASS is per-pass: used with a runtime label argument to BeginProfile */ \
-	X(ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS, "Flux Record Pass") \
-	X(ZENITH_PROFILE_INDEX__FLUX_MESH_GEOMETRY_LOAD_FROM_FILE, "Flux Mesh Geometry Load From File") \
-	X(ZENITH_PROFILE_INDEX__ASSET_LOAD, "Asset Load") \
-	/* #TO_TODO: rename these at runtime */ \
-	X(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS, "Vulkan Update Descriptor Sets") \
-	X(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD, "Vulkan Memory Manager Upload") \
-	X(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH, "Vulkan Memory Manager Flush") \
-	X(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU, "Vulkan Wait For GPU") \
-	X(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS, "Vulkan Reset Descriptor Pools") \
-	X(ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS, "Vulkan Record Command Buffers") \
-	X(ZENITH_PROFILE_INDEX__VISIBILITY_CHECK, "Visibility Check") \
-	X(ZENITH_PROFILE_INDEX__AI_PERCEPTION_UPDATE, "AI Perception Update") \
-	X(ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT, "AI Perception Sight") \
-	X(ZENITH_PROFILE_INDEX__AI_SQUAD_UPDATE, "AI Squad Update") \
-	X(ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE, "AI Tactical Update") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_AGENT_UPDATE, "AI NavMesh Agent Update") \
-	X(ZENITH_PROFILE_INDEX__AI_PATHFINDING, "AI Pathfinding") \
-	X(ZENITH_PROFILE_INDEX__AI_AGENT_UPDATE, "AI Agent Update") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE, "AI NavMesh Generate") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COLLECT_GEOMETRY, "AI NavMesh Generate / Collect Geometry") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COMPUTE_BOUNDS, "AI NavMesh Generate / Compute Bounds") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_VOXELIZE, "AI NavMesh Generate / Voxelize") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_FILTER_WALKABLE, "AI NavMesh Generate / Filter Walkable") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_COMPACT_HF, "AI NavMesh Generate / Build Compact HF") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_REGIONS, "AI NavMesh Generate / Build Regions") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_TRACE_CONTOURS, "AI NavMesh Generate / Trace Contours") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_POLY_MESH, "AI NavMesh Generate / Build Poly Mesh") \
-	X(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_NAVMESH, "AI NavMesh Generate / Build NavMesh") \
-	X(ZENITH_PROFILE_INDEX__AI_DEBUG_DRAW, "AI Debug Draw") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_LEVEL, "TilePuzzle Generate Level") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_ATTEMPT, "TilePuzzle Generate Attempt") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP, "TilePuzzle Grid Setup") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE, "TilePuzzle Scramble") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_REVERSE_BFS_SCRAMBLE, "TilePuzzle Reverse BFS Scramble") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER, "TilePuzzle Solver") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH, "TilePuzzle Solver With Path") \
-	X(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_BFS_DEPTH, "TilePuzzle Solver BFS Depth")
 
-#ifdef ZENITH_TOOLS
-#define ZENITH_PROFILE_INDEX_LIST(X) \
-	ZENITH_PROFILE_INDEX_LIST_COMMON(X) \
-	X(ZENITH_PROFILE_INDEX__RENDER_IMGUI, "ImGUI") \
-	X(ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING, "ImGUI Profiling")
-#else
-#define ZENITH_PROFILE_INDEX_LIST(X) ZENITH_PROFILE_INDEX_LIST_COMMON(X)
-#endif
+// Dense zone ids. Every recorded event stores a Zenith_ProfileZoneID, minted lazily by
+// RegisterZone from a string name (content-deduped). The ZENITH_PROFILE_SCOPE("Name")
+// and ZENITH_PROFILE_ZONE("Name") macros are the call-site entry points. Names resolve
+// at DISPLAY time via GetZoneName.
+using Zenith_ProfileZoneID = u_int;
+static constexpr Zenith_ProfileZoneID ZENITH_PROFILE_ZONE_NULL     = 0xFFFFFFFFu; // distinct from id 0 (TOTAL_FRAME)
+static constexpr Zenith_ProfileZoneID ZENITH_PROFILE_ZONE_OVERFLOW = 0xFFFFFFFEu; // table/arena full sentinel
 
-#define ZENITH_PROFILE_INDEX_AS_ENUM(eIndex, szName) eIndex,
-enum Zenith_ProfileIndex
+struct Zenith_ProfileZoneDesc
 {
-	ZENITH_PROFILE_INDEX_LIST(ZENITH_PROFILE_INDEX_AS_ENUM)
-	ZENITH_PROFILE_INDEX__COUNT,
+	const char* m_szName = nullptr;                      // owned copy in the name arena
+	u_int       m_uColorRGB = 0;                         // 0 => derive from id
+	Zenith_ProfileZoneID m_uCategoryID = ZENITH_PROFILE_ZONE_NULL;
 };
-#undef ZENITH_PROFILE_INDEX_AS_ENUM
 
-#define ZENITH_PROFILE_INDEX_AS_NAME(eIndex, szName) szName,
-inline constexpr const char* g_aszProfileNames[]
-{
-	ZENITH_PROFILE_INDEX_LIST(ZENITH_PROFILE_INDEX_AS_NAME)
-};
-#undef ZENITH_PROFILE_INDEX_AS_NAME
-static_assert(COUNT_OF(g_aszProfileNames) == ZENITH_PROFILE_INDEX__COUNT, "g_aszProfileNames mismatch");
-
-// Bridge so header-inline code (Scope and ZENITH_PROFILING_FUNCTION_WRAPPER)
-// can reach the engine-owned instance without including Zenith_Engine.h here,
-// which would cycle. Definitions live in Zenith_Profiling.cpp.
+// Bridge so header-inline code (ScopeZone and ZENITH_PROFILING_FUNCTION_WRAPPER)
+// can reach the per-thread profiling state without including Zenith_Engine.h
+// here, which would cycle. The ENABLED definitions in Zenith_Profiling.cpp
+// operate directly on the per-thread ring (tl_pxBuffer) — no g_xEngine reach,
+// no lock — so the hot path stays engine-free.
 namespace Zenith_Profiling_Detail
 {
-	void BeginProfile(Zenith_ProfileIndex eIndex, const char* szLabel);
-	void EndProfile(Zenith_ProfileIndex eIndex);
+	// String-zone bridge (used by the ZENITH_PROFILE_SCOPE/_ZONE macros). RegisterZone
+	// is a cold path (interns the name once); BeginProfileZone/EndProfileZone are the
+	// hot path and operate directly on the per-thread ring.
+	Zenith_ProfileZoneID RegisterZone(const char* szStaticName);
+	void BeginProfileZone(Zenith_ProfileZoneID uZoneID, const char* szLabel);
+	void EndProfileZone(Zenith_ProfileZoneID uZoneID);
+
+	// Thread-exit unregister for header-inline producers (e.g. the task worker loop)
+	// that should free their ring without reaching g_xEngine directly.
+	void UnregisterThread();
+
+	// Raw monotonic timestamp in CLOCK TICKS (not nanoseconds). The hot path stores
+	// the raw u_int64 tick count; ticks are converted to ns only at display time via
+	// GetTicksToNs(), captured once. Header-inline + cross-platform: high_resolution_clock
+	// wraps QueryPerformanceCounter on Windows and the monotonic clock on Android.
+	inline u_int64 GetTimestamp()
+	{
+		return static_cast<u_int64>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+	}
+	inline double GetTicksToNs()
+	{
+		using Period = std::chrono::high_resolution_clock::period;
+		// num/den is the tick duration in SECONDS; scale to ns. On MSVC the period is
+		// std::nano, so this folds to 1.0 at compile time.
+		return static_cast<double>(Period::num) * 1.0e9 / static_cast<double>(Period::den);
+	}
 }
 
 // Held on g_xEngine, accessed via g_xEngine.Profiling().
+//
+// Storage model (rev. 3): each producing thread owns a lock-free SPSC ring
+// (Zenith_ProfileThreadBuffer) published into m_apxThreadBuffers by stable thread
+// id. The hot path (Begin/EndProfile) writes its own thread's ring with a single
+// release-store and NO lock / NO hashmap / NO g_xEngine reach. The main thread is
+// the sole consumer: it drains every ring at the frame boundary into a heap
+// Snapshot and hands the snapshot off by POINTER SWAP (never container assignment,
+// which would free+reallocate). See Zenith_Profiling.cpp for the full protocol.
 class Zenith_Profiling
 {
 public:
@@ -134,29 +87,114 @@ public:
 	Zenith_Profiling(const Zenith_Profiling&) = delete;
 	Zenith_Profiling& operator=(const Zenith_Profiling&) = delete;
 
+	// A completed scope. Begin/End are raw monotonic CLOCK TICKS (converted to ns at
+	// display via Zenith_Profiling_Detail::GetTicksToNs); m_uZoneID/m_szLabel identify
+	// the zone (m_uZoneID resolves to a name via GetZoneName).
 	struct Event
 	{
-		Event(const std::chrono::time_point<std::chrono::high_resolution_clock>& xBegin, const std::chrono::time_point<std::chrono::high_resolution_clock>& xEnd, const Zenith_ProfileIndex eIndex, const u_int uDepth, const char* szLabel = nullptr)
-			: m_xBegin(xBegin)
-			, m_xEnd(xEnd)
-			, m_eIndex(eIndex)
+		Event() = default;
+		Event(const u_int64 uBeginTicks, const u_int64 uEndTicks, const Zenith_ProfileZoneID uZoneID, const u_int uDepth, const char* szLabel = nullptr)
+			: m_uBeginTicks(uBeginTicks)
+			, m_uEndTicks(uEndTicks)
+			, m_uZoneID(uZoneID)
 			, m_uDepth(uDepth)
 			, m_szLabel(szLabel)
 		{
 		}
-		std::chrono::time_point<std::chrono::high_resolution_clock> m_xBegin;
-		std::chrono::time_point<std::chrono::high_resolution_clock> m_xEnd;
-		Zenith_ProfileIndex m_eIndex;
-		u_int m_uDepth;
-		const char* m_szLabel;
+		u_int64 m_uBeginTicks = 0;
+		u_int64 m_uEndTicks = 0;
+		Zenith_ProfileZoneID m_uZoneID = ZENITH_PROFILE_ZONE_NULL;
+		u_int m_uDepth = 0;
+		const char* m_szLabel = nullptr;
+	};
+
+	static constexpr u_int uMAX_PROFILE_THREADS = 64;   // > main + 16 workers + FileWatcher + misc
+	static constexpr u_int uRING_CAPACITY       = 8 * 1024;
+	static constexpr u_int uMAX_PROFILE_DEPTH   = 64;
+	static constexpr u_int uFRAME_HISTORY       = 256;
+
+	// One per producing thread. Producer = the owning thread (writes the ring with
+	// one release-store per completed scope, NO lock). Consumer = the main thread
+	// (drains via DrainPending). m_axStack is producer-private; the cursors are the
+	// SPSC handshake.
+	struct ThreadBuffer
+	{
+		struct InFlight
+		{
+			Zenith_ProfileZoneID m_uZoneID;
+			const char* m_szLabel;
+			u_int64 m_uStartTicks;
+		};
+		InFlight  m_axStack[uMAX_PROFILE_DEPTH];
+		u_int     m_uDepth = 0;
+		u_int     m_uSuppressedDepth = 0;            // release-safe nesting-overflow balance
+
+		Event                m_axEvents[uRING_CAPACITY];
+		std::atomic<u_int64> m_uWriteCursor{ 0 };    // producer publishes (release)
+		std::atomic<u_int64> m_uReadCursor{ 0 };     // consumer publishes (release)
+		u_int64              m_uWriteLocal = 0;       // producer-private copy of the write cursor
+		std::atomic<u_int64> m_uDroppedEvents{ 0 };   // producer counts, consumer reports
+		std::atomic<u_int64> m_uUnmatchedEnds{ 0 };   // producer counts, consumer reports
+		u_int                m_uThreadID = ~0u;
+		bool                 m_bDropWarned = false;    // consumer-owned (main thread only)
+		bool                 m_bUnmatchedWarned = false;
+	};
+
+	// Per-thread event lists for one displayed frame, keyed by thread id. Reused
+	// across frames (entries persist; inner vectors are Clear()ed — capacity kept —
+	// so steady state never reallocates). Handed off by pointer swap, never copied.
+	struct Snapshot
+	{
+		Zenith_HashMap<u_int, Zenith_Vector<Event>> m_xThreadEvents;
+		u_int64 m_uBeginTicks = 0;
+		u_int64 m_uEndTicks = 0;
 	};
 
 	void Initialise(Zenith_Multithreading& xThreading);
+	void Shutdown();
 
 	void RegisterThread();
+	void UnregisterThread();
 
 	void BeginFrame();
 	void EndFrame();
+
+	// String-zone API. RegisterZone interns a name (content-deduped) into a fixed,
+	// reader-safe descriptor table and returns its dense id; Begin/EndProfileZone are
+	// the hot path. GetZoneName resolves an id back to its name for display.
+	Zenith_ProfileZoneID RegisterZone(const char* szStaticName);
+	void BeginProfileZone(const Zenith_ProfileZoneID uZoneID, const char* szLabel = nullptr);
+	void EndProfileZone(const Zenith_ProfileZoneID uZoneID);
+	const char* GetZoneName(const Zenith_ProfileZoneID uZoneID) const;
+
+	// Zone id of the innermost in-flight scope on the calling thread (tests/debug).
+	Zenith_ProfileZoneID GetCurrentZoneID();
+
+	// The most recently published (previous) frame, for tools/tests. Only completed
+	// frames are exposed — the live frame is still accumulating.
+	const Snapshot& GetDisplaySnapshot() const { return *m_pxDisplay; }
+
+	void ClearEvents();
+	void WriteTextReport(FILE* pFile);
+
+	// ---- GPU per-pass timing channel ---------------------------------------
+	// Populated by the render backend's deferred timestamp readback: one entry per
+	// Flux_RenderGraph pass that ran, in execution order, with its GPU milliseconds.
+	// Capture is main-thread only (BeginGPUCapture -> AddGPUPass* -> EndGPUCapture),
+	// so the list is consumed (report / viz) on the same thread with no locking. A
+	// frame with no readback leaves the previous capture intact (no flicker to empty).
+	struct GPUPass
+	{
+		const char* m_szName = nullptr;     // static-lifetime pass DebugName()
+		double      m_fMilliseconds = 0.0;
+		u_int       m_uExecIndex = 0;       // Flux_RenderGraph execution-order index
+	};
+	void BeginGPUCapture();
+	void AddGPUPass(const char* szName, double fMilliseconds, u_int uExecIndex);
+	void EndGPUCapture();
+	const Zenith_Vector<GPUPass>& GetGPUPasses() const { return m_xGPUPasses; }
+	double GetGPUTotalMs() const { return m_fGPUTotalMs; }
+
 	#ifdef ZENITH_TOOLS
 	struct TimelineViewState
 	{
@@ -173,55 +211,134 @@ public:
 	void RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID);
 	#endif
 
-	void BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel = nullptr);
-	void EndProfile(const Zenith_ProfileIndex eIndex);
-
-	const Zenith_ProfileIndex GetCurrentIndex();
-
-	const Zenith_HashMap<u_int, Zenith_Vector<Event>>& GetEvents();
-
-	void ClearEvents();
-	void WriteTextReport(FILE* pFile);
-
-	// RAII begin/end. Routes through the _Detail:: bridge because g_xEngine
-	// is not reachable from this header.
-	class Scope
+	// RAII begin/end for a dense zone id (used by the ZENITH_PROFILE_SCOPE macro).
+	// Routes through the _Detail:: bridge because g_xEngine is not reachable from this
+	// header. Optional runtime label for dynamic scopes.
+	class ScopeZone
 	{
 	public:
-		Scope() = delete;
-		Scope(Zenith_ProfileIndex eIndex)
-			: m_eIndex(eIndex)
+		ScopeZone() = delete;
+		ScopeZone(Zenith_ProfileZoneID uZoneID, const char* szLabel = nullptr)
+			: m_uZoneID(uZoneID)
 		{
-			Zenith_Profiling_Detail::BeginProfile(eIndex, nullptr);
+#if ZENITH_PROFILING_ENABLED
+			Zenith_Profiling_Detail::BeginProfileZone(uZoneID, szLabel);
+#else
+			(void)szLabel;
+#endif
 		}
-		~Scope()
+		~ScopeZone()
 		{
-			Zenith_Profiling_Detail::EndProfile(m_eIndex);
+#if ZENITH_PROFILING_ENABLED
+			Zenith_Profiling_Detail::EndProfileZone(m_uZoneID);
+#endif
 		}
 	private:
-		Zenith_ProfileIndex m_eIndex;
+		Zenith_ProfileZoneID m_uZoneID;
 	};
 
-	// Public because the .cpp's static free-function helpers reach these
-	// through g_xEngine.Profiling(). The per-thread profile stack lives as a
-	// thread_local in the .cpp — per-OS-thread, not per-engine.
-	Zenith_Multithreading*                          m_pxThreading = nullptr; // Injected at Initialise().
+	// Injected at Initialise(). Used only on cold paths (the hot path reaches the
+	// per-thread ring via the tl_pxBuffer thread_local in the .cpp).
+	Zenith_Multithreading* m_pxThreading = nullptr;
 
-	Zenith_HashMap<u_int, Zenith_Vector<Event>>     m_xEvents;
-	Zenith_HashMap<u_int, Zenith_Vector<Event>>     m_xPreviousFrameEvents;
-	Zenith_Mutex_NoProfiling                        m_xEventsMutex;
-	std::chrono::time_point<std::chrono::high_resolution_clock> m_xFrameStart;
-	std::chrono::time_point<std::chrono::high_resolution_clock> m_xFrameEnd;
-	std::chrono::time_point<std::chrono::high_resolution_clock> m_xPreviousFrameStart;
-	std::chrono::time_point<std::chrono::high_resolution_clock> m_xPreviousFrameEnd;
+	// Thread-buffer table: fixed capacity, published with release at RegisterThread,
+	// read with acquire at drain. Never reallocates, so the consumer can iterate it
+	// concurrently with a late registration with no data race.
+	std::atomic<ThreadBuffer*> m_apxThreadBuffers[uMAX_PROFILE_THREADS]{};
 
-	// Latched from dbg_bPauseRequested at frame boundaries (see EndFrame) so
-	// the recorded final frame is internally consistent.
-	bool m_bPauseEffective = false;
+	// Four heap snapshots, swapped/copied by pointer — see Zenith_Profiling.cpp §B.
+	Snapshot* m_pxAccumulator = nullptr;   // the frame currently being built
+	Snapshot* m_pxDisplay     = nullptr;   // the previous (published) frame
+	Snapshot* m_pxWorst       = nullptr;   // worst frame captured
+	Snapshot* m_pxPinned      = nullptr;   // user-pinned frame (Phase 5)
+
+	// Rolling history of the last uFRAME_HISTORY wall-clock frame durations (ms).
+	float  m_afFrameHistoryMs[uFRAME_HISTORY]{};
+	u_int  m_uFrameHistoryHead = 0;
+	u_int  m_uFrameHistoryCount = 0;
+	float  m_fWorstFrameMs = 0.0f;
+
+	// GPU per-pass timings for the last read-back frame (see the GPU channel API).
+	// m_xGPUPasses is published by EndGPUCapture; m_fGPUBuildingTotalMs accumulates
+	// during a capture and is committed to m_fGPUTotalMs at EndGPUCapture.
+	Zenith_Vector<GPUPass> m_xGPUPasses;
+	double m_fGPUTotalMs = 0.0;
+	double m_fGPUBuildingTotalMs = 0.0;
+
+	// Rolling history of total GPU ms per read-back frame (mirrors the CPU frame
+	// history); pushed in EndGPUCapture, plotted in the GPU viz tab.
+	float  m_afGPUHistoryMs[uFRAME_HISTORY]{};
+	u_int  m_uGPUHistoryHead = 0;
+	u_int  m_uGPUHistoryCount = 0;
+	float  m_fWorstGPUMs = 0.0f;
+
+	// Zone descriptor table: fixed capacity (never reallocates), published count read
+	// with acquire so the UI can iterate lock-free while a worker appends a new zone.
+	// Names are copied into m_acNameArena (owned), so any caller string is lifetime-safe.
+	static constexpr u_int uMAX_ZONES   = 4096;
+	static constexpr u_int uARENA_BYTES = 256 * 1024;
+	Zenith_ProfileZoneDesc m_axZoneDescs[uMAX_ZONES];
+	std::atomic<u_int>     m_uZoneCount{ 0 };
+	char                   m_acNameArena[uARENA_BYTES]{};
+	u_int                  m_uArenaUsed = 0;   // guarded by m_xRegistrationMutex (cold)
+
+	// The frame-root zone ("Total Frame"), resolved once at Initialise so BeginFrame
+	// needs no per-frame registration.
+	Zenith_ProfileZoneID m_uTotalFrameZone = ZENITH_PROFILE_ZONE_NULL;
+
+	// Main-thread id (captured at Initialise) so the timeline can label its lane "Main".
+	u_int m_uMainThreadID = ~0u;
+
+	// Registration (threads + zones) is the only structural mutation; the drain/hot
+	// paths are lock-free.
+	Zenith_Mutex_NoProfiling m_xRegistrationMutex;
+
+	bool m_bInitialised = false;
 };
 
-// Uses the bridge forwarders so callers do not need Zenith_Engine.h.
-#define ZENITH_PROFILING_FUNCTION_WRAPPER(x, eProfile, ...) \
-	Zenith_Profiling_Detail::BeginProfile(eProfile, nullptr); \
+// Uses the bridge forwarders so callers do not need Zenith_Engine.h. When profiling
+// is compiled out the wrapper still invokes the wrapped call (args evaluated, fn run)
+// but adds no begin/end — zero overhead.
+#if ZENITH_PROFILING_ENABLED
+#define ZENITH_PROFILING_FUNCTION_WRAPPER(x, uZone, ...) \
+	Zenith_Profiling_Detail::BeginProfileZone(uZone, nullptr); \
 	x(__VA_ARGS__); \
-	Zenith_Profiling_Detail::EndProfile(eProfile);
+	Zenith_Profiling_Detail::EndProfileZone(uZone);
+#else
+#define ZENITH_PROFILING_FUNCTION_WRAPPER(x, uZone, ...) x(__VA_ARGS__)
+#endif
+
+// String-literal profiling, usable ANYWHERE without editing a central list. The
+// static-local registers the zone exactly once (C++11 thread-safe static init); the
+// __LINE__ token-paste makes the locals unique per use site. The hot path then stores
+// only the cached dense id.
+#define ZENITH_PP_CAT_(a, b) a##b
+#define ZENITH_PP_CAT(a, b)  ZENITH_PP_CAT_(a, b)
+
+#if ZENITH_PROFILING_ENABLED
+	// Scoped zone: ZENITH_PROFILE_SCOPE("My Zone");
+	#define ZENITH_PROFILE_SCOPE(szName) \
+		static const Zenith_ProfileZoneID ZENITH_PP_CAT(znProfZone_, __LINE__) = \
+			Zenith_Profiling_Detail::RegisterZone(szName); \
+		Zenith_Profiling::ScopeZone ZENITH_PP_CAT(znProfScope_, __LINE__)( \
+			ZENITH_PP_CAT(znProfZone_, __LINE__))
+
+	// Scoped zone with a runtime label under a static category. COLD: the category id
+	// is cached (static-local) but the label is passed through to the timeline as-is;
+	// for per-frame hot labels (e.g. render passes) cache the id on the object instead.
+	#define ZENITH_PROFILE_SCOPE_DYNAMIC(szCategory, szLabel) \
+		static const Zenith_ProfileZoneID ZENITH_PP_CAT(znProfZone_, __LINE__) = \
+			Zenith_Profiling_Detail::RegisterZone(szCategory); \
+		Zenith_Profiling::ScopeZone ZENITH_PP_CAT(znProfScope_, __LINE__)( \
+			ZENITH_PP_CAT(znProfZone_, __LINE__), (szLabel))
+
+	// Value form: returns a cached dense id, for APIs that take an id by value (tasks).
+	#define ZENITH_PROFILE_ZONE(szName) \
+		([]() -> Zenith_ProfileZoneID { \
+			static const Zenith_ProfileZoneID s_uZoneId = Zenith_Profiling_Detail::RegisterZone(szName); \
+			return s_uZoneId; }())
+#else
+	#define ZENITH_PROFILE_SCOPE(szName)                 ((void)0)
+	#define ZENITH_PROFILE_SCOPE_DYNAMIC(szCat, szLabel) ((void)0)
+	#define ZENITH_PROFILE_ZONE(szName)                  (ZENITH_PROFILE_ZONE_NULL)
+#endif

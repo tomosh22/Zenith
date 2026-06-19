@@ -674,7 +674,7 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const Zenith_Image& 
 	xChunkData.strName = strName;
 
 	u_int uNumInvocations = std::min(static_cast<u_int>(64), uTotalChunks);
-	Zenith_DataParallelTask xChunkTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, ExportChunkBatch, &xChunkData, uNumInvocations, true);
+	Zenith_DataParallelTask xChunkTask(ZENITH_PROFILE_ZONE("Flux Terrain"), ExportChunkBatch, &xChunkData, uNumInvocations, true);
 	g_xEngine.Tasks().SubmitDataParallelTask(&xChunkTask);
 	xChunkTask.WaitUntilComplete();
 }

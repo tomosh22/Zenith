@@ -391,7 +391,7 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 
 bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
-	m_pxProfiling->BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
+	m_pxProfiling->BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	//#TO_TODO: -1 here to shut up validation layer
@@ -421,7 +421,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 		Initialise();
 		m_pxFluxRenderer->OnResChange();
 	}
-	m_pxProfiling->EndProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
+	m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
 	return true;
 }
 

@@ -158,6 +158,14 @@ public:
 #ifdef ZENITH_FLUX_PROFILING
 	void BeginDebugMarker(const char* szName);
 	void EndDebugMarker();
+	// GPU per-pass timestamp brackets. BeginGPUTimer claims a query slot from the
+	// active frame and writes the start timestamp, returning the timer index;
+	// EndGPUTimer writes the end timestamp for that index. UINT32_MAX means GPU
+	// timestamps are unsupported or the per-frame budget is exhausted (untimed).
+	// uExecutionIndex (the pass's topological position) is stored with the timer so
+	// the readback can order passes by execution order, not record-race order.
+	u_int BeginGPUTimer(const char* szName, u_int uExecutionIndex);
+	void  EndGPUTimer(u_int uTimerIdx);
 #endif
 
 	vk::CommandBuffer m_xCurrentCmdBuffer;

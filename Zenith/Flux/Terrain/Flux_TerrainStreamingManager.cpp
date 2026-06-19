@@ -52,7 +52,7 @@ void Flux_TerrainBufferAllocator::Reset()
 
 uint32_t Flux_TerrainBufferAllocator::Allocate(uint32_t uSize)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_ALLOCATE);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Flux Terrain Streaming Allocate"));
 	if (uSize == 0 || uSize > m_uUnusedSpace)
 		return UINT32_MAX;
 
@@ -645,7 +645,7 @@ bool Flux_TerrainStreamingManagerImpl::TryAllocateStreamingSpace(Flux_TerrainStr
 
 Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_STREAM_IN_LOD);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Flux Terrain Streaming Stream In LOD"));
 
 	// Static method (no `this`): recover the singletons once here — these are
 	// the legitimate single re-entry points for a method that can't hold the
@@ -807,7 +807,7 @@ void Flux_TerrainStreamingManagerImpl::EvictLOD(Flux_TerrainStreamingState& xSta
 
 bool Flux_TerrainStreamingManagerImpl::EvictToMakeSpace(Flux_TerrainStreamingState& xState, uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded, const Zenith_Maths::Vector3& xCameraPos)
 {
-	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_EVICT);
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Flux Terrain Streaming Evict"));
 
 	// Build list of eviction candidates (resident HIGH LODs that are far from camera)
 	struct EvictionCandidate

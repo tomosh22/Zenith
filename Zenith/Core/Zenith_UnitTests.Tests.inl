@@ -131,6 +131,7 @@ void Zenith_UnitTests::TestMemoryManagement(){
 	delete[] piTest;
 }
 
+#if ZENITH_PROFILING_ENABLED
 struct TestData
 {
 	bool Validate() { return m_uIn == m_uOut; }
@@ -141,27 +142,34 @@ static void Test(void* pData)
 	TestData& xTestData = *static_cast<TestData*>(pData);
 	xTestData.m_uOut = xTestData.m_uIn;
 }
+#endif
 
 ZENITH_TEST(Core, Profiling) { Zenith_UnitTests::TestProfiling(); }
 
 void Zenith_UnitTests::TestProfiling(){
-	constexpr Zenith_ProfileIndex eIndex0 = ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES;
-	constexpr Zenith_ProfileIndex eIndex1 = ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES;
+#if ZENITH_PROFILING_ENABLED
+	const Zenith_ProfileZoneID uZoneStatic = g_xEngine.Profiling().RegisterZone("Flux Static Meshes");
+	const Zenith_ProfileZoneID uZoneAnim   = g_xEngine.Profiling().RegisterZone("Flux Animated Meshes");
 
-	g_xEngine.Profiling().BeginFrame();
-	
-	g_xEngine.Profiling().BeginProfile(eIndex0);
-	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
-	g_xEngine.Profiling().BeginProfile(eIndex1);
-	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentIndex(), eIndex1, "Profiling index wasn't set correctly");
-	g_xEngine.Profiling().EndProfile(eIndex1);
-	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
-	g_xEngine.Profiling().EndProfile(eIndex0);
+	// Lock-free SPSC model: events are only visible after the main thread DRAINS the
+	// per-thread rings (at EndFrame, into the display snapshot). The rings may still
+	// hold un-drained boot-time events, so flush them first; then this frame's drain
+	// sees only the events recorded below.
+	g_xEngine.Profiling().ClearEvents();
+	g_xEngine.Profiling().BeginFrame();   // opens the frame-root zone (depth 0)
+
+	g_xEngine.Profiling().BeginProfileZone(uZoneStatic);   // depth 1
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentZoneID(), uZoneStatic, "Profiling zone wasn't set correctly");
+	g_xEngine.Profiling().BeginProfileZone(uZoneAnim);     // depth 2
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentZoneID(), uZoneAnim, "Profiling zone wasn't set correctly");
+	g_xEngine.Profiling().EndProfileZone(uZoneAnim);       // publishes ANIMATED first
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().GetCurrentZoneID(), uZoneStatic, "Profiling zone wasn't set correctly");
+	g_xEngine.Profiling().EndProfileZone(uZoneStatic);     // publishes STATIC second
 
 	TestData xTest0 = { 0, ~0u }, xTest1 = { 1, ~0u }, xTest2 = { 2, ~0u };
-	Zenith_Task* pxTask0 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Test, &xTest0);
-	Zenith_Task* pxTask1 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Test, &xTest1);
-	Zenith_Task* pxTask2 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Test, &xTest2);
+	Zenith_Task* pxTask0 = new Zenith_Task(ZENITH_PROFILE_ZONE("Flux Shadows"), Test, &xTest0);
+	Zenith_Task* pxTask1 = new Zenith_Task(ZENITH_PROFILE_ZONE("Flux Deferred Shading"), Test, &xTest1);
+	Zenith_Task* pxTask2 = new Zenith_Task(ZENITH_PROFILE_ZONE("Flux Skybox"), Test, &xTest2);
 	g_xEngine.Tasks().SubmitTask(pxTask0);
 	g_xEngine.Tasks().SubmitTask(pxTask1);
 	g_xEngine.Tasks().SubmitTask(pxTask2);
@@ -173,21 +181,165 @@ void Zenith_UnitTests::TestProfiling(){
 	ZENITH_ASSERT_TRUE(xTest1.Validate(), "");
 	ZENITH_ASSERT_TRUE(xTest2.Validate(), "");
 
-	const Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = g_xEngine.Profiling().GetEvents();
-	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.Get(g_xEngine.Threading().GetCurrentThreadID());
-	(void)xEvents.Get(pxTask0->GetCompletedThreadID());
-	(void)xEvents.Get(pxTask1->GetCompletedThreadID());
-	(void)xEvents.Get(pxTask2->GetCompletedThreadID());
-
-	ZENITH_ASSERT_EQ(xEventsMain.GetSize(), 8, "Expected 8 events, have %u", xEvents.GetSize());
-	ZENITH_ASSERT_EQ(xEventsMain.Get(0).m_eIndex, eIndex1, "Wrong profile index");
-	ZENITH_ASSERT_EQ(xEventsMain.Get(1).m_eIndex, eIndex0, "Wrong profile index");
+	const u_int uTask0Thread = pxTask0->GetCompletedThreadID();
+	const u_int uTask1Thread = pxTask1->GetCompletedThreadID();
+	const u_int uTask2Thread = pxTask2->GetCompletedThreadID();
 
 	delete pxTask0;
 	delete pxTask1;
 	delete pxTask2;
 
+	// Publish this frame: closes TOTAL_FRAME and drains every ring into the display
+	// snapshot.
 	g_xEngine.Profiling().EndFrame();
+
+	const Zenith_Profiling::Snapshot& xSnapshot = g_xEngine.Profiling().GetDisplaySnapshot();
+
+	// Main-thread events are published in END order: ANIMATED ended before STATIC.
+	const Zenith_Vector<Zenith_Profiling::Event>* pxMain = xSnapshot.m_xThreadEvents.TryGet(g_xEngine.Threading().GetCurrentThreadID());
+	ZENITH_ASSERT_TRUE(pxMain != nullptr, "Main thread has no profiling events");
+	ZENITH_ASSERT_TRUE(pxMain->GetSize() >= 2, "Expected at least 2 main-thread events, have %u", pxMain->GetSize());
+	// Events publish in END order: ANIMATED ended before STATIC.
+	ZENITH_ASSERT_EQ(pxMain->Get(0).m_uZoneID, uZoneAnim, "Wrong zone id (expected ANIMATED first)");
+	ZENITH_ASSERT_EQ(pxMain->Get(1).m_uZoneID, uZoneStatic, "Wrong zone id (expected STATIC second)");
+
+	// Each task ran a profiled scope on the worker thread that completed it, so that
+	// thread must appear in the cross-thread snapshot.
+	ZENITH_ASSERT_TRUE(xSnapshot.m_xThreadEvents.TryGet(uTask0Thread) != nullptr, "Task 0 worker thread missing from snapshot");
+	ZENITH_ASSERT_TRUE(xSnapshot.m_xThreadEvents.TryGet(uTask1Thread) != nullptr, "Task 1 worker thread missing from snapshot");
+	ZENITH_ASSERT_TRUE(xSnapshot.m_xThreadEvents.TryGet(uTask2Thread) != nullptr, "Task 2 worker thread missing from snapshot");
+
+	// String-zone registry: content dedup + owned (lifetime-safe) names.
+	const Zenith_ProfileZoneID uZoneA  = g_xEngine.Profiling().RegisterZone("UnitTest Zone Alpha");
+	const Zenith_ProfileZoneID uZoneA2 = g_xEngine.Profiling().RegisterZone("UnitTest Zone Alpha");
+	ZENITH_ASSERT_EQ(uZoneA, uZoneA2, "RegisterZone must dedup identical names to one id");
+	ZENITH_ASSERT_TRUE(uZoneA != ZENITH_PROFILE_ZONE_NULL && uZoneA != ZENITH_PROFILE_ZONE_OVERFLOW, "RegisterZone returned a sentinel id");
+	ZENITH_ASSERT_TRUE(strcmp(g_xEngine.Profiling().GetZoneName(uZoneA), "UnitTest Zone Alpha") == 0, "GetZoneName returned the wrong name");
+	ZENITH_ASSERT_TRUE(strcmp(g_xEngine.Profiling().GetZoneName(uZoneStatic), "Flux Static Meshes") == 0, "Resolved zone name mismatch");
+#endif
+}
+
+// Interned zone names are copied into the profiler's arena, so they survive the source
+// string being destroyed/overwritten; identical content dedups to one id.
+ZENITH_TEST(Core, ProfilingDynamicZone) {
+#if ZENITH_PROFILING_ENABLED
+	Zenith_ProfileZoneID uId;
+	{
+		char acTmp[32];
+		snprintf(acTmp, sizeof(acTmp), "Ephemeral Zone %d", 7);
+		uId = g_xEngine.Profiling().RegisterZone(acTmp);
+		memset(acTmp, 'X', sizeof(acTmp));   // clobber the source to prove the name was copied
+	}
+	ZENITH_ASSERT_TRUE(strcmp(g_xEngine.Profiling().GetZoneName(uId), "Ephemeral Zone 7") == 0, "Interned zone name must survive its source string");
+	char acTmp2[32];
+	snprintf(acTmp2, sizeof(acTmp2), "Ephemeral Zone %d", 7);
+	ZENITH_ASSERT_EQ(g_xEngine.Profiling().RegisterZone(acTmp2), uId, "Identical content must dedup to one id");
+#endif
+}
+
+// Ring overflow: producing more than the ring capacity (with no consumer draining)
+// drops the excess and counts it, without crashing or corrupting the cursors.
+ZENITH_TEST(Core, ProfilingOverflow) {
+#if ZENITH_PROFILING_ENABLED
+	g_xEngine.Profiling().ClearEvents();   // free the ring (read cursor -> write cursor)
+	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Overflow Test Zone");
+	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	ZENITH_ASSERT_TRUE(pxBuf != nullptr, "main thread must be registered");
+	const u_int64 uDropsBefore = pxBuf->m_uDroppedEvents.load();
+	const u_int uExcess = 100;
+	for (u_int i = 0; i < Zenith_Profiling::uRING_CAPACITY + uExcess; ++i)
+	{
+		g_xEngine.Profiling().BeginProfileZone(uZ);
+		g_xEngine.Profiling().EndProfileZone(uZ);
+	}
+	ZENITH_ASSERT_TRUE(pxBuf->m_uDroppedEvents.load() - uDropsBefore >= uExcess, "ring overflow must drop the excess events");
+	g_xEngine.Profiling().ClearEvents();
+#endif
+}
+
+// Nesting deeper than uMAX_PROFILE_DEPTH is release-safe: the suppressed-depth counter
+// balances begin/end so the stack never overruns and returns to depth 0.
+ZENITH_TEST(Core, ProfilingNestingOverflow) {
+#if ZENITH_PROFILING_ENABLED
+	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Deep Zone");
+	const u_int uDepth = Zenith_Profiling::uMAX_PROFILE_DEPTH + 20;
+	for (u_int i = 0; i < uDepth; ++i) g_xEngine.Profiling().BeginProfileZone(uZ);
+	for (u_int i = 0; i < uDepth; ++i) g_xEngine.Profiling().EndProfileZone(uZ);
+	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	ZENITH_ASSERT_EQ(pxBuf->m_uDepth, 0u, "deep nesting must balance back to depth 0");
+	ZENITH_ASSERT_EQ(pxBuf->m_uSuppressedDepth, 0u, "suppressed-depth must balance back to 0");
+	g_xEngine.Profiling().ClearEvents();
+#endif
+}
+
+// An unmatched EndProfileZone (no open scope) is counted, never underflows the depth.
+ZENITH_TEST(Core, ProfilingUnmatchedEnd) {
+#if ZENITH_PROFILING_ENABLED
+	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	ZENITH_ASSERT_EQ(pxBuf->m_uDepth, 0u, "precondition: no scope open at test start");
+	const u_int64 uUnmatchedBefore = pxBuf->m_uUnmatchedEnds.load();
+	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Unmatched Zone");
+	g_xEngine.Profiling().EndProfileZone(uZ);   // nothing open
+	ZENITH_ASSERT_EQ(pxBuf->m_uUnmatchedEnds.load(), uUnmatchedBefore + 1, "unmatched end must be counted");
+	ZENITH_ASSERT_EQ(pxBuf->m_uDepth, 0u, "unmatched end must not underflow the depth");
+#endif
+}
+
+// The timebase is monotonic non-decreasing and the ticks->ns scale is positive (no
+// tight ns bound -- that would be hardware-dependent and flaky).
+ZENITH_TEST(Core, ProfilingTimebase) {
+#if ZENITH_PROFILING_ENABLED
+	const u_int64 t0 = Zenith_Profiling_Detail::GetTimestamp();
+	const u_int64 t1 = Zenith_Profiling_Detail::GetTimestamp();
+	ZENITH_ASSERT_TRUE(t1 >= t0, "GetTimestamp must be monotonic non-decreasing");
+	ZENITH_ASSERT_TRUE(Zenith_Profiling_Detail::GetTicksToNs() > 0.0, "ticks->ns scale must be positive");
+#endif
+}
+
+// A live WriteTextReport drains into the SAME frame accumulator that EndFrame publishes,
+// so it must NOT consume events from the about-to-be-published frame (R3-7).
+ZENITH_TEST(Core, ProfilingLiveReportNonDestructive) {
+#if ZENITH_PROFILING_ENABLED
+	g_xEngine.Profiling().ClearEvents();
+	g_xEngine.Profiling().BeginFrame();
+	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("LiveReport Zone");
+	g_xEngine.Profiling().BeginProfileZone(uZ);
+	g_xEngine.Profiling().EndProfileZone(uZ);
+	g_xEngine.Profiling().WriteTextReport(stdout);   // live drain into the accumulator (non-destructive)
+	g_xEngine.Profiling().EndFrame();   // publishes the accumulator (incl. the report-drained events)
+	const Zenith_Profiling::Snapshot& xSnap = g_xEngine.Profiling().GetDisplaySnapshot();
+	const Zenith_Vector<Zenith_Profiling::Event>* pxMain = xSnap.m_xThreadEvents.TryGet(g_xEngine.Threading().GetCurrentThreadID());
+	bool bFound = false;
+	if (pxMain) for (u_int i = 0; i < pxMain->GetSize(); ++i) if (pxMain->Get(i).m_uZoneID == uZ) bFound = true;
+	ZENITH_ASSERT_TRUE(bFound, "live WriteTextReport must not consume events from the published frame");
+#endif
+}
+
+// Report-based perf smoke: logs the per-zone begin/end cost and gates only the loose,
+// non-flaky invariant that a nominal load (< ring capacity) drops nothing.
+ZENITH_TEST(Core, ProfilingPerfSmoke) {
+#if ZENITH_PROFILING_ENABLED
+	g_xEngine.Profiling().ClearEvents();
+	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Perf Smoke Zone");
+	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	const u_int64 uDropsBefore = pxBuf->m_uDroppedEvents.load();
+	const u_int uN = Zenith_Profiling::uRING_CAPACITY / 2;   // nominal load, no drops expected
+	const u_int64 t0 = Zenith_Profiling_Detail::GetTimestamp();
+	for (u_int i = 0; i < uN; ++i)
+	{
+		g_xEngine.Profiling().BeginProfileZone(uZ);
+		g_xEngine.Profiling().EndProfileZone(uZ);
+	}
+	const u_int64 t1 = Zenith_Profiling_Detail::GetTimestamp();
+	const double fNsPerPair = static_cast<double>(t1 - t0) * Zenith_Profiling_Detail::GetTicksToNs() / static_cast<double>(uN);
+	Zenith_Log(LOG_CATEGORY_CORE, "Profiling perf: %.1f ns / begin+end pair (%u pairs, lock-free hot path)", fNsPerPair, uN);
+	ZENITH_ASSERT_EQ(pxBuf->m_uDroppedEvents.load(), uDropsBefore, "nominal load (< ring capacity) must not drop events");
+	g_xEngine.Profiling().ClearEvents();
+#endif
 }
 
 ZENITH_TEST(Core, Vector) { Zenith_UnitTests::TestVector(); }
@@ -9210,7 +9362,7 @@ void Zenith_UnitTests::TestDataParallelTaskCallingThreadParticipates(){
 
 	constexpr u_int uNumInvocations = 8;
 	Zenith_DataParallelTask xTask(
-		ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES,
+		ZENITH_PROFILE_ZONE("Flux Static Meshes"),
 		CallingThreadTestFunc,
 		&xData,
 		uNumInvocations,
@@ -9906,7 +10058,7 @@ void Zenith_UnitTests::TestTaskReuseAfterWait(){
 	// the second submit valid (TryMarkSubmitted succeeds again).
 	ReuseTestData xData;
 
-	Zenith_Task xTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, ReuseTaskFunc, &xData);
+	Zenith_Task xTask(ZENITH_PROFILE_ZONE("Flux Static Meshes"), ReuseTaskFunc, &xData);
 
 	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
@@ -16348,7 +16500,7 @@ void Zenith_UnitTests::TestQueueFullSurfacesError(){
 	Zenith_Task** apxTasks = new Zenith_Task*[uNUM_TASKS];
 	for (u_int u = 0; u < uNUM_TASKS; u++)
 	{
-		apxTasks[u] = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, QueueFullTaskFunc, &xData);
+		apxTasks[u] = new Zenith_Task(ZENITH_PROFILE_ZONE("Flux Static Meshes"), QueueFullTaskFunc, &xData);
 	}
 
 	// Fire them all in without draining — this is what drives the overflow.

@@ -3988,7 +3988,7 @@ private:
 		m_xHintSolverData.bComplete.store(false, std::memory_order_release);
 
 		// Dispatch solver on background thread
-		m_pxHintTask = new Zenith_Task(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH, HintSolveTask, &m_xHintSolverData);
+		m_pxHintTask = new Zenith_Task(ZENITH_PROFILE_ZONE("TilePuzzle Solver With Path"), HintSolveTask, &m_xHintSolverData);
 		g_xEngine.Tasks().SubmitTask(m_pxHintTask);
 		m_bHintSolving = true;
 		m_fHintFlashTimer = 0.f;

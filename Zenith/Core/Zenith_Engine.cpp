@@ -790,7 +790,11 @@ void Zenith_Engine::ShutdownRuntimeServices()
 	// Free the per-Engine Profiling state. Comes AFTER TaskSystem
 	// shutdown (step 9) -- worker threads may have profile scopes
 	// pending until they exit, and AFTER tearing down m_pxTasks so no
-	// stale ThreadFunc can call Profiling.
+	// stale ThreadFunc can call Profiling. Shutdown() frees the per-thread
+	// rings + snapshots: the workers have joined + unregistered, so it frees
+	// the main thread's ring and leaves any still-live producer (FileWatcher)
+	// allocated to avoid a use-after-free.
+	m_pxProfiling->Shutdown();
 	delete m_pxProfiling;
 	m_pxProfiling = nullptr;
 

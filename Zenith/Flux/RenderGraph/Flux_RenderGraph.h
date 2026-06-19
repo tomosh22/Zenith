@@ -324,7 +324,11 @@ public:
     // passing its worker command buffer. pxGraph is taken explicitly (not via
     // g_xEngine) so local/test graphs validate against the right resource set.
     // No-op if the pass has a null record callback (barrier-only passes).
-    static void RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const Flux_RenderGraph* pxGraph, Flux_CommandBuffer* pxCmdBuf);
+    // uExecutionIndex is the pass's global index in the (topologically-ordered)
+    // pending-pass list — the GPU profiler keys its per-pass timer on it so the
+    // readback can present passes in stable Flux_RenderGraph execution order
+    // regardless of which worker thread recorded the pass.
+    static void RecordPassInto(const Flux_RenderGraph_Pass* pxPass, const Flux_RenderGraph* pxGraph, Flux_CommandBuffer* pxCmdBuf, u_int uExecutionIndex);
 
     // Assert that the bound resource (identified by VRAM handle) appears in the
     // current recording pass's reads or writes with an access compatible with

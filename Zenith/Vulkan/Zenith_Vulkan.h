@@ -16,6 +16,7 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include <vector>
+#include <atomic>
 
 // VkUnwrap: extract value from vk::ResultValue<T>
 // Some Vulkan calls (e.g. createGraphicsPipeline) return ResultValue<T> on all platforms
@@ -86,6 +87,31 @@ public:
 	static constexpr u_int uSCRATCH_BUFFER_SIZE = 1 * 1024 * 1024;
 	static constexpr u_int uWORKER_PARTITION_SIZE = uSCRATCH_BUFFER_SIZE / NUM_WORKER_THREADS;
 
+#ifdef ZENITH_FLUX_PROFILING
+	// ---- GPU per-pass timestamp profiling ----------------------------------
+	// One timestamp query PAIR per recorded render-graph pass, claimed atomically
+	// during parallel recording (workers race on m_uGPUTimerCount). The pool is
+	// cmd-reset at the head of worker 0's command buffer (submitted first, so the
+	// reset precedes every pass's writes on the GPU timeline) and read back
+	// deferred — MAX_FRAMES_IN_FLIGHT frames later in BeginFrame, guarded by this
+	// slot's fence (the same "prior GPU work for this slot is done" guarantee the
+	// deferred-deletion drains rely on). Results feed the CPU profiler's GPU
+	// channel (per-pass GPU milliseconds). Disabled cleanly when the graphics
+	// queue reports timestampValidBits == 0.
+	static constexpr u_int uMAX_GPU_TIMERS = 256;            // 512 timestamp queries / frame slot
+	u_int ClaimGPUTimer(const char* szName, u_int uExecutionIndex);  // atomic; timer idx or UINT32_MAX when full
+	vk::QueryPool GetTimestampQueryPool() const { return m_xTimestampQueryPool; }
+	void CmdResetGPUTimers(Zenith_Vulkan_CommandBuffer& xCmd);  // worker-0, head of frame
+	void ReadbackGPUTimers();                                // deferred read → profiler GPU channel
+	void CreateTimestampQueryPool();                         // called from Initialise when supported
+
+	vk::QueryPool      m_xTimestampQueryPool;
+	std::atomic<u_int> m_uGPUTimerCount{ 0 };                // claims this frame (workers fetch_add)
+	u_int              m_uGPUTimerReadbackCount = 0;          // claims from this slot's last recording
+	const char*        m_aszGPUTimerNames[uMAX_GPU_TIMERS] = {};
+	u_int              m_auGPUTimerExecIndex[uMAX_GPU_TIMERS] = {};  // pass execution-order index per claimed slot
+#endif
+
 private:
 	std::vector<vk::Framebuffer> m_axPendingFramebuffers;
 	std::vector<vk::RenderPass> m_axPendingRenderPasses;
@@ -151,6 +177,15 @@ public:
 	void CreateCommandPools();
 	void CreateDefaultDescriptorPool();
 	void CreateBindlessTexturesDescriptorPool();
+
+#ifdef ZENITH_FLUX_PROFILING
+	// GPU per-pass timestamp profiling accessors. Caps are read at device
+	// creation (CreatePhysicalDevice / CreateQueueFamilies); GetCurrentFrame()
+	// lets the command recorder reach the active slot's query pool / claim slot.
+	Zenith_Vulkan_PerFrame* GetCurrentFrame() { return m_pxCurrentFrame; }
+	bool  IsGPUTimestampsSupported() const { return m_bGPUTimestampsSupported; }
+	float GetTimestampPeriod() const { return m_fTimestampPeriod; }
+#endif
 
 #ifdef ZENITH_TOOLS
 	void InitialiseImGui();
@@ -271,6 +306,15 @@ public:
 	// Per-frame ring state (fences, semaphores, command-pool slots).
 	Zenith_Vulkan_PerFrame        m_axPerFrame[MAX_FRAMES_IN_FLIGHT];
 	Zenith_Vulkan_PerFrame*       m_pxCurrentFrame = nullptr;
+
+#ifdef ZENITH_FLUX_PROFILING
+	// GPU timestamp capabilities (read once at device creation). validBits == 0
+	// means the graphics queue can't write timestamps, so GPU profiling stays a
+	// clean no-op (no pool created, no writes, no readback).
+	float m_fTimestampPeriod = 0.0f;        // ns per tick (limits.timestampPeriod)
+	u_int m_uTimestampValidBits = 0;        // graphics-queue timestampValidBits
+	bool  m_bGPUTimestampsSupported = false;
+#endif
 
 	// Transfer command buffer used for staging-buffer flushes.
 	Zenith_Vulkan_CommandBuffer*  m_pxMemoryUpdateCmdBuf = nullptr;

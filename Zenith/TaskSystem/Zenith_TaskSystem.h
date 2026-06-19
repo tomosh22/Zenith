@@ -17,8 +17,8 @@ class Zenith_Task
 {
 public:
 	Zenith_Task() = delete;
-	Zenith_Task(Zenith_ProfileIndex eProfileIndex, Zenith_TaskFunction pfnFunc, void* pData)
-		: m_eProfileIndex(eProfileIndex)
+	Zenith_Task(Zenith_ProfileZoneID uProfileZoneID, Zenith_TaskFunction pfnFunc, void* pData)
+		: m_uProfileZoneID(uProfileZoneID)
 		, m_pfnFunc(pfnFunc)
 		, m_xSemaphore(0, 1)
 		, m_pData(pData)
@@ -32,9 +32,13 @@ public:
 	virtual void DoTask()
 	{
 		Zenith_Assert(m_pfnFunc != nullptr, "DoTask: Task function pointer is null");
-		Zenith_Profiling_Detail::BeginProfile(m_eProfileIndex, nullptr);
+#if ZENITH_PROFILING_ENABLED
+		Zenith_Profiling_Detail::BeginProfileZone(m_uProfileZoneID, nullptr);
 		m_pfnFunc(m_pData);
-		Zenith_Profiling_Detail::EndProfile(m_eProfileIndex);
+		Zenith_Profiling_Detail::EndProfileZone(m_uProfileZoneID);
+#else
+		m_pfnFunc(m_pData);
+#endif
 		m_uCompletedThreadID = Zenith_Multithreading_Detail::GetCurrentThreadID();
 		m_xSemaphore.Signal();
 	}
@@ -42,15 +46,15 @@ public:
 	void WaitUntilComplete()
 	{
 		if (!m_bSubmitted.load(std::memory_order_acquire)) return;
-		Zenith_Profiling_Detail::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM, nullptr);
+		Zenith_Profiling_Detail::BeginProfileZone(ZENITH_PROFILE_ZONE("Wait for Task System"), nullptr);
 		m_xSemaphore.Wait();
-		Zenith_Profiling_Detail::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
+		Zenith_Profiling_Detail::EndProfileZone(ZENITH_PROFILE_ZONE("Wait for Task System"));
 		MarkRecycled();
 	}
 
-	const Zenith_ProfileIndex GetProfileIndex() const
+	const Zenith_ProfileZoneID GetProfileZoneID() const
 	{
-		return m_eProfileIndex;
+		return m_uProfileZoneID;
 	}
 
 	const u_int GetCompletedThreadID() const
@@ -60,8 +64,8 @@ public:
 
 protected:
 	// For derived tasks that dispatch through their own function pointer.
-	Zenith_Task(Zenith_ProfileIndex eProfileIndex, void* pData)
-		: m_eProfileIndex(eProfileIndex)
+	Zenith_Task(Zenith_ProfileZoneID uProfileZoneID, void* pData)
+		: m_uProfileZoneID(uProfileZoneID)
 		, m_pfnFunc(nullptr)
 		, m_xSemaphore(0, 1)
 		, m_pData(pData)
@@ -70,7 +74,7 @@ protected:
 	{
 	}
 
-	Zenith_ProfileIndex m_eProfileIndex;
+	Zenith_ProfileZoneID m_uProfileZoneID;
 	Zenith_TaskFunction m_pfnFunc;
 	Zenith_Semaphore m_xSemaphore;
 	void* m_pData;
@@ -103,8 +107,8 @@ class Zenith_DataParallelTask : public Zenith_Task
 {
 public:
 	Zenith_DataParallelTask() = delete;
-	Zenith_DataParallelTask(Zenith_ProfileIndex eProfileIndex, Zenith_DataParallelTaskFunction pfnFunc, void* pData, u_int uNumInvocations, bool bCallingThreadParticipates = false)
-		: Zenith_Task(eProfileIndex, pData)
+	Zenith_DataParallelTask(Zenith_ProfileZoneID uProfileZoneID, Zenith_DataParallelTaskFunction pfnFunc, void* pData, u_int uNumInvocations, bool bCallingThreadParticipates = false)
+		: Zenith_Task(uProfileZoneID, pData)
 		, m_pfnInvocationFunc(pfnFunc)
 		, m_uNumInvocations(uNumInvocations)
 		, m_bCallingThreadParticipates(bCallingThreadParticipates)
@@ -119,9 +123,13 @@ public:
 	{
 		u_int uInvocationIndex = m_uInvocationCounter.fetch_add(1);
 
-		Zenith_Profiling_Detail::BeginProfile(m_eProfileIndex, nullptr);
+#if ZENITH_PROFILING_ENABLED
+		Zenith_Profiling_Detail::BeginProfileZone(m_uProfileZoneID, nullptr);
 		m_pfnInvocationFunc(m_pData, uInvocationIndex, m_uNumInvocations);
-		Zenith_Profiling_Detail::EndProfile(m_eProfileIndex);
+		Zenith_Profiling_Detail::EndProfileZone(m_uProfileZoneID);
+#else
+		m_pfnInvocationFunc(m_pData, uInvocationIndex, m_uNumInvocations);
+#endif
 
 		Zenith_Assert(uInvocationIndex < m_uNumInvocations, "We have done this task too many times");
 		u_int uCompletedCount = m_uCompletionCounter.fetch_add(1) + 1;

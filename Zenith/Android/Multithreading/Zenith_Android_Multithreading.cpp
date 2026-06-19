@@ -21,9 +21,9 @@ thread_local static u_int tl_g_uThreadID = ~0u;
 template<>
 void Zenith_Android_Mutex_T<true>::Lock()
 {
-	g_xEngine.Profiling().BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
+	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Wait for Mutex"));
 	pthread_mutex_lock(&m_xMutex);
-	g_xEngine.Profiling().EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
+	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Wait for Mutex"));
 }
 
 template<>

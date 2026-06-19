@@ -902,7 +902,7 @@ private:
 
 	void UpdateEnemyAI(float fDt)
 	{
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_AGENT_UPDATE);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Agent Update"));
 
 		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
@@ -1064,7 +1064,7 @@ private:
 	void DrawDebugVisualization()
 	{
 #ifdef ZENITH_TOOLS
-		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_DEBUG_DRAW);
+		Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Debug Draw"));
 
 		if (!Zenith_AIDebugVariables::s_bEnableAllAIDebug)
 			return;
