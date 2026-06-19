@@ -72,6 +72,8 @@ enum class FluxShaderProgram : unsigned int
 	Translucent_Forward = 60,
 	MaterialPreview_Background = 61,
 	MaterialPreview_Tonemap = 62,
+	SkyboxTransmittanceLUT = 63,
+	SkyboxSkyViewLUT = 64,
 
 	COUNT
 };

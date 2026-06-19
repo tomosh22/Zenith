@@ -36,6 +36,10 @@ struct AtmosphereConstantsLayout
 };
 [[vk::binding(1, 0)]] ConstantBuffer<AtmosphereConstantsLayout> AtmosphereConstants;
 
+// Precomputed low-res sky-view LUT (Common.Atmosphere). The full raymarch ran
+// once this frame into it; the fullscreen sky pass just samples it per pixel.
+[[vk::binding(2, 0)]] Sampler2D g_xSkyViewLUT;
+
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
@@ -84,13 +88,11 @@ GBufferOut fsMain(FullscreenVsOut input)
 	float2 xScaleHeights  = float2(AtmosphereConstants.g_xRayleighScatter.w,
 									AtmosphereConstants.g_xMieScatter.w);
 
-	float4 xScatterResult = ComputeAtmosphereScattering(
-		xCamPos, xRayDir, xSunDir, 1e10,
-		xRayleighCoeff, fMieCoeff, xScaleHeights,
-		AtmosphereConstants.g_fMieG,
-		AtmosphereConstants.g_fPlanetRadius, AtmosphereConstants.g_fAtmosphereRadius,
-		AtmosphereConstants.g_fSunIntensity,
-		AtmosphereConstants.g_uSkySamples, AtmosphereConstants.g_uLightSamples);
+	// Fast path: sample the low-res sky-view LUT (the full raymarch ran once this
+	// frame into g_xSkyViewLUT, itself sampling the transmittance LUT). Per-pixel
+	// cost is now a single texture fetch. Debug modes below still run the full
+	// solver for their visualisations. xCamPos/coeffs above feed those paths.
+	float4 xScatterResult = g_xSkyViewLUT.Sample(SkyViewDirToUv(xRayDir));
 
 	float3 xSkyColor = xScatterResult.rgb;
 	// Sun disk attenuated by view transmittance — disappears behind the

@@ -33,6 +33,11 @@ namespace AtmosphereConfig
 	constexpr u_int uTRANSMITTANCE_LUT_WIDTH = 256;
 	constexpr u_int uTRANSMITTANCE_LUT_HEIGHT = 64;
 
+	// Low-res sky-view LUT (lat-long). The per-frame raymarch runs at this
+	// resolution instead of full screen; the fullscreen sky pass samples it.
+	constexpr u_int uSKYVIEW_LUT_WIDTH = 192;
+	constexpr u_int uSKYVIEW_LUT_HEIGHT = 108;
+
 	constexpr u_int uAERIAL_VOLUME_WIDTH = 32;
 	constexpr u_int uAERIAL_VOLUME_HEIGHT = 32;
 	constexpr u_int uAERIAL_VOLUME_DEPTH = 32;
@@ -112,6 +117,13 @@ public:
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 	void SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph);
 
+	// Toggles the transmittance-LUT generation pass per frame. Called from
+	// Flux_RendererImpl::ApplySubsystemGraphSelections BEFORE Compile (like IBL):
+	// force-enables the writer on a dirty compile so the validator sees a writer
+	// for the LUT the Skybox pass reads, and re-enables it when atmosphere params
+	// that affect transmittance change.
+	void UpdateGraphPassEnables(Flux_RenderGraph& xGraph);
+
 	void SetSunIntensity(float fIntensity)              { m_fSunIntensity = fIntensity; }
 	void SetRayleighScale(float fScale)                 { m_fRayleighScale = fScale; }
 	void SetMieScale(float fScale)                      { m_fMieScale = fScale; }
@@ -140,15 +152,35 @@ public:
 	Flux_RenderAttachment      m_xTransmittanceLUT;
 	bool                       m_bLUTNeedsUpdate = true;
 
+	// Sky-view LUT. Persistent (not a graph transient): the "Skybox" pass reads
+	// it unconditionally (so no mode-change rebuild), and in cubemap/solid mode
+	// the sky-view writer is disabled in steady state while the read still needs
+	// a stably-allocated target. ~192x108 RGBA16F (~166 KB) — trivial VRAM.
+	Flux_RenderAttachment      m_xSkyViewLUT;
+
 	Flux_Pipeline              m_xCubemapPipeline;
 	Flux_Pipeline              m_xAtmospherePipeline;
 	Flux_Pipeline              m_xAerialPerspectivePipeline;
 	Flux_Pipeline              m_xSolidColourPipeline;
+	Flux_Pipeline              m_xTransmittanceLUTPipeline;
+	Flux_Pipeline              m_xSkyViewLUTPipeline;
 
 	Flux_Shader                m_xCubemapShader;
 	Flux_Shader                m_xAtmosphereShader;
 	Flux_Shader                m_xAerialPerspectiveShader;
 	Flux_Shader                m_xSolidColourShader;
+	Flux_Shader                m_xTransmittanceLUTShader;
+	Flux_Shader                m_xSkyViewLUTShader;
+
+	// Transmittance-LUT generation pass. Enabled only when the LUT needs a
+	// refresh (m_bLUTNeedsUpdate); the graph floats this handle's enable bit via
+	// UpdateGraphPassEnables. Cached scales detect the param changes that
+	// invalidate the LUT (Rayleigh/Mie scale only — NOT sun intensity / Mie-G /
+	// sky samples, which don't affect transmittance).
+	Flux_PassHandle            m_xTransmittanceLUTPassHandle = {};
+	Flux_PassHandle            m_xSkyViewLUTPassHandle       = {};
+	float                      m_fLastLUTRayleighScale      = 1.0f;
+	float                      m_fLastLUTMieScale           = 1.0f;
 
 	Flux_DynamicConstantBuffer m_xAtmosphereConstantsBuffer;
 	Flux_DynamicConstantBuffer m_xSolidColourConstantsBuffer;

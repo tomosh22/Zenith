@@ -178,6 +178,176 @@ public float4 ComputeAtmosphereScattering(float3 xRayOrigin,
 	return float4(xInscatter, fTransmittance);
 }
 
+// =====================================================================
+// Transmittance LUT (Bruneton/Hillaire-style precompute).
+//
+// The full single-scatter solver above re-integrates the sun-ray optical
+// depth (the inner ComputeOpticalDepth loop) for EVERY view sample of
+// EVERY pixel. That integral depends only on (altitude r, sun-zenith
+// cosine mu), so it can be precomputed once into a 2D LUT and sampled.
+// These helpers define the LUT parameterisation ONCE so the generator
+// (Flux_TransmittanceLUT) and every consumer agree.
+// =====================================================================
+
+// LUT parameterisation: uv.x <- sun/view-zenith cosine mu in [-1,1],
+// uv.y <- altitude fraction in [0,1]. Linear to start (a Bruneton sqrt
+// remap is a documented refinement to cut horizon error). Texel-centre
+// sampling and clamp addressing are the caller's (sampler) responsibility.
+public float2 TransmittanceLutUv(float fRadius, float fMu, float fPlanetRadius, float fAtmosphereRadius)
+{
+	float fUvY = saturate((fRadius - fPlanetRadius) / (fAtmosphereRadius - fPlanetRadius));
+	float fUvX = saturate(fMu * 0.5 + 0.5);
+	return float2(fUvX, fUvY);
+}
+
+// Transmittance from a point at radius fRadius, looking along a ray whose
+// angle to the local zenith has cosine fMu, out to the top of the
+// atmosphere. Returns float3(0) when the ray is blocked by the planet
+// (ground-occluded) so shadowed sun directions naturally contribute zero.
+public float3 TransmittanceToAtmosphereTop(float  fRadius,
+											 float  fMu,
+											 float3 xRayleighCoeff,
+											 float  fMieCoeff,
+											 float2 xScaleHeights,
+											 float  fPlanetRadius,
+											 float  fAtmosphereRadius,
+											 uint   uSamples)
+{
+	// Build a ray from (0,0,r) whose zenith cosine is fMu. Local zenith at
+	// that point is +Z, so dir.z = mu and the tangential component closes the
+	// unit vector.
+	float3 xPos = float3(0.0, 0.0, fRadius);
+	float3 xDir = float3(sqrt(max(0.0, 1.0 - fMu * fMu)), 0.0, fMu);
+
+	// Ground occlusion: a downward ray that hits the planet never reaches the
+	// atmosphere top.
+	float2 xPlanet = RaySphereIntersect(xPos, xDir, fPlanetRadius);
+	if (xPlanet.x > 0.0) return float3(0.0, 0.0, 0.0);
+
+	float2 xAtmos = RaySphereIntersect(xPos, xDir, fAtmosphereRadius);
+	float  fDist  = max(0.0, xAtmos.y);
+
+	float2 xOpticalDepth = ComputeOpticalDepth(
+		xPos, xDir, fDist, xRayleighCoeff, fMieCoeff, xScaleHeights, fPlanetRadius, uSamples);
+
+	return exp(-xRayleighCoeff * xOpticalDepth.x - fMieCoeff * xOpticalDepth.y);
+}
+
+// Sample the precomputed transmittance LUT (sun-ray transmittance to the
+// atmosphere top). Mirrors TransmittanceLutUv so writer/reader agree.
+public float3 SampleTransmittanceLut(Sampler2D xLut,
+									  float      fRadius,
+									  float      fMu,
+									  float      fPlanetRadius,
+									  float      fAtmosphereRadius)
+{
+	float2 xUv = TransmittanceLutUv(fRadius, fMu, fPlanetRadius, fAtmosphereRadius);
+	return xLut.Sample(xUv).rgb;
+}
+
+// LUT-accelerated single-scatter solver. Identical to
+// ComputeAtmosphereScattering except the inner sun-ray optical-depth
+// integral (and its planet-shadow test) is replaced by a single
+// transmittance-LUT fetch per view sample — O(uSkySamples) instead of
+// O(uSkySamples * uLightSamples) per pixel.
+public float4 ComputeAtmosphereScatteringLut(float3    xRayOrigin,
+											   float3    xRayDir,
+											   float3    xSunDir,
+											   float     fMaxDistance,
+											   float3    xRayleighCoeff,
+											   float     fMieCoeff,
+											   float2    xScaleHeights,
+											   float     fMieG,
+											   float     fPlanetRadius,
+											   float     fAtmosphereRadius,
+											   float     fSunIntensity,
+											   uint      uSkySamples,
+											   Sampler2D xTransmittanceLut)
+{
+	float2 xAtmosIntersect = RaySphereIntersect(xRayOrigin, xRayDir, fAtmosphereRadius);
+	if (xAtmosIntersect.y < 0.0) return float4(0.0, 0.0, 0.0, 1.0);
+
+	float fRayStart = max(0.0, xAtmosIntersect.x);
+	float fRayEnd   = min(fMaxDistance, xAtmosIntersect.y);
+
+	float2 xPlanetIntersect = RaySphereIntersect(xRayOrigin, xRayDir, fPlanetRadius);
+	if (xPlanetIntersect.x > 0.0) fRayEnd = min(fRayEnd, xPlanetIntersect.x);
+
+	if (fRayEnd <= fRayStart) return float4(0.0, 0.0, 0.0, 1.0);
+
+	float fStepSize = (fRayEnd - fRayStart) / (float)uSkySamples;
+	float fCosTheta = dot(xRayDir, xSunDir);
+
+	float fRayleighPhase = (3.0 / (16.0 * PI)) * (1.0 + fCosTheta * fCosTheta);
+	float fMiePhase      = MiePhase(fCosTheta, fMieG);
+
+	float3 xInscatterR       = float3(0.0, 0.0, 0.0);
+	float3 xInscatterM       = float3(0.0, 0.0, 0.0);
+	float2 xOpticalDepthView = float2(0.0, 0.0);
+
+	for (uint i = 0; i < uSkySamples; i++)
+	{
+		float  fT         = fRayStart + ((float)i + 0.5) * fStepSize;
+		float3 xSamplePos = xRayOrigin + xRayDir * fT;
+		float  fSampleR   = length(xSamplePos);
+		float  fHeight    = fSampleR - fPlanetRadius;
+		float2 xDensity   = GetDensity(fHeight, xScaleHeights);
+
+		xOpticalDepthView += xDensity * fStepSize;
+
+		// Sun-ray transmittance to the atmosphere top, from the LUT. The LUT
+		// returns ~0 where the sun is below the sample's horizon, so it also
+		// encodes the planet shadow the inner loop used to test explicitly.
+		float  fMuSun = dot(xSamplePos / fSampleR, xSunDir);
+		float3 xTransLight = SampleTransmittanceLut(xTransmittanceLut, fSampleR, fMuSun, fPlanetRadius, fAtmosphereRadius);
+		float3 xTransView  = exp(-xRayleighCoeff * xOpticalDepthView.x - fMieCoeff * xOpticalDepthView.y);
+		float3 xTransmittance = xTransView * xTransLight;
+
+		xInscatterR += xDensity.x * xTransmittance * fStepSize;
+		xInscatterM += xDensity.y * xTransmittance * fStepSize;
+	}
+
+	float3 xRayleighScatter = xInscatterR * xRayleighCoeff * fRayleighPhase;
+	float3 xMieScatter      = xInscatterM * fMieCoeff      * fMiePhase;
+	float3 xInscatter       = (xRayleighScatter + xMieScatter) * fSunIntensity;
+
+	float3 xViewTransmittance = exp(
+		-xRayleighCoeff * xOpticalDepthView.x
+		- fMieCoeff      * xOpticalDepthView.y);
+	float fTransmittance = dot(xViewTransmittance, float3(0.333, 0.333, 0.333));
+
+	return float4(xInscatter, fTransmittance);
+}
+
+// =====================================================================
+// Sky-view LUT mapping (Hillaire). A low-res lat-long image indexed by
+// view direction (world +Y up): u <- azimuth around up, v <- elevation
+// above the horizon with a sqrt warp that concentrates texels near the
+// horizon (where the sky gradient is steepest). Defined ONCE here so the
+// generator (Flux_SkyViewLUT) and the fullscreen reader (Flux_Atmosphere)
+// use an identical mapping — a mismatch rotates/mirrors the sky or blurs
+// the horizon. Sampler addressing: WRAP on u (azimuth seam), CLAMP on v.
+// =====================================================================
+public float2 SkyViewDirToUv(float3 xDir)
+{
+	float fElev = asin(clamp(xDir.y, -1.0, 1.0));            // [-PI/2, PI/2]
+	float fAzim = atan2(xDir.z, xDir.x);                     // [-PI, PI]
+	float fU    = (fAzim + PI) / (2.0 * PI);
+	float fT    = sign(fElev) * sqrt(abs(fElev) / (PI * 0.5)); // horizon-focused
+	float fV    = 0.5 + 0.5 * fT;
+	return float2(fU, fV);
+}
+
+public float3 SkyViewUvToDir(float2 xUv)
+{
+	float fAzim = xUv.x * 2.0 * PI - PI;
+	float fT    = (xUv.y - 0.5) * 2.0;                       // [-1, 1]
+	float fElev = sign(fT) * fT * fT * (PI * 0.5);           // exact inverse of the warp
+	float fCosE = cos(fElev);
+	float fSinE = sin(fElev);
+	return float3(fCosE * cos(fAzim), fSinE, fCosE * sin(fAzim));
+}
+
 // Limb-darkened sun disk. Angular radius ~0.53 degrees. Returns the
 // emissive contribution at xRayDir; outside the disk, returns black.
 public float3 RenderSunDisk(float3 xRayDir, float3 xSunDir, float fSunIntensity)

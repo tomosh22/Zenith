@@ -362,6 +362,10 @@ void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 	// propagation reason described above.
 	g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
 	g_xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
+	// Skybox transmittance/sky-view LUT enables. Must run BEFORE IBL's (and after
+	// any graph-dirtying system above) so a dirty compile force-enables the LUT
+	// writers the "Skybox" pass reads — same MarkDirty-propagation reason as IBL.
+	g_xEngine.Skybox().UpdateGraphPassEnables(xGraph);
 	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
 }
 

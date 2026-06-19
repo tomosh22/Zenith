@@ -263,13 +263,22 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	xReg.AddSetupStep("@SetupTransients:FluxGraphics", +[](Flux_RenderGraph& xGraph){ g_xEngine.FluxGraphics().SetupTransients(xGraph); });
 	xReg.AddSetupStep("@SetupTransients:HDR",          +[](Flux_RenderGraph& xGraph){ g_xEngine.HDR().SetupTransients(xGraph); });
 	xReg.AddToSetupWalk("IBL");
-	xReg.AddToSetupWalk("Skybox");
 	xReg.AddToSetupWalk("Shadows");
 	xReg.AddToSetupWalk("StaticMeshes");
 	xReg.AddToSetupWalk("Terrain");
 	xReg.AddToSetupWalk("Primitives");
 	xReg.AddToSetupWalk("AnimatedMeshes");
 	xReg.AddToSetupWalk("InstancedMeshes");
+	// Skybox renders AFTER all opaque G-buffer writers (above) so its fullscreen
+	// atmosphere/cubemap draw depth-TESTS against scene depth and only shades
+	// pixels where sky is actually visible (depth still at the far-cleared 1.0),
+	// instead of shading 100% of the screen first and being overdrawn by geometry.
+	// It still owns the G-buffer clear request; the render graph floats the actual
+	// clear up to the first opaque writer (and the skybox clears itself in a
+	// no-geometry scene). Placed BEFORE Decals so the sky is an earlier producer
+	// for Decals' depth/normals reads and the depth attachment doesn't ping-pong
+	// layouts (DEPTH_ATTACHMENT -> SHADER_READ -> DEPTH_ATTACHMENT) across them.
+	xReg.AddToSetupWalk("Skybox");
 	xReg.AddToSetupWalk("Decals");
 	xReg.AddToSetupWalk("HiZ");
 	xReg.AddToSetupWalk("SSR");

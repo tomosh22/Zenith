@@ -42,10 +42,15 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		// Attach depth only so the render-pass clear resets scene depth to far.
-		// The fullscreen sky draw must not depth-test or write depth.
+		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
+		// against scene depth instead of disabling the test: the fullscreen quad
+		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
+		// depth is still the far-cleared 1.0 (i.e. sky pixels), rejecting anything
+		// geometry already drew. Depth WRITE stays off (the sky must not modify
+		// depth); the attachment is still bound so the clear-request can reset it.
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xSpec.m_bDepthTestEnabled = false;
+		xSpec.m_bDepthTestEnabled = true;
+		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &this->m_xCubemapShader;
 		this->m_xCubemapShader.Initialise(FluxShaderProgram::SkyboxCubemap);
@@ -67,10 +72,15 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		// Attach depth only so the render-pass clear resets scene depth to far.
-		// The fullscreen sky draw must not depth-test or write depth.
+		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
+		// against scene depth instead of disabling the test: the fullscreen quad
+		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
+		// depth is still the far-cleared 1.0 (i.e. sky pixels), rejecting anything
+		// geometry already drew. Depth WRITE stays off (the sky must not modify
+		// depth); the attachment is still bound so the clear-request can reset it.
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xSpec.m_bDepthTestEnabled = false;
+		xSpec.m_bDepthTestEnabled = true;
+		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &this->m_xSolidColourShader;
 		this->m_xSolidColourShader.Initialise(FluxShaderProgram::SkyboxSolidColour);
@@ -92,10 +102,15 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		// Attach depth only so the render-pass clear resets scene depth to far.
-		// The fullscreen sky draw must not depth-test or write depth.
+		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
+		// against scene depth instead of disabling the test: the fullscreen quad
+		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
+		// depth is still the far-cleared 1.0 (i.e. sky pixels), rejecting anything
+		// geometry already drew. Depth WRITE stays off (the sky must not modify
+		// depth); the attachment is still bound so the clear-request can reset it.
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xSpec.m_bDepthTestEnabled = false;
+		xSpec.m_bDepthTestEnabled = true;
+		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &this->m_xAtmosphereShader;
 		this->m_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
@@ -116,6 +131,18 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 		Flux_PipelineBuilder::FromSpecification(this->m_xAerialPerspectivePipeline, xSpec);
 	}
+
+	// ========== Transmittance LUT generation pipeline (single RG/RGBA16F RT) ==========
+	// Fullscreen bake into m_xTransmittanceLUT; no depth, no blend — mirrors the
+	// IBL BRDF-LUT pipeline.
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		this->m_xTransmittanceLUTShader, this->m_xTransmittanceLUTPipeline,
+		FluxShaderProgram::SkyboxTransmittanceLUT, this->m_xTransmittanceLUT.m_xSurfaceInfo.m_eFormat);
+
+	// ========== Sky-view LUT generation pipeline (single RGBA16F RT) ==========
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		this->m_xSkyViewLUTShader, this->m_xSkyViewLUTPipeline,
+		FluxShaderProgram::SkyboxSkyViewLUT, this->m_xSkyViewLUT.m_xSurfaceInfo.m_eFormat);
 }
 
 void Flux_SkyboxImpl::Initialise()
@@ -138,8 +165,10 @@ void Flux_SkyboxImpl::Initialise()
 		FluxShaderProgram::SkyboxSolidColour,
 		FluxShaderProgram::SkyboxAtmosphere,
 		FluxShaderProgram::SkyboxAerialPerspective,
+		FluxShaderProgram::SkyboxTransmittanceLUT,
+		FluxShaderProgram::SkyboxSkyViewLUT,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Skybox().BuildPipelines(); },
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Skybox().BuildPipelines(); g_xEngine.Skybox().m_bLUTNeedsUpdate = true; },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -179,6 +208,12 @@ void Flux_SkyboxImpl::CreateRenderTargets()
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 	xBuilder.BuildColour(this->m_xTransmittanceLUT, "Skybox Transmittance LUT");
+
+	// Sky-view LUT (low-res lat-long). Raymarched once per frame and sampled by
+	// the fullscreen sky pass. Same memory flags + format as the transmittance LUT.
+	xBuilder.m_uWidth = AtmosphereConfig::uSKYVIEW_LUT_WIDTH;
+	xBuilder.m_uHeight = AtmosphereConfig::uSKYVIEW_LUT_HEIGHT;
+	xBuilder.BuildColour(this->m_xSkyViewLUT, "Skybox Sky-View LUT");
 }
 
 void Flux_SkyboxImpl::DestroyRenderTargets()
@@ -188,6 +223,12 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xTransmittanceLUT.m_xVRAMHandle,
 			this->m_xTransmittanceLUT.RTV().m_xImageViewHandle, this->m_xTransmittanceLUT.DSV().m_xImageViewHandle,
 			this->m_xTransmittanceLUT.SRV().m_xImageViewHandle, this->m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
+	}
+	if (this->m_xSkyViewLUT.m_xVRAMHandle.IsValid())
+	{
+		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xSkyViewLUT.m_xVRAMHandle,
+			this->m_xSkyViewLUT.RTV().m_xImageViewHandle, this->m_xSkyViewLUT.DSV().m_xImageViewHandle,
+			this->m_xSkyViewLUT.SRV().m_xImageViewHandle, this->m_xSkyViewLUT.UAV(0).m_xImageViewHandle);
 	}
 }
 
@@ -206,8 +247,12 @@ static void PreExecuteSkybox(void*)
 		xSkybox.m_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
 		g_xEngine.FluxMemory().UploadBufferData(xSkybox.m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &xSkybox.m_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
-	else if (xSkybox.IsAtmosphereEnabled())
+	else
 	{
+		// Fill + upload the atmosphere constants whenever the skybox is enabled
+		// (atmosphere OR cubemap mode), not just atmosphere mode: the transmittance
+		// LUT generator reads these and may run (e.g. on a graph recompile) even in
+		// cubemap mode. The cubemap shader ignores them; the upload is ~80 bytes.
 		xSkybox.m_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::afRAYLEIGH_SCATTER[0],
 			AtmosphereConfig::afRAYLEIGH_SCATTER[1],
@@ -272,6 +317,7 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 			Flux_ShaderBinder xBinder(*pxCommandList);
 			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
 			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+			xBinder.BindSRV(xSkybox.m_xAtmosphereShader, "g_xSkyViewLUT", &xSkybox.m_xSkyViewLUT.SRV());
 		}
 
 		pxCommandList->DrawIndexed(6);
@@ -321,23 +367,135 @@ static void ExecuteAerialPerspective(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->DrawIndexed(6);
 }
 
+static void ExecuteTransmittanceLUT(Flux_CommandBuffer* pxCommandList, void*)
+{
+	// Non-capturing graph callback — recover the singleton via g_xEngine.Skybox().
+	// Bakes the 256x64 transmittance LUT from AtmosphereConstants. Disabled passes
+	// are skipped before record, so this only runs when the LUT needs a refresh.
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+
+	pxCommandList->SetPipeline(&xSkybox.m_xTransmittanceLUTPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(*pxCommandList);
+		xBinder.BindCBV(xSkybox.m_xTransmittanceLUTShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+	}
+
+	pxCommandList->DrawIndexed(6);
+
+	// Clear the dirty flag from the SUCCESSFUL record callback (not from
+	// UpdateGraphPassEnables before execution) so a skipped/failed frame can't
+	// drop the regeneration.
+	xSkybox.m_bLUTNeedsUpdate = false;
+}
+
+static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
+{
+	// Non-capturing graph callback. Raymarches the atmosphere once per frame into
+	// the low-res sky-view LUT, sampling the transmittance LUT for the sun-ray
+	// term. The fullscreen sky pass then samples this LUT per screen pixel.
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+
+	pxCommandList->SetPipeline(&xSkybox.m_xSkyViewLUTPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(*pxCommandList);
+		xBinder.BindCBV(xSkybox.m_xSkyViewLUTShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(xSkybox.m_xSkyViewLUTShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+		xBinder.BindSRV(xSkybox.m_xSkyViewLUTShader, "g_xTransmittanceLUT", &xSkybox.m_xTransmittanceLUT.SRV());
+	}
+
+	pxCommandList->DrawIndexed(6);
+}
+
 void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Sky render pass (writes to MRT). Skybox is a fullscreen quad that writes
-	// all G-Buffer channels via OutputToGBuffer, so it's the natural place to
-	// clear the MRT target (both color — redundantly — and depth, which the
-	// subsequent geometry passes need for depth testing).
+	// Transmittance LUT generation (256x64). Camera-independent; runs only when
+	// the LUT needs a refresh (gated by UpdateGraphPassEnables). Declared before
+	// the "Skybox" pass for producer-before-consumer; the Read/Write edge below
+	// also orders it ahead of the sky draw regardless of geometry placement.
+	this->m_xTransmittanceLUTPassHandle = xGraph.AddPass("Skybox Transmittance LUT", ExecuteTransmittanceLUT)
+		.ClearTargets()
+		.Writes(this->m_xTransmittanceLUT, RESOURCE_ACCESS_WRITE_RTV);
+
+	// Sky-view LUT generation. Reads the transmittance LUT, raymarches the
+	// atmosphere once per frame into the low-res sky-view LUT. Enabled every frame
+	// in atmosphere mode (tracks the moving sun); see UpdateGraphPassEnables.
+	this->m_xSkyViewLUTPassHandle = xGraph.AddPass("Skybox Sky-View LUT", ExecuteSkyViewLUT)
+		.ClearTargets()
+		.Reads (this->m_xTransmittanceLUT, RESOURCE_ACCESS_READ_SRV)
+		.Writes(this->m_xSkyViewLUT,       RESOURCE_ACCESS_WRITE_RTV);
+
+	// Sky render pass (writes the G-buffer MRT). Registered AFTER the opaque
+	// geometry passes (see the Flux_FeatureRegistry setup walk) so the fullscreen
+	// sky draw depth-TESTS against scene depth and only shades pixels where sky is
+	// visible (depth still at the far-cleared 1.0), instead of shading the whole
+	// screen and being overdrawn. It still requests the clear (.ClearTargets());
+	// the render graph assigns the actual clear to the FIRST opaque writer in
+	// execution order (CollectClearRequirements / AssignClearFlags), so geometry is
+	// cleared before it draws. In a scene with no opaque geometry the skybox is the
+	// first/only writer and clears itself.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("Skybox", ExecuteSkybox)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),       RESOURCE_ACCESS_WRITE_RTV)
-		// Depth is attached purely so ClearTargets() clears it to 1.0; the
-		// skybox pipelines disable depth test/write, so the draw does not touch it.
+		// Depth is attached as WRITE_DSV so the clear-request floats up to the
+		// first opaque writer (depth -> 1.0). The skybox pipelines depth-TEST
+		// (LESSEQUAL) but disable depth WRITE, so this pass reads scene depth to
+		// reject occluded pixels without modifying it.
 		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
+		// Atmosphere path samples the sky-view LUT generated above. Declared
+		// unconditionally (the cubemap/solid branches just don't sample it); the
+		// sky-view writer is force-enabled on any dirty compile so this read always
+		// has an enabled writer (see UpdateGraphPassEnables).
+		.Reads (this->m_xSkyViewLUT,                                  RESOURCE_ACCESS_READ_SRV)
 		.Prepare(PreExecuteSkybox)
 		.ClearTargets();
+}
+
+void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
+{
+	// Called from Flux_RendererImpl::ApplySubsystemGraphSelections BEFORE Compile.
+	// On a dirty compile the validator (ValidateOrphanedReads) requires every
+	// enabled read to have an enabled writer: the "Skybox" pass reads the
+	// transmittance LUT, so force the LUT writer on for this compile. The fresh
+	// attachment is also in UNDEFINED layout after a rebuild and must be
+	// re-rendered. Mirrors Flux_IBLImpl::ResetIBLRegenStateForRecompile.
+	if (xGraph.IsDirty())
+		m_bLUTNeedsUpdate = true;
+
+	// Regenerate when a transmittance-affecting param changes. Only the Rayleigh
+	// and Mie SCALES are runtime-mutable; the coefficients/scale-heights/radii are
+	// compile-time constants. Sun intensity (post-scatter multiplier), Mie-G
+	// (phase function) and the sky-sample count do NOT affect transmittance and
+	// are deliberately excluded.
+	if (m_fRayleighScale != m_fLastLUTRayleighScale || m_fMieScale != m_fLastLUTMieScale)
+	{
+		m_bLUTNeedsUpdate = true;
+		m_fLastLUTRayleighScale = m_fRayleighScale;
+		m_fLastLUTMieScale = m_fMieScale;
+	}
+
+	// Cheap enable toggle (no MarkDirty): re-enables the writer the frame after a
+	// param change without a full recompile; the flag is cleared in the record
+	// callback so the pass runs exactly once per refresh.
+	xGraph.SetEnabled(m_xTransmittanceLUTPassHandle, m_bLUTNeedsUpdate);
+
+	// Sky-view LUT: regenerate EVERY frame in atmosphere mode (it tracks the
+	// moving sun). Also force-enable on a dirty compile so the "Skybox" pass's
+	// unconditional read of the sky-view LUT always has an enabled writer — even
+	// in cubemap/solid mode, where the LUT is generated once on recompile but
+	// never sampled.
+	const bool bRunSkyView = IsAtmosphereEnabled() || xGraph.IsDirty();
+	xGraph.SetEnabled(m_xSkyViewLUTPassHandle, bRunSkyView);
 }
 
 void Flux_SkyboxImpl::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)

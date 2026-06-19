@@ -845,6 +845,36 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"spirv_1_3",
 		"MaterialPreview",
 	},
+
+	// Atmosphere transmittance LUT generator (256x64). Precomputes sun-ray
+	// transmittance to the atmosphere top, sampled by the atmosphere solver to
+	// replace the per-pixel inner light-ray march. Appended at the array END so
+	// its FluxShaderProgram id stays the last value (matches a FluxCompiler regen).
+	{
+		FluxShaderProgram::SkyboxTransmittanceLUT,
+		"SkyboxTransmittanceLUT",
+		"Skybox/Flux_TransmittanceLUT",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"Skybox",
+	},
+
+	// Atmosphere sky-view LUT generator (low-res lat-long). Runs the single-
+	// scatter raymarch once per frame per LUT texel (sampling the transmittance
+	// LUT), so the fullscreen sky pass samples it instead of raymarching per
+	// pixel. Appended at the array END to keep its id last (FluxCompiler-regen safe).
+	{
+		FluxShaderProgram::SkyboxSkyViewLUT,
+		"SkyboxSkyViewLUT",
+		"Skybox/Flux_SkyViewLUT",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"Skybox",
+	},
 };
 
 static constexpr u_int kRegistryCount = sizeof(s_axRegistry) / sizeof(s_axRegistry[0]);
