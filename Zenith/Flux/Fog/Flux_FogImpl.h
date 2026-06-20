@@ -18,6 +18,10 @@ public:
 	void Initialise();
 	void BuildPipelines();
 	void Reset();
+	// No-op: Fog owns no teardown-managed state (RAII / stateless), so there is
+	// nothing to release at shutdown. Present only to satisfy the uniform
+	// FluxRenderFeature interface.
+	void Shutdown() {}
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

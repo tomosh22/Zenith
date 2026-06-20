@@ -19,9 +19,6 @@
 // VulkanSwapchain supplies the render dimensions. Both are reached via
 // g_xEngine at point of use and need their full types here.
 #include "Flux/Flux_BackendTypes.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
 // and destroyed by the render graph, sized from the descriptors set in
@@ -250,17 +247,6 @@ void Flux_SSRImpl::Initialise()
 
 	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(
 		&dbg_xSSRConstants, sizeof(SSRConstants), m_xSSRConstantsBuffer);
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::SSR_RayMarch,
-		FluxShaderProgram::SSR_Upsample,
-		FluxShaderProgram::SSR_DenoiseH,
-		FluxShaderProgram::SSR_DenoiseV,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSR().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "DebugMode" }, dbg_uDebugMode, 0, 100);  // Extended range for diagnostic mode 99

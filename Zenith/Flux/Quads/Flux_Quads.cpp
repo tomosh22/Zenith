@@ -12,10 +12,6 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Phase 7b: state on Flux_QuadsImpl held by Zenith_Engine.
 //
 // Cross-subsystem deps (FluxGraphics + VulkanMemory) are reached via g_xEngine
@@ -64,14 +60,6 @@ void Flux_QuadsImpl::Initialise()
 	BuildPipelines();
 
 	g_xEngine.FluxMemory().InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), m_xInstanceBuffer, false);
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Quads,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Quads().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads initialised");
 }

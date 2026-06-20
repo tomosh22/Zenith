@@ -19,9 +19,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 // Render graph pass indices for dynamic enable/disable.
 //
@@ -69,13 +66,25 @@ void Flux_FogImpl::BuildPipelines()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
+
+	// Fog is an orchestrator: shader hot-reload routes EVERY "Fog"-subsystem
+	// program to this one callback (all fog .slang share that grouping), so a
+	// rebuild must refresh the simple-fog pipeline AND every technique. Each
+	// technique's BuildPipelines is leak-safe and self-contained (its own
+	// Initialise calls it first), so this is safe both at init — where Initialise
+	// runs it AFTER the techniques are initialised — and on a live reload.
+	g_xEngine.GodRaysFog().BuildPipelines();
+	g_xEngine.RaymarchFog().BuildPipelines();
+	g_xEngine.FroxelFog().BuildPipelines();
 }
 
 void Flux_FogImpl::Initialise()
 {
-	BuildPipelines();
-
-	// Initialize shared volumetric fog infrastructure
+	// Initialize shared infrastructure + every technique FIRST (each builds its
+	// own pipelines + resources), THEN BuildPipelines(). BuildPipelines() now also
+	// (re)builds the techniques' pipelines for hot-reload, so running it after
+	// their Initialise keeps that a harmless leak-safe refresh rather than a build
+	// against not-yet-initialised state.
 	g_xEngine.VolumeFog().Initialise();
 
 	// Initialize all volumetric fog techniques (spatial-only, no temporal).
@@ -83,13 +92,7 @@ void Flux_FogImpl::Initialise()
 	g_xEngine.RaymarchFog().Initialise();
 	g_xEngine.FroxelFog().Initialise();
 
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Fog_Simple,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Fog().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
+	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);

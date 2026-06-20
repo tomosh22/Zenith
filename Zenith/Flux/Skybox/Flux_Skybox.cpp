@@ -14,7 +14,6 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 // Phase 7g: subsystem state moved to Flux_SkyboxImpl held by Zenith_Engine.
@@ -143,6 +142,12 @@ void Flux_SkyboxImpl::BuildPipelines()
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		this->m_xSkyViewLUTShader, this->m_xSkyViewLUTPipeline,
 		FluxShaderProgram::SkyboxSkyViewLUT, this->m_xSkyViewLUT.m_xSurfaceInfo.m_eFormat);
+
+	// The transmittance / sky-view LUTs depend on these shaders, so any (re)build
+	// must regenerate them. Already the default at first init; the load-bearing
+	// case is hot-reload, where the shader-rebuild auto-wire fires BuildPipelines
+	// directly (no per-subsystem callback to also flip this flag).
+	this->m_bLUTNeedsUpdate = true;
 }
 
 void Flux_SkyboxImpl::Initialise()
@@ -159,18 +164,10 @@ void Flux_SkyboxImpl::Initialise()
 	// Take a ref-counted copy of the global cubemap handle (set during init in Zenith_Main).
 	this->m_xCubemapTexture = g_xEngine.FluxGraphics().m_xCubemapTexture;
 
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::SkyboxCubemap,
-		FluxShaderProgram::SkyboxSolidColour,
-		FluxShaderProgram::SkyboxAtmosphere,
-		FluxShaderProgram::SkyboxAerialPerspective,
-		FluxShaderProgram::SkyboxTransmittanceLUT,
-		FluxShaderProgram::SkyboxSkyViewLUT,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Skybox().BuildPipelines(); g_xEngine.Skybox().m_bLUTNeedsUpdate = true; },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
+	// Shader hot-reload is wired automatically from the feature registry
+	// (Flux_ShaderHotReload::AutoRegisterFeatures) — every "Skybox"-subsystem
+	// program rebuilds via this feature's BuildPipelines(), which also re-flags
+	// the LUTs for refresh. No per-subsystem registration needed here.
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	RegisterDebugVariables();

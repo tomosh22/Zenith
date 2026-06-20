@@ -12,9 +12,6 @@
 // GetWidth/GetHeight on the swapchain (reached via g_xEngine at point of use)
 // need the full type here.
 #include "Flux/Flux_BackendTypes.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 // Shaders and pipelines
 
@@ -95,17 +92,6 @@ void Flux_SSAOImpl::BuildPipelines()
 void Flux_SSAOImpl::Initialise()
 {
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::SSAO_Main,
-		FluxShaderProgram::SSAO_Blur,
-	};
-	// Non-capturing fn-pointer trampoline: re-enters via g_xEngine.SSAO() to
-	// reach the singleton instance (it cannot capture `this`).
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSAO().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Radius" }, dbg_xGenerateConstants.m_fRadius, 0.01f, 2.f);

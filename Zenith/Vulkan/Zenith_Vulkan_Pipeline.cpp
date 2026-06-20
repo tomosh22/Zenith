@@ -717,13 +717,13 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 	xPipelineOut.m_xPipeline = VkUnwrap(g_xEngine.FluxBackend().GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
 
-	// Hot-reload registration lives at the subsystem level — each subsystem's
-	// Initialise() calls Flux_ShaderHotReload::RegisterSubsystem with its
-	// own BuildPipelines callback, and the watcher in Flux_ShaderHotReload
-	// fires those callbacks on .slang edits. Pipeline-level registration
-	// here would need to know which programs the pipeline was built from,
-	// which the spec doesn't carry — keeping it at the subsystem level lets
-	// each owner phrase the rebuild precisely.
+	// Hot-reload registration is centralised, not pipeline-level: the watcher in
+	// Flux_ShaderHotReload fires each owning feature's BuildPipelines() on .slang
+	// edits, and Flux_ShaderHotReload::AutoRegisterFeatures derives the
+	// program->feature wiring from the feature registry at boot. Pipeline-level
+	// registration here would need to know which programs the pipeline was built
+	// from (which the spec doesn't carry), and the per-subsystem RegisterSubsystem
+	// boilerplate it replaced is gone.
 }
 
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)

@@ -13,9 +13,6 @@
 // Buffer/index-buffer lifetime + staging upload (VulkanMemory) and the
 // per-frame delta-time (FrameContext) need the full types.
 #include "Core/FrameContext.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -268,15 +265,6 @@ void Flux_DecalsImpl::Initialise()
 		m_axDecalSlots[u].m_bActive = false;
 	m_uNextSlot         = 0;
 	m_uActiveDecalCount = 0;
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Decals_NormalsCopy,
-		FluxShaderProgram::Decals_Apply,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Decals().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Decals", "Debug Spheres" },

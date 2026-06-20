@@ -247,23 +247,21 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_ShaderHotReload::Initialise();
 #endif
 
-	g_xEngine.FluxGraphics().Initialise();
-
 #ifdef ZENITH_TOOLS
-	// ImGui is the tail of the inline prologue. It depends only on the Vulkan
-	// device + swapchain format (see Zenith_Vulkan::InitialiseImGuiRenderPass),
-	// not on any registry feature, so bringing it up here — before the
-	// FluxGraphics-onward feature walk — is dependency-safe. Gizmos (which DOES
-	// depend on ImGui) is registered as a feature and initialised by the walk.
+	// ImGui depends only on the Vulkan device + swapchain format (see
+	// Zenith_Vulkan::InitialiseImGuiRenderPass), not on any registry feature
+	// (FluxGraphics included), so bringing it up before the feature walk is
+	// dependency-safe. Gizmos (which DOES depend on ImGui) is registered as a
+	// feature and initialised by the walk.
 	g_xEngine.FluxBackend().InitialiseImGui();
 #endif
 
 	// The per-subsystem Initialise() ladder walks the Flux_FeatureRegistry in
-	// registration order (FluxGraphics is brought up inline above — its registry
-	// init trampoline is null, so the walk effectively starts at HDR). The
-	// dependency rationale documented at the top of this function still holds;
-	// it is encoded as the registration order in
-	// Flux_FeatureRegistry.cpp::RegisterDefaultFeatures().
+	// registration order. FluxGraphics is registered FIRST, so the walk brings it
+	// up before every dependent feature — it used to be a separate inline init,
+	// but it is now an ordinary RegisterFeature<> entry like everything else. The
+	// dependency rationale documented at the top of this function is encoded as
+	// the registration order in Flux_FeatureRegistry.cpp::RegisterDefaultFeatures().
 	Flux_FeatureRegistry::RegisterDefaultFeatures();
 	const Flux_FeatureRegistry& xRegistry = Flux_FeatureRegistry::Get();
 	for (u_int uFeature = 0; uFeature < xRegistry.GetNumFeatures(); uFeature++)
@@ -272,6 +270,14 @@ void Flux_RendererImpl::LateInitialise()
 		if (xDesc.m_pfnInitialise != nullptr)
 			xDesc.m_pfnInitialise();
 	}
+
+#ifdef ZENITH_TOOLS
+	// Hot-reload: derive every engine shader program's rebuild callback from the
+	// feature registry — no per-subsystem RegisterSubsystem needed. Runs after the
+	// feature table is populated (BuildPipelines trampolines exist) and after the
+	// watcher came up above. Game-side / non-feature owners register afterwards.
+	Flux_ShaderHotReload::AutoRegisterFeatures();
+#endif
 
 	// Drain the GPU uploads staged by swapchain init + the feature walk above.
 	g_xEngine.FluxMemory().Flush();
@@ -452,14 +458,14 @@ void Flux_RendererImpl::Shutdown()
 	// callbacks would otherwise deref the now-null m_pxRenderGraph and crash.
 	xRenderer.m_xResChangeCallbacks.Clear();
 
-	// Shutdown Flux subsystems in REVERSE order of initialization. This ensures
-	// dependencies are destroyed after their dependents. The walk follows the
-	// Flux_FeatureRegistry's explicit shutdown order (transcribed, NOT a
-	// mechanical reverse of init). Features with no Shutdown() trampoline (Fog —
-	// RAII / stateless) are skipped. The non-feature teardown below (Slang /
-	// HotReload / ImGui) and the three inline-shutdown features (Gizmos, HDR,
-	// FluxGraphics — each kept inline here, deliberately absent from the
-	// registry shutdown walk) follow.
+	// Shut down every Flux feature in REVERSE registration order. RunShutdown now
+	// covers ALL features — including FluxGraphics, HDR, Gizmos and MaterialPreview,
+	// which used to be torn down inline here — because no feature's Shutdown reads
+	// another feature (only foundation + own state, verified), so reverse-of-init is
+	// a correct teardown order with no hand-tuning. Features with no Shutdown (Fog —
+	// RAII / stateless) are skipped. Only the NON-feature teardown (Slang /
+	// HotReload / ImGui / swapchain / memory) stays inline below; it runs after the
+	// feature walk while the Vulkan device + memory manager are still up.
 	Flux_FeatureRegistry::Get().RunShutdown();
 
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
@@ -468,19 +474,8 @@ void Flux_RendererImpl::Shutdown()
 
 #ifdef ZENITH_TOOLS
 	Flux_ShaderHotReload::Shutdown();
-	g_xEngine.Gizmos().Shutdown();
-	// MaterialPreview owns persistent attachments + a dynamic CB + pipelines,
-	// like Gizmos — shut down inline here (deliberately absent from the
-	// registry shutdown walk), before the device teardown below.
-	g_xEngine.MaterialPreview().Shutdown();
 	g_xEngine.FluxBackend().ShutdownImGui();
 #endif
-
-	// HDR must shutdown after other render systems that target HDR buffer
-	g_xEngine.HDR().Shutdown();
-
-	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
-	g_xEngine.FluxGraphics().Shutdown();
 
 	// Shutdown swapchain-owned file-static shader/pipeline state before the
 	// Vulkan device and memory-manager registries go away.

@@ -11,10 +11,6 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Phase 7b: state on Flux_SDFsImpl held by Zenith_Engine.
 
 static constexpr uint32_t s_uMaxSpheres = 1000;
@@ -61,14 +57,6 @@ void Flux_SDFsImpl::Initialise()
 	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), this->m_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-#endif
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::SDFs,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SDFs().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs initialised");

@@ -16,9 +16,6 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
 // and destroyed by the render graph, sized from the descriptors set in
@@ -148,17 +145,6 @@ void Flux_SSGIImpl::BuildPipelines()
 void Flux_SSGIImpl::Initialise()
 {
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::SSGI_RayMarch,
-		FluxShaderProgram::SSGI_Upsample,
-		FluxShaderProgram::SSGI_DenoiseH,
-		FluxShaderProgram::SSGI_DenoiseV,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSGI().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSGI", "DebugMode" }, dbg_uDebugMode, 0, SSGI_DEBUG_COUNT - 1);

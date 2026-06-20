@@ -19,10 +19,6 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Phase 7b: state on Flux_StaticMeshesImpl held by Zenith_Engine.
 
 
@@ -100,15 +96,6 @@ void Flux_StaticMeshesImpl::BuildPipelines()
 void Flux_StaticMeshesImpl::Initialise()
 {
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::StaticMesh_ToGBuffer,
-		FluxShaderProgram::StaticMesh_ToShadowmap,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.StaticMeshes().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "StaticMeshes", "Force Cull None" }, m_bDbgForceCullNone);

@@ -13,7 +13,6 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 // Static member definitions
@@ -60,17 +59,6 @@ void Flux_IBLImpl::Initialise()
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
-
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::IBL_BRDFIntegration,
-		FluxShaderProgram::IBL_IrradianceConvolution,
-		FluxShaderProgram::IBL_PrefilterEnvMap,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.IBL().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-
-	// On hot reload, the IBL convolutions need re-running too — flag them as
-	// dirty so the next frame regenerates the irradiance + prefilter cubemaps.
 #endif
 
 	// BRDF LUT will be generated on first frame via render graph ExecuteIBLUpdate()

@@ -10,9 +10,6 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 // GetWidth/GetHeight on the swapchain need the full type.
 #include "Flux/Flux_BackendTypes.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 // Phase 9: methods now live on Flux_HiZImpl. Callers use g_xEngine.HiZ().X().
 
@@ -64,17 +61,6 @@ void Flux_HiZImpl::Initialise()
 		"FLUX_MAX_MIPS must be >= uHIZ_MAX_MIPS");
 
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::HiZ_Generate,
-	};
-	// Non-capturing fn-pointer trampoline: re-enters via g_xEngine.HiZ() to
-	// reach the singleton instance (it cannot capture `this`).
-	Flux_ShaderHotReload::RegisterSubsystem(
-		[](){ g_xEngine.HiZ().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	// Resize callback: recompute mip count. The graph owns the transient
 	// image and re-creates it with new dimensions on the next SetupRenderGraph.

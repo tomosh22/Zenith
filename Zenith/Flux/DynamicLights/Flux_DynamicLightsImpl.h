@@ -4,6 +4,8 @@
 #include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
+class Flux_RenderGraph; // for the no-op SetupRenderGraph stub's parameter (uniform feature interface)
+
 // 64 bytes — sized to spot's worst-case footprint so all light types
 // share one struct. Padding fields stay zero on CPU staging.
 // Mirrors Common.Lighting.slang LightInstance.
@@ -43,6 +45,15 @@ public:
 	void Initialise();
 	void Shutdown();
 	void Reset();
+
+	// No-op: DynamicLights declares no render-graph passes — it's a gather/upload
+	// front-end; the separate LightClustering feature owns the clustering compute
+	// pass. Present only to satisfy the uniform FluxRenderFeature interface.
+	void SetupRenderGraph(Flux_RenderGraph&) {}
+	// No-op: DynamicLights owns no shader programs of its own (LightClustering owns
+	// the only DynamicLights/ shader), so there are no pipelines to build/hot-reload.
+	// Present only to satisfy the uniform FluxRenderFeature interface.
+	void BuildPipelines() {}
 
 	void GatherLightsFromScene();
 

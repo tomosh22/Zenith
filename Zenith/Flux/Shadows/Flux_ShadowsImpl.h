@@ -77,6 +77,10 @@ public:
 
 	void Initialise();
 	void Shutdown();
+	// No-op: Shadows owns no shader programs of its own — the caster pipelines live in
+	// the mesh subsystems (StaticMesh_ToShadowmap etc.), so there is nothing to
+	// build/hot-reload. Present only to satisfy the uniform FluxRenderFeature interface.
+	void BuildPipelines() {}
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

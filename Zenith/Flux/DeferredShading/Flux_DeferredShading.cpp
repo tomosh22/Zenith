@@ -19,9 +19,6 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 // Phase 7b: state on Flux_DeferredShadingImpl held by Zenith_Engine.
 
@@ -63,14 +60,6 @@ void Flux_DeferredShadingImpl::Initialise()
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "DeferredShading", "AmbientFallback" }, dbg_fAmbientFallbackIntensity, 0.0f, 0.2f);
 	#endif
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::DeferredShading,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.DeferredShading().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
 }

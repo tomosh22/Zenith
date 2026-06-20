@@ -16,7 +16,6 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 // Phase 7h: subsystem state moved to Flux_HDRImpl held by Zenith_Engine.
@@ -186,18 +185,6 @@ void Flux_HDRImpl::Initialise()
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
-
-	// Hot reload — every HDR shader reloads via BuildPipelines().
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::HDR_ToneMapping,
-		FluxShaderProgram::BloomThreshold,
-		FluxShaderProgram::BloomDownsample,
-		FluxShaderProgram::BloomUpsample,
-		FluxShaderProgram::HDR_Luminance,
-		FluxShaderProgram::HDR_Adaptation,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.HDR().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	// Render targets are graph-owned transients, created in SetupTransients.

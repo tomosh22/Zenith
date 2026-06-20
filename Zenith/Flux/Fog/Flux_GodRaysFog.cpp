@@ -11,10 +11,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 
 // Debug variables
 DEBUGVAR u_int dbg_uGodRaysSamples = 64;
@@ -67,14 +63,6 @@ void Flux_GodRaysFogImpl::Initialise()
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "God Rays", "Exposure" }, dbg_fGodRaysExposure, 0.0f, 1.0f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "God Rays", "Density" }, dbg_fGodRaysDensity, 0.0f, 2.0f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "God Rays", "Weight" }, dbg_fGodRaysWeight, 0.0f, 1.0f);
-#endif
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Fog_GodRays,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.GodRaysFog().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_GodRaysFog initialised");

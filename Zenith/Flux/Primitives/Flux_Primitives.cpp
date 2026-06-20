@@ -12,10 +12,6 @@
 
 #include <cmath>
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Phase 7g: subsystem state moved to Flux_PrimitivesImpl held by Zenith_Engine.
 //
 // Cross-subsystem deps (FluxGraphics / VulkanMemory) are reached via g_xEngine at
@@ -476,14 +472,6 @@ void Flux_PrimitivesImpl::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-#endif
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Primitives,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Primitives().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives initialised");

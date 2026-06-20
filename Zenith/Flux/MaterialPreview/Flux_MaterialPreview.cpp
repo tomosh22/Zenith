@@ -10,7 +10,6 @@
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Slang/Flux_ShaderHotReload.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
@@ -142,14 +141,6 @@ void Flux_MaterialPreviewImpl::Initialise()
 		sizeof(Flux_GraphicsImpl::FrameConstants), m_xPreviewFrameConstantsBuffer);
 
 	BuildPipelines();
-
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Translucent_Forward,
-		FluxShaderProgram::MaterialPreview_Background,
-		FluxShaderProgram::MaterialPreview_Tonemap,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.MaterialPreview().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_MaterialPreview initialised");
 }

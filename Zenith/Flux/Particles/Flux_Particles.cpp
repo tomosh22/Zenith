@@ -18,9 +18,6 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
 
 
 
@@ -95,15 +92,6 @@ void Flux_ParticlesImpl::Initialise()
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
 		m_xParticleTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;
 	}
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Particles,
-		FluxShaderProgram::ParticleUpdate,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Particles().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised (max %u particles)", s_uMaxParticles);
 }

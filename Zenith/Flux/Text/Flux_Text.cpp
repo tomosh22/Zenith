@@ -13,10 +13,6 @@
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Cross-subsystem deps (FluxGraphics + VulkanMemory) are reached via g_xEngine
 // at point of use. The non-capturing ExecuteText / hot-reload fn-pointer
 // trampolines below re-enter via g_xEngine.Text() to recover the singleton
@@ -78,14 +74,6 @@ void Flux_TextImpl::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
-#endif
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Text,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Text().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text initialised");

@@ -13,23 +13,32 @@
 // include, so this header includes ONLY Core/Flux types and forward-declares
 // Flux_RenderGraph.
 //
-// ORDERING. Init order and Shutdown order are DEPENDENCY-LOAD-BEARING — they
-// encode real subsystem dependencies (see the comment block in
-// Flux_RendererImpl::LateInitialise); a reorder is a latent boot/teardown
-// crash. The SetupRenderGraph walk is a SINGLE ordered list (no discrete
-// phases): the render graph COMPUTES pass execution order by topologically
-// sorting each pass's declared Reads/Writes. That sort is SEEDED by the walk's
-// declaration order in two load-bearing ways, so the walk order is NOT free-form:
-//   1. PRODUCERS MUST BE DECLARED BEFORE CONSUMERS. A reader is linked only to a
-//      writer of the SAME resource declared EARLIER in the walk
-//      (Flux_RenderGraph::FindBestWriter requires uBestWriter < uReader).
-//      Declaring a consumer before its producer would silently drop the edge AND
-//      the barrier — now caught at Compile by
-//      Flux_RenderGraph::ValidateProducerBeforeConsumer (a Zenith_Check), so a
-//      bad reorder fails loudly instead of producing missing-barrier corruption.
-//   2. Multiple writers of the same resource execute in declaration order (the
-//      write-after-write chain). This is the tiebreak the graph falls back to
-//      when two passes write a resource with no dependency between them.
+// ONE CALL PER FEATURE. RegisterDefaultFeatures() adds every feature with a
+// single RegisterFeature<&Zenith_Engine::X>(reg, "X") call, written in the order
+// passes are DECLARED to the render graph. That one source order drives all three
+// walks automatically — adding a feature is exactly one call placed at the right
+// spot:
+//   * Init     — features in registration order (forward). Dependency-safe in ANY
+//                order beyond "FluxGraphics first": every subsystem's Initialise /
+//                Shutdown touches only foundation (FluxGraphics, memory, backend) +
+//                its own state, never another feature (verified), so the render-
+//                graph declaration order is also a valid init/teardown order.
+//   * Setup    — RegisterFeature auto-appends the feature's SetupRenderGraph step
+//                at the call site; the few non-feature "irregular" steps are
+//                interleaved with AddSetupStep (FluxGraphics/HDR transient
+//                creation, Skybox aerial perspective, final-RT layout transition).
+//                This declaration order is LOAD-BEARING — the graph topologically
+//                sorts passes by declared Reads/Writes, SEEDED by declaration order
+//                two ways:
+//                  1. PRODUCERS BEFORE CONSUMERS — a reader links only to a writer
+//                     declared EARLIER (FindBestWriter requires writer < reader); a
+//                     consumer-before-producer slip silently drops the edge AND the
+//                     barrier, now caught at Compile by
+//                     Flux_RenderGraph::ValidateProducerBeforeConsumer (a Zenith_Check).
+//                  2. Multiple writers of one resource run in declaration order
+//                     (the write-after-write tiebreak).
+//   * Shutdown — features in REVERSE registration order (auto-derived by
+//                RunShutdown). Safe in any order for the same reason init is.
 // Passes touching disjoint resources are order-independent.
 // ---------------------------------------------------------------------------
 
@@ -41,31 +50,61 @@ class Flux_RenderGraph;
 static constexpr u_int FLUX_MAX_FEATURES = 40;
 
 // One step in the single ordered SetupRenderGraph walk. Most steps are a
-// feature's SetupRenderGraph trampoline; a few are "irregulars" — the
-// FluxGraphics/HDR transient creation, the Skybox aerial-perspective pass, and
-// the final-RT layout-transition pass — which are not plain feature setups but
-// share the void(Flux_RenderGraph&) signature. They are ordinary ordered steps
-// in the one walk. See the ORDERING note above.
+// feature's SetupRenderGraph trampoline (auto-appended by RegisterFeature); a few
+// are "irregulars" added via AddSetupStep — the FluxGraphics/HDR transient
+// creation, the Skybox aerial-perspective pass, and the final-RT layout-transition
+// pass — which are not plain feature setups but share the void(Flux_RenderGraph&)
+// signature. They are ordinary ordered steps in the one walk. See the ORDERING note.
 struct Flux_SetupStep
 {
 	const char* m_szName              = nullptr;
 	void      (*m_pfnSetup)(Flux_RenderGraph&) = nullptr;
 };
 
-// Setup walk holds every feature's setup trampoline (~25) plus the 5 irregular
-// steps, so it can exceed the feature count. +8 leaves slack; AddToSetupWalk /
-// AddSetupStep assert against this bound at runtime.
+// Setup walk holds every feature's setup trampoline (~25) plus the handful of
+// irregular steps, so it can exceed the feature count. +8 leaves slack; Register
+// (auto-append) and AddSetupStep assert against this bound at runtime.
 static constexpr u_int FLUX_MAX_SETUP_STEPS = FLUX_MAX_FEATURES + 8;
 
-// One registered renderer feature. Every function pointer is NULLABLE; a null
-// pointer means "this feature does not participate in that phase". Captureless
-// free-function trampolines only (no std::function) — see the .cpp.
+// One registered renderer feature. With the uniform mandatory interface (see
+// FluxRenderFeature) RegisterFeature wires ALL FOUR trampolines for every feature —
+// a feature with nothing to do in a phase supplies a no-op method, so these are
+// non-null in practice. Captureless free-function trampolines only (no
+// std::function) — see the .cpp. (The fields default to null only so the struct is
+// trivially zero-constructible for Reset.)
 struct Flux_FeatureDesc
 {
 	const char*  m_szName              = nullptr;
 	void       (*m_pfnInitialise)()                      = nullptr;
 	void       (*m_pfnSetupRenderGraph)(Flux_RenderGraph&) = nullptr;
 	void       (*m_pfnShutdown)()                        = nullptr;
+	// Rebuild this feature's GPU pipelines from its (now-recompiled) shaders — what
+	// the Slang hot-reload watcher fires when a .slang owned by the feature changes
+	// (see Flux_ShaderHotReload::AutoRegisterFeatures). A no-op for features that own
+	// no pipelines (FluxGraphics, DynamicLights, Shadows — Shadows reuses the mesh
+	// subsystems' shadow programs); AutoRegisterFeatures only calls it for programs
+	// that map to this feature, so those no-ops are never actually invoked.
+	void       (*m_pfnBuildPipelines)()                  = nullptr;
+};
+
+// The compile-time contract for a Flux render feature — the subsystem type behind a
+// Zenith_Engine accessor that RegisterFeature<&Zenith_Engine::X> drives. The
+// interface is UNIFORM AND MANDATORY: every feature implements all four lifecycle
+// methods — Initialise(), SetupRenderGraph(Flux_RenderGraph&), Shutdown() and
+// BuildPipelines() — even if a method is a no-op for that feature (e.g. FluxGraphics
+// and DynamicLights have no-op SetupRenderGraph/BuildPipelines; Fog has a no-op
+// Shutdown; Shadows a no-op BuildPipelines). RegisterFeature wires all four
+// unconditionally and is constrained on this concept, so a render system that is
+// missing a method (or mis-spelled one) is a clear compile error at the call site —
+// "if a feature lacks a function, add it (a no-op stub if there's nothing to do)".
+// (Mirrors the concept-driven backend abstraction in Flux_Backend.h.)
+template<typename T>
+concept FluxRenderFeature = requires(T& xFeature, Flux_RenderGraph& xGraph)
+{
+	xFeature.Initialise();
+	xFeature.SetupRenderGraph(xGraph);
+	xFeature.Shutdown();
+	xFeature.BuildPipelines();
 };
 
 // Fixed-size, registration-ordered feature table. Single instance, reached via
@@ -79,44 +118,43 @@ public:
 	// use, zero static-init cost.
 	static Flux_FeatureRegistry& Get();
 
-	// Populate the registry with the engine's default feature set, IN INIT
-	// ORDER, then record the setup walk and the shutdown order. IDEMPOTENT:
-	// re-entry resets the table first, so headless boots that skip
-	// LateInitialise and unit tests that re-init Flux in-process can call this
-	// repeatedly.
+	// Populate the registry with the engine's default feature set via one
+	// RegisterFeature call each, in render-graph declaration order (which also
+	// serves as init order; shutdown is the reverse). IDEMPOTENT: re-entry resets
+	// the table first, so headless boots that skip LateInitialise and unit tests
+	// that re-init Flux in-process can call this repeatedly.
 	static void RegisterDefaultFeatures();
 
-	// Drop every registration (count -> 0). Used by RegisterDefaultFeatures for
+	// Drop every registration (counts -> 0). Used by RegisterDefaultFeatures for
 	// idempotency and available to tests.
 	void Reset();
 
-	// Append a feature in INIT order. Asserts on overflow / duplicate name.
+	// Append a feature in registration order. Asserts on overflow / duplicate
+	// name. If pfnSetupRenderGraph is non-null the feature is ALSO appended to the
+	// setup walk at this position (so one call wires init + setup + shutdown +
+	// hot-reload). pfnBuildPipelines is the optional Slang hot-reload rebuild
+	// callback (see Flux_FeatureDesc).
 	void Register(const char* szName,
 		void (*pfnInitialise)(),
 		void (*pfnSetupRenderGraph)(Flux_RenderGraph&),
-		void (*pfnShutdown)());
-
-	// Append the named feature's SetupRenderGraph trampoline to the single
-	// ordered setup walk. Call order defines the walk (= declaration) order.
-	// Asserts the name is a registered feature with a SetupRenderGraph
-	// trampoline — a feature with none (e.g. DynamicLights) must NOT be added.
-	void AddToSetupWalk(const char* szFeatureName);
+		void (*pfnShutdown)(),
+		void (*pfnBuildPipelines)() = nullptr);
 
 	// Append a raw named setup step — an "irregular" that is not a registered
 	// feature's setup (FluxGraphics/HDR transient creation, Skybox aerial
-	// perspective, the final-RT layout-transition pass).
+	// perspective, the final-RT layout-transition pass). Interleave these between
+	// RegisterFeature calls to place them in render-graph declaration order.
 	void AddSetupStep(const char* szName, void (*pfnSetup)(Flux_RenderGraph&));
-
-	// Record that the named feature participates in the registry-driven
-	// Shutdown walk. Call order defines shutdown order. (FluxGraphics / HDR /
-	// Gizmos shut down INLINE in Flux_RendererImpl::Shutdown and are
-	// deliberately NOT added here — see the .cpp.)
-	void AddToShutdownWalk(const char* szFeatureName);
 
 	// Init-order feature view. The init walk iterates [0, GetNumFeatures()) and
 	// calls m_pfnInitialise where non-null.
 	const Flux_FeatureDesc* GetFeatures() const { return m_axFeatures; }
 	u_int GetNumFeatures() const { return m_uNumFeatures; }
+
+	// Resolve a registered feature by name, or nullptr if none matches (does NOT
+	// assert on miss — the hot-reload auto-wire expects misses for shader programs
+	// that no engine feature owns, e.g. Water / ComputeTest).
+	const Flux_FeatureDesc* FindFeatureByName(const char* szName) const;
 
 	// Run the single ordered setup walk: invoke each step's setup fn in walk
 	// order. Every step's fn is non-null (asserted at append time). Between steps
@@ -129,26 +167,22 @@ public:
 	// strcmp scan; names are static-lifetime literals.
 	bool HasSetupStepNamed(const char* szName) const;
 
-	// Walk the explicit shutdown order, invoking m_pfnShutdown where non-null.
+	// Shut down every feature in REVERSE registration order, invoking m_pfnShutdown
+	// where non-null. No separate shutdown list — the reverse of the init order is
+	// a correct teardown order (no cross-feature teardown dependencies; see the
+	// ORDERING note). The non-feature teardown (Slang / HotReload / ImGui /
+	// swapchain / memory) runs after this, inline in Flux_RendererImpl::Shutdown.
 	void RunShutdown() const;
 
 private:
 	Flux_FeatureRegistry() = default;
 
-	// Resolve a registered feature's index by name. Asserts on miss, so a typo
-	// in an AddToSetupWalk / AddToShutdownWalk name fails loudly at boot.
-	u_int FindFeatureIndex(const char* szName) const;
-
 	Flux_FeatureDesc m_axFeatures[FLUX_MAX_FEATURES];
 	u_int            m_uNumFeatures = 0;
 
-	// Single ordered setup walk: feature setup trampolines + irregular steps, in
-	// the order RunSetup invokes them. This IS the declaration order the render
-	// graph falls back to when ordering writers of the same resource.
+	// Single ordered setup walk: feature setup trampolines (auto-appended by
+	// Register) + irregular steps, in the order RunSetup invokes them. This IS the
+	// declaration order the render graph falls back to when ordering writers.
 	Flux_SetupStep m_axSetupSteps[FLUX_MAX_SETUP_STEPS];
 	u_int          m_uNumSetup = 0;
-
-	// Shutdown order: indices into m_axFeatures, in shutdown sequence.
-	u_int m_auShutdownOrder[FLUX_MAX_FEATURES];
-	u_int m_uNumShutdown = 0;
 };

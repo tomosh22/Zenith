@@ -6,6 +6,7 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #include "Flux/Slang/Flux_ShaderRegistry.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_FeatureRegistry.h"
 #include "Core/Zenith_FileWatcher.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Flux/Flux_BackendTypes.h"
@@ -264,6 +265,77 @@ void Flux_ShaderHotReload::RegisterSubsystem(ProgramRebuildCallback pfnRebuild,
 	{
 		RegisterProgram(axPrograms[u], pfnRebuild);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Automatic registration from the feature registry.
+// ---------------------------------------------------------------------------
+
+// A program's owning FEATURE is normally its m_szSubsystem string (matched
+// against the Flux_FeatureRegistry feature name). These are the only programs
+// where that breaks down — either the grouping name differs from the feature
+// name, or no engine feature owns the program (m_szFeature == nullptr → skip).
+// Keep this list tiny: the right fix for a new feature is to make its programs'
+// m_szSubsystem equal the feature name, not to add an entry here.
+namespace
+{
+	struct ProgramOwnerOverride
+	{
+		FluxShaderProgram m_eProgram;
+		const char*       m_szFeature; // nullptr => do not auto-wire this program
+	};
+
+	const ProgramOwnerOverride s_axOwnerOverrides[] =
+	{
+		// Lives in the DynamicLights/ shader dir (subsystem grouping
+		// "DynamicLights") but is owned by the separate LightClustering feature;
+		// the DynamicLights feature is a gather/upload front-end with no pipelines.
+		{ FluxShaderProgram::LightClustering, "LightClustering" },
+		// Subsystem grouping is "Vegetation"; the feature / engine accessor is "Grass".
+		{ FluxShaderProgram::Grass,           "Grass" },
+		// The final-frame blit shader is owned by Zenith_Vulkan_Swapchain, not the
+		// Quads feature — leave it out of feature-driven auto-wire entirely.
+		{ FluxShaderProgram::TexturedQuad,    nullptr },
+	};
+
+	// Returns the owning feature name for a program, or nullptr if it should not
+	// be auto-wired. Defaults to the program's subsystem grouping.
+	const char* ResolveOwningFeature(const Flux_ShaderRegistryEntry& xEntry)
+	{
+		for (const ProgramOwnerOverride& xOv : s_axOwnerOverrides)
+		{
+			if (xOv.m_eProgram == xEntry.m_eId)
+				return xOv.m_szFeature;
+		}
+		return xEntry.m_szSubsystem;
+	}
+}
+
+void Flux_ShaderHotReload::AutoRegisterFeatures()
+{
+	const Flux_FeatureRegistry& xFeatures = Flux_FeatureRegistry::Get();
+	const u_int uNumPrograms = Flux_ShaderRegistry::GetProgramCount();
+
+	u_int uWired = 0;
+	for (u_int u = 0; u < uNumPrograms; u++)
+	{
+		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgramByIndex(u);
+
+		const char* szFeature = ResolveOwningFeature(xEntry);
+		if (!szFeature) continue; // explicitly unowned (e.g. swapchain blit)
+
+		const Flux_FeatureDesc* pxFeature = xFeatures.FindFeatureByName(szFeature);
+		// No matching engine feature (Water / ComputeTest), or the feature owns no
+		// pipelines (Shadows / DynamicLights) — nothing to rebuild on change.
+		if (!pxFeature || !pxFeature->m_pfnBuildPipelines) continue;
+
+		RegisterProgram(xEntry.m_eId, pxFeature->m_pfnBuildPipelines);
+		uWired++;
+	}
+
+	Zenith_Log(LOG_CATEGORY_RENDERER,
+		"ShaderHotReload: auto-registered %u/%u shader programs from the feature registry",
+		uWired, uNumPrograms);
 }
 
 void Flux_ShaderHotReload::UnregisterProgram(FluxShaderProgram eProgram)

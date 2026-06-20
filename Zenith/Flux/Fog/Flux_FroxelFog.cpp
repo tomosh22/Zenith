@@ -15,10 +15,6 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Compute pipelines
 
 // Apply fragment pipeline
@@ -146,20 +142,6 @@ void Flux_FroxelFogImpl::Initialise()
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Falloff" }, dbg_fFroxelHeightFalloff, 0.001f, 0.1f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Bias" }, dbg_fVolShadowBias, 0.0001f, 0.01f);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Cone Radius" }, dbg_fVolShadowConeRadius, 0.0001f, 0.01f);
-#endif
-
-#ifdef ZENITH_TOOLS
-	// Fog_TemporalResolve listed by the wiring task is registered in
-	// Flux_ShaderRegistry but never built — this subsystem is spatial-only
-	// per Flux/Fog/CLAUDE.md, so only the three pipelines this Initialise
-	// actually constructs are wired into hot reload.
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Fog_FroxelInject,
-		FluxShaderProgram::Fog_FroxelLight,
-		FluxShaderProgram::Fog_FroxelApply,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.FroxelFog().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFog initialised (%ux%ux%u grid)", FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH);

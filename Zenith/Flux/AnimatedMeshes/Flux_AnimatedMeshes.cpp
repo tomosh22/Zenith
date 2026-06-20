@@ -19,10 +19,6 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Phase 7b: state on Flux_AnimatedMeshesImpl held by Zenith_Engine.
 //
 // Cross-subsystem deps (FluxGraphics) are reached via g_xEngine at point of
@@ -111,15 +107,6 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 void Flux_AnimatedMeshesImpl::Initialise()
 {
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::AnimatedMesh_ToGBuffer,
-		FluxShaderProgram::AnimatedMesh_ToShadowmap,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.AnimatedMeshes().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }

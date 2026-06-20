@@ -55,6 +55,15 @@ public:
 
 	void SetupTransients(Flux_RenderGraph& xGraph);
 
+	// No-op: FluxGraphics declares no render-graph passes of its own — its G-buffer /
+	// depth / final-RT transients are created by the @SetupTransients:FluxGraphics
+	// setup step (above), not by a feature SetupRenderGraph. Present only to satisfy
+	// the uniform FluxRenderFeature interface.
+	void SetupRenderGraph(Flux_RenderGraph&) {}
+	// No-op: FluxGraphics owns no shader programs, so there are no pipelines to build
+	// or hot-reload. Present only to satisfy the uniform FluxRenderFeature interface.
+	void BuildPipelines() {}
+
 	Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex);
 	Flux_RenderAttachment& GetDepthAttachment();
 	Flux_RenderAttachment& GetFinalRenderTarget();

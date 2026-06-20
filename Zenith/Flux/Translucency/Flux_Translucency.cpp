@@ -15,10 +15,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 #include <algorithm>
 
 // Pass constants — mirrors TranslucencyConstantsLayout in
@@ -90,14 +86,6 @@ void Flux_TranslucencyImpl::BuildPipelines()
 void Flux_TranslucencyImpl::Initialise()
 {
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Translucent_Forward,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Translucency().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Translucency initialised");
 }

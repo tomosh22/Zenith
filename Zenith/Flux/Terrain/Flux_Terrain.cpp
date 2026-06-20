@@ -21,10 +21,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Terrain.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
 // Material-texture binding table used by ExecuteGBuffer's slot/channel loop.
@@ -261,18 +257,6 @@ void Flux_TerrainImpl::Initialise()
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 12);
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
-#endif
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Terrain_ToGBuffer,
-		FluxShaderProgram::Terrain_ToShadowmap,
-		FluxShaderProgram::TerrainCulling,
-		FluxShaderProgram::TerrainResetCounters,
-		FluxShaderProgram::Water,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Terrain().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========

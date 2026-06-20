@@ -18,20 +18,29 @@
 // de-duplicated each Update pass, so a Common/ touch fires each subsystem's
 // callback exactly once even though it marks every program.
 //
+// AUTOMATIC REGISTRATION (the normal path). Engine subsystems do NOT call
+// RegisterSubsystem themselves any more. Flux::LateInitialise calls
+// AutoRegisterFeatures() after the feature registry is populated; that walks the
+// Flux_ShaderRegistry and wires every program to its owning feature's
+// BuildPipelines callback (Flux_FeatureDesc::m_pfnBuildPipelines). A program's
+// owning feature is its m_szSubsystem string, matched against the feature name —
+// so a new feature gets hot-reload "for free" as long as its shader programs'
+// m_szSubsystem equals its Flux_FeatureRegistry name. The handful of programs
+// whose grouping differs (or that no engine feature owns) live in the override
+// table in the .cpp.
+//
 // Usage:
 //   // At init time (already wired in Flux::LateInitialise):
 //   Flux_ShaderHotReload::Initialise();
-//
-//   // Inside a subsystem's Initialise(), after the first build:
-//   static const FluxShaderProgram s_axMyPrograms[] = {
-//       FluxShaderProgram::Foo,
-//       FluxShaderProgram::Bar,
-//   };
-//   Flux_ShaderHotReload::RegisterSubsystem(&Flux_Foo::BuildPipelines,
-//       s_axMyPrograms, sizeof(s_axMyPrograms) / sizeof(s_axMyPrograms[0]));
+//   // ... after Flux_FeatureRegistry::RegisterDefaultFeatures():
+//   Flux_ShaderHotReload::AutoRegisterFeatures();
 //
 //   // Once per frame at a safe sync point (already wired in Zenith_Vulkan):
 //   Flux_ShaderHotReload::Update();
+//
+// The RegisterProgram / RegisterSubsystem entry points remain public for
+// out-of-tree owners that are not engine features (e.g. a game's own pass, or
+// the swapchain blit) — call them AFTER AutoRegisterFeatures to override.
 class Flux_ShaderHotReload
 {
 public:
@@ -44,6 +53,15 @@ public:
 	static void Shutdown();
 	static bool IsEnabled() { return s_bEnabled; }
 	static void SetEnabled(bool bEnabled);
+
+	// Walk the Flux_ShaderRegistry and register every shader program against its
+	// owning feature's BuildPipelines callback, resolved from the
+	// Flux_FeatureRegistry. This replaces the per-subsystem RegisterSubsystem
+	// boilerplate — subsystems no longer register themselves. Must be called AFTER
+	// Flux_FeatureRegistry::RegisterDefaultFeatures (so the rebuild callbacks
+	// exist) and after Initialise (so the watcher is live); both hold in
+	// Flux::LateInitialise. Idempotent — safe to call again after a re-init.
+	static void AutoRegisterFeatures();
 
 	// Drains pending file-change notifications and fires callbacks for any
 	// programs whose source changed. Must be called from the main thread at

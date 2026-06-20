@@ -21,10 +21,6 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include <vector>
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 //=============================================================================
 // Push Constants for Instanced Meshes (192 bytes)
 // Mirrors MaterialDrawConstants except the 5th field carries VAT animation
@@ -156,16 +152,6 @@ void Flux_InstancedMeshesImpl::Initialise()
 	// One-time setup that hot-reload must NOT repeat (would leak VRAM).
 	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), m_xCullingConstantsBuffer);
 	m_bCullingInitialized = true;
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::InstancedMesh_ToGBuffer,
-		FluxShaderProgram::InstancedMesh_ToShadowmap,
-		FluxShaderProgram::InstanceCulling,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.InstancedMeshes().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif

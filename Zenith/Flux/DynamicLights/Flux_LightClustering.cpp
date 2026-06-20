@@ -10,10 +10,6 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Flux/Flux_BackendTypes.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#endif
-
 // =====================================================================
 // Flux_LightClustering — implementation.
 //
@@ -72,14 +68,6 @@ void Flux_LightClusteringImpl::Initialise()
 	xVulkanMemory.InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, m_xClusterLightIndices);
 
 	BuildPipelines();
-
-#ifdef ZENITH_TOOLS
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::LightClustering,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.LightClustering().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
-#endif
 
 	m_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering initialised (%ux%ux%u clusters, %u max lights/cluster)",

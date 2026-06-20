@@ -19,7 +19,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Maths/Zenith_Maths_Intersections.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Flux/Slang/Flux_ShaderHotReload.h"
 #include "Flux/Flux_BackendTypes.h"
 
 // Constants
@@ -93,12 +92,6 @@ void Flux_GizmosImpl::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
 #endif
-
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Gizmos,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Gizmos().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos initialised");
 }

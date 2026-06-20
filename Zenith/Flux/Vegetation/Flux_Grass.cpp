@@ -17,7 +17,6 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 // Phase 7g: subsystem state moved to Flux_GrassImpl held by Zenith_Engine.
@@ -122,12 +121,6 @@ void Flux_GrassImpl::Initialise()
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
-
-	static const FluxShaderProgram s_axPrograms[] = {
-		FluxShaderProgram::Grass,
-	};
-	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Grass().BuildPipelines(); },
-		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass Initialised");
