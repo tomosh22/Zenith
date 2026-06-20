@@ -20,7 +20,6 @@
 class Zenith_Vulkan;
 class Zenith_Vulkan_MemoryManager;
 class Flux_RendererImpl;
-class Flux_GraphicsImpl;
 class Zenith_Profiling;
 
 // Per-Engine state + behaviour for the Vulkan swapchain. Replaces both the
@@ -81,11 +80,11 @@ public:
 
 	bool                         m_bShouldWaitOnImageAvailableSem = false;
 
-	// Copy-to-framebuffer pass — samples the final render target and writes
-	// to the current swapchain image. Manually Reset() in Shutdown() before
-	// the Vulkan device tears down.
-	Zenith_Vulkan_Shader         m_xCopyToFramebufferShader;
-	Zenith_Vulkan_Pipeline       m_xCopyToFramebufferPipeline;
+	// Command buffer for the final-frame present blit. The blit pipeline + shader
+	// + recording are owned by the backend-neutral Flux_Present feature; only this
+	// command buffer (whose record-pass begin / submit / present are inherently
+	// backend-specific) stays here. EndFrame hands it to Flux_PresentImpl::
+	// RecordBlit each frame.
 	Zenith_Vulkan_CommandBuffer  m_xCopyToFramebufferCmd;
 
 	// Self-wired cross-subsystem deps (set once at the top of Initialise()).
@@ -95,10 +94,8 @@ public:
 	Zenith_Vulkan*               m_pxVulkan        = nullptr;
 	Zenith_Vulkan_MemoryManager* m_pxVulkanMemory  = nullptr;
 	Flux_RendererImpl*           m_pxFluxRenderer  = nullptr;
-	Flux_GraphicsImpl*           m_pxFluxGraphics  = nullptr;
 	Zenith_Profiling*            m_pxProfiling     = nullptr;
 
 private:
 	void BindAsTarget();
-	void InitialiseCopyToFramebufferCommands();
 };

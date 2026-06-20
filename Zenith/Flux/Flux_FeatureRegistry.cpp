@@ -35,6 +35,7 @@
 #include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
+#include "Flux/Present/Flux_PresentImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
@@ -45,15 +46,6 @@
 
 #include <cstring> // strcmp — name lookups (Register dup-check / FindFeatureByName / HasSetupStepNamed); deliberately not in the header.
 #include <type_traits> // std::remove_cvref_t — strip the accessor's returned T& for the FluxRenderFeature constraint on RegisterFeature.
-
-// Moved here from Flux.cpp: no-op record callback for the final-layout-transition
-// pass. The pass carries no commands — it exists only so the render graph emits a
-// prologue barrier putting the Final RT into SHADER_READ_ONLY_OPTIMAL for the
-// swapchain copy (which lives outside the graph). File-static, not header-exposed;
-// referenced solely by the @FinalRTLayoutTransition setup step below.
-static void Flux_FinalLayoutTransitionNoOp(Flux_CommandBuffer*, void*)
-{
-}
 
 // ---------------------------------------------------------------------------
 // Registry plumbing.
@@ -329,11 +321,10 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// early-out when the editor panel is closed, so placement is cosmetic.
 	RegisterFeature<&Zenith_Engine::MaterialPreview>(xReg, "MaterialPreview");
 #endif
-	xReg.AddSetupStep("@FinalRTLayoutTransition", +[](Flux_RenderGraph& xGraph){
-		// Leaves the Final Render Target in SHADER_READ_ONLY_OPTIMAL so the
-		// swapchain copy (outside the graph) can sample it. Pure reader → sorts
-		// strictly after every Final-RT writer (tonemap/quads/text/gizmos).
-		xGraph.AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
-		      .Reads(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
-	});
+	// Present is the LAST feature: its SetupRenderGraph adds the final-RT
+	// layout-transition reader (subsuming the former @FinalRTLayoutTransition raw
+	// step), and it owns the backend-neutral present blit pipeline the swapchain
+	// uses to copy the Final RT to the backbuffer. Declared after every Final-RT
+	// writer (tonemap/quads/text/gizmos) so its reader sorts strictly last.
+	RegisterFeature<&Zenith_Engine::Present>(xReg, "Present");
 }

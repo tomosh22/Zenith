@@ -24,9 +24,10 @@
 //                its own state, never another feature (verified), so the render-
 //                graph declaration order is also a valid init/teardown order.
 //   * Setup    — RegisterFeature auto-appends the feature's SetupRenderGraph step
-//                at the call site; the few non-feature "irregular" steps are
-//                interleaved with AddSetupStep (FluxGraphics/HDR transient
-//                creation, final-RT layout transition).
+//                at the call site (via AddSetupStep). RegisterDefaultFeatures is
+//                now ALL features — no hand-written irregular steps remain (the
+//                former transient-creation + final-RT-layout-transition steps are
+//                now FluxGraphics / Flux_Present SetupRenderGraph methods).
 //                This declaration order is LOAD-BEARING — the graph topologically
 //                sorts passes by declared Reads/Writes, SEEDED by declaration order
 //                two ways:
@@ -49,12 +50,11 @@ class Flux_RenderGraph;
 // trips if the registration list ever exceeds this (count is a runtime value).
 static constexpr u_int FLUX_MAX_FEATURES = 40;
 
-// One step in the single ordered SetupRenderGraph walk. Most steps are a
-// feature's SetupRenderGraph trampoline (auto-appended by RegisterFeature); a few
-// are "irregulars" added via AddSetupStep — the FluxGraphics/HDR transient
-// creation and the final-RT layout-transition pass — which are not plain feature
-// setups but share the void(Flux_RenderGraph&) signature. They are ordinary
-// ordered steps in the one walk. See the ORDERING note.
+// One step in the single ordered SetupRenderGraph walk. Every step is a feature's
+// SetupRenderGraph trampoline, auto-appended by RegisterFeature via AddSetupStep.
+// AddSetupStep stays a public primitive (used by Register; also callable directly
+// by out-of-tree owners such as a game's own pass), but RegisterDefaultFeatures no
+// longer hand-writes any irregular steps. See the ORDERING note.
 struct Flux_SetupStep
 {
 	const char* m_szName              = nullptr;

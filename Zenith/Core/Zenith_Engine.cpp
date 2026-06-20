@@ -63,6 +63,7 @@
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
+#include "Flux/Present/Flux_PresentImpl.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #ifdef ZENITH_TOOLS
@@ -217,6 +218,7 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TranslucencyImpl,            Translucency,  
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PrimitivesImpl,              Primitives,           m_pxPrimitives)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_HDRImpl,                     HDR,                  m_pxHDR)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TerrainImpl,                 Terrain,              m_pxTerrain)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PresentImpl,                 Present,              m_pxPresent)
 #ifdef ZENITH_TOOLS
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GizmosImpl,                  Gizmos,               m_pxGizmos)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_MaterialPreviewImpl,         MaterialPreview,      m_pxMaterialPreview)
@@ -360,6 +362,7 @@ void Zenith_Engine::AllocateFluxSubsystems()
 	// biggest subsystems.
 	m_pxHDR     = new Flux_HDRImpl();
 	m_pxTerrain = new Flux_TerrainImpl();
+	m_pxPresent = new Flux_PresentImpl();
 #ifdef ZENITH_TOOLS
 	m_pxGizmos          = new Flux_GizmosImpl();
 	m_pxMaterialPreview = new Flux_MaterialPreviewImpl();
@@ -888,6 +891,7 @@ void Zenith_Engine::DeleteRendererState()
 	delete m_pxPrimitives; m_pxPrimitives = nullptr;
 	delete m_pxHDR;     m_pxHDR     = nullptr;
 	delete m_pxTerrain; m_pxTerrain = nullptr;
+	delete m_pxPresent; m_pxPresent = nullptr;
 #ifdef ZENITH_TOOLS
 	delete m_pxGizmos;          m_pxGizmos = nullptr;
 	delete m_pxMaterialPreview; m_pxMaterialPreview = nullptr;

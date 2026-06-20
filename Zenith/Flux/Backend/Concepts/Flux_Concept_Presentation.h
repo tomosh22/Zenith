@@ -16,7 +16,7 @@
 // g_xEngine.Frame().GetRingIndex() at call time.
 
 template <typename T>
-concept FluxBackendPresentation = requires(T t)
+concept FluxBackendPresentation = requires(T t, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepth)
 {
 	{ t.Initialise()                                                           } -> std::same_as<void>;
 	// BeginFrame / EndFrame are instance methods — the main loop calls them via
@@ -26,4 +26,8 @@ concept FluxBackendPresentation = requires(T t)
 	{ t.GetWidth()                                                             } -> std::same_as<uint32_t>;
 	{ t.GetHeight()                                                            } -> std::same_as<uint32_t>;
 	{ t.GetCurrentFrameIndex()                                                 } -> std::same_as<uint32_t>;
+	// The acquired backbuffer exposed as a neutral render target. The backend-
+	// neutral Flux_Present feature reads its colour format to build the present
+	// pipeline; backends MUST expose it so presentation stays render-API-neutral.
+	{ t.GetCurrentSwapchainTarget(uNumColour, pxDepth)                         } -> std::same_as<Flux_RenderAttachment*>;
 };

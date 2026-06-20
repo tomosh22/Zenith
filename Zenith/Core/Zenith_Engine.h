@@ -47,6 +47,7 @@ class Flux_TranslucencyImpl;
 class Flux_PrimitivesImpl;
 class Flux_HDRImpl;
 class Flux_TerrainImpl;
+class Flux_PresentImpl;
 class Zenith_DebugVariables;
 class Zenith_EditorAutomation;
 class Zenith_Editor;
@@ -162,6 +163,7 @@ public:
 	Flux_PrimitivesImpl& Primitives();
 	Flux_HDRImpl& HDR();
 	Flux_TerrainImpl& Terrain();
+	Flux_PresentImpl& Present();
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl& Gizmos();
 	Flux_MaterialPreviewImpl& MaterialPreview();
@@ -261,6 +263,7 @@ private:
 	Flux_PrimitivesImpl*                m_pxPrimitives       = nullptr;
 	Flux_HDRImpl*                       m_pxHDR              = nullptr;
 	Flux_TerrainImpl*                   m_pxTerrain          = nullptr;
+	Flux_PresentImpl*                   m_pxPresent          = nullptr;
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
 	Flux_MaterialPreviewImpl*           m_pxMaterialPreview  = nullptr;

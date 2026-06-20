@@ -553,6 +553,9 @@
     <ClCompile Include="..\Zenith\Flux\Particles\Flux_Particles.cpp">
       <Filter>Flux\Particles</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Present\Flux_Present.cpp">
+      <Filter>Flux\Present</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Primitives\Flux_Primitives.cpp">
       <Filter>Flux\Primitives</Filter>
     </ClCompile>
@@ -2622,6 +2625,9 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Present\Flux_PresentImpl.h">
+      <Filter>Flux\Present</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_PrimitivesImpl.h">
       <Filter>Flux\Primitives</Filter>
     </ClInclude>
@@ -2856,9 +2862,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.slang">
       <Filter>Flux\Shaders\SDFs</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AerialPerspective.slang">
-      <Filter>Flux\Shaders\Skybox</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.slang">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
@@ -2866,6 +2869,12 @@
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_SkyboxSolidColour.slang">
+      <Filter>Flux\Shaders\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_SkyViewLUT.slang">
+      <Filter>Flux\Shaders\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_TransmittanceLUT.slang">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.slang">
@@ -3335,6 +3344,9 @@
     </Filter>
     <Filter Include="Flux\Particles">
       <UniqueIdentifier>{b458bbe9-33ce-1680-c291-58f5f6673943}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Present">
+      <UniqueIdentifier>{5b8d2b6f-3d87-6dcb-492b-fbaf132a34b8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Primitives">
       <UniqueIdentifier>{02e9fc3e-4e26-4113-0f85-c9171a136c94}</UniqueIdentifier>

@@ -19,7 +19,7 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"fsMain",
 		nullptr,
 		"spirv_1_3",
-		"Quads",
+		"Present",
 	},
 
 	// HiZ depth-pyramid generator. Compute pilot — proves the compute path

@@ -293,9 +293,6 @@ namespace
 		{ FluxShaderProgram::LightClustering, "LightClustering" },
 		// Subsystem grouping is "Vegetation"; the feature / engine accessor is "Grass".
 		{ FluxShaderProgram::Grass,           "Grass" },
-		// The final-frame blit shader is owned by Zenith_Vulkan_Swapchain, not the
-		// Quads feature — leave it out of feature-driven auto-wire entirely.
-		{ FluxShaderProgram::TexturedQuad,    nullptr },
 	};
 
 	// Returns the owning feature name for a program, or nullptr if it should not

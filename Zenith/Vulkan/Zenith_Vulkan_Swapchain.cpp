@@ -8,6 +8,7 @@
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Present/Flux_PresentImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Flux/Flux_Screenshot.h"
@@ -32,9 +33,6 @@ uint32_t       Zenith_Vulkan_Swapchain::GetWidth()  { return Zenith_Vulkan_Swapc
 uint32_t       Zenith_Vulkan_Swapchain::GetHeight() { return Zenith_Vulkan_Swapchain::m_xExtent.height; }
 vk::Extent2D&  Zenith_Vulkan_Swapchain::GetExtent() { return Zenith_Vulkan_Swapchain::m_xExtent; }
 vk::Format     Zenith_Vulkan_Swapchain::GetFormat() { return Zenith_Vulkan_Swapchain::m_xImageFormat; }
-
-DEBUGVAR bool dbg_bOutputMRT = false;
-DEBUGVAR uint32_t dbg_uMRTIndex = MRT_INDEX_DIFFUSE;
 
 struct SwapChainSupportDetails
 {
@@ -128,31 +126,6 @@ Zenith_Vulkan_Swapchain::~Zenith_Vulkan_Swapchain()
 	
 }
 
-void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
-{
-	m_xCopyToFramebufferCmd.Initialise();
-
-	// Pilot Slang program — replaces the GLSL pair Flux_Fullscreen_UV.vert +
-	// Flux_TexturedQuad.frag. Resolves to Quads/Flux_TexturedQuad.slang via
-	// Flux_ShaderRegistry.
-	m_xCopyToFramebufferShader.Initialise(FluxShaderProgram::TexturedQuad);
-
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
-	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat;
-	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &m_xCopyToFramebufferShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumBindingGroups = 1;
-	xLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_TEXTURE;
-
-	Flux_PipelineBuilder::FromSpecification(m_xCopyToFramebufferPipeline, xPipelineSpec);
-}
-
 void Zenith_Vulkan_Swapchain::Initialise()
 {
 	// Self-wire cross-subsystem deps once (FluxBackendPresentation forbids
@@ -162,7 +135,6 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	m_pxVulkan       = &g_xEngine.FluxBackend();
 	m_pxVulkanMemory = &g_xEngine.FluxMemory();
 	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
-	m_pxFluxGraphics = &g_xEngine.FluxGraphics();
 	m_pxProfiling    = &g_xEngine.Profiling();
 
 	const vk::SurfaceKHR& xSurface = m_pxVulkan->GetSurface();
@@ -304,32 +276,20 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		m_axRenderFinishedSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
 	}
 
-	InitialiseCopyToFramebufferCommands();
+	// The present blit's command buffer. Its pipeline + shader + the blit
+	// recording itself are owned by the backend-neutral Flux_Present feature.
+	m_xCopyToFramebufferCmd.Initialise();
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan swapchain initialised");
-
-	//#TO_TODO: this is very hacky, Initialise gets called whenever we need to recreate the swapchain, e.g on resize, this should only be called once
-#ifdef ZENITH_DEBUG_VARIABLES
-	static bool s_bInitialisedDbgVars = false;
-	if (!s_bInitialisedDbgVars)
-	{
-		g_xEngine.DebugVariables().AddBoolean({ "Render", "Debug", "Output MRT" }, dbg_bOutputMRT);
-		g_xEngine.DebugVariables().AddUInt32({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, MRT_INDEX_COUNT - 1);
-		s_bInitialisedDbgVars = true;
-	}
-#endif
 }
 
 void Zenith_Vulkan_Swapchain::Shutdown()
 {
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
-	// Tear down the copy-to-framebuffer shader/pipeline/cmd buffer while the
-	// Vulkan device is still alive. The members' destructors run later when
-	// Zenith_Engine deletes the swapchain impl, but by then they'll be in the
-	// freshly-reset state so the Reset()s inside the destructors are no-ops.
-	m_xCopyToFramebufferPipeline.Reset();
-	m_xCopyToFramebufferShader.Reset();
+	// Tear down the present command buffer while the Vulkan device is still alive.
+	// The blit pipeline + shader are owned by Flux_Present and torn down by its
+	// Shutdown (the feature shutdown walk runs before the device is destroyed).
 	m_xCopyToFramebufferCmd.GetCurrentCmdBuffer() = VK_NULL_HANDLE;
 	m_xCopyToFramebufferCmd.SetCurrentRenderPass(VK_NULL_HANDLE);
 
@@ -383,7 +343,6 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 	m_pxVulkan       = nullptr;
 	m_pxVulkanMemory = nullptr;
 	m_pxFluxRenderer = nullptr;
-	m_pxFluxGraphics = nullptr;
 	m_pxProfiling    = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan swapchain shut down");
@@ -646,37 +605,10 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 	BindAsTarget();
 
-	xCmd.SetPipeline(&m_xCopyToFramebufferPipeline);
-
-	xCmd.SetVertexBuffer(m_pxFluxGraphics->m_xQuadMesh.GetVertexBuffer());
-	xCmd.SetIndexBuffer(m_pxFluxGraphics->m_xQuadMesh.GetIndexBuffer());
-
-#ifdef ZENITH_DEBUG_VARIABLES
-	if (dbg_bOutputMRT)
-	{
-		// When debugging, bind the MRT SRV
-		Flux_ShaderResourceView* pxMRTSRV = m_pxFluxGraphics->GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
-		if (pxMRTSRV)
-		{
-			xCmd.BindSRV(pxMRTSRV, Flux_BindingSlot{ 0, 0, true });
-		}
-	}
-	else
-#endif
-	{
-		// Bind final render target using SRV
-		Flux_ShaderResourceView& xSRV = m_pxFluxGraphics->GetFinalRenderTarget().SRV();
-		if (xSRV.m_xImageViewHandle.IsValid())
-		{
-			xCmd.BindSRV(&xSRV, Flux_BindingSlot{ 0, 0, true });
-		}
-		else
-		{
-			Zenith_Assert(false, "Final render target SRV not created");
-		}
-	}
-
-	xCmd.DrawIndexed(6);
+	// The present blit pipeline + recording is owned by the backend-neutral
+	// Flux_Present feature; delegate to it. It samples the Final RT (or a debug
+	// MRT) into the backbuffer, inside the render pass BindAsTarget() began.
+	g_xEngine.Present().RecordBlit(xCmd);
 
 #ifdef ZENITH_TOOLS
 	// Render ImGui on top of the game content
