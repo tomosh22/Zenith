@@ -191,7 +191,7 @@ namespace
 		// pass with owner "DP_Fog" (the feature name) around this call.
 		xGraph.AddPass("DP_Fog", &ExecuteDPFog)
 			.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
-			.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV);
+			.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	void ShutdownDPFog()

@@ -2,7 +2,7 @@
   "name": "Test_DPDoor_LockedStaysUnlockedAfterCloseReopen",
   "passed": true,
   "frames": 61,
-  "durationMs": 3068.015,
+  "durationMs": 1997.099,
   "failures": [],
   "skipped": false
 }

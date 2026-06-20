@@ -233,7 +233,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// at the semicolon. All loop/conditional declarations below go through
 	// the graph's Read/ReadTransient helpers with the captured handle.
 	const Flux_PassHandle xPass = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.ClearTargets();
 
 	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();

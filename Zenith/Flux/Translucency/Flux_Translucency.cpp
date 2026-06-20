@@ -109,7 +109,7 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	const Flux_PassHandle xPass = xGraph.AddPass("Translucency", ExecuteTranslucency)
 		.Prepare([](void* p){ g_xEngine.Translucency().GatherDrawPacket(p); })
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(),      RESOURCE_ACCESS_READ_DEPTH);
 
 	// Shadow maps (CSM depth targets) — same declarations as DeferredShading

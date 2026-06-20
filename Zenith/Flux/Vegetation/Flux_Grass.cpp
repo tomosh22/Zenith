@@ -170,7 +170,7 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// blades depth-test against the opaque scene without writing depth.
 	// Do NOT clear: both attachments carry live scene contents.
 	xGraph.AddPass("Grass", ExecuteRender)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),                 RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),                 RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),       RESOURCE_ACCESS_READ_DEPTH);
 }
 

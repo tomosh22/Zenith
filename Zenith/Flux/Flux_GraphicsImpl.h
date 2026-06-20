@@ -55,11 +55,12 @@ public:
 
 	void SetupTransients(Flux_RenderGraph& xGraph);
 
-	// No-op: FluxGraphics declares no render-graph passes of its own — its G-buffer /
-	// depth / final-RT transients are created by the @SetupTransients:FluxGraphics
-	// setup step (above), not by a feature SetupRenderGraph. Present only to satisfy
-	// the uniform FluxRenderFeature interface.
-	void SetupRenderGraph(Flux_RenderGraph&) {}
+	// FluxGraphics creates all the shared cross-feature render-graph transients
+	// (G-buffer / depth / final-RT / HDR scene) via SetupTransients. It is registered
+	// FIRST, so its SetupRenderGraph runs before any feature declares a pass on those
+	// targets — which is why this is real work, not a no-op (it replaced the former
+	// @SetupTransients:FluxGraphics raw step).
+	void SetupRenderGraph(Flux_RenderGraph& xGraph) { SetupTransients(xGraph); }
 	// No-op: FluxGraphics owns no shader programs, so there are no pipelines to build
 	// or hot-reload. Present only to satisfy the uniform FluxRenderFeature interface.
 	void BuildPipelines() {}
@@ -67,6 +68,15 @@ public:
 	Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex);
 	Flux_RenderAttachment& GetDepthAttachment();
 	Flux_RenderAttachment& GetFinalRenderTarget();
+
+	// HDR scene target — the shared scene-colour buffer many features write and the
+	// HDR tonemap reads. Owned here (alongside the other shared targets) so it exists
+	// before the first writer; the HDR feature keeps only its private bloom chain.
+	// (Was Flux_HDRImpl's, created by the removed @SetupTransients:HDR step.)
+	Flux_RenderAttachment&   GetHDRSceneTarget();
+	Flux_ShaderResourceView& GetHDRSceneSRV();
+	void GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
+	void GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 
 	TextureFormat GetMRTFormat(MRTIndex eIndex);
 
@@ -82,6 +92,7 @@ public:
 	const Flux_ShaderResourceView* GetDebugSRV_MRTNormalsAO();
 	const Flux_ShaderResourceView* GetDebugSRV_MRTMaterial();
 	const Flux_ShaderResourceView* GetDebugSRV_Depth();
+	const Flux_ShaderResourceView* GetDebugSRV_HDRScene();
 #endif
 
 	Zenith_Maths::Matrix4  GetViewProjMatrix();
@@ -140,5 +151,6 @@ public:
 	Flux_TransientHandle        m_axMRTHandles[MRT_INDEX_COUNT];
 	Flux_TransientHandle        m_xFinalRTHandle;
 	Flux_TransientHandle        m_xDepthHandle;
+	Flux_TransientHandle        m_xHDRSceneTargetHandle;
 	Flux_RenderGraph*           m_pxGraph = nullptr;
 };

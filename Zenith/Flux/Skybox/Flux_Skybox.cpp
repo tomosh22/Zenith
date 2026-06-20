@@ -503,7 +503,7 @@ void Flux_SkyboxImpl::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph
 	// it downstream of the lighting pass — otherwise it would blend into stale
 	// last-frame HDR and produce garbage.
 	xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),      RESOURCE_ACCESS_READ_SRV);
 }
 

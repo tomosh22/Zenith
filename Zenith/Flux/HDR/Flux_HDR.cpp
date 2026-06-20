@@ -187,8 +187,9 @@ void Flux_HDRImpl::Initialise()
 	RegisterDebugVariables();
 #endif
 
-	// Render targets are graph-owned transients, created in SetupTransients.
-	// No resize callback needed — the graph re-creates them on every
+	// HDR's render targets are graph-owned transients: the shared scene target is
+	// created by Flux_Graphics; the private bloom chain in HDR::SetupRenderGraph. No
+	// resize callback needed — the graph re-creates transients on every
 	// SetupRenderGraph pass, which is already a resize callback.
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HDR Initialised");
@@ -306,7 +307,7 @@ static void ExecuteLuminanceHistogram(Flux_CommandBuffer* pxCommandList, void* p
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindDrawConstants(xHDR.m_xLuminanceHistogramShader, "LuminanceConstants", &xConsts, sizeof(xConsts));
-	xBinder.BindSRV(xHDR.m_xLuminanceHistogramShader, "g_xHDRTex", &xHDR.GetHDRSceneTarget().SRV());
+	xBinder.BindSRV(xHDR.m_xLuminanceHistogramShader, "g_xHDRTex", &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
 	xBinder.BindUAV_Buffer(xHDR.m_xLuminanceHistogramShader, "g_auHistogram", &xHDR.m_xHistogramBuffer.GetUAV());
 
 	u_int uGroupsX = (g_xEngine.FluxSwapchain().GetWidth() + 15) / 16;
@@ -444,7 +445,7 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(xHDR.m_xBloomThresholdShader, "g_xHDRTex", &xHDR.GetHDRSceneTarget().SRV());
+	xBinder.BindSRV(xHDR.m_xBloomThresholdShader, "g_xHDRTex", &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
 	xBinder.BindDrawConstants(xHDR.m_xBloomThresholdShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -529,7 +530,7 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindSRV(xHDR.m_xToneMappingShader, "g_xHDRTex", &xHDR.GetHDRSceneTarget().SRV());
+		xBinder.BindSRV(xHDR.m_xToneMappingShader, "g_xHDRTex", &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
 		xBinder.BindSRV(xHDR.m_xToneMappingShader, "g_xBloomTex", &xHDR.GetBloomChainAttachment(0).SRV());
 		// Slang reflection keys on the variable name (not the GLSL block
 		// name) — match the names declared in Flux_ToneMapping.slang.
@@ -547,25 +548,13 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	}
 }
 
-void Flux_HDRImpl::SetupTransients(Flux_RenderGraph& xGraph)
+void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
 
-	// Create transient HDR scene target early — many subsystems write to
-	// GetHDRSceneTarget() during their SetupRenderGraph, so the handle must
-	// exist before they run.
-	Flux_TransientTextureDesc xHDRDesc;
-	xHDRDesc.m_uWidth = g_xEngine.FluxSwapchain().GetWidth();
-	xHDRDesc.m_uHeight = g_xEngine.FluxSwapchain().GetHeight();
-	xHDRDesc.m_eFormat = HDR_SCENE_FORMAT;
-	xHDRDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	m_xHDRSceneTargetHandle = xGraph.CreateTransient(xHDRDesc);
-}
-
-void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
-{
-	// m_pxGraph already set by SetupTransients(). HDR scene target transient
-	// already created there too.
+	// The HDR scene target is created + owned by Flux_Graphics (a shared target,
+	// created before the first writer); HDR creates only its private bloom chain
+	// here, then declares its bloom / tonemap / exposure passes.
 
 	u_int uBloomWidth = g_xEngine.FluxSwapchain().GetWidth() / 2;
 	u_int uBloomHeight = g_xEngine.FluxSwapchain().GetHeight() / 2;
@@ -585,7 +574,7 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	xGraph.AddPass("HDR_LuminanceHistogram", ExecuteLuminanceHistogram)
 		.Prepare    (PreExecuteLuminanceHistogram)
-		.Reads      (GetHDRSceneTarget(),                     RESOURCE_ACCESS_READ_SRV)
+		.Reads      (g_xEngine.FluxGraphics().GetHDRSceneTarget(),                     RESOURCE_ACCESS_READ_SRV)
 		.WritesBuffer(m_xHistogramBuffer.GetBuffer(),          RESOURCE_ACCESS_WRITE_UAV);
 
 	// Histogram is bound as UAV_Buffer (see ExecuteAdaptation); declare as
@@ -596,7 +585,7 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	xGraph.AddPass("HDR_BloomThreshold", ExecuteBloomThreshold)
 		.ClearTargets()
-		.Reads          (GetHDRSceneTarget(),             RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetHDRSceneTarget(),             RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_axBloomChainHandles[0],        RESOURCE_ACCESS_WRITE_RTV);
 
 	static const char* s_aszBloomDownsampleNames[] = {
@@ -630,37 +619,16 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// rather than the shader's actual read-only intent.
 	xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping)
 		.ClearTargets()
-		.Reads         (GetHDRSceneTarget(),                    RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetHDRSceneTarget(),                    RESOURCE_ACCESS_READ_SRV)
 		.Writes        (g_xEngine.FluxGraphics().GetFinalRenderTarget(),  RESOURCE_ACCESS_WRITE_RTV)
 		.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),         RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),          RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsTransient(m_axBloomChainHandles[0],               RESOURCE_ACCESS_READ_SRV);
 }
 
-Flux_ShaderResourceView& Flux_HDRImpl::GetHDRSceneSRV()
-{
-	return GetHDRSceneTarget().SRV();
-}
-
-Flux_RenderAttachment& Flux_HDRImpl::GetHDRSceneTarget()
-{
-	Zenith_Assert(m_pxGraph, "Flux_HDRImpl::GetHDRSceneTarget: graph pointer is null");
-	return m_pxGraph->GetTransientAttachment(m_xHDRSceneTargetHandle);
-}
-
-void Flux_HDRImpl::GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
-{
-	apxColourAttachments[0] = &GetHDRSceneTarget();
-	uNumColour = 1;
-	pxDepthStencil = nullptr;
-}
-
-void Flux_HDRImpl::GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
-{
-	apxColourAttachments[0] = &GetHDRSceneTarget();
-	uNumColour = 1;
-	pxDepthStencil = &g_xEngine.FluxGraphics().GetDepthAttachment();
-}
+// GetHDRSceneTarget / GetHDRSceneSRV / GetHDRSceneTargetSetup{,WithDepth} moved to
+// Flux_GraphicsImpl — the HDR scene target is a shared Flux_Graphics-owned transient
+// now. HDR reads it via g_xEngine.FluxGraphics().GetHDRSceneTarget().
 
 
 
@@ -755,11 +723,6 @@ void Flux_HDRImpl::RegisterDebugVariables()
 // via g_xEngine.DebugVariables().AddTextureCallback in Flux::LateInitialise; the
 // callback is invoked on every ImGui draw so the preview tracks transient
 // rebuilds on resize without leaving a dangling SRV.
-const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_HDRScene()
-{
-	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_xHDRSceneTargetHandle).SRV();
-}
 const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_Bloom0()
 {
 	if (m_pxGraph == nullptr) return nullptr;

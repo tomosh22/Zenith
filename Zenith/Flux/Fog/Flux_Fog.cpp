@@ -243,7 +243,6 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	m_uLastFogTechnique = UINT32_MAX; // Force initial enable/disable
 
 	Flux_FroxelFogImpl& xFroxelFog = g_xEngine.FroxelFog();
-	Flux_HDRImpl&       xHDR       = g_xEngine.HDR();
 	Flux_GraphicsImpl&  xGraphics  = g_xEngine.FluxGraphics();
 
 	// Let FroxelFog create its transient resources (must happen before pass registration)
@@ -255,7 +254,7 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Flux_PassHandle conversion.
 
 	m_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
-		.Writes(xHDR.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
@@ -272,17 +271,17 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// be declared so the graph transitions them out of GENERAL before the
 	// SRV bind.
 	m_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
-		.Writes        (xHDR.GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (xGraphics.GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
 		.Reads         (xGraphics.GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(xFroxelFog.GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(xFroxelFog.GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
 
 	m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
-		.Writes(xHDR.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
-		.Writes(xHDR.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// A game that overrides fog force-disables owner "Fog" on the graph; that

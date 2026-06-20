@@ -45,20 +45,25 @@ Scene Rendering (Deferred Shading, SSAO, Fog, Particles, SDFs)
 
 ## Render Targets
 
-All HDR render targets are graph-owned transients declared in
-`Flux_HDR::SetupTransients` / `SetupRenderGraph`.
+HDR owns only its **private bloom chain** (a graph transient created in
+`Flux_HDR::SetupRenderGraph`). The **HDR scene target** is a *shared* render target
+owned by `Flux_Graphics` — created up front in `Flux_GraphicsImpl::SetupRenderGraph`
+(the first feature), before any feature writes it. HDR reads / tonemaps it via
+`g_xEngine.FluxGraphics().GetHDRSceneTarget()`.
 
-| Target | Format | Purpose |
-|--------|--------|---------|
-| HDR scene target (`s_xHDRSceneTargetHandle`) | `RGBA16F` | Main HDR scene accumulation |
-| Bloom chain (`s_axBloomChainHandles[5]`) | `RGBA16F` | Bloom downsample/upsample chain |
+| Target | Owner | Format | Purpose |
+|--------|-------|--------|---------|
+| HDR scene target (`m_xHDRSceneTargetHandle`) | `Flux_Graphics` | `RGBA16F` | Main HDR scene accumulation (shared; many features write it) |
+| Bloom chain (`m_axBloomChainHandles[5]`) | `Flux_HDR` | `RGBA16F` | Bloom downsample/upsample chain (HDR-private) |
 
 ## Target Setups
 
+The HDR scene-target setup helpers live on `Flux_Graphics` (it owns the target):
+
 | Setup | Use Case |
 |-------|----------|
-| `GetHDRSceneTargetSetup()` | Color-only (deferred shading, SSAO, fog) |
-| `GetHDRSceneTargetSetupWithDepth()` | With depth (particles, SDFs) |
+| `g_xEngine.FluxGraphics().GetHDRSceneTargetSetup()` | Color-only (deferred shading, fog) |
+| `g_xEngine.FluxGraphics().GetHDRSceneTargetSetupWithDepth()` | With depth (particles, SDFs) |
 
 ## Pass placement
 
@@ -126,27 +131,24 @@ Systems that render after tone mapping (to final target):
 
 ## Initialization Order
 
-HDR must be initialized BEFORE systems that render to the HDR target:
-
-```cpp
-Flux_Swapchain::Initialise();
-Flux_Graphics::Initialise();
-Flux_HDR::Initialise();        // Creates HDR targets
-// ... then DeferredShading, SSAO, Fog, etc.
-```
+The shared HDR scene target is created by `Flux_Graphics` (the first-registered
+feature) in its `SetupRenderGraph` — before any feature declares a pass on it. The
+ordering is feature-registry-driven (see `Flux_FeatureRegistry.cpp`), not a manual
+call sequence. `Flux_HDR::Initialise` creates only HDR's histogram/exposure buffers;
+its private bloom chain is created in `Flux_HDR::SetupRenderGraph`.
 
 ## Common Operations
 
 ### Render to HDR (no depth):
 HDR targets are declared as render-graph pass writes; the pass's record callback
 records directly into the supplied `Flux_CommandBuffer*`. Target setup comes from
-`Flux_HDR::GetHDRSceneTargetSetup()` (or `...WithDepth()`), wired via the pass's
-`Writes(...)` declarations in `SetupRenderGraph` — there is no manual command-list
-submission.
+`g_xEngine.FluxGraphics().GetHDRSceneTargetSetup()` (or `...WithDepth()`), wired via
+the pass's `Writes(...)` declarations in `SetupRenderGraph` — there is no manual
+command-list submission.
 
 ### Access HDR texture for sampling:
 ```cpp
-Flux_ShaderResourceView& srv = Flux_HDR::GetHDRSceneSRV();
+Flux_ShaderResourceView& srv = g_xEngine.FluxGraphics().GetHDRSceneSRV();
 ```
 
 ## Performance Notes

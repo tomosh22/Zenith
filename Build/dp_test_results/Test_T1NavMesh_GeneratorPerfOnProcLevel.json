@@ -2,7 +2,7 @@
   "name": "Test_T1NavMesh_GeneratorPerfOnProcLevel",
   "passed": true,
   "frames": 13,
-  "durationMs": 7133.249,
+  "durationMs": 3491.770,
   "failures": [],
   "skipped": false
 }

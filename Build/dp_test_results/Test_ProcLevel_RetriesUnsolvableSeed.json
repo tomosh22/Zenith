@@ -2,7 +2,7 @@
   "name": "Test_ProcLevel_RetriesUnsolvableSeed",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.146,
+  "durationMs": 0.118,
   "failures": [],
   "skipped": false
 }

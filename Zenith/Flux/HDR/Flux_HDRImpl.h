@@ -46,13 +46,10 @@ public:
 	void Reset();
 	void BuildPipelines();
 
-	void SetupTransients(Flux_RenderGraph& xGraph);
+	// HDR no longer owns the scene target — Flux_Graphics does (it's a shared target
+	// created before the first writer). HDR reads it via g_xEngine.FluxGraphics()
+	// .GetHDRSceneTarget() and owns only its private bloom chain (below).
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
-
-	Flux_ShaderResourceView& GetHDRSceneSRV();
-	Flux_RenderAttachment&   GetHDRSceneTarget();
-	void GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
-	void GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 
 	void SetToneMappingOperator(ToneMappingOperator eOperator);
 	void SetExposure(float fExposure);
@@ -76,7 +73,6 @@ public:
 #ifdef ZENITH_TOOLS
 	void RegisterDebugVariables();
 
-	const Flux_ShaderResourceView* GetDebugSRV_HDRScene();
 	const Flux_ShaderResourceView* GetDebugSRV_Bloom0();
 	const Flux_ShaderResourceView* GetDebugSRV_Bloom1();
 	const Flux_ShaderResourceView* GetDebugSRV_Bloom2();
@@ -84,7 +80,6 @@ public:
 
 	void SyncDebugVariables();
 
-	Flux_TransientHandle      m_xHDRSceneTargetHandle;
 	Flux_TransientHandle      m_axBloomChainHandles[5];
 	Flux_RenderGraph*         m_pxGraph = nullptr;
 	bool                      m_bAutoExposureWasEnabled = false;

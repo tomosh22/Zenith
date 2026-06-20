@@ -271,6 +271,6 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// required edge (without it the CPU particle sim/upload would never run).
 	xGraph.AddPass("Particles", ExecuteParticles)
 		.Prepare([](void* p){ g_xEngine.Particles().Render(p); })
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.DependsOn(xComputePass);
 }

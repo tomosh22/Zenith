@@ -354,6 +354,19 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 		m_xFinalRTHandle = xGraph.CreateTransient(xDesc);
 	}
+
+	// HDR scene target — the shared scene-colour buffer. Created here (with the other
+	// shared targets) so it exists before the first feature that writes it
+	// (DeferredShading and the post-lighting passes); the HDR feature reads/tonemaps
+	// it and owns only its private bloom chain.
+	{
+		Flux_TransientTextureDesc xDesc;
+		xDesc.m_uWidth       = uWidth;
+		xDesc.m_uHeight      = uHeight;
+		xDesc.m_eFormat      = HDR_SCENE_FORMAT;
+		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+		m_xHDRSceneTargetHandle = xGraph.CreateTransient(xDesc);
+	}
 }
 
 #ifdef ZENITH_TOOLS
@@ -383,6 +396,11 @@ const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_Depth()
 	if (m_pxGraph == nullptr) return nullptr;
 	return &m_pxGraph->GetTransientAttachment(m_xDepthHandle).SRV();
 }
+const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_HDRScene()
+{
+	if (m_pxGraph == nullptr) return nullptr;
+	return &m_pxGraph->GetTransientAttachment(m_xHDRSceneTargetHandle).SRV();
+}
 #endif
 
 // Render target getters — always resolve through the graph's transient slot.
@@ -403,6 +421,31 @@ Flux_RenderAttachment& Flux_GraphicsImpl::GetFinalRenderTarget()
 {
 	Zenith_Assert(m_pxGraph, "Flux_Graphics::GetFinalRenderTarget: graph pointer is null");
 	return m_pxGraph->GetTransientAttachment(m_xFinalRTHandle);
+}
+
+Flux_RenderAttachment& Flux_GraphicsImpl::GetHDRSceneTarget()
+{
+	Zenith_Assert(m_pxGraph, "Flux_Graphics::GetHDRSceneTarget: graph pointer is null");
+	return m_pxGraph->GetTransientAttachment(m_xHDRSceneTargetHandle);
+}
+
+Flux_ShaderResourceView& Flux_GraphicsImpl::GetHDRSceneSRV()
+{
+	return GetHDRSceneTarget().SRV();
+}
+
+void Flux_GraphicsImpl::GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
+{
+	apxColourAttachments[0] = &GetHDRSceneTarget();
+	uNumColour = 1;
+	pxDepthStencil = nullptr;
+}
+
+void Flux_GraphicsImpl::GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
+{
+	apxColourAttachments[0] = &GetHDRSceneTarget();
+	uNumColour = 1;
+	pxDepthStencil = &GetDepthAttachment();
 }
 
 void Flux_GraphicsImpl::ReleaseAssetReferences()

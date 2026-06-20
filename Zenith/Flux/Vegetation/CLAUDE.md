@@ -142,7 +142,7 @@ This placement gives:
 ## Integration Points
 
 **Uses:**
-- `Flux_HDR::GetHDRSceneTargetSetupWithDepth()` for depth testing
+- `Flux_Graphics::GetHDRSceneTargetSetupWithDepth()` for depth testing
 - `Flux_Graphics::s_xFrameConstantsBuffer` for camera/sun
 - Terrain chunk load/unload events for grass generation
 

@@ -129,6 +129,6 @@ void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass.
 	xGraph.AddPass("SDFs", ExecuteSDFs)
-		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),      RESOURCE_ACCESS_WRITE_DSV);
 }

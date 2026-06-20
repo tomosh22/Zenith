@@ -262,17 +262,12 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// are interleaved by RunSetup right after the Fog step.
 
 	// FluxGraphics is the foundation (quad mesh, frame constants, G-buffer formats,
-	// fallback assets); registered FIRST so it initialises before every feature that
-	// reads it. It declares no render-graph passes and owns no pipelines, so its
-	// SetupRenderGraph/BuildPipelines are no-op stubs (its real transient creation is
-	// the @SetupTransients:FluxGraphics step below).
+	// fallback assets) AND the owner of every shared cross-feature render-graph
+	// transient (G-buffer / depth / final-RT / HDR scene). Registered FIRST so its
+	// SetupRenderGraph — which creates those transients — runs before any feature
+	// declares a pass on them. (This replaced the former @SetupTransients:FluxGraphics
+	// and @SetupTransients:HDR raw steps.) BuildPipelines is a no-op (owns no shaders).
 	RegisterFeature<&Zenith_Engine::FluxGraphics>(xReg, "FluxGraphics");
-	// Transient creation for the G-buffer / HDR-scene targets — must run before any
-	// pass that reads/writes them. Raw steps (not a feature's SetupRenderGraph): the
-	// HDR scene target is created early here even though HDR's tonemap pass declares
-	// last, and FluxGraphics creates the G-buffer/depth/final-RT transients.
-	xReg.AddSetupStep("@SetupTransients:FluxGraphics", +[](Flux_RenderGraph& xGraph){ g_xEngine.FluxGraphics().SetupTransients(xGraph); });
-	xReg.AddSetupStep("@SetupTransients:HDR",          +[](Flux_RenderGraph& xGraph){ g_xEngine.HDR().SetupTransients(xGraph); });
 
 	RegisterFeature<&Zenith_Engine::IBL>(xReg, "IBL");
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
@@ -322,9 +317,10 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	RegisterFeature<&Zenith_Engine::Fog>(xReg, "Fog");
 	RegisterFeature<&Zenith_Engine::SDFs>(xReg, "SDFs");
 	RegisterFeature<&Zenith_Engine::Particles>(xReg, "Particles");
-	// HDR tonemap composites last (reads the fully-lit HDR scene + bloom). Its early
-	// transient creation is the @SetupTransients:HDR step above; its histogram /
-	// exposure buffers are created in Initialise, which is order-free.
+	// HDR tonemap composites last (reads the fully-lit HDR scene + bloom). The shared
+	// HDR scene target it reads is created/owned by FluxGraphics (first step); HDR
+	// creates only its private bloom chain in SetupRenderGraph and its histogram /
+	// exposure buffers in Initialise (order-free).
 	RegisterFeature<&Zenith_Engine::HDR>(xReg, "HDR");
 	RegisterFeature<&Zenith_Engine::Quads>(xReg, "Quads");
 	RegisterFeature<&Zenith_Engine::Text>(xReg, "Text");
