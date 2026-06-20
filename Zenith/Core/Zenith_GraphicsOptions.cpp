@@ -42,7 +42,6 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "IBL", "Diffuse" }, xOpts.m_bIBLDiffuseEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "IBL", "Specular" }, xOpts.m_bIBLSpecularEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Skybox", "Atmosphere" }, xOpts.m_bSkyboxAtmosphereEnabled);
-	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Skybox", "AerialPerspective" }, xOpts.m_bSkyboxAerialPerspectiveEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSAO", "Blur" }, xOpts.m_bSSAOBlurEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSR", "RoughnessBlur" }, xOpts.m_bSSRRoughnessBlurEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSGI", "Denoise" }, xOpts.m_bSSGIDenoiseEnabled);

@@ -26,7 +26,7 @@
 //   * Setup    — RegisterFeature auto-appends the feature's SetupRenderGraph step
 //                at the call site; the few non-feature "irregular" steps are
 //                interleaved with AddSetupStep (FluxGraphics/HDR transient
-//                creation, Skybox aerial perspective, final-RT layout transition).
+//                creation, final-RT layout transition).
 //                This declaration order is LOAD-BEARING — the graph topologically
 //                sorts passes by declared Reads/Writes, SEEDED by declaration order
 //                two ways:
@@ -52,9 +52,9 @@ static constexpr u_int FLUX_MAX_FEATURES = 40;
 // One step in the single ordered SetupRenderGraph walk. Most steps are a
 // feature's SetupRenderGraph trampoline (auto-appended by RegisterFeature); a few
 // are "irregulars" added via AddSetupStep — the FluxGraphics/HDR transient
-// creation, the Skybox aerial-perspective pass, and the final-RT layout-transition
-// pass — which are not plain feature setups but share the void(Flux_RenderGraph&)
-// signature. They are ordinary ordered steps in the one walk. See the ORDERING note.
+// creation and the final-RT layout-transition pass — which are not plain feature
+// setups but share the void(Flux_RenderGraph&) signature. They are ordinary
+// ordered steps in the one walk. See the ORDERING note.
 struct Flux_SetupStep
 {
 	const char* m_szName              = nullptr;
@@ -141,8 +141,8 @@ public:
 		void (*pfnBuildPipelines)() = nullptr);
 
 	// Append a raw named setup step — an "irregular" that is not a registered
-	// feature's setup (FluxGraphics/HDR transient creation, Skybox aerial
-	// perspective, the final-RT layout-transition pass). Interleave these between
+	// feature's setup (FluxGraphics/HDR transient creation, the final-RT
+	// layout-transition pass). Interleave these between
 	// RegisterFeature calls to place them in render-graph declaration order.
 	void AddSetupStep(const char* szName, void (*pfnSetup)(Flux_RenderGraph&));
 

@@ -306,7 +306,6 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// (declaring Grass earlier put its output before the clear, wiped every frame).
 	// Before Fog/Particles so atmosphere + effects composite over the blades.
 	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass");
-	xReg.AddSetupStep("@Skybox:AerialPerspective", +[](Flux_RenderGraph& xGraph){ g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(xGraph); });
 	// Forward translucency after lighting and before Fog: glass is lit in its own
 	// forward pass and fog must composite over it.
 	RegisterFeature<&Zenith_Engine::Translucency>(xReg, "Translucency");

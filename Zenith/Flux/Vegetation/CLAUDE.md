@@ -136,7 +136,7 @@ Topological sort places the foliage pass **after** the opaque mesh / terrain pas
 
 This placement gives:
 - Proper depth testing against terrain
-- Grass receives fog / aerial perspective in the deferred lighting pass
+- Grass receives fog in the deferred lighting pass
 - Can cast shadows (future)
 
 ## Integration Points

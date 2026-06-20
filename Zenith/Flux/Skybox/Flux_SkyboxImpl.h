@@ -37,11 +37,6 @@ namespace AtmosphereConfig
 	// resolution instead of full screen; the fullscreen sky pass samples it.
 	constexpr u_int uSKYVIEW_LUT_WIDTH = 192;
 	constexpr u_int uSKYVIEW_LUT_HEIGHT = 108;
-
-	constexpr u_int uAERIAL_VOLUME_WIDTH = 32;
-	constexpr u_int uAERIAL_VOLUME_HEIGHT = 32;
-	constexpr u_int uAERIAL_VOLUME_DEPTH = 32;
-	constexpr float fAERIAL_MAX_DISTANCE = 128000.0f;
 }
 
 // Solid colour override constants
@@ -66,7 +61,6 @@ struct AtmosphereConstants
 	// Configuration
 	float m_fRayleighScale;
 	float m_fMieScale;
-	float m_fAerialPerspectiveStrength;
 	u_int m_uDebugMode;
 
 	// Ray march settings
@@ -82,7 +76,6 @@ enum Skybox_DebugMode : u_int
 	SKYBOX_DEBUG_MIE_ONLY,
 	SKYBOX_DEBUG_TRANSMITTANCE,
 	SKYBOX_DEBUG_SCATTER_DIRECTION,
-	SKYBOX_DEBUG_AERIAL_DEPTH,
 	SKYBOX_DEBUG_SUN_DISK,
 	SKYBOX_DEBUG_LUT_PREVIEW,
 	SKYBOX_DEBUG_RAY_STEPS,
@@ -93,9 +86,8 @@ enum Skybox_DebugMode : u_int
 // Phase 9: state + behaviour for Skybox subsystem.
 //
 // Cross-subsystem dependencies (FluxGraphics for the fullscreen quad + frame
-// constants + MRT and final-RT attachments, HDR for the scene render target in
-// the aerial-perspective path, VulkanMemory for the constant-buffer + upload
-// paths) are reached via g_xEngine at point of use. The non-capturing
+// constants + MRT and final-RT attachments, VulkanMemory for the constant-buffer
+// + upload paths) are reached via g_xEngine at point of use. The non-capturing
 // fn-pointer trampolines (the Execute*/PreExecuteSkybox graph callbacks and
 // the ZENITH_TOOLS hot-reload callback) cannot capture state, so they re-enter
 // via g_xEngine.Skybox() to reach this singleton instance.
@@ -115,7 +107,6 @@ public:
 	void BuildPipelines();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
-	void SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph);
 
 	// Toggles the transmittance-LUT generation pass per frame. Called from
 	// Flux_RendererImpl::ApplySubsystemGraphSelections BEFORE Compile (like IBL):
@@ -128,15 +119,12 @@ public:
 	void SetRayleighScale(float fScale)                 { m_fRayleighScale = fScale; }
 	void SetMieScale(float fScale)                      { m_fMieScale = fScale; }
 	void SetMieG(float fG)                              { m_fMieG = fG; }
-	void SetAerialPerspectiveStrength(float fStrength)  { m_fAerialPerspectiveStrength = fStrength; }
 
 	bool IsAtmosphereEnabled() const;
 	float GetSunIntensity() const                       { return m_fSunIntensity; }
 	float GetRayleighScale() const                      { return m_fRayleighScale; }
 	float GetMieScale() const                           { return m_fMieScale; }
 	float GetMieG() const                               { return m_fMieG; }
-	bool IsAerialPerspectiveEnabled() const;
-	float GetAerialPerspectiveStrength() const          { return m_fAerialPerspectiveStrength; }
 
 	Flux_ShaderResourceView& GetTransmittanceLUTSRV();
 
@@ -160,14 +148,12 @@ public:
 
 	Flux_Pipeline              m_xCubemapPipeline;
 	Flux_Pipeline              m_xAtmospherePipeline;
-	Flux_Pipeline              m_xAerialPerspectivePipeline;
 	Flux_Pipeline              m_xSolidColourPipeline;
 	Flux_Pipeline              m_xTransmittanceLUTPipeline;
 	Flux_Pipeline              m_xSkyViewLUTPipeline;
 
 	Flux_Shader                m_xCubemapShader;
 	Flux_Shader                m_xAtmosphereShader;
-	Flux_Shader                m_xAerialPerspectiveShader;
 	Flux_Shader                m_xSolidColourShader;
 	Flux_Shader                m_xTransmittanceLUTShader;
 	Flux_Shader                m_xSkyViewLUTShader;
@@ -194,5 +180,4 @@ public:
 	float                      m_fRayleighScale             = 1.0f;
 	float                      m_fMieScale                  = 1.0f;
 	float                      m_fMieG                      = AtmosphereConfig::fMIE_G;
-	float                      m_fAerialPerspectiveStrength = 1.0f;
 };

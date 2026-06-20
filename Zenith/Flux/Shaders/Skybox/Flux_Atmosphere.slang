@@ -28,7 +28,6 @@ struct AtmosphereConstantsLayout
 	float  g_fSunIntensity;
 	float  g_fRayleighScale;
 	float  g_fMieScale;
-	float  g_fAerialStrength;
 	uint   g_uDebugMode;
 	uint   g_uSkySamples;
 	uint   g_uLightSamples;
@@ -50,11 +49,10 @@ static const uint SKYBOX_DEBUG_RAYLEIGH_ONLY     = 1;
 static const uint SKYBOX_DEBUG_MIE_ONLY          = 2;
 static const uint SKYBOX_DEBUG_TRANSMITTANCE     = 3;
 static const uint SKYBOX_DEBUG_SCATTER_DIRECTION = 4;
-static const uint SKYBOX_DEBUG_AERIAL_DEPTH      = 5;
-static const uint SKYBOX_DEBUG_SUN_DISK          = 6;
-static const uint SKYBOX_DEBUG_LUT_PREVIEW       = 7;
-static const uint SKYBOX_DEBUG_RAY_STEPS         = 8;
-static const uint SKYBOX_DEBUG_PHASE_FUNCTION    = 9;
+static const uint SKYBOX_DEBUG_SUN_DISK          = 5;
+static const uint SKYBOX_DEBUG_LUT_PREVIEW       = 6;
+static const uint SKYBOX_DEBUG_RAY_STEPS         = 7;
+static const uint SKYBOX_DEBUG_PHASE_FUNCTION    = 8;
 
 float3 DebugHeatmap(float fValue)
 {

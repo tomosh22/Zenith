@@ -417,22 +417,6 @@ namespace Exploration_AtmosphereController
 		// Update Flux_Skybox atmosphere with sun intensity
 		g_xEngine.Skybox().SetSunIntensity(s_xCurrentState.m_fSunIntensity);
 
-		// Set aerial perspective strength based on weather
-		float fAerialStrength = 1.0f;
-		switch (s_xCurrentState.m_eWeatherState)
-		{
-		case WEATHER_CLEAR:
-			fAerialStrength = 0.5f;
-			break;
-		case WEATHER_CLOUDY:
-			fAerialStrength = 1.0f;
-			break;
-		case WEATHER_FOGGY:
-			fAerialStrength = 2.0f;
-			break;
-		}
-		g_xEngine.Skybox().SetAerialPerspectiveStrength(fAerialStrength);
-
 		// Update Flux_Grass wind based on weather
 		Zenith_Maths::Vector2 xWindDir(1.0f, 0.2f);
 		float fWindStrength = 0.3f;

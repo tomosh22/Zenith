@@ -182,7 +182,7 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 	// alpha blending enabled, which for passes like SSR RayMarch would blend
 	// the new output into stale last-frame contents (alpha < 1 preserves old
 	// pixels, producing ghosting). Callers that actually want a blend mode
-	// (e.g. Skybox Aerial Perspective) override this explicitly.
+	// (e.g. forward translucency) override this explicitly.
 	for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 	{
 		xBlendState.m_bBlendEnabled = false;
@@ -415,8 +415,8 @@ void Flux_RendererImpl::SetupRenderGraph()
 	// earlier-declared writer of the same resource) and same-resource writers run
 	// in declaration order (see the ORDERING note in Flux_FeatureRegistry.h). The
 	// walk (built in Flux_FeatureRegistry::RegisterDefaultFeatures) folds the former
-	// inline irregulars — FluxGraphics/HDR transient creation, the Skybox aerial-
-	// perspective pass, the post-fog game hook, and the final-RT layout-transition
+	// inline irregulars — FluxGraphics/HDR transient creation, the post-fog game
+	// hook, and the final-RT layout-transition
 	// pass — in as ordinary ordered steps at their exact prior positions, so the
 	// compiled order is unchanged.
 	Flux_FeatureRegistry::Get().RunSetup(*xRenderer.m_pxRenderGraph);

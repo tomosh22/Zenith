@@ -26,7 +26,6 @@ struct AtmosphereConstantsLayout
 	float  g_fSunIntensity;
 	float  g_fRayleighScale;
 	float  g_fMieScale;
-	float  g_fAerialStrength;
 	uint   g_uDebugMode;
 	uint   g_uSkySamples;
 	uint   g_uLightSamples;

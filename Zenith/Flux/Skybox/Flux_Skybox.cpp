@@ -27,7 +27,6 @@ float dbg_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
 float dbg_fRayleighScale = 1.0f;
 float dbg_fMieScale = 1.0f;
 float dbg_fMieG = AtmosphereConfig::fMIE_G;
-float dbg_fAerialStrength = 1.0f;
 u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
 u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 
@@ -115,20 +114,6 @@ void Flux_SkyboxImpl::BuildPipelines()
 		this->m_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
 		this->m_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		Flux_PipelineBuilder::FromSpecification(this->m_xAtmospherePipeline, xSpec);
-	}
-
-	// ========== Aerial perspective pipeline (alpha blending) ==========
-	{
-		Flux_PipelineSpecification xSpec;
-		xSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
-		xSpec.m_uNumColourAttachments = 1;
-		xSpec.m_pxShader = &this->m_xAerialPerspectiveShader;
-		this->m_xAerialPerspectiveShader.Initialise(FluxShaderProgram::SkyboxAerialPerspective);
-		this->m_xAerialPerspectiveShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
-		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
-		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
-		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
-		Flux_PipelineBuilder::FromSpecification(this->m_xAerialPerspectivePipeline, xSpec);
 	}
 
 	// ========== Transmittance LUT generation pipeline (single RG/RGBA16F RT) ==========
@@ -269,7 +254,6 @@ static void PreExecuteSkybox(void*)
 
 		xSkybox.m_xAtmosphereConstants.m_fRayleighScale = xSkybox.GetRayleighScale();
 		xSkybox.m_xAtmosphereConstants.m_fMieScale = xSkybox.GetMieScale();
-		xSkybox.m_xAtmosphereConstants.m_fAerialPerspectiveStrength = xSkybox.GetAerialPerspectiveStrength();
 		xSkybox.m_xAtmosphereConstants.m_uDebugMode = dbg_uSkyboxDebugMode;
 
 		xSkybox.m_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
@@ -335,33 +319,6 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		pxCommandList->BindSRV(&pxCubemap->m_xSRV, 1);
 		pxCommandList->DrawIndexed(6);
 	}
-}
-
-static void ExecuteAerialPerspective(Flux_CommandBuffer* pxCommandList, void*)
-{
-	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
-	// capture, so it re-enters via g_xEngine.Skybox() to reach the singleton
-	// instance; FluxGraphics is reached via g_xEngine at point of use.
-	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
-
-	if (!xSkybox.IsAtmosphereEnabled() || !xSkybox.IsAerialPerspectiveEnabled())
-	{
-		return;
-	}
-
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->SetPipeline(&xSkybox.m_xAerialPerspectivePipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
-
-	{
-		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(xSkybox.m_xAerialPerspectiveShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(xSkybox.m_xAerialPerspectiveShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
-		xBinder.BindSRV(xSkybox.m_xAerialPerspectiveShader, "g_xDepthTex", &xGraphics.GetDepthAttachment().SRV());
-	}
-
-	pxCommandList->DrawIndexed(6);
 }
 
 static void ExecuteTransmittanceLUT(Flux_CommandBuffer* pxCommandList, void*)
@@ -495,23 +452,10 @@ void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	xGraph.SetEnabled(m_xSkyViewLUTPassHandle, bRunSkyView);
 }
 
-void Flux_SkyboxImpl::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
-{
-	// Aerial perspective applies atmospheric scattering via SRC_ALPHA blending
-	// on top of existing HDR content. It is registered AFTER DeferredShading
-	// (see Flux::SetupRenderGraph) so the writer-chain topological order puts
-	// it downstream of the lighting pass — otherwise it would blend into stale
-	// last-frame HDR and produce garbage.
-	xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective)
-		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),      RESOURCE_ACCESS_READ_SRV);
-}
-
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 
 // Getters
 bool Flux_SkyboxImpl::IsAtmosphereEnabled() const { return Zenith_GraphicsOptions::Get().m_bSkyboxAtmosphereEnabled; }
-bool Flux_SkyboxImpl::IsAerialPerspectiveEnabled() const { return Zenith_GraphicsOptions::Get().m_bSkyboxAerialPerspectiveEnabled; }
 
 Flux_ShaderResourceView& Flux_SkyboxImpl::GetTransmittanceLUTSRV()
 {
@@ -526,7 +470,6 @@ void Flux_SkyboxImpl::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "RayleighScale" }, dbg_fRayleighScale, 0.0f, 5.0f);
 	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "MieScale" }, dbg_fMieScale, 0.0f, 5.0f);
 	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "MieG" }, dbg_fMieG, 0.0f, 0.99f);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "AerialStrength" }, dbg_fAerialStrength, 0.0f, 5.0f);
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);
 

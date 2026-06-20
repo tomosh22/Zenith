@@ -99,7 +99,7 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 
 	// Skybox solid-colour fallback. Writes the override colour to the
 	// G-buffer (MRT0=diffuse, MRT1=normals+ambient=0, MRT2=material).
-	// Doesn't depend on FrameConstants — the cubemap / atmosphere / aerial
+	// Doesn't depend on FrameConstants — the cubemap / atmosphere
 	// variants need Common.slang and land in a follow-up batch.
 	{
 		FluxShaderProgram::SkyboxSolidColour,
@@ -442,19 +442,6 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		FluxShaderProgram::SkyboxAtmosphere,
 		"SkyboxAtmosphere",
 		"Skybox/Flux_Atmosphere",
-		"vsMain",
-		"fsMain",
-		nullptr,
-		"spirv_1_3",
-		"Skybox",
-	},
-
-	// Aerial perspective. Distance-based atmospheric attenuation between
-	// the scene and the camera; alpha-blended over the HDR scene target.
-	{
-		FluxShaderProgram::SkyboxAerialPerspective,
-		"SkyboxAerialPerspective",
-		"Skybox/Flux_AerialPerspective",
 		"vsMain",
 		"fsMain",
 		nullptr,

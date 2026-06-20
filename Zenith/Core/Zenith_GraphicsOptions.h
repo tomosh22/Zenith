@@ -41,11 +41,6 @@ struct Zenith_GraphicsOptions
 	// with the lighting. Drawing the atmosphere makes sky + ambient one coherent
 	// system -- the strongest single outdoor photoreal cue, and it already runs.
 	bool m_bSkyboxAtmosphereEnabled = true;
-	// Aerial perspective OFF for now: the simplified overlay (strength 1.0,
-	// inscatter x sunIntensity 20) veils the whole frame on elevated/long-range
-	// cameras. Re-enable once retuned to a subtle strength (or replaced by the
-	// ray-marched + ozone version) so distance haze reads without washing out.
-	bool m_bSkyboxAerialPerspectiveEnabled = false;
 	bool m_bSSAOBlurEnabled = true;
 	bool m_bSSRRoughnessBlurEnabled = true;
 	bool m_bSSGIDenoiseEnabled = true;
