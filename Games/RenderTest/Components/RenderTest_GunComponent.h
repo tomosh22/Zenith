@@ -16,9 +16,10 @@
 // The player component owns the pickup/drop/IK/fire logic and reads this for the
 // held gun. See RenderTest_Guns.h for the design overview.
 //
-// The guns are spawned procedurally post scene-load (like the tennis court), so
-// this component is never serialized into a saved scene in practice; the
-// stream methods only round-trip a version tag to satisfy the component concept.
+// The guns are now AUTHORED into RenderTest.zscen (one entity per type), so this
+// component IS serialized: the v2 stream persists the gun type + ammo (set at author
+// time via RenderTest_ApplyTestbedEntityConfig) and ReadFromDataStream rebuilds the
+// full spec from the type, so an authored gun reloads as the right weapon.
 class RenderTest_GunComponent
 {
 public:
@@ -54,14 +55,38 @@ public:
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const
 	{
-		const u_int uVersion = 1;
+		// v2: persist the gun type + ammo so an authored gun reloads as the right
+		// weapon (the runtime spawn that used to seed these is gone). v1 (version tag
+		// only) loads back as a default pistol.
+		const u_int uVersion = 2;
 		xStream << uVersion;
+		const uint32_t uType = static_cast<uint32_t>(m_xSpec.m_eType);
+		xStream << uType;
+		xStream << m_uAmmoInClip;
+		xStream << m_uReserve;
 	}
 	void ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		u_int uVersion = 0;
 		xStream >> uVersion;
 		m_bHeld = false;
+		if (uVersion < 2)
+		{
+			return;   // v1 carried no payload — keep the default-constructed spec.
+		}
+		uint32_t uType = 0;
+		xStream >> uType;
+		if (uType >= static_cast<uint32_t>(RenderTest_Guns::GunType::COUNT))
+		{
+			uType = 0;   // corrupt / forward-version type -> default
+		}
+		// Rebuild the full spec from the persisted type, then restore the saved ammo.
+		Init(RenderTest_Guns::GetSpec(static_cast<RenderTest_Guns::GunType>(uType)));
+		uint32_t uClip = 0;
+		uint32_t uReserve = 0;
+		xStream >> uClip;
+		xStream >> uReserve;
+		SetAmmo(uClip, uReserve);
 	}
 
 #ifdef ZENITH_TOOLS

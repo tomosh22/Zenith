@@ -20,12 +20,31 @@
 // Unlike the guns, the jetpack is NOT a pickup — it is auto-attached to the
 // player at spawn and stays on.
 
-// Procedural spawn entry point (queued via AddStep_Custom after the guns).
-// Builds the backpack mesh, creates the jetpack entity, attaches it to the
-// player's Spine bone, and gives it the jet-trail emitter. Windowed-only.
-void RenderTest_SpawnJetpack();
+// Tools-only: build the backpack mesh as a CPU Zenith_MeshAsset and export it +
+// a bundling .zmodel (referencing the shared vertex-colour material passed in) to
+// disk, so the authored scene can LoadModel it. Overwrites every tools run.
+// CPU-only (no GPU upload) — headless/--skip-tool-exports safe.
+#ifdef ZENITH_TOOLS
+void RenderTest_ExportJetpackAssets(const char* szVtxColorMaterialPath);
+#endif
 
-// Release the file-scope material handles BEFORE Zenith_AssetRegistry shutdown
+// Deterministic on-disk path of the exported jetpack .zmodel (stable static
+// storage — safe to pass straight to AddStep_LoadModel). Used by both the export
+// (write target) and the authoring (load reference).
+const char* RenderTest_JetpackModelPath();
+
+// Parse --rendertest-jetpack-showcase + --jetpack-mount-* into
+// RenderTest_JetpackTuning. Called by the RenderTest bootstrap component in OnAwake
+// (previously inlined in the now-deleted runtime spawn).
+void RenderTest_ParseJetpackCLI();
+
+// Bone-local mount transform for the backpack (T * Ry * Rx * Rz), honouring any
+// --jetpack-mount-* overrides. The default mount is baked into the scene by
+// AddStep_AttachToBone; the bootstrap re-applies this at runtime only when a knob
+// was set (calibration override).
+Zenith_Maths::Matrix4 RenderTest_BuildJetpackMount();
+
+// Release the file-scope asset handles BEFORE Zenith_AssetRegistry shutdown
 // (mirrors RenderTest_GunsShutdown). Call from Project_Shutdown.
 void RenderTest_JetpackShutdown();
 

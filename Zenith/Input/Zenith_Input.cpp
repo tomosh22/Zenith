@@ -47,19 +47,7 @@ void Zenith_Input::BeginFrame()
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
 	Zenith_Window::GetInstance()->GetMousePosition(xCurrentMousePos);
 
-	// Skip the delta when last-position came from a different input domain.
-	if (m_bFirstFrame || bJustLeftSimMode)
-	{
-		m_xMouseDelta = { 0.0, 0.0 };
-		m_bFirstFrame = false;
-	}
-	else
-	{
-		m_xMouseDelta.x = xCurrentMousePos.x - m_xLastMousePosition.x;
-		m_xMouseDelta.y = xCurrentMousePos.y - m_xLastMousePosition.y;
-	}
-
-	m_xLastMousePosition = xCurrentMousePos;
+	UpdateMouseDeltaFromPosition(xCurrentMousePos, bJustLeftSimMode);
 
 #ifdef ZENITH_WINDOWS
 	// Update gamepad state for all connected gamepads
@@ -86,6 +74,28 @@ void Zenith_Input::BeginFrame()
 		}
 	}
 #endif
+}
+
+void Zenith_Input::UpdateMouseDeltaFromPosition(const Zenith_Maths::Vector2_64& xCurrentMousePos, bool bJustLeftSimMode)
+{
+	// Skip the delta when last-position came from a different input domain, or when a
+	// cursor-mode change (capture/release) just teleported the OS cursor — a stale
+	// last-position would otherwise produce a one-frame spike. m_bMouseDiscontinuity is
+	// a one-shot: cleared here so the FOLLOWING frame resumes computing real deltas from
+	// the resynced baseline. Window-free (current pos is supplied) so it is unit-testable.
+	if (m_bFirstFrame || bJustLeftSimMode || m_bMouseDiscontinuity)
+	{
+		m_xMouseDelta = { 0.0, 0.0 };
+		m_bFirstFrame = false;
+	}
+	else
+	{
+		m_xMouseDelta.x = xCurrentMousePos.x - m_xLastMousePosition.x;
+		m_xMouseDelta.y = xCurrentMousePos.y - m_xLastMousePosition.y;
+	}
+
+	m_bMouseDiscontinuity = false;
+	m_xLastMousePosition = xCurrentMousePos;
 }
 
 float Zenith_Input::GetMouseWheelDelta() const
@@ -242,3 +252,5 @@ float Zenith_Input::GetGamepadLeftTrigger(int) { return 0.0f; }
 float Zenith_Input::GetGamepadRightTrigger(int) { return 0.0f; }
 
 #endif
+
+#include "Input/Zenith_Input.Tests.inl"

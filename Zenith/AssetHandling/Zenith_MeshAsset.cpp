@@ -823,3 +823,71 @@ void Zenith_MeshAsset::GenerateUnitCube(Zenith_MeshAsset& xMeshOut)
 	xMeshOut.EnsureGPUBuffers();
 }
 
+void Zenith_MeshAsset::GenerateUnitSphere(Zenith_MeshAsset& xMeshOut, uint32_t uSegments)
+{
+	// EVEN latitude count -> a ring lands exactly on the equator (theta = pi/2), so
+	// |x| and |z| reach exactly 0.5 and the bounds are a tight [-0.5, 0.5] cube.
+	Zenith_Assert(uSegments >= 2 && (uSegments % 2u) == 0u,
+		"GenerateUnitSphere: uSegments must be even and >= 2");
+
+	const float fPI = 3.14159265359f;
+	const uint32_t uLat = uSegments;        // stacks (pole to pole)
+	const uint32_t uLon = uSegments * 2u;   // slices (around)
+
+	xMeshOut.Reset();
+	const uint32_t uNumVerts = (uLat + 1u) * (uLon + 1u);
+	const uint32_t uNumIndices = uLat * uLon * 6u;
+	xMeshOut.Reserve(uNumVerts, uNumIndices);
+
+	// Vertices. Mirrors Zenith_MeshGeometryAsset::GenerateSphere exactly (same ring
+	// layout, seam/pole duplication and analytic attributes), but emits a CPU
+	// Zenith_MeshAsset. AddVertex doesn't take a bitangent, so push it in parallel to
+	// keep all six vertex arrays the same length.
+	for (uint32_t uLatIdx = 0; uLatIdx <= uLat; ++uLatIdx)
+	{
+		const float fTheta = uLatIdx * fPI / static_cast<float>(uLat);
+		const float fSinTheta = sinf(fTheta);
+		const float fCosTheta = cosf(fTheta);
+
+		for (uint32_t uLonIdx = 0; uLonIdx <= uLon; ++uLonIdx)
+		{
+			const float fPhi = uLonIdx * 2.0f * fPI / static_cast<float>(uLon);
+			const float fSinPhi = sinf(fPhi);
+			const float fCosPhi = cosf(fPhi);
+
+			const Zenith_Maths::Vector3 xPos(
+				fSinTheta * fCosPhi * 0.5f,
+				fCosTheta * 0.5f,
+				fSinTheta * fSinPhi * 0.5f);
+			// Radial normal — already unit length (sin^2 + cos^2 = 1), == normalize(pos).
+			const Zenith_Maths::Vector3 xNormal(fSinTheta * fCosPhi, fCosTheta, fSinTheta * fSinPhi);
+			const Zenith_Maths::Vector2 xUV(
+				static_cast<float>(uLonIdx) / static_cast<float>(uLon),
+				static_cast<float>(uLatIdx) / static_cast<float>(uLat));
+			const Zenith_Maths::Vector3 xTangent(-fSinPhi, 0.0f, fCosPhi);
+			const Zenith_Maths::Vector3 xBitangent(fCosTheta * fCosPhi, -fSinTheta, fCosTheta * fSinPhi);
+
+			xMeshOut.AddVertex(xPos, xNormal, xUV, xTangent, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+			xMeshOut.m_xBitangents.PushBack(xBitangent);
+		}
+	}
+
+	// Indices — same winding as the runtime sphere (two triangles per quad).
+	for (uint32_t uLatIdx = 0; uLatIdx < uLat; ++uLatIdx)
+	{
+		for (uint32_t uLonIdx = 0; uLonIdx < uLon; ++uLonIdx)
+		{
+			const uint32_t uCurrent = uLatIdx * (uLon + 1u) + uLonIdx;
+			const uint32_t uNext = uCurrent + uLon + 1u;
+
+			xMeshOut.AddTriangle(uCurrent, uNext, uCurrent + 1u);
+			xMeshOut.AddTriangle(uCurrent + 1u, uNext, uNext + 1u);
+		}
+	}
+
+	xMeshOut.ComputeBounds();
+	// CPU-only: no EnsureGPUBuffers (offline export path; W2/V1).
+}
+
+#include "AssetHandling/Zenith_MeshAsset.Tests.inl"
+

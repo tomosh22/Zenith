@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Collections/Zenith_Vector.h"
+#include "Maths/Zenith_Maths.h"   // Matrix4 / Quat return types on the euler-authoring helpers
 
 //=============================================================================
 // Editor Automation System
@@ -45,6 +46,10 @@ enum class Zenith_EditorActionType
 	// Component addition (via Zenith_Editor::AddComponentToSelected)
 	ADD_COMPONENT,
 
+	// Bone attachment: add a Zenith_AttachmentComponent to the SELECTED entity and
+	// bind it to a named bone of another entity (resolved by name in the same scene).
+	ATTACH_TO_BONE,
+
 	// Camera field edits
 	SET_CAMERA_POSITION,
 	SET_CAMERA_PITCH,
@@ -59,6 +64,7 @@ enum class Zenith_EditorActionType
 	SET_TRANSFORM_POSITION,
 	SET_TRANSFORM_SCALE,
 	SET_TRANSFORM_ROTATION_YAW,
+	SET_TRANSFORM_ROTATION,         // full XYZ euler (degrees); composes Ry * Rx * Rz
 
 	// Light field edits
 	SET_LIGHT_INTENSITY,
@@ -302,6 +308,23 @@ void AddStep_AddCollider() { AddStep_AddComponent("Collider"); }
 void AddStep_AddModel() { AddStep_AddComponent("Model"); }
 void AddStep_AddAnimator() { AddStep_AddComponent("Animator"); }
 
+	// Add a Zenith_AttachmentComponent to the SELECTED entity and bind it to szBone
+	// of szTargetEntityName (resolved by name within the selected entity's scene).
+	// The mount offset is built from the position + XYZ euler (degrees) exactly like
+	// RT_BuildJetpackMount: M = T(pos) * Ry(eulerY) * Rx(eulerX) * Rz(eulerZ). Author
+	// the target entity BEFORE this step so the name resolves.
+void AddStep_AttachToBone(const char* szTargetEntityName, const char* szBone,
+	float fPosX, float fPosY, float fPosZ,
+	float fEulerXDeg, float fEulerYDeg, float fEulerZDeg);
+
+	// Pure authoring-math helpers (also used by ATTACH_TO_BONE / SET_TRANSFORM_ROTATION
+	// executors). Composition order matches RT_BuildJetpackMount: rotation = Ry * Rx * Rz
+	// (degrees); the offset matrix is T(pos) * that rotation. Exposed static so unit
+	// tests can assert the composition order directly.
+	static Zenith_Maths::Quat    BuildEulerRotation(float fEulerXDeg, float fEulerYDeg, float fEulerZDeg);
+	static Zenith_Maths::Matrix4 BuildEulerOffsetMatrix(float fPosX, float fPosY, float fPosZ,
+		float fEulerXDeg, float fEulerYDeg, float fEulerZDeg);
+
 	//--------------------------------------------------------------------------
 	// Camera Step Helpers
 	//--------------------------------------------------------------------------
@@ -323,6 +346,11 @@ void AddStep_SetTransformScale(float fX, float fY, float fZ);
 	// common "place an actor flat on the ground at angle θ" pattern that
 	// dominates DP scene authoring (UE author rotations imported as yaw).
 void AddStep_SetTransformYaw(float fYawRadians);
+
+	// Full XYZ rotation (degrees). Composes Ry(eulerY) * Rx(eulerX) * Rz(eulerZ) — the
+	// rotation half of the AttachToBone mount convention. Use for the guns' 90deg Z
+	// rest pose where yaw-only is insufficient.
+void AddStep_SetTransformRotationEuler(float fEulerXDeg, float fEulerYDeg, float fEulerZDeg);
 
 	// Light component field edits. Apply to the selected entity's
 	// Zenith_LightComponent — set after AddStep_AddComponent("Light").

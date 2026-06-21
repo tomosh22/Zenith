@@ -20,6 +20,20 @@ public:
 
 	void BeginFrame();
 
+	// Pure (window-free) core of BeginFrame's mouse-delta update: given the current
+	// cursor position, computes m_xMouseDelta + advances m_xLastMousePosition, applying
+	// the first-frame / left-sim / discontinuity one-shot skip. BeginFrame supplies the
+	// live GLFW position; unit tests supply a synthetic one to verify the one-shot
+	// discontinuity semantics without a window.
+	void UpdateMouseDeltaFromPosition(const Zenith_Maths::Vector2_64& xCurrentMousePos, bool bJustLeftSimMode);
+
+	// Signal that the OS cursor position jumped discontinuously this frame (e.g. the
+	// window just switched GLFW_CURSOR between NORMAL and DISABLED, which re-centres /
+	// teleports the cursor). The NEXT BeginFrame zeroes that frame's mouse delta and
+	// resyncs the last-position baseline — mirroring the input-domain (simulator) skip
+	// — so the switch doesn't produce a one-frame look spike. One-shot.
+	void NotifyMouseDiscontinuity() { m_bMouseDiscontinuity = true; }
+
 	void KeyPressedCallback(Zenith_KeyCode iKey);
 	void MouseButtonPressedCallback(Zenith_KeyCode iKey);
 	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
@@ -51,6 +65,9 @@ public:
 	Zenith_Maths::Vector2_64 m_xMouseDelta        = { 0.0, 0.0 };
 	float                    m_fMouseWheelDelta   = 0.0f;
 	bool                     m_bFirstFrame        = true;
+	// One-shot: set by NotifyMouseDiscontinuity (cursor capture/release), consumed by
+	// the next BeginFrame to skip that frame's delta + resync the baseline.
+	bool                     m_bMouseDiscontinuity = false;
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	bool                     m_bSimWasEnabledLastFrame = false;

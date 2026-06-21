@@ -100,6 +100,14 @@ using ComponentUpdateFn = void(*)(Zenith_Entity&, float);
 using ComponentCollisionFn = void(*)(Zenith_Entity&, Zenith_Entity&);
 using ComponentCollisionExitFn = void(*)(Zenith_Entity&, Zenith_EntityID);
 
+// Re-establish cross-entity references after a scene load, given the file-index ->
+// new EntityID map (the same map ResolvePendingParents uses to remap parent links).
+// Only components that persist another entity BY FILE-INDEX need this (e.g. an
+// attachment storing its skeleton target); every other component leaves the hook null.
+// The map is passed by const-ref (the dispatcher does NOT route it through the
+// by-value variadic lifecycle helper, which would copy the whole map per entity).
+using ComponentResolveRefsFn = void(*)(Zenith_Entity&, const Zenith_HashMap<uint32_t, Zenith_EntityID>&);
+
 //------------------------------------------------------------------------------
 // C++20 Concepts for optional lifecycle hooks
 //------------------------------------------------------------------------------
@@ -136,6 +144,11 @@ concept HasOnCollisionStay = requires(T& t, Zenith_Entity& xOther) { { t.OnColli
 
 template<typename T>
 concept HasOnCollisionExit = requires(T& t, Zenith_EntityID xOtherID) { { t.OnCollisionExit(xOtherID) } -> std::same_as<void>; };
+
+template<typename T>
+concept HasResolveEntityReferences = requires(T& t, const Zenith_HashMap<uint32_t, Zenith_EntityID>& xMap) {
+	{ t.ResolveEntityReferences(xMap) } -> std::same_as<void>;
+};
 
 template<typename T>
 concept HasRegisterProperties = requires(Zenith_Vector<Zenith_PropertyDescriptor>& a) {
@@ -298,6 +311,12 @@ template<typename T>
 static void OnCollisionExitWrapper(Zenith_Entity& xEntity, Zenith_EntityID xOtherID)
 {
 	xEntity.GetComponent<T>().OnCollisionExit(xOtherID);
+}
+
+template<typename T>
+static void ResolveEntityReferencesWrapper(Zenith_Entity& xEntity, const Zenith_HashMap<uint32_t, Zenith_EntityID>& xMap)
+{
+	xEntity.GetComponent<T>().ResolveEntityReferences(xMap);
 }
 
 template<typename T>

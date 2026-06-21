@@ -22,10 +22,11 @@
 // points read here. This mirrors RenderTest_GunComponent (passive data; the
 // player owns the behaviour).
 //
-// Like the guns/tennis court the jetpack is spawned procedurally post scene-load
-// (windowed-only), so this component is never serialized into a saved scene in
-// practice; the stream methods only round-trip a version tag to satisfy the
-// component concept.
+// The jetpack is now AUTHORED into RenderTest.zscen (attached to the player's Spine
+// via a serialized Zenith_AttachmentComponent). This component is added
+// default-constructed, and its default Spec (below) is the canonical nozzle geometry,
+// so the stream only round-trips a version tag — there is no per-entity payload to
+// persist.
 class RenderTest_JetpackComponent
 {
 public:
@@ -39,9 +40,14 @@ public:
 	// them each frame so the trail reads as a twin exhaust.
 	struct Spec
 	{
+		// Canonical nozzle mouths, matching the two drawn nozzles in
+		// RT_BuildJetpackMeshAsset. These are the DEFAULT now (the runtime spawn that
+		// used to override them is gone): the jetpack is authored with a
+		// default-constructed RenderTest_JetpackComponent, so the default Spec must be
+		// the real geometry.
 		Zenith_Maths::Vector3 m_axNozzleLocal[2] = {
-			Zenith_Maths::Vector3(-0.10f, -0.22f, -0.06f),
-			Zenith_Maths::Vector3( 0.10f, -0.22f, -0.06f),
+			Zenith_Maths::Vector3(-0.085f, -0.28f, -0.10f),
+			Zenith_Maths::Vector3( 0.085f, -0.28f, -0.10f),
 		};
 		// Exhaust direction in jetpack-local space (down + slightly back). The
 		// player transforms this by the jetpack's world rotation each frame.

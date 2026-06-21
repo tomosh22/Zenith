@@ -9,6 +9,7 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
@@ -3079,6 +3080,113 @@ ZENITH_TEST(Automation, SamePropertyOverrideTwiceReplaces)
 	std::filesystem::remove(szVariantPath);
 	g_xEngine.EditorAutomation().Reset();
 	EDITOR_TEST_END(TestAutomationSamePropertyReplaces);
+}
+
+// ============================================================================
+// Pure euler-authoring math (ATTACH_TO_BONE / SET_TRANSFORM_ROTATION). No editor
+// fixture needed — BuildEulerRotation / BuildEulerOffsetMatrix are pure static.
+// Pins the composition order M = T(pos) * Ry * Rx * Rz (= RT_BuildJetpackMount).
+// ============================================================================
+
+ZENITH_TEST(Automation, BuildEulerRotationPerAxis)
+{
+	// Pitch Rx(90): +Z -> -Y.
+	{
+		const Zenith_Maths::Quat q = Zenith_EditorAutomation::BuildEulerRotation(90.0f, 0.0f, 0.0f);
+		ZENITH_ASSERT_NEAR_VEC3(q * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1e-4f, "Rx(90): +Z -> -Y");
+	}
+	// Yaw Ry(90): +Z -> +X.
+	{
+		const Zenith_Maths::Quat q = Zenith_EditorAutomation::BuildEulerRotation(0.0f, 90.0f, 0.0f);
+		ZENITH_ASSERT_NEAR_VEC3(q * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 1e-4f, "Ry(90): +Z -> +X");
+	}
+	// Roll Rz(90): +X -> +Y.
+	{
+		const Zenith_Maths::Quat q = Zenith_EditorAutomation::BuildEulerRotation(0.0f, 0.0f, 90.0f);
+		ZENITH_ASSERT_NEAR_VEC3(q * Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 1e-4f, "Rz(90): +X -> +Y");
+	}
+	// Racket rest pose Rx(180): +Y -> -Y.
+	{
+		const Zenith_Maths::Quat q = Zenith_EditorAutomation::BuildEulerRotation(180.0f, 0.0f, 0.0f);
+		ZENITH_ASSERT_NEAR_VEC3(q * Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1e-4f, "Rx(180): +Y -> -Y");
+	}
+}
+
+ZENITH_TEST(Automation, BuildEulerRotationCompositionOrder)
+{
+	// Ry(90) * Rx(90) on +Y: Rx first (+Y -> +Z), then Ry (+Z -> +X) => +X.
+	// The opposite Rx*Ry order would give +Z, so this pins the Ry-before-Rx ordering.
+	const Zenith_Maths::Quat q = Zenith_EditorAutomation::BuildEulerRotation(90.0f, 90.0f, 0.0f);
+	ZENITH_ASSERT_NEAR_VEC3(q * Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 1e-4f, "Ry(90)*Rx(90): +Y -> +X");
+
+	// Pin Rz's slot in the product too: Ry(90) * Rz(90) applied to +X.
+	// Rz first (+X -> +Y), then Ry (+Y unchanged by yaw) => +Y. The alternative
+	// Rz*Ry order would instead send +X -> Ry(+X)=-Z -> Rz(-Z)=-Z => -Z, so this
+	// discriminates the full Ry * Rx * Rz composition (Rx=identity here).
+	const Zenith_Maths::Quat q2 = Zenith_EditorAutomation::BuildEulerRotation(0.0f, 90.0f, 90.0f);
+	ZENITH_ASSERT_NEAR_VEC3(q2 * Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 1e-4f, "Ry(90)*Rz(90): +X -> +Y");
+}
+
+ZENITH_TEST(Automation, BuildEulerOffsetMatrixTranslationAndRotation)
+{
+	const Zenith_Maths::Matrix4 m = Zenith_EditorAutomation::BuildEulerOffsetMatrix(
+		1.0f, 2.0f, 3.0f, 90.0f, 0.0f, 0.0f);
+	// Translation in the 4th column.
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(m[3]),
+		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), 1e-4f, "offset translation column");
+	// Rotation half applies to a direction (w=0): Rx(90) +Z -> -Y.
+	const Zenith_Maths::Vector3 xDir(m * Zenith_Maths::Vector4(0.0f, 0.0f, 1.0f, 0.0f));
+	ZENITH_ASSERT_NEAR_VEC3(xDir, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1e-4f,
+		"offset rotation half: Rx(90) +Z -> -Y");
+}
+
+// The ATTACH_TO_BONE executor seam (adds Zenith_AttachmentComponent to the selected
+// entity, resolves the target by name in the same scene, AttachToBone with the
+// euler-built offset). Mirrors the AttachGraphStep test pattern.
+ZENITH_TEST(Automation, AttachToBoneStep)
+{
+	EDITOR_TEST_BEGIN(TestAttachToBoneStep);
+
+	g_xEngine.EditorAutomation().Reset();
+
+	// Target (skeleton) authored FIRST so the executor's FindEntityByName resolves it.
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("AttachTarget");
+	// Item authored second -> it is the SELECTED entity the executor attaches.
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("AttachItem");
+	g_xEngine.EditorAutomation().AddStep_AttachToBone("AttachTarget", "RightHand",
+		1.0f, 2.0f, 3.0f, 90.0f, 0.0f, 0.0f);
+	g_xEngine.EditorAutomation().Begin();
+
+	g_xEngine.EditorAutomation().ExecuteNextStep();   // create target
+	g_xEngine.EditorAutomation().ExecuteNextStep();   // create item (selected)
+	g_xEngine.EditorAutomation().ExecuteNextStep();   // attach-to-bone
+
+	Zenith_Entity* pxItem = g_xEngine.Editor().GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxItem, "item entity should be selected");
+	ZENITH_ASSERT_TRUE(pxItem->HasComponent<Zenith_AttachmentComponent>(),
+		"ATTACH_TO_BONE must add a Zenith_AttachmentComponent");
+
+	Zenith_AttachmentComponent& xAtt = pxItem->GetComponent<Zenith_AttachmentComponent>();
+	ZENITH_ASSERT_TRUE(xAtt.IsAttached(), "attachment must be live after the step");
+	ZENITH_ASSERT_STREQ(xAtt.GetBoneName().c_str(), "RightHand", "bone name must match the step arg");
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(xAtt.GetOffset()[3]),
+		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), 1e-4f, "offset translation must match the step pos args");
+	// The resolved skeleton entity must be the named target.
+	Zenith_SceneData* pxSceneData = pxItem->GetSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "item must belong to a scene");
+	Zenith_Entity xTarget = pxSceneData->FindEntityByName("AttachTarget");
+	ZENITH_ASSERT_TRUE(xAtt.GetSkeletonEntity().GetEntityID() == xTarget.GetEntityID(),
+		"attachment skeleton entity must be the named target");
+
+	g_xEngine.EditorAutomation().Reset();
+
+	EDITOR_TEST_END(TestAttachToBoneStep);
 }
 
 #endif // ZENITH_TOOLS

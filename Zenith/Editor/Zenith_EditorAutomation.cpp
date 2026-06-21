@@ -14,6 +14,7 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
@@ -288,6 +289,48 @@ void Zenith_EditorAutomation::AddStep_SetAsMainCamera()               { Push(Zen
 void Zenith_EditorAutomation::AddStep_SetTransformPosition(float fX, float fY, float fZ) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_POSITION, fX, fY, fZ); }
 void Zenith_EditorAutomation::AddStep_SetTransformScale   (float fX, float fY, float fZ) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_SCALE,    fX, fY, fZ); }
 void Zenith_EditorAutomation::AddStep_SetTransformYaw     (float fYawRadians)             { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_ROTATION_YAW, fYawRadians); }
+void Zenith_EditorAutomation::AddStep_SetTransformRotationEuler(float fXDeg, float fYDeg, float fZDeg) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_ROTATION, fXDeg, fYDeg, fZDeg); }
+
+// ATTACH_TO_BONE packs 2 names + 6 floats (pos[0..2], euler[3..5]) — no Push overload
+// covers that shape, so the action is constructed directly.
+void Zenith_EditorAutomation::AddStep_AttachToBone(const char* szTargetEntityName, const char* szBone,
+	float fPosX, float fPosY, float fPosZ,
+	float fEulerXDeg, float fEulerYDeg, float fEulerZDeg)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ATTACH_TO_BONE;
+	xAction.m_szArg1 = szTargetEntityName;
+	xAction.m_szArg2 = szBone;
+	xAction.m_afArgs[0] = fPosX;
+	xAction.m_afArgs[1] = fPosY;
+	xAction.m_afArgs[2] = fPosZ;
+	xAction.m_afArgs[3] = fEulerXDeg;
+	xAction.m_afArgs[4] = fEulerYDeg;
+	xAction.m_afArgs[5] = fEulerZDeg;
+	Zenith_EditorAutomation::m_axActions.PushBack(xAction);
+}
+
+// -- Authoring math (shared by the executors; pure, unit-testable) --
+
+Zenith_Maths::Quat Zenith_EditorAutomation::BuildEulerRotation(float fEulerXDeg, float fEulerYDeg, float fEulerZDeg)
+{
+	// Ry * Rx * Rz (quaternion product = the same composition glm::rotate applies in
+	// RT_BuildJetpackMount: yaw about Y, then pitch about X, then roll about Z).
+	const Zenith_Maths::Quat xYaw   = glm::angleAxis(glm::radians(fEulerYDeg), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	const Zenith_Maths::Quat xPitch = glm::angleAxis(glm::radians(fEulerXDeg), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	const Zenith_Maths::Quat xRoll  = glm::angleAxis(glm::radians(fEulerZDeg), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	return xYaw * xPitch * xRoll;
+}
+
+Zenith_Maths::Matrix4 Zenith_EditorAutomation::BuildEulerOffsetMatrix(float fPosX, float fPosY, float fPosZ,
+	float fEulerXDeg, float fEulerYDeg, float fEulerZDeg)
+{
+	// M = T(pos) * Ry * Rx * Rz — identical to RT_BuildJetpackMount.
+	Zenith_Maths::Matrix4 xM = glm::translate(Zenith_Maths::Matrix4(1.0f),
+		Zenith_Maths::Vector3(fPosX, fPosY, fPosZ));
+	xM *= glm::mat4_cast(BuildEulerRotation(fEulerXDeg, fEulerYDeg, fEulerZDeg));
+	return xM;
+}
 
 // -- Light --
 
@@ -1572,6 +1615,28 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1);
 		break;
 
+	case Zenith_EditorActionType::ATTACH_TO_BONE:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for ATTACH_TO_BONE");
+		Zenith_SceneData* pxSceneData = pxEntity->GetSceneData();
+		Zenith_Assert(pxSceneData, "ATTACH_TO_BONE: selected entity has no scene");
+		// Resolve the skeleton target by name within the same scene (authored earlier
+		// in the step list).
+		Zenith_Entity xTarget = pxSceneData->FindEntityByName(xAction.m_szArg1);
+		Zenith_Assert(xTarget.IsValid(), "ATTACH_TO_BONE: target entity not found by name");
+		if (!pxEntity->HasComponent<Zenith_AttachmentComponent>())
+		{
+			pxEntity->AddComponent<Zenith_AttachmentComponent>();
+		}
+		const Zenith_Maths::Matrix4 xOffset = BuildEulerOffsetMatrix(
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2],
+			xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5]);
+		pxEntity->GetComponent<Zenith_AttachmentComponent>().AttachToBone(
+			xTarget, xAction.m_szArg2, xOffset);
+		break;
+	}
+
 	//--------------------------------------------------------------------------
 	// Camera field edits
 	//--------------------------------------------------------------------------
@@ -1664,6 +1729,16 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		const float fYaw = xAction.m_afArgs[0];
 		const Zenith_Maths::Quat xRot = glm::angleAxis(
 			fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION");
+		const Zenith_Maths::Quat xRot = BuildEulerRotation(
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
 		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
 		break;
 	}

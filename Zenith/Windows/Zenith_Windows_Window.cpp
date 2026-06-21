@@ -193,21 +193,51 @@ void Zenith_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 	glfwGetCursorPos(m_pxNativeWindow, &xOut.x, &xOut.y);
 }
 
+void Zenith_Window::SetCursorCaptured(bool bCaptured)
+{
+	// Single funnel for all cursor-mode changes. Only act when the mode ACTUALLY
+	// changes: a redundant call (e.g. EnableCaptureCursor while already captured)
+	// must not teleport the cursor, must not suppress that frame's delta, and must
+	// not re-toggle raw motion.
+	const int iTarget = bCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
+	if (glfwGetInputMode(m_pxNativeWindow, GLFW_CURSOR) == iTarget)
+	{
+		return;
+	}
+
+	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR, iTarget);
+
+	// Raw (unaccelerated, unscaled) motion gives correct, linear look sensitivity
+	// while captured; turn it off again on release so the desktop pointer behaves
+	// normally. Only meaningful with GLFW_CURSOR_DISABLED, and only where supported.
+	if (glfwRawMouseMotionSupported())
+	{
+		glfwSetInputMode(m_pxNativeWindow, GLFW_RAW_MOUSE_MOTION, bCaptured ? GLFW_TRUE : GLFW_FALSE);
+	}
+
+	// The mode switch re-centres / teleports the OS cursor; tell Input to drop the
+	// resulting one-frame delta spike and resync its baseline next BeginFrame.
+	g_xEngine.Input().NotifyMouseDiscontinuity();
+}
+
 void Zenith_Window::ToggleCaptureCursor()
 {
-	const int iCurrent = glfwGetInputMode(m_pxNativeWindow, GLFW_CURSOR);
-	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR,
-		iCurrent == GLFW_CURSOR_DISABLED ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+	SetCursorCaptured(glfwGetInputMode(m_pxNativeWindow, GLFW_CURSOR) != GLFW_CURSOR_DISABLED);
 }
 
 void Zenith_Window::EnableCaptureCursor()
 {
-	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	SetCursorCaptured(true);
 }
 
 void Zenith_Window::DisableCaptureCursor()
 {
-	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	SetCursorCaptured(false);
+}
+
+bool Zenith_Window::IsCursorCaptured()
+{
+	return glfwGetInputMode(m_pxNativeWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
 }
 
 bool Zenith_Window::IsKeyDown(Zenith_KeyCode iKey)

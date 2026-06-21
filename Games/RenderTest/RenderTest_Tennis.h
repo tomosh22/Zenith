@@ -10,9 +10,11 @@
 // auto-restart on match completion. Doubles as the arm-IK / racket-attachment
 // testbed.
 //
-// Like the material showcase, all of this is spawned PROCEDURALLY post scene
-// load each boot (procedural Flux_MeshGeometry does not survive SaveScene), so
-// it is windowed-only (Zenith_CommandLine::IsHeadless() early-out).
+// The geometry/materials/textures are now baked OFFLINE (tools) into CPU
+// Zenith_MeshAssets + bundling .zmodels + .zmtrl materials + .ztxtr textures on
+// disk; the authored scene loads those models and creates the court/net/ball/NPC
+// entities itself. (Previously every mesh was a runtime GPU Flux_MeshGeometry
+// spawned post scene-load — that path is gone.)
 
 namespace RenderTest_Tennis
 {
@@ -55,12 +57,34 @@ namespace RenderTest_Tennis
 	constexpr float fPLAYER_FEET_OFFSET = 1.0f;
 }
 
-// Procedural spawn entry point (queued via AddStep_Custom after the material
-// showcase). Builds the court/net/lines, the ball, the two NPC players + their
-// rackets, and the match manager. Windowed-only.
-void RenderTest_SpawnTennisCourt();
+// Tools-only: bake the tennis geometry as CPU Zenith_MeshAssets and export them
+// (each as a .zasset + a bundling .zmodel), plus the court/net textures (.ztxtr)
+// and the court/net/tape/racket/ball materials (.zmtrl), to disk so the authored
+// scene can LoadModel them. The court + net models bundle their textured
+// materials; the tape + racket models bundle the shared vertex-colour material
+// passed in (szVtxColorMaterialPath); the ball model bundles a dedicated yellow
+// material. Overwrites every tools run. Texture export is CPU-only (no GPU
+// upload) — headless/--skip-tool-exports safe (the caller gates this).
+#ifdef ZENITH_TOOLS
+void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath);
+#endif
 
-// Release the file-scope material/texture handles BEFORE Zenith_AssetRegistry
+// Deterministic on-disk paths of the exported tennis .zmodels (stable static
+// storage — safe to pass straight to LoadModel). Used by both the export (write
+// target) and the authoring (load reference).
+const char* RenderTest_TennisCourtModelPath();
+const char* RenderTest_TennisNetModelPath();
+const char* RenderTest_TennisTapeModelPath();
+const char* RenderTest_TennisRacketModelPath();
+const char* RenderTest_TennisBallModelPath();
+
+// Parse the tennis spectator / follow / camera / IK-showcase CLI flags into
+// RenderTest_GameplayState (spectator vantage, --tenniscam-*, follow side,
+// IK-showcase stroke). Called by the RenderTest bootstrap component (previously
+// inlined in the now-deleted runtime spawn).
+void RenderTest_ParseTennisCLI();
+
+// Release the file-scope material/model handles BEFORE Zenith_AssetRegistry
 // shutdown, so their static destructors don't Release into a freed registry
 // ("Release called on asset with 0 ref count"). Call from Project_Shutdown.
 void RenderTest_TennisShutdown();

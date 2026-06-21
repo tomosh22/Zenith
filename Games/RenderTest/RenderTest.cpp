@@ -68,6 +68,11 @@
 #include "RenderTest/RenderTest_Jetpack.h"
 #include "RenderTest/Components/RenderTest_JetpackComponent.h"
 
+// Per-launch bootstrap (CLI/tuning state + post-terrain grass apply) now that the
+// testbeds are baked into the saved scene. Header-only component; also declares
+// RenderTest_TryApplyGrassDensityFromDisk (defined in this TU).
+#include "RenderTest/Components/RenderTest_BootstrapComponent.h"
+
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -81,9 +86,17 @@
 // scene load (windowed, all configs).
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 
+// Owner for the shared vertex-colour testbed material created during the tools asset
+// export. File-scope (not in the ZENITH_TOOLS block) so Project_Shutdown can release
+// it before the asset registry tears down; in non-tools it stays an empty handle.
+static MaterialHandle s_xTestbedVtxColorMaterial;
+
 // Defined alongside Project_LoadInitialScene below; also queued as a
-// post-scene-load automation step in tools builds.
+// post-scene-load automation step in tools builds (ZENITH_TOOLS-only — the
+// runtime/Playing grass apply is driven by RenderTest_BootstrapComponent).
+#ifdef ZENITH_TOOLS
 static void RenderTest_ApplyGrassDensityFromDisk();
+#endif
 
 // Material battle-test showcase: a second platform carrying a grid of every
 // shape × a wide matrix of materials, spawned at runtime (procedural meshes do
@@ -801,6 +814,7 @@ ZENITH_REGISTER_COMPONENT(RenderTest_GunComponent, "RenderTestGun", 110u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisPlayerComponent, "RenderTestTennisPlayer", 120u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisMatchComponent, "RenderTestTennisMatch", 130u)
 ZENITH_REGISTER_COMPONENT(RenderTest_JetpackComponent, "RenderTestJetpack", 140u)
+ZENITH_REGISTER_COMPONENT(RenderTest_BootstrapComponent, "RenderTestBootstrap", 150u)
 
 // (ExportColoredTexture/CreateFlatColorMaterial used to live here for the
 // flat-teal player material — the StickFigure .zmodel now bundles its own
@@ -1270,6 +1284,7 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_TennisPlayerComponent>("RenderTestTennisPlayer");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisMatchComponent>("RenderTestTennisMatch");
 	xEditorRegistry.RegisterComponent<RenderTest_JetpackComponent>("RenderTestJetpack");
+	xEditorRegistry.RegisterComponent<RenderTest_BootstrapComponent>("RenderTestBootstrap");
 #endif
 
 	s_uRenderTestSmokeFrameLimit = RenderTest_GetCommandLineUInt("--rendertest-smoke-frames=", 240);
@@ -1310,6 +1325,10 @@ void Project_Shutdown()
 	RenderTest::Resources().m_xStickFigureModelAsset = ModelHandle{};
 	RenderTest::Resources().m_xCubeMaterial          = MaterialHandle{};
 
+	// Shared testbed material created during the tools asset export (empty in
+	// non-tools — clearing is a safe no-op there).
+	s_xTestbedVtxColorMaterial = MaterialHandle{};
+
 	// Release the tennis-testbed material/texture handles before the registry
 	// tears down (otherwise their static destructors assert on a freed registry).
 	RenderTest_TennisShutdown();
@@ -1324,9 +1343,46 @@ void Project_Shutdown()
 void Project_LoadInitialScene();
 
 #ifdef ZENITH_TOOLS
+// Stable on-disk path of the shared vertex-colour testbed material (white base; the
+// jetpack / guns / racket / net-tape meshes show their per-vertex colour through it).
+static const std::string& RenderTest_TestbedVtxColorMaterialPath()
+{
+	static const std::string s = std::string(GAME_ASSETS_DIR) + "Materials/RenderTest/TestbedVtxColor" ZENITH_MATERIAL_EXT;
+	return s;
+}
+
+// Bake every testbed mesh / material / texture to disk so the authored scene can
+// LoadModel them in ANY build. CPU-only; skipped for headless and --skip-tool-exports
+// runs (no asset mutation there). Overwrites every tools run so geometry/texture
+// edits always propagate (the GenerateStickFigureAssets policy).
+static void GenerateRenderTestTestbedAssets()
+{
+	if (Zenith_CommandLine::IsHeadless() || RenderTest_HasCommandLineFlag("--skip-tool-exports"))
+	{
+		return;
+	}
+
+	const std::string& strMatPath = RenderTest_TestbedVtxColorMaterialPath();
+	std::filesystem::create_directories(std::filesystem::path(strMatPath).parent_path());
+	Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	pxMat->SetName("RenderTest_TestbedVtxColor");
+	pxMat->SetBaseColor(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+	pxMat->SetRoughness(0.45f);
+	pxMat->SetMetallic(0.55f);
+	pxMat->SaveToFile(strMatPath);
+	s_xTestbedVtxColorMaterial.Set(pxMat);
+
+	RenderTest_ExportJetpackAssets(strMatPath.c_str());
+	RenderTest_ExportGunAssets(strMatPath.c_str());
+	RenderTest_ExportTennisAssets(strMatPath.c_str());
+}
+
 void Project_InitializeResources()
 {
 	InitializeRenderTestResources();
+	// Export the testbed assets BEFORE automation runs, so AddStep_LoadModel resolves
+	// them when the authored scene is (re)built and saved.
+	GenerateRenderTestTestbedAssets();
 }
 
 // --rendertest-open-terrain-editor: queued as a final automation step (no
@@ -1399,6 +1455,61 @@ static void RenderTest_EnterSmokePlayMode()
 		g_xEngine.Terrain().GetWireframeMode() = true;
 
 	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+}
+
+// Stable per-type gun entity name ("Gun_<TypeName>"). Function-local-static storage
+// so the c_str() is safe to hand to AddStep_CreateEntity (which stores the pointer).
+// Shared by the authoring + the per-entity config pass so the names always match.
+static const char* RenderTest_GunEntityName(RenderTest_Guns::GunType eType)
+{
+	static std::string s_aNames[static_cast<int>(RenderTest_Guns::GunType::COUNT)];
+	static bool s_bInit = false;
+	if (!s_bInit)
+	{
+		for (int i = 0; i < static_cast<int>(RenderTest_Guns::GunType::COUNT); ++i)
+		{
+			s_aNames[i] = std::string("Gun_") + RenderTest_Guns::GetSpec(static_cast<RenderTest_Guns::GunType>(i)).m_szName;
+		}
+		s_bInit = true;
+	}
+	return s_aNames[static_cast<int>(eType)].c_str();
+}
+
+// AddStep_Custom callback (queued after the testbed CreateEntity steps, before
+// SaveScene): stamp each authored entity's per-instance config — gun type/ammo and
+// tennis NPC side — through the existing Init() setters, so SaveScene serializes it
+// (the components persist it via their v2 streams). Runs in the authoring scene.
+static void RenderTest_ApplyTestbedEntityConfig()
+{
+	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
+
+	// Guns: rebuild the full spec from the per-type entity.
+	for (int i = 0; i < static_cast<int>(RenderTest_Guns::GunType::COUNT); ++i)
+	{
+		const RenderTest_Guns::GunType eType = static_cast<RenderTest_Guns::GunType>(i);
+		Zenith_Entity xGun = pxSceneData->FindEntityByName(RenderTest_GunEntityName(eType));
+		if (xGun.IsValid() && xGun.HasComponent<RenderTest_GunComponent>())
+		{
+			xGun.GetComponent<RenderTest_GunComponent>().Init(RenderTest_Guns::GetSpec(eType));
+		}
+	}
+
+	// Tennis NPCs: set their baseline side (derives facing).
+	auto SetNpcSide = [pxSceneData](const char* szName, bool bNear)
+	{
+		Zenith_Entity xNpc = pxSceneData->FindEntityByName(szName);
+		if (xNpc.IsValid() && xNpc.HasComponent<RenderTest_TennisPlayerComponent>())
+		{
+			xNpc.GetComponent<RenderTest_TennisPlayerComponent>().Init(bNear);
+		}
+	};
+	SetNpcSide("Tennis_NPC_Near", true);
+	SetNpcSide("Tennis_NPC_Far", false);
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -1474,6 +1585,13 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_PackTerrainRoughnessMetallic);
 
 	g_xEngine.EditorAutomation().AddStep_CreateScene("RenderTest");
+
+	// Per-launch bootstrap, authored FIRST so its OnAwake (CLI/tuning parse) precedes
+	// every other entity's OnAwake/OnStart. Saved (non-transient) by default. Owns the
+	// CLI tuning state, the jetpack-mount calibration override, and the post-terrain
+	// grass apply now that the runtime spawns are gone.
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestBootstrap");
+	g_xEngine.EditorAutomation().AddStep_AddComponent("RenderTestBootstrap");
 
 	// GameManager — main camera with follow-camera component.
 	// Initial position is approximate; the FollowCamera overwrites it on the
@@ -1633,6 +1751,131 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIFontSize("GunPrompt", 26.0f);
 	g_xEngine.EditorAutomation().AddStep_SetUIColor("GunPrompt", 1.0f, 0.95f, 0.6f, 1.0f);
 
+	// =====================================================================
+	// Testbeds baked into the scene (jetpack / guns / tennis). Meshes/materials/
+	// textures are exported to disk by GenerateRenderTestTestbedAssets (run in
+	// Project_InitializeResources, before automation); here we author the ENTITIES,
+	// which SaveScene serializes. The Player (jetpack/attach target) is authored
+	// above; the NPCs (racket targets) are authored here BEFORE their attach steps,
+	// so every AddStep_AttachToBone target resolves by name at author time.
+	// =====================================================================
+	{
+		Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+
+		// --- Jetpack: worn on the Player's Spine bone (default mount). ---
+		xAuto.AddStep_CreateEntity("Jetpack");
+		// Seat at the player spawn so frame 0 (before the attachment's OnLateUpdate
+		// resolves the Spine bone) isn't at the world origin.
+		xAuto.AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
+		xAuto.AddStep_AddModel();
+		xAuto.AddStep_LoadModel(RenderTest_JetpackModelPath());
+		xAuto.AddStep_AddParticleEmitter();
+		xAuto.AddStep_SetParticleConfigByName("RenderTest_JetTrail");
+		xAuto.AddStep_SetParticleEmitting(false);
+		xAuto.AddStep_AddComponent("RenderTestJetpack");
+		// Default mount T(0, 0.18, -0.14) — matches RenderTest_BuildJetpackMount's
+		// default; the --jetpack-mount-* override is re-applied at runtime by the
+		// bootstrap.
+		xAuto.AddStep_AttachToBone("Player", "Spine", 0.0f, 0.18f, -0.14f, 0.0f, 0.0f, 0.0f);
+
+		// --- Guns: one of each type laid flat on the spawn-platform deck. ---
+		// CenterPlatform deck top Y = 48.75; lay them in a row in front of the player.
+		{
+			constexpr float fDeckTopY = 48.75f;
+			constexpr float fRowZ = 261.0f;
+			constexpr float fSpacing = 2.0f;
+			constexpr float fRestLift = 0.05f;
+			const int iCount = static_cast<int>(RenderTest_Guns::GunType::COUNT);
+			for (int i = 0; i < iCount; ++i)
+			{
+				const RenderTest_Guns::GunType eType = static_cast<RenderTest_Guns::GunType>(i);
+				const float fX = 256.0f + (static_cast<float>(i) - (iCount - 1) * 0.5f) * fSpacing;
+				xAuto.AddStep_CreateEntity(RenderTest_GunEntityName(eType));
+				xAuto.AddStep_SetTransformPosition(fX, fDeckTopY + fRestLift, fRowZ);
+				// Rest flat on a side face (rotZ +90deg).
+				xAuto.AddStep_SetTransformRotationEuler(0.0f, 0.0f, 90.0f);
+				xAuto.AddStep_AddModel();
+				xAuto.AddStep_LoadModel(RenderTest_GunModelPath(eType));
+				xAuto.AddStep_AddComponent("RenderTestGun");
+				xAuto.AddStep_AddComponent("Attachment");   // idle until picked up; no collider
+			}
+		}
+
+		// --- Tennis court / net / tape / ball + 2 NPCs + rackets + match. ---
+		{
+			using namespace RenderTest_Tennis;
+
+			// Court slab (textured), static OBB collider for the bounce.
+			xAuto.AddStep_CreateEntity("Tennis_Court");
+			xAuto.AddStep_SetTransformPosition(fCOURT_CX, fSURFACE_Y - fSLAB_THICKNESS * 0.5f, fCOURT_CZ);
+			xAuto.AddStep_SetTransformScale(2.0f * fSLAB_HALF_WIDTH, fSLAB_THICKNESS, 2.0f * fSLAB_HALF_LENGTH);
+			xAuto.AddStep_AddModel();
+			xAuto.AddStep_LoadModel(RenderTest_TennisCourtModelPath());
+			xAuto.AddStep_AddCollider();
+			xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+
+			// Net (masked, two-sided), thin static OBB collider.
+			xAuto.AddStep_CreateEntity("Tennis_Net");
+			xAuto.AddStep_SetTransformPosition(fCOURT_CX, fSURFACE_Y + fNET_HEIGHT * 0.5f, fCOURT_CZ);
+			xAuto.AddStep_SetTransformScale(2.0f * fNET_HALF_WIDTH, fNET_HEIGHT, 0.06f);
+			xAuto.AddStep_AddModel();
+			xAuto.AddStep_LoadModel(RenderTest_TennisNetModelPath());
+			xAuto.AddStep_AddCollider();
+			xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+
+			// White net tape (real-size mesh, visual only) along the top edge.
+			xAuto.AddStep_CreateEntity("Tennis_NetTape");
+			xAuto.AddStep_SetTransformPosition(fCOURT_CX, fSURFACE_Y + fNET_HEIGHT, fCOURT_CZ);
+			xAuto.AddStep_AddModel();
+			xAuto.AddStep_LoadModel(RenderTest_TennisTapeModelPath());
+
+			// Ball (yellow sphere), dynamic sphere collider. Scale BEFORE the shape
+			// step — the sphere radius is derived from the transform scale.
+			xAuto.AddStep_CreateEntity("Tennis_Ball");
+			xAuto.AddStep_SetTransformPosition(fCOURT_CX, fSURFACE_Y + 3.0f, fBASELINE_NEAR_Z + 1.0f);
+			xAuto.AddStep_SetTransformScale(2.0f * fBALL_RADIUS, 2.0f * fBALL_RADIUS, 2.0f * fBALL_RADIUS);
+			xAuto.AddStep_AddModel();
+			xAuto.AddStep_LoadModel(RenderTest_TennisBallModelPath());
+			xAuto.AddStep_AddCollider();
+			xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+
+			// NPC players (StickFigure model + animator + tennis component) and their
+			// hand-attached rackets. Per-side config is stamped by the config step
+			// below; the NPC's dynamic capsule collider is added in OnStart.
+			struct NpcAuthoring { const char* m_szNpc; const char* m_szRacket; float m_fZ; };
+			const NpcAuthoring axNpcs[2] = {
+				{ "Tennis_NPC_Near", "Tennis_Racket_Near", fBASELINE_NEAR_Z },
+				{ "Tennis_NPC_Far",  "Tennis_Racket_Far",  fBASELINE_FAR_Z  },
+			};
+			for (const NpcAuthoring& xNpc : axNpcs)
+			{
+				const float fFeetY = fSURFACE_Y + 1.05f;
+				xAuto.AddStep_CreateEntity(xNpc.m_szNpc);
+				xAuto.AddStep_SetTransformPosition(fCOURT_CX, fFeetY, xNpc.m_fZ);
+				xAuto.AddStep_AddModel();
+				xAuto.AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
+				xAuto.AddStep_AddAnimator();
+				xAuto.AddStep_AddComponent("RenderTestTennisPlayer");
+
+				// Racket, seated at the NPC for frame 0, attached to the right hand
+				// (Rx 180deg so the head extends along the hand).
+				xAuto.AddStep_CreateEntity(xNpc.m_szRacket);
+				xAuto.AddStep_SetTransformPosition(fCOURT_CX, fFeetY, xNpc.m_fZ);
+				xAuto.AddStep_AddModel();
+				xAuto.AddStep_LoadModel(RenderTest_TennisRacketModelPath());
+				xAuto.AddStep_AttachToBone(xNpc.m_szNpc, "RightHand", 0.0f, 0.0f, 0.0f, 180.0f, 0.0f, 0.0f);
+			}
+
+			// Match manager (owns the ball + players, scoring).
+			xAuto.AddStep_CreateEntity("Tennis_Match");
+			xAuto.AddStep_AddComponent("RenderTestTennisMatch");
+		}
+
+		// Stamp per-instance config (gun type/ammo, NPC side) after all the testbed
+		// entities exist, before SaveScene serializes them.
+		xAuto.AddStep_Custom(&RenderTest_ApplyTestbedEntityConfig);
+	}
+
 	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
 	if (RenderTest_IsSmokeMode())
 	{
@@ -1652,21 +1895,13 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_ApplyGrassDensityFromDisk);
 
 	// Material battle-test showcase platform — spawned post-load (procedural
-	// meshes don't serialize, so it can't go in the saved scene).
+	// meshes don't serialize, so it can't go in the saved scene). Out of scope of
+	// the testbed-bake work; still the only procedural post-load spawn.
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnMaterialShowcase);
 
-	// Tennis-court testbed (third platform) — likewise procedural, spawned
-	// post-load. Tools path is this automation step; the non-tools windowed path
-	// calls it from Project_LoadInitialScene below.
-	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnTennisCourt);
-
-	// FPS gun pickup/drop testbed (guns on the spawn platform) — likewise
-	// procedural, spawned post-load.
-	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnGuns);
-
-	// Jetpack testbed (backpack attached to the player's back) — likewise
-	// procedural, spawned post-load (after the player exists in the loaded scene).
-	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnJetpack);
+	// (The jetpack / guns / tennis testbeds are no longer spawned post-load — they
+	// are authored into the saved scene above, before AddStep_SaveScene, and their
+	// meshes/materials/textures are baked to disk by GenerateRenderTestTestbedAssets.)
 
 	// Smoke play-mode entry LAST — by this step the deferred load has
 	// completed, so the smoke runner's first tick probes the fully loaded
@@ -1698,34 +1933,21 @@ void Project_RegisterEditorAutomationSteps()
 
 // Painted grass: load the terrain editor's saved GrassDensity.ztxtr (R32,
 // 1024^2) into the grass system and rebuild blade placement from the terrain's
-// physics mesh. Windowed only — the grass GPU buffers don't exist headless.
-static void RenderTest_ApplyGrassDensityFromDisk()
+// physics mesh. Idempotent + retryable — the result tells the caller (the
+// bootstrap component) whether to retry (terrain not streamed yet) or give up
+// (missing file / headless). Declared in RenderTest_BootstrapComponent.h.
+RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk()
 {
 	if (Zenith_CommandLine::IsHeadless())
 	{
-		return;
-	}
-	const std::string strPath = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/GrassDensity" ZENITH_TEXTURE_EXT;
-	if (!std::filesystem::exists(strPath))
-	{
-		return;
+		return RenderTest_GrassApplyResult::SkippedHeadless;   // grass GPU buffers don't exist headless
 	}
 
-	// Read through the single .ztxtr parser (no GPU upload) — never hand-parse.
-	Flux_SurfaceInfo xInfo;
-	std::vector<uint8_t> xBytes;
-	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk()
-		|| xInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT
-		|| xBytes.size() != static_cast<size_t>(xInfo.m_uWidth) * xInfo.m_uHeight * sizeof(float))
-	{
-		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] GrassDensity%s has unexpected layout - skipping grass", ZENITH_TEXTURE_EXT);
-		return;
-	}
-	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
-	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
-	std::vector<float> xDensity(static_cast<size_t>(iWidth) * iHeight);
-	memcpy(xDensity.data(), xBytes.data(), xBytes.size());
-
+	// Probe terrain readiness FIRST — it's the gate that flips frame-to-frame while
+	// terrain streams in, and the bootstrap retries this every frame until it does.
+	// Reading + decoding the ~4MB density .ztxtr before this check would re-parse the
+	// whole file on every not-ready frame (up to the retry cap); doing it after the
+	// cheap probe restores the old single-read behaviour.
 	Zenith_TerrainComponent* pxTerrain = nullptr;
 	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(
 		[&pxTerrain](Zenith_EntityID, Zenith_TerrainComponent& xTerrain)
@@ -1737,14 +1959,55 @@ static void RenderTest_ApplyGrassDensityFromDisk()
 		});
 	if (pxTerrain == nullptr || !pxTerrain->HasPhysicsGeometry())
 	{
-		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] Grass density present but %s - grass skipped",
-			pxTerrain == nullptr ? "no terrain component found" : "terrain has no physics geometry");
-		return;
+		return RenderTest_GrassApplyResult::TerrainNotReady;   // retry next frame (no disk read yet)
 	}
+
+	const std::string strPath = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/GrassDensity" ZENITH_TEXTURE_EXT;
+	if (!std::filesystem::exists(strPath))
+	{
+		return RenderTest_GrassApplyResult::FileMissing;
+	}
+
+	// Read through the single .ztxtr parser (no GPU upload) — never hand-parse.
+	Flux_SurfaceInfo xInfo;
+	std::vector<uint8_t> xBytes;
+	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk()
+		|| xInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT
+		|| xBytes.size() != static_cast<size_t>(xInfo.m_uWidth) * xInfo.m_uHeight * sizeof(float))
+	{
+		return RenderTest_GrassApplyResult::FileMissing;   // invalid layout — treat as missing (caller warns once)
+	}
+	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
+	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
+	std::vector<float> xDensity(static_cast<size_t>(iWidth) * iHeight);
+	memcpy(xDensity.data(), xBytes.data(), xBytes.size());
 
 	g_xEngine.Grass().SetDensityMap(xDensity.data(), static_cast<u_int>(iWidth), static_cast<u_int>(iHeight), 4096.0f);
 	g_xEngine.Grass().GenerateFromTerrain(pxTerrain->GetPhysicsMeshGeometry());
+	return RenderTest_GrassApplyResult::Applied;
 }
+
+// Void wrapper for the tools post-load AddStep_Custom (the editor Stopped-view
+// apply — the bootstrap's OnUpdate only ticks while Playing in tools). Shares the
+// one idempotent helper and, like master's inline version, logs a diagnostic on the
+// failure paths (the bootstrap warns on the runtime/Playing path instead).
+#ifdef ZENITH_TOOLS
+static void RenderTest_ApplyGrassDensityFromDisk()
+{
+	switch (RenderTest_TryApplyGrassDensityFromDisk())
+	{
+	case RenderTest_GrassApplyResult::FileMissing:
+		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] grass density map missing/invalid — grass not applied (tools post-load)");
+		break;
+	case RenderTest_GrassApplyResult::TerrainNotReady:
+		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] terrain not ready at tools post-load grass step — grass not applied");
+		break;
+	case RenderTest_GrassApplyResult::Applied:
+	case RenderTest_GrassApplyResult::SkippedHeadless:
+		break;
+	}
+}
+#endif
 
 //=============================================================================
 // Material battle-test showcase
@@ -1979,25 +2242,13 @@ void Project_LoadInitialScene()
 	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 
-#ifndef ZENITH_TOOLS
-	// Painted-density grass meadows (terrain-editor authored). Runtime builds
-	// load the scene synchronously, so the terrain's physics mesh exists here.
-	// Tools builds defer the load to the next editor Update — there the grass
-	// is applied by the automation step queued after LOAD_INITIAL_SCENE.
-	RenderTest_ApplyGrassDensityFromDisk();
-
-	// Tennis-court testbed (third platform). Tools builds spawn it via the
-	// AddStep_Custom queued in Project_RegisterEditorAutomationSteps; the
-	// non-tools windowed path spawns it here (post synchronous scene load).
-	RenderTest_SpawnTennisCourt();
-
-	// FPS gun pickup/drop testbed (guns on the spawn platform). Same split as the
-	// tennis court: tools via the automation step, non-tools here.
-	RenderTest_SpawnGuns();
-
-	// Jetpack testbed (backpack on the player's back). Same split.
-	RenderTest_SpawnJetpack();
-#endif
+	// The jetpack / guns / tennis testbeds are now AUTHORED into RenderTest.zscen
+	// (entities + on-disk assets) and the bone bindings are re-resolved on load, so
+	// nothing is spawned procedurally here any more. Per-launch state (CLI tuning,
+	// jetpack-mount calibration override, post-terrain grass apply) is owned by the
+	// authored RenderTest_BootstrapComponent (OnAwake/OnStart/OnUpdate), which covers
+	// both the non-tools runtime and tools Playing paths. (The tools Stopped-view
+	// grass apply is the AddStep_Custom queued after LOAD_INITIAL_SCENE.)
 
 	// Tools builds: smoke play-mode entry is queued as the FINAL automation
 	// step (RenderTest_EnterSmokePlayMode) instead of being set here. This
@@ -2014,3 +2265,4 @@ void Project_LoadInitialScene()
 // TU) so the auto-registered ZENITH_TEST cases land in the RenderTest binary's
 // test runner.
 #include "RenderTest/Components/RenderTest_PlayerComponent.Tests.inl"
+#include "RenderTest/Components/RenderTest_Testbed.Tests.inl"

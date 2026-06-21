@@ -355,6 +355,18 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 		}
 	}
 
+	// Re-establish per-component cross-entity references now that the file-index ->
+	// EntityID map is complete (the same remap the parent-link pass above used).
+	// Components that persist another entity BY FILE-INDEX — e.g.
+	// Zenith_AttachmentComponent's skeleton target — re-bind here; every other
+	// component has a null hook and is skipped. Must run after the parent pass so a
+	// resolved reference sees a fully-rebuilt hierarchy.
+	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+	{
+		Zenith_Entity xEntity = GetEntity(m_xActiveEntities.Get(u));
+		Zenith_ComponentMetaRegistry::Get().DispatchResolveEntityReferences(xEntity, xFileIndexToNewID);
+	}
+
 	// Wave9.1 (a) guard 3: the trailing main-camera index is mandatory. If the
 	// stream is truncated before it, the body is malformed — bail (re-activating
 	// the Operations.cpp rollback) rather than letting operator>> clamp/no-op and

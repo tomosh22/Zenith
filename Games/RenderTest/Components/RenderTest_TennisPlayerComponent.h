@@ -55,6 +55,9 @@ public:
 	// ---- Match-facing API ------------------------------------------------
 	bool IsReady() const { return m_eStroke == Stroke::None; }
 
+	// Which baseline this NPC plays (serialized v2; read back by tests/tools).
+	bool IsNearSide() const { return m_bNearSide; }
+
 	// Begin a serve aimed at xAimTarget (world space).
 	void RequestServe(const Zenith_Maths::Vector3& xAimTarget)
 	{
@@ -142,13 +145,24 @@ public:
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const
 	{
-		const u_int uVersion = 1;
+		// v2: persist which baseline this NPC plays so an authored player reloads
+		// facing the right way (the runtime spawn that called Init(side) is gone).
+		// v1 (version tag only) loads back as the near-side default.
+		const u_int uVersion = 2;
 		xStream << uVersion;
+		xStream << m_bNearSide;
 	}
 	void ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		u_int uVersion = 0;
 		xStream >> uVersion;
+		if (uVersion < 2)
+		{
+			return;   // v1 carried no side — keep the near-side default.
+		}
+		bool bNearSide = true;
+		xStream >> bNearSide;
+		Init(bNearSide);   // derives m_bFacingPositiveZ; OnStart reads both later.
 	}
 #ifdef ZENITH_TOOLS
 	void RenderPropertiesPanel()

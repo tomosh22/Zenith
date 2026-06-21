@@ -1,34 +1,28 @@
 #include "Zenith.h"
 #include "RenderTest/RenderTest_Tennis.h"
 
-#include "Core/Zenith_Engine.h"
-#include "Core/Zenith_CommandLine.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "Flux/Flux_Types.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "ZenithECS/Zenith_Scene.h"
-#include "ZenithECS/Zenith_SceneSystem.h"
-#include "ZenithECS/Zenith_SceneData.h"
-#include "ZenithECS/Zenith_Entity.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
-#include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#ifdef ZENITH_TOOLS
+// Offline (CPU) texture export. The header lives under the engine /Tools tree,
+// which is not on a game's include search path, so reach it with a relative path
+// (mirrors Zenith_EditorPanel_ContentBrowser.cpp).
+#include "../../Tools/Zenith_Tools_TextureExport.h"
+#endif
 #include "RenderTest/Components/RenderTest_GameplayState.h"
-#include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
-#include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
 
 #include <vector>
+#include <string>
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <filesystem>
 
 using namespace RenderTest_Tennis;
 using Zenith_Maths::Vector2;
@@ -36,21 +30,35 @@ using Zenith_Maths::Vector3;
 using Zenith_Maths::Vector4;
 
 //=============================================================================
-// Procedural geometry/material/texture helpers for the tennis testbed.
+// Tennis testbed asset production.
 //
-// Everything is built at runtime and attached via Zenith_ModelComponent::
-// AddMeshEntry (procedural meshes do not serialize), so the spawn runs once
-// post scene load and is windowed-only. Geometries are leaked for the process
-// lifetime (the session-long convention used by the other procedural games) —
-// the caller must keep the Flux_MeshGeometry alive for the component lifetime,
-// and these courts/players live until the process exits.
+// Everything the tennis court needs to render (the court/net/tape/racket meshes,
+// the ball sphere, the grass+lines court texture, the net mesh texture, and the
+// materials that bind them) is baked OFFLINE here into CPU assets on disk:
+//
+//   .zasset  (Zenith_MeshAsset)   - geometry, no GPU upload
+//   .zmodel  (Zenith_ModelAsset)  - bundles a mesh + its material(s) by path
+//   .zmtrl   (Zenith_MaterialAsset) - PBR params + texture references by path
+//   .ztxtr   (Zenith_TextureAsset)  - raw RGBA8 pixel data
+//
+// The authored scene (RenderTest.cpp) loads these models and creates the
+// court/net/ball/NPC/racket/match entities + colliders itself; this file no
+// longer touches the scene or the GPU. The box/quad geometry + the court/net
+// pixel buffers are generated the same as the old runtime path — only the OUTPUT
+// target moved from a live Flux_MeshGeometry / GPU texture to a disk asset. Two
+// deliberate, benign deltas vs the old path: the masked net .ztxtr now gets a
+// runtime mip chain when loaded through the asset registry (was single-mip — the
+// alpha-tested cords soften slightly at distance, which also reduces shimmer);
+// and the racket/net-tape share the testbed vertex-colour material (the planned
+// consolidation), so their specular response differs from the old per-mesh mats.
 //=============================================================================
 namespace
 {
-	// Session-lifetime owners so attached geometry/material/texture stay alive.
-	std::vector<Flux_MeshGeometry*> g_apxGeoms;
-	std::vector<MaterialHandle>     g_axMaterials;
-	std::vector<TextureHandle>      g_axTextures;
+	// Session-lifetime owners for the export-time material/model handles, so they
+	// outlive the export and are released cleanly at shutdown (mirrors the
+	// jetpack/guns export pattern).
+	std::vector<MaterialHandle> g_axMaterials;
+	std::vector<ModelHandle>    g_axModels;
 
 	bool RT_TennisHasFlag(const char* szFlag)
 	{
@@ -78,16 +86,32 @@ namespace
 		return fDefault;
 	}
 
-	template <typename T>
-	T* RT_Alloc(uint32_t uCount)
-	{
-		return static_cast<T*>(Zenith_MemoryManagement::Allocate(uCount * sizeof(T)));
-	}
+	// --- Deterministic on-disk asset paths -----------------------------------
+	// Function-local statics give stable storage whose c_str() is safe to hand to
+	// LoadModel (GAME_ASSETS_DIR-relative, like EnsureUnitCubeModelExists).
+	const std::string& TennisCourtMeshPath()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Court"  ZENITH_MESH_ASSET_EXT; return s; }
+	const std::string& TennisNetMeshPath()     { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Net"    ZENITH_MESH_ASSET_EXT; return s; }
+	const std::string& TennisTapeMeshPath()    { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_NetTape" ZENITH_MESH_ASSET_EXT; return s; }
+	const std::string& TennisRacketMeshPath()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Racket" ZENITH_MESH_ASSET_EXT; return s; }
+	const std::string& TennisBallMeshPath()    { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Ball"   ZENITH_MESH_ASSET_EXT; return s; }
+
+	const std::string& TennisCourtModelPathStr()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Court"  ZENITH_MODEL_EXT; return s; }
+	const std::string& TennisNetModelPathStr()    { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Net"    ZENITH_MODEL_EXT; return s; }
+	const std::string& TennisTapeModelPathStr()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_NetTape" ZENITH_MODEL_EXT; return s; }
+	const std::string& TennisRacketModelPathStr() { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Racket" ZENITH_MODEL_EXT; return s; }
+	const std::string& TennisBallModelPathStr()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Meshes/RenderTest/Tennis_Ball"   ZENITH_MODEL_EXT; return s; }
+
+	const std::string& TennisCourtMaterialPath() { static const std::string s = std::string(GAME_ASSETS_DIR) + "Materials/RenderTest/Tennis_Court" ZENITH_MATERIAL_EXT; return s; }
+	const std::string& TennisNetMaterialPath()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Materials/RenderTest/Tennis_Net"   ZENITH_MATERIAL_EXT; return s; }
+	const std::string& TennisBallMaterialPath()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Materials/RenderTest/Tennis_Ball"  ZENITH_MATERIAL_EXT; return s; }
+
+	const std::string& TennisCourtTexturePath() { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Court" ZENITH_TEXTURE_EXT; return s; }
+	const std::string& TennisNetTexturePath()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Net"   ZENITH_TEXTURE_EXT; return s; }
 
 	// Accumulating triangle-mesh builder. Quads use the same CCW winding as
-	// Flux_MeshGeometry::GenerateUnitCube (0-2-1, 1-2-3) so front faces survive
-	// Vulkan back-face culling. p0=bottom-left, p1=bottom-right, p2=top-left,
-	// p3=top-right in the face's own frame.
+	// GenerateUnitCube (0-2-1, 1-2-3) so front faces survive back-face culling.
+	// p0=bottom-left, p1=bottom-right, p2=top-left, p3=top-right in the face's
+	// own frame. Drains into a CPU Zenith_MeshAsset for offline export (no GPU).
 	struct GeomBuilder
 	{
 		std::vector<Vector3> m_xPos, m_xNrm, m_xTan, m_xBit;
@@ -121,59 +145,37 @@ namespace
 			m_xIdx.push_back(uBase + 1); m_xIdx.push_back(uBase + 2); m_xIdx.push_back(uBase + 3);
 		}
 
-		// Finalize into a heap Flux_MeshGeometry (GPU-uploaded). Leaked for the
-		// session; tracked in g_apxGeoms so nothing reclaims it.
-		Flux_MeshGeometry* Build()
+		// Drain the accumulated vertices/indices into a CPU Zenith_MeshAsset for
+		// offline export (no GPU upload). AddVertex doesn't take a bitangent, so the
+		// analytic bitangent is pushed in parallel to keep all six arrays the same
+		// length (matches Zenith_MeshAsset::GenerateUnitSphere / the jetpack export).
+		void BuildAsset(Zenith_MeshAsset& xOut) const
 		{
-			Flux_MeshGeometry* pxGeom = new Flux_MeshGeometry();
+			xOut.Reset();
 			const uint32_t uNV = static_cast<uint32_t>(m_xPos.size());
 			const uint32_t uNI = static_cast<uint32_t>(m_xIdx.size());
-			pxGeom->m_uNumVerts = uNV;
-			pxGeom->m_uNumIndices = uNI;
-			pxGeom->m_pxPositions  = RT_Alloc<Vector3>(uNV);
-			pxGeom->m_pxNormals    = RT_Alloc<Vector3>(uNV);
-			pxGeom->m_pxTangents   = RT_Alloc<Vector3>(uNV);
-			pxGeom->m_pxBitangents = RT_Alloc<Vector3>(uNV);
-			pxGeom->m_pxUVs        = RT_Alloc<Vector2>(uNV);
-			pxGeom->m_pxColors     = RT_Alloc<Vector4>(uNV);
-			pxGeom->m_puIndices    = RT_Alloc<Flux_MeshGeometry::IndexType>(uNI);
-			std::memcpy(pxGeom->m_pxPositions,  m_xPos.data(), uNV * sizeof(Vector3));
-			std::memcpy(pxGeom->m_pxNormals,    m_xNrm.data(), uNV * sizeof(Vector3));
-			std::memcpy(pxGeom->m_pxTangents,   m_xTan.data(), uNV * sizeof(Vector3));
-			std::memcpy(pxGeom->m_pxBitangents, m_xBit.data(), uNV * sizeof(Vector3));
-			std::memcpy(pxGeom->m_pxUVs,        m_xUV.data(),  uNV * sizeof(Vector2));
-			std::memcpy(pxGeom->m_pxColors,     m_xCol.data(), uNV * sizeof(Vector4));
-			std::memcpy(pxGeom->m_puIndices,    m_xIdx.data(), uNI * sizeof(Flux_MeshGeometry::IndexType));
-			pxGeom->GenerateLayoutAndVertexData();
-			pxGeom->UploadToGPU();
-			g_apxGeoms.push_back(pxGeom);
-			return pxGeom;
+			xOut.Reserve(uNV, uNI);
+			for (uint32_t u = 0; u < uNV; ++u)
+			{
+				xOut.AddVertex(m_xPos[u], m_xNrm[u], m_xUV[u], m_xTan[u], m_xCol[u]);
+				xOut.m_xBitangents.PushBack(m_xBit[u]);
+			}
+			for (uint32_t u = 0; u + 3 <= uNI; u += 3)
+			{
+				xOut.AddTriangle(m_xIdx[u], m_xIdx[u + 1], m_xIdx[u + 2]);
+			}
+			xOut.ComputeBounds();
 		}
 	};
 
-	// --- Procedural textures -------------------------------------------------
-
-	Zenith_TextureAsset* RT_MakeTexture(uint32_t uW, uint32_t uH, const std::vector<uint8_t>& xPixels)
-	{
-		Zenith_TextureAsset* pxTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-		Flux_SurfaceInfo xInfo;
-		xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-		xInfo.m_eTextureType = TEXTURE_TYPE_2D;
-		xInfo.m_uWidth = uW;
-		xInfo.m_uHeight = uH;
-		xInfo.m_uDepth = 1;
-		xInfo.m_uNumMips = 1;
-		xInfo.m_uNumLayers = 1;
-		xInfo.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-		pxTex->CreateFromData(xPixels.data(), xInfo, /*bCreateMips*/ false);
-		return pxTex;
-	}
+	// --- Procedural textures (CPU pixel buffers) -----------------------------
 
 	// Court texture: green grass (with a little noise) + white painted lines.
 	// U maps to court width (X), V to court length (Z). The painted court is
 	// inset by the grass apron. Lines: doubles + singles sidelines, baselines,
-	// the two service lines, and the centre service line.
-	Zenith_TextureAsset* RT_MakeCourtTexture()
+	// the two service lines, and the centre service line. Returns the RGBA8 pixel
+	// buffer (uW/uH set) so the caller can export it to disk.
+	std::vector<uint8_t> RT_MakeCourtTexture(uint32_t& uWOut, uint32_t& uHOut)
 	{
 		constexpr uint32_t uW = 384;
 		constexpr uint32_t uH = 832;   // ~ slabWidth : slabLength
@@ -244,12 +246,15 @@ namespace
 		FillRect(0.5f - fLwU, fNearBase, 0.5f + fLwU, fNearBase + 6.0f * fLwV);
 		FillRect(0.5f - fLwU, fFarBase - 6.0f * fLwV, 0.5f + fLwU, fFarBase);
 
-		return RT_MakeTexture(uW, uH, xPx);
+		uWOut = uW;
+		uHOut = uH;
+		return xPx;
 	}
 
 	// Net texture: a coarse mesh — dark cord on the grid lines (opaque), holes
-	// transparent. Tiled across the net panel by the material UV tiling.
-	Zenith_TextureAsset* RT_MakeNetTexture()
+	// transparent. Tiled across the net panel by the material UV tiling. Returns
+	// the RGBA8 pixel buffer (uS square) so the caller can export it to disk.
+	std::vector<uint8_t> RT_MakeNetTexture(uint32_t& uSizeOut)
 	{
 		constexpr uint32_t uS = 64;
 		constexpr uint32_t uCell = 8;     // 8 cells across the texture
@@ -265,26 +270,8 @@ namespace
 				p[3] = bCord ? 255 : 0;
 			}
 		}
-		return RT_MakeTexture(uS, uS, xPx);
-	}
-
-	// --- Materials -----------------------------------------------------------
-
-	Zenith_MaterialAsset* RT_NewMaterial(const char* szName)
-	{
-		MaterialHandle xHandle;
-		xHandle.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-		g_axMaterials.push_back(xHandle);
-		Zenith_MaterialAsset* pxMat = xHandle.GetDirect();
-		pxMat->SetName(szName);
-		return pxMat;
-	}
-
-	TextureHandle RT_TrackTexture(Zenith_TextureAsset* pxTex)
-	{
-		TextureHandle xHandle(pxTex);
-		g_axTextures.push_back(xHandle);
-		return xHandle;
+		uSizeOut = uS;
+		return xPx;
 	}
 
 	// --- Court + net geometry (unit meshes; scaled by the entity transform so
@@ -292,7 +279,7 @@ namespace
 
 	// Unit box [-0.5,0.5]^3. Top (+Y) face carries the full court texture; the
 	// other five faces sample a fixed grass pixel so the slab edges read as grass.
-	Flux_MeshGeometry* RT_BuildCourtSlab()
+	void RT_BuildCourtSlab(Zenith_MeshAsset& xOut)
 	{
 		GeomBuilder xB;
 		const Vector4 xWhite(1.0f);
@@ -314,22 +301,22 @@ namespace
 			xGrass, xGrass, xGrass, xGrass, xWhite);
 		xB.AddQuad({ -h, -h, -h }, { -h, -h, h }, { -h, h, -h }, { -h, h, h }, { -1, 0, 0 },
 			xGrass, xGrass, xGrass, xGrass, xWhite);
-		return xB.Build();
+		xB.BuildAsset(xOut);
 	}
 
 	// Unit quad in the XY plane ([-0.5,0.5] x [-0.5,0.5], Z=0), normal +Z. Scaled
 	// to the net dimensions; the two-sided material makes the back visible.
-	Flux_MeshGeometry* RT_BuildQuad()
+	void RT_BuildNetQuad(Zenith_MeshAsset& xOut)
 	{
 		GeomBuilder xB;
 		const float h = 0.5f;
 		xB.AddQuad({ -h, -h, 0.0f }, { h, -h, 0.0f }, { -h, h, 0.0f }, { h, h, 0.0f }, { 0, 0, 1 },
 			{ 0, 1 }, { 1, 1 }, { 0, 0 }, { 1, 0 }, Vector4(1.0f));
-		return xB.Build();
+		xB.BuildAsset(xOut);
 	}
 
 	// Add an axis-aligned box [xMin,xMax] to a builder with a flat vertex colour
-	// (UVs unused — the racket is vertex-coloured, not textured).
+	// (UVs unused — the racket/tape are vertex-coloured, not textured).
 	void RT_AddBox(GeomBuilder& xB, const Vector3& xMin, const Vector3& xMax, const Vector4& xColor)
 	{
 		const Vector2 z(0.0f, 0.0f);
@@ -343,11 +330,22 @@ namespace
 		xB.AddQuad({ x0,y0,z0 }, { x0,y0,z1 }, { x0,y1,z0 }, { x0,y1,z1 }, { -1,0,0 }, z, z, z, z, xColor);   // -X
 	}
 
+	// White net tape along the top edge (the iconic tennis-net band). Opaque,
+	// visual only — built at real size, centred (the entity transform places it
+	// at the net top). Vertex-coloured white.
+	void RT_BuildNetTape(Zenith_MeshAsset& xOut)
+	{
+		GeomBuilder xB;
+		RT_AddBox(xB, Vector3(-fNET_HALF_WIDTH, -0.03f, -0.03f), Vector3(fNET_HALF_WIDTH, 0.03f, 0.03f),
+			Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		xB.BuildAsset(xOut);
+	}
+
 	// Tennis racket: a dark grip/handle + a light oval string-bed head, built in
 	// its own local frame with the grip at the origin (+Y = up the racket). One
 	// mesh, two-tone via vertex colour (material base = white). Attached to the
-	// hand bone by Zenith_AttachmentComponent.
-	Flux_MeshGeometry* RT_BuildRacket()
+	// hand bone by Zenith_AttachmentComponent (authoring).
+	void RT_BuildRacket(Zenith_MeshAsset& xOut)
 	{
 		GeomBuilder xB;
 		const Vector4 xFrame(0.12f, 0.12f, 0.14f, 1.0f);   // dark grip/frame
@@ -361,166 +359,74 @@ namespace
 		RT_AddBox(xB, { 0.105f, 0.30f, -0.012f }, { 0.135f, 0.54f, 0.012f }, xFrame);   // right rim
 		// String bed: a thin light panel inside the frame.
 		RT_AddBox(xB, { -0.105f, 0.30f, -0.004f }, { 0.105f, 0.54f, 0.004f }, xString);
-		return xB.Build();
+		xB.BuildAsset(xOut);
 	}
 
-	// --- Entity spawn helpers ------------------------------------------------
-
-	Zenith_Entity RT_SpawnMeshEntity(Zenith_Scene xScene, const char* szName,
-		const Vector3& xPos, const Vector3& xScale,
-		Flux_MeshGeometry* pxGeom, Zenith_MaterialAsset* pxMat)
+#ifdef ZENITH_TOOLS
+	// Create + register a material handle (kept alive for the session in
+	// g_axMaterials), name it, and return it for property setup + SaveToFile.
+	Zenith_MaterialAsset* RT_NewMaterial(const char* szName)
 	{
-		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(xScene, szName);
-		Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
-		xT.SetPosition(xPos);
-		xT.SetScale(xScale);
-		Zenith_ModelComponent& xModel = xEnt.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*pxGeom, *pxMat);
-		return xEnt;
+		MaterialHandle xHandle;
+		xHandle.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		g_axMaterials.push_back(xHandle);
+		Zenith_MaterialAsset* pxMat = xHandle.GetDirect();
+		pxMat->SetName(szName);
+		return pxMat;
 	}
+
+	// Export a CPU mesh asset + a bundling .zmodel referencing the given material
+	// paths. Overwrites every tools run so geometry/material edits propagate (the
+	// EnsureStickFigureModelExists generation policy). The model handle is tracked
+	// in g_axModels for clean release at shutdown.
+	void RT_ExportMeshModel(const char* szModelName, void (*pfnBuild)(Zenith_MeshAsset&),
+		const std::string& strMeshPath, const std::string& strModelPath,
+		const Zenith_Vector<std::string>& xMaterialPaths)
+	{
+		std::filesystem::create_directories(std::filesystem::path(strMeshPath).parent_path());
+
+		Zenith_MeshAsset xMesh;
+		pfnBuild(xMesh);
+		xMesh.Export(strMeshPath.c_str());
+
+		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		pxModel->SetName(szModelName);
+		pxModel->AddMeshByPath(strMeshPath, xMaterialPaths);
+		pxModel->Export(strModelPath.c_str());
+
+		ModelHandle xHandle;
+		xHandle.Set(pxModel);
+		g_axModels.push_back(xHandle);
+
+		Zenith_Log(LOG_CATEGORY_MESH, "[Tennis] exported %s", strModelPath.c_str());
+	}
+#endif
 }
 
 //=============================================================================
-// Spawn entry point
+// Public path getters (used by both the export write target + the authoring
+// LoadModel reference).
 //=============================================================================
-void RenderTest_SpawnTennisCourt()
+const char* RenderTest_TennisCourtModelPath()  { return TennisCourtModelPathStr().c_str(); }
+const char* RenderTest_TennisNetModelPath()    { return TennisNetModelPathStr().c_str(); }
+const char* RenderTest_TennisTapeModelPath()   { return TennisTapeModelPathStr().c_str(); }
+const char* RenderTest_TennisRacketModelPath() { return TennisRacketModelPathStr().c_str(); }
+const char* RenderTest_TennisBallModelPath()   { return TennisBallModelPathStr().c_str(); }
+
+// (The racket's 180deg-about-X mount is baked directly by the authoring step
+// AddStep_AttachToBone(..., 180,0,0) — BuildEulerOffsetMatrix produces the identical
+// transform — so no dedicated mount helper is needed here.)
+
+//=============================================================================
+// CLI parsing (spectator / follow / camera / IK-showcase). Sets the same
+// RenderTest_GameplayState flags the runtime spawn used to set.
+//=============================================================================
+void RenderTest_ParseTennisCLI()
 {
-	if (Zenith_CommandLine::IsHeadless())
-		return;   // procedural meshes/textures are GPU-dependent — windowed only.
-
-	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
-	if (!xScene.IsValid())
-	{
-		Zenith_Warning(LOG_CATEGORY_CORE, "[Tennis] no active scene; skipping court spawn");
-		return;
-	}
-
-	// --- Court slab: grass + painted lines, static OBB collider for the bounce ---
-	{
-		Zenith_MaterialAsset* pxCourtMat = RT_NewMaterial("Tennis_Court");
-		pxCourtMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-		pxCourtMat->SetRoughness(0.9f);
-		pxCourtMat->SetMetallic(0.0f);
-		pxCourtMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, RT_TrackTexture(RT_MakeCourtTexture()));
-
-		Flux_MeshGeometry* pxSlab = RT_BuildCourtSlab();
-		const Vector3 xScale(2.0f * fSLAB_HALF_WIDTH, fSLAB_THICKNESS, 2.0f * fSLAB_HALF_LENGTH);
-		const Vector3 xPos(fCOURT_CX, fSURFACE_Y - fSLAB_THICKNESS * 0.5f, fCOURT_CZ);
-		Zenith_Entity xCourt = RT_SpawnMeshEntity(xScene, "Tennis_Court", xPos, xScale, pxSlab, pxCourtMat);
-		Zenith_ColliderComponent& xCol = xCourt.AddComponent<Zenith_ColliderComponent>();
-		xCol.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
-	}
-
-	// --- Net: alpha-tested, two-sided, thin static collider ---
-	{
-		Zenith_MaterialAsset* pxNetMat = RT_NewMaterial("Tennis_Net");
-		pxNetMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-		pxNetMat->SetRoughness(0.7f);
-		pxNetMat->SetMetallic(0.0f);
-		pxNetMat->SetBlendMode(MATERIAL_BLEND_MASKED);
-		pxNetMat->SetAlphaCutoff(0.5f);
-		pxNetMat->SetTwoSided(true);
-		pxNetMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, RT_TrackTexture(RT_MakeNetTexture()));
-		// Tile the coarse net texture so the holes read at ~12 cm.
-		pxNetMat->SetUVTiling(Vector2(2.0f * fNET_HALF_WIDTH, fNET_HEIGHT));
-
-		Flux_MeshGeometry* pxQuad = RT_BuildQuad();
-		const Vector3 xScale(2.0f * fNET_HALF_WIDTH, fNET_HEIGHT, 0.06f);
-		const Vector3 xPos(fCOURT_CX, fSURFACE_Y + fNET_HEIGHT * 0.5f, fCOURT_CZ);
-		Zenith_Entity xNet = RT_SpawnMeshEntity(xScene, "Tennis_Net", xPos, xScale, pxQuad, pxNetMat);
-		Zenith_ColliderComponent& xCol = xNet.AddComponent<Zenith_ColliderComponent>();
-		xCol.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
-
-		// White net tape along the top edge (the iconic tennis-net band). Opaque,
-		// visual only — built at real size, centred, positioned at the net top.
-		GeomBuilder xTapeB;
-		RT_AddBox(xTapeB, Vector3(-fNET_HALF_WIDTH, -0.03f, -0.03f), Vector3(fNET_HALF_WIDTH, 0.03f, 0.03f),
-			Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-		Flux_MeshGeometry* pxTape = xTapeB.Build();
-		Zenith_MaterialAsset* pxTapeMat = RT_NewMaterial("Tennis_NetTape");
-		pxTapeMat->SetBaseColor(Vector4(0.96f, 0.96f, 0.96f, 1.0f));
-		pxTapeMat->SetRoughness(0.6f);
-		pxTapeMat->SetMetallic(0.0f);
-		Zenith_Entity xTape = g_xEngine.Scenes().CreateEntity(xScene, "Tennis_NetTape");
-		xTape.GetComponent<Zenith_TransformComponent>().SetPosition(Vector3(fCOURT_CX, fSURFACE_Y + fNET_HEIGHT, fCOURT_CZ));
-		xTape.AddComponent<Zenith_ModelComponent>().AddMeshEntry(*pxTape, *pxTapeMat);
-	}
-
-	// --- Ball: dynamic sphere (tennis yellow). Restitution/friction are applied
-	//     at runtime by the match component (they don't serialize). ---
-	{
-		Zenith_MaterialAsset* pxBallMat = RT_NewMaterial("Tennis_Ball");
-		pxBallMat->SetBaseColor(Vector4(0.78f, 0.88f, 0.16f, 1.0f));
-		pxBallMat->SetRoughness(0.55f);
-		pxBallMat->SetMetallic(0.0f);
-
-		// Registry-cached unit sphere (radius 0.5); scale to the ball diameter.
-		Flux_MeshGeometry* pxBallGeom = Zenith_MeshGeometryAsset::CreateUnitSphere(20)->GetGeometry();
-		const Vector3 xScale(2.0f * fBALL_RADIUS);
-		const Vector3 xPos(fCOURT_CX, fSURFACE_Y + 3.0f, fBASELINE_NEAR_Z + 1.0f);
-		Zenith_Entity xBall = RT_SpawnMeshEntity(xScene, "Tennis_Ball", xPos, xScale, pxBallGeom, pxBallMat);
-		// Set scale before AddCollider (sphere radius is derived from it).
-		Zenith_ColliderComponent& xCol = xBall.AddComponent<Zenith_ColliderComponent>();
-		xCol.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	}
-
-	// --- NPC players + their rackets ---
-	// Two StickFigure NPCs on opposite baselines; each holds a racket attached to
-	// its right hand by the engine attachment component.
-	{
-		const std::string strStickModel = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
-
-		Flux_MeshGeometry* pxRacketGeom = RT_BuildRacket();
-		Zenith_MaterialAsset* pxRacketMat = RT_NewMaterial("Tennis_Racket");
-		pxRacketMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));   // vertex colour shows through
-		pxRacketMat->SetRoughness(0.5f);
-		pxRacketMat->SetMetallic(0.1f);
-
-		// Racket mount: rotate 180deg about X so the head extends along the hand's
-		// continuation, with the grip seated in the palm. (Tuning knob.)
-		const Zenith_Maths::Matrix4 xRacketOffset =
-			glm::rotate(Zenith_Maths::Matrix4(1.0f), static_cast<float>(Zenith_Maths::Pi), Vector3(1.0f, 0.0f, 0.0f));
-
-		auto SpawnPlayer = [&](const char* szNpcName, const char* szRacketName, bool bNear)
-		{
-			const float fZ = bNear ? fBASELINE_NEAR_Z : fBASELINE_FAR_Z;
-			// Capsule (half-extent ~1.05) rests on the court with the model's feet
-			// near the surface.
-			const Vector3 xPos(fCOURT_CX, fSURFACE_Y + 1.05f, fZ);
-
-			Zenith_Entity xNpc = g_xEngine.Scenes().CreateEntity(xScene, szNpcName);
-			xNpc.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
-			Zenith_ModelComponent& xModel = xNpc.AddComponent<Zenith_ModelComponent>();
-			xModel.LoadModel(strStickModel);
-			xNpc.AddComponent<Zenith_AnimatorComponent>();
-			xNpc.AddComponent<RenderTest_TennisPlayerComponent>().Init(bNear);
-
-			Zenith_Entity xRacket = g_xEngine.Scenes().CreateEntity(xScene, szRacketName);
-			// Seat the racket at the player's position so frame 0 (before the bone
-			// resolves in OnLateUpdate) isn't at the world origin.
-			xRacket.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
-			Zenith_ModelComponent& xRModel = xRacket.AddComponent<Zenith_ModelComponent>();
-			xRModel.AddMeshEntry(*pxRacketGeom, *pxRacketMat);
-			Zenith_AttachmentComponent& xAttach = xRacket.AddComponent<Zenith_AttachmentComponent>();
-			xAttach.AttachToBone(xNpc, "RightHand", xRacketOffset);
-		};
-
-		SpawnPlayer("Tennis_NPC_Near", "Tennis_Racket_Near", true);
-		SpawnPlayer("Tennis_NPC_Far",  "Tennis_Racket_Far",  false);
-	}
-
-	// --- Match manager: owns the ball + the players, scoring, score text. ---
-	{
-		Zenith_Entity xMatch = g_xEngine.Scenes().CreateEntity(xScene, "Tennis_Match");
-		xMatch.AddComponent<RenderTest_TennisMatchComponent>();
-	}
-
-	// --- Spectator camera (capture aid) ---
-	// A fixed vantage behind the near baseline, elevated, looking down the court
-	// (+Z). The follow camera honours these when the flag is set; the tennis
-	// match also runs in Play mode, so the autonomous rally is framed.
-	// Defaults overlook the whole court from behind the near baseline; each is
-	// overridable from the CLI (--tenniscam-x/y/z/yaw/pitch=) for close-up capture.
+	// Spectator camera (capture aid): a fixed vantage behind the near baseline,
+	// elevated, looking down the court (+Z). Defaults overlook the whole court;
+	// each is overridable from the CLI (--tenniscam-x/y/z/yaw/pitch=) for close-up
+	// capture.
 	RenderTest_GameplayState::s_fTennisCamX = RT_TennisArgFloat("--tenniscam-x=", fCOURT_CX);
 	RenderTest_GameplayState::s_fTennisCamY = RT_TennisArgFloat("--tenniscam-y=", fSURFACE_Y + 16.0f);
 	RenderTest_GameplayState::s_fTennisCamZ = RT_TennisArgFloat("--tenniscam-z=", fBASELINE_NEAR_Z - 14.0f);
@@ -556,20 +462,99 @@ void RenderTest_SpawnTennisCourt()
 		}
 	}
 #endif
-
-	Zenith_Log(LOG_CATEGORY_CORE,
-		"[Tennis] spawned court (%.1f x %.1f) + net at (%.0f, %.0f, %.0f); spectator=%d",
-		fCOURT_WIDTH, fCOURT_LENGTH, fCOURT_CX, fSURFACE_Y, fCOURT_CZ,
-		RenderTest_GameplayState::s_bTennisSpectatorActive ? 1 : 0);
 }
+
+//=============================================================================
+// Tools asset export
+//=============================================================================
+#ifdef ZENITH_TOOLS
+void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath)
+{
+	std::filesystem::create_directories(std::filesystem::path(TennisCourtTexturePath()).parent_path());
+	std::filesystem::create_directories(std::filesystem::path(TennisCourtMaterialPath()).parent_path());
+
+	// --- Textures (CPU pixel buffers -> .ztxtr; no GPU upload) ---
+	{
+		uint32_t uW = 0, uH = 0;
+		const std::vector<uint8_t> xCourtPx = RT_MakeCourtTexture(uW, uH);
+		Zenith_Tools_TextureExport::ExportFromData(xCourtPx.data(), TennisCourtTexturePath(),
+			static_cast<int32_t>(uW), static_cast<int32_t>(uH), TEXTURE_FORMAT_RGBA8_UNORM);
+
+		uint32_t uS = 0;
+		const std::vector<uint8_t> xNetPx = RT_MakeNetTexture(uS);
+		Zenith_Tools_TextureExport::ExportFromData(xNetPx.data(), TennisNetTexturePath(),
+			static_cast<int32_t>(uS), static_cast<int32_t>(uS), TEXTURE_FORMAT_RGBA8_UNORM);
+	}
+
+	// --- Court material: grass + painted lines, textured by the .ztxtr above ---
+	{
+		Zenith_MaterialAsset* pxCourtMat = RT_NewMaterial("Tennis_Court");
+		pxCourtMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		pxCourtMat->SetRoughness(0.9f);
+		pxCourtMat->SetMetallic(0.0f);
+		pxCourtMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, TextureHandle(TennisCourtTexturePath()));
+		pxCourtMat->SaveToFile(TennisCourtMaterialPath());
+	}
+
+	// --- Net material: alpha-tested, two-sided, UV-tiled (preserves every prop
+	//     the runtime material set) ---
+	{
+		Zenith_MaterialAsset* pxNetMat = RT_NewMaterial("Tennis_Net");
+		pxNetMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		pxNetMat->SetRoughness(0.7f);
+		pxNetMat->SetMetallic(0.0f);
+		pxNetMat->SetBlendMode(MATERIAL_BLEND_MASKED);
+		pxNetMat->SetAlphaCutoff(0.5f);
+		pxNetMat->SetTwoSided(true);
+		pxNetMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, TextureHandle(TennisNetTexturePath()));
+		// Tile the coarse net texture so the holes read at ~12 cm.
+		pxNetMat->SetUVTiling(Vector2(2.0f * fNET_HALF_WIDTH, fNET_HEIGHT));
+		pxNetMat->SaveToFile(TennisNetMaterialPath());
+	}
+
+	// --- Ball material: tennis yellow, vertex colour irrelevant (sphere is
+	//     analytic-shaded; base colour drives the look) ---
+	{
+		Zenith_MaterialAsset* pxBallMat = RT_NewMaterial("Tennis_Ball");
+		pxBallMat->SetBaseColor(Vector4(0.78f, 0.88f, 0.16f, 1.0f));
+		pxBallMat->SetRoughness(0.55f);
+		pxBallMat->SetMetallic(0.0f);
+		pxBallMat->SaveToFile(TennisBallMaterialPath());
+	}
+
+	// --- Meshes + bundling models ---
+	// Court + net bundle their textured materials; tape + racket bundle the shared
+	// vertex-colour material; the ball bundles its dedicated yellow material.
+	{
+		Zenith_Vector<std::string> xCourtMat;  xCourtMat.PushBack(TennisCourtMaterialPath());
+		RT_ExportMeshModel("RenderTest_Tennis_Court", &RT_BuildCourtSlab,
+			TennisCourtMeshPath(), TennisCourtModelPathStr(), xCourtMat);
+
+		Zenith_Vector<std::string> xNetMat;    xNetMat.PushBack(TennisNetMaterialPath());
+		RT_ExportMeshModel("RenderTest_Tennis_Net", &RT_BuildNetQuad,
+			TennisNetMeshPath(), TennisNetModelPathStr(), xNetMat);
+
+		Zenith_Vector<std::string> xVtxMat;    xVtxMat.PushBack(szVtxColorMaterialPath);
+		RT_ExportMeshModel("RenderTest_Tennis_NetTape", &RT_BuildNetTape,
+			TennisTapeMeshPath(), TennisTapeModelPathStr(), xVtxMat);
+		RT_ExportMeshModel("RenderTest_Tennis_Racket", &RT_BuildRacket,
+			TennisRacketMeshPath(), TennisRacketModelPathStr(), xVtxMat);
+
+		// Ball: a unit sphere (radius 0.5; bundle the yellow ball material). The
+		// authoring scales it to the ball diameter; a sphere collider sized from
+		// the same scale lines up with the mesh.
+		Zenith_Vector<std::string> xBallMat;   xBallMat.PushBack(TennisBallMaterialPath());
+		RT_ExportMeshModel("RenderTest_Tennis_Ball",
+			[](Zenith_MeshAsset& xOut) { Zenith_MeshAsset::GenerateUnitSphere(xOut, 20); },   // 20 segs == original runtime CreateUnitSphere(20)
+			TennisBallMeshPath(), TennisBallModelPathStr(), xBallMat);
+	}
+}
+#endif
 
 void RenderTest_TennisShutdown()
 {
-	// Drop the registry refcounts while the AssetRegistry is still alive (mirrors
-	// RenderTest::Project_Shutdown's handling of its own Resources handles). The
-	// procedural Flux_MeshGeometry objects in g_apxGeoms are intentionally leaked
-	// for the session (same convention as the material showcase); they are not
-	// registry assets, so they don't trip the asset-refcount assertion.
+	// Release the export-time material/model handles while the AssetRegistry is
+	// still alive (mirrors RenderTest_JetpackShutdown / RenderTest_GunsShutdown).
 	g_axMaterials.clear();
-	g_axTextures.clear();
+	g_axModels.clear();
 }

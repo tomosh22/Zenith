@@ -176,6 +176,28 @@ public:
 	 */
 	static void GenerateUnitCube(Zenith_MeshAsset& xMeshOut);
 
+	/**
+	 * Generate a unit sphere (radius 0.5, centred at the origin; bounds exactly
+	 * [-0.5, 0.5]). Matches the runtime Zenith_MeshGeometryAsset::CreateUnitSphere
+	 * convention (latitude = uSegments, longitude = uSegments*2) so a sphere-collider
+	 * sized from the same scale lines up with the mesh.
+	 *
+	 * uSegments is the latitude (stack) count and MUST be EVEN (asserted): an even
+	 * count puts a ring exactly on the equator, so |x| and |z| reach exactly 0.5.
+	 *
+	 * Writes ANALYTIC attributes — normal = radial (unit), tangent = the longitude
+	 * derivative {-sinφ, 0, cosφ}, bitangent = {cosθcosφ, -sinθ, cosθsinφ} — rather
+	 * than GenerateNormals/GenerateTangents, which average across the duplicated
+	 * pole/seam vertices and corrupt shading there.
+	 *
+	 * CPU-only: does NOT create GPU buffers (suits offline asset export). Call
+	 * EnsureGPUBuffers() yourself if you need to render the result directly.
+	 *
+	 * @param xMeshOut Output mesh asset (will be reset first)
+	 * @param uSegments Latitude segment count (even, >= 2)
+	 */
+	static void GenerateUnitSphere(Zenith_MeshAsset& xMeshOut, uint32_t uSegments = 16);
+
 	//--------------------------------------------------------------------------
 	// Vertex Data (public for direct access during export/building)
 	//--------------------------------------------------------------------------

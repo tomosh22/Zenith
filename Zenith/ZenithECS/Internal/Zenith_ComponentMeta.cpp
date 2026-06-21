@@ -393,3 +393,18 @@ void Zenith_ComponentMetaRegistry::DispatchOnDestroy(Zenith_Entity& xEntity) con
 			pxMeta->m_pfnOnDestroy(xEntity);
 	}
 }
+
+void Zenith_ComponentMetaRegistry::DispatchResolveEntityReferences(Zenith_Entity& xEntity,
+	const Zenith_HashMap<uint32_t, Zenith_EntityID>& xFileIndexToNewID) const
+{
+	EnsureInitialized();
+	// Dedicated loop rather than DispatchLifecycleHook: that helper forwards its args
+	// BY VALUE, which would deep-copy the whole file-index map once per entity. Here
+	// the map is passed straight through by const-ref.
+	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
+	{
+		if (!xEntity.IsValid()) return;
+		if (pxMeta->m_pfnResolveEntityReferences && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
+			pxMeta->m_pfnResolveEntityReferences(xEntity, xFileIndexToNewID);
+	}
+}

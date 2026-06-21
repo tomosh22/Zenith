@@ -23,9 +23,11 @@
 // support arm's reach, so both hands genuinely meet the gun. See RenderTest_Guns.cpp
 // for the per-type anchor/foregrip numbers and the reachability budget.
 //
-// Like the tennis court and material showcase, everything here is procedural
-// (meshes built at runtime, do not survive SaveScene), so the spawn runs post
-// scene-load and is windowed-only (Zenith_CommandLine::IsHeadless() early-out).
+// The four gun meshes are baked OFFLINE (tools) into CPU Zenith_MeshAssets + a
+// bundling .zmodel each; the authored scene LoadModels them and the runtime
+// pickup/drop bind happens via the serialized Zenith_AttachmentComponent.
+// (Previously each mesh was built as a runtime GPU Flux_MeshGeometry and spawned
+// post scene-load — that path is gone.)
 
 namespace RenderTest_Guns
 {
@@ -78,12 +80,27 @@ namespace RenderTest_Guns
 	constexpr float fPICKUP_RADIUS = 2.2f;
 }
 
-// Procedural spawn entry point (queued via AddStep_Custom after the tennis court).
-// Builds one gun of each type lying on the spawn platform floor. Windowed-only.
-void RenderTest_SpawnGuns();
+// Tools-only: build each gun's mesh as a CPU Zenith_MeshAsset and export it + a
+// bundling .zmodel (referencing the shared vertex-colour material passed in) to
+// disk, so the authored scene can LoadModel them. Loops over all GunType values.
+// Overwrites every tools run. CPU-only (no GPU upload) — headless/
+// --skip-tool-exports safe.
+#ifdef ZENITH_TOOLS
+void RenderTest_ExportGunAssets(const char* szVtxColorMaterialPath);
+#endif
 
-// Release the file-scope material/texture handles BEFORE Zenith_AssetRegistry
-// shutdown (mirrors RenderTest_TennisShutdown). Call from Project_Shutdown.
+// Deterministic on-disk path of the exported .zmodel for a gun type (stable
+// static storage — safe to pass straight to AddStep_LoadModel). Used by both the
+// export (write target) and the authoring (load reference).
+const char* RenderTest_GunModelPath(RenderTest_Guns::GunType eType);
+
+// Parse --rendertest-gun-showcase[=...] + --gun-* into RenderTest_GunTuning.
+// Called by the RenderTest bootstrap component in OnAwake (previously inlined in
+// the now-deleted runtime spawn).
+void RenderTest_ParseGunCLI();
+
+// Release the file-scope asset handles BEFORE Zenith_AssetRegistry shutdown
+// (mirrors RenderTest_JetpackShutdown). Call from Project_Shutdown.
 void RenderTest_GunsShutdown();
 
 // Optional showcase / tuning support. --rendertest-gun-showcase[=pistol|smg|rifle|

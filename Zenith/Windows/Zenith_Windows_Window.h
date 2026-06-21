@@ -55,6 +55,11 @@ public:
 	static u_int64 GetGLFWAllocationCount();
 
 private:
+	// Single funnel for cursor-mode changes (Enable/Disable/Toggle route here): only
+	// acts on an actual mode change, then toggles raw motion + signals the input
+	// discontinuity. See the .cpp for the rationale.
+	void SetCursorCaptured(bool bCaptured);
+
 	static Zenith_Window* s_pxInstance;
 
 	GLFWwindow* m_pxNativeWindow = nullptr;

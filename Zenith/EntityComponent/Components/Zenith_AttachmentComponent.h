@@ -1,5 +1,6 @@
 #pragma once
 #include "ZenithECS/Zenith_Entity.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
 
@@ -59,6 +60,12 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+	// Scene-load hook (concept-detected by the component-meta registry). Re-binds
+	// m_xSkeletonEntity from the serialized skeleton file-index once the loader's
+	// file-index -> EntityID map is complete. Scene-load only — never runs in prefab
+	// context, so a prefab-instantiated attachment stays inert until re-attached in code.
+	void ResolveEntityReferences(const Zenith_HashMap<uint32_t, Zenith_EntityID>& xMap);
+
 #ifdef ZENITH_TOOLS
 	void RenderPropertiesPanel()
 	{
@@ -77,4 +84,11 @@ private:
 	Zenith_Maths::Matrix4 m_xOffset = Zenith_Maths::Matrix4(1.0f);
 	bool          m_bAttached = false;
 	bool          m_bWarnedMissingBone = false;   // one-shot diagnostic latch
+
+	// Deserialized binding awaiting resolution (scene v2+). ReadFromDataStream stashes
+	// the serialized attached-flag + skeleton slot index here; ResolveEntityReferences
+	// (scene-load only) consumes them, then clears both — so they are inert in any other
+	// context (prefab instantiation, runtime). AttachToBone / Detach also clear them.
+	uint32_t      m_uPendingSkeletonFileIndex = Zenith_EntityID::INVALID_INDEX;
+	bool          m_bPendingAttached = false;
 };

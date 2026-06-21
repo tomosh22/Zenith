@@ -11,12 +11,19 @@ void Zenith_AttachmentComponent::AttachToBone(Zenith_Entity xSkeletonEntity, con
 	m_strBone = szBone ? szBone : "";
 	m_xOffset = xOffset;
 	m_bAttached = true;
+
+	// A live (re)attach supersedes any deserialized binding awaiting resolution.
+	m_uPendingSkeletonFileIndex = Zenith_EntityID::INVALID_INDEX;
+	m_bPendingAttached = false;
 }
 
 void Zenith_AttachmentComponent::Detach()
 {
 	m_bAttached = false;
 	m_xSkeletonEntity = Zenith_Entity();
+
+	m_uPendingSkeletonFileIndex = Zenith_EntityID::INVALID_INDEX;
+	m_bPendingAttached = false;
 }
 
 void Zenith_AttachmentComponent::OnLateUpdate(float)
@@ -72,16 +79,101 @@ void Zenith_AttachmentComponent::OnLateUpdate(float)
 
 void Zenith_AttachmentComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Runtime-only follow state — the skeleton-entity reference is re-established
-	// by whoever spawns/attaches the entity (the attachment is set up in code,
-	// not authored into a scene), so only the version tag persists.
-	const u_int uVersion = 1;
+	// v2: persist the bone binding so an attachment authored into a scene (a racket on
+	// an NPC's hand, a jetpack on the player's spine) survives a load. The skeleton
+	// reference is written as its slot index — which IS the scene file-index, exactly
+	// like the main-camera entity — and re-resolved on load by ResolveEntityReferences.
+	// v1 (version tag only) still loads back as detached.
+	const u_int uVersion = 2;
 	xStream << uVersion;
+
+	xStream << m_bAttached;
+	xStream << m_strBone;
+
+	// Offset as 16 explicit floats (column-major, nested [i][j]) — an ABI-stable wire
+	// format independent of the glm::mat4 in-memory layout (mirrors
+	// Flux_AnimationController's matrix serialization).
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			xStream << m_xOffset[i][j];
+		}
+	}
+
+	const uint32_t uSkeletonFileIndex = (m_bAttached && m_xSkeletonEntity.IsValid())
+		? m_xSkeletonEntity.GetEntityID().m_uIndex
+		: Zenith_EntityID::INVALID_INDEX;
+	xStream << uSkeletonFileIndex;
 }
 
 void Zenith_AttachmentComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	u_int uVersion = 0;
 	xStream >> uVersion;
+
+	// Reset to a clean detached state; the scene-load resolve pass re-establishes any
+	// binding (and leaves it detached in non-scene contexts, e.g. prefab instantiation).
 	m_bAttached = false;
+	m_xSkeletonEntity = Zenith_Entity();
+	m_uPendingSkeletonFileIndex = Zenith_EntityID::INVALID_INDEX;
+	m_bPendingAttached = false;
+
+	if (uVersion < 2)
+	{
+		return;   // v1 carried no binding.
+	}
+
+	xStream >> m_bPendingAttached;
+	xStream >> m_strBone;
+
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			xStream >> m_xOffset[i][j];
+		}
+	}
+
+	xStream >> m_uPendingSkeletonFileIndex;
 }
+
+void Zenith_AttachmentComponent::ResolveEntityReferences(const Zenith_HashMap<uint32_t, Zenith_EntityID>& xMap)
+{
+	// Single-use pending state: capture then clear, so a failed resolve (or a
+	// non-scene context that never calls this) leaves the component cleanly detached.
+	const bool bWantAttach = m_bPendingAttached;
+	const uint32_t uPendingIndex = m_uPendingSkeletonFileIndex;
+	m_uPendingSkeletonFileIndex = Zenith_EntityID::INVALID_INDEX;
+	m_bPendingAttached = false;
+
+	if (!bWantAttach)
+	{
+		return;   // authored detached (or v1) — nothing to bind.
+	}
+
+	// The attachment and its skeleton target were loaded from the same scene, so the
+	// owner's SceneData resolves the remapped EntityID into a live handle.
+	Zenith_SceneData* pxSceneData = m_xSelf.GetSceneData();
+	if (pxSceneData != nullptr && uPendingIndex != Zenith_EntityID::INVALID_INDEX)
+	{
+		if (const Zenith_EntityID* pxID = xMap.TryGet(uPendingIndex))
+		{
+			Zenith_Entity xTarget = pxSceneData->GetEntity(*pxID);
+			if (xTarget.IsValid())
+			{
+				m_xSkeletonEntity = xTarget;
+				m_bAttached = true;
+				return;
+			}
+		}
+	}
+
+	// Unresolved: the target was transient-excluded, cross-scene, or missing. Stay
+	// detached so OnLateUpdate no-ops rather than chasing a stale handle.
+	Zenith_Warning(LOG_CATEGORY_ECS,
+		"[Attachment] could not resolve skeleton entity for bone '%s' on scene load — left detached",
+		m_strBone.c_str());
+}
+
+#include "EntityComponent/Components/Zenith_AttachmentComponent.Tests.inl"

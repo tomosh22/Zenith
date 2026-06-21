@@ -113,6 +113,12 @@ struct Zenith_ComponentMeta
 	ComponentCollisionFn m_pfnOnCollisionStay = nullptr;
 	ComponentCollisionExitFn m_pfnOnCollisionExit = nullptr;
 
+	// Re-establish cross-entity references after a scene load (nullptr unless the
+	// component implements ResolveEntityReferences). Invoked by the scene loader per
+	// loaded entity, right after the parent-link resolution pass, with the
+	// file-index -> new EntityID map. Concept-detected at registration.
+	ComponentResolveRefsFn m_pfnResolveEntityReferences = nullptr;
+
 	// On-disk schema version of this component's serialized payload. Written
 	// per-component into scene v6+ files OUTSIDE the size-prefixed payload, so it
 	// never disturbs the bounded/unknown-component skip path. Default 1; a component
@@ -214,6 +220,13 @@ public:
 	void DispatchOnCollisionEnter(Zenith_Entity& xEntity, Zenith_Entity& xOther) const;
 	void DispatchOnCollisionStay(Zenith_Entity& xEntity, Zenith_Entity& xOther) const;
 	void DispatchOnCollisionExit(Zenith_Entity& xEntity, Zenith_EntityID xOtherID) const;
+
+	// Re-establish cross-entity references on a loaded entity after a scene load. The
+	// scene loader calls this per entity once the file-index -> EntityID map is built
+	// (right after the parent-link resolution pass); any component implementing
+	// ResolveEntityReferences (concept-detected) re-binds its stored entity handles.
+	void DispatchResolveEntityReferences(Zenith_Entity& xEntity,
+		const Zenith_HashMap<uint32_t, Zenith_EntityID>& xFileIndexToNewID) const;
 
 	// Populate + seal the registry if it has not been initialized yet. Public so
 	// Zenith_Engine::Initialise can force the one-time init eagerly (after
@@ -382,6 +395,10 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 	if constexpr (HasOnCollisionExit<T>)
 	{
 		xMeta.m_pfnOnCollisionExit = &OnCollisionExitWrapper<T>;
+	}
+	if constexpr (HasResolveEntityReferences<T>)
+	{
+		xMeta.m_pfnResolveEntityReferences = &ResolveEntityReferencesWrapper<T>;
 	}
 
 	m_xMetaByName[strTypeName] = xMeta;
