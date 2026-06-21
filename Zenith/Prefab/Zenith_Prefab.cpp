@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -297,6 +298,7 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData,
 	const Zenith_Maths::Quat& xRotation,
 	const Zenith_Maths::Vector3& xScale) const
 {
+	ZENITH_PROFILE_SCOPE("Prefab Instantiate");
 	if (!m_bIsValid || !pxSceneData)
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot instantiate invalid prefab or null scene");

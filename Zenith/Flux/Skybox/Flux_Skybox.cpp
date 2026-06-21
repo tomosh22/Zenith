@@ -11,6 +11,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -417,6 +418,7 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 {
+	ZENITH_PROFILE_SCOPE("Flux Skybox LUT Setup");
 	// Called from Flux_RendererImpl::ApplySubsystemGraphSelections BEFORE Compile.
 	// On a dirty compile the validator (ValidateOrphanedReads) requires every
 	// enabled read to have an enabled writer: the "Skybox" pass reads the

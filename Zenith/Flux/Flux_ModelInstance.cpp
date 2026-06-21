@@ -98,6 +98,35 @@ void Flux_ModelInstance::AppendProceduralMesh(Flux_MeshGeometry& xGeometry, Zeni
 	MaterialHandle xMaterialHandle;
 	xMaterialHandle.Set(&xMaterial);
 	m_xMaterials.PushBack(std::move(xMaterialHandle));
+
+	// Phase 3: the mesh set grew — the cached local union bounds must be recomputed.
+	InvalidateLocalBounds();
+}
+
+const Zenith_AABB& Flux_ModelInstance::GetLocalBounds() const
+{
+	if (m_bLocalBoundsValid)
+	{
+		return m_xLocalBounds;
+	}
+
+	// Union of every mesh instance's local bounds. A default (invalid) per-mesh AABB
+	// (min > max — empty/degenerate mesh) contributes nothing; the union's Reset state
+	// means a model with no valid mesh bounds returns an invalid AABB (treated
+	// conservatively by callers — the snapshot fill leaves such entities unculled).
+	m_xLocalBounds.Reset();
+	for (uint32_t u = 0; u < GetNumMeshes(); ++u)
+	{
+		Flux_MeshInstance* pxMesh = GetMeshInstance(u);
+		if (!pxMesh) continue;
+		const Zenith_AABB& xMeshBounds = pxMesh->GetLocalBounds();
+		if (!xMeshBounds.IsValid()) continue;
+		m_xLocalBounds.ExpandToInclude(xMeshBounds.m_xMin);
+		m_xLocalBounds.ExpandToInclude(xMeshBounds.m_xMax);
+	}
+
+	m_bLocalBoundsValid = true;
+	return m_xLocalBounds;
 }
 
 void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAsset* pxAsset)

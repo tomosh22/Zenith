@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Particles/Flux_ParticlesImpl.h"
@@ -119,6 +120,7 @@ void Flux_ParticlesImpl::Shutdown()
 
 void Flux_ParticlesImpl::UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
+	ZENITH_PROFILE_SCOPE("Particles CPU Sim & Build");
 	m_uAlphaInstanceCount = 0;
 	m_uAdditiveInstanceCount = 0;
 
@@ -150,6 +152,7 @@ void Flux_ParticlesImpl::UpdateEmittersAndBuildInstanceBuffer(float fDt)
 
 void Flux_ParticlesImpl::UploadInstanceData()
 {
+	ZENITH_PROFILE_SCOPE("Particles GPU Upload");
 	// Promoted from a file-static free function to an instance member: buffer/count
 	// self-references now resolve through 'this'. VulkanMemory is reached via
 	// g_xEngine at point of use.

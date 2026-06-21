@@ -10,6 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include <random>
@@ -292,6 +293,7 @@ static u_int Flux_Grass_InstanceCountForLOD(u_int uTotal, u_int uLOD)
 
 void Flux_GrassImpl::UpdateVisibleChunks()
 {
+	ZENITH_PROFILE_SCOPE("Grass Culling & LOD");
 	m_uVisibleBladeCount = 0;
 	m_uActiveChunkCount = 0;
 

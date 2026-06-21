@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
@@ -444,6 +445,7 @@ namespace
 
 void Flux_DynamicLightsImpl::GatherLightsFromScene()
 {
+	ZENITH_PROFILE_SCOPE("Flux Light Gather & Cull");
 	m_uLightCount = 0;
 
 	// Toggling dynamic lights off resets the count to zero. The clustering

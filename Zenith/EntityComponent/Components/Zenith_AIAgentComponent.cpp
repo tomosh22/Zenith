@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
@@ -153,6 +154,7 @@ void Zenith_AIAgentComponent::SetBehaviorTree(Zenith_BehaviorTree* pxTree)
 
 void Zenith_AIAgentComponent::TickBehaviorTree(float fDt)
 {
+	ZENITH_PROFILE_SCOPE("AI BehaviorTree Tick");
 	if (m_pxBehaviorTree == nullptr)
 	{
 		return;

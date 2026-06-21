@@ -7,6 +7,9 @@
 #define ZENITH_FLUX_NUM_CSMS 4
 #define ZENITH_FLUX_CSM_RESOLUTION 2048
 
+class Flux_StaticMeshesImpl;
+class Flux_AnimatedMeshesImpl;
+
 // CSM depth format — exposed here so subsystems that build shadow pipelines at
 // Initialise() time can reference it without going through a graph-owned
 // transient accessor (which requires the graph to exist).
@@ -91,6 +94,18 @@ public:
 
 	void UpdateShadowMatrices();
 
+	// Phase 3: the two geometry consumers, injected at the composition root (Zenith_Engine.cpp)
+	// so the shadow cascade-0 Prepare can ensure their UNCULLLED shadow packets without this TU
+	// reaching g_xEngine. This is what keeps shadows correct when the G-buffer pass is
+	// force-disabled (the mesh G-buffer Prepares — which would otherwise build the packets —
+	// don't run then). Generation-guarded inside the consumers, so a double-call is a no-op.
+	void SetGeometryConsumers(Flux_StaticMeshesImpl* pxStatic, Flux_AnimatedMeshesImpl* pxAnimated)
+	{
+		m_pxStaticMeshes = pxStatic;
+		m_pxAnimatedMeshes = pxAnimated;
+	}
+	void EnsureGeometryShadowPackets();
+
 	// Per-cascade + global sampling data for the lighting pass. Valid after
 	// UpdateShadowMatrices() has run for the current frame.
 	const Flux_ShadowCascadeSamplingData& GetCascadeSamplingData() const { return m_xCascadeSamplingData; }
@@ -104,6 +119,10 @@ public:
 	Flux_DynamicConstantBuffer m_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 	Flux_DynamicConstantBuffer m_xShadowSamplingBuffer;
 	Zenith_Maths::Matrix4      m_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
+
+	// Phase 3: injected geometry consumers (non-owning, forward-declared). null until injected.
+	Flux_StaticMeshesImpl*   m_pxStaticMeshes = nullptr;
+	Flux_AnimatedMeshesImpl* m_pxAnimatedMeshes = nullptr;
 
 private:
 	Flux_RenderAttachment& GetCSM(u_int uIndex);

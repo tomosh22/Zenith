@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include <atomic>
+#include "Profiling/Zenith_Profiling.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -243,6 +244,7 @@ void Flux_HDRImpl::Reset()
 
 static void PreExecuteLuminanceHistogram(void* pUserData)
 {
+	ZENITH_PROFILE_SCOPE("Flux HDR Histogram Setup");
 	(void)pUserData;
 
 	// Non-capturing graph trampoline: recover this subsystem instance, then

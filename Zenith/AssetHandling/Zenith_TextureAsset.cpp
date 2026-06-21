@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -59,6 +60,7 @@ void Zenith_TextureAsset::MarkAsBindless()
 Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
 	Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes, bool& bOutIsV2)
 {
+	ZENITH_PROFILE_SCOPE("Texture Parse .ztxtr");
 	bOutIsV2 = false;
 
 	if (!xStream.IsValid())
@@ -185,6 +187,7 @@ Zenith_Status Zenith_TextureAsset::LoadCPUData(const std::string& strPath, Flux_
 
 Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
 {
+	ZENITH_PROFILE_SCOPE("Texture Load + GPU Upload");
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strPath.c_str());
 	if (!xStream.IsValid())
@@ -333,6 +336,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 	const char* szPathPY, const char* szPathNY,
 	const char* szPathPZ, const char* szPathNZ)
 {
+	ZENITH_PROFILE_SCOPE("Cubemap Load From Files");
 	const char* aszPaths[6] = { szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ };
 	std::vector<uint8_t> axFaceBytes[6];   // mip 0 of each face
 	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;

@@ -80,6 +80,19 @@ struct Zenith_EntitySlot
 	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
 	uint32_t m_uPendingParentFileIndex = Zenith_EntityID::INVALID_INDEX;
 
+	// Scene-graph transform-cache revision. Bumped whenever this entity's world
+	// transform could have changed — its own pose edited, a structural re-parent,
+	// a physics pose sync, or (propagated by Zenith_SceneData::BumpHierarchyRevision)
+	// any ancestor's edit. Zenith_TransformComponent caches a world matrix stamped
+	// with the revision it was built against; a mismatch forces a recompute. The
+	// counter is monotonic across slot recycle (ReleaseSlot/OccupySlot increment it
+	// rather than reset) so a reused slot can never alias a previous occupant's
+	// cached stamp. Written only on the main thread (pose/structural/physics-sync
+	// writers all run before SetRenderTasksActive(true)); read render-task-safe via
+	// Zenith_SceneData::GetHierRevisionUnchecked. Starts at 1 so a fresh transform
+	// cache (stamped 0 = "never built") always misses on first use.
+	uint64_t m_uHierRevision = 1;
+
 	// Lifecycle state queries
 	bool IsOccupied() const { return m_eLifecycle >= Zenith_EntityLifecycleState::OCCUPIED; }
 	bool IsAwoken() const { return m_eLifecycle >= Zenith_EntityLifecycleState::AWOKEN; }
@@ -142,6 +155,9 @@ struct Zenith_EntitySlot
 		m_xParentEntityID = INVALID_ENTITY_ID;
 		m_xChildEntityIDs.Clear();
 		m_uPendingParentFileIndex = Zenith_EntityID::INVALID_INDEX;
+		// Monotonic bump (NOT reset) so a recycled slot's revision can never equal a
+		// previous occupant's cached transform stamp — forces a recompute on reuse.
+		++m_uHierRevision;
 	}
 
 	// Initialize all lifecycle flags and occupy the slot for a new entity
@@ -158,6 +174,9 @@ struct Zenith_EntitySlot
 		m_xParentEntityID = INVALID_ENTITY_ID;
 		m_xChildEntityIDs.Clear();
 		m_uPendingParentFileIndex = Zenith_EntityID::INVALID_INDEX;
+		// Monotonic bump (NOT reset) so a recycled slot's revision can never equal a
+		// previous occupant's cached transform stamp — forces a recompute on reuse.
+		++m_uHierRevision;
 	}
 };
 

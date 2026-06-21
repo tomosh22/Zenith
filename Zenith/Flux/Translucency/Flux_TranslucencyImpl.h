@@ -9,6 +9,7 @@ class Flux_ModelInstance;
 class Flux_MeshInstance;
 class Flux_ShaderBinder;
 class Zenith_MaterialAsset;
+class Flux_RenderSceneSnapshot;
 
 // Per-frame draw item resolved on the main thread during Prepare: one
 // translucent/additive SUBMESH (the gather walks every model's meshes and
@@ -49,6 +50,10 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// Phase 2: engine-owned uncullled snapshot injected at the composition root. The
+	// Prepare reads it instead of running its own ECS scan. Keeps this TU off the ratchet.
+	void SetSnapshot(const Flux_RenderSceneSnapshot* pxSnapshot) { m_pxSnapshot = pxSnapshot; }
+
 	// Prepare callback: gathers + depth-sorts the per-frame packet (main thread).
 	void GatherDrawPacket(void* pUserData);
 
@@ -65,4 +70,8 @@ public:
 
 	// One-shot warning latch for unsupported animated translucent submeshes.
 	bool m_bWarnedAnimatedTranslucent = false;
+
+	// Phase 2: engine-owned uncullled scene snapshot, injected at the composition root
+	// (non-owning). Read in GatherDrawPacket; null until injected (early boot).
+	const Flux_RenderSceneSnapshot* m_pxSnapshot = nullptr;
 };

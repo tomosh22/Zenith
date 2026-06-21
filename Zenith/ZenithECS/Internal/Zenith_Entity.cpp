@@ -453,6 +453,10 @@ void Zenith_Entity::SetParent(Zenith_EntityID xParentID)
 	// (The former Zenith_Entity::SetParent shim did this after delegating to the
 	// owning component; preserved here so the cache stays consistent with the slot chain.)
 	Zenith_SceneData::InvalidateActiveInHierarchyCache(m_xEntityID);
+
+	// Re-parenting changes this entity's world transform (new ancestor chain) and thus
+	// every descendant's — bump the whole subtree so cached world matrices recompute.
+	Zenith_SceneData::BumpHierarchyRevision(m_xEntityID);
 }
 
 void Zenith_Entity::DetachFromParent()
@@ -484,6 +488,10 @@ void Zenith_Entity::DetachAllChildren()
 		if (pxSceneData->EntityExists(uChildID))
 		{
 			ECS_SlotByID(uChildID).m_xParentEntityID = INVALID_ENTITY_ID;
+			// The child (now a root) and its descendants lose this entity's transform
+			// contribution — bump each detached subtree so their caches recompute. The
+			// grandchild links are still intact, so the DFS reaches them.
+			Zenith_SceneData::BumpHierarchyRevision(uChildID);
 		}
 	}
 	xMySlot.m_xChildEntityIDs.Clear();

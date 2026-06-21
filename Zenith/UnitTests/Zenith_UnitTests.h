@@ -220,6 +220,56 @@ public:
 	static void TestLocalSceneDestruction();
 	static void TestLocalSceneWithHierarchy();
 
+	// Phase 1 scene-graph transform-cache tests. Cover the revision-checked
+	// BuildModelMatrix cache (hit==recompute + sentinel first-call), invalidation by
+	// every pose setter + structural edit + ancestor edit, the leaf-safe slot
+	// hierarchy-revision propagation (subtree bumped, siblings untouched), the
+	// worker-thread cache-write contract (a worker miss leaves the shared cache
+	// unmutated), and the physics → transform sync (post-physics sweep for sim moves +
+	// the teleport hook for immediate invalidation).
+	static void TestTransformCacheReturnsRecomputedValue();
+	static void TestTransformCacheInvalidatedBySetters();
+	static void TestTransformCacheInvalidatedByAncestorEdit();
+	static void TestTransformCacheInvalidatedByReparent();
+	static void TestTransformCacheInvalidatedByDetachAllChildren();
+	static void TestHierRevisionPropagatesToSubtree();
+	static void TestTransformCacheWorkerContractLeavesCacheUnwritten();
+	static void TestPhysicsSweepInvalidatesTransformCache();
+	static void TestTeleportInvalidatesTransformCacheImmediately();
+	// Adversarial-review coverage gaps: the sweep must be a NO-OP for an unmoved body (no
+	// spurious epsilon trip re-invalidating every static collider's subtree each frame), and
+	// the production worker path (main builds the cache, workers concurrently READ the hit)
+	// must leave the cache intact.
+	static void TestPhysicsSweepNoOpForUnmovedBody();
+	static void TestTransformCacheWorkerConcurrentReadHits();
+
+	// Phase 2 scene-graph render-snapshot + lifetime-epoch tests. Cover the
+	// Zenith_SceneSystem render-mutation epoch (NotifyRenderMutation / GetRenderMutationEpoch),
+	// and the engine-owned Flux_RenderSceneSnapshot's pure mechanics: Rebuild stamps the
+	// epoch + fills items + bumps the generation; IsCurrent tracks the epoch (false after a
+	// mutation, true after the next rebuild for it); Reset clears entries + invalidates
+	// (epoch 0); and the diagnostics are pointer-free.
+	static void TestRenderMutationEpochIncrements();
+	static void TestSnapshotRebuildStampsEpochAndItems();
+	static void TestSnapshotIsCurrentTracksEpoch();
+	static void TestSnapshotResetClearsAndInvalidates();
+	static void TestSnapshotGenerationBumpsEachRebuild();
+
+	// Phase 3 scene-graph culling tests. Cover the snapshot camera-frustum stamp +
+	// the AABB-frustum cull DECISION (the core of camera culling: inside visible,
+	// outside culled, straddling conservatively visible), and the entity world-AABB
+	// computation the snapshot fill performs (TransformAABB of the local union bounds).
+	static void TestSnapshotCameraFrustumCullDecision();
+	static void TestWorldAABBTransform();
+	// Round-2 review fix: the snapshot frustum-valid flag gates culling (false until the
+	// owner stamps a valid camera; cleared each Rebuild) so a camera-invalid frame culls
+	// nothing instead of culling against an identity/stale frustum.
+	static void TestSnapshotCameraFrustumValidGate();
+	// Round-3 review fix: drive the camera-valid gate THROUGH the real consumer packet build
+	// (Flux_StaticMeshesImpl::Build{Camera,Shadow}Packet) — valid frustum culls the off-screen
+	// item from the camera packet but never the shadow packet; invalid frustum culls nothing.
+	static void TestStaticMeshesCameraCullGate();
+
 	// Prefab system tests
 	static void TestPrefabCreateFromEntity();
 	static void TestPrefabInstantiation();

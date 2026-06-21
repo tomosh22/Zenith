@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "Profiling/Zenith_Profiling.h"
 
 //------------------------------------------------------------------------------
 // MeshMaterialBinding Serialization
@@ -76,6 +77,7 @@ Zenith_ModelAsset& Zenith_ModelAsset::operator=(Zenith_ModelAsset&& xOther)
 
 Zenith_Result<Zenith_ModelAsset*> Zenith_ModelAsset::LoadFromFile(const char* szPath)
 {
+	ZENITH_PROFILE_SCOPE("Model Load + Parse");
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 

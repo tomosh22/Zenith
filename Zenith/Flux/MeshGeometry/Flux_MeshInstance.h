@@ -1,6 +1,7 @@
 #pragma once
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "Maths/Zenith_FrustumCulling.h"   // Zenith_AABB (Phase 3 culling bounds)
 
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
@@ -98,6 +99,14 @@ public:
 	 */
 	bool HasSkinning() const;
 
+	// Phase 3 (scene-graph culling): the mesh's LOCAL-space AABB, captured at creation
+	// and cached. Asset-backed instances read the baked asset bounds (Zenith_MeshAsset::
+	// GetBounds{Min,Max}); procedural instances compute it from the geometry's positions
+	// (GenerateAABBFromVertices). Call InvalidateLocalBounds() if the procedural geometry
+	// mutates (it is immutable for asset-backed instances).
+	const Zenith_AABB& GetLocalBounds() const;
+	void InvalidateLocalBounds() { m_bLocalBoundsValid = false; }
+
 private:
 	Flux_VertexBuffer m_xVertexBuffer;
 	Flux_IndexBuffer m_xIndexBuffer;
@@ -115,4 +124,9 @@ private:
 	// skips buffer teardown (the geometry owns them).
 	Flux_MeshGeometry* m_pxProceduralGeometry = nullptr;
 	bool m_bInitialized = false;
+
+	// Phase 3: lazily-computed, cached local-space bounds (mutable so GetLocalBounds()
+	// stays const). m_bLocalBoundsValid == false forces a recompute on next access.
+	mutable Zenith_AABB m_xLocalBounds;
+	mutable bool m_bLocalBoundsValid = false;
 };

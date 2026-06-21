@@ -14,6 +14,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Profiling/Zenith_Profiling.h"
 #include <filesystem>
 
 #ifdef ZENITH_TOOLS
@@ -198,12 +199,19 @@ bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 
 void Flux_GraphicsImpl::UploadFrameConstants()
 {
+	ZENITH_PROFILE_SCOPE("Flux Upload Frame Constants");
 	bool bCameraValid = BuildCameraMatrices(m_xFrameConstants);
+	m_bCameraValid = bCameraValid;   // exposed via IsCameraValid() for the scene-graph snapshot frustum
 
 	if (bCameraValid)
 	{
 		if (dbg_bOverrideViewProjMat)
 		{
+			// Debug-only (default-off) sun-cascade inspector: the WHOLE frame's view-proj —
+			// and hence the scene-graph snapshot's camera frustum (stamped via IsCameraValid()
+			// from GetViewProjMatrix()) plus the world reconstruction below — is replaced by the
+			// sun's. So under this override the geometry consumers intentionally cull to the SUN
+			// frustum, consistent with viewing the frame from the light. Not a camera path.
 			m_xFrameConstants.m_xViewProjMat = g_xEngine.Shadows().GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
 		}
 		else

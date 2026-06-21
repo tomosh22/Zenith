@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -639,6 +639,7 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_ImGuiInputBridge.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_SceneGraphDebug.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AIAgentComponent.h" />
@@ -664,6 +665,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Physics.Tests.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsTransformSync.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
@@ -739,6 +741,7 @@
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_QuadsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Internal.h" />
+    <ClInclude Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToShadowmap.slang" />
@@ -870,6 +873,7 @@
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
@@ -1272,6 +1276,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_SceneGraphDebug.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_SelectionSystem.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1306,6 +1314,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphReload.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsTransformSync.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsWorldHooksInstall.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1360,6 +1370,7 @@
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.cpp" />
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Compilation.cpp" />
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Execution.cpp" />
+    <ClCompile Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.cpp" />
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
@@ -1396,6 +1407,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

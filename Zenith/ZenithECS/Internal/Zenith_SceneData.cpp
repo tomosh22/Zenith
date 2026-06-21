@@ -176,6 +176,59 @@ Zenith_EntityID Zenith_SceneData::GetParentEntityIDUnchecked(Zenith_EntityID xID
 	return Zenith_ECS_EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_xParentEntityID;
 }
 
+uint64_t Zenith_SceneData::GetHierRevisionUnchecked(Zenith_EntityID xID) const
+{
+	// Render-task-safe read (no main-thread assert), mirroring GetParentEntityIDUnchecked.
+	// An out-of-range index yields 0 — the "never built" stamp — so a stale/invalid handle
+	// always misses the transform cache rather than returning a bogus hit.
+	if (xID.m_uIndex >= Zenith_ECS_EntityStore().m_axEntitySlots.GetSize())
+	{
+		return 0;
+	}
+	return Zenith_ECS_EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_uHierRevision;
+}
+
+void Zenith_SceneData::BumpHierarchyRevision(Zenith_EntityID xRoot)
+{
+	Zenith_Assert(Zenith_ECS_IsMainThread(), "BumpHierarchyRevision must be called from main thread");
+
+	// Iterative tree walk using an explicit stack (avoids stack overflow on deep
+	// hierarchies) — same traversal as InvalidateActiveInHierarchyCache. A parent's
+	// world transform feeds every descendant's, so a single edit must bump the whole
+	// subtree; each node's cache is stamped with its own revision, so bumping it forces
+	// that node to recompute on its next BuildModelMatrix.
+	//
+	// The stack is a FUNCTION-LOCAL static reused across calls (Clear() retains capacity →
+	// zero heap allocation after warmup) because this runs on the HOT path — every
+	// SetPosition/Rotation/Scale and every moved physics body each frame call it, and a
+	// per-call Zenith_Vector ctor would malloc/free 8 slots each time, partially defeating
+	// the very cache this feature adds. Safe: BumpHierarchyRevision is asserted main-thread
+	// only (above) and its body invokes no user code (pure slot walk), so it is neither
+	// reentrant nor concurrent — the single shared scratch can't be clobbered mid-walk.
+	static Zenith_Vector<Zenith_EntityID> s_axStack;
+	s_axStack.Clear();
+	s_axStack.PushBack(xRoot);
+
+	while (s_axStack.GetSize() > 0)
+	{
+		Zenith_EntityID xCurrentID = s_axStack.GetBack();
+		s_axStack.PopBack();
+
+		if (xCurrentID.m_uIndex >= Zenith_ECS_EntityStore().m_axEntitySlots.GetSize()) continue;
+		Zenith_EntitySlot& xSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(xCurrentID.m_uIndex);
+		if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xCurrentID.m_uGeneration) continue;
+
+		++xSlot.m_uHierRevision;
+
+		// Queue children (slot is the single source of truth — no owner component needed).
+		const Zenith_Vector<Zenith_EntityID>& axChildIDs = xSlot.m_xChildEntityIDs;
+		for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
+		{
+			s_axStack.PushBack(axChildIDs.Get(i));
+		}
+	}
+}
+
 void Zenith_SceneData::ClearSceneStateAfterReset()
 {
 	m_xActiveEntities.Clear();

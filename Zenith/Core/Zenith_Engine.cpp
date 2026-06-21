@@ -30,6 +30,7 @@
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_TouchInput.h"
 #include "Flux/Flux_RendererImpl.h"
+#include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type to allocate the by-ptr snapshot in AllocateRenderer
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
@@ -69,6 +70,7 @@
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_SceneGraphDebug.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
@@ -287,6 +289,13 @@ void Zenith_Engine::AllocateRenderer()
 	// before Flux::EarlyInitialise creates the graph.
 	Zenith_Assert(m_pxFluxRenderer == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFluxRenderer = new Flux_RendererImpl();
+
+	// Phase 2: allocate the renderer-owned scene snapshot UNCONDITIONALLY here (not in
+	// Flux::EarlyInitialise, which is headless-skipped) so GetSceneSnapshot() is valid for
+	// the composition-root injection below in every config — including the headless
+	// unit-test boot. Held by pointer to break the snapshot-header include cycle; freed in
+	// Flux_RendererImpl::Shutdown.
+	m_pxFluxRenderer->m_pxSceneSnapshot = new Flux_RenderSceneSnapshot();
 
 	// Flux_Graphics state (samplers, fallback texture /
 	// material handles, scene textures, MRT formats, frame constants,
@@ -578,6 +587,37 @@ void Zenith_Engine::InitialiseECS()
 	// here), so install order only needs to precede the first AI tick.
 	extern void Zenith_AI_InstallWorldHooks();
 	Zenith_AI_InstallWorldHooks();
+
+	// Install the Physics-leaf world hook (see Physics/Zenith_PhysicsWorldHooks.h):
+	// a body teleport (Zenith_Physics::TeleportBody) forwards to the owning
+	// Zenith_TransformComponent so the scene-graph transform cache is invalidated
+	// immediately, not next frame. Same inversion as the AI hooks above; the pointer
+	// is data, so install order only needs to precede the first teleport.
+	extern void Zenith_Physics_InstallWorldHooks();
+	Zenith_Physics_InstallWorldHooks();
+
+	// Phase 2 (scene graph): inject the renderer-owned uncullled scene snapshot into the
+	// geometry consumers. The renderer rebuilds it once per frame (Zenith_Core.cpp); the
+	// consumers' Prepare callbacks then derive their draw packets from it instead of each
+	// scanning the ECS. The snapshot is heap-allocated above (AllocateRenderer) and held by
+	// pointer on Flux_RendererImpl, so its address is stable until Shutdown/the dtor frees it.
+	// Injection (vs the consumers reaching
+	// g_xEngine.FluxRenderer()) keeps those Flux TUs off the singleton ratchet.
+	const Flux_RenderSceneSnapshot* pxSceneSnapshot = &g_xEngine.FluxRenderer().GetSceneSnapshot();
+	g_xEngine.StaticMeshes().SetSnapshot(pxSceneSnapshot);
+	g_xEngine.AnimatedMeshes().SetSnapshot(pxSceneSnapshot);
+	g_xEngine.Translucency().SetSnapshot(pxSceneSnapshot);
+
+	// Phase 3: inject the geometry consumers into Shadows so the shadow cascade-0 Prepare can
+	// ensure their uncullled shadow packets (correct shadows even with the G-buffer disabled).
+	g_xEngine.Shadows().SetGeometryConsumers(&g_xEngine.StaticMeshes(), &g_xEngine.AnimatedMeshes());
+
+#ifdef ZENITH_TOOLS
+	// Phase 3: install the scene-graph debug overlays (world-AABB wireframes + cull stats),
+	// drawing through the injected Flux_PrimitivesImpl and registering toggles/readouts into
+	// the injected Zenith_DebugVariables — so the diagnostics TU holds no g_xEngine.
+	Zenith_SceneGraphDebug::Install(g_xEngine.DebugVariables(), g_xEngine.Primitives());
+#endif
 }
 
 // GPU-dependent assets + pinned textures, then Flux LateInitialise.

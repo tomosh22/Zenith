@@ -15,6 +15,7 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Flux_BackendTypes.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -269,6 +270,7 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // After this returns the group state is frozen; the record callbacks are readers.
 void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 {
+	ZENITH_PROFILE_SCOPE("Flux Instanced Gather & Update");
 	Flux_InstancedMeshesImpl& xSelf = *this;
 
 	// Reset stats up-front (matches ExecuteInstancedGBuffer's old pre-loop reset).

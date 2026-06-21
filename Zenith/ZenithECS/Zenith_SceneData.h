@@ -135,6 +135,22 @@ public:
 	// or no parent.
 	Zenith_EntityID GetParentEntityIDUnchecked(Zenith_EntityID xID) const;
 
+	// Scene-graph transform cache (Phase 1). Public + leaf-safe (operate on a plain
+	// uint64_t slot field, name no concrete component) so the engine-side
+	// Zenith_TransformComponent can read/bump them without the leaf depending on it.
+	//
+	//  * GetHierRevisionUnchecked — non-asserting, render-task-safe read of a slot's
+	//    transform-cache revision (mirrors GetParentEntityIDUnchecked). Out-of-range
+	//    index returns 0 (the "never built" stamp), which forces a recompute.
+	//  * BumpHierarchyRevision — increment the given entity's revision AND every
+	//    descendant's (iterative DFS over the slot child lists, generation-validated,
+	//    mirrors InvalidateActiveInHierarchyCache). Call after any edit that changes an
+	//    entity's world transform (its pose, a re-parent, a physics pose sync) so that
+	//    the entity and everything beneath it recompute their cached world matrix.
+	//    Main-thread only.
+	uint64_t GetHierRevisionUnchecked(Zenith_EntityID xID) const;
+	static void BumpHierarchyRevision(Zenith_EntityID xRoot);
+
 	//==========================================================================
 	// Entity Count & Queries
 	//==========================================================================

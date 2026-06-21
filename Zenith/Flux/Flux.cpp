@@ -4,6 +4,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type for the by-ptr snapshot (alloc/rebuild/free)
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
@@ -111,6 +112,33 @@ Flux_RenderGraph& Flux_RendererImpl::GetRenderGraph()    { return *m_pxRenderGra
 bool              Flux_RendererImpl::IsRenderGraphValid(){ return m_pxRenderGraph != nullptr; }
 
 void Flux_RendererImpl::RequestGraphRebuild() { m_bGraphRebuildRequested = true; }
+
+// Phase 2: rebuild the uncullled scene snapshot for this frame via the EC fill seam and
+// stamp the render-mutation epoch (passed in by the caller — keeps this off g_xEngine).
+// Called once per frame from Zenith_Core.cpp before SetRenderTasksActive(true), so it
+// runs on the main thread and every render-pass Prepare that derives from it sees the
+// freshly built list.
+Flux_RendererImpl::~Flux_RendererImpl()
+{
+	// Backstop free for the by-ptr snapshot (Shutdown's early free nulls it first when it
+	// runs; headless never calls Shutdown, so this is the only free there). delete-null safe.
+	delete m_pxSceneSnapshot;
+	m_pxSceneSnapshot = nullptr;
+}
+
+void Flux_RendererImpl::RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, const Zenith_Maths::Matrix4& xCameraViewProj, bool bCameraValid)
+{
+	m_pxSceneSnapshot->Rebuild(g_pfnZenithSceneSnapshotFill, uRenderMutationEpoch);
+	// Phase 3: stamp the frame's camera frustum so the geometry consumers camera-cull
+	// against it without reaching FluxGraphics themselves — but ONLY when the camera
+	// actually resolved this frame. Rebuild cleared the frustum-valid flag, so an invalid
+	// camera frame leaves it unset and the consumers cull nothing (vs culling every off-
+	// origin object against an identity/stale view-proj).
+	if (bCameraValid)
+	{
+		m_pxSceneSnapshot->SetCameraFrustum(xCameraViewProj);
+	}
+}
 bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 {
 	bool b = m_bGraphRebuildRequested;
@@ -445,6 +473,11 @@ void Flux_RendererImpl::Shutdown()
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
 	delete xRenderer.m_pxRenderGraph;
 	xRenderer.m_pxRenderGraph = nullptr;
+
+	// Phase 2: free the snapshot (drops its non-owning Flux_ModelInstance* entries) so no
+	// stale pointer survives into a fresh renderer on engine reinit.
+	delete xRenderer.m_pxSceneSnapshot;
+	xRenderer.m_pxSceneSnapshot = nullptr;
 
 	// Shut down any still-registered game render features (reverse registration
 	// order) AFTER the graph is gone, so a feature's Shutdown can't touch a live

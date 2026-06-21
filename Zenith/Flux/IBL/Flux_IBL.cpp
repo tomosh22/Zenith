@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/IBL/Flux_IBLImpl.h"
@@ -225,6 +226,7 @@ void Flux_IBLImpl::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
 
 void Flux_IBLImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 {
+	ZENITH_PROFILE_SCOPE("Flux IBL Graph Setup");
 	// IMPORTANT ordering: this dirty check must run AFTER any system that may
 	// have called MarkDirty() this frame (e.g. g_xEngine.Fog().ApplyTechniqueSelectionToGraph),
 	// so the call sequence in Zenith_Core::ExecuteRenderGraph is:

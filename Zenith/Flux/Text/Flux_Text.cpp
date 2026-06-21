@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #include "Flux/Text/Flux_TextImpl.h"
 
@@ -192,6 +193,7 @@ static void ProcessTextEntry(const Flux::Flux_TextEntry& xEntry,
 
 uint32_t Flux_TextImpl::UploadChars()
 {
+	ZENITH_PROFILE_SCOPE("Text Glyph & Quad Build");
 	Zenith_Vector<Flux_TextVertex> xVertices(s_uMaxCharsPerFrame);
 	uint32_t uCharCount = 0;
 

@@ -160,7 +160,12 @@ static void PreExecuteShadowMatrices(void*)
 	{
 		return;
 	}
-	g_xEngine.Shadows().UpdateShadowMatrices();
+	// Recover the instance ONCE (keeps this TU at its singleton-ratchet baseline). Phase 3:
+	// also ensure the geometry shadow packets here so off-screen casters still cast even when
+	// the mesh G-buffer passes (which would otherwise build the packets) are force-disabled.
+	Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
+	xShadows.UpdateShadowMatrices();
+	xShadows.EnsureGeometryShadowPackets();
 }
 
 static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserData)
@@ -256,6 +261,15 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
 }
 
+
+void Flux_ShadowsImpl::EnsureGeometryShadowPackets()
+{
+	// Ensure the UNCULLLED geometry shadow packets (cascade-0 Prepare). Generation-guarded
+	// inside the consumers, so this is a no-op when the mesh G-buffer Prepares already built
+	// them this frame; it's the backstop when the G-buffer passes are force-disabled.
+	if (m_pxStaticMeshes)   m_pxStaticMeshes->EnsureShadowPacket();
+	if (m_pxAnimatedMeshes) m_pxAnimatedMeshes->EnsureAnimatedPacket();
+}
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {

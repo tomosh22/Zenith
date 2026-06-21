@@ -2,17 +2,19 @@
 
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Core/Zenith_Engine.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ModelInstance.h"
+#include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
-// Wave 3: models arrive from the EC-side gatherer (g_pfnZenithModelGather, declared in
-// Flux_ModelInstance.h) as (instance, matrix) pairs; the skeleton is read from the
+// Phase 2: models arrive from the engine-owned Flux_RenderSceneSnapshot (rebuilt once
+// per frame by the renderer; injected via SetSnapshot); the skeleton is read from the
 // instance. No Zenith_ModelComponent.h / Zenith_TransformComponent.h / scene-query here.
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -152,33 +154,42 @@ void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // set of models renders, in the same order.
 void Flux_AnimatedMeshesImpl::GatherDrawPacket(void*)
 {
-	// Instance method: the packet is our own member (direct access). Wave 3: the
-	// scene query now lives in the EC-side gatherer; this body touches no ECS.
+	// G-buffer Prepare: ensure the animated packet for the current snapshot (also ensured
+	// from the shadow cascade-0 Prepare, generation-guarded).
+	EnsureAnimatedPacket();
+}
+
+void Flux_AnimatedMeshesImpl::EnsureAnimatedPacket()
+{
+	ZENITH_PROFILE_SCOPE("Flux Animated Mesh Gather");
+	if (!m_pxSnapshot) return;
+	const uint32_t uGen = m_pxSnapshot->GetGeneration();
+	if (m_uAnimatedPacketGen == uGen) return;   // already built this snapshot
+
+	// Instance method: the packet is our own member (direct access).
 	Zenith_Vector<Flux_AnimatedMeshDrawItem>& xPacket = m_xDrawPacket;
 	xPacket.Clear();
 
-	// Wave 3: models are gathered EC-side into parallel (instance, matrix) lists.
-	Zenith_Vector<Flux_ModelInstance*> xInstances;
-	Zenith_Vector<Zenith_Maths::Matrix4> xMatrices;
-	if (g_pfnZenithModelGather) g_pfnZenithModelGather(xInstances, xMatrices);
-
-	for (u_int u = 0; u < xInstances.GetSize(); ++u)
+	// Phase 2/3: read the engine-owned uncullled snapshot. The filter is byte-identical to
+	// the old gather: keep ONLY models with a skeleton instance (the inverse of the
+	// StaticMeshes filter), in the same order. Animated meshes are not camera-culled.
+	const Zenith_Vector<Flux_RenderSceneItem>& xItems = m_pxSnapshot->Items();
+	for (u_int u = 0; u < xItems.GetSize(); ++u)
 	{
-		Flux_ModelInstance* pxModelInstance = xInstances.Get(u);
+		Flux_ModelInstance* pxModelInstance = xItems.Get(u).m_pxModelInstance;
 
 		// The skeleton instance distinguishes animated (skinned) models from static
-		// ones. No skeleton -> rendered by Flux_StaticMeshes instead. (Equivalent to
-		// the old HasModel() && HasSkeleton() component test — both delegate to the
-		// model instance.)
+		// ones. No skeleton -> rendered by Flux_StaticMeshes instead.
 		Flux_SkeletonInstance* pxSkeleton = pxModelInstance->GetSkeletonInstance();
 		if (!pxSkeleton) continue;
 
 		Flux_AnimatedMeshDrawItem xItem;
 		xItem.m_pxModelInstance = pxModelInstance;
 		xItem.m_pxSkeleton      = pxSkeleton;
-		xItem.m_xModelMatrix    = xMatrices.Get(u);
+		xItem.m_xModelMatrix    = xItems.Get(u).m_xWorldMatrix;
 		xPacket.PushBack(xItem);
 	}
+	m_uAnimatedPacketGen = uGen;
 }
 
 static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)

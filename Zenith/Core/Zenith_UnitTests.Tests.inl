@@ -7,10 +7,13 @@
 // pin. A future refactor may replace the friend declarations with a
 // test-only `*_Internal.h` header if the coupling starts to leak, but until
 // the interface grows the friend declarations are the cheapest option.
+#include <thread>   // Phase 1 transform-cache worker-contract test spawns a non-main thread
 #include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
+#include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"  // Phase 2 snapshot tests
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"    // Phase 3 consumer cull-packet test
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -25,6 +28,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Zenith_PhysicsTransformSync.h"  // Phase 1 post-physics transform sweep
 #include "EntityComponent/Components/Zenith_LightComponent.h"  // WS10 fuzz cross-check (Light is a headless-safe component)
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"  // WS19 forwarding-handle relocation tests
@@ -10431,6 +10435,602 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix(){
 		xEntity.DestroyImmediate();
 	}
 
+}
+
+// =============================================================================
+// Phase 1 scene-graph transform cache + leaf-safe hierarchy revision tests.
+// =============================================================================
+
+namespace
+{
+	// Bit-identical compare (a cache HIT must return exactly the stored matrix).
+	bool Zenith_MatricesExact(const Zenith_Maths::Matrix4& xA, const Zenith_Maths::Matrix4& xB)
+	{
+		for (int c = 0; c < 4; ++c)
+			for (int r = 0; r < 4; ++r)
+				if (xA[c][r] != xB[c][r]) return false;
+		return true;
+	}
+
+	Zenith_Maths::Vector3 Zenith_TranslationOf(const Zenith_Maths::Matrix4& xM)
+	{
+		return Zenith_Maths::Vector3(xM[3][0], xM[3][1], xM[3][2]);
+	}
+}
+
+ZENITH_TEST(Core, TransformCacheReturnsRecomputedValue) { Zenith_UnitTests::TestTransformCacheReturnsRecomputedValue(); }
+void Zenith_UnitTests::TestTransformCacheReturnsRecomputedValue(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "CacheRecompute");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(3.0f, -4.0f, 5.0f));
+
+	// First call (cache stamp 0 == "never built"): must RECOMPUTE, not return the
+	// default-identity m_xCachedWorld. This pins the sentinel — a fresh slot's revision
+	// is >= 1, never 0, so the hit-check (revision != 0 && match) can't false-hit.
+	Zenith_Maths::Matrix4 xFirst;
+	xT.BuildModelMatrix(xFirst);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xFirst), Zenith_Maths::Vector3(3.0f, -4.0f, 5.0f), 1e-4f,
+		"TransformCache: first call must recompute the real transform, not identity");
+	ZENITH_ASSERT_TRUE(xT.m_uCachedHierRevision != 0, "TransformCache: first call must populate the cache stamp");
+
+	// Second call: cache HIT — must return the byte-identical stored matrix.
+	Zenith_Maths::Matrix4 xSecond;
+	xT.BuildModelMatrix(xSecond);
+	ZENITH_ASSERT_TRUE(Zenith_MatricesExact(xFirst, xSecond), "TransformCache: cache hit must return the exact cached matrix");
+
+	xEnt.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TransformCacheInvalidatedBySetters) { Zenith_UnitTests::TestTransformCacheInvalidatedBySetters(); }
+void Zenith_UnitTests::TestTransformCacheInvalidatedBySetters(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "CacheSetters");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+
+	Zenith_Maths::Matrix4 xM;
+
+	// SetPosition invalidates.
+	xT.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xT.BuildModelMatrix(xM);   // builds cache
+	xT.SetPosition(Zenith_Maths::Vector3(0.0f, 9.0f, 0.0f));
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xM), Zenith_Maths::Vector3(0.0f, 9.0f, 0.0f), 1e-4f,
+		"TransformCache: SetPosition must invalidate the cache");
+
+	// SetScale invalidates (the 0,0 element carries scale.x with identity rot).
+	xT.BuildModelMatrix(xM);   // rebuild cache at current pose
+	xT.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_EQ_FLOAT(xM[0][0], 2.0f, 1e-4f, "TransformCache: SetScale must invalidate the cache");
+
+	// SetRotation invalidates (90° about Y maps local +X onto a different world axis;
+	// just assert the cached upper-3x3 changed by checking m[0][0] moved off the scaled 2.0).
+	xT.BuildModelMatrix(xM);
+	xT.SetRotation(Zenith_Maths::Quat(Zenith_Maths::Vector3(0.0f, glm::radians(90.0f), 0.0f)));
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_TRUE(std::abs(xM[0][0]) < 1.0f,
+		"TransformCache: SetRotation must invalidate the cache (rotated x-basis should no longer be the full scaled 2.0)");
+
+	xEnt.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TransformCacheInvalidatedByAncestorEdit) { Zenith_UnitTests::TestTransformCacheInvalidatedByAncestorEdit(); }
+void Zenith_UnitTests::TestTransformCacheInvalidatedByAncestorEdit(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xParent = g_xEngine.Scenes().CreateEntity(pxSceneData, "CacheAncestorP");
+	Zenith_Entity xChild  = g_xEngine.Scenes().CreateEntity(pxSceneData, "CacheAncestorC");
+	xParent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+	xChild.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	xChild.SetParent(xParent.GetEntityID());
+
+	Zenith_TransformComponent& xCT = xChild.GetComponent<Zenith_TransformComponent>();
+
+	Zenith_Maths::Matrix4 xWorld;
+	xCT.BuildModelMatrix(xWorld);   // world = (10,0,1), builds cache
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xWorld), Zenith_Maths::Vector3(10.0f, 0.0f, 1.0f), 1e-4f,
+		"TransformCache: child world should fold in the parent translate");
+
+	// Move the PARENT — the child's cached world must invalidate (subtree propagation).
+	xParent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(-5.0f, 0.0f, 0.0f));
+	xCT.BuildModelMatrix(xWorld);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xWorld), Zenith_Maths::Vector3(-5.0f, 0.0f, 1.0f), 1e-4f,
+		"TransformCache: editing an ancestor must invalidate the descendant's cached world");
+
+	xChild.DestroyImmediate();
+	xParent.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TransformCacheInvalidatedByReparent) { Zenith_UnitTests::TestTransformCacheInvalidatedByReparent(); }
+void Zenith_UnitTests::TestTransformCacheInvalidatedByReparent(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xP1 = g_xEngine.Scenes().CreateEntity(pxSceneData, "ReparentP1");
+	Zenith_Entity xP2 = g_xEngine.Scenes().CreateEntity(pxSceneData, "ReparentP2");
+	Zenith_Entity xC  = g_xEngine.Scenes().CreateEntity(pxSceneData, "ReparentC");
+	xP1.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(100.0f, 0.0f, 0.0f));
+	xP2.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 200.0f, 0.0f));
+
+	Zenith_TransformComponent& xCT = xC.GetComponent<Zenith_TransformComponent>();
+	xC.SetParent(xP1.GetEntityID());
+	Zenith_Maths::Matrix4 xWorld;
+	xCT.BuildModelMatrix(xWorld);   // under P1: (100,0,0)
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xWorld), Zenith_Maths::Vector3(100.0f, 0.0f, 0.0f), 1e-4f,
+		"TransformCache: child under P1");
+
+	// Re-parent to P2 — cache must invalidate and reflect P2's transform.
+	xC.SetParent(xP2.GetEntityID());
+	xCT.BuildModelMatrix(xWorld);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xWorld), Zenith_Maths::Vector3(0.0f, 200.0f, 0.0f), 1e-4f,
+		"TransformCache: SetParent must invalidate and re-walk the new ancestor chain");
+
+	xC.DestroyImmediate();
+	xP1.DestroyImmediate();
+	xP2.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TransformCacheInvalidatedByDetachAllChildren) { Zenith_UnitTests::TestTransformCacheInvalidatedByDetachAllChildren(); }
+void Zenith_UnitTests::TestTransformCacheInvalidatedByDetachAllChildren(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xParent = g_xEngine.Scenes().CreateEntity(pxSceneData, "DetachP");
+	Zenith_Entity xChild  = g_xEngine.Scenes().CreateEntity(pxSceneData, "DetachC");
+	xParent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(50.0f, 0.0f, 0.0f));
+	xChild.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 3.0f));
+	xChild.SetParent(xParent.GetEntityID());
+
+	Zenith_TransformComponent& xCT = xChild.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Matrix4 xWorld;
+	xCT.BuildModelMatrix(xWorld);   // (50,0,3), builds cache
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xWorld), Zenith_Maths::Vector3(50.0f, 0.0f, 3.0f), 1e-4f,
+		"TransformCache: child under parent before detach");
+
+	xParent.DetachAllChildren();
+	xCT.BuildModelMatrix(xWorld);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xWorld), Zenith_Maths::Vector3(0.0f, 0.0f, 3.0f), 1e-4f,
+		"TransformCache: DetachAllChildren must invalidate the (now-root) child's cached world");
+
+	xChild.DestroyImmediate();
+	xParent.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, HierRevisionPropagatesToSubtree) { Zenith_UnitTests::TestHierRevisionPropagatesToSubtree(); }
+void Zenith_UnitTests::TestHierRevisionPropagatesToSubtree(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	// Chain P -> C -> GC, plus an unrelated sibling root S.
+	Zenith_Entity xP  = g_xEngine.Scenes().CreateEntity(pxSceneData, "RevP");
+	Zenith_Entity xC  = g_xEngine.Scenes().CreateEntity(pxSceneData, "RevC");
+	Zenith_Entity xGC = g_xEngine.Scenes().CreateEntity(pxSceneData, "RevGC");
+	Zenith_Entity xS  = g_xEngine.Scenes().CreateEntity(pxSceneData, "RevS");
+	xC.SetParent(xP.GetEntityID());
+	xGC.SetParent(xC.GetEntityID());
+
+	const Zenith_EntityID idP = xP.GetEntityID(), idC = xC.GetEntityID(), idGC = xGC.GetEntityID(), idS = xS.GetEntityID();
+
+	const uint64_t r0P  = pxSceneData->GetHierRevisionUnchecked(idP);
+	const uint64_t r0C  = pxSceneData->GetHierRevisionUnchecked(idC);
+	const uint64_t r0GC = pxSceneData->GetHierRevisionUnchecked(idGC);
+	const uint64_t r0S  = pxSceneData->GetHierRevisionUnchecked(idS);
+
+	// A fresh slot's revision is non-zero (the "never built" cache stamp is 0).
+	ZENITH_ASSERT_TRUE(r0P != 0 && r0C != 0 && r0GC != 0 && r0S != 0, "HierRevision: fresh slots must have non-zero revision");
+
+	// Bump the root: the whole subtree (P, C, GC) must increment; the sibling S must not.
+	Zenith_SceneData::BumpHierarchyRevision(idP);
+	ZENITH_ASSERT_GT(pxSceneData->GetHierRevisionUnchecked(idP),  r0P,  "HierRevision: bumped root must increment");
+	ZENITH_ASSERT_GT(pxSceneData->GetHierRevisionUnchecked(idC),  r0C,  "HierRevision: child must increment (propagation)");
+	ZENITH_ASSERT_GT(pxSceneData->GetHierRevisionUnchecked(idGC), r0GC, "HierRevision: grandchild must increment (propagation)");
+	ZENITH_ASSERT_EQ(pxSceneData->GetHierRevisionUnchecked(idS),  r0S,  "HierRevision: unrelated sibling must NOT change");
+
+	xGC.DestroyImmediate();
+	xC.DestroyImmediate();
+	xP.DestroyImmediate();
+	xS.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TransformCacheWorkerContractLeavesCacheUnwritten) { Zenith_UnitTests::TestTransformCacheWorkerContractLeavesCacheUnwritten(); }
+void Zenith_UnitTests::TestTransformCacheWorkerContractLeavesCacheUnwritten(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "CacheWorker");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f));
+
+	// Never built on the main thread: the cache stamp is 0 (a guaranteed worker MISS).
+	ZENITH_ASSERT_EQ(xT.m_uCachedHierRevision, (uint64_t)0, "WorkerContract: cache must start un-built");
+
+	// Open the render-task window so the worker passes the BuildModelMatrix entry assert
+	// (IsMainThread() || AreRenderTasksActive()). The main thread does NOT call
+	// BuildModelMatrix concurrently, so there is no main-thread writer to race.
+	g_xEngine.Scenes().SetRenderTasksActive(true);
+
+	constexpr int NUM_WORKERS = 4;
+	std::thread axThreads[NUM_WORKERS];
+	Zenith_Maths::Matrix4 axResults[NUM_WORKERS];
+	for (int i = 0; i < NUM_WORKERS; ++i)
+	{
+		axThreads[i] = std::thread([&xT, &axResults, i]() { xT.BuildModelMatrix(axResults[i]); });
+	}
+	for (int i = 0; i < NUM_WORKERS; ++i) axThreads[i].join();
+
+	g_xEngine.Scenes().SetRenderTasksActive(false);
+
+	// Every worker computed the correct world matrix into its OWN out-param...
+	for (int i = 0; i < NUM_WORKERS; ++i)
+	{
+		ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(axResults[i]), Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f), 1e-4f,
+			"WorkerContract: each worker must compute the correct matrix");
+	}
+	// ...and NONE of them wrote the shared cache (the contract: workers never mutate it).
+	ZENITH_ASSERT_EQ(xT.m_uCachedHierRevision, (uint64_t)0, "WorkerContract: a worker miss must leave the shared cache stamp un-written");
+
+	xEnt.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, PhysicsSweepInvalidatesTransformCache) { Zenith_UnitTests::TestPhysicsSweepInvalidatesTransformCache(); }
+void Zenith_UnitTests::TestPhysicsSweepInvalidatesTransformCache(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "SweepBody");
+	Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(40.0f, 3.0f, 0.0f));
+
+	// Build the cache at the start pose.
+	Zenith_Maths::Matrix4 xM;
+	xT.BuildModelMatrix(xM);
+	const float fStartX = Zenith_TranslationOf(xM).x;
+
+	// Drive the body along +X by simulation (no setter → no revision bump yet).
+	g_xEngine.Physics().SetGravityEnabled(xCol.GetBodyID(), false);
+	g_xEngine.Physics().SetLinearVelocity(xCol.GetBodyID(), Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f));
+	for (int i = 0; i < 30; ++i) g_xEngine.Physics().Update(1.0f / 60.0f);
+
+	// The post-physics sweep commits the moved pose + invalidates the cache.
+	Zenith_SyncPhysicsTransforms();
+
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_TRUE(Zenith_TranslationOf(xM).x > fStartX + 0.5f,
+		"PhysicsSweep: after the sweep, the cached world must reflect the simulation-moved body (x %.2f -> %.2f)",
+		fStartX, Zenith_TranslationOf(xM).x);
+
+	xEnt.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, PhysicsSweepNoOpForUnmovedBody) { Zenith_UnitTests::TestPhysicsSweepNoOpForUnmovedBody(); }
+void Zenith_UnitTests::TestPhysicsSweepNoOpForUnmovedBody(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "SweepNoOp");
+	Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(12.0f, 8.0f, -3.0f));   // write-through: body AND m_xPosition == P
+
+	const Zenith_EntityID xID = xEnt.GetEntityID();
+	const uint64_t r0 = pxSceneData->GetHierRevisionUnchecked(xID);
+
+	// The body is at exactly m_xPosition (no physics stepped), so the sweep's epsilon
+	// comparison must NOT fire — an unmoved collider must not re-invalidate its subtree.
+	Zenith_SyncPhysicsTransforms();
+	ZENITH_ASSERT_EQ(pxSceneData->GetHierRevisionUnchecked(xID), r0,
+		"PhysicsSweep: an unmoved body must NOT bump the hierarchy revision (no spurious epsilon trip)");
+	// Idempotent across repeated sweeps.
+	Zenith_SyncPhysicsTransforms();
+	Zenith_SyncPhysicsTransforms();
+	ZENITH_ASSERT_EQ(pxSceneData->GetHierRevisionUnchecked(xID), r0,
+		"PhysicsSweep: repeated sweeps of an unmoved body stay a no-op");
+
+	xEnt.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TransformCacheWorkerConcurrentReadHits) { Zenith_UnitTests::TestTransformCacheWorkerConcurrentReadHits(); }
+void Zenith_UnitTests::TestTransformCacheWorkerConcurrentReadHits(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "CacheConcurrentRead");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(5.0f, -6.0f, 7.0f));
+
+	// Main thread populates the cache (the production sequence: owner pre-builds, then the
+	// render-task workers read the HIT). The stamp must now be non-zero.
+	Zenith_Maths::Matrix4 xMain;
+	xT.BuildModelMatrix(xMain);
+	const uint64_t uStamp = xT.m_uCachedHierRevision;
+	ZENITH_ASSERT_TRUE(uStamp != 0, "ConcurrentRead: main-thread build must populate the cache stamp");
+
+	g_xEngine.Scenes().SetRenderTasksActive(true);
+
+	constexpr int NUM_WORKERS = 4;
+	std::thread axThreads[NUM_WORKERS];
+	Zenith_Maths::Matrix4 axResults[NUM_WORKERS];
+	for (int i = 0; i < NUM_WORKERS; ++i)
+	{
+		axThreads[i] = std::thread([&xT, &axResults, i]() { xT.BuildModelMatrix(axResults[i]); });
+	}
+	for (int i = 0; i < NUM_WORKERS; ++i) axThreads[i].join();
+
+	g_xEngine.Scenes().SetRenderTasksActive(false);
+
+	// Every worker took the HIT path and returned the exact cached matrix...
+	for (int i = 0; i < NUM_WORKERS; ++i)
+	{
+		ZENITH_ASSERT_TRUE(Zenith_MatricesExact(axResults[i], xMain),
+			"ConcurrentRead: every worker must return the byte-identical cached matrix");
+	}
+	// ...and the shared cache is intact (no worker mutated the stamp on a hit OR a miss).
+	ZENITH_ASSERT_EQ(xT.m_uCachedHierRevision, uStamp, "ConcurrentRead: concurrent worker reads must leave the cache stamp unchanged");
+
+	xEnt.DestroyImmediate();
+}
+
+ZENITH_TEST(Core, TeleportInvalidatesTransformCacheImmediately) { Zenith_UnitTests::TestTeleportInvalidatesTransformCacheImmediately(); }
+void Zenith_UnitTests::TestTeleportInvalidatesTransformCacheImmediately(){
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "TeleportBody");
+	Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f));
+
+	// Build cache at the start pose.
+	Zenith_Maths::Matrix4 xM;
+	xT.BuildModelMatrix(xM);
+
+	// Teleport via the physics wrapper — fires the pose-change hook, which immediately
+	// (no post-physics sweep) commits the new pose + invalidates the cache.
+	const Zenith_Maths::Vector3 xTarget(123.0f, 45.0f, -67.0f);
+	g_xEngine.Physics().TeleportBody(xCol.GetBodyID(), xTarget);
+
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_TranslationOf(xM), xTarget, 0.05f,
+		"Teleport: the pose-change hook must invalidate the cache immediately (this frame, not next)");
+
+	xEnt.DestroyImmediate();
+}
+
+// =============================================================================
+// Phase 2 scene-graph render-snapshot + lifetime-epoch tests.
+// =============================================================================
+
+namespace
+{
+	// Captureless stub fill fn for the snapshot tests — adds s_uSnapshotStubFillCount
+	// default items (no real models needed; the snapshot mechanics are pure). Matches
+	// the Zenith_SceneSnapshotFillFn signature (populates the item vector directly).
+	uint32_t s_uSnapshotStubFillCount = 0;
+	void Zenith_SnapshotStubFill(Zenith_Vector<Flux_RenderSceneItem>& xOutItems)
+	{
+		for (uint32_t i = 0; i < s_uSnapshotStubFillCount; ++i)
+		{
+			Flux_RenderSceneItem xItem;
+			xItem.m_uMeshCount = i + 1;   // pointer-free diagnostic
+			xOutItems.PushBack(xItem);
+		}
+	}
+
+	// Two-item fill for the consumer-level cull test (TestStaticMeshesCameraCullGate). Item 0
+	// sits INSIDE the ortho test frustum (x,y in [-10,10], z in [1,100]); item 1 is far OUTSIDE
+	// the +X plane. Both are non-animated (so the static consumer processes them) and carry valid
+	// world AABBs so the cull predicate is exercised (not the invalid-AABB never-cull bypass).
+	void Zenith_SnapshotCullStubFill(Zenith_Vector<Flux_RenderSceneItem>& xOutItems)
+	{
+		Flux_RenderSceneItem xInside;
+		xInside.m_xWorldAABB = Zenith_AABB(Zenith_Maths::Vector3(-1.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(1.0f, 1.0f, 51.0f));
+		xOutItems.PushBack(xInside);
+
+		Flux_RenderSceneItem xOutside;
+		xOutside.m_xWorldAABB = Zenith_AABB(Zenith_Maths::Vector3(49.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(51.0f, 1.0f, 51.0f));
+		xOutItems.PushBack(xOutside);
+	}
+}
+
+ZENITH_TEST(Core, RenderMutationEpochIncrements) { Zenith_UnitTests::TestRenderMutationEpochIncrements(); }
+void Zenith_UnitTests::TestRenderMutationEpochIncrements(){
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	const uint64_t uBefore = xScenes.GetRenderMutationEpoch();
+	xScenes.NotifyRenderMutation();
+	ZENITH_ASSERT_EQ(xScenes.GetRenderMutationEpoch(), uBefore + 1, "Epoch: NotifyRenderMutation must strictly increment");
+	xScenes.NotifyRenderMutation();
+	xScenes.NotifyRenderMutation();
+	ZENITH_ASSERT_EQ(xScenes.GetRenderMutationEpoch(), uBefore + 3, "Epoch: each NotifyRenderMutation increments by one");
+}
+
+ZENITH_TEST(Core, SnapshotRebuildStampsEpochAndItems) { Zenith_UnitTests::TestSnapshotRebuildStampsEpochAndItems(); }
+void Zenith_UnitTests::TestSnapshotRebuildStampsEpochAndItems(){
+	Flux_RenderSceneSnapshot xSnapshot;
+	s_uSnapshotStubFillCount = 3;
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 42);
+
+	ZENITH_ASSERT_EQ(xSnapshot.GetNumItems(), (uint32_t)3, "Snapshot: Rebuild must run the fill fn (3 items)");
+	ZENITH_ASSERT_EQ(xSnapshot.GetBuiltEpoch(), (uint64_t)42, "Snapshot: Rebuild must stamp the passed epoch");
+	ZENITH_ASSERT_TRUE(xSnapshot.IsCurrent(42), "Snapshot: IsCurrent(builtEpoch) must be true");
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCurrent(41), "Snapshot: IsCurrent(otherEpoch) must be false");
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCurrent(43), "Snapshot: IsCurrent(otherEpoch) must be false");
+	// Diagnostics are pointer-free + copied from the fill.
+	ZENITH_ASSERT_EQ(xSnapshot.Items().Get(0).m_uMeshCount, (uint32_t)1, "Snapshot: copied diagnostics");
+	ZENITH_ASSERT_NULL(xSnapshot.Items().Get(0).m_pxModelInstance, "Snapshot: stub items carry no instance pointer");
+
+	// A second Rebuild replaces (not appends) the items.
+	s_uSnapshotStubFillCount = 1;
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 43);
+	ZENITH_ASSERT_EQ(xSnapshot.GetNumItems(), (uint32_t)1, "Snapshot: Rebuild must clear before refilling");
+	ZENITH_ASSERT_TRUE(xSnapshot.IsCurrent(43), "Snapshot: re-stamped to the new epoch");
+	s_uSnapshotStubFillCount = 0;
+}
+
+ZENITH_TEST(Core, SnapshotIsCurrentTracksEpoch) { Zenith_UnitTests::TestSnapshotIsCurrentTracksEpoch(); }
+void Zenith_UnitTests::TestSnapshotIsCurrentTracksEpoch(){
+	// Simulate the live data path: build for the current epoch, then a render-mutation
+	// advances the live epoch -> the snapshot is no longer current until the next rebuild.
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	Flux_RenderSceneSnapshot xSnapshot;
+
+	uint64_t uEpoch = xScenes.GetRenderMutationEpoch();
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, uEpoch);
+	ZENITH_ASSERT_TRUE(xSnapshot.IsCurrent(xScenes.GetRenderMutationEpoch()), "Snapshot: current right after build");
+
+	xScenes.NotifyRenderMutation();   // a model/scene mutation
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCurrent(xScenes.GetRenderMutationEpoch()),
+		"Snapshot: a render mutation makes the prior snapshot stale (panel would show 'pending')");
+
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, xScenes.GetRenderMutationEpoch());
+	ZENITH_ASSERT_TRUE(xSnapshot.IsCurrent(xScenes.GetRenderMutationEpoch()), "Snapshot: current again after the authoritative rebuild");
+}
+
+ZENITH_TEST(Core, SnapshotResetClearsAndInvalidates) { Zenith_UnitTests::TestSnapshotResetClearsAndInvalidates(); }
+void Zenith_UnitTests::TestSnapshotResetClearsAndInvalidates(){
+	Flux_RenderSceneSnapshot xSnapshot;
+	s_uSnapshotStubFillCount = 5;
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 100);
+	ZENITH_ASSERT_EQ(xSnapshot.GetNumItems(), (uint32_t)5, "Snapshot: pre-reset items");
+
+	xSnapshot.Reset();
+	ZENITH_ASSERT_EQ(xSnapshot.GetNumItems(), (uint32_t)0, "Snapshot: Reset drops all (non-owning) entries");
+	ZENITH_ASSERT_EQ(xSnapshot.GetBuiltEpoch(), (uint64_t)0, "Snapshot: Reset stamps epoch 0 (never built)");
+	// Any real epoch (>= 1) is then not current — no post-teardown stale read can pass.
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCurrent(100), "Snapshot: post-Reset IsCurrent is false for any prior epoch");
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCurrent(1), "Snapshot: post-Reset IsCurrent is false");
+	s_uSnapshotStubFillCount = 0;
+}
+
+ZENITH_TEST(Core, SnapshotGenerationBumpsEachRebuild) { Zenith_UnitTests::TestSnapshotGenerationBumpsEachRebuild(); }
+void Zenith_UnitTests::TestSnapshotGenerationBumpsEachRebuild(){
+	Flux_RenderSceneSnapshot xSnapshot;
+	s_uSnapshotStubFillCount = 0;
+	const uint32_t g0 = xSnapshot.GetGeneration();
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 1);
+	const uint32_t g1 = xSnapshot.GetGeneration();
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 2);
+	const uint32_t g2 = xSnapshot.GetGeneration();
+	xSnapshot.Reset();
+	const uint32_t g3 = xSnapshot.GetGeneration();
+	ZENITH_ASSERT_GT(g1, g0, "Snapshot: generation bumps on Rebuild");
+	ZENITH_ASSERT_GT(g2, g1, "Snapshot: generation bumps on each Rebuild");
+	ZENITH_ASSERT_GT(g3, g2, "Snapshot: generation bumps on Reset (monotonic — never aliases a pre-reset packet)");
+}
+
+// =============================================================================
+// Phase 3 scene-graph culling tests (pure math: snapshot frustum + world AABB).
+// =============================================================================
+
+ZENITH_TEST(Core, SnapshotCameraFrustumCullDecision) { Zenith_UnitTests::TestSnapshotCameraFrustumCullDecision(); }
+void Zenith_UnitTests::TestSnapshotCameraFrustumCullDecision(){
+	// Orthographic frustum: x,y in [-10,10], z (near..far) in [1,100]. Identity view, so
+	// viewProj == the ortho projection; the snapshot extracts + stores the frustum from it
+	// (the same value the geometry consumers camera-cull against). The X planes are
+	// convention-robust, so the test exercises them.
+	Zenith_Maths::Matrix4 xProj = Zenith_Maths::OrthographicProjection(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.0f);
+	Flux_RenderSceneSnapshot xSnapshot;
+	xSnapshot.SetCameraFrustum(xProj);
+	const Zenith_Frustum& xF = xSnapshot.GetCameraFrustum();
+
+	// Centered in the box -> visible.
+	Zenith_AABB xInside(Zenith_Maths::Vector3(-1.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(1.0f, 1.0f, 51.0f));
+	ZENITH_ASSERT_TRUE(Zenith_FrustumCulling::TestAABBFrustum(xF, xInside),
+		"Cull: an AABB centered in the frustum must be visible");
+
+	// Far outside the +X plane -> culled.
+	Zenith_AABB xOutside(Zenith_Maths::Vector3(49.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(51.0f, 1.0f, 51.0f));
+	ZENITH_ASSERT_FALSE(Zenith_FrustumCulling::TestAABBFrustum(xF, xOutside),
+		"Cull: an AABB entirely outside the +X plane must be culled");
+
+	// Straddling the +X plane (x in [8,12]) -> conservatively visible (no false negatives).
+	Zenith_AABB xStraddle(Zenith_Maths::Vector3(8.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(12.0f, 1.0f, 51.0f));
+	ZENITH_ASSERT_TRUE(Zenith_FrustumCulling::TestAABBFrustum(xF, xStraddle),
+		"Cull: a straddling AABB must be conservatively visible");
+}
+
+ZENITH_TEST(Core, SnapshotCameraFrustumValidGate) { Zenith_UnitTests::TestSnapshotCameraFrustumValidGate(); }
+void Zenith_UnitTests::TestSnapshotCameraFrustumValidGate(){
+	Flux_RenderSceneSnapshot xSnapshot;
+	s_uSnapshotStubFillCount = 0;
+
+	// Right after Rebuild the frustum is NOT valid (the owner stamps it separately, only when
+	// the camera resolved) — consumers must treat this as "cull nothing".
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 1);
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCameraFrustumValid(), "FrustumGate: invalid immediately after Rebuild");
+
+	// SetCameraFrustum makes it valid.
+	xSnapshot.SetCameraFrustum(Zenith_Maths::OrthographicProjection(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.0f));
+	ZENITH_ASSERT_TRUE(xSnapshot.IsCameraFrustumValid(), "FrustumGate: valid after SetCameraFrustum");
+
+	// A subsequent Rebuild clears it again (a frame where the camera is unresolved leaves it
+	// unset, so culling is skipped that frame).
+	xSnapshot.Rebuild(&Zenith_SnapshotStubFill, 2);
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCameraFrustumValid(), "FrustumGate: Rebuild clears the valid flag");
+
+	// Reset also clears it.
+	xSnapshot.SetCameraFrustum(Zenith_Maths::OrthographicProjection(-1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 10.0f));
+	xSnapshot.Reset();
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCameraFrustumValid(), "FrustumGate: Reset clears the valid flag");
+}
+
+ZENITH_TEST(Core, StaticMeshesCameraCullGate) { Zenith_UnitTests::TestStaticMeshesCameraCullGate(); }
+void Zenith_UnitTests::TestStaticMeshesCameraCullGate(){
+	// Round-3 review fix: the prior tests only checked the snapshot's IsCameraFrustumValid
+	// boolean (and the AABB-frustum math) in ISOLATION — nothing drove the actual consumer
+	// packet build, so dropping/inverting the `bCull &&` guard (the regression R2 exists to
+	// prevent: cull-everything on a camera-invalid frame) would have passed silently. This
+	// drives the EXACT decision the G-buffer + shadow consumers use via the pure, GPU-free
+	// Flux_StaticMeshesImpl::Build{Camera,Shadow}Packet helpers against a hand-built snapshot.
+	Flux_RenderSceneSnapshot xSnapshot;
+	xSnapshot.Rebuild(&Zenith_SnapshotCullStubFill, 7);   // 2 items: [0] inside frustum, [1] far outside
+
+	// (a) Camera frustum VALID -> the camera packet culls the off-screen item (keeps 1); the
+	//     shadow packet is UNCULLLED (keeps both — an off-screen caster still casts).
+	xSnapshot.SetCameraFrustum(Zenith_Maths::OrthographicProjection(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.0f));
+	Zenith_Vector<Flux_StaticMeshDrawItem> xCamera;
+	Zenith_Vector<Flux_StaticMeshDrawItem> xShadow;
+	Flux_StaticMeshesImpl::BuildCameraPacket(xSnapshot, xCamera);
+	Flux_StaticMeshesImpl::BuildShadowPacket(xSnapshot, xShadow);
+	ZENITH_ASSERT_EQ(xCamera.GetSize(), (uint32_t)1, "StaticMeshes cull: a valid frustum drops the off-screen item from the camera packet");
+	ZENITH_ASSERT_EQ(xShadow.GetSize(), (uint32_t)2, "StaticMeshes cull: the shadow packet stays uncullled (off-screen casters cast)");
+
+	// (b) Camera frustum INVALID (no SetCameraFrustum since the last Rebuild) -> culling is
+	//     SKIPPED entirely, so the camera packet keeps BOTH. This is the camera-invalid-frame
+	//     case (e.g. boot before the camera entity resolves) that must NOT cull the whole scene.
+	xSnapshot.Rebuild(&Zenith_SnapshotCullStubFill, 8);   // Rebuild clears the valid flag
+	ZENITH_ASSERT_FALSE(xSnapshot.IsCameraFrustumValid(), "StaticMeshes cull: precondition — frustum invalid after Rebuild");
+	Flux_StaticMeshesImpl::BuildCameraPacket(xSnapshot, xCamera);
+	ZENITH_ASSERT_EQ(xCamera.GetSize(), (uint32_t)2, "StaticMeshes cull: a camera-invalid frame culls NOTHING (both items kept)");
+}
+
+ZENITH_TEST(Core, WorldAABBTransform) { Zenith_UnitTests::TestWorldAABBTransform(); }
+void Zenith_UnitTests::TestWorldAABBTransform(){
+	// The snapshot fill computes each entity's world AABB as TransformAABB(localUnion, world).
+	// A unit cube, scaled 2x and translated +10 on X, becomes x:[8,12] y:[-2,2] z:[-2,2].
+	Zenith_AABB xLocal(Zenith_Maths::Vector3(-1.0f, -1.0f, -1.0f), Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	Zenith_Maths::Matrix4 xWorld =
+		glm::translate(glm::identity<glm::mat4>(), Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f)) *
+		glm::scale(glm::identity<glm::mat4>(), Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	Zenith_AABB xWorldAABB = Zenith_FrustumCulling::TransformAABB(xLocal, xWorld);
+	ZENITH_ASSERT_NEAR_VEC3(xWorldAABB.m_xMin, Zenith_Maths::Vector3(8.0f, -2.0f, -2.0f), 1e-4f, "WorldAABB: min");
+	ZENITH_ASSERT_NEAR_VEC3(xWorldAABB.m_xMax, Zenith_Maths::Vector3(12.0f, 2.0f, 2.0f), 1e-4f, "WorldAABB: max");
+
+	// A 90deg rotation about Y of a non-cubic local box swaps the X/Z extents in world space.
+	Zenith_AABB xLocalBox(Zenith_Maths::Vector3(-4.0f, -1.0f, -2.0f), Zenith_Maths::Vector3(4.0f, 1.0f, 2.0f));
+	Zenith_Maths::Matrix4 xRotY = glm::mat4_cast(Zenith_Maths::Quat(Zenith_Maths::Vector3(0.0f, glm::radians(90.0f), 0.0f)));
+	Zenith_AABB xRotated = Zenith_FrustumCulling::TransformAABB(xLocalBox, xRotY);
+	// X half-extent 4 -> ends up on Z; Z half-extent 2 -> ends up on X (within tolerance).
+	ZENITH_ASSERT_EQ_FLOAT(xRotated.m_xMax.x, 2.0f, 1e-3f, "WorldAABB: rotated X extent comes from local Z");
+	ZENITH_ASSERT_EQ_FLOAT(xRotated.m_xMax.z, 4.0f, 1e-3f, "WorldAABB: rotated Z extent comes from local X");
+
+	// Adversarial-review regression: transforming an INVALID (default/empty) AABB must stay
+	// invalid — NOT become an inf/NaN box that wrongly passes IsValid() and defeats the
+	// "invalid == no bounds, never cull / never draw" guard in the snapshot fill + overlay.
+	Zenith_AABB xInvalid;   // default = min{FLT_MAX..}, max{-FLT_MAX..}
+	ZENITH_ASSERT_FALSE(xInvalid.IsValid(), "WorldAABB: default-constructed AABB is invalid");
+	Zenith_AABB xTransformedInvalid = Zenith_FrustumCulling::TransformAABB(xInvalid, xWorld);
+	ZENITH_ASSERT_FALSE(xTransformedInvalid.IsValid(),
+		"WorldAABB: TransformAABB of an invalid AABB must stay invalid (no inf/NaN box)");
 }
 
 /**

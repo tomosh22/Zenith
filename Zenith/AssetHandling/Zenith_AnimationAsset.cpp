@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -45,6 +46,7 @@ Flux_AnimationClip* Zenith_AnimationAsset::ReleaseClip()
 
 Zenith_Status Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 {
+	ZENITH_PROFILE_SCOPE("Animation Load");
 	if (strPath.empty())
 	{
 		return Zenith_ErrorCode::INVALID_ARGUMENT;

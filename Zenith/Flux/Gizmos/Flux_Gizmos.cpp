@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
@@ -230,6 +231,7 @@ void Flux_GizmosImpl::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Ze
 // ONLY m_xDrawPacket. Mirrors Flux_StaticMeshesImpl::GatherDrawPacket.
 void Flux_GizmosImpl::GatherGizmoPacket(void*)
 {
+	ZENITH_PROFILE_SCOPE("Flux Gizmos Gather");
 	Flux_GizmoDrawPacket& xPacket = m_xDrawPacket;
 	xPacket.m_bValid = false;
 

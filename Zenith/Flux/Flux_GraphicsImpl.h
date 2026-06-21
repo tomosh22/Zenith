@@ -26,12 +26,18 @@ public:
 
 	struct FrameConstants
 	{
-		Zenith_Maths::Matrix4 m_xViewMat;
-		Zenith_Maths::Matrix4 m_xProjMat;
-		Zenith_Maths::Matrix4 m_xViewProjMat;
-		Zenith_Maths::Matrix4 m_xInvViewProjMat;
-		Zenith_Maths::Matrix4 m_xInvViewMat;
-		Zenith_Maths::Matrix4 m_xInvProjMat;
+		// Value-initialised to identity so the FIRST frame (before BuildCameraMatrices first
+		// succeeds — UploadFrameConstants skips the refresh while the camera is invalid) reads
+		// a DEFINED view-proj rather than indeterminate VRAM. The scene-graph snapshot stamps
+		// its camera frustum from m_xViewProjMat, so an indeterminate value would cull every
+		// renderable against garbage on frame 0. In-class initializers don't change the GPU
+		// constant-buffer layout (the struct stays trivially copyable for the memcpy upload).
+		Zenith_Maths::Matrix4 m_xViewMat        = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xProjMat        = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xViewProjMat    = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xInvViewProjMat = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xInvViewMat     = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xInvProjMat     = Zenith_Maths::Matrix4(1.0f);
 		Zenith_Maths::Vector4 m_xCamPos_Pad;
 		Zenith_Maths::Vector4 m_xSunDir_Pad;
 		Zenith_Maths::Vector4 m_xSunColour_Pad;
@@ -98,6 +104,12 @@ public:
 	Zenith_Maths::Matrix4  GetViewProjMatrix();
 	Zenith_Maths::Matrix4  GetInvViewProjMatrix();
 	Zenith_Maths::Matrix4  GetViewMatrix();
+
+	// True iff UploadFrameConstants resolved a valid main camera this frame (else
+	// m_xViewProjMat is stale/identity). The scene-graph snapshot reads this so it can skip
+	// frustum culling against a bogus matrix until the camera resolves (e.g. first boot frame
+	// in a non-tools/Playing build before the camera entity exists).
+	bool IsCameraValid() const { return m_bCameraValid; }
 	Zenith_Maths::Vector3  GetSunDir();
 	float GetNearPlane();
 	float GetFarPlane();
@@ -141,6 +153,8 @@ public:
 
 	// Per-frame CPU-side constants struct + binding-group layout.
 	FrameConstants              m_xFrameConstants;
+	// Set each UploadFrameConstants to whether a valid main camera was resolved this frame.
+	bool                        m_bCameraValid = false;
 	// Per-scene sun override (see SetSunOverride). Default OFF.
 	bool                        m_bSunOverride = false;
 	Zenith_Maths::Vector3       m_xSunDirOverride = { 0.0f, -1.0f, 0.0f };

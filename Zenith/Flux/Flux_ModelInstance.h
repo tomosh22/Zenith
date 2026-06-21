@@ -2,6 +2,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"
+#include "Maths/Zenith_FrustumCulling.h"   // Zenith_AABB (Phase 3 culling bounds)
 
 class Zenith_ModelAsset;
 class Zenith_MeshAsset;
@@ -119,6 +120,14 @@ public:
 	 */
 	Flux_MeshInstance* GetMeshInstance(uint32_t uIndex) const;
 
+	// Phase 3 (scene-graph culling): the model's LOCAL-space AABB = the union of its mesh
+	// instances' local bounds, lazily computed + cached. InvalidateLocalBounds() dirties
+	// the union (e.g. after AppendProceduralMesh grows the mesh set); the per-mesh bounds
+	// are themselves immutable for asset-backed meshes. The entity WORLD AABB is then
+	// TransformAABB(GetLocalBounds(), worldMatrix) — computed at snapshot-build time.
+	const Zenith_AABB& GetLocalBounds() const;
+	void InvalidateLocalBounds() { m_bLocalBoundsValid = false; }
+
 	/**
 	 * Get skinned mesh instance at the specified index (104-byte format with bone data)
 	 * These are used for animated mesh rendering with GPU skinning
@@ -152,6 +161,21 @@ public:
 	 */
 	bool HasSkeleton() const { return m_pxSkeleton != nullptr; }
 
+	// True iff this is a skinned-animated model: it has a skeleton AND at least one
+	// skinned mesh instance. Flux_StaticMeshes skips these (they're drawn by
+	// Flux_AnimatedMeshes); a skeleton with NO skinned mesh still renders as static.
+	// Single source for the static/animated split (the snapshot fill stamps the
+	// advisory flag from this; the StaticMeshes filter calls it too).
+	bool IsAnimatedSkinned() const
+	{
+		if (!HasSkeleton()) return false;
+		for (uint32_t u = 0; u < GetNumMeshes(); u++)
+		{
+			if (GetSkinnedMeshInstance(u) != nullptr) return true;
+		}
+		return false;
+	}
+
 	/**
 	 * Get the skeleton instance
 	 * Returns nullptr if model has no skeleton
@@ -174,6 +198,11 @@ private:
 
 	// Runtime mesh instances (GPU-ready, owned by this instance)
 	// Static 72-byte format for static rendering or bind-pose rendering
+	// Phase 3: lazily-computed, cached local-space union bounds (mutable so GetLocalBounds()
+	// stays const). Invalidated by InvalidateLocalBounds() when the mesh set changes.
+	mutable Zenith_AABB m_xLocalBounds;
+	mutable bool m_bLocalBoundsValid = false;
+
 	Zenith_Vector<Flux_MeshInstance*> m_xMeshInstances;
 
 	// Skinned mesh instances (104-byte format with bone indices/weights)
@@ -197,14 +226,39 @@ private:
 	void BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAsset* pxAsset);
 };
 
-// Wave 3: model render-gather. The EC side queries Zenith_ModelComponent + the entity
-// transform and produces a flat list of (model instance, world matrix) pairs so the
-// renderers (Flux_StaticMeshes / Flux_AnimatedMeshes) no longer #include the components.
-// The fn-ptr type lives here (not in Core/Zenith_RenderGather.h) because it names
-// Flux_ModelInstance, a Flux type; Zenith_ModelComponent.cpp already includes this header
-// (an existing forward EC->Flux edge), so hosting it here adds no new Flux<->EC edge.
-// Both renderers consume the full list and filter (static keeps non-skinned; animated
-// keeps skinned) exactly as before.
-using Zenith_ModelGatherFn = void (*)(Zenith_Vector<Flux_ModelInstance*>& xOutInstances,
-	Zenith_Vector<Zenith_Maths::Matrix4>& xOutMatrices);
-extern Zenith_ModelGatherFn g_pfnZenithModelGather;
+// Phase 2 (scene graph): one entry of the engine-owned Flux_RenderSceneSnapshot (the
+// uncullled master list, rebuilt once per frame — see Flux/SceneGraph/Flux_RenderSceneSnapshot.h).
+// The item struct + fill seam live HERE, in the Flux header Zenith_ModelComponent.cpp already
+// includes, so the EC-side fill fn (g_pfnZenithSceneSnapshotFill, defined in
+// Zenith_ModelComponent.cpp) populates a Zenith_Vector<Flux_RenderSceneItem> WITHOUT EC ever
+// including the snapshot header — i.e. no new EntityComponent->Flux edge. The render consumers
+// dereference m_pxModelInstance + read m_xWorldMatrix (only after the authoritative rebuild);
+// the remaining fields are pointer-free diagnostics the tools panel reads even when stale.
+struct Flux_RenderSceneItem
+{
+	Flux_ModelInstance*    m_pxModelInstance = nullptr;
+	Zenith_Maths::Matrix4  m_xWorldMatrix = Zenith_Maths::Matrix4(1.0f);
+
+	// Phase 3: the entity's world-space AABB (TransformAABB of the model's local union by
+	// the world matrix), computed at snapshot build. Camera-cull consumers test this; it is
+	// also pointer-free so the diagnostics overlays read it directly.
+	Zenith_AABB            m_xWorldAABB;
+
+	// --- pointer-free diagnostics (safe to read when stale) ---
+	// EntityID stored PACKED (uint64) rather than as Zenith_EntityID: the established
+	// Flux<->ECS convention forward-declares Zenith_EntityID and never #includes
+	// Zenith_Entity.h into a widely-included Flux header (cycle). A by-value member needs
+	// the complete type, so the packed form keeps this struct a pure ECS-free POD; the
+	// tools panel unpacks with Zenith_EntityID::FromPacked. 0 == none.
+	uint64_t               m_ulEntityIDPacked = 0;
+	uint32_t               m_uMeshCount = 0;
+	bool                   m_bAnimatedSkinned = false;   // advisory/debug only; consumers still apply their own predicate
+};
+
+// EC -> Flux fill seam (replaces the former g_pfnZenithModelGather two-vector form). The EC
+// side pushes one item per renderable into the snapshot's item vector; the snapshot's Rebuild
+// drives it. The typedef names only Flux + ECS-leaf types (no EntityComponent type), and lives
+// in this already-included header, so it adds no new EntityComponent->Flux edge. DEFINED in
+// Zenith_ModelComponent.cpp.
+using Zenith_SceneSnapshotFillFn = void (*)(Zenith_Vector<Flux_RenderSceneItem>& xOutItems);
+extern Zenith_SceneSnapshotFillFn g_pfnZenithSceneSnapshotFill;

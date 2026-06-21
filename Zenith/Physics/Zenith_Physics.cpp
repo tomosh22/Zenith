@@ -9,6 +9,7 @@
 #define ZENITH_PLACEMENT_NEW_ZONE
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
+#include "Physics/Zenith_PhysicsWorldHooks.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -646,41 +647,54 @@ void Zenith_Physics::LockRotation(Zenith_PhysicsBodyID xBodyID, bool bLockX, boo
 	Zenith_Assert(m_pxPhysicsSystem != nullptr, "LockRotation: Physics system not initialized");
 	if (!m_pxPhysicsSystem) return;
 
-	JPH::BodyLockWrite xLock(m_pxPhysicsSystem->GetBodyLockInterface(), ToJolt(xBodyID));
-	if (xLock.Succeeded())
+	bool bRotationChanged = false;
 	{
-		JPH::Body& xBody = xLock.GetBody();
-		if (xBody.IsDynamic())
+		JPH::BodyLockWrite xLock(m_pxPhysicsSystem->GetBodyLockInterface(), ToJolt(xBodyID));
+		if (xLock.Succeeded())
 		{
-			JPH::MotionProperties* pxMotion = xBody.GetMotionProperties();
-
-			// Step 1: Zero out angular velocity on locked axes
-			JPH::Vec3 xAngVel = pxMotion->GetAngularVelocity();
-			if (bLockX) xAngVel.SetX(0.0f);
-			if (bLockY) xAngVel.SetY(0.0f);
-			if (bLockZ) xAngVel.SetZ(0.0f);
-			pxMotion->SetAngularVelocity(xAngVel);
-
-			// Step 2: Set inverse inertia to zero on locked axes to prevent angular acceleration
-			JPH::Vec3 xInvInertia = pxMotion->GetInverseInertiaDiagonal();
-			if (bLockX) xInvInertia.SetX(0.0f);
-			if (bLockY) xInvInertia.SetY(0.0f);
-			if (bLockZ) xInvInertia.SetZ(0.0f);
-			pxMotion->SetInverseInertia(xInvInertia, pxMotion->GetInertiaRotation());
-
-			// Step 3: Reset rotation to upright (keep only Y rotation)
-			// This fixes any tilt that already occurred
-			if (bLockX && bLockZ)
+			JPH::Body& xBody = xLock.GetBody();
+			if (xBody.IsDynamic())
 			{
-				JPH::Quat xRot = xBody.GetRotation();
-				// Extract yaw (Y rotation) and create new quaternion with only Y rotation
-				JPH::Vec3 xForward = xRot.RotateAxisZ();
-				float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
-				JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
-				// Use NoLock interface since we already hold the body lock
-				m_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(ToJolt(xBodyID), xUprightRot, JPH::EActivation::DontActivate);
+				JPH::MotionProperties* pxMotion = xBody.GetMotionProperties();
+
+				// Step 1: Zero out angular velocity on locked axes
+				JPH::Vec3 xAngVel = pxMotion->GetAngularVelocity();
+				if (bLockX) xAngVel.SetX(0.0f);
+				if (bLockY) xAngVel.SetY(0.0f);
+				if (bLockZ) xAngVel.SetZ(0.0f);
+				pxMotion->SetAngularVelocity(xAngVel);
+
+				// Step 2: Set inverse inertia to zero on locked axes to prevent angular acceleration
+				JPH::Vec3 xInvInertia = pxMotion->GetInverseInertiaDiagonal();
+				if (bLockX) xInvInertia.SetX(0.0f);
+				if (bLockY) xInvInertia.SetY(0.0f);
+				if (bLockZ) xInvInertia.SetZ(0.0f);
+				pxMotion->SetInverseInertia(xInvInertia, pxMotion->GetInertiaRotation());
+
+				// Step 3: Reset rotation to upright (keep only Y rotation)
+				// This fixes any tilt that already occurred
+				if (bLockX && bLockZ)
+				{
+					JPH::Quat xRot = xBody.GetRotation();
+					// Extract yaw (Y rotation) and create new quaternion with only Y rotation
+					JPH::Vec3 xForward = xRot.RotateAxisZ();
+					float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
+					JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
+					// Use NoLock interface since we already hold the body lock
+					m_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(ToJolt(xBodyID), xUprightRot, JPH::EActivation::DontActivate);
+					bRotationChanged = true;
+				}
 			}
 		}
+	}   // body write-lock released here
+
+	// Out-of-band rotation change (step 3): notify the engine AFTER the lock releases (the
+	// hook re-reads the body via the no-lock interface) so the owning entity's cached world
+	// transform invalidates this frame. Mirrors TeleportBody.
+	if (bRotationChanged)
+	{
+		JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+		Zenith_Physics_FireBodyPoseChanged(Zenith_EntityID::FromPacked(xBodyInterface.GetUserData(ToJolt(xBodyID))));
 	}
 }
 
@@ -703,6 +717,18 @@ void Zenith_Physics::EnforceUpright(Zenith_PhysicsBodyID xBodyID)
 	float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
 	JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
 	xBodyInterface.SetRotation(ToJolt(xBodyID), xUprightRot, JPH::EActivation::DontActivate);
+
+	// Out-of-band rotation change (bypasses the transform setters): notify the engine so the
+	// owning entity's cached world transform invalidates THIS frame, not next (mirrors
+	// TeleportBody + the LockRotation guard). EnforceUpright is called every frame for every
+	// upright-locked character, so only fire when the rotation ACTUALLY changed (|dot| ~= 1
+	// means the body was already upright — no real change, skip the wasted hook dispatch).
+	const float fRotDot = xRot.Dot(xUprightRot);
+	const bool bRotationChanged = ((fRotDot < 0.0f ? -fRotDot : fRotDot) < 1.0f - 1e-6f);
+	if (bRotationChanged)
+	{
+		Zenith_Physics_FireBodyPoseChanged(Zenith_EntityID::FromPacked(xBodyInterface.GetUserData(ToJolt(xBodyID))));
+	}
 }
 
 void Zenith_Physics::SetRestitution(Zenith_PhysicsBodyID xBodyID, float fRestitution)
@@ -742,6 +768,14 @@ void Zenith_Physics::TeleportBody(Zenith_PhysicsBodyID xBodyID, const Zenith_Mat
 		JPH::Quat::sIdentity(),
 		JPH::EActivation::Activate);
 	xBodyInterface.SetLinearVelocity(ToJolt(xBodyID), JPH::Vec3::sZero());
+
+	// Out-of-band pose change: notify the engine so it can immediately invalidate the
+	// owning entity's cached world transform (the per-frame post-physics sweep would
+	// otherwise only catch this next frame, lagging the render a frame on a teleport).
+	// Resolve the entity from the body user-data, exactly as Raycast does. No-op when
+	// no hook is installed (physics-only / headless build).
+	Zenith_EntityID xEntity = Zenith_EntityID::FromPacked(xBodyInterface.GetUserData(ToJolt(xBodyID)));
+	Zenith_Physics_FireBodyPoseChanged(xEntity);
 }
 
 void Zenith_Physics::SetBodyPosition(Zenith_PhysicsBodyID xBodyID, const Zenith_Maths::Vector3& xPosition)

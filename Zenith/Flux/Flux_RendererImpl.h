@@ -5,6 +5,13 @@
 #include "Flux/Flux.h"            // Flux_RenderPassEntry, Flux_WorkDistribution, Flux_RenderGraph_AttachmentRef/Pass
 
 class Flux_RenderGraph;
+// Held by POINTER (forward-declared, heap-allocated in Zenith_Engine::AllocateRenderer /
+// freed in Shutdown + the dtor backstop) rather than by value: the snapshot header pulls
+// Flux_ModelInstance.h -> AssetHandle ->
+// AssetRegistry -> Flux, which would close an include cycle back to this header. Forward-
+// decl + by-ptr is the sanctioned header-decoupling pattern (NOT pimpl — the type is a
+// public, fully-defined Flux type; this just breaks the include edge).
+class Flux_RenderSceneSnapshot;
 
 // Per-Engine state + behaviour for the Flux renderer. Replaces the two
 // public static-facade classes that used to live in Flux.h / Flux_PerFrame.h:
@@ -25,7 +32,10 @@ class Flux_RendererImpl
 {
 public:
 	Flux_RendererImpl() = default;
-	~Flux_RendererImpl() = default;
+	// User-declared (defined in Flux.cpp where Flux_RenderSceneSnapshot is complete): frees
+	// the by-ptr snapshot. The headless boot never calls Shutdown, so the dtor is the
+	// backstop free on `delete m_pxFluxRenderer`. Safe alongside Shutdown's early free (nulls).
+	~Flux_RendererImpl();
 
 	Flux_RendererImpl(const Flux_RendererImpl&) = delete;
 	Flux_RendererImpl& operator=(const Flux_RendererImpl&) = delete;
@@ -112,6 +122,17 @@ public:
 	void BeginFrame();
 	void ProcessFrameEnd();
 
+	// ===== Scene-graph snapshot (Phase 2) =====
+	// The renderer OWNS the uncullled Flux_RenderSceneSnapshot and rebuilds it EXACTLY
+	// ONCE per frame, triggered from Zenith_Core.cpp right before SetRenderTasksActive(true)
+	// (after UI().Update() drains deferred scene loads + ImGui transform edits, so no entry
+	// captures a stale/dangling Flux_ModelInstance*). The epoch is passed in explicitly
+	// (Zenith_SceneSystem::GetRenderMutationEpoch()) so this class holds no g_xEngine reach;
+	// the fill fn is the EC-defined g_pfnZenithSceneSnapshotFill. Reset() on Shutdown drops
+	// the non-owning instance pointers so none survives a teardown/reinit.
+	void RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, const Zenith_Maths::Matrix4& xCameraViewProj, bool bCameraValid);
+	const Flux_RenderSceneSnapshot& GetSceneSnapshot() const { return *m_pxSceneSnapshot; }
+
 	// ===== Data members =====
 
 	// Render graph. Allocated in LateInitialise, freed in Shutdown.
@@ -131,6 +152,13 @@ public:
 
 	// Graph rebuild request flag — consumed by next Compile().
 	bool                                  m_bGraphRebuildRequested = false;
+
+	// Phase 2: the uncullled master scene snapshot. Owned by pointer (heap-allocated in
+	// Zenith_Engine::AllocateRenderer — unconditionally, so the headless boot is safe — and
+	// freed in Shutdown + the dtor backstop) to break the snapshot-header include cycle (see
+	// the forward-decl note above). Rebuilt once per frame via RebuildSceneSnapshot; injected
+	// (by pointer) into the geometry consumers at the composition root.
+	Flux_RenderSceneSnapshot*             m_pxSceneSnapshot = nullptr;
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;

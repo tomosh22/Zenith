@@ -405,6 +405,7 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
+    <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h">
@@ -1336,6 +1337,7 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
   </ItemGroup>
   <ItemGroup>

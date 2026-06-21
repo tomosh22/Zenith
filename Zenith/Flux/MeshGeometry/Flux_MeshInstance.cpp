@@ -322,6 +322,49 @@ bool Flux_MeshInstance::HasSkinning() const
 	return false;
 }
 
+const Zenith_AABB& Flux_MeshInstance::GetLocalBounds() const
+{
+	if (m_bLocalBoundsValid)
+	{
+		return m_xLocalBounds;
+	}
+
+	if (Zenith_MeshAsset* pxSource = m_xSourceAsset.GetDirect())
+	{
+		// Asset-backed: the bounds were baked at import time. A Zenith_MeshAsset that was
+		// never baked defaults to a zero-volume point (min == max == 0,0,0) — which would
+		// pass IsValid() and falsely cull the model the instant the entity origin leaves the
+		// frustum. Treat a degenerate point as NO usable bounds (leave the default-invalid
+		// box) so such an entity stays conservatively unculled.
+		const Zenith_Maths::Vector3 xMin = pxSource->GetBoundsMin();
+		const Zenith_Maths::Vector3 xMax = pxSource->GetBoundsMax();
+		if (xMin != xMax)
+		{
+			m_xLocalBounds = Zenith_AABB(xMin, xMax);
+		}
+		else
+		{
+			m_xLocalBounds = Zenith_AABB();   // invalid -> "no bounds"
+		}
+	}
+	else if (m_pxProceduralGeometry && m_pxProceduralGeometry->m_pxPositions && m_pxProceduralGeometry->GetNumVerts() > 0)
+	{
+		// Procedural: compute the tight AABB over the CPU positions.
+		m_xLocalBounds = Zenith_FrustumCulling::GenerateAABBFromVertices(
+			m_pxProceduralGeometry->m_pxPositions, m_pxProceduralGeometry->GetNumVerts());
+	}
+	else
+	{
+		// No source (empty/degenerate instance): leave the default-invalid AABB so a
+		// frustum test treats it conservatively (an invalid AABB has min > max — callers
+		// of the model union skip empty mesh bounds).
+		m_xLocalBounds = Zenith_AABB();
+	}
+
+	m_bLocalBoundsValid = true;
+	return m_xLocalBounds;
+}
+
 Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* pxAsset)
 {
 	Zenith_Assert(pxAsset != nullptr, "Cannot create skinned mesh instance from null asset");

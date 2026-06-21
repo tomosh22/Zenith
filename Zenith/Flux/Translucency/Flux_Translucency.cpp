@@ -2,6 +2,7 @@
 
 #include "Flux/Translucency/Flux_TranslucencyImpl.h"
 #include "Core/Zenith_Engine.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
@@ -10,6 +11,7 @@
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/Flux_ModelInstance.h"
+#include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -146,19 +148,30 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // submesh renders on exactly one path.
 void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 {
+	ZENITH_PROFILE_SCOPE("Flux Translucency Gather");
 	Zenith_Vector<Flux_TranslucentDrawItem>& xPacket = m_xDrawPacket;
 	xPacket.Clear();
 
-	Zenith_Vector<Flux_ModelInstance*> xInstances;
-	Zenith_Vector<Zenith_Maths::Matrix4> xMatrices;
-	if (g_pfnZenithModelGather) g_pfnZenithModelGather(xInstances, xMatrices);
+	// Phase 2: read the engine-owned uncullled snapshot (rebuilt once per frame) instead
+	// of running our own ECS scan. Per-submesh translucent/additive selection below is
+	// unchanged, so the same submeshes render in the same order.
+	if (!m_pxSnapshot) return;
+	const Zenith_Vector<Flux_RenderSceneItem>& xItems = m_pxSnapshot->Items();
+	const bool bCull = m_pxSnapshot->IsCameraFrustumValid();   // skip culling against an unresolved camera
+	const Zenith_Frustum& xFrustum = m_pxSnapshot->GetCameraFrustum();
 
 	const Zenith_Maths::Vector3& xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 
-	for (u_int u = 0; u < xInstances.GetSize(); ++u)
+	for (u_int u = 0; u < xItems.GetSize(); ++u)
 	{
-		Flux_ModelInstance* pxModelInstance = xInstances.Get(u);
-		const Zenith_Maths::Matrix4& xModelMatrix = xMatrices.Get(u);
+		const Flux_RenderSceneItem& xSrc = xItems.Get(u);
+		Flux_ModelInstance* pxModelInstance = xSrc.m_pxModelInstance;
+		const Zenith_Maths::Matrix4& xModelMatrix = xSrc.m_xWorldMatrix;
+
+		// Phase 3: camera-frustum cull the whole model before walking submeshes (translucency
+		// is a screen effect — off-screen translucent geometry contributes nothing). Conservative:
+		// an invalid AABB is never culled; culling is skipped entirely when the camera is unresolved.
+		if (bCull && xSrc.m_xWorldAABB.IsValid() && !Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xSrc.m_xWorldAABB)) continue;
 
 		for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
 		{

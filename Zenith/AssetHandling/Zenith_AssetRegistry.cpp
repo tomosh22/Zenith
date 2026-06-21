@@ -12,6 +12,7 @@
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Collections/Zenith_Vector.h"
+#include "Profiling/Zenith_Profiling.h"
 #include <fstream>
 
 // Loader implementations
@@ -521,6 +522,7 @@ void Zenith_AssetRegistry::RegisterLoader(Zenith_TypeIndex xType, AssetLoaderFn 
 
 Zenith_Asset* Zenith_AssetRegistry::GetInternal(Zenith_TypeIndex xType, const std::string& strPath)
 {
+	ZENITH_PROFILE_SCOPE("AssetRegistry Load");
 	if (strPath.empty())
 	{
 		return nullptr;

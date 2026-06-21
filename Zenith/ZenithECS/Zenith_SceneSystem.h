@@ -226,6 +226,15 @@ public:
 	}
 	void SetRenderTasksActive(bool b) { m_bRenderTasksActive.store(b, std::memory_order_release); }
 
+	// Scene-graph render-mutation epoch (Phase 2). NotifyRenderMutation() is called
+	// immediately before any renderable Flux_ModelInstance is freed (Zenith_ModelComponent::
+	// ClearModel + scene/entity teardown) and after one is created/procedurally mutated,
+	// so a bump strictly precedes any stale-pointer read. GetRenderMutationEpoch() reads
+	// the live value; Flux_RenderSceneSnapshot::IsCurrent compares against the epoch it
+	// was built for.
+	void NotifyRenderMutation() { m_uRenderMutationEpoch.fetch_add(1, std::memory_order_acq_rel); }
+	uint64_t GetRenderMutationEpoch() const { return m_uRenderMutationEpoch.load(std::memory_order_acquire); }
+
 	// WS10 sparse-set query toggle. When true (the shipped default), Zenith_Query
 	// uses the O(matches) sparse-set fast path; when false it uses the legacy
 	// O(entities x types) scan. Both paths are kept (reversibility), and the
@@ -488,6 +497,15 @@ private:
 	// WS10 sparse-set query read path. Default true = sparse fast path shipped on.
 	// Plain std::atomic (NOT #ifdef-d) so it compiles + works in *_False configs.
 	std::atomic<bool>             m_bUseSparseQueryReads { true };
+
+	// Scene-graph render-mutation epoch (Phase 2). Bumped by NotifyRenderMutation()
+	// whenever a renderable Flux_ModelInstance is created or destroyed (incl. scene
+	// load/unload + entity destroy). The Flux_RenderSceneSnapshot stamps the epoch it
+	// was built for; the tools panel compares against the live value to detect a stale
+	// snapshot before dereferencing a possibly-freed instance. Starts at 1 so a
+	// never-built snapshot (epoch 0) is never "current". Atomic because frees can be
+	// queued from teardown paths; mirrors the other atomics here.
+	std::atomic<uint64_t>         m_uRenderMutationEpoch { 1 };
 
 	// Leaf-safe runtime hooks installed by the engine bootstrap (all nullptr
 	// until SetRuntimeHooks is called; the documented null-semantics make every

@@ -60,6 +60,16 @@ public:
 	// current world transform instead of a stale cached value.
 	void CommitPhysicsTransformToCache();
 
+	// Physics → transform-cache sync (Phase 1). If the owning entity has a live,
+	// active physics body whose pose has drifted from the cached m_xPosition/
+	// m_xRotation, commit the body pose into the cache and bump this entity's
+	// hierarchy revision (invalidating the cached world matrix of this entity and
+	// its descendants). The post-physics main-loop sweep calls this for every
+	// collider entity to catch Jolt *simulation* moves (which go through no setter);
+	// direct teleports invalidate immediately via the physics pose-change hook. No-op
+	// for bodyless entities, when there is no active simulation, and for unchanged poses.
+	void SyncPhysicsPoseAndInvalidate();
+
 	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
 
 	void BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut);
@@ -127,13 +137,36 @@ public:
 #endif
 
 private:
+	// Phase 1 scene-graph transform-cache tests read the private cache members
+	// (m_xCachedWorld / m_uCachedHierRevision) directly to assert the worker-thread
+	// cache-write contract. Test-only; mirrors the friend on Zenith_AnimatorComponent.
+	friend class Zenith_UnitTests;
+
 	// If the owning entity has a collider with a live physics body, return its
 	// body ID. Single source of the "does this transform have an authoritative
 	// physics body?" check the pose getters/setters share. Names no Jolt type.
 	bool TryGetColliderBody(Zenith_PhysicsBodyID& xOutBodyID);
 
+	// True iff (xPos,xRot) differs from the last-synced pose (m_xPosition/m_xRotation)
+	// beyond the physics-sync epsilons (squared distance for position; quaternion
+	// double-cover dot for rotation). The single change-test shared by the post-physics
+	// sweep and CommitPhysicsTransformToCache, so committing a moved body pose can never
+	// silently skip the hierarchy-revision bump that invalidates the cached world matrix.
+	bool PhysicsPoseDiffersFromCache(const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Quat& xRot) const;
+
 	Zenith_Maths::Vector3 m_xPosition = { 0.0, 0.0, 0.0 };
 	Zenith_Maths::Quat m_xRotation = { 1.0, 0.0, 0.0, 0.0 };
+
+	// Phase 1 scene-graph transform cache. m_xCachedWorld holds the last computed
+	// WORLD matrix (full ancestor chain folded in); m_uCachedHierRevision is the
+	// owning slot's hierarchy revision it was built against (0 = never built — the
+	// fresh-cache miss sentinel, since slot revisions start at 1). BuildModelMatrix
+	// returns m_xCachedWorld when the slot revision still matches, else recomputes.
+	// Only the main thread writes these (see the worker-thread cache-write contract
+	// in BuildModelMatrix): a render-task worker that misses recomputes into its
+	// out-param and leaves the cache untouched (no shared write → race-free).
+	Zenith_Maths::Matrix4 m_xCachedWorld = Zenith_Maths::Matrix4(1.0f);
+	uint64_t m_uCachedHierRevision = 0;
 
 	// The entity that owns this component (NOT the hierarchy parent)
 	Zenith_Entity m_xOwningEntity;

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
@@ -124,6 +125,7 @@ Zenith_MeshAsset& Zenith_MeshAsset::operator=(Zenith_MeshAsset&& xOther)
 
 Zenith_Result<Zenith_MeshAsset*> Zenith_MeshAsset::LoadFromFile(const char* szPath)
 {
+	ZENITH_PROFILE_SCOPE("Mesh Load + Parse");
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 

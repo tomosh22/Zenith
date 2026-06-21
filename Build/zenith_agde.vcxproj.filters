@@ -334,6 +334,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_ImGuiInputBridge.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_SceneGraphDebug.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_SelectionSystem.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -416,6 +419,12 @@
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsTransformSync.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsWorldHooksInstall.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_UISystem.cpp">
@@ -571,6 +580,9 @@
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Execution.cpp">
       <Filter>Flux\RenderGraph</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.cpp">
+      <Filter>Flux\SceneGraph</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp">
       <Filter>Flux\SDFs</Filter>
     </ClCompile>
@@ -650,6 +662,9 @@
       <Filter>Physics</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp">
+      <Filter>Physics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.cpp">
       <Filter>Physics</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Prefab\Zenith_Prefab.cpp">
@@ -2340,6 +2355,9 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_ImGuiInputBridge.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_SceneGraphDebug.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h">
       <Filter>Editor</Filter>
     </ClInclude>
@@ -2413,6 +2431,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsTransformSync.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h">
@@ -2639,6 +2660,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Internal.h">
       <Filter>Flux\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.h">
+      <Filter>Flux\SceneGraph</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h">
       <Filter>Flux\SDFs</Filter>
@@ -3033,6 +3057,9 @@
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
       <Filter>Physics</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.h">
+      <Filter>Physics</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h">
       <Filter>Physics</Filter>
     </ClInclude>
@@ -3368,6 +3395,9 @@
     </Filter>
     <Filter Include="Flux\SSR">
       <UniqueIdentifier>{60ec89e3-eec9-33f0-a320-77934f93c0c7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\SceneGraph">
+      <UniqueIdentifier>{1924dd5d-6104-a8f8-679f-81a0a0c1efa9}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders">
       <UniqueIdentifier>{64ae2a77-12ed-fc55-5117-fc86e630299b}</UniqueIdentifier>

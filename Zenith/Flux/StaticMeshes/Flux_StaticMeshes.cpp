@@ -2,6 +2,7 @@
 
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Core/Zenith_Engine.h"
+#include "Profiling/Zenith_Profiling.h"
 
 
 #include "Flux/Flux_RenderTargets.h"
@@ -10,9 +11,10 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_ModelInstance.h"
+#include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-// Wave 3: models arrive from the EC-side gatherer (g_pfnZenithModelGather, declared in
-// Flux_ModelInstance.h) as (instance, matrix) pairs -- no Zenith_ModelComponent.h /
+// Phase 2: models arrive from the engine-owned Flux_RenderSceneSnapshot (rebuilt once
+// per frame by the renderer; injected via SetSnapshot) -- no Zenith_ModelComponent.h /
 // Zenith_TransformComponent.h / scene-query includes here any more.
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -24,7 +26,6 @@
 
 
 static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*);
-static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance);
 
 void Flux_StaticMeshesImpl::BuildPipelines()
 {
@@ -140,39 +141,83 @@ void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // all shadow cascades — it removes every live-ECS read from those worker paths.
 void Flux_StaticMeshesImpl::GatherDrawPacket(void*)
 {
-	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = m_xDrawPacket;
-	xPacket.Clear();
+	ZENITH_PROFILE_SCOPE("Flux Static Mesh Gather");
+	// G-buffer Prepare: ensure both the camera (culled) and shadow (uncullled) packets for
+	// this snapshot. Generation-guarded, so a repeat call from the shadow Prepare is a no-op.
+	EnsureCameraPacket();
+	EnsureShadowPacket();
+}
 
-	// Wave 3: models are gathered EC-side into parallel (instance, matrix) lists.
-	Zenith_Vector<Flux_ModelInstance*> xInstances;
-	Zenith_Vector<Zenith_Maths::Matrix4> xMatrices;
-	if (g_pfnZenithModelGather) g_pfnZenithModelGather(xInstances, xMatrices);
+void Flux_StaticMeshesImpl::EnsureCameraPacket()
+{
+	if (!m_pxSnapshot) return;
+	const uint32_t uGen = m_pxSnapshot->GetGeneration();
+	if (m_uCameraPacketGen == uGen) return;   // already built this snapshot
 
-	for (u_int u = 0; u < xInstances.GetSize(); ++u)
+	BuildCameraPacket(*m_pxSnapshot, m_xCameraDrawPacket);
+	m_uCameraPacketGen = uGen;
+}
+
+void Flux_StaticMeshesImpl::EnsureShadowPacket()
+{
+	if (!m_pxSnapshot) return;
+	const uint32_t uGen = m_pxSnapshot->GetGeneration();
+	if (m_uShadowPacketGen == uGen) return;   // already built this snapshot
+
+	BuildShadowPacket(*m_pxSnapshot, m_xShadowDrawPacket);
+	m_uShadowPacketGen = uGen;
+}
+
+// Pure (GPU-free) packet builders. Extracted from the Ensure* wrappers so the exact cull
+// decision is unit-testable against a hand-built snapshot without a GPU-backed subsystem.
+void Flux_StaticMeshesImpl::BuildCameraPacket(const Flux_RenderSceneSnapshot& xSnapshot,
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xOut)
+{
+	xOut.Clear();
+
+	// Phase 3: camera-frustum cull the opaque static set (drops off-screen draws from the
+	// G-buffer). Filter (skip skinned-animated) is byte-identical to Phase 2. Culling is
+	// SKIPPED when the camera frustum is not valid this frame (no resolved camera — would
+	// otherwise cull against an identity/stale matrix).
+	const bool bCull = xSnapshot.IsCameraFrustumValid();
+	const Zenith_Frustum& xFrustum = xSnapshot.GetCameraFrustum();
+	const Zenith_Vector<Flux_RenderSceneItem>& xItems = xSnapshot.Items();
+	for (u_int u = 0; u < xItems.GetSize(); ++u)
 	{
-		Flux_ModelInstance* pxModelInstance = xInstances.Get(u);
+		const Flux_RenderSceneItem& xSrc = xItems.Get(u);
+		// Skinned-animated models are rendered by Flux_AnimatedMeshes. Use the flag the
+		// snapshot fill already stamped (byte-identical to re-running the predicate — the
+		// build-before-workers contract means skinning topology can't change mid-frame).
+		if (xSrc.m_bAnimatedSkinned) continue;
 
-		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
-		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
+		// Conservative cull: an invalid AABB (no bounds) is never culled.
+		if (bCull && xSrc.m_xWorldAABB.IsValid() && !Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xSrc.m_xWorldAABB)) continue;
 
 		Flux_StaticMeshDrawItem xItem;
-		xItem.m_pxModelInstance = pxModelInstance;
-		xItem.m_xModelMatrix    = xMatrices.Get(u);
-		xPacket.PushBack(xItem);
+		xItem.m_pxModelInstance = xSrc.m_pxModelInstance;
+		xItem.m_xModelMatrix    = xSrc.m_xWorldMatrix;
+		xOut.PushBack(xItem);
 	}
 }
 
-// Animated meshes (skeleton + at least one skinned mesh instance) are rendered
-// by Flux_AnimatedMeshes; this renderer skips them. Models with a skeleton but
-// NO skinning data still render here as static meshes.
-static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance)
+void Flux_StaticMeshesImpl::BuildShadowPacket(const Flux_RenderSceneSnapshot& xSnapshot,
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xOut)
 {
-	if (!xModelInstance.HasSkeleton()) return false;
-	for (uint32_t u = 0; u < xModelInstance.GetNumMeshes(); u++)
+	xOut.Clear();
+
+	// Phase 3: shadow casters are UNCULLLED against the camera (an off-screen caster can
+	// still cast a visible shadow). Per-cascade light-frustum culling is deferred.
+	const Zenith_Vector<Flux_RenderSceneItem>& xItems = xSnapshot.Items();
+	for (u_int u = 0; u < xItems.GetSize(); ++u)
 	{
-		if (xModelInstance.GetSkinnedMeshInstance(u) != nullptr) return true;
+		const Flux_RenderSceneItem& xSrc = xItems.Get(u);
+		if (xSrc.m_bAnimatedSkinned) continue;   // drawn by Flux_AnimatedMeshes (precomputed flag)
+
+		Flux_StaticMeshDrawItem xItem;
+		xItem.m_pxModelInstance = xSrc.m_pxModelInstance;
+		xItem.m_xModelMatrix    = xSrc.m_xWorldMatrix;
+		xOut.PushBack(xItem);
 	}
-	return false;
 }
 
 // Per-mesh draw helper. Binds material constants + SRVs, then emits the
@@ -265,10 +310,10 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
-	// access here — this runs on a worker thread. Two walks: one per cull
-	// pipeline (one-sided cull-back, then two-sided cull-none).
-	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = xZZ.m_xDrawPacket;
+	// Iterate the CAMERA-CULLED packet (EnsureCameraPacket, main thread). No ECS access
+	// here — this runs on a worker thread. Two walks: one per cull pipeline (one-sided
+	// cull-back, then two-sided cull-none).
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = xZZ.m_xCameraDrawPacket;
 	for (u_int uCullPass = 0; uCullPass < 2; uCullPass++)
 	{
 		const bool bTwoSidedPass = (uCullPass == 1);
@@ -292,10 +337,10 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 	// FrameConstants doesn't appear in the reflected layout — binding it
 	// here would fail the name lookup.
 
-	// Iterate the packet gathered on the main thread (GatherDrawPacket). This is
-	// the same packet the GBuffer pass consumes; it is shared across all 4 shadow
-	// cascades. No ECS access here — this runs on a worker thread.
-	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = m_xDrawPacket;
+	// Iterate the UNCULLLED shadow packet (EnsureShadowPacket, main thread) — off-screen
+	// casters still cast. Shared across all 4 shadow cascades. No ECS access here — this
+	// runs on a worker thread.
+	Zenith_Vector<Flux_StaticMeshDrawItem>& xPacket = m_xShadowDrawPacket;
 	for (u_int u = 0; u < xPacket.GetSize(); u++)
 	{
 		const Flux_StaticMeshDrawItem& xItem = xPacket.Get(u);

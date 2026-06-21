@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -19,6 +20,12 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_Query.h"
 #include <filesystem>
+
+// File-local scene-system forwarder (defined near the snapshot fill below). Forward-
+// declared here so the render-mutation bumps in ClearModel/LoadModel/AddMeshEntry — which
+// appear before the definition — can route through it. The definition holds this TU's sole
+// engine-singleton occurrence; this declaration adds none.
+static Zenith_SceneSystem& Scenes();
 
 void Zenith_ModelComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
@@ -119,6 +126,10 @@ void Zenith_ModelComponent::AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_Ma
 	{
 		m_pxModelInstance->AppendProceduralMesh(xGeometry, xMaterial);
 	}
+
+	// Phase 2: a renderable was created or its mesh set grew — bump the render-mutation
+	// epoch so the snapshot's copied diagnostics (mesh count) aren't read as current-but-stale.
+	Scenes().NotifyRenderMutation();
 }
 
 //=============================================================================
@@ -214,6 +225,10 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	{
 		GeneratePhysicsMesh();
 	}
+
+	// Phase 2: a new renderable now exists — bump the render-mutation epoch so the tools
+	// panel doesn't read a snapshot that predates it as "current".
+	Scenes().NotifyRenderMutation();
 }
 
 void Zenith_ModelComponent::ClearModel()
@@ -221,6 +236,13 @@ void Zenith_ModelComponent::ClearModel()
 	// Delete model instance (handles cleanup of mesh instances, skeleton instance, etc.)
 	if (m_pxModelInstance)
 	{
+		// Phase 2: bump the render-mutation epoch BEFORE the free so the previous
+		// frame's snapshot (which may still reference this instance, and which the tools
+		// panel reads pre-rebuild) is marked stale before the pointer dangles. This is the
+		// single Flux_ModelInstance free site — reached by the dtor, move-assignment,
+		// LoadModel's reload, scene unload + entity destroy — so one bump here covers them all.
+		Scenes().NotifyRenderMutation();
+
 		m_pxModelInstance->Destroy();
 		delete m_pxModelInstance;
 		m_pxModelInstance = nullptr;
@@ -573,11 +595,25 @@ void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector
 // list and filter it themselves (static skips skinned-animated models, animated
 // keeps them) -- identical to the per-renderer queries this replaces.
 // ---------------------------------------------------------------------------
-static void Zenith_GatherModelInstancesImpl(Zenith_Vector<Flux_ModelInstance*>& xOutInstances,
-	Zenith_Vector<Zenith_Maths::Matrix4>& xOutMatrices)
+// File-local scene-system accessor. This forwarder holds the SOLE engine-singleton
+// occurrence in this TU (baseline count 1): both the snapshot fill below AND every
+// NotifyRenderMutation() call route through it, so adding the epoch notifications does
+// not raise the singleton-ratchet count. NOT a getter on the component — a TU-local
+// forwarder, like the per-feature re-entry pattern in the Flux subsystems.
+static Zenith_SceneSystem& Scenes() { return g_xEngine.Scenes(); }
+
+// Phase 2: EC->Flux snapshot fill (replaces the former two-vector Zenith_GatherModelInstancesImpl).
+// Queries every Zenith_ModelComponent with a built model instance once per frame and pushes
+// one Flux_RenderSceneItem per renderable (instance + cached world matrix + pointer-free
+// diagnostics) into the snapshot's item vector. Flux_RenderSceneItem + this fn-ptr type live
+// in the already-included Flux_ModelInstance.h, so this TU never includes the snapshot header
+// (no new EntityComponent->Flux edge). The mesh renderers each derive their own filtered
+// packet from the snapshot — identical selection to the per-renderer filters this feeds.
+static void Zenith_FillSceneSnapshotImpl(Zenith_Vector<Flux_RenderSceneItem>& xOutItems)
 {
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>()
-		.ForEach([&xOutInstances, &xOutMatrices](Zenith_EntityID, Zenith_ModelComponent& xModel)
+	ZENITH_PROFILE_SCOPE("Snapshot::Fill");
+	Scenes().QueryAllScenes<Zenith_ModelComponent>()
+		.ForEach([&xOutItems](Zenith_EntityID xEntityID, Zenith_ModelComponent& xModel)
 	{
 		Flux_ModelInstance* pxModelInstance = xModel.GetModelInstance();
 		if (!pxModelInstance) return;
@@ -585,9 +621,17 @@ static void Zenith_GatherModelInstancesImpl(Zenith_Vector<Flux_ModelInstance*>& 
 		Zenith_Maths::Matrix4 xMatrix;
 		xModel.GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xMatrix);
 
-		xOutInstances.PushBack(pxModelInstance);
-		xOutMatrices.PushBack(xMatrix);
+		Flux_RenderSceneItem xItem;
+		xItem.m_pxModelInstance  = pxModelInstance;
+		xItem.m_xWorldMatrix     = xMatrix;
+		// Phase 3: world-space AABB = the model's local union bounds transformed by the
+		// world matrix. Consumers frustum-cull against this; overlays draw it.
+		xItem.m_xWorldAABB       = Zenith_FrustumCulling::TransformAABB(pxModelInstance->GetLocalBounds(), xMatrix);
+		xItem.m_ulEntityIDPacked = xEntityID.GetPacked();
+		xItem.m_uMeshCount       = pxModelInstance->GetNumMeshes();
+		xItem.m_bAnimatedSkinned = pxModelInstance->IsAnimatedSkinned();
+		xOutItems.PushBack(xItem);
 	});
 }
 
-Zenith_ModelGatherFn g_pfnZenithModelGather = &Zenith_GatherModelInstancesImpl;
+Zenith_SceneSnapshotFillFn g_pfnZenithSceneSnapshotFill = &Zenith_FillSceneSnapshotImpl;

@@ -904,6 +904,55 @@ ZENITH_TEST(Physics, RebuildColliderPreservesVelocity)
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }
+// Regression (review [P2]): RebuildCollider commits a SILENTLY-moved body pose (a Jolt
+// simulation move that went through no setter, so nothing bumped the hierarchy revision)
+// into the transform before destroying + recreating the body. The commit advances
+// m_xPosition/m_xRotation to match the body, so the later post-physics sweep sees no delta
+// and never invalidates the cache — leaving BuildModelMatrix permanently stuck at the
+// pre-move pose. The fix bumps the revision inside CommitPhysicsTransformToCache when the
+// committed pose actually changed; this test fails without it.
+ZENITH_TEST(Physics, RebuildColliderAfterSilentMoveInvalidatesTransformCache)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_RebuildMove", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// Dynamic body at the origin (gravity off — only WE move it, deterministically).
+	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "RebuildMoveSphere",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
+	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
+	Zenith_TransformComponent& xT = xSphere.GetComponent<Zenith_TransformComponent>();
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+
+	// Prime the BuildModelMatrix world-matrix cache at the origin.
+	Zenith_Maths::Matrix4 xM;
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(xM[3].x, xM[3].y, xM[3].z), Zenith_Maths::Vector3(0, 0, 0), 0.05f,
+		"RebuildMove: cache primed at the origin");
+
+	// SILENT physics move: drive the Jolt body to a new pose via the raw body interface —
+	// no transform setter, no TeleportBody — so nothing bumps the hierarchy revision (exactly
+	// what a Jolt simulation step does between frames).
+	const Zenith_Maths::Vector3 xMoved(10.0f, 20.0f, 30.0f);
+	JPH::BodyInterface& xBI = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+	xBI.SetPosition(JPH::BodyID(xCollider.GetBodyID().m_uID),
+		JPH::RVec3(xMoved.x, xMoved.y, xMoved.z), JPH::EActivation::DontActivate);
+
+	// RebuildCollider commits the live (moved) pose into the transform, then destroys +
+	// recreates the body at it. AddCollider only READS the pose (no bump), so before the fix
+	// the silent move had NO invalidation point on this path.
+	xCollider.RebuildCollider();
+
+	// The post-physics sweep (what Zenith_Core runs each frame between Physics/Scenes Update);
+	// after RebuildCollider it sees body-pose == m_xPosition, so it cannot rescue a missed bump.
+	xT.SyncPhysicsPoseAndInvalidate();
+
+	xT.BuildModelMatrix(xM);
+	ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(xM[3].x, xM[3].y, xM[3].z), xMoved, 0.05f,
+		"RebuildMove: a silent body move committed by RebuildCollider must invalidate the transform cache (was stuck at the origin)");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
 
 //==============================================================================
 // Cat 8: Collider Shape Types

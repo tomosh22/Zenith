@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "UI/Zenith_UILayoutGroup.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UICanvas.h"
@@ -108,6 +109,7 @@ static float GetChildCrossSize(Zenith_UIElement* pxChild, LayoutDirection eDir)
 
 void Zenith_UILayoutGroup::RecalculateLayout()
 {
+	ZENITH_PROFILE_SCOPE("UI Layout Solve");
 	m_bLayoutDirty = false;
 
 	const float fPadLeft   = m_xPadding.x;

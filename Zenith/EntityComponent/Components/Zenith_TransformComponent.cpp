@@ -132,6 +132,10 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 	{
 		xPhysics.SetBodyPosition(xBodyID, xPos);
 	}
+
+	// Moving this entity changes its world matrix and every descendant's — invalidate
+	// the cached world matrices of the whole subtree (Phase 1 scene-graph cache).
+	Zenith_SceneData::BumpHierarchyRevision(m_xOwningEntity.GetEntityID());
 }
 
 void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
@@ -144,6 +148,8 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 	{
 		xPhysics.SetBodyRotation(xBodyID, xRot);
 	}
+
+	Zenith_SceneData::BumpHierarchyRevision(m_xOwningEntity.GetEntityID());
 }
 
 void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
@@ -172,6 +178,10 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		xCollider.RebuildCollider();
 	}
+
+	// Scale changed (we early-returned above if it didn't) — invalidate this entity's
+	// subtree cached world matrices (Phase 1 scene-graph cache).
+	Zenith_SceneData::BumpHierarchyRevision(m_xOwningEntity.GetEntityID());
 }
 
 void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
@@ -205,6 +215,23 @@ void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale) const
 	xScale = m_xScale;
 }
 
+bool Zenith_TransformComponent::PhysicsPoseDiffersFromCache(const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Quat& xRot) const
+{
+	// Compare against the last-synced pose (m_xPosition/m_xRotation). These mirror the
+	// body for body-backed entities — kept current by SetPosition/Rotation, by
+	// CommitPhysicsTransformToCache, and by the post-physics sweep — so an unmoved body
+	// is a true no-op (no spurious cache invalidation for sleeping/static bodies).
+	const Zenith_Maths::Vector3 xPosDelta = xPos - m_xPosition;
+	const float fPosDistSq = glm::dot(xPosDelta, xPosDelta);
+	const float fRotDot = xRot.x * m_xRotation.x + xRot.y * m_xRotation.y
+		+ xRot.z * m_xRotation.z + xRot.w * m_xRotation.w;
+	const float fRotDotAbs = fRotDot < 0.0f ? -fRotDot : fRotDot;
+
+	constexpr float fPOS_EPSILON_SQ = 1e-10f;   // ~1e-5 world units
+	constexpr float fROT_EPSILON = 1e-6f;       // 1 - |dot| past this => rotated
+	return fPosDistSq > fPOS_EPSILON_SQ || (1.0f - fRotDotAbs) > fROT_EPSILON;
+}
+
 void Zenith_TransformComponent::CommitPhysicsTransformToCache()
 {
 	// GetPosition/GetRotation read the live body when one is valid; copy those
@@ -215,12 +242,77 @@ void Zenith_TransformComponent::CommitPhysicsTransformToCache()
 	Zenith_Maths::Quat xRot;
 	GetPosition(xPos);
 	GetRotation(xRot);
+
+	// If the live body has moved since the last-synced pose, bump the hierarchy revision
+	// here — committing the moved pose into m_xPosition/m_xRotation advances the very
+	// values the post-physics sweep compares against, so without this bump the sweep would
+	// see no delta and never invalidate the cached world matrix, leaving BuildModelMatrix
+	// permanently stuck at the pre-move pose. (RebuildCollider commits a simulation-moved
+	// body before destroying it, so this is the only invalidation point on that path.)
+	const bool bMoved = PhysicsPoseDiffersFromCache(xPos, xRot);
+
 	m_xPosition = xPos;
 	m_xRotation = xRot;
+
+	if (bMoved)
+	{
+		Zenith_SceneData::BumpHierarchyRevision(m_xOwningEntity.GetEntityID());
+	}
+}
+
+void Zenith_TransformComponent::SyncPhysicsPoseAndInvalidate()
+{
+	// Only entities with a live, active physics body can move via simulation; bodyless
+	// entities and setter-driven moves already bump the revision at the mutation site.
+	// Uses the engine-free Zenith_Physics::Get() accessor (not the global engine reach)
+	// so this new method does not raise the file's singleton-ratchet count.
+	Zenith_Physics& xPhysics = Zenith_Physics::Get();
+	Zenith_PhysicsBodyID xBodyID;
+	if (!xPhysics.HasActiveSimulation() || !TryGetColliderBody(xBodyID))
+	{
+		return;
+	}
+
+	const Zenith_Maths::Vector3 xBodyPos = xPhysics.GetBodyPosition(xBodyID);
+	const Zenith_Maths::Quat xBodyRot = xPhysics.GetBodyRotation(xBodyID);
+
+	if (!PhysicsPoseDiffersFromCache(xBodyPos, xBodyRot))
+	{
+		return;
+	}
+
+	m_xPosition = xBodyPos;
+	m_xRotation = xBodyRot;
+	Zenith_SceneData::BumpHierarchyRevision(m_xOwningEntity.GetEntityID());
 }
 
 void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 {
+	// Legal only on the main thread, or during the render-task window (which freezes
+	// every transform writer — see the worker-thread cache-write contract below). This
+	// mirrors the prior thread-affinity of this hot path (the old slot read used the
+	// non-asserting GetParentEntityIDUnchecked, permitting render-task reads).
+	Zenith_Assert(Zenith_ECS_IsMainThread() || Zenith_AreRenderTasksActive(),
+		"BuildModelMatrix must run on the main thread or during active render tasks");
+
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+
+	// Effective revision: this entity's slot revision already folds in any ancestor
+	// edit (BumpHierarchyRevision propagates a bump down the whole subtree). 0 means
+	// "no scene / never built" and never matches a stamped cache, forcing a recompute.
+	const uint64_t uEffectiveRevision = pxSceneData
+		? pxSceneData->GetHierRevisionUnchecked(m_xOwningEntity.GetEntityID())
+		: 0;
+
+	// Cache hit: nothing affecting this entity's world matrix has changed since the
+	// cache was stamped.
+	if (uEffectiveRevision != 0 && m_uCachedHierRevision == uEffectiveRevision)
+	{
+		xMatOut = m_xCachedWorld;
+		return;
+	}
+
+	// --- Recompute (cache miss) ---
 	Zenith_Maths::Vector3 xPos;
 	Zenith_Maths::Quat xRot;
 	GetPosition(xPos);
@@ -240,11 +332,13 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 	// slot directly with no main-thread assert, and the parent Transform via
 	// GetComponentFromEntity, which permits render-task reads); its doc comment
 	// carries the render-task rationale.
-	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
 	if (!pxSceneData)
 	{
+		// No scene: xMatOut is the local TRS only (matches the pre-cache behaviour).
+		// uEffectiveRevision is 0, so there is nothing to cache — just return.
 		return;
 	}
+
 	Zenith_EntityID uMyID = m_xOwningEntity.GetEntityID();
 	Zenith_EntityID uParentID = pxSceneData->GetParentEntityIDUnchecked(uMyID);
 
@@ -286,6 +380,19 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 		// accessor (no main-thread assert — render-task safe).
 		uParentID = pxSceneData->GetParentEntityIDUnchecked(uParentID);
 		++uDepth;
+	}
+
+	// Worker-thread cache-write contract: only the main thread mutates the shared
+	// cache. A render-task worker that missed recomputed into xMatOut above and
+	// returns WITHOUT writing m_xCachedWorld/m_uCachedHierRevision — a concurrent
+	// worker read of a clean cache is safe, but a worker write would race the other
+	// workers. A 0 effective revision (no valid slot) is never cached — it would be the
+	// "never built" stamp, so it can't false-hit. In practice the main-thread owner
+	// pre-populates every snapshot-covered transform, so a worker miss is rare.
+	if (uEffectiveRevision != 0 && Zenith_ECS_IsMainThread())
+	{
+		m_xCachedWorld = xMatOut;
+		m_uCachedHierRevision = uEffectiveRevision;
 	}
 }
 

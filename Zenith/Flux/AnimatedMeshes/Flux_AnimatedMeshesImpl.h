@@ -8,11 +8,11 @@
 class Flux_DynamicConstantBuffer;
 class Flux_ModelInstance;
 class Flux_SkeletonInstance;
+class Flux_RenderSceneSnapshot;
 
-// Wave 3: the model+transform+skeleton read that the Prepare-gather did is now
-// done by the EC-side model gatherer (g_pfnZenithModelGather), so this TU names
-// no EntityComponent type; the skeleton is read from the gathered
-// Flux_ModelInstance.
+// Phase 2: the model+transform+skeleton read that the Prepare-gather did is now done
+// by the engine-owned Flux_RenderSceneSnapshot (injected via SetSnapshot), so this TU
+// names no EntityComponent type; the skeleton is read from the snapshot's Flux_ModelInstance.
 
 // Per-frame draw item resolved on the main thread during Prepare. The (instance,
 // skeleton, matrix) come from the EC-side model gather; the record callbacks run on
@@ -47,14 +47,29 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// Prepare callback: gathers the per-frame draw packet on the main thread.
+	// Phase 2: injected once at the composition root (Zenith_Engine.cpp) — the engine-owned
+	// uncullled snapshot the renderer rebuilds once per frame. GatherDrawPacket reads it
+	// instead of running its own ECS scan. Injection keeps this TU off the singleton ratchet.
+	void SetSnapshot(const Flux_RenderSceneSnapshot* pxSnapshot) { m_pxSnapshot = pxSnapshot; }
+
+	// Prepare callback (animated G-buffer pass): ensures the animated packet for the
+	// current snapshot.
 	void GatherDrawPacket(void* pUserData);
+
+	// Phase 3: generation-guarded packet builder. Animated meshes are NOT camera-culled
+	// (no conservative animation bounds yet), so there is a single uncullled packet used by
+	// both the G-buffer pass and the shadow cascades. Called from the animated G-buffer
+	// Prepare AND the shadow cascade-0 Prepare (generation-guarded) so the packet is built
+	// even when the G-buffer pass is force-disabled.
+	void EnsureAnimatedPacket();
 
 	Flux_Pipeline& GetShadowPipeline() { return m_xShadowPipeline; }
 
-	// Per-frame draw packet, populated in GatherDrawPacket (main thread) and
-	// consumed by both the GBuffer record callback and all 4 shadow cascades.
+	// Per-frame draw packet, populated by EnsureAnimatedPacket (main thread) and consumed by
+	// both the GBuffer record callback and all 4 shadow cascades. m_uAnimatedPacketGen is the
+	// snapshot generation it was built for (UINT32_MAX = never built).
 	Zenith_Vector<Flux_AnimatedMeshDrawItem> m_xDrawPacket;
+	uint32_t m_uAnimatedPacketGen = UINT32_MAX;
 
 	Flux_Shader   m_xGBufferShader;
 	// Cull permutation pair (see Flux_StaticMeshesImpl): one-sided culls back
@@ -63,4 +78,8 @@ public:
 	Flux_Pipeline m_xGBufferPipelineTwoSided;	// two-sided (cull none)
 	Flux_Shader   m_xShadowShader;
 	Flux_Pipeline m_xShadowPipeline;
+
+	// Phase 2: engine-owned uncullled scene snapshot, injected at the composition root
+	// (non-owning). Read in GatherDrawPacket; null until injected (early boot).
+	const Flux_RenderSceneSnapshot* m_pxSnapshot = nullptr;
 };

@@ -3,6 +3,7 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #include <cmath>
 
@@ -430,6 +431,7 @@ Flux_MeshGeometry* Zenith_MeshGeometryAsset::ReleaseGeometry()
 
 Zenith_Status Zenith_MeshGeometryAsset::LoadFromFile(const std::string& strPath, uint32_t uRetainAttributeBits, bool bUploadToGPU)
 {
+	ZENITH_PROFILE_SCOPE("Mesh Geometry Load");
 	if (strPath.empty())
 	{
 		return Zenith_ErrorCode::INVALID_ARGUMENT;

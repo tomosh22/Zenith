@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Fog/Flux_FogImpl.h"
@@ -119,6 +120,7 @@ void Flux_FogImpl::Reset()
 
 void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 {
+	ZENITH_PROFILE_SCOPE("Flux Fog Technique Selection");
 	// Always keep the per-pass BASE enable bits in sync with the active technique.
 	// If a game force-disables owner "Fog" via the render graph overlay, these
 	// passes are masked regardless of their base bit; when the game lifts the

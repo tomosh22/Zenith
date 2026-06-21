@@ -17,6 +17,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Zenith_PhysicsDebugDraw.h"
+#include "EntityComponent/Zenith_PhysicsTransformSync.h"
 #include "EntityComponent/Zenith_UISystem.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -29,6 +30,7 @@
 #ifdef ZENITH_TOOLS
 #include "AssetHandling/Zenith_PropertyTuning.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_SceneGraphDebug.h"
 #include "EntityComponent/Zenith_GraphReload.h"
 #endif
 #include "Input/Zenith_Input.h"
@@ -174,6 +176,13 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 	if (bShouldUpdateGameLogic)
 	{
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_ZONE("Physics"), g_xEngine.Frame().GetDt());
+
+		// Scene-graph transform cache (Phase 1): sync any body that the simulation just
+		// moved into the owning Transform's cache + invalidate its subtree, BEFORE Scene
+		// Update runs animation/game logic that reads BuildModelMatrix. Must sit between
+		// Physics().Update() and Scenes().Update().
+		Zenith_SyncPhysicsTransforms();
+
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Scenes().Update, ZENITH_PROFILE_ZONE("Scene Update"), g_xEngine.Frame().GetDt());
 
 		// Optional engine-driven AI manager tick (opt-in, default off). Most games
@@ -220,6 +229,23 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 	#ifdef ZENITH_TOOLS
 	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Editor().RenderImGuiFrame, ZENITH_PROFILE_ZONE("ImGUI"));
 	#endif
+
+	// Scene-graph snapshot (Phase 2): the renderer owns the uncullled master list and
+	// rebuilds it EXACTLY ONCE here — after UI().Update() drained deferred scene loads
+	// and after ImGui transform edits, immediately before the render-task window opens.
+	// Rebuilding here (not in a pass Prepare) means every consumer derives from the same
+	// fresh list regardless of which passes are enabled, and no entry can dangle from an
+	// entity a late scene-load destroyed. The epoch is passed explicitly.
+	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.FluxRenderer().RebuildSceneSnapshot,
+		ZENITH_PROFILE_ZONE("Snapshot::Build"), g_xEngine.Scenes().GetRenderMutationEpoch(),
+		g_xEngine.FluxGraphics().GetViewProjMatrix(), g_xEngine.FluxGraphics().IsCameraValid());
+
+#ifdef ZENITH_TOOLS
+	// Phase 3: queue the scene-graph debug overlays (world-AABB wireframes + cull stats)
+	// from the just-rebuilt snapshot, before the render graph records the Primitives pass.
+	Zenith_SceneGraphDebug::QueueOverlays(g_xEngine.FluxRenderer().GetSceneSnapshot(),
+		g_xEngine.Scenes().GetRenderMutationEpoch());
+#endif
 
 	g_xEngine.Scenes().SetRenderTasksActive(true);
 	ExecuteRenderGraph();

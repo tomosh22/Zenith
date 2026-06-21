@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -445,6 +445,7 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
   </ItemGroup>
   <ItemGroup>
@@ -989,6 +990,7 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
+    <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsWorldHooks.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

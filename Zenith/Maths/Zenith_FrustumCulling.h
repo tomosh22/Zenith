@@ -254,6 +254,16 @@ namespace Zenith_FrustumCulling
 	 */
 	inline Zenith_AABB TransformAABB(const Zenith_AABB& xAABB, const Zenith_Maths::Matrix4& xTransform)
 	{
+		// An invalid/empty AABB has min={FLT_MAX..}, max={-FLT_MAX..}. Transforming those
+		// corners would produce a box that spans ±inf yet passes IsValid() (min <= max),
+		// with a NaN center / inf extents — defeating every caller's "invalid == no bounds,
+		// never cull / never draw" guard (scene-graph culling + the debug overlay rely on
+		// this). Return the invalid box unchanged so it stays invalid.
+		if (!xAABB.IsValid())
+		{
+			return xAABB;
+		}
+
 		// Get the 8 corners of the original AABB
 		Zenith_Maths::Vector3 axCorners[8];
 		axCorners[0] = Zenith_Maths::Vector3(xAABB.m_xMin.x, xAABB.m_xMin.y, xAABB.m_xMin.z);
