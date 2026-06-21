@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Particles/Flux_Particles_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Particles/Flux_ParticleGPUImpl.h"
@@ -62,7 +63,7 @@ namespace
 
 void Flux_ParticleGPUImpl::BuildPipelines()
 {
-	m_xComputeShader.Initialise(FluxShaderProgram::ParticleUpdate);
+	m_xComputeShader.Initialise(Flux_ParticlesShaders::xParticleUpdate);
 
 	const Flux_ShaderReflection& xReflection = m_xComputeShader.GetReflection();
 	Flux_RootSigBuilder::FromReflection(m_xComputeRootSig, xReflection);

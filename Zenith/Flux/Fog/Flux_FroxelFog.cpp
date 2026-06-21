@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Fog/Flux_Fog_Shaders.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
@@ -76,7 +77,7 @@ Flux_RenderAttachment& Flux_FroxelFogImpl::GetScatteringGridInternal()
 void Flux_FroxelFogImpl::BuildPipelines()
 {
 	// Initialize inject compute shader
-	m_xInjectShader.Initialise(FluxShaderProgram::Fog_FroxelInject);
+	m_xInjectShader.Initialise(Flux_FogShaders::xFog_FroxelInject);
 
 	// Build inject root signature from shader reflection
 	Flux_RootSigBuilder::FromReflection(m_xInjectRootSig, m_xInjectShader.GetReflection());
@@ -89,7 +90,7 @@ void Flux_FroxelFogImpl::BuildPipelines()
 	m_xInjectPipeline.m_xRootSig = m_xInjectRootSig;
 
 	// Initialize light compute shader
-	m_xLightShader.Initialise(FluxShaderProgram::Fog_FroxelLight);
+	m_xLightShader.Initialise(Flux_FogShaders::xFog_FroxelLight);
 
 	// Build light root signature from shader reflection
 	Flux_RootSigBuilder::FromReflection(m_xLightRootSig, m_xLightShader.GetReflection());
@@ -102,7 +103,7 @@ void Flux_FroxelFogImpl::BuildPipelines()
 	m_xLightPipeline.m_xRootSig = m_xLightRootSig;
 
 	// Initialize apply fragment shader
-	m_xApplyShader.Initialise(FluxShaderProgram::Fog_FroxelApply);
+	m_xApplyShader.Initialise(Flux_FogShaders::xFog_FroxelApply);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

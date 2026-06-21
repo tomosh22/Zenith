@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/SDFs/Flux_SDFs_Shaders.h"
 
 #include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -31,7 +32,7 @@ static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_SDFsImpl::BuildPipelines()
 {
-	this->m_xShader.Initialise(FluxShaderProgram::SDFs);
+	this->m_xShader.Initialise(Flux_SDFsShaders::xSDFs);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

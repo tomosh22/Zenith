@@ -1,0 +1,154 @@
+# shader-validation — the gate that enforces "each render feature owns its shaders".
+#
+# Builds + RUNS the canonical (Tools=True) FluxCompiler and fails if:
+#   (a) the catalog is structurally invalid (Flux_ShaderCatalog::Validate), or
+#   (b) the catalog/feature parity check fails (ValidateFeatureParity) — i.e. a
+#       feature was registered without a catalog entry, or a catalog include was
+#       added without a RegisterFeature line, or
+#   (c) running FluxCompiler leaves the checked-in generated tree DIRTY — i.e. a
+#       shader's .slang / .spv / .spv.refl / Generated header is stale or missing.
+#
+# Unlike dp-tests, FluxCompiler does NO Vulkan device work (it only drives Slang
+# to emit SPIR-V), so the exe runs fine on the GPU-less windows-latest runner.
+#
+# This is the mechanism that makes "modify a feature's shader = 0 central edits"
+# and "new feature = 2 central lines" safe: forget a line, or commit a stale
+# artifact, and this job fails. Provisioning mirrors dp-tests.yml / cb-tests.yml.
+
+name: shader-validation
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shader-validation:
+    name: shader-validation
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      VCPKG_DISABLE_METRICS: 1
+      SLANG_VERSION: '2026.1'
+      VULKAN_SDK_VERSION: '1.3.290.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Cache vcpkg installed/
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-pkgs-shaderval-v1
+          restore-keys: |
+            vcpkg-x64-windows-pkgs-
+            vcpkg-x64-windows-
+
+      - name: Install vcpkg packages
+        shell: pwsh
+        run: |
+          $packages = @('assimp','curl','draco','kubazip','minizip','jhasse-poly2tri','pugixml','zlib')
+          & 'C:\vcpkg\vcpkg.exe' install @packages --triplet x64-windows --recurse
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & 'C:\vcpkg\vcpkg.exe' integrate install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Cache Vulkan SDK
+        id: cache-vulkan
+        uses: actions/cache@v4
+        with:
+          path: C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}
+          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}-v1
+
+      - name: Install Vulkan SDK
+        if: steps.cache-vulkan.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $version = $env:VULKAN_SDK_VERSION
+          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile vulkan-installer.exe -UseBasicParsing
+          $proc = Start-Process -FilePath .\vulkan-installer.exe `
+              -ArgumentList @("--root","C:\VulkanSDK\$version","--accept-licenses","--default-answer","--confirm-command","install") `
+              -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { Write-Error "Vulkan SDK installer exited $($proc.ExitCode)"; exit 1 }
+
+      - name: Export Vulkan SDK env vars
+        shell: pwsh
+        run: |
+          $sdkRoot = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          echo "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Download Slang runtime DLLs (v${{ env.SLANG_VERSION }})
+        shell: pwsh
+        run: |
+          $version = $env:SLANG_VERSION
+          $url = "https://github.com/shader-slang/slang/releases/download/v$version/slang-$version-windows-x86_64.zip"
+          $tmpDir = 'C:\tmp\slang-release'
+          New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "$tmpDir\slang.zip" -UseBasicParsing
+          Expand-Archive -Path "$tmpDir\slang.zip" -DestinationPath $tmpDir -Force
+          $slangBin = Get-ChildItem -Path $tmpDir -Directory -Filter 'bin' -Recurse | Select-Object -First 1
+          if (-not $slangBin) { Write-Error "No 'bin' dir in slang release zip"; exit 1 }
+          New-Item -ItemType Directory -Path 'Middleware\slang\bin' -Force | Out-Null
+          Copy-Item "$($slangBin.FullName)\*.dll" 'Middleware\slang\bin\' -Force
+
+      - name: Regenerate solution (Sharpmake)
+        shell: pwsh
+        working-directory: Build
+        run: |
+          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_FreeType.cs', 'Sharpmake_Msdfgen.cs', 'Sharpmake_MsdfAtlasGen.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_ZenithECS.cs', 'Sharpmake_SentinelECS.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build FluxCompiler (canonical Tools=True)
+        shell: pwsh
+        run: |
+          msbuild Build\zenith_win64.sln `
+              /t:FluxCompiler `
+              /p:Configuration=Vulkan_vs2022_Release_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Run FluxCompiler (Validate + ValidateFeatureParity + regen + prune)
+        shell: pwsh
+        run: |
+          $exeDir = 'FluxCompiler\output\win64\vulkan_vs2022_release_win64_true'
+          # FluxCompiler drives Slang (no Vulkan device) — copy the Slang DLL tree
+          # next to the exe so it resolves at runtime.
+          Copy-Item 'Middleware\slang\bin\*.dll' $exeDir -Force
+          $exe = Join-Path $exeDir 'fluxcompiler.exe'
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "FluxCompiler failed (Validate / ValidateFeatureParity / codegen) — exit $LASTEXITCODE"
+              exit $LASTEXITCODE
+          }
+
+      - name: Gate — generated shader tree must be clean after a canonical run
+        shell: pwsh
+        run: |
+          # Use `git status` (NOT a path-scoped `git diff`): the artifacts are
+          # .spv/.spv.refl next to the .slang in subsystem dirs, plus NEW untracked
+          # files and per-game shader trees — a diff misses all three.
+          $dirty = git status --porcelain --untracked-files=all -- Zenith/Flux/Shaders Games/*/Shaders
+          if ($dirty) {
+              Write-Host "::error::Shader tree is stale — a canonical FluxCompiler run produced changes that are not committed."
+              Write-Host "Run FluxCompiler (Vulkan_vs2022_Release_Win64_True) locally and commit the regenerated tree."
+              Write-Host "--- offending paths ---"
+              $dirty | Out-Host
+              exit 1
+          }
+          Write-Host "Shader tree is clean — generated artifacts match a canonical FluxCompiler run."

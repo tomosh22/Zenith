@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/SSR/Flux_SSR_Shaders.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
@@ -217,14 +218,14 @@ void Flux_SSRImpl::BuildPipelines()
 	{
 		const TextureFormat aeFormats[2] = { SSR_FORMAT, SSR_FORMAT };
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpecMRT(
-			m_xRayMarchShader, FluxShaderProgram::SSR_RayMarch, aeFormats, 2u);
+			m_xRayMarchShader, Flux_SSRShaders::xSSR_RayMarch, aeFormats, 2u);
 		Flux_PipelineBuilder::FromSpecification(m_xRayMarchPipeline, xSpec);
 	}
 
 	{
 		const TextureFormat aeFormats[2] = { SSR_FORMAT, SSR_FORMAT };
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpecMRT(
-			m_xUpsampleShader, FluxShaderProgram::SSR_Upsample, aeFormats, 2u);
+			m_xUpsampleShader, Flux_SSRShaders::xSSR_Upsample, aeFormats, 2u);
 		Flux_PipelineBuilder::FromSpecification(m_xUpsamplePipeline, xSpec);
 	}
 
@@ -232,13 +233,13 @@ void Flux_SSRImpl::BuildPipelines()
 	{
 		const TextureFormat aeFormats[2] = { SSR_FORMAT, SSR_FORMAT };
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpecMRT(
-			m_xDenoiseHShader, FluxShaderProgram::SSR_DenoiseH, aeFormats, 2u);
+			m_xDenoiseHShader, Flux_SSRShaders::xSSR_DenoiseH, aeFormats, 2u);
 		Flux_PipelineBuilder::FromSpecification(m_xDenoiseHPipeline, xSpec);
 	}
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xDenoiseVShader, m_xDenoiseVPipeline,
-		FluxShaderProgram::SSR_DenoiseV, SSR_FORMAT);
+		Flux_SSRShaders::xSSR_DenoiseV, SSR_FORMAT);
 }
 
 void Flux_SSRImpl::Initialise()

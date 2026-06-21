@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Primitives/Flux_Primitives_Shaders.h"
 
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -375,7 +376,7 @@ static void GenerateUnitLine(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith_V
 void Flux_PrimitivesImpl::BuildPipelines()
 {
 	// Load shaders
-	m_xPrimitivesShader.Initialise(FluxShaderProgram::Primitives);
+	m_xPrimitivesShader.Initialise(Flux_PrimitivesShaders::xPrimitives);
 
 	// Define vertex layout (Position, Normal, Color)
 	Flux_VertexInputDescription xVertexDesc;

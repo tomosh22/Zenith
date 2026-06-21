@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Gizmos/Flux_Gizmos_Shaders.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
@@ -48,7 +49,7 @@ static void ExecuteGizmos(Flux_CommandBuffer* pxCommandList, void* pUserData);
 void Flux_GizmosImpl::BuildPipelines()
 {
 	// Load shaders
-	m_xShader.Initialise(FluxShaderProgram::Gizmos);
+	m_xShader.Initialise(Flux_GizmosShaders::xGizmos);
 
 	// Create pipeline specification
 	Flux_PipelineSpecification xSpec;

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/SSGI/Flux_SSGI_Shaders.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 
@@ -127,19 +128,19 @@ void Flux_SSGIImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xRayMarchShader, m_xRayMarchPipeline,
-		FluxShaderProgram::SSGI_RayMarch, SSGI_FORMAT);
+		Flux_SSGIShaders::xSSGI_RayMarch, SSGI_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xUpsampleShader, m_xUpsamplePipeline,
-		FluxShaderProgram::SSGI_Upsample, SSGI_FORMAT);
+		Flux_SSGIShaders::xSSGI_Upsample, SSGI_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xDenoiseHShader, m_xDenoiseHPipeline,
-		FluxShaderProgram::SSGI_DenoiseH, SSGI_FORMAT);
+		Flux_SSGIShaders::xSSGI_DenoiseH, SSGI_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xDenoiseVShader, m_xDenoiseVPipeline,
-		FluxShaderProgram::SSGI_DenoiseV, SSGI_FORMAT);
+		Flux_SSGIShaders::xSSGI_DenoiseV, SSGI_FORMAT);
 }
 
 void Flux_SSGIImpl::Initialise()

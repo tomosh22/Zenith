@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/HDR/Flux_HDR_Shaders.h"
 
 #include <atomic>
 #include "Profiling/Zenith_Profiling.h"
@@ -115,22 +116,22 @@ void Flux_HDRImpl::BuildPipelines()
 	// + debug overlays in a single fragment program.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xToneMappingShader, m_xToneMappingPipeline,
-		FluxShaderProgram::HDR_ToneMapping, FINAL_RT_FORMAT);
+		Flux_HDRShaders::xHDR_ToneMapping, FINAL_RT_FORMAT);
 
 	// Bloom passes — all migrated to the Slang shader registry. They share
 	// Common.Fullscreen for vsMain so a single .slang module per pass holds
 	// both stages.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xBloomThresholdShader, m_xBloomThresholdPipeline,
-		FluxShaderProgram::BloomThreshold, BLOOM_FORMAT);
+		Flux_HDRShaders::xBloomThreshold, BLOOM_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xBloomDownsampleShader, m_xBloomDownsamplePipeline,
-		FluxShaderProgram::BloomDownsample, BLOOM_FORMAT);
+		Flux_HDRShaders::xBloomDownsample, BLOOM_FORMAT);
 
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			m_xBloomUpsampleShader, FluxShaderProgram::BloomUpsample, BLOOM_FORMAT);
+			m_xBloomUpsampleShader, Flux_HDRShaders::xBloomUpsample, BLOOM_FORMAT);
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -140,12 +141,12 @@ void Flux_HDRImpl::BuildPipelines()
 	// Auto-exposure compute pipelines — shader Initialise + RootSig +
 	// ComputePipelineBuilder. The VRAM buffers (m_xHistogramBuffer /
 	// m_xExposureBuffer) live in Initialise and are not touched here.
-	m_xLuminanceHistogramShader.Initialise(FluxShaderProgram::HDR_Luminance);
+	m_xLuminanceHistogramShader.Initialise(Flux_HDRShaders::xHDR_Luminance);
 	Flux_RootSigBuilder::FromReflection(m_xLuminanceRootSig, m_xLuminanceHistogramShader.GetReflection());
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xLuminanceHistogramPipeline,
 		m_xLuminanceHistogramShader, m_xLuminanceRootSig);
 
-	m_xAdaptationShader.Initialise(FluxShaderProgram::HDR_Adaptation);
+	m_xAdaptationShader.Initialise(Flux_HDRShaders::xHDR_Adaptation);
 	Flux_RootSigBuilder::FromReflection(m_xAdaptationRootSig, m_xAdaptationShader.GetReflection());
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xAdaptationPipeline,
 		m_xAdaptationShader, m_xAdaptationRootSig);

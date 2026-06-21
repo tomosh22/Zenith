@@ -12,7 +12,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
-#include "Flux/Shaders/Generated/FluxShaderProgram.h"
+#include "Flux/Slang/Flux_ShaderDecl.h"
 #include "Core/Zenith_Result.h"
 
 struct Flux_BlendState;
@@ -35,7 +35,7 @@ public:
 	// zero-stage Reset() shader just crashes later at createGraphicsPipeline —
 	// so this hard-asserts on failure. Use InitialiseEx if you need the
 	// specific failure code (e.g. from a unit test).
-	void Initialise(FluxShaderProgram eProgram);
+	void Initialise(const Flux_ShaderDecl& xDecl);
 
 	// Status-returning sibling of Initialise. Same success path (byte-identical
 	// state on success), but surfaces the specific reason on failure:
@@ -43,18 +43,18 @@ public:
 	//   SHADER_COMPILE_FAILED — Flux_SlangCompiler::CompileProgram failed (source path)
 	//   CORRUPT_DATA          — a compiled/loaded SPIR-V blob was empty
 	// Initialise() is a thin wrapper that calls this and hard-asserts IsOk().
-	Zenith_Status InitialiseEx(FluxShaderProgram eProgram);
+	Zenith_Status InitialiseEx(const Flux_ShaderDecl& xDecl);
 
 #ifdef ZENITH_WINDOWS
 	// Runtime program-ID compile via Flux_SlangCompiler::CompileProgram.
 	// SHADER_COMPILE_FAILED on compile failure, CORRUPT_DATA on empty SPIR-V.
-	Zenith_Status InitialiseFromProgramSource(FluxShaderProgram eProgram);
+	Zenith_Status InitialiseFromProgramSource(const Flux_ShaderDecl& xDecl);
 #endif
 
 	// Offline path: load precompiled .spv + .spv.refl per stage from disk
 	// using the program's registry-derived artifact stems. FILE_NOT_FOUND when
 	// a .spv read yields null, CORRUPT_DATA on an empty blob.
-	Zenith_Status InitialiseFromProgramArtifacts(FluxShaderProgram eProgram);
+	Zenith_Status InitialiseFromProgramArtifacts(const Flux_ShaderDecl& xDecl);
 
 	~Zenith_Vulkan_Shader();
 

@@ -3,7 +3,7 @@
 
 #include "Zenith_Vulkan_Pipeline.h"
 #include "Zenith_Vulkan.h"
-#include "Flux/Slang/Flux_ShaderRegistry.h"
+#include "Flux/Slang/Flux_ShaderCatalog.h"
 
 #ifdef ZENITH_WINDOWS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -18,7 +18,7 @@
 // device handle for creating vk::ShaderModules.
 //==========================================================================
 
-void Zenith_Vulkan_Shader::Initialise(FluxShaderProgram eProgram)
+void Zenith_Vulkan_Shader::Initialise(const Flux_ShaderDecl& xDecl)
 {
 	// Boot path: a failed shader load is non-recoverable — a zero-stage Reset()
 	// shader just crashes later at createGraphicsPipeline, so a hard break here
@@ -26,14 +26,14 @@ void Zenith_Vulkan_Shader::Initialise(FluxShaderProgram eProgram)
 	// specific reason for callers that can use it (e.g. unit tests); this void
 	// wrapper exists because the backend concept FluxBackendShader pins
 	// Initialise to `-> std::same_as<void>`.
-	const Zenith_Status xStatus = InitialiseEx(eProgram);
+	const Zenith_Status xStatus = InitialiseEx(xDecl);
 	Zenith_Assert(xStatus.IsOk(),
-				  "Shader load failed for FluxShaderProgram=%u (eError=%u)",
-				  static_cast<u_int>(eProgram),
+				  "Shader load failed for '%s' (eError=%u)",
+				  xDecl.m_szName,
 				  static_cast<u_int>(xStatus.Error()));
 }
 
-Zenith_Status Zenith_Vulkan_Shader::InitialiseEx(FluxShaderProgram eProgram)
+Zenith_Status Zenith_Vulkan_Shader::InitialiseEx(const Flux_ShaderDecl& xDecl)
 {
 	// Idempotent: free any previously-loaded SPIR-V code, modules, and
 	// reflection so the hot-reload path can re-call Initialise on the same
@@ -43,22 +43,21 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseEx(FluxShaderProgram eProgram)
 #ifdef ZENITH_WINDOWS
 	if (Flux_SlangCompiler::IsInitialised())
 	{
-		return InitialiseFromProgramSource(eProgram);
+		return InitialiseFromProgramSource(xDecl);
 	}
 #endif
-	return InitialiseFromProgramArtifacts(eProgram);
+	return InitialiseFromProgramArtifacts(xDecl);
 }
 
-Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderProgram eProgram)
+Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(const Flux_ShaderDecl& xDecl)
 {
-	const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(eProgram);
 	std::string strRoot(SHADER_SOURCE_ROOT);
 
 	// Graphics-program path
-	if (xEntry.m_szVertexEntry && xEntry.m_szFragmentEntry)
+	if (xDecl.m_szVertexEntry && xDecl.m_szFragmentEntry)
 	{
-		std::string strVStem = Flux_ShaderRegistry::GetVertexArtifactStem(eProgram);
-		std::string strFStem = Flux_ShaderRegistry::GetFragmentArtifactStem(eProgram);
+		std::string strVStem = Flux_ShaderCatalog::GetVertexArtifactStem(xDecl);
+		std::string strFStem = Flux_ShaderCatalog::GetFragmentArtifactStem(xDecl);
 
 		m_pcVertShaderCode = Zenith_FileAccess::ReadFile((strRoot + strVStem + ".spv").c_str(), m_pcVertShaderCodeSize);
 		m_pcFragShaderCode = Zenith_FileAccess::ReadFile((strRoot + strFStem + ".spv").c_str(), m_pcFragShaderCodeSize);
@@ -74,7 +73,7 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderPro
 
 		// Slang's SPIR-V emitter renames each entry point to "main" when each
 		// .spv blob contains only that one entry point (the default). The
-		// source-level entry name (xEntry.m_szVertexEntry / m_szFragmentEntry)
+		// source-level entry name (xDecl.m_szVertexEntry / m_szFragmentEntry)
 		// is what we passed to findEntryPointByName / what reflection keys on,
 		// but the Vulkan-visible OpEntryPoint name is "main". Multi-entry-per-
 		// module SPIR-V emission would need a different Slang option (see
@@ -107,9 +106,9 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderPro
 	}
 
 	// Compute-program path
-	if (xEntry.m_szComputeEntry)
+	if (xDecl.m_szComputeEntry)
 	{
-		std::string strCStem = Flux_ShaderRegistry::GetComputeArtifactStem(eProgram);
+		std::string strCStem = Flux_ShaderCatalog::GetComputeArtifactStem(xDecl);
 		m_pcCompShaderCode = Zenith_FileAccess::ReadFile((strRoot + strCStem + ".spv").c_str(), m_pcCompShaderCodeSize);
 		if (!m_pcCompShaderCode) return Zenith_ErrorCode::FILE_NOT_FOUND;
 		if (!m_pcCompShaderCodeSize) return Zenith_ErrorCode::CORRUPT_DATA;
@@ -137,12 +136,11 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(FluxShaderPro
 }
 
 #ifdef ZENITH_WINDOWS
-Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgram eProgram)
+Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(const Flux_ShaderDecl& xDecl)
 {
-	const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(eProgram);
 
 	Flux_SlangProgramDesc xDesc;
-	Flux_ShaderRegistry::DescribeProgram(eProgram, xDesc);
+	Flux_ShaderCatalog::DescribeProgram(xDecl, xDesc);
 
 	Flux_SlangProgramResult xResult;
 	if (!Flux_SlangCompiler::CompileProgram(xDesc, xResult))
@@ -151,11 +149,11 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgra
 		// surface the dedicated code so callers can distinguish a compile error
 		// from a missing artifact / corrupt blob.
 		Zenith_Log(LOG_CATEGORY_RENDERER, "CompileProgram failed for '%s': %s",
-				   xEntry.m_szName, xResult.m_strError.c_str());
+				   xDecl.m_szName, xResult.m_strError.c_str());
 		return Zenith_ErrorCode::SHADER_COMPILE_FAILED;
 	}
 
-	const bool bGraphics = xEntry.m_szVertexEntry && xEntry.m_szFragmentEntry;
+	const bool bGraphics = xDecl.m_szVertexEntry && xDecl.m_szFragmentEntry;
 	if (bGraphics)
 	{
 		m_pcVertShaderCodeSize = xResult.m_axVertexSpirv.GetSize() * sizeof(uint32_t);
@@ -184,7 +182,7 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(FluxShaderProgra
 		m_xInfos[1].module = m_xFragShaderModule;
 		m_xInfos[1].pName  = "main";
 	}
-	else if (xEntry.m_szComputeEntry)
+	else if (xDecl.m_szComputeEntry)
 	{
 		m_pcCompShaderCodeSize = xResult.m_axComputeSpirv.GetSize() * sizeof(uint32_t);
 		if (!m_pcCompShaderCodeSize) return Zenith_ErrorCode::CORRUPT_DATA;

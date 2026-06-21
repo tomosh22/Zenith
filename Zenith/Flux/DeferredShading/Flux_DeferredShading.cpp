@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/DeferredShading/Flux_DeferredShading_Shaders.h"
 
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
@@ -28,7 +29,7 @@ DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disab
 
 void Flux_DeferredShadingImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::DeferredShading);
+	m_xShader.Initialise(Flux_DeferredShadingShaders::xDeferredShading);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/Slang/Flux_ShaderDecl.h" // const Flux_ShaderDecl& — the shader-init handle
 
 // Concept group: pipeline / shader / root signature construction.
 //
@@ -10,18 +11,17 @@
 // that references the shader; ComputePipelineBuilder cooperates with all
 // three).
 
-// ---- Shader: initialise from a shader program ID (resolved against the
-// Slang registry — graphics or compute is determined by the registry entry's
-// populated entry-point fields), expose linked reflection. The const-
-// correctness of GetReflection matters because the binder caches a
+// ---- Shader: initialise from a shader DECL (graphics or compute is determined
+// by the decl's populated entry-point fields), expose linked reflection. The
+// const-correctness of GetReflection matters because the binder caches a
 // reflection pointer.
 template <typename T>
 concept FluxBackendShader = requires(
 	T& xShader,
 	const T& xCShader,
-	FluxShaderProgram eProgram)
+	const Flux_ShaderDecl& xDecl)
 {
-	{ xShader.Initialise(eProgram)                                             } -> std::same_as<void>;
+	{ xShader.Initialise(xDecl)                                                } -> std::same_as<void>;
 	{ xCShader.GetReflection()                                                 } -> std::same_as<const Flux_ShaderReflection&>;
 };
 

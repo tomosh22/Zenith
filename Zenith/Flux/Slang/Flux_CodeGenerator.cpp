@@ -262,32 +262,6 @@ namespace
 	}
 }
 
-std::string Flux_CodeGenerator::BuildProgramEnumContent()
-{
-	std::string strContent;
-	strContent += kBanner;
-	strContent += "#pragma once\n\n";
-	strContent += "enum class FluxShaderProgram : unsigned int\n{\n";
-
-	const u_int uCount = Flux_ShaderRegistry::GetProgramCount();
-	for (u_int u = 0; u < uCount; u++)
-	{
-		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgramByIndex(u);
-		char szLine[256];
-		snprintf(szLine, sizeof(szLine), "\t%s = %u,\n", xEntry.m_szName, u);
-		strContent += szLine;
-	}
-	strContent += "\n\tCOUNT\n};\n";
-	return strContent;
-}
-
-bool Flux_CodeGenerator::WriteProgramEnumHeader(const char* szOutputDir)
-{
-	std::string strContent = BuildProgramEnumContent();
-	std::string strPath = std::string(szOutputDir) + "FluxShaderProgram.h";
-	return WriteIfChanged(strPath, strContent);
-}
-
 std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsystem,
 															 const ProgramReflection* axPrograms,
 															 u_int uProgramCount)
@@ -309,8 +283,8 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 	for (u_int u = 0; u < uProgramCount; u++)
 	{
 		const ProgramReflection& xPR = axPrograms[u];
-		if (!xPR.m_pxReflection) continue;
-		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(xPR.m_eId);
+		if (!xPR.m_pxReflection || !xPR.m_pxDecl) continue;
+		const Flux_ShaderDecl& xEntry = *xPR.m_pxDecl;
 
 		std::string strProgIdent = SanitizeIdentifier(xEntry.m_szName);
 		strContent += "\t// ----- " + std::string(xEntry.m_szName) + " (" + xEntry.m_szModuleName + ") -----\n";
@@ -388,21 +362,20 @@ bool Flux_CodeGenerator::WriteAllHeaders(const char* szOutputDir,
 										  const ProgramReflection* axAll,
 										  u_int uProgramCount)
 {
-	bool bOk = WriteProgramEnumHeader(szOutputDir);
+	bool bOk = true;
 
 	// Group programs by subsystem. std::map (sorted) instead of
 	// std::unordered_map so that the order in which subsystem files are
 	// touched on disk is also deterministic — the per-file contents were
-	// already deterministic (registry iteration order is fixed) but unordered
+	// already deterministic (catalog iteration order is fixed) but unordered
 	// iteration would still give different timestamps run-to-run when the
 	// content matches and WriteIfChanged early-outs.
 	std::map<std::string, Zenith_Vector<ProgramReflection>> xBySubsystem;
 	for (u_int u = 0; u < uProgramCount; u++)
 	{
 		const ProgramReflection& xPR = axAll[u];
-		if (xPR.m_eId >= FluxShaderProgram::COUNT) continue;
-		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(xPR.m_eId);
-		std::string strSubsystem = xEntry.m_szSubsystem ? xEntry.m_szSubsystem : "Misc";
+		if (!xPR.m_pxDecl) continue;
+		std::string strSubsystem = xPR.m_pxDecl->m_szSubsystem ? xPR.m_pxDecl->m_szSubsystem : "Misc";
 		xBySubsystem[strSubsystem].PushBack(xPR);
 	}
 

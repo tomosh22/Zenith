@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Vegetation/Flux_Grass_Shaders.h"
 
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -83,7 +84,7 @@ static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void* pUserData);
 void Flux_GrassImpl::BuildPipelines()
 {
 	// Initialize grass shader
-	m_xGrassShader.Initialise(FluxShaderProgram::Grass);
+	m_xGrassShader.Initialise(Flux_GrassShaders::xGrass);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

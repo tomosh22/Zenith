@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/MaterialPreview/Flux_MaterialPreview_Shaders.h"
 
 #ifdef ZENITH_TOOLS
 
@@ -46,9 +47,9 @@ static void ExecutePreviewLayoutTransition(Flux_CommandBuffer*, void*) {}
 
 void Flux_MaterialPreviewImpl::BuildPipelines()
 {
-	m_xMeshShader.Initialise(FluxShaderProgram::Translucent_Forward);
-	m_xBackgroundShader.Initialise(FluxShaderProgram::MaterialPreview_Background);
-	m_xTonemapShader.Initialise(FluxShaderProgram::MaterialPreview_Tonemap);
+	m_xMeshShader.Initialise(Flux_MaterialPreviewShaders::xMaterialPreview_Forward);
+	m_xBackgroundShader.Initialise(Flux_MaterialPreviewShaders::xMaterialPreview_Background);
+	m_xTonemapShader.Initialise(Flux_MaterialPreviewShaders::xMaterialPreview_Tonemap);
 
 	// ---- Mesh pipelines (static-mesh vertex layout) ----
 	{
@@ -95,7 +96,7 @@ void Flux_MaterialPreviewImpl::BuildPipelines()
 	// ---- Background (fullscreen cubemap sample into the HDR target) ----
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			m_xBackgroundShader, FluxShaderProgram::MaterialPreview_Background, HDR_SCENE_FORMAT, DEPTH_FORMAT);
+			m_xBackgroundShader, Flux_MaterialPreviewShaders::xMaterialPreview_Background, HDR_SCENE_FORMAT, DEPTH_FORMAT);
 		// Depth attached purely so the pass's ClearTargets resets it for the
 		// mesh draw; background neither tests nor writes.
 		xSpec.m_bDepthTestEnabled = false;
@@ -107,7 +108,7 @@ void Flux_MaterialPreviewImpl::BuildPipelines()
 	{
 		Flux_PipelineHelper::BuildFullscreenPipeline(
 			m_xTonemapShader, m_xTonemapPipeline,
-			FluxShaderProgram::MaterialPreview_Tonemap, TEXTURE_FORMAT_RGBA8_UNORM);
+			Flux_MaterialPreviewShaders::xMaterialPreview_Tonemap, TEXTURE_FORMAT_RGBA8_UNORM);
 	}
 }
 

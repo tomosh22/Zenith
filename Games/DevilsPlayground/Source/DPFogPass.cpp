@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Slang/Flux_UnownedEngineShaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Source/DPFogPass.h"
@@ -87,7 +88,7 @@ namespace
 		if (!s_pxShader)   s_pxShader   = new Flux_Shader();
 		if (!s_pxPipeline) s_pxPipeline = new Flux_Pipeline();
 
-		s_pxShader->Initialise(FluxShaderProgram::DevilsPlayground_DPFog);
+		s_pxShader->Initialise(Flux_UnownedEngineShaders::xDevilsPlayground_DPFog);
 
 		Flux_VertexInputDescription xVertexDesc;
 		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -168,8 +169,8 @@ namespace
 		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "HoleRadiusScale"  }, s_fDebugHoleRadiusScale, 0.0f,  2.0f);
 
 		// Re-build the DP_Fog pipeline whenever the shader hot-reloads.
-		static const FluxShaderProgram s_axPrograms[] = {
-			FluxShaderProgram::DevilsPlayground_DPFog,
+		static const Flux_ShaderDecl* s_axPrograms[] = {
+			&Flux_UnownedEngineShaders::xDevilsPlayground_DPFog,
 		};
 		Flux_ShaderHotReload::RegisterSubsystem(&BuildPipelines,
 			s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));

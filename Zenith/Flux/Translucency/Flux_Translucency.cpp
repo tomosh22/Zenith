@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Translucency/Flux_Translucency_Shaders.h"
 
 #include "Flux/Translucency/Flux_TranslucencyImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -38,7 +39,7 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*);
 
 void Flux_TranslucencyImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::Translucent_Forward);
+	m_xShader.Initialise(Flux_TranslucencyShaders::xTranslucent_Forward);
 
 	// Same vertex layout as static meshes.
 	Flux_VertexInputDescription xVertexDesc;

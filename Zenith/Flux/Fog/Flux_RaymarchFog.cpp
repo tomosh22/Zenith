@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Fog/Flux_Fog_Shaders.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/FrameContext.h"
@@ -31,7 +32,7 @@ DEBUGVAR float dbg_fRaymarchShadowConeRadius = 0.002f; // Cone spread - controls
 
 void Flux_RaymarchFogImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::Fog_Raymarch);
+	m_xShader.Initialise(Flux_FogShaders::xFog_Raymarch);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

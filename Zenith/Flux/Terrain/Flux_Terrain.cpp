@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Terrain/Flux_Terrain_Shaders.h"
 
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
@@ -127,8 +128,8 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
 void Flux_TerrainImpl::BuildPipelines()
 {
-	m_xTerrainGBufferShader.Initialise(FluxShaderProgram::Terrain_ToGBuffer);
-	m_xTerrainShadowShader.Initialise(FluxShaderProgram::Terrain_ToShadowmap);
+	m_xTerrainGBufferShader.Initialise(Flux_TerrainShaders::xTerrain_ToGBuffer);
+	m_xTerrainShadowShader.Initialise(Flux_TerrainShaders::xTerrain_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -191,7 +192,7 @@ void Flux_TerrainImpl::BuildPipelines()
 	}
 
 	{
-		m_xWaterShader.Initialise(FluxShaderProgram::Water);
+		m_xWaterShader.Initialise(Flux_TerrainShaders::xWater);
 
 		Flux_VertexInputDescription xWaterVertexDesc;
 		xWaterVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -214,7 +215,7 @@ void Flux_TerrainImpl::BuildPipelines()
 	}
 
 	// ========== GPU-Driven Terrain Culling Compute Pipeline ==========
-	m_xCullingShader.Initialise(FluxShaderProgram::TerrainCulling);
+	m_xCullingShader.Initialise(Flux_TerrainShaders::xTerrainCulling);
 
 	// Build compute root signature from shader reflection
 	const Flux_ShaderReflection& xCullingReflection = m_xCullingShader.GetReflection();
@@ -230,7 +231,7 @@ void Flux_TerrainImpl::BuildPipelines()
 
 	// ========== Visible-Count Reset Compute Pipeline ==========
 	// Single dispatch, single thread. See the slang module for rationale.
-	m_xResetCountersShader.Initialise(FluxShaderProgram::TerrainResetCounters);
+	m_xResetCountersShader.Initialise(Flux_TerrainShaders::xTerrainResetCounters);
 	const Flux_ShaderReflection& xResetReflection = m_xResetCountersShader.GetReflection();
 	Flux_RootSigBuilder::FromReflection(m_xResetCountersRootSig, xResetReflection);
 	Flux_ComputePipelineBuilder xResetBuilder;

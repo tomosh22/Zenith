@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Decals/Flux_Decals_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Decals/Flux_DecalsImpl.h"
@@ -195,13 +196,13 @@ void Flux_DecalsImpl::BuildPipelines()
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xNormalsCopyShader,
 		m_xNormalsCopyPipeline,
-		FluxShaderProgram::Decals_NormalsCopy,
+		Flux_DecalsShaders::xDecals_NormalsCopy,
 		k_eNormalsCopyFormat);
 
 	// Apply — instanced cube into 3 G-buffer MRTs with per-attachment
 	// alpha blend and color write mask.
 	{
-		m_xApplyShader.Initialise(FluxShaderProgram::Decals_Apply);
+		m_xApplyShader.Initialise(Flux_DecalsShaders::xDecals_Apply);
 
 		Flux_PipelineSpecification xSpec;
 		xSpec.m_pxShader = &m_xApplyShader;

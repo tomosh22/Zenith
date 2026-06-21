@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/SSAO/Flux_SSAO_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/SSAO/Flux_SSAOImpl.h"
@@ -77,11 +78,11 @@ void Flux_SSAOImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xGenerateShader, m_xGeneratePipeline,
-		FluxShaderProgram::SSAO_Main, SSAO_FORMAT);
+		Flux_SSAOShaders::xSSAO_Main, SSAO_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xBlurShader, m_xBlurPipeline,
-		FluxShaderProgram::SSAO_Blur, SSAO_FORMAT);
+		Flux_SSAOShaders::xSSAO_Blur, SSAO_FORMAT);
 
 	// The old post-lighting upsample pipeline (multiplicative composite onto the
 	// HDR scene) is retired: SSAO is now folded into the deferred ambient term

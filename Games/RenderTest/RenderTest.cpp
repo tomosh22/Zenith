@@ -137,6 +137,7 @@ namespace RenderTest
 static bool s_bResourcesInitialized = false;
 static uint32_t s_uRenderTestSmokeFrameLimit = 240;
 
+#ifdef ZENITH_TOOLS
 static bool RenderTest_HasCommandLineFlag(const char* szFlag)
 {
 #ifdef ZENITH_WINDOWS
@@ -150,6 +151,7 @@ static bool RenderTest_HasCommandLineFlag(const char* szFlag)
 #endif
 	return false;
 }
+#endif
 
 // True if any CLI arg STARTS WITH szPrefix (so "--rendertest-gun-showcase=rifle"
 // matches "--rendertest-gun-showcase"). RenderTest_HasCommandLineFlag is exact-match.
@@ -187,10 +189,12 @@ static uint32_t RenderTest_GetCommandLineUInt(const char* szPrefix, uint32_t uDe
 	return uDefault;
 }
 
+#ifdef ZENITH_TOOLS
 static bool RenderTest_IsSmokeMode()
 {
 	return RenderTest_HasCommandLineFlag("--rendertest-smoke");
 }
+#endif
 
 static void RenderTest_RequestClose()
 {

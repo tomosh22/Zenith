@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Skybox/Flux_Skybox_Shaders.h"
 
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
@@ -52,7 +53,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &this->m_xCubemapShader;
-		this->m_xCubemapShader.Initialise(FluxShaderProgram::SkyboxCubemap);
+		this->m_xCubemapShader.Initialise(Flux_SkyboxShaders::xSkyboxCubemap);
 		this->m_xCubemapShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 		{
@@ -82,7 +83,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &this->m_xSolidColourShader;
-		this->m_xSolidColourShader.Initialise(FluxShaderProgram::SkyboxSolidColour);
+		this->m_xSolidColourShader.Initialise(Flux_SkyboxShaders::xSkyboxSolidColour);
 		this->m_xSolidColourShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 		{
@@ -112,7 +113,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &this->m_xAtmosphereShader;
-		this->m_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
+		this->m_xAtmosphereShader.Initialise(Flux_SkyboxShaders::xSkyboxAtmosphere);
 		this->m_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		Flux_PipelineBuilder::FromSpecification(this->m_xAtmospherePipeline, xSpec);
 	}
@@ -122,12 +123,12 @@ void Flux_SkyboxImpl::BuildPipelines()
 	// IBL BRDF-LUT pipeline.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		this->m_xTransmittanceLUTShader, this->m_xTransmittanceLUTPipeline,
-		FluxShaderProgram::SkyboxTransmittanceLUT, this->m_xTransmittanceLUT.m_xSurfaceInfo.m_eFormat);
+		Flux_SkyboxShaders::xSkyboxTransmittanceLUT, this->m_xTransmittanceLUT.m_xSurfaceInfo.m_eFormat);
 
 	// ========== Sky-view LUT generation pipeline (single RGBA16F RT) ==========
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		this->m_xSkyViewLUTShader, this->m_xSkyViewLUTPipeline,
-		FluxShaderProgram::SkyboxSkyViewLUT, this->m_xSkyViewLUT.m_xSurfaceInfo.m_eFormat);
+		Flux_SkyboxShaders::xSkyboxSkyViewLUT, this->m_xSkyViewLUT.m_xSurfaceInfo.m_eFormat);
 
 	// The transmittance / sky-view LUTs depend on these shaders, so any (re)build
 	// must regenerate them. Already the default at first init; the load-bearing

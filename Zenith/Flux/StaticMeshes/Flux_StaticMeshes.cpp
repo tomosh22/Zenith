@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshes_Shaders.h"
 
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -29,8 +30,8 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*);
 
 void Flux_StaticMeshesImpl::BuildPipelines()
 {
-	m_xGBufferShader.Initialise(FluxShaderProgram::StaticMesh_ToGBuffer);
-	m_xShadowShader.Initialise(FluxShaderProgram::StaticMesh_ToShadowmap);
+	m_xGBufferShader.Initialise(Flux_StaticMeshesShaders::xStaticMesh_ToGBuffer);
+	m_xShadowShader.Initialise(Flux_StaticMeshesShaders::xStaticMesh_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

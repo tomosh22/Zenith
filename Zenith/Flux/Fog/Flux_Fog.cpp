@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Fog/Flux_Fog_Shaders.h"
 #include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -50,7 +51,7 @@ static void ExecuteGodRays(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_FogImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::Fog_Simple);
+	m_xShader.Initialise(Flux_FogShaders::xFog_Simple);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

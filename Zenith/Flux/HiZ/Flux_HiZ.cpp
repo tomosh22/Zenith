@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/HiZ/Flux_HiZ_Shaders.h"
 
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
@@ -48,7 +49,7 @@ void Flux_HiZImpl::UpdateMipCountFromSwapchain()
 void Flux_HiZImpl::BuildPipelines()
 {
 	// HiZ_Generate is a compute-only program in the Slang registry.
-	m_xComputeShader.Initialise(FluxShaderProgram::HiZ_Generate);
+	m_xComputeShader.Initialise(Flux_HiZShaders::xHiZ_Generate);
 	Flux_RootSigBuilder::FromReflection(m_xComputeRootSig, m_xComputeShader.GetReflection());
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }

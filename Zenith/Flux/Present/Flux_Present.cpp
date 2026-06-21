@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Present/Flux_Present_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Present/Flux_PresentImpl.h"
@@ -38,7 +39,7 @@ void Flux_PresentImpl::BuildPipelines()
 	Flux_RenderAttachment* pxSwapTarget = g_xEngine.FluxSwapchain().GetCurrentSwapchainTarget(uNumColour, pxDepth);
 	const TextureFormat eBackbufferFormat = pxSwapTarget->m_xSurfaceInfo.m_eFormat;
 
-	m_xPresentShader.Initialise(FluxShaderProgram::TexturedQuad);
+	m_xPresentShader.Initialise(Flux_PresentShaders::xTexturedQuad);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

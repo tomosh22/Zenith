@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Fog/Flux_Fog_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
@@ -28,7 +29,7 @@ DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
 
 void Flux_GodRaysFogImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
+	m_xShader.Initialise(Flux_FogShaders::xFog_GodRays);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

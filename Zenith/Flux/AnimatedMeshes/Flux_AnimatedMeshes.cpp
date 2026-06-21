@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes_Shaders.h"
 
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -38,8 +39,8 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 	// Instance method: every member touched here belongs to THIS instance, so
 	// the old g_xEngine.AnimatedMeshes() self-lookups are replaced with direct
 	// member access (no singleton round-trip).
-	m_xGBufferShader.Initialise(FluxShaderProgram::AnimatedMesh_ToGBuffer);
-	m_xShadowShader.Initialise(FluxShaderProgram::AnimatedMesh_ToShadowmap);
+	m_xGBufferShader.Initialise(Flux_AnimatedMeshesShaders::xAnimatedMesh_ToGBuffer);
+	m_xShadowShader.Initialise(Flux_AnimatedMeshesShaders::xAnimatedMesh_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

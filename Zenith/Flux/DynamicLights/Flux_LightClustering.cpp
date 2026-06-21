@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/DynamicLights/Flux_LightClustering_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
@@ -43,7 +44,7 @@ struct LightClusteringPushConstants
 
 void Flux_LightClusteringImpl::BuildPipelines()
 {
-	m_xComputeShader.Initialise(FluxShaderProgram::LightClustering);
+	m_xComputeShader.Initialise(Flux_LightClusteringShaders::xLightClustering);
 	Flux_RootSigBuilder::FromReflection(m_xComputeRootSig, m_xComputeShader.GetReflection());
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xComputePipeline, m_xComputeShader, m_xComputeRootSig);
 }

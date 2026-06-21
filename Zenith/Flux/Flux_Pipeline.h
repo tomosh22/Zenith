@@ -4,7 +4,7 @@
 // Split out of Flux.h.
 #include "Flux/Flux_BackendTypes.h"             // Flux_Shader, Flux_BlendState, Flux_PipelineLayout, Flux_VertexInputDescription, Flux_Pipeline
 #include "Flux/Flux_Enums.h"                    // TextureFormat, DepthCompareFunc, LoadAction, CullMode
-#include "Flux/Shaders/Generated/FluxShaderProgram.h"  // FluxShaderProgram (by-value param of Flux_PipelineHelper)
+#include "Flux/Slang/Flux_ShaderDecl.h"  // const Flux_ShaderDecl& param of Flux_PipelineHelper
 
 struct Flux_PipelineSpecification
 {
@@ -57,13 +57,12 @@ class Flux_PipelineHelper
 public:
 	Flux_PipelineHelper() = delete;
 
-	// Initialises a shader from the Slang program registry and builds a
-	// fullscreen pipeline with no depth test/write. Covers the common case
-	// used by HDR, SSR, SSGI, IBL, SSAO etc.
+	// Initialises a shader from its decl and builds a fullscreen pipeline with no
+	// depth test/write. Covers the common case used by HDR, SSR, SSGI, IBL, SSAO etc.
 	static void BuildFullscreenPipeline(
 		Flux_Shader& xShader,
 		Flux_Pipeline& xPipeline,
-		FluxShaderProgram eProgram,
+		const Flux_ShaderDecl& xDecl,
 		TextureFormat eColourFormat,
 		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);
 
@@ -71,7 +70,7 @@ public:
 	// Use when you need to customise blend states or other settings before building.
 	static Flux_PipelineSpecification CreateFullscreenSpec(
 		Flux_Shader& xShader,
-		FluxShaderProgram eProgram,
+		const Flux_ShaderDecl& xDecl,
 		TextureFormat eColourFormat,
 		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);
 
@@ -79,7 +78,7 @@ public:
 	// CreateFullscreenSpec above delegates to this with uNumColourAttachments==1.
 	static Flux_PipelineSpecification CreateFullscreenSpecMRT(
 		Flux_Shader& xShader,
-		FluxShaderProgram eProgram,
+		const Flux_ShaderDecl& xDecl,
 		const TextureFormat* aeColourFormats,
 		u_int uNumColourAttachments,
 		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);

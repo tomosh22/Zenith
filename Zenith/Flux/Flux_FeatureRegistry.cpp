@@ -39,7 +39,36 @@
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
+#include "Flux/Gizmos/Flux_Gizmos_Shaders.h"
+#include "Flux/MaterialPreview/Flux_MaterialPreview_Shaders.h"
 #endif
+
+// Per-feature shader decls — each feature passes its apxALL to RegisterFeature so
+// the registry carries structural shader ownership (drives hot-reload + the
+// catalog parity check). Pure-data leaf headers; no layering impact.
+#include "Flux/IBL/Flux_IBL_Shaders.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshes_Shaders.h"
+#include "Flux/Terrain/Flux_Terrain_Shaders.h"
+#include "Flux/Primitives/Flux_Primitives_Shaders.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes_Shaders.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshes_Shaders.h"
+#include "Flux/Skybox/Flux_Skybox_Shaders.h"
+#include "Flux/Decals/Flux_Decals_Shaders.h"
+#include "Flux/HiZ/Flux_HiZ_Shaders.h"
+#include "Flux/SSR/Flux_SSR_Shaders.h"
+#include "Flux/SSGI/Flux_SSGI_Shaders.h"
+#include "Flux/SSAO/Flux_SSAO_Shaders.h"
+#include "Flux/DynamicLights/Flux_LightClustering_Shaders.h"
+#include "Flux/DeferredShading/Flux_DeferredShading_Shaders.h"
+#include "Flux/Vegetation/Flux_Grass_Shaders.h"
+#include "Flux/Translucency/Flux_Translucency_Shaders.h"
+#include "Flux/Fog/Flux_Fog_Shaders.h"
+#include "Flux/SDFs/Flux_SDFs_Shaders.h"
+#include "Flux/Particles/Flux_Particles_Shaders.h"
+#include "Flux/HDR/Flux_HDR_Shaders.h"
+#include "Flux/Quads/Flux_Quads_Shaders.h"
+#include "Flux/Text/Flux_Text_Shaders.h"
+#include "Flux/Present/Flux_Present_Shaders.h"
 
 #include "Flux/Zenith_GameRenderFeatures.h" // generic game render-feature interleave + anchor verify
 #include "Flux/Flux_BackendTypes.h"
@@ -76,7 +105,9 @@ void Flux_FeatureRegistry::Register(const char* szName,
 	void (*pfnInitialise)(),
 	void (*pfnSetupRenderGraph)(Flux_RenderGraph&),
 	void (*pfnShutdown)(),
-	void (*pfnBuildPipelines)())
+	void (*pfnBuildPipelines)(),
+	const Flux_ShaderDecl* const* paxShaders,
+	u_int uShaderCount)
 {
 	Zenith_Assert(szName != nullptr, "Flux_FeatureRegistry::Register: null feature name");
 	Zenith_Assert(m_uNumFeatures < FLUX_MAX_FEATURES,
@@ -98,6 +129,8 @@ void Flux_FeatureRegistry::Register(const char* szName,
 	xDesc.m_pfnSetupRenderGraph = pfnSetupRenderGraph;
 	xDesc.m_pfnShutdown = pfnShutdown;
 	xDesc.m_pfnBuildPipelines = pfnBuildPipelines;
+	xDesc.m_paxShaders = paxShaders;
+	xDesc.m_uShaderCount = uShaderCount;
 	m_uNumFeatures++;
 
 	// One call wires everything: append the feature's SetupRenderGraph trampoline to
@@ -223,6 +256,23 @@ namespace
 // xReg.Register(...) here. Constrained on FluxRenderFeature so a feature missing any
 // method fails to compile HERE (with the concept name) instead of silently
 // registering a feature that drops part of its lifecycle at runtime.
+// Shader-owning features: pass the feature's apxALL (array bound N deduced). The
+// decls are static-lifetime (inline constexpr in the per-feature _Shaders.h), so
+// storing the array pointer + N in the desc is safe for the registry's lifetime.
+template<auto pfnAccessor, u_int N>
+	requires FluxRenderFeature<std::remove_cvref_t<decltype((g_xEngine.*pfnAccessor)())>>
+static void RegisterFeature(Flux_FeatureRegistry& xReg, const char* szName,
+							const Flux_ShaderDecl* const (&axShaders)[N])
+{
+	xReg.Register(szName,
+		&FluxFeatureInitialise<pfnAccessor>,
+		&FluxFeatureSetup<pfnAccessor>,
+		&FluxFeatureShutdown<pfnAccessor>,
+		&FluxFeatureBuildPipelines<pfnAccessor>,
+		axShaders, N);
+}
+
+// No-shader features (FluxGraphics / Shadows / DynamicLights own no pipelines).
 template<auto pfnAccessor>
 	requires FluxRenderFeature<std::remove_cvref_t<decltype((g_xEngine.*pfnAccessor)())>>
 static void RegisterFeature(Flux_FeatureRegistry& xReg, const char* szName)
@@ -231,16 +281,33 @@ static void RegisterFeature(Flux_FeatureRegistry& xReg, const char* szName)
 		&FluxFeatureInitialise<pfnAccessor>,
 		&FluxFeatureSetup<pfnAccessor>,
 		&FluxFeatureShutdown<pfnAccessor>,
-		&FluxFeatureBuildPipelines<pfnAccessor>);
+		&FluxFeatureBuildPipelines<pfnAccessor>,
+		nullptr, 0);
 }
 
 void Flux_FeatureRegistry::RegisterDefaultFeatures()
 {
-	Flux_FeatureRegistry& xReg = Get();
+	// Engine wrapper: reset the singleton (the main-thread assert lives in Reset)
+	// then populate it. The feature list lives in RegisterDefaultFeaturesInto so
+	// tooling can build a snapshot WITHOUT Reset()'s g_xEngine threading assert.
+	// Idempotent: headless boots skip LateInitialise and unit tests re-init Flux
+	// in-process — Reset() returns to a known-empty table on every entry.
+	Get().Reset();
+	RegisterDefaultFeaturesInto(Get());
+}
 
-	// Idempotency: headless boots skip LateInitialise and unit tests re-init
-	// Flux in-process — reset to a known-empty table on every entry.
-	xReg.Reset();
+Flux_FeatureRegistry Flux_FeatureRegistry::CreateDefaultSnapshotForValidation()
+{
+	// No Reset(), no g_xEngine deref — the RegisterFeature<&Engine::X> trampolines
+	// reference g_xEngine only when CALLED, never during registration. Returned by
+	// value (trivially copyable: fixed arrays + counts, no owning pointers).
+	Flux_FeatureRegistry xSnapshot;
+	RegisterDefaultFeaturesInto(xSnapshot);
+	return xSnapshot;
+}
+
+void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xReg)
+{
 
 	// ONE ordered list, in render-graph DECLARATION order. Each feature is added
 	// with a single RegisterFeature<&Zenith_Engine::X> call that wires init
@@ -261,13 +328,13 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// and @SetupTransients:HDR raw steps.) BuildPipelines is a no-op (owns no shaders).
 	RegisterFeature<&Zenith_Engine::FluxGraphics>(xReg, "FluxGraphics");
 
-	RegisterFeature<&Zenith_Engine::IBL>(xReg, "IBL");
+	RegisterFeature<&Zenith_Engine::IBL>(xReg, "IBL", Flux_IBLShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
-	RegisterFeature<&Zenith_Engine::StaticMeshes>(xReg, "StaticMeshes");
-	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain");
-	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives");
-	RegisterFeature<&Zenith_Engine::AnimatedMeshes>(xReg, "AnimatedMeshes");
-	RegisterFeature<&Zenith_Engine::InstancedMeshes>(xReg, "InstancedMeshes");
+	RegisterFeature<&Zenith_Engine::StaticMeshes>(xReg, "StaticMeshes", Flux_StaticMeshesShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::AnimatedMeshes>(xReg, "AnimatedMeshes", Flux_AnimatedMeshesShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::InstancedMeshes>(xReg, "InstancedMeshes", Flux_InstancedMeshesShaders::apxALL);
 	// Skybox renders AFTER all opaque G-buffer writers (above) so its fullscreen
 	// atmosphere/cubemap draw depth-TESTS against scene depth and only shades pixels
 	// where sky is actually visible (depth still at the far-cleared 1.0), instead of
@@ -276,55 +343,55 @@ void Flux_FeatureRegistry::RegisterDefaultFeatures()
 	// to the first opaque writer (and the skybox clears itself in a no-geometry
 	// scene). Declared BEFORE Decals so the sky is an earlier producer for Decals'
 	// depth/normals reads and the depth attachment doesn't ping-pong layouts.
-	RegisterFeature<&Zenith_Engine::Skybox>(xReg, "Skybox");
-	RegisterFeature<&Zenith_Engine::Decals>(xReg, "Decals");
-	RegisterFeature<&Zenith_Engine::HiZ>(xReg, "HiZ");
-	RegisterFeature<&Zenith_Engine::SSR>(xReg, "SSR");
-	RegisterFeature<&Zenith_Engine::SSGI>(xReg, "SSGI");
+	RegisterFeature<&Zenith_Engine::Skybox>(xReg, "Skybox", Flux_SkyboxShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Decals>(xReg, "Decals", Flux_DecalsShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::HiZ>(xReg, "HiZ", Flux_HiZShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::SSR>(xReg, "SSR", Flux_SSRShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::SSGI>(xReg, "SSGI", Flux_SSGIShaders::apxALL);
 	// SSAO feeds the DeferredShading ambient term (it no longer composites
 	// post-lighting), so it must declare BEFORE DeferredShading: its transient
 	// handles must exist when DeferredShading's setup reads them. Natural home
 	// alongside HiZ/SSR/SSGI.
-	RegisterFeature<&Zenith_Engine::SSAO>(xReg, "SSAO");
+	RegisterFeature<&Zenith_Engine::SSAO>(xReg, "SSAO", Flux_SSAOShaders::apxALL);
 	// DynamicLights is a gather/upload front-end — no graph passes and no pipelines of
 	// its own (the LightClustering feature owns the clustering compute), so its
 	// SetupRenderGraph/BuildPipelines are no-op stubs (its no-op setup adds nothing to
 	// the walk). Declared next to its consumer LightClustering for readability.
 	RegisterFeature<&Zenith_Engine::DynamicLights>(xReg, "DynamicLights");
-	RegisterFeature<&Zenith_Engine::LightClustering>(xReg, "LightClustering");
-	RegisterFeature<&Zenith_Engine::DeferredShading>(xReg, "DeferredShading");
+	RegisterFeature<&Zenith_Engine::LightClustering>(xReg, "LightClustering", Flux_LightClusteringShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::DeferredShading>(xReg, "DeferredShading", Flux_DeferredShadingShaders::apxALL);
 	// Grass is a FORWARD pass over the lit HDR scene (depth-tested, read-only depth)
 	// — it must declare AFTER DeferredShading, whose pass CLEARS the HDR target
 	// (declaring Grass earlier put its output before the clear, wiped every frame).
 	// Before Fog/Particles so atmosphere + effects composite over the blades.
-	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass");
+	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass", Flux_GrassShaders::apxALL);
 	// Forward translucency after lighting and before Fog: glass is lit in its own
 	// forward pass and fog must composite over it.
-	RegisterFeature<&Zenith_Engine::Translucency>(xReg, "Translucency");
+	RegisterFeature<&Zenith_Engine::Translucency>(xReg, "Translucency", Flux_TranslucencyShaders::apxALL);
 	// Fog is an orchestrator: all fog .slang programs share the "Fog" subsystem
 	// grouping, so hot-reload auto-wires them to Flux_FogImpl::BuildPipelines, which
 	// rebuilds every technique (Simple + GodRays + Raymarch + Froxel). It is RAII, so
 	// its Shutdown is a no-op stub.
-	RegisterFeature<&Zenith_Engine::Fog>(xReg, "Fog");
-	RegisterFeature<&Zenith_Engine::SDFs>(xReg, "SDFs");
-	RegisterFeature<&Zenith_Engine::Particles>(xReg, "Particles");
+	RegisterFeature<&Zenith_Engine::Fog>(xReg, "Fog", Flux_FogShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::SDFs>(xReg, "SDFs", Flux_SDFsShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Particles>(xReg, "Particles", Flux_ParticlesShaders::apxALL);
 	// HDR tonemap composites last (reads the fully-lit HDR scene + bloom). The shared
 	// HDR scene target it reads is created/owned by FluxGraphics (first step); HDR
 	// creates only its private bloom chain in SetupRenderGraph and its histogram /
 	// exposure buffers in Initialise (order-free).
-	RegisterFeature<&Zenith_Engine::HDR>(xReg, "HDR");
-	RegisterFeature<&Zenith_Engine::Quads>(xReg, "Quads");
-	RegisterFeature<&Zenith_Engine::Text>(xReg, "Text");
+	RegisterFeature<&Zenith_Engine::HDR>(xReg, "HDR", Flux_HDRShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Quads>(xReg, "Quads", Flux_QuadsShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Text>(xReg, "Text", Flux_TextShaders::apxALL);
 #ifdef ZENITH_TOOLS
-	RegisterFeature<&Zenith_Engine::Gizmos>(xReg, "Gizmos");
+	RegisterFeature<&Zenith_Engine::Gizmos>(xReg, "Gizmos", Flux_GizmosShaders::apxALL);
 	// Material-preview offscreen passes last — they own persistent targets and
 	// early-out when the editor panel is closed, so placement is cosmetic.
-	RegisterFeature<&Zenith_Engine::MaterialPreview>(xReg, "MaterialPreview");
+	RegisterFeature<&Zenith_Engine::MaterialPreview>(xReg, "MaterialPreview", Flux_MaterialPreviewShaders::apxALL);
 #endif
 	// Present is the LAST feature: its SetupRenderGraph adds the final-RT
 	// layout-transition reader (subsuming the former @FinalRTLayoutTransition raw
 	// step), and it owns the backend-neutral present blit pipeline the swapchain
 	// uses to copy the Final RT to the backbuffer. Declared after every Final-RT
 	// writer (tonemap/quads/text/gizmos) so its reader sorts strictly last.
-	RegisterFeature<&Zenith_Engine::Present>(xReg, "Present");
+	RegisterFeature<&Zenith_Engine::Present>(xReg, "Present", Flux_PresentShaders::apxALL);
 }

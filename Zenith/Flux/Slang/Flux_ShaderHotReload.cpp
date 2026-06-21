@@ -4,7 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Flux/Slang/Flux_ShaderHotReload.h"
-#include "Flux/Slang/Flux_ShaderRegistry.h"
+#include "Flux/Slang/Flux_ShaderCatalog.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_FeatureRegistry.h"
 #include "Core/Zenith_FileWatcher.h"
@@ -16,7 +16,7 @@
 
 struct RegisteredProgram
 {
-	FluxShaderProgram                            m_eProgram   = FluxShaderProgram::COUNT;
+	const Flux_ShaderDecl*                       m_pxDecl     = nullptr;
 	Flux_ShaderHotReload::ProgramRebuildCallback m_pfnRebuild = nullptr;
 	bool                                         m_bNeedsReload = false;
 };
@@ -45,7 +45,7 @@ static std::string NormalizePath(const std::string& strPath)
 // True if szPath ends with `<m_szModuleName>.slang` (case-insensitive). The
 // registry stores module names without an extension and with `/` separators
 // already, so suffix-matching against a normalised path is exact.
-static bool ProgramMatchesPath(const Flux_ShaderRegistryEntry& xEntry, const std::string& strNormPath)
+static bool ProgramMatchesPath(const Flux_ShaderDecl& xEntry, const std::string& strNormPath)
 {
 	if (!xEntry.m_szModuleName) return false;
 	std::string strModule = xEntry.m_szModuleName;
@@ -150,7 +150,7 @@ void Flux_ShaderHotReload::MarkProgramsForReload(const char* szChangedFile)
 	for (u_int u = 0; u < s_axRegistered.GetSize(); u++)
 	{
 		RegisteredProgram& xReg = s_axRegistered.Get(u);
-		if (xReg.m_eProgram >= FluxShaderProgram::COUNT) continue;
+		if (!xReg.m_pxDecl) continue;
 
 		if (bShared)
 		{
@@ -158,8 +158,7 @@ void Flux_ShaderHotReload::MarkProgramsForReload(const char* szChangedFile)
 			continue;
 		}
 
-		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(xReg.m_eProgram);
-		if (ProgramMatchesPath(xEntry, strNorm))
+		if (ProgramMatchesPath(*xReg.m_pxDecl, strNorm))
 		{
 			xReg.m_bNeedsReload = true;
 		}
@@ -228,22 +227,21 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	}
 }
 
-void Flux_ShaderHotReload::RegisterProgram(FluxShaderProgram eProgram,
+void Flux_ShaderHotReload::RegisterProgram(const Flux_ShaderDecl& xDecl,
 											ProgramRebuildCallback pfnRebuild)
 {
-	// Subsystems may register before Flux_ShaderHotReload::Initialise runs
+	// Features may register before Flux_ShaderHotReload::Initialise runs
 	// (Flux::LateInitialise calls Initialise() AFTER subsystem inits in the
 	// current ordering). The registration list is a static-storage container
 	// that's safe to append to before Initialise; once the watcher starts,
 	// any pre-registered callbacks fire normally on file changes.
 	if (!pfnRebuild) return;
-	if (eProgram >= FluxShaderProgram::COUNT) return;
 
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 	for (u_int u = 0; u < s_axRegistered.GetSize(); u++)
 	{
 		RegisteredProgram& xReg = s_axRegistered.Get(u);
-		if (xReg.m_eProgram == eProgram)
+		if (xReg.m_pxDecl == &xDecl)
 		{
 			xReg.m_pfnRebuild = pfnRebuild;
 			return;
@@ -251,98 +249,66 @@ void Flux_ShaderHotReload::RegisterProgram(FluxShaderProgram eProgram,
 	}
 
 	RegisteredProgram xNew;
-	xNew.m_eProgram   = eProgram;
+	xNew.m_pxDecl     = &xDecl;
 	xNew.m_pfnRebuild = pfnRebuild;
 	s_axRegistered.PushBack(xNew);
 }
 
 void Flux_ShaderHotReload::RegisterSubsystem(ProgramRebuildCallback pfnRebuild,
-											  const FluxShaderProgram* axPrograms,
+											  const Flux_ShaderDecl* const* apxDecls,
 											  u_int uCount)
 {
-	if (!pfnRebuild || !axPrograms) return;
+	if (!pfnRebuild || !apxDecls) return;
 	for (u_int u = 0; u < uCount; u++)
 	{
-		RegisterProgram(axPrograms[u], pfnRebuild);
+		if (apxDecls[u]) RegisterProgram(*apxDecls[u], pfnRebuild);
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Automatic registration from the feature registry.
+//
+// Ownership is STRUCTURAL: each feature carries its shader decls in m_paxShaders
+// (set from the feature's apxALL at RegisterFeature). We walk the registered
+// features and wire every owned program's rebuild to that feature's
+// BuildPipelines — no m_szSubsystem==feature convention and no override table.
+// A program no feature lists in apxALL (Water is listed by Terrain; ComputeTest
+// and game programs are unowned) is simply not auto-wired.
 // ---------------------------------------------------------------------------
-
-// A program's owning FEATURE is normally its m_szSubsystem string (matched
-// against the Flux_FeatureRegistry feature name). These are the only programs
-// where that breaks down — either the grouping name differs from the feature
-// name, or no engine feature owns the program (m_szFeature == nullptr → skip).
-// Keep this list tiny: the right fix for a new feature is to make its programs'
-// m_szSubsystem equal the feature name, not to add an entry here.
-namespace
-{
-	struct ProgramOwnerOverride
-	{
-		FluxShaderProgram m_eProgram;
-		const char*       m_szFeature; // nullptr => do not auto-wire this program
-	};
-
-	const ProgramOwnerOverride s_axOwnerOverrides[] =
-	{
-		// Lives in the DynamicLights/ shader dir (subsystem grouping
-		// "DynamicLights") but is owned by the separate LightClustering feature;
-		// the DynamicLights feature is a gather/upload front-end with no pipelines.
-		{ FluxShaderProgram::LightClustering, "LightClustering" },
-		// Subsystem grouping is "Vegetation"; the feature / engine accessor is "Grass".
-		{ FluxShaderProgram::Grass,           "Grass" },
-	};
-
-	// Returns the owning feature name for a program, or nullptr if it should not
-	// be auto-wired. Defaults to the program's subsystem grouping.
-	const char* ResolveOwningFeature(const Flux_ShaderRegistryEntry& xEntry)
-	{
-		for (const ProgramOwnerOverride& xOv : s_axOwnerOverrides)
-		{
-			if (xOv.m_eProgram == xEntry.m_eId)
-				return xOv.m_szFeature;
-		}
-		return xEntry.m_szSubsystem;
-	}
-}
-
 void Flux_ShaderHotReload::AutoRegisterFeatures()
 {
 	const Flux_FeatureRegistry& xFeatures = Flux_FeatureRegistry::Get();
-	const u_int uNumPrograms = Flux_ShaderRegistry::GetProgramCount();
 
 	u_int uWired = 0;
-	for (u_int u = 0; u < uNumPrograms; u++)
+	const u_int uNumFeatures = xFeatures.GetNumFeatures();
+	for (u_int f = 0; f < uNumFeatures; f++)
 	{
-		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgramByIndex(u);
+		const Flux_FeatureDesc& xFeat = xFeatures.GetFeatures()[f];
+		// No pipelines (FluxGraphics / Shadows / DynamicLights) => nothing to rebuild.
+		if (!xFeat.m_pfnBuildPipelines || !xFeat.m_paxShaders) continue;
 
-		const char* szFeature = ResolveOwningFeature(xEntry);
-		if (!szFeature) continue; // explicitly unowned (e.g. swapchain blit)
-
-		const Flux_FeatureDesc* pxFeature = xFeatures.FindFeatureByName(szFeature);
-		// No matching engine feature (Water / ComputeTest), or the feature owns no
-		// pipelines (Shadows / DynamicLights) — nothing to rebuild on change.
-		if (!pxFeature || !pxFeature->m_pfnBuildPipelines) continue;
-
-		RegisterProgram(xEntry.m_eId, pxFeature->m_pfnBuildPipelines);
-		uWired++;
+		for (u_int s = 0; s < xFeat.m_uShaderCount; s++)
+		{
+			const Flux_ShaderDecl* pxDecl = xFeat.m_paxShaders[s];
+			if (!pxDecl) continue;
+			RegisterProgram(*pxDecl, xFeat.m_pfnBuildPipelines);
+			uWired++;
+		}
 	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER,
-		"ShaderHotReload: auto-registered %u/%u shader programs from the feature registry",
-		uWired, uNumPrograms);
+		"ShaderHotReload: auto-registered %u shader programs from %u features",
+		uWired, uNumFeatures);
 }
 
-void Flux_ShaderHotReload::UnregisterProgram(FluxShaderProgram eProgram)
+void Flux_ShaderHotReload::UnregisterProgram(const Flux_ShaderDecl& xDecl)
 {
 	// Mirrors RegisterProgram — operates on the static registration list,
 	// which is safe before Initialise / after Shutdown.
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 	for (u_int u = s_axRegistered.GetSize(); u-- > 0; )
 	{
-		if (s_axRegistered.Get(u).m_eProgram == eProgram)
+		if (s_axRegistered.Get(u).m_pxDecl == &xDecl)
 		{
 			s_axRegistered.Remove(u);
 		}

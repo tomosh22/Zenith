@@ -28,8 +28,8 @@
 // ============================================================================
 
 #include "Flux/Slang/Flux_SlangCompiler.h"            // Flux_ShaderReflection
-#include "Flux/Slang/Flux_ShaderRegistry.h"           // Flux_ShaderRegistry / entry / artifact stems
-#include "Flux/Shaders/Generated/FluxShaderProgram.h" // FluxShaderProgram
+#include "Flux/Slang/Flux_ShaderCatalog.h"           // Flux_ShaderCatalog artifact stems
+#include "Flux/Slang/Flux_ShaderDecl.h"              // const Flux_ShaderDecl& Initialise handle
 #include "DataStream/Zenith_DataStream.h"             // Zenith_DataStream (reflection load)
 
 //==========================================================================
@@ -46,16 +46,15 @@ public:
 	// reads each stage's <stem>.spv.refl into a Zenith_DataStream and merges via
 	// Flux_ShaderReflection::ReadFromDataStream so m_xReflection is populated.
 	// No SPIR-V / Slang / GPU module work is performed.
-	void Initialise(FluxShaderProgram eProgram)
+	void Initialise(const Flux_ShaderDecl& xDecl)
 	{
-		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(eProgram);
 		std::string strRoot(SHADER_SOURCE_ROOT);
 
 		// Graphics-program path: merge vertex + fragment reflection.
-		if (xEntry.m_szVertexEntry && xEntry.m_szFragmentEntry)
+		if (xDecl.m_szVertexEntry && xDecl.m_szFragmentEntry)
 		{
-			std::string strVStem = Flux_ShaderRegistry::GetVertexArtifactStem(eProgram);
-			std::string strFStem = Flux_ShaderRegistry::GetFragmentArtifactStem(eProgram);
+			std::string strVStem = Flux_ShaderCatalog::GetVertexArtifactStem(xDecl);
+			std::string strFStem = Flux_ShaderCatalog::GetFragmentArtifactStem(xDecl);
 
 			Zenith_DataStream xVRefl;
 			xVRefl.ReadFromFile((strRoot + strVStem + ".spv.refl").c_str());
@@ -77,9 +76,9 @@ public:
 		}
 
 		// Compute-program path.
-		if (xEntry.m_szComputeEntry)
+		if (xDecl.m_szComputeEntry)
 		{
-			std::string strCStem = Flux_ShaderRegistry::GetComputeArtifactStem(eProgram);
+			std::string strCStem = Flux_ShaderCatalog::GetComputeArtifactStem(xDecl);
 			Zenith_DataStream xRefl;
 			xRefl.ReadFromFile((strRoot + strCStem + ".spv.refl").c_str());
 			if (xRefl.IsValid())

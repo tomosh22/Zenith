@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/IBL/Flux_IBL_Shaders.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
@@ -42,15 +43,15 @@ void Flux_IBLImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xBRDFLUTShader, m_xBRDFLUTPipeline,
-		FluxShaderProgram::IBL_BRDFIntegration, m_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
+		Flux_IBLShaders::xIBL_BRDFIntegration, m_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xIrradianceConvolveShader, m_xIrradianceConvolvePipeline,
-		FluxShaderProgram::IBL_IrradianceConvolution, m_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
+		Flux_IBLShaders::xIBL_IrradianceConvolution, m_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		m_xPrefilterShader, m_xPrefilterPipeline,
-		FluxShaderProgram::IBL_PrefilterEnvMap, m_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
+		Flux_IBLShaders::xIBL_PrefilterEnvMap, m_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
 }
 
 void Flux_IBLImpl::Initialise()

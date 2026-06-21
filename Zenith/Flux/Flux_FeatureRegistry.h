@@ -44,6 +44,7 @@
 // ---------------------------------------------------------------------------
 
 class Flux_RenderGraph;
+struct Flux_ShaderDecl; // per-feature shader decls (Flux/<Feature>/Flux_<Feature>_Shaders.h)
 
 // Upper bound on the number of registered features. ~25 today; 40 leaves slack
 // without making the fixed array wasteful. A runtime Zenith_Assert in Register()
@@ -85,6 +86,14 @@ struct Flux_FeatureDesc
 	// subsystems' shadow programs); AutoRegisterFeatures only calls it for programs
 	// that map to this feature, so those no-ops are never actually invoked.
 	void       (*m_pfnBuildPipelines)()                  = nullptr;
+
+	// The shader programs this feature OWNS — the feature's apxALL array (set by
+	// RegisterFeature). Drives hot-reload (each owned program's rebuild is this
+	// feature's BuildPipelines) and the catalog<->feature parity check
+	// (Flux_ShaderCatalog::ValidateFeatureParity). nullptr/0 for features that own
+	// no pipelines (FluxGraphics / Shadows / DynamicLights).
+	const Flux_ShaderDecl* const* m_paxShaders          = nullptr;
+	u_int                         m_uShaderCount         = 0;
 };
 
 // The compile-time contract for a Flux render feature — the subsystem type behind a
@@ -125,6 +134,22 @@ public:
 	// that re-init Flux in-process can call this repeatedly.
 	static void RegisterDefaultFeatures();
 
+	// The engine-startup-free population step: append the default feature set to
+	// the given (already-empty) registry. RegisterDefaultFeatures is the engine
+	// wrapper that Reset()s the singleton (main-thread assert) then calls this.
+	// Split out so tooling (FluxCompiler) can build a snapshot WITHOUT booting the
+	// engine — Reset()'s g_xEngine.Threading() main-thread assert would otherwise
+	// fire on an uninitialised engine.
+	static void RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xReg);
+
+	// Build a fresh, fully-populated registry snapshot by value WITHOUT touching
+	// the singleton or g_xEngine (the RegisterFeature trampolines reference
+	// g_xEngine only when CALLED, never during registration). The registry is
+	// trivially copyable (fixed arrays + counts, no owning pointers), so returning
+	// by value is faithful. FluxCompiler validates this snapshot's parity against
+	// the catalog without engine startup.
+	static Flux_FeatureRegistry CreateDefaultSnapshotForValidation();
+
 	// Drop every registration (counts -> 0). Used by RegisterDefaultFeatures for
 	// idempotency and available to tests.
 	void Reset();
@@ -138,7 +163,9 @@ public:
 		void (*pfnInitialise)(),
 		void (*pfnSetupRenderGraph)(Flux_RenderGraph&),
 		void (*pfnShutdown)(),
-		void (*pfnBuildPipelines)() = nullptr);
+		void (*pfnBuildPipelines)() = nullptr,
+		const Flux_ShaderDecl* const* paxShaders = nullptr,
+		u_int uShaderCount = 0);
 
 	// Append a raw named setup step — an "irregular" that is not a registered
 	// feature's setup (FluxGraphics/HDR transient creation, the final-RT

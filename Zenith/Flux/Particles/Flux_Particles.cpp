@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Particles/Flux_Particles_Shaders.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
@@ -34,7 +35,7 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 
 void Flux_ParticlesImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::Particles);
+	m_xShader.Initialise(Flux_ParticlesShaders::xParticles);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

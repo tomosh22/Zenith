@@ -43,6 +43,7 @@
 
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_FeatureRegistry.h"
+#include "Flux/Slang/Flux_ShaderCatalog.h" // ValidateFeatureParity boot check
 
 // (The frame counter that used to be read from here moved to FrameContext —
 // g_xEngine.Frame().GetFrameIndex().)
@@ -162,28 +163,28 @@ DEBUGVAR bool dbg_bTransientAliasing = true;
 void Flux_PipelineHelper::BuildFullscreenPipeline(
 	Flux_Shader& xShader,
 	Flux_Pipeline& xPipeline,
-	FluxShaderProgram eProgram,
+	const Flux_ShaderDecl& xDecl,
 	TextureFormat eColourFormat,
 	TextureFormat eDepthStencilFormat)
 {
-	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, eProgram, eColourFormat, eDepthStencilFormat);
+	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, xDecl, eColourFormat, eDepthStencilFormat);
 	Flux_PipelineBuilder::FromSpecification(xPipeline, xSpec);
 }
 
 Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 	Flux_Shader& xShader,
-	FluxShaderProgram eProgram,
+	const Flux_ShaderDecl& xDecl,
 	TextureFormat eColourFormat,
 	TextureFormat eDepthStencilFormat)
 {
 	// Single-RTV is the N==1 case. Taking the address of the by-value param
 	// yields a valid 1-element array for the duration of this call.
-	return CreateFullscreenSpecMRT(xShader, eProgram, &eColourFormat, 1u, eDepthStencilFormat);
+	return CreateFullscreenSpecMRT(xShader, xDecl, &eColourFormat, 1u, eDepthStencilFormat);
 }
 
 Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 	Flux_Shader& xShader,
-	FluxShaderProgram eProgram,
+	const Flux_ShaderDecl& xDecl,
 	const TextureFormat* aeColourFormats,
 	u_int uNumColourAttachments,
 	TextureFormat eDepthStencilFormat)
@@ -191,7 +192,7 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 	Zenith_Assert(uNumColourAttachments >= 1 && uNumColourAttachments <= FLUX_MAX_TARGETS,
 		"CreateFullscreenSpecMRT: uNumColourAttachments %u out of range [1, %u]", uNumColourAttachments, FLUX_MAX_TARGETS);
 
-	xShader.Initialise(eProgram);
+	xShader.Initialise(xDecl);
 
 	Flux_PipelineSpecification xSpec;
 	for (u_int u = 0; u < uNumColourAttachments; u++)
@@ -291,6 +292,16 @@ void Flux_RendererImpl::LateInitialise()
 	// dependency rationale documented at the top of this function is encoded as
 	// the registration order in Flux_FeatureRegistry.cpp::RegisterDefaultFeatures().
 	Flux_FeatureRegistry::RegisterDefaultFeatures();
+
+	// Catalog<->feature parity. Backend-independent; runs in ALL configs right
+	// after registration so a forgotten catalog include or RegisterFeature line
+	// fails loudly at boot instead of as a silent stale/missing-shader bug.
+	{
+		std::string strParityErr;
+		const bool bParity = Flux_ShaderCatalog::ValidateFeatureParity(Flux_FeatureRegistry::Get(), strParityErr);
+		Zenith_Assert(bParity, "Flux shader catalog/feature parity failed: %s", strParityErr.c_str());
+	}
+
 	const Flux_FeatureRegistry& xRegistry = Flux_FeatureRegistry::Get();
 	for (u_int uFeature = 0; uFeature < xRegistry.GetNumFeatures(); uFeature++)
 	{

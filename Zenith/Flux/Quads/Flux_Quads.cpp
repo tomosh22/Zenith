@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Quads/Flux_Quads_Shaders.h"
 
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -25,7 +26,7 @@ static void ExecuteQuads(Flux_CommandBuffer* pxCommandList, void* pUserData);
 
 void Flux_QuadsImpl::BuildPipelines()
 {
-	m_xShader.Initialise(FluxShaderProgram::Quads);
+	m_xShader.Initialise(Flux_QuadsShaders::xQuads);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

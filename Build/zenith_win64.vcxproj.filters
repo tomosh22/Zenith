@@ -598,10 +598,10 @@
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.cpp">
       <Filter>Flux\Slang</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp">
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderCatalog.cpp">
       <Filter>Flux\Slang</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderRegistry.cpp">
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp">
       <Filter>Flux\Slang</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.cpp">
@@ -2445,6 +2445,9 @@
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes_Shaders.h">
+      <Filter>Flux\AnimatedMeshes</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h">
       <Filter>Flux\Backend\Concepts</Filter>
     </ClInclude>
@@ -2469,13 +2472,22 @@
     <ClInclude Include="..\Zenith\Flux\Decals\Flux_DecalsImpl.h">
       <Filter>Flux\Decals</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Decals\Flux_Decals_Shaders.h">
+      <Filter>Flux\Decals</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShadingImpl.h">
+      <Filter>Flux\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading_Shaders.h">
       <Filter>Flux\DeferredShading</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLightsImpl.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClusteringImpl.h">
+      <Filter>Flux\DynamicLights</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering_Shaders.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux.h">
@@ -2553,6 +2565,9 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog_Shaders.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
@@ -2568,13 +2583,25 @@
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_GizmosImpl.h">
       <Filter>Flux\Gizmos</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos_Shaders.h">
+      <Filter>Flux\Gizmos</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDRImpl.h">
+      <Filter>Flux\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR_Shaders.h">
       <Filter>Flux\HDR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZImpl.h">
       <Filter>Flux\HiZ</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ_Shaders.h">
+      <Filter>Flux\HiZ</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBLImpl.h">
+      <Filter>Flux\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL_Shaders.h">
       <Filter>Flux\IBL</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h">
@@ -2586,10 +2613,16 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes_Shaders.h">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreviewImpl.h">
+      <Filter>Flux\MaterialPreview</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview_Shaders.h">
       <Filter>Flux\MaterialPreview</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h">
@@ -2646,13 +2679,25 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles_Shaders.h">
+      <Filter>Flux\Particles</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Present\Flux_PresentImpl.h">
+      <Filter>Flux\Present</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Present\Flux_Present_Shaders.h">
       <Filter>Flux\Present</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_PrimitivesImpl.h">
       <Filter>Flux\Primitives</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives_Shaders.h">
+      <Filter>Flux\Primitives</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_QuadsImpl.h">
+      <Filter>Flux\Quads</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads_Shaders.h">
       <Filter>Flux\Quads</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h">
@@ -2665,6 +2710,9 @@
       <Filter>Flux\SceneGraph</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h">
+      <Filter>Flux\SDFs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs_Shaders.h">
       <Filter>Flux\SDFs</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang">
@@ -2973,16 +3021,22 @@
     <ClInclude Include="..\Zenith\Flux\Skybox\Flux_SkyboxImpl.h">
       <Filter>Flux\Skybox</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox_Shaders.h">
+      <Filter>Flux\Skybox</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_CodeGenerator.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h">
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderCatalog.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderRegistry.h">
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderDecl.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h">
@@ -2991,13 +3045,25 @@
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h">
       <Filter>Flux\SSAO</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO_Shaders.h">
+      <Filter>Flux\SSAO</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGIImpl.h">
+      <Filter>Flux\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI_Shaders.h">
       <Filter>Flux\SSGI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSRImpl.h">
       <Filter>Flux\SSR</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR_Shaders.h">
+      <Filter>Flux\SSR</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h">
+      <Filter>Flux\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes_Shaders.h">
       <Filter>Flux\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
@@ -3012,16 +3078,28 @@
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManagerImpl.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain_Shaders.h">
+      <Filter>Flux\Terrain</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h">
       <Filter>Flux\Text</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_TextQueue.h">
       <Filter>Flux\Text</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Text\Flux_Text_Shaders.h">
+      <Filter>Flux\Text</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_TranslucencyImpl.h">
       <Filter>Flux\Translucency</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Translucency\Flux_Translucency_Shaders.h">
+      <Filter>Flux\Translucency</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h">
+      <Filter>Flux\Vegetation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass_Shaders.h">
       <Filter>Flux\Vegetation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderFeatures.h">

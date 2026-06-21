@@ -16723,7 +16723,7 @@ void Zenith_UnitTests::TestCodegenDeterministicDoubleRun(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string strFirst  = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPilot", &xPR, 1);
@@ -16731,19 +16731,6 @@ void Zenith_UnitTests::TestCodegenDeterministicDoubleRun(){
 
 	ZENITH_ASSERT_EQ(strFirst, strSecond, "Codegen must produce byte-identical output across runs with identical input");
 	ZENITH_ASSERT_TRUE(!strFirst.empty(), "Codegen output should not be empty");
-
-	// Program-enum content is independent of input data (it's a function of
-	// the registry), so the same double-run check applies.
-	const std::string strEnum1 = Flux_CodeGenerator::BuildProgramEnumContent();
-	const std::string strEnum2 = Flux_CodeGenerator::BuildProgramEnumContent();
-	ZENITH_ASSERT_EQ(strEnum1, strEnum2, "Program enum content must be deterministic");
-
-	// Sanity: enum should at least include one program name and the COUNT
-	// terminator (the registry must have at least one entry for the engine
-	// to link).
-	ZENITH_ASSERT_TRUE(strEnum1.find("enum class FluxShaderProgram") != std::string::npos, "Enum content should declare FluxShaderProgram");
-	ZENITH_ASSERT_TRUE(strEnum1.find("COUNT") != std::string::npos, "Enum content should include COUNT terminator");
-
 }
 
 ZENITH_TEST(Codegen, CodegenContainsBindingMetadata) { Zenith_UnitTests::TestCodegenContainsBindingMetadata(); }
@@ -16768,7 +16755,7 @@ void Zenith_UnitTests::TestCodegenContainsBindingMetadata(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestMetadata", &xPR, 1);
@@ -16823,7 +16810,7 @@ void Zenith_UnitTests::TestCodegenEmitsCBStructWithStaticAsserts(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestStruct", &xPR, 1);
@@ -16879,7 +16866,7 @@ void Zenith_UnitTests::TestCodegenScalarHungarianPrefixes(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPrefixes", &xPR, 1);
@@ -16931,7 +16918,7 @@ void Zenith_UnitTests::TestCodegenInsertsTrailingPadding(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPad", &xPR, 1);
@@ -16982,7 +16969,7 @@ void Zenith_UnitTests::TestCodegenInsertsInteriorPadding(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestInterior", &xPR, 1);
@@ -17017,7 +17004,7 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
-	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
 	xPR.m_pxReflection = &xRefl;
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestIdentifier", &xPR, 1);

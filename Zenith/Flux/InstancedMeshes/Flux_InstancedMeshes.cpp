@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshes_Shaders.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
@@ -71,8 +72,8 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserDa
 void Flux_InstancedMeshesImpl::BuildPipelines()
 {
 	// Load shaders
-	m_xGBufferShader.Initialise(FluxShaderProgram::InstancedMesh_ToGBuffer);
-	m_xShadowShader.Initialise(FluxShaderProgram::InstancedMesh_ToShadowmap);
+	m_xGBufferShader.Initialise(Flux_InstancedMeshesShaders::xInstancedMesh_ToGBuffer);
+	m_xShadowShader.Initialise(Flux_InstancedMeshesShaders::xInstancedMesh_ToShadowmap);
 
 	// Vertex input description - same as static meshes (position, UV, normal, tangent, bitangent, color)
 	Flux_VertexInputDescription xVertexDesc;
@@ -130,7 +131,7 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 
 	// Culling compute pipeline
 	{
-		m_xCullingShader.Initialise(FluxShaderProgram::InstanceCulling);
+		m_xCullingShader.Initialise(Flux_InstancedMeshesShaders::xInstanceCulling);
 
 		// Build compute root signature from shader reflection
 		const Flux_ShaderReflection& xCullingReflection = m_xCullingShader.GetReflection();

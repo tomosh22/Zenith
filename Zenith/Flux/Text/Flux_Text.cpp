@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Flux/Text/Flux_Text_Shaders.h"
 #include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -26,7 +27,7 @@ DEBUGVAR float dbg_fTextSize = 100.f;
 
 void Flux_TextImpl::BuildPipelines()
 {
-	this->m_xShader.Initialise(FluxShaderProgram::Text);
+	this->m_xShader.Initialise(Flux_TextShaders::xText);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
