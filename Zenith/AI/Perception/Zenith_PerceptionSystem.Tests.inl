@@ -128,6 +128,63 @@ void Zenith_UnitTests::TestSightConeOutOfFOV(){
 
 }
 
+// Regression: an agent FACING -Z must perceive a target directly in front of it
+// (also at -Z). The agent forward used to be derived via glm::eulerAngles(quat).y,
+// whose asin-based middle angle collapses for a 180-deg facing (decoding to a +Z
+// forward), so a -Z-facing agent was blinded to anything directly in front of it.
+// Rotating the +Z basis by the quaternion fixes it. This is the bug that forced the
+// RenderTest tennis far player to a 360 FOV and is a latent landmine for any
+// sight-cone agent (e.g. DevilsPlayground's priest) that faces the -Z hemisphere.
+ZENITH_TEST(AI, SightConeFacingNegativeZSeesTargetInFront)
+{
+	Zenith_PerceptionSystem::Initialise();
+
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "AgentNegZ");
+	Zenith_Entity xTarget = g_xEngine.Scenes().CreateEntity(pxSceneData, "TargetNegZ");
+
+	// Agent at origin, rotated 180 deg about Y so it faces -Z. Target 5m directly in
+	// FRONT of it (also -Z). With a narrow 90-deg cone this passes ONLY if the agent's
+	// forward is correctly -Z (the buggy decode made it +Z, putting the target 180 deg
+	// behind the perceived forward).
+	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xAgent.GetComponent<Zenith_TransformComponent>().SetRotation(
+		glm::angleAxis(3.14159265f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, -5.0f));
+
+	Zenith_PerceptionSystem::RegisterAgent(xAgent.GetEntityID());
+	Zenith_PerceptionSystem::RegisterTarget(xTarget.GetEntityID());
+
+	Zenith_SightConfig xConfig;
+	xConfig.m_fMaxRange = 20.0f;
+	xConfig.m_fFOVAngle = 90.0f;
+	xConfig.m_bRequireLineOfSight = false;
+
+	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
+	Zenith_PerceptionSystem::Update(0.1f);
+
+	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
+		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
+
+	bool bFound = false;
+	if (pxTargets)
+	{
+		for (uint32_t u = 0; u < pxTargets->GetSize(); ++u)
+		{
+			if (pxTargets->Get(u).m_bCurrentlyVisible)
+			{
+				bFound = true;
+				break;
+			}
+		}
+	}
+
+	Zenith_PerceptionSystem::Shutdown();
+
+	ZENITH_ASSERT_TRUE(bFound, "Agent facing -Z must perceive a target directly in front of it");
+}
+
 ZENITH_TEST(AI, SightAwarenessGain) { Zenith_UnitTests::TestSightAwarenessGain(); }
 
 void Zenith_UnitTests::TestSightAwarenessGain(){

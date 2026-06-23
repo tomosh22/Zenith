@@ -2,7 +2,7 @@
   "name": "DP_FindItemByTag_Test",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.113,
+  "durationMs": 0.063,
   "failures": [],
   "skipped": false
 }

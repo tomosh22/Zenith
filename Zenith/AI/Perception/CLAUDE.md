@@ -53,6 +53,17 @@ struct Zenith_SightConfig
 2. **Peripheral**: Reduced gain rate within m_fPeripheralAngle
 3. **Behind**: No sight detection
 
+The FOV/peripheral cones are measured against the agent's **forward vector**, derived
+each tick by rotating the +Z basis by the agent's transform rotation (`xForward = quat *
+(0,0,1)`, projected to XZ). This is correct for **any** facing, including the −Z
+hemisphere.
+
+> **Do NOT derive the forward from `glm::eulerAngles(quat).y`.** That asin-based middle
+> (yaw) angle collapses for facings more than ~90° off +Z — a 180° (−Z) facing decodes
+> to yaw 0, so the forward computes as +Z and the cone points the wrong way, blinding the
+> agent to a target directly in front of it. This was a real bug (fixed 2026-06); the
+> regression test is `SightConeFacingNegativeZSeesTargetInFront`.
+
 ### Awareness Mechanics
 
 - Awareness increases when target visible
@@ -224,6 +235,10 @@ Zenith_BTAction_FindPrimaryTarget()  // Sets "TargetEntity" in blackboard
 - Ensure target registered with RegisterTarget()
 - Check sight config range and FOV
 - Verify target within line of sight
+- If the agent is blind ONLY at certain facings (e.g. a −Z-facing agent can't see a
+  target right in front of it), suspect the forward-vector derivation: it must be
+  `quat * +Z`, never `glm::eulerAngles(quat).y` (which collapses past ±90° off +Z). A
+  360° FOV "fixes" this only by masking it — prefer the correct forward + a realistic FOV.
 
 **Awareness Not Decaying**:
 - Check decay rate is > 0

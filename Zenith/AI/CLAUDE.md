@@ -218,13 +218,29 @@ Enable via Zenith_DebugVariables panel:
 - NavMesh spatial grid accelerates point queries
 - Path smoothing reduces waypoint count
 
+## Facing / heading convention (cross-cutting)
+
+AI code that needs an agent's forward/heading derives it by rotating the +Z basis with
+the entity's transform quaternion — `forward = quat * (0,0,1)` (project to XZ;
+`yaw = atan2(forward.x, forward.z)` if a scalar yaw is needed). **Never extract yaw via
+`glm::eulerAngles(quat).y`**: that asin-based middle angle collapses for facings more
+than ~90° off +Z (a 180°/−Z facing decodes to yaw 0), silently reversing the heading.
+This bit BOTH the perception sight cone (agents blind to targets in front when facing −Z)
+and nav turn-to-travel (wrong-way turns + corrupted pitch/roll) — fixed 2026-06 with
+regression tests in each. Apply the same rule to any new yaw-only logic.
+
 ## Common Issues
 
 **Agent not moving**: Check NavMesh is assigned to agent, destination is on navmesh
 
-**Not detecting targets**: Ensure targets registered with PerceptionSystem::RegisterTarget()
+**Not detecting targets**: Ensure targets registered with PerceptionSystem::RegisterTarget().
+If detection fails only at certain facings, suspect a `glm::eulerAngles().y` forward
+derivation (see *Facing / heading convention* above).
 
 **Holes in NavMesh**: Check ColliderComponents are static, geometry not too steep
+
+**Agent faces the wrong way travelling toward −Z**: nav heading must use `quat*+Z`, not
+`glm::eulerAngles().y` (see *Facing / heading convention* above).
 
 ## See Also
 

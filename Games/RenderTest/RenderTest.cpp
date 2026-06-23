@@ -53,6 +53,8 @@
 #include "RenderTest/RenderTest_Tennis.h"
 #include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
 #include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
+#include "RenderTest/Components/RenderTest_TennisAgentComponent.h"
+#include "RenderTest/Components/RenderTest_TennisBTNodes.h"
 
 // FPS gun pickup/drop testbed (guns lying on the spawn platform; player picks
 // them up, shoots, drops; arm IK keeps the hands on the gun). Header included so
@@ -813,6 +815,7 @@ ZENITH_REGISTER_COMPONENT(RenderTest_SmokeRunnerComponent, "RenderTestSmokeRunne
 ZENITH_REGISTER_COMPONENT(RenderTest_GunComponent, "RenderTestGun", 110u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisPlayerComponent, "RenderTestTennisPlayer", 120u)
 ZENITH_REGISTER_COMPONENT(RenderTest_TennisMatchComponent, "RenderTestTennisMatch", 130u)
+ZENITH_REGISTER_COMPONENT(RenderTest_TennisAgentComponent, "RenderTestTennisAgent", 135u)
 ZENITH_REGISTER_COMPONENT(RenderTest_JetpackComponent, "RenderTestJetpack", 140u)
 ZENITH_REGISTER_COMPONENT(RenderTest_BootstrapComponent, "RenderTestBootstrap", 150u)
 
@@ -1283,6 +1286,7 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_GunComponent>("RenderTestGun");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisPlayerComponent>("RenderTestTennisPlayer");
 	xEditorRegistry.RegisterComponent<RenderTest_TennisMatchComponent>("RenderTestTennisMatch");
+	xEditorRegistry.RegisterComponent<RenderTest_TennisAgentComponent>("RenderTestTennisAgent");
 	xEditorRegistry.RegisterComponent<RenderTest_JetpackComponent>("RenderTestJetpack");
 	xEditorRegistry.RegisterComponent<RenderTest_BootstrapComponent>("RenderTestBootstrap");
 #endif
@@ -1499,17 +1503,20 @@ static void RenderTest_ApplyTestbedEntityConfig()
 		}
 	}
 
-	// Tennis NPCs: set their baseline side (derives facing).
-	auto SetNpcSide = [pxSceneData](const char* szName, bool bNear)
+	// Tennis NPCs: set their baseline side (derives facing) + the AI tick rate
+	// (serialized on the AIAgent, so the rate persists into the saved scene).
+	auto ConfigNpc = [pxSceneData](const char* szName, bool bNear)
 	{
 		Zenith_Entity xNpc = pxSceneData->FindEntityByName(szName);
-		if (xNpc.IsValid() && xNpc.HasComponent<RenderTest_TennisPlayerComponent>())
-		{
+		if (!xNpc.IsValid())
+			return;
+		if (xNpc.HasComponent<RenderTest_TennisPlayerComponent>())
 			xNpc.GetComponent<RenderTest_TennisPlayerComponent>().Init(bNear);
-		}
+		if (xNpc.HasComponent<Zenith_AIAgentComponent>())
+			xNpc.GetComponent<Zenith_AIAgentComponent>().SetUpdateInterval(0.08f);
 	};
-	SetNpcSide("Tennis_NPC_Near", true);
-	SetNpcSide("Tennis_NPC_Far", false);
+	ConfigNpc("Tennis_NPC_Near", true);
+	ConfigNpc("Tennis_NPC_Far", false);
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -1856,6 +1863,12 @@ void Project_RegisterEditorAutomationSteps()
 				xAuto.AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
 				xAuto.AddStep_AddAnimator();
 				xAuto.AddStep_AddComponent("RenderTestTennisPlayer");
+				// Autonomous AI: the engine AIAgent (BT tick + nav) + the tennis brain
+				// (builds/owns the BT, decides shots). Both authored + serialized so the
+				// scene plays the same in tools and _False. The brain's OnStart wires the
+				// BT onto the AIAgent at load.
+				xAuto.AddStep_AddComponent("AIAgent");
+				xAuto.AddStep_AddComponent("RenderTestTennisAgent");
 
 				// Racket, seated at the NPC for frame 0, attached to the right hand
 				// (Rx 180deg so the head extends along the hand).
@@ -2266,3 +2279,4 @@ void Project_LoadInitialScene()
 // test runner.
 #include "RenderTest/Components/RenderTest_PlayerComponent.Tests.inl"
 #include "RenderTest/Components/RenderTest_Testbed.Tests.inl"
+#include "RenderTest/Components/RenderTest_Tennis.Tests.inl"

@@ -234,6 +234,15 @@ namespace Zenith_Telemetry
 		         const char* szJsonPathOrNull = nullptr,
 		         const char* (*pfnEventTypeToString)(uint16_t) = nullptr);
 
+		// Write the FULL accumulated recording to disk WITHOUT ending it
+		// (recording continues afterwards). Use to periodically checkpoint a
+		// long-running recording so a process killed before End() still leaves
+		// a complete, valid file on disk. Same output format as End(); the file
+		// is overwritten each call. Returns false if not recording.
+		bool FlushSnapshot(const char* szBinaryPath,
+		                   const char* szJsonPathOrNull = nullptr,
+		                   const char* (*pfnEventTypeToString)(uint16_t) = nullptr);
+
 		// Telemetry can be paused (e.g. during pause overlay) without
 		// ending the recording. NextFrame still ticks, but RecordFrame /
 		// RecordEvent are no-ops while paused.

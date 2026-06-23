@@ -220,11 +220,15 @@ void Zenith_NavMeshAgent::Update(float fDt, Zenith_EntityID xEntity)
 		// Calculate target rotation
 		float fTargetYaw = std::atan2(xMoveDir.x, xMoveDir.z);
 
-		// Get current rotation as Euler angles
+		// Current heading: rotate the +Z basis by the body quaternion and read its
+		// yaw. Do NOT use glm::eulerAngles().y — its asin-based middle angle collapses
+		// for facings more than ~90 deg off +Z (a 180-deg facing decodes to yaw 0 with
+		// the rotation pushed into pitch/roll), which would snap/reverse the turn for
+		// any -Z-bound agent and re-encode a corrupted (pitch=pi, roll=pi) quaternion.
 		Zenith_Maths::Quaternion xCurrentQuat;
 		Zenith_AI_GetEntityRotation(xEntity, xCurrentQuat);
-		Zenith_Maths::Vector3 xCurrentEuler = glm::eulerAngles(xCurrentQuat);
-		float fCurrentYaw = xCurrentEuler.y;
+		const Zenith_Maths::Vector3 xCurrentFwd = xCurrentQuat * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		float fCurrentYaw = std::atan2(xCurrentFwd.x, xCurrentFwd.z);
 
 		// Smoothly interpolate rotation
 		float fMaxRotation = m_fTurnSpeed * (3.14159265f / 180.0f) * fDt;
@@ -235,8 +239,9 @@ void Zenith_NavMeshAgent::Update(float fDt, Zenith_EntityID xEntity)
 		while (fDiff < -3.14159265f) fDiff += 2.0f * 3.14159265f;
 
 		float fRotation = std::max(-fMaxRotation, std::min(fMaxRotation, fDiff));
-		xCurrentEuler.y = fCurrentYaw + fRotation;
-		Zenith_AI_SetEntityRotation(xEntity, Zenith_Maths::Quaternion(xCurrentEuler));
+		// Write back a clean yaw-only quaternion (agents on a navmesh stay upright).
+		const float fNewYaw = fCurrentYaw + fRotation;
+		Zenith_AI_SetEntityRotation(xEntity, glm::angleAxis(fNewYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
 	}
 }
 

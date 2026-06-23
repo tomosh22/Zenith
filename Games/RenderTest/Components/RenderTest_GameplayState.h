@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 // Tiny shared header to break a header-only mutual-include cycle between
 // RenderTest_FollowCameraComponent and RenderTest_PlayerComponent: the camera
 // reads the player's aiming flag, and the player reads the camera's yaw/pitch.
@@ -51,6 +53,15 @@ namespace RenderTest_GameplayState
 	// 0 = serve, 1 = forehand, 2 = backhand.
 	inline bool s_bTennisIkShowcase = false;
 	inline int  s_iTennisShowcaseStroke = 0;
+
+	// Telemetry: when active the tennis referee records per-frame samples +
+	// gameplay events through Zenith_Telemetry and flushes a .ztlm (+ .json +
+	// CSV sidecars) at match end / shutdown. Enabled by --rendertest-tennis-telemetry
+	// [=<base-path>]. Gated to the real "RenderTest" game scene so the unit-test
+	// fixtures (which construct referees in additive test scenes) never record.
+	// Process-level, NOT cleared by Reset().
+	inline bool        s_bTennisTelemetry = false;
+	inline std::string s_strTennisTelemetryPath = "tennis_telemetry";  // base; .ztlm/.json/_*.csv appended
 
 	inline float GetCameraYaw()        { return s_fCameraYaw; }
 	inline float GetCameraPitch()      { return s_fCameraPitch; }

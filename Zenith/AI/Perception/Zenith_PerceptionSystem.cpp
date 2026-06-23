@@ -301,12 +301,19 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 		}
 		xAgentPos.y += xData.m_xSightConfig.m_fEyeHeight;
 
-		// Calculate forward direction from rotation
+		// Forward direction from the agent's rotation. Rotate the +Z basis directly
+		// instead of extracting yaw via glm::eulerAngles().y: that asin-based middle
+		// (Y) angle collapses for facings more than ~90 deg off +Z (a 180-deg turn
+		// decodes to yaw 0, with the rotation pushed into pitch/roll), which pointed
+		// the sight cone the wrong way and blinded any -Z-facing agent to targets
+		// directly in front of it. quat * +Z is correct for every orientation.
 		Zenith_Maths::Quaternion xQuat;
 		Zenith_AI_GetEntityRotation(xAgentID, xQuat);
-		Zenith_Maths::Vector3 xRot = glm::eulerAngles(xQuat);
-		float fYaw = xRot.y;
-		Zenith_Maths::Vector3 xForward(std::sin(fYaw), 0.0f, std::cos(fYaw));
+		Zenith_Maths::Vector3 xForward = xQuat * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		xForward.y = 0.0f;
+		const float fFwdLenSq = xForward.x * xForward.x + xForward.z * xForward.z;
+		xForward = (fFwdLenSq > 1e-6f) ? Zenith_Maths::Normalize(xForward)
+			: Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
 
 		// Mark all targets as not currently visible
 		for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); ++u)

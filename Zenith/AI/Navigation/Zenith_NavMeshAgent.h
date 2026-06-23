@@ -169,7 +169,7 @@ private:
 	// Current path
 	Zenith_PathResult m_xCurrentPath;
 	uint32_t m_uCurrentWaypoint = 0;
-	Zenith_Maths::Vector3 m_xDestination;
+	Zenith_Maths::Vector3 m_xDestination = Zenith_Maths::Vector3(0.0f);   // zero-init: read defensively (e.g. progress trackers) before the first SetDestination
 	Zenith_Maths::Vector3 m_xPathStartPos;  // For batch pathfinding
 	bool m_bReachedDestination = false;
 	bool m_bPathPending = false;  // True when destination set but path not yet calculated

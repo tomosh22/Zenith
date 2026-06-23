@@ -2,7 +2,7 @@
   "name": "Test_P2HUD_DetailedReadouts",
   "passed": true,
   "frames": 1,
-  "durationMs": 0.099,
+  "durationMs": 0.064,
   "failures": [],
   "skipped": false
 }

@@ -394,6 +394,29 @@ namespace Zenith_Telemetry
 		return true;
 	}
 
+	bool Recorder::FlushSnapshot(const char* szBinaryPath,
+	                             const char* szJsonPathOrNull,
+	                             const char* (*pfnEventTypeToString)(uint16_t))
+	{
+		if (!m_bRecording) return false;
+		// Same write as End(), but do NOT clear m_bRecording — recording continues.
+		uint64_t ulEstimate = 256u
+		                    + static_cast<uint64_t>(m_axEvents.GetSize()) * 100u
+		                    + static_cast<uint64_t>(m_axFrames.GetSize()) * 1024u;
+		if (ulEstimate < 4096u) ulEstimate = 4096u;
+		Zenith_DataStream xStream(ulEstimate);
+		SerializeRun(m_xHeader, m_axFrames, m_axEvents, xStream);
+		xStream.WriteToFile(szBinaryPath);
+
+		if (szJsonPathOrNull != nullptr)
+		{
+			Reader xReader;
+			if (!xReader.LoadFromFile(szBinaryPath)) return false;
+			if (!xReader.ExportJson(szJsonPathOrNull, pfnEventTypeToString)) return false;
+		}
+		return true;
+	}
+
 	// =========================================================
 	// Reader
 	// =========================================================
@@ -739,3 +762,5 @@ namespace Zenith_Telemetry
 		return s_xRecorder;
 	}
 }
+
+#include "Telemetry/Zenith_Telemetry.Tests.inl"

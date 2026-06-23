@@ -21,6 +21,7 @@
 #include "Flux/MeshAnimation/Flux_InverseKinematics.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "RenderTest/RenderTest_Tennis.h"
+#include "RenderTest/Components/RenderTest_TennisDecision.h"
 
 #include <cmath>
 #include <string>
@@ -58,21 +59,73 @@ public:
 	// Which baseline this NPC plays (serialized v2; read back by tests/tools).
 	bool IsNearSide() const { return m_bNearSide; }
 
-	// Begin a serve aimed at xAimTarget (world space).
-	void RequestServe(const Zenith_Maths::Vector3& xAimTarget)
+	// Net-facing direction (true = faces +Z). Derived from the side at Init().
+	bool IsFacingPositiveZ() const { return m_bFacingPositiveZ; }
+
+	// When the nav agent owns the XZ velocity (autonomous AI), the body's footwork
+	// must NOT also write velocity (the two fight); it keeps EnforceUpright and
+	// re-asserts net-facing instead. The referee toggles this per phase.
+	void SetExternalMovementDriven(bool bDriven) { m_bExternalMovementDriven = bDriven; }
+	bool IsExternalMovementDriven() const { return m_bExternalMovementDriven; }
+
+	// Begin a serve aimed at xAimTarget (world space). Returns true only if a
+	// stroke actually started — i.e. the NPC was ready AND the animator/state
+	// machine are available. The BT arms its decided shot only on a true return,
+	// so a not-ready / setup-missing call can never leave a phantom armed shot.
+	bool RequestServe(const Zenith_Maths::Vector3& xAimTarget)
 	{
-		BeginStroke(Stroke::Serve, xAimTarget);
+		return IsReady() && BeginStroke(Stroke::Serve, xAimTarget);
 	}
 
 	// Begin a groundstroke; forehand/backhand picked from the ball side relative
-	// to this NPC's facing.
-	void RequestSwing(const Zenith_Maths::Vector3& xAimTarget, float fBallX)
+	// to this NPC's facing. Returns true only if the stroke actually started.
+	bool RequestSwing(const Zenith_Maths::Vector3& xAimTarget, float fBallX)
 	{
+		if (!IsReady())
+			return false;
 		const float fSideX = fBallX - PlayerX();
 		// Facing +Z (near side): ball to the player's right (+X) is a forehand for
 		// a right-hander. Facing -Z (far side): mirror.
 		const bool bForehand = m_bFacingPositiveZ ? (fSideX >= 0.0f) : (fSideX < 0.0f);
-		BeginStroke(bForehand ? Stroke::Forehand : Stroke::Backhand, xAimTarget);
+		return BeginStroke(bForehand ? Stroke::Forehand : Stroke::Backhand, xAimTarget);
+	}
+
+	// World position of the racket-head sweet spot, derived from the POSED
+	// RightHand bone (so it tracks serve/forehand/backhand poses). The referee
+	// proximity-gates contact against this, so a mistimed/mispositioned swing is a
+	// genuine miss. Falls back to the body position if no skeleton is posed yet.
+	Zenith_Maths::Vector3 GetRacketSweetSpotPos() const
+	{
+		Zenith_Maths::Vector3 xPos(0.0f);
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+			return xPos;
+		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+			return xPos;
+		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		Zenith_Maths::Matrix4 xBoneModel;
+		if (!xModel.HasSkeleton() || !xModel.GetBoneModelMatrix("RightHand", xBoneModel))
+			return xPos;
+		Zenith_Maths::Matrix4 xWorld;
+		m_xParentEntity.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xWorld);
+		const Zenith_Maths::Matrix4 xHandWorld = xWorld * xBoneModel;
+		return RenderTest_Tennis::ComputeRacketSweetSpot(xHandWorld, k_fRacketReach);
+	}
+
+	// Zero the body's horizontal velocity (keeps Y so gravity/landing survive).
+	// The referee calls this when parking a disabled agent so it doesn't coast on
+	// the nav agent's last velocity.
+	void ParkBody()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+			return;
+		Zenith_ColliderComponent& xCol = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		if (!xCol.HasValidBody())
+			return;
+		Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCol.GetBodyID());
+		xVel.x = 0.0f;
+		xVel.z = 0.0f;
+		g_xEngine.Physics().SetLinearVelocity(xCol.GetBodyID(), xVel);
 	}
 
 	// True exactly once, on the frame the active stroke reaches its contact point.
@@ -139,6 +192,11 @@ public:
 			return;
 
 		Footwork(fDt);
+		// When the nav agent drives movement it may also rotate the body toward
+		// its travel direction; re-assert the fixed net-facing so strokes/IK stay
+		// oriented across the net.
+		if (m_bExternalMovementDriven)
+			ReassertFacing();
 		UpdateStroke(fDt);
 		UpdateArmIK();
 	}
@@ -190,10 +248,12 @@ private:
 		return xPos;
 	}
 
-	void BeginStroke(Stroke eStroke, const Zenith_Maths::Vector3& xAimTarget)
+	// Returns false (no-op) when the animator/state-machine aren't available — so
+	// RequestServe/RequestSwing can report whether a stroke truly started.
+	bool BeginStroke(Stroke eStroke, const Zenith_Maths::Vector3& xAimTarget)
 	{
 		if (!m_pxAnimator || !m_pxSM)
-			return;
+			return false;
 		m_eStroke = eStroke;
 		m_xAimTarget = xAimTarget;
 		m_fStrokeNorm = 0.0f;
@@ -203,9 +263,24 @@ private:
 			eStroke == Stroke::Serve ? "ServeTrigger" :
 			eStroke == Stroke::Forehand ? "ForehandTrigger" : "BackhandTrigger";
 		m_pxSM->GetParameters().SetTrigger(szTrigger);
+		return true;
 	}
 
-	// Slide along X toward the footwork target; hold the baseline Z.
+	// Re-assert the fixed net-facing rotation (used when the nav agent might have
+	// rotated the body toward its travel direction).
+	void ReassertFacing()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+			return;
+		Zenith_TransformComponent& xT = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		const float fYaw = m_bFacingPositiveZ ? 0.0f : static_cast<float>(Zenith_Maths::Pi);
+		xT.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+	}
+
+	// Slide along X toward the footwork target; hold the baseline Z. Routed through
+	// the pure ComputeFootworkVelocityX/ShouldDriveFootwork seam. When the nav
+	// agent owns movement (m_bExternalMovementDriven) the body keeps EnforceUpright
+	// but skips its velocity write so the two don't fight.
 	void Footwork(float)
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
@@ -215,11 +290,12 @@ private:
 			return;
 		g_xEngine.Physics().EnforceUpright(xCol.GetBodyID());
 
+		if (!RenderTest_Tennis::ShouldDriveFootwork(m_bExternalMovementDriven))
+			return;   // nav agent owns the XZ velocity this frame
+
 		const float fX = PlayerX();
-		const float fErr = m_fFootworkTargetX - fX;
 		Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCol.GetBodyID());
-		// Proportional slide, capped at a believable run speed.
-		xVel.x = glm::clamp(fErr * 4.0f, -k_fRunSpeed, k_fRunSpeed);
+		xVel.x = RenderTest_Tennis::ComputeFootworkVelocityX(fX, m_fFootworkTargetX, k_fRunSpeed);
 		xVel.z = 0.0f;   // pinned to the baseline
 		g_xEngine.Physics().SetLinearVelocity(xCol.GetBodyID(), xVel);
 	}
@@ -448,7 +524,11 @@ private:
 	// 16/30; groundstroke contact ~tick 10/18).
 	static constexpr float k_fServeContactNorm = 0.53f;
 	static constexpr float k_fSwingContactNorm = 0.55f;
-	static constexpr float k_fRunSpeed = 5.0f;
+	// Footwork X-slide speed. MUST match the nav agent / PredictIntercept run speed
+	// (6.0): on the P2 nav-fallback path the body becomes the sole mover, and the brain
+	// committed reachability at 6.0 — a slower body would undershoot a ball it judged
+	// reachable, exceeding the contact radius and losing the point.
+	static constexpr float k_fRunSpeed = 6.0f;
 	// Distance from the hand/grip to the racket head's sweet spot (the racket is
 	// attached at the grip; the head extends ~0.42 m up the shaft).
 	static constexpr float k_fRacketReach = 0.42f;
@@ -463,6 +543,7 @@ private:
 
 	bool  m_bNearSide = true;
 	bool  m_bFacingPositiveZ = true;
+	bool  m_bExternalMovementDriven = false;   // nav agent owns XZ velocity (transient)
 	float m_fFootworkTargetX = RenderTest_Tennis::fCOURT_CX;
 
 	Stroke m_eStroke = Stroke::None;

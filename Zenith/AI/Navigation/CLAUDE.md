@@ -67,6 +67,16 @@ Handles agent movement along paths:
 - **Update()**: Advances along path each frame
 - **CalculateVelocity()**: Computes desired velocity toward next waypoint
 - Automatic path recalculation when destination changes
+- **Turn toward travel**: while moving, `Update()` smoothly rotates the body to face its
+  travel direction (`m_fTurnSpeed` deg/s) and writes a **pure-yaw** quaternion to the
+  transform.
+
+> **Heading derivation (don't regress this):** the current heading is read by rotating
+> the +Z basis (`atan2((quat*+Z).x, (quat*+Z).z)`), NOT via `glm::eulerAngles(quat).y`.
+> The euler yaw collapses for facings >~90° off +Z (a 180° facing decodes to yaw 0),
+> which made −Z-bound agents turn the wrong way and re-encode a corrupted pitch=π/roll=π
+> quaternion (fixed 2026-06; regression test `NavAgentFacingNegativeZTurnsTowardTravel`).
+> The same `glm::eulerAngles().y` trap applies to any yaw-only heading logic.
 
 **Configuration**:
 | Setting | Default | Description |
@@ -160,6 +170,12 @@ Enable via `Zenith_AIDebugVariables`:
 - Increase stopping distance
 - Check for dynamic obstacles blocking path
 - Verify navmesh covers the area
+
+**Agent Faces / Turns the Wrong Way (esp. when travelling toward −Z)**:
+- The turn-to-travel heading must come from `quat * +Z`, never `glm::eulerAngles(quat).y`
+  (which collapses past ±90° off +Z). A symptom is an agent that spins or faces backward
+  only when its path heads into the −Z hemisphere. Writeback must be a pure-yaw
+  `angleAxis(yaw, +Y)` — re-encoding a full euler triple bakes in spurious pitch/roll.
 
 **NavMesh Polygons Not Visible / Rendering Below Geometry**:
 - Check polygon normals are pointing UP (Y should be +1.0, not -1.0)

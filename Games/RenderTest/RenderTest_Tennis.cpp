@@ -107,6 +107,7 @@ namespace
 
 	const std::string& TennisCourtTexturePath() { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Court" ZENITH_TEXTURE_EXT; return s; }
 	const std::string& TennisNetTexturePath()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Net"   ZENITH_TEXTURE_EXT; return s; }
+	const std::string& TennisBallTexturePath()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Ball"  ZENITH_TEXTURE_EXT; return s; }
 
 	// Accumulating triangle-mesh builder. Quads use the same CCW winding as
 	// GenerateUnitCube (0-2-1, 1-2-3) so front faces survive back-face culling.
@@ -271,6 +272,43 @@ namespace
 			}
 		}
 		uSizeOut = uS;
+		return xPx;
+	}
+
+	// Tennis-ball felt with the classic curved white seam. Equirectangular so the
+	// unit sphere's lat/long UVs wrap it; the seam + felt shading make the ball's
+	// SPIN visible as it rotates (a flat-yellow analytic sphere shows no rotation).
+	// Returns the RGBA8 buffer (W x H) so the caller exports it to .ztxtr.
+	std::vector<uint8_t> RT_MakeBallTexture(uint32_t& uWOut, uint32_t& uHOut)
+	{
+		constexpr uint32_t uW = 256, uH = 256;
+		constexpr float fTwoPi = 6.28318530718f;
+		std::vector<uint8_t> xPx(static_cast<size_t>(uW) * uH * 4);
+		for (uint32_t y = 0; y < uH; y++)
+		{
+			const float fV = static_cast<float>(y) / static_cast<float>(uH - 1);   // latitude 0..1
+			for (uint32_t x = 0; x < uW; x++)
+			{
+				const float fU = static_cast<float>(x) / static_cast<float>(uW - 1);   // longitude 0..1
+				// Two mirrored sinusoids approximate the figure-eight tennis seam.
+				const float fSeamA = 0.5f + 0.20f * std::sin(fU * fTwoPi * 2.0f);
+				const float fSeamB = 0.5f - 0.20f * std::sin(fU * fTwoPi * 2.0f);
+				const float fDist = std::min(std::fabs(fV - fSeamA), std::fabs(fV - fSeamB));
+
+				// Base tennis felt (slightly shaded by longitude so curvature reads).
+				const float fShade = 0.92f + 0.08f * std::sin(fU * fTwoPi);
+				uint8_t r = static_cast<uint8_t>(199.0f * fShade);
+				uint8_t g = static_cast<uint8_t>(224.0f * fShade);
+				uint8_t b = static_cast<uint8_t>(41.0f  * fShade);
+				if (fDist < 0.018f)        { r = 240; g = 240; b = 235; }   // white seam line
+				else if (fDist < 0.045f)   { r = static_cast<uint8_t>(r * 0.7f); g = static_cast<uint8_t>(g * 0.7f); b = static_cast<uint8_t>(b * 0.7f); }   // darker felt either side
+
+				uint8_t* p = &xPx[(static_cast<size_t>(y) * uW + x) * 4];
+				p[0] = r; p[1] = g; p[2] = b; p[3] = 255;
+			}
+		}
+		uWOut = uW;
+		uHOut = uH;
 		return xPx;
 	}
 
@@ -460,6 +498,16 @@ void RenderTest_ParseTennisCLI()
 				(std::strstr(__argv[i], "backhand") != nullptr) ? 2 :
 				(std::strstr(__argv[i], "forehand") != nullptr) ? 1 : 0;
 		}
+		// Telemetry: --rendertest-tennis-telemetry[=<base-path>]. Records the
+		// match to disk (Zenith_Telemetry) for offline analytics. Optional
+		// value overrides the output base path (.ztlm/.json/_*.csv appended).
+		if (std::strncmp(__argv[i], "--rendertest-tennis-telemetry", 29) == 0)
+		{
+			RenderTest_GameplayState::s_bTennisTelemetry = true;
+			const char* pszEq = std::strchr(__argv[i], '=');
+			if (pszEq != nullptr && pszEq[1] != '\0')
+				RenderTest_GameplayState::s_strTennisTelemetryPath = (pszEq + 1);
+		}
 	}
 #endif
 }
@@ -484,6 +532,11 @@ void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath)
 		const std::vector<uint8_t> xNetPx = RT_MakeNetTexture(uS);
 		Zenith_Tools_TextureExport::ExportFromData(xNetPx.data(), TennisNetTexturePath(),
 			static_cast<int32_t>(uS), static_cast<int32_t>(uS), TEXTURE_FORMAT_RGBA8_UNORM);
+
+		uint32_t uBW = 0, uBH = 0;
+		const std::vector<uint8_t> xBallPx = RT_MakeBallTexture(uBW, uBH);
+		Zenith_Tools_TextureExport::ExportFromData(xBallPx.data(), TennisBallTexturePath(),
+			static_cast<int32_t>(uBW), static_cast<int32_t>(uBH), TEXTURE_FORMAT_RGBA8_UNORM);
 	}
 
 	// --- Court material: grass + painted lines, textured by the .ztxtr above ---
@@ -512,13 +565,14 @@ void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath)
 		pxNetMat->SaveToFile(TennisNetMaterialPath());
 	}
 
-	// --- Ball material: tennis yellow, vertex colour irrelevant (sphere is
-	//     analytic-shaded; base colour drives the look) ---
+	// --- Ball material: tennis-felt texture with the curved seam so the ball's
+	//     SPIN is visible as it rotates (base colour tints the felt) ---
 	{
 		Zenith_MaterialAsset* pxBallMat = RT_NewMaterial("Tennis_Ball");
-		pxBallMat->SetBaseColor(Vector4(0.78f, 0.88f, 0.16f, 1.0f));
+		pxBallMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 		pxBallMat->SetRoughness(0.55f);
 		pxBallMat->SetMetallic(0.0f);
+		pxBallMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, TextureHandle(TennisBallTexturePath()));
 		pxBallMat->SaveToFile(TennisBallMaterialPath());
 	}
 

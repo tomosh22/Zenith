@@ -238,3 +238,56 @@ void Zenith_UnitTests::TestNavAgentRemainingDistanceBounds(){
 
 }
 
+// Regression: an agent FACING the -Z hemisphere turns toward its travel direction.
+// The current heading used to be read via glm::eulerAngles(quat).y, which collapses for
+// a 180-deg facing (decoding to yaw 0) and re-encodes a corrupted pitch=pi/roll=pi
+// quaternion; the fix reads the heading from quat*+Z and writes a pure-yaw quat.
+// The destination is deliberately OFF the -X axis (it has a -Z component): on the -X
+// symmetry axis the old + new code converge to the SAME forward, so the test must steer
+// asymmetrically to discriminate. The old decode under-turns in Z (forward.z ~ -0.06)
+// while the fix tracks the travel direction (forward.z ~ -0.3); we assert forward.z well
+// below the old value so this FAILS on the pre-fix code.
+ZENITH_TEST(AI, NavAgentFacingNegativeZTurnsTowardTravel)
+{
+	Zenith_NavMesh xNavMesh;
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(10.0f, 0.0f, 10.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 10.0f));
+	Zenith_Vector<uint32_t> axIndices;
+	axIndices.PushBack(0); axIndices.PushBack(1); axIndices.PushBack(2); axIndices.PushBack(3);
+	xNavMesh.AddPolygon(axIndices);
+	xNavMesh.ComputeSpatialData();
+	xNavMesh.BuildSpatialGrid();
+
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "NavAgentNegZ");
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(8.0f, 0.0f, 8.0f));
+	// Face -Z (180 deg about Y) — the hemisphere the old eulerAngles().y decode mangled.
+	xTransform.SetRotation(glm::angleAxis(3.14159265f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+
+	Zenith_NavMeshAgent xAgent;
+	xAgent.SetNavMesh(&xNavMesh);
+	xAgent.SetMoveSpeed(3.0f);
+	xAgent.SetTurnSpeed(360.0f);
+	// Travel toward (-X, -Z): an ASYMMETRIC heading (move dir ~(-0.95, 0, -0.32)) so the
+	// fixed code (tracking travel) and the old code (under-turning in Z) diverge.
+	xAgent.SetDestination(Zenith_Maths::Vector3(2.0f, 0.0f, 6.0f));
+
+	for (int i = 0; i < 60; ++i)
+		xAgent.Update(0.02f, xEntity.GetEntityID());
+
+	Zenith_Maths::Quat xRot;
+	xTransform.GetRotation(xRot);
+	const Zenith_Maths::Vector3 xForward = xRot * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	// Turned toward the travel direction in BOTH axes (the -Z component is the
+	// discriminator: the old decode leaves forward.z ~ -0.06, the fix reaches ~ -0.32),
+	// and stayed upright (pure-yaw writeback: no spurious pitch/roll off the XZ plane).
+	ZENITH_ASSERT_LT(xForward.x, -0.7f,  "Agent should turn toward its -X travel component");
+	ZENITH_ASSERT_LT(xForward.z, -0.15f, "Agent must track the -Z travel component (old eulerAngles decode fails this)");
+	ZENITH_ASSERT_LT(xForward.y,  0.1f,  "Nav rotation must stay pure-yaw (upright)");
+	ZENITH_ASSERT_GT(xForward.y, -0.1f,  "Nav rotation must stay pure-yaw (upright)");
+}
+
