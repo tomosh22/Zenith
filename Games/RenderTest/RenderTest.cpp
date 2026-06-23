@@ -93,6 +93,19 @@
 // it before the asset registry tears down; in non-tools it stays an empty handle.
 static MaterialHandle s_xTestbedVtxColorMaterial;
 
+// Campus origin. RenderTest's entire "campus" — the player, the three co-planar
+// platforms (IK deck, tennis court, material showcase), the ring of hills/grass/trees,
+// and every demo/capture vantage — sits at the CENTRE of the 4096 m terrain
+// (Flux_TerrainConfig::TERRAIN_SIZE * 0.5), not the (256,256) corner it was historically
+// authored around. fCAMPUS_C{X,Z} is that centre; fCAMPUS_SHIFT (= centre - 256, the old
+// anchor) translates the legacy 256-anchored local offsets (IK cubes, grass meadows,
+// scattered feature hills) onto it so the whole layout moves rigidly with no relative
+// drift. Bumping the terrain marker re-bakes the heightfield with the features at the
+// new centre, leaving the old corner as plain procedural ground.
+static constexpr float fCAMPUS_CX    = 2048.0f;
+static constexpr float fCAMPUS_CZ    = 2048.0f;
+static constexpr float fCAMPUS_SHIFT = 1792.0f;   // = fCAMPUS_CX - 256.0f (legacy anchor)
+
 // Defined alongside Project_LoadInitialScene below; also queued as a
 // post-scene-load automation step in tools builds (ZENITH_TOOLS-only — the
 // runtime/Playing grass apply is driven by RenderTest_BootstrapComponent).
@@ -108,11 +121,15 @@ void RenderTest_SpawnMaterialShowcase();
 namespace RenderTest_Showcase
 {
 	// World framing constants the capture test reads to aim the editor camera.
-	constexpr float fPLATFORM_CX = 256.0f;
-	constexpr float fPLATFORM_CZ = 300.0f;
-	// Floated well above the (hilly, seed-1337) terrain so the grid is never
-	// buried and reads against the sky/IBL — the cleanest material backdrop.
-	constexpr float fPLATFORM_TOP_Y = 120.0f;
+	// Centred on the terrain with the rest of the campus (fCAMPUS_C*); the showcase
+	// sits 44 m north of the campus centre (was Z=300 vs the old 256 anchor).
+	constexpr float fPLATFORM_CX = fCAMPUS_CX;
+	constexpr float fPLATFORM_CZ = fCAMPUS_CZ + 44.0f;
+	// Sits flush on the flattened campus plateau, co-planar with the player deck
+	// (top Y = 48.75) and the tennis court, so the three platforms form one
+	// connected campus. The ring of hills is the material backdrop now (the grid
+	// used to be floated to read against the sky/IBL).
+	constexpr float fPLATFORM_TOP_Y = 48.75f;
 	constexpr int   iROWS = 5;
 	constexpr float fCOL_SPACING = 3.0f;
 	constexpr float fROW_SPACING = 3.6f;
@@ -643,7 +660,7 @@ public:
 		// Frame 150: warp back over the platform (top Y=48.75) and validate.
 		if (m_uFrame == 60)
 		{
-			TeleportPlayerTo(Zenith_Maths::Vector3(244.0f, 49.5f, 268.0f));
+			TeleportPlayerTo(Zenith_Maths::Vector3(244.0f + fCAMPUS_SHIFT, 49.5f, 268.0f + fCAMPUS_SHIFT));
 		}
 		if (m_uFrame == 120)
 		{
@@ -652,7 +669,7 @@ public:
 		}
 		if (m_uFrame == 150)
 		{
-			TeleportPlayerTo(Zenith_Maths::Vector3(256.0f, 49.5f, 256.0f));
+			TeleportPlayerTo(Zenith_Maths::Vector3(fCAMPUS_CX, 49.5f, fCAMPUS_CZ));
 		}
 		if (m_uFrame == 200)
 		{
@@ -1048,7 +1065,15 @@ static void InitializeRenderTestResources()
 // --rendertest-force-regenerate) to regenerate.
 // v2: spawn meadow painted as a ring around the CenterPlatform footprint
 // (was one dab over it — blades poked through the platform deck).
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v2.marker";
+// v3: ring of 8 hills around the campus + dense grass on them + plateau
+// flatten widened 90->100m (covers the lowered tennis court + showcase).
+// v4: hills now ENTIRELY surround the spawn — a continuous 24-dab inner ring
+// (r=170) + a taller 18-dab outer ring (r=255), both grassed + forested.
+// v5: hills made LOWER + GENTLER (peaks 74/92 over wider brush 80/95 → ~27/36deg
+// flanks, was 104/134 over 62/78 → ~53deg) at pushed-out radii 185/265.
+// v6: whole campus (+ its hills/grass/trees + scattered feature hills) recentred from
+// the (256,256) corner to the terrain centre (2048,2048) — every world XZ shifted +1792.
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v6.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {
@@ -1416,13 +1441,14 @@ static void RenderTest_OpenTerrainEditorForCursor()
 
 	// Plant a demo grove around the plateau with the tree brush so the
 	// capture harness can photograph instanced wind-swayed trees without
-	// scripted mouse drags.
+	// scripted mouse drags. Coords are the legacy 256-anchored layout shifted
+	// onto the recentred campus (fCAMPUS_SHIFT).
 	xTE.m_xBrush.m_uTreesPerDab = 6;
-	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 215.0f, 300.0f, 26.0f, 1.0f, 0.0f);
-	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 300.0f, 305.0f, 26.0f, 1.0f, 0.0f);
-	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 256.0f, 340.0f, 30.0f, 1.0f, 0.0f);
-	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 190.0f, 255.0f, 22.0f, 1.0f, 0.0f);
-	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 325.0f, 255.0f, 22.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 215.0f + fCAMPUS_SHIFT, 300.0f + fCAMPUS_SHIFT, 26.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 300.0f + fCAMPUS_SHIFT, 305.0f + fCAMPUS_SHIFT, 26.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 256.0f + fCAMPUS_SHIFT, 340.0f + fCAMPUS_SHIFT, 30.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 190.0f + fCAMPUS_SHIFT, 255.0f + fCAMPUS_SHIFT, 22.0f, 1.0f, 0.0f);
+	xTE.ApplyBrushDab(Zenith_TerrainBrushTool::TreePaint, 325.0f + fCAMPUS_SHIFT, 255.0f + fCAMPUS_SHIFT, 22.0f, 1.0f, 0.0f);
 
 	// Elevate the EDITOR camera (authoritative for the Stopped-mode view)
 	// so cursor rays spread across the plateau instead of clustering a few
@@ -1432,13 +1458,13 @@ static void RenderTest_OpenTerrainEditorForCursor()
 	if (RenderTest_HasCommandLineFlag("--rendertest-tree-closeup"))
 	{
 		// Eye-level vantage inside the grove for sway/foliage close-ups.
-		xCamera.m_xPosition = { 213.0f, 53.5f, 286.0f };
+		xCamera.m_xPosition = { 213.0f + fCAMPUS_SHIFT, 53.5f, 286.0f + fCAMPUS_SHIFT };
 		xCamera.m_fPitch = -0.06;
 		xCamera.m_fYaw = 0.0;
 	}
 	else
 	{
-		xCamera.m_xPosition = { 256.0f, 95.0f, 215.0f };
+		xCamera.m_xPosition = { 256.0f + fCAMPUS_SHIFT, 95.0f, 215.0f + fCAMPUS_SHIFT };
 		xCamera.m_fPitch = -0.55;
 		xCamera.m_fYaw = 0.0;
 	}
@@ -1550,18 +1576,53 @@ void Project_RegisterEditorAutomationSteps()
 
 		// Feature hills: a smooth dome, a terraced mesa, a roughened noise
 		// field, and the dome cloned east via the copy/stamp brush.
-		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 760.0f, 420.0f, 220.0f, 0.9f, 120.0f);
-		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 1500.0f, 900.0f, 260.0f, 0.85f, 95.0f);
-		xAuto.AddStep_TerrainBrushStroke(iTerrace, 1500.0f, 900.0f, 300.0f, 0.8f, 10.0f);
-		xAuto.AddStep_TerrainBrushStroke(iNoise, 1100.0f, 1500.0f, 280.0f, 0.7f, 14.0f);
-		xAuto.AddStep_TerrainSampleStamp(760.0f, 420.0f, 240.0f);
-		xAuto.AddStep_TerrainBrushStroke(iStamp, 2100.0f, 600.0f, 240.0f, 0.9f, 0.0f);
+		// (all +fCAMPUS_SHIFT so they cluster NE of the recentred campus, not the corner)
+		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 760.0f + fCAMPUS_SHIFT, 420.0f + fCAMPUS_SHIFT, 220.0f, 0.9f, 120.0f);
+		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 1500.0f + fCAMPUS_SHIFT, 900.0f + fCAMPUS_SHIFT, 260.0f, 0.85f, 95.0f);
+		xAuto.AddStep_TerrainBrushStroke(iTerrace, 1500.0f + fCAMPUS_SHIFT, 900.0f + fCAMPUS_SHIFT, 300.0f, 0.8f, 10.0f);
+		xAuto.AddStep_TerrainBrushStroke(iNoise, 1100.0f + fCAMPUS_SHIFT, 1500.0f + fCAMPUS_SHIFT, 280.0f, 0.7f, 14.0f);
+		xAuto.AddStep_TerrainSampleStamp(760.0f + fCAMPUS_SHIFT, 420.0f + fCAMPUS_SHIFT, 240.0f);
+		xAuto.AddStep_TerrainBrushStroke(iStamp, 2100.0f + fCAMPUS_SHIFT, 600.0f + fCAMPUS_SHIFT, 240.0f, 0.9f, 0.0f);
+
+		// Hills ENTIRELY surrounding the spawn campus (player + the 3 co-planar
+		// platforms, all at deck-top 48.75): a CONTINUOUS inner ring the player
+		// can't see through, plus a taller, half-step-offset outer ring for
+		// layered depth. Both use deterministic per-dab peak variation (sinf of
+		// the index → byte-stable) for a natural undulating skyline. Placed
+		// before Erode so they weather naturally; the post-erode r=100 plateau
+		// re-flatten restores the flat campus the dabs ring.
+		//
+		// Inner ring: 24 dabs at r=170, brush 62 → chord spacing ~44m < brush, so
+		// the dabs overlap into a gapless ridge. Inner edge (170-62=108) clears
+		// the widened (100m) plateau flatten by ~8m → surrounds without burying.
+		const int   iINNER_HILLS = 24;
+		const float fInnerR = 185.0f, fInnerBrush = 80.0f;
+		for (int iHill = 0; iHill < iINNER_HILLS; ++iHill)
+		{
+			const float fA = glm::radians(360.0f / iINNER_HILLS * static_cast<float>(iHill));
+			const float fPeak = 74.0f + 8.0f * sinf(static_cast<float>(iHill) * 2.1f);
+			xAuto.AddStep_TerrainBrushStroke(iSetHeight, fCAMPUS_CX + fInnerR * cosf(fA),
+				fCAMPUS_CZ + fInnerR * sinf(fA), fInnerBrush, 0.9f, fPeak);
+		}
+		// Outer ring: 18 taller dabs at r=255, brush 78, offset +10deg so its
+		// peaks interleave the inner ring → a layered hill belt receding into the
+		// distance. Outer edge (255+78=333) stays well inside the dome (760,420).
+		const int   iOUTER_HILLS = 18;
+		const float fOuterR = 265.0f, fOuterBrush = 95.0f;
+		for (int iHill = 0; iHill < iOUTER_HILLS; ++iHill)
+		{
+			const float fA = glm::radians(360.0f / iOUTER_HILLS * static_cast<float>(iHill) + 10.0f);
+			const float fPeak = 92.0f + 12.0f * sinf(static_cast<float>(iHill) * 1.3f + 0.6f);
+			xAuto.AddStep_TerrainBrushStroke(iSetHeight, fCAMPUS_CX + fOuterR * cosf(fA),
+				fCAMPUS_CZ + fOuterR * sinf(fA), fOuterBrush, 0.88f, fPeak);
+		}
 
 		// Erode everything (hydraulic droplets + thermal slumping), THEN
 		// re-flatten the gameplay plateau the IK platforms / player spawn /
-		// smoke expectations assume (fully flat within ~45m of 256,256).
+		// smoke expectations assume (fully flat within ~100m of 256,256 — wide
+		// enough to cover the lowered tennis court + material showcase cluster).
 		xAuto.AddStep_TerrainErode(150000, 2, 1337);
-		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 256.0f, 256.0f, 90.0f, 1.0f, 48.25f);
+		xAuto.AddStep_TerrainBrushStroke(iSetHeight, fCAMPUS_CX, fCAMPUS_CZ, 100.0f, 1.0f, 48.25f);
 
 		// Auto-splat: grass on flats, rock on steeps, lowland + altitude accents.
 		xAuto.AddStep_TerrainAutoSplatRule(0, 0.0f, 512.0f, 0.0f, 22.0f, 1.0f, 0.15f);
@@ -1574,11 +1635,27 @@ void Project_RegisterEditorAutomationSteps()
 		// The spawn meadow is a RING of four dabs around the CenterPlatform
 		// footprint (X/Z 241-271) rather than one dab over it — blades root in
 		// the terrain under the platform and would poke up through its deck.
-		xAuto.AddStep_TerrainBrushStroke(iGrass, 256.0f, 330.0f, 60.0f, 1.0f, 0.6f);
-		xAuto.AddStep_TerrainBrushStroke(iGrass, 256.0f, 182.0f, 60.0f, 1.0f, 0.6f);
-		xAuto.AddStep_TerrainBrushStroke(iGrass, 330.0f, 256.0f, 60.0f, 1.0f, 0.6f);
-		xAuto.AddStep_TerrainBrushStroke(iGrass, 182.0f, 256.0f, 60.0f, 1.0f, 0.6f);
-		xAuto.AddStep_TerrainBrushStroke(iGrass, 420.0f, 360.0f, 80.0f, 1.0f, 0.5f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX, fCAMPUS_CZ + 74.0f, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX, fCAMPUS_CZ - 74.0f, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX + 74.0f, fCAMPUS_CZ, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX - 74.0f, fCAMPUS_CZ, 60.0f, 1.0f, 0.6f);
+		xAuto.AddStep_TerrainBrushStroke(iGrass, 420.0f + fCAMPUS_SHIFT, 360.0f + fCAMPUS_SHIFT, 80.0f, 1.0f, 0.5f);
+
+		// Dense grass blanketing BOTH hill rings (matches the hill footprints
+		// above). Reaches non-tools via the saved GrassDensity.ztxtr + the
+		// bootstrap component's per-boot apply.
+		for (int iHill = 0; iHill < 24; ++iHill)
+		{
+			const float fA = glm::radians(360.0f / 24.0f * static_cast<float>(iHill));
+			xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX + 185.0f * cosf(fA),
+				fCAMPUS_CZ + 185.0f * sinf(fA), 80.0f, 1.0f, 0.9f);
+		}
+		for (int iHill = 0; iHill < 18; ++iHill)
+		{
+			const float fA = glm::radians(360.0f / 18.0f * static_cast<float>(iHill) + 10.0f);
+			xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX + 265.0f * cosf(fA),
+				fCAMPUS_CZ + 265.0f * sinf(fA), 95.0f, 1.0f, 0.85f);
+		}
 
 		// Persist the textures + bake every chunk mesh, then write the marker.
 		xAuto.AddStep_TerrainSaveTextures();
@@ -1613,7 +1690,7 @@ void Project_RegisterEditorAutomationSteps()
 	const float fCamOffsetZ = -4.0f;
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("GameManager");
 	g_xEngine.EditorAutomation().AddStep_AddCamera();
-	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(512 * 0.5f, fInitialPlayerY + fCamOffsetY, 512 * 0.5f + fCamOffsetZ);
+	g_xEngine.EditorAutomation().AddStep_SetCameraPosition(fCAMPUS_CX, fInitialPlayerY + fCamOffsetY, fCAMPUS_CZ + fCamOffsetZ);
 	g_xEngine.EditorAutomation().AddStep_SetCameraPitch(-0.15f);
 	g_xEngine.EditorAutomation().AddStep_SetCameraYaw(0.0f);
 	g_xEngine.EditorAutomation().AddStep_SetCameraFOV(glm::radians(70.0f));
@@ -1637,7 +1714,7 @@ void Project_RegisterEditorAutomationSteps()
 	// Cube platform — uses exported .zmodel so it survives SaveScene/LoadScene.
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("CenterPlatform");
 	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
-	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY - 2.f, 512 * 0.5f);
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(fCAMPUS_CX, fInitialPlayerY - 2.f, fCAMPUS_CZ);
 	g_xEngine.EditorAutomation().AddStep_SetTransformScale(30.0f, 0.5f, 30.0f);
 	g_xEngine.EditorAutomation().AddStep_AddModel();
 	g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
@@ -1651,12 +1728,16 @@ void Project_RegisterEditorAutomationSteps()
 	// Top-Y values are designed so the dynamic capsule can step up without jumping
 	// (max +0.30m above the platform top at Y=48.75). Bases sit on the main
 	// platform top, which itself sits base-down on the 48.25m terrain plateau.
+	// fX/fZ below are the legacy 256-anchored campus-local coords; the lambda
+	// translates them onto the recentred campus (fCAMPUS_SHIFT). The absolute
+	// X-range notes in the callers are pre-shift but the relative geometry (cube
+	// edge vs capsule, step heights) is preserved exactly by the rigid translation.
 	auto AddIKPlatform = [](const char* szName, float fX, float fY, float fZ,
 		float fSX, float fSY, float fSZ)
 	{
 		g_xEngine.EditorAutomation().AddStep_CreateEntity(szName);
 		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
-		g_xEngine.EditorAutomation().AddStep_SetTransformPosition(fX, fY, fZ);
+		g_xEngine.EditorAutomation().AddStep_SetTransformPosition(fX + fCAMPUS_SHIFT, fY, fZ + fCAMPUS_SHIFT);
 		g_xEngine.EditorAutomation().AddStep_SetTransformScale(fSX, fSY, fSZ);
 		g_xEngine.EditorAutomation().AddStep_AddModel();
 		g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
@@ -1695,7 +1776,7 @@ void Project_RegisterEditorAutomationSteps()
 	// Player — .zmodel with skeleton; AnimatorComponent discovers skeleton on OnStart.
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("Player");
 	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
-	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
+	g_xEngine.EditorAutomation().AddStep_SetTransformPosition(fCAMPUS_CX, fInitialPlayerY, fCAMPUS_CZ);
 	g_xEngine.EditorAutomation().AddStep_AddModel();
 	// The .zmodel bundles the painted-atlas body material — no override step.
 	g_xEngine.EditorAutomation().AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
@@ -1773,7 +1854,7 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_CreateEntity("Jetpack");
 		// Seat at the player spawn so frame 0 (before the attachment's OnLateUpdate
 		// resolves the Spine bone) isn't at the world origin.
-		xAuto.AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
+		xAuto.AddStep_SetTransformPosition(fCAMPUS_CX, fInitialPlayerY, fCAMPUS_CZ);
 		xAuto.AddStep_AddModel();
 		xAuto.AddStep_LoadModel(RenderTest_JetpackModelPath());
 		xAuto.AddStep_AddParticleEmitter();
@@ -1789,14 +1870,14 @@ void Project_RegisterEditorAutomationSteps()
 		// CenterPlatform deck top Y = 48.75; lay them in a row in front of the player.
 		{
 			constexpr float fDeckTopY = 48.75f;
-			constexpr float fRowZ = 261.0f;
+			constexpr float fRowZ = fCAMPUS_CZ + 5.0f;   // 5 m in front of the campus centre
 			constexpr float fSpacing = 2.0f;
 			constexpr float fRestLift = 0.05f;
 			const int iCount = static_cast<int>(RenderTest_Guns::GunType::COUNT);
 			for (int i = 0; i < iCount; ++i)
 			{
 				const RenderTest_Guns::GunType eType = static_cast<RenderTest_Guns::GunType>(i);
-				const float fX = 256.0f + (static_cast<float>(i) - (iCount - 1) * 0.5f) * fSpacing;
+				const float fX = fCAMPUS_CX + (static_cast<float>(i) - (iCount - 1) * 0.5f) * fSpacing;
 				xAuto.AddStep_CreateEntity(RenderTest_GunEntityName(eType));
 				xAuto.AddStep_SetTransformPosition(fX, fDeckTopY + fRestLift, fRowZ);
 				// Rest flat on a side face (rotZ +90deg).
@@ -1882,6 +1963,37 @@ void Project_RegisterEditorAutomationSteps()
 			// Match manager (owns the ball + players, scoring).
 			xAuto.AddStep_CreateEntity("Tennis_Match");
 			xAuto.AddStep_AddComponent("RenderTestTennisMatch");
+		}
+
+		// --- Instanced trees ringing the hills. -----------------------------
+		// Painted AFTER CreateScene (TreePaint needs the active scene to host the
+		// TerrainTrees_Trunk/_Leaves instanced entities) and BEFORE SaveScene, so
+		// the instances serialize into RenderTest.zscen via Zenith_InstancedMesh-
+		// Component and load in non-tools (which run no automation). The terrain
+		// editor auto-opens a standalone session here, seeded from the baked
+		// Height.ztxtr, so SampleHeightWorld reads the ring-hill heights for tree
+		// Y + slope rejection. Re-painted into the FRESH scene every tools boot
+		// (CreateScene makes a new scene each boot => no accumulation); the fixed
+		// seed + deterministic heightfield keep the save byte-stable. Windowed-
+		// only (EnsureTreeEntities no-ops headless — harmless; authoring is windowed).
+		{
+			const int iTreeTool = static_cast<int>(Zenith_TerrainBrushTool::TreePaint);
+			// Dense brush: many attempts/dab, tight spacing, allow steeper flanks
+			// (the default 38deg skips most of a ~56m hill). Seed 4242 for a
+			// reproducible scatter. fToolValue 0 = paint (>0.5 would erase).
+			xAuto.AddStep_TerrainSetTreeBrush(60, 1.0f, 1.8f, 2.5f, 50.0f, 4242);
+			for (int iHill = 0; iHill < 24; ++iHill)
+			{
+				const float fA = glm::radians(360.0f / 24.0f * static_cast<float>(iHill));
+				xAuto.AddStep_TerrainBrushStroke(iTreeTool, fCAMPUS_CX + 185.0f * cosf(fA),
+					fCAMPUS_CZ + 185.0f * sinf(fA), 75.0f, 1.0f, 0.0f);
+			}
+			for (int iHill = 0; iHill < 18; ++iHill)
+			{
+				const float fA = glm::radians(360.0f / 18.0f * static_cast<float>(iHill) + 10.0f);
+				xAuto.AddStep_TerrainBrushStroke(iTreeTool, fCAMPUS_CX + 265.0f * cosf(fA),
+					fCAMPUS_CZ + 265.0f * sinf(fA), 90.0f, 1.0f, 0.0f);
+			}
 		}
 
 		// Stamp per-instance config (gun type/ammo, NPC side) after all the testbed

@@ -32,6 +32,11 @@ namespace
 {
 	constexpr int iFRAMES_PER_SCENARIO = 420;
 
+	// Campus recentred from the (256,256) corner to the terrain centre (2048,2048);
+	// every sculpt site below is the legacy layout shifted by fSHIFT so the demo
+	// keeps modifying the ground in front of the (now-centred) player photo camera.
+	constexpr float fSHIFT = 1792.0f;
+
 	void Showcase_Mark(const char* szName)
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] SHOWCASE_MARK %s", szName);
@@ -82,7 +87,7 @@ namespace
 			xTE.BeginStroke();
 			for (u_int u = 0; u < 30; u++)
 			{
-				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Raise, 256.0f, 340.0f, 45.0f, 1.0f, 0.0f);
+				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Raise, 256.0f + fSHIFT, 340.0f + fSHIFT, 45.0f, 1.0f, 0.0f);
 			}
 			xTE.EndStroke();
 			Showcase_Mark("raise");
@@ -94,7 +99,7 @@ namespace
 			xTE.BeginStroke();
 			for (u_int u = 0; u < 24; u++)
 			{
-				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Lower, 330.0f, 320.0f, 32.0f, 1.0f, 0.0f);
+				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Lower, 330.0f + fSHIFT, 320.0f + fSHIFT, 32.0f, 1.0f, 0.0f);
 			}
 			xTE.EndStroke();
 			Showcase_Mark("lower");
@@ -106,7 +111,7 @@ namespace
 			xTE.BeginStroke();
 			for (u_int u = 0; u < 6; u++)
 			{
-				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Terrace, 256.0f, 340.0f, 60.0f, 1.0f, 5.0f);
+				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Terrace, 256.0f + fSHIFT, 340.0f + fSHIFT, 60.0f, 1.0f, 5.0f);
 			}
 			xTE.EndStroke();
 			Showcase_Mark("terrace");
@@ -115,9 +120,9 @@ namespace
 
 		case 4 * iFRAMES_PER_SCENARIO:
 		{
-			xTE.SampleStamp(256.0f, 340.0f, 55.0f);
+			xTE.SampleStamp(256.0f + fSHIFT, 340.0f + fSHIFT, 55.0f);
 			xTE.BeginStroke();
-			xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Stamp, 180.0f, 330.0f, 55.0f, 1.0f, 0.0f);
+			xTE.ApplyBrushDab(Zenith_TerrainBrushTool::Stamp, 180.0f + fSHIFT, 330.0f + fSHIFT, 55.0f, 1.0f, 0.0f);
 			xTE.EndStroke();
 			Showcase_Mark("stamp");
 			break;
@@ -130,8 +135,8 @@ namespace
 			xParams.m_uHydraulicDroplets = 40000;
 			xParams.m_uThermalIterations = 2;
 			xParams.m_bRegionOnly = true;
-			xParams.m_fRegionCentreX = 256.0f;
-			xParams.m_fRegionCentreZ = 340.0f;
+			xParams.m_fRegionCentreX = 256.0f + fSHIFT;
+			xParams.m_fRegionCentreZ = 340.0f + fSHIFT;
 			xParams.m_fRegionRadius = 90.0f;
 			xTE.RunErosion(xParams, true);
 			Showcase_Mark("erode");
@@ -141,8 +146,8 @@ namespace
 		case 6 * iFRAMES_PER_SCENARIO:
 		{
 			xTE.BeginStroke();
-			xTE.ApplyBrushDab(Zenith_TerrainBrushTool::GrassDensity, 230.0f, 290.0f, 40.0f, 1.0f, 0.9f);
-			xTE.ApplyBrushDab(Zenith_TerrainBrushTool::GrassDensity, 285.0f, 290.0f, 35.0f, 1.0f, 0.8f);
+			xTE.ApplyBrushDab(Zenith_TerrainBrushTool::GrassDensity, 230.0f + fSHIFT, 290.0f + fSHIFT, 40.0f, 1.0f, 0.9f);
+			xTE.ApplyBrushDab(Zenith_TerrainBrushTool::GrassDensity, 285.0f + fSHIFT, 290.0f + fSHIFT, 35.0f, 1.0f, 0.8f);
 			xTE.EndStroke();
 			Showcase_Mark("grass");
 			break;
@@ -153,7 +158,7 @@ namespace
 			xTE.BeginStroke();
 			for (u_int u = 0; u < 6; u++)
 			{
-				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::SplatPaint, 256.0f, 295.0f, 45.0f, 1.0f, 1.0f /* layer 1 = rock */);
+				xTE.ApplyBrushDab(Zenith_TerrainBrushTool::SplatPaint, 256.0f + fSHIFT, 295.0f + fSHIFT, 45.0f, 1.0f, 1.0f /* layer 1 = rock */);
 			}
 			xTE.EndStroke();
 			Showcase_Mark("splat");
@@ -179,7 +184,7 @@ namespace
 	bool Verify_TerrainEditorShowcase()
 	{
 		// Visual demo — pass as long as the sculpting actually landed.
-		const bool bSculpted = g_xEngine.TerrainEditor().SampleHeightWorld(256.0f, 340.0f) > 50.0f;
+		const bool bSculpted = g_xEngine.TerrainEditor().SampleHeightWorld(256.0f + fSHIFT, 340.0f + fSHIFT) > 50.0f;
 		g_xEngine.UndoSystem().Clear();
 		g_xEngine.TerrainEditor().Close();
 		return bSculpted;

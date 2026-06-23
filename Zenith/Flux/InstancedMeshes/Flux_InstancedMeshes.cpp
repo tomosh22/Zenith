@@ -3,14 +3,13 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
-#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Flux/InstancedMeshes/Flux_InstanceCulling.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_RendererImpl.h"  // RequestGraphRebuild on group register/unregister
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -47,6 +46,21 @@ static_assert(sizeof(InstancedMeshPushConstants) == sizeof(MaterialDrawConstants
 	"InstancedMeshPushConstants must stay byte-compatible with MaterialDrawConstants / DrawConstantsLayout");
 
 //=============================================================================
+// Reset compute draw constants (16 bytes). Mirrors ResetDrawConstantsLayout in
+// Flux_InstanceReset.slang: the GPU reset pass writes the per-group mesh index
+// count into the indirect command's indexCount[0] every frame (replacing the
+// old host seed that raced an in-flight indirect draw on a runtime SetMesh).
+//=============================================================================
+struct InstanceResetDrawConstants
+{
+	uint32_t m_uIndexCount;
+	uint32_t m_uPad0;
+	uint32_t m_uPad1;
+	uint32_t m_uPad2;
+};
+static_assert(sizeof(InstanceResetDrawConstants) == 16, "InstanceResetDrawConstants must be 16 bytes");
+
+//=============================================================================
 // Static Data
 //=============================================================================
 
@@ -66,6 +80,7 @@ static_assert(sizeof(InstancedMeshPushConstants) == sizeof(MaterialDrawConstants
 // Initialise / Shutdown
 //=============================================================================
 
+static void ExecuteCullReset(Flux_CommandBuffer* pxCmdList, void* pUserData);
 static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void* pUserData);
 static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
@@ -145,6 +160,22 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 
 		m_xCullingPipeline.m_xRootSig = m_xCullingRootSig;
 	}
+
+	// Reset compute pipeline (zeroes the persistent visible-count + indirect
+	// instanceCount each frame, before culling). Mirrors the culling setup.
+	{
+		m_xResetShader.Initialise(Flux_InstancedMeshesShaders::xInstanceReset);
+
+		const Flux_ShaderReflection& xResetReflection = m_xResetShader.GetReflection();
+		Flux_RootSigBuilder::FromReflection(m_xResetRootSig, xResetReflection);
+
+		Flux_ComputePipelineBuilder xResetBuilder;
+		xResetBuilder.WithShader(m_xResetShader)
+			.WithLayout(m_xResetRootSig.m_xLayout)
+			.Build(m_xResetPipeline);
+
+		m_xResetPipeline.m_xRootSig = m_xResetRootSig;
+	}
 }
 
 void Flux_InstancedMeshesImpl::Initialise()
@@ -201,6 +232,12 @@ void Flux_InstancedMeshesImpl::RegisterInstanceGroup(Flux_InstanceGroup* pxGroup
 
 	m_apxInstanceGroups.PushBack(pxGroup);
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Registered instance group (total: %u)", m_apxInstanceGroups.GetSize());
+
+	// The group set is part of SetupRenderGraph's per-group buffer declarations, so
+	// a change to it must re-run SetupRenderGraph (re-runs every subsystem's setup
+	// + recompiles cached barriers). RequestGraphRebuild defers the rebuild to the
+	// next safe point (mirrors Zenith_TerrainComponent on terrain create/destroy).
+	g_xEngine.FluxRenderer().RequestGraphRebuild();
 }
 
 void Flux_InstancedMeshesImpl::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
@@ -212,6 +249,9 @@ void Flux_InstancedMeshesImpl::UnregisterInstanceGroup(Flux_InstanceGroup* pxGro
 			// Swap with last and pop
 			m_apxInstanceGroups.RemoveSwap(i);
 			Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Unregistered instance group (remaining: %u)", m_apxInstanceGroups.GetSize());
+
+			// Group set changed -> re-run SetupRenderGraph (see RegisterInstanceGroup).
+			g_xEngine.FluxRenderer().RequestGraphRebuild();
 			return;
 		}
 	}
@@ -229,29 +269,81 @@ void Flux_InstancedMeshesImpl::ClearAllGroups()
 
 void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Pass 1: GPU culling compute (no declared resources — per-instance-group
-	// output buffers are dynamic and not graph-tracked, so the GBuffer pass's
-	// dependency is expressed as an explicit DependsOn below).
+	// SetupRenderGraph runs ONCE at init and on every RequestGraphRebuild() (which
+	// re-runs every subsystem's SetupRenderGraph). The set of instance groups is
+	// dynamic, so RegisterInstanceGroup / UnregisterInstanceGroup call
+	// RequestGraphRebuild() — this loop re-declares the per-group buffer Reads/
+	// Writes against the CURRENT group set each rebuild, and the cached compiled
+	// barriers stay correct.
 	//
-	// WS7 keystone: the gather Prepare is hung on this FIRST instanced pass
-	// (Particles-Compute pattern). CallPrepareCallbacks runs it on the main thread
-	// before any record task dispatches, so it is the SINGLE writer of every
-	// group's per-frame state (UpdateGPUBuffers + ResetVisibleCount + culling-
-	// constants upload + stats). Both ExecuteCulling and ExecuteInstancedGBuffer
-	// then only READ that frozen state on their worker threads. Pass-registration
-	// order is irrelevant to Prepare timing.
-	Flux_PassHandle xCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling)
-		.Prepare([](void* p){ g_xEngine.InstancedMeshes().GatherInstancedPacket(p); });
+	// Three passes, each declaring the PERSISTENT (graph-trackable) per-group GPU
+	// buffers it touches. The transform/anim/culling-constants buffers are
+	// frame-indexed (dynamic) and therefore intentionally NOT declared — the graph
+	// cannot track a buffer whose physical handle changes per frame; their sync is
+	// handled by frame indexing + the implicit host-write barrier (see Flux_Buffers.h).
+	//
+	//   1. "Instanced Cull Reset" (compute) — zeroes each group's persistent
+	//      visible-count + indirect-instanceCount buffers on device.
+	//   2. "Instanced Meshes Culling" (compute) — writes the visible-index list and
+	//      bumps the indirect instanceCount; depends on the reset.
+	//   3. "Instanced Meshes GBuffer" (graphics) — reads the visible-index +
+	//      indirect buffers for the indirect draw; depends on the culling.
+	//
+	// WS7 keystone: the gather Prepare is hung on the culling pass. CallPrepareCallbacks
+	// runs it on the main thread before any record task dispatches, so it is the
+	// SINGLE writer of every group's per-frame CPU/GPU-sync state. All three record
+	// callbacks then only READ that frozen state on their worker threads.
 
-	// Pass 2: GBuffer render
+	// Pass 1: GPU reset compute.
+	Flux_PassHandle xResetPass = xGraph.AddPass("Instanced Cull Reset", ExecuteCullReset);
+
+	// Pass 2: GPU culling compute. The gather Prepare is hung here.
+	Flux_PassHandle xCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling)
+		.Prepare([](void* p){ g_xEngine.InstancedMeshes().GatherInstancedPacket(p); })
+		.DependsOn(xResetPass);
+
+	// Pass 3: GBuffer render.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteInstancedGBuffer)
+	Flux_PassHandle xGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteInstancedGBuffer)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),		RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
+
+	// Per-group buffer declarations. The builder chain is &&-qualified (single
+	// expression only), so declare the loop-driven per-group buffers via the
+	// graph's handle-taking ReadBuffer/WriteBuffer helpers (mirrors the HiZ per-mip
+	// loop). Skip groups whose GPU buffers aren't initialised yet — the execute
+	// callbacks apply the same skip, so the declared set matches the bound set.
+	for (u_int uGroup = 0; uGroup < m_apxInstanceGroups.GetSize(); ++uGroup)
+	{
+		Flux_InstanceGroup* pxGroup = m_apxInstanceGroups.Get(uGroup);
+		if (!pxGroup || !pxGroup->HasGPUBuffers())
+		{
+			continue;
+		}
+
+		Flux_Buffer& xVisibleIndex = pxGroup->GetVisibleIndexBuffer().GetBuffer();
+		Flux_Buffer& xVisibleCount = pxGroup->GetVisibleCountBuffer().GetBuffer();
+		Flux_Buffer& xIndirect     = pxGroup->GetIndirectBuffer().GetBuffer();
+
+		// Reset writes the count + indirect (pure write — full overwrite).
+		xGraph.WriteBuffer(xResetPass, xVisibleCount, RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.WriteBuffer(xResetPass, xIndirect,     RESOURCE_ACCESS_WRITE_UAV);
+
+		// Culling writes the visible-index list (pure write), and read-modify-writes
+		// the count + indirect (atomic increments) — so READWRITE on those two so
+		// the graph orders them after the reset's writes.
+		xGraph.WriteBuffer(xCullingPass, xVisibleIndex, RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.WriteBuffer(xCullingPass, xVisibleCount, RESOURCE_ACCESS_READWRITE_UAV);
+		xGraph.WriteBuffer(xCullingPass, xIndirect,     RESOURCE_ACCESS_READWRITE_UAV);
+
+		// GBuffer reads the visible-index list (SSBO) and the indirect args.
+		xGraph.ReadBuffer(xGBufferPass, xVisibleIndex, RESOURCE_ACCESS_READ_BUFFER_SRV);
+		xGraph.ReadBuffer(xGBufferPass, xIndirect,     RESOURCE_ACCESS_READ_INDIRECT_ARG);
+	}
 }
 
 // WS7 keystone gather (main thread, via .Prepare). This is the SINGLE writer of
@@ -262,10 +354,12 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 //     visible-index list + m_uVisibleCount. Needed by BOTH the GPU-culling path
 //     (fresh transform/anim before the compute dispatch) and the CPU-fallback
 //     path (the ExecuteInstancedGBuffer !bUseGPUCulling branch used to call this).
-//   - When GPU culling is active: ResetVisibleCount() (zeroes the GPU atomic
-//     counter + indirect command, and m_uVisibleCount) and uploads the per-group
-//     culling constants into the shared subsystem buffer (same single-buffer
-//     overwrite semantics as before — the dispatches bind+read it at GPU time).
+//   - When GPU culling is active: uploads the per-group culling constants into the
+//     shared subsystem buffer (same single-buffer overwrite semantics as before —
+//     the dispatches bind+read it at GPU time). The persistent visible-count +
+//     indirect-instanceCount are NOT host-reset here — the ExecuteCullReset compute
+//     pass zeroes them on-device each frame (a host upload would race the prior
+//     frame's indirect draw).
 //   - Accumulates the m_uTotalInstances / m_uVisibleInstances stats that
 //     ExecuteInstancedGBuffer used to write in its draw loop.
 // After this returns the group state is frozen; the record callbacks are readers.
@@ -313,16 +407,20 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 			continue;
 		}
 
-		// Upload CPU data to GPU + rebuild CPU visible list (sets m_uVisibleCount).
-		pxGroup->UpdateGPUBuffers();
+		// Upload CPU data to GPU + rebuild the enabled-index list (sets
+		// m_uEnabledCount / m_uVisibleCount). In BOTH modes this uploads the
+		// frame-indexed transform/anim buffers and the frame-indexed enabled-index
+		// buffer (used by the shadow pass in all modes + the CPU-fallback GBuffer
+		// draw). The persistent visible-index buffer is GPU-written by the culling
+		// compute and is never host-uploaded here.
+		pxGroup->UpdateGPUBuffers(bUseGPUCulling);
 
 		if (bUseGPUCulling)
 		{
-			// Reset the GPU atomic counter + indirect command (also zeroes
-			// m_uVisibleCount). Order matters: AFTER UpdateGPUBuffers, mirroring
-			// the old ExecuteCulling sequence — the GPU compute writes the real
-			// visible count on-device.
-			pxGroup->ResetVisibleCount();
+			// GPU path: the persistent visible-count + indirect-instanceCount
+			// buffers are reset on device by the graph-tracked GPU reset compute
+			// pass (ExecuteCullReset) — NOT by a host upload here, which would race
+			// the prior frame's indirect draw. So no ResetVisibleCount() call.
 
 			// Build + upload culling constants into the shared subsystem buffer.
 			// Single-buffer overwrite semantics preserved exactly (UploadBufferData
@@ -349,10 +447,69 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 	}
 }
 
+static void ExecuteCullReset(Flux_CommandBuffer* pxCmdList, void*)
+{
+	// PURE READER (worker thread). Zeroes each group's persistent visible-count +
+	// indirect-instanceCount on device. The render graph synthesises the barriers
+	// between this pass, the culling pass (which read-modify-writes the same two
+	// buffers) and the GBuffer indirect draw, from the per-group buffer Reads/
+	// Writes declared in SetupRenderGraph.
+	Flux_InstancedMeshesImpl& xZZ = g_xEngine.InstancedMeshes();
+
+	// Same predicate the culling pass + gather use. When GPU culling is disabled
+	// the reset is a harmless no-op (CPU path doesn't use the indirect buffer).
+	if (!xZZ.m_bCullingInitialized || !xZZ.m_bCullingEnabled || !Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled)
+	{
+		return;
+	}
+
+	if (xZZ.m_apxInstanceGroups.GetSize() == 0)
+	{
+		return;
+	}
+
+	pxCmdList->BindComputePipeline(&xZZ.m_xResetPipeline);
+
+	Flux_ShaderBinder xBinder(*pxCmdList);
+
+	for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
+	{
+		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
+		// Skip groups whose GPU buffers don't exist yet — matches the
+		// SetupRenderGraph per-group declaration guard so the bound set equals the
+		// declared set.
+		if (!pxGroup || pxGroup->IsEmpty() || !pxGroup->HasGPUBuffers())
+		{
+			continue;
+		}
+
+		// The reset shader now writes the full VkDrawIndexedIndirectCommand,
+		// including indexCount[0] from the mesh — so a group with no mesh has no
+		// index count to write (and never draws). Skip it.
+		Flux_MeshInstance* pxMesh = pxGroup->GetMesh();
+		if (!pxMesh)
+		{
+			continue;
+		}
+
+		// Per-group draw constants: the mesh index count the reset writes into the
+		// indirect command (mirrors the GBuffer/shadow DrawConstants binding).
+		InstanceResetDrawConstants xResetConstants = {};
+		xResetConstants.m_uIndexCount = pxMesh->GetNumIndices();
+		xBinder.BindDrawConstants(xZZ.m_xResetShader, "DrawConstants", &xResetConstants, sizeof(xResetConstants));
+
+		// binding 0 = visibleCount, binding 1 = indirectInstanceCount.
+		xBinder.BindUAV_Buffer(xZZ.m_xResetShader, "visibleCount", &pxGroup->GetVisibleCountBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(xZZ.m_xResetShader, "indirectInstanceCount", &pxGroup->GetIndirectBuffer().GetUAV());
+
+		pxCmdList->Dispatch(1, 1, 1);
+	}
+}
+
 static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 {
-	// PURE READER (worker thread). All CPU/GPU-sync mutation — UpdateGPUBuffers,
-	// ResetVisibleCount, and the culling-constants upload — was relocated to
+	// PURE READER (worker thread). All CPU/GPU-sync mutation — UpdateGPUBuffers
+	// and the culling-constants upload — was relocated to
 	// GatherInstancedPacket (.Prepare, main thread). This callback only binds the
 	// now-frozen per-group buffers and dispatches the culling compute.
 
@@ -379,7 +536,9 @@ static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 	for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
 		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
-		if (!pxGroup || pxGroup->IsEmpty())
+		// HasGPUBuffers skip matches the SetupRenderGraph per-group declaration
+		// guard so the bound set equals the graph-declared set.
+		if (!pxGroup || pxGroup->IsEmpty() || !pxGroup->HasGPUBuffers())
 		{
 			continue;
 		}
@@ -408,7 +567,15 @@ static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 // Bind per-batch material, animation texture, push constants, and instance
 // buffers for the GBuffer pass. Caller must have bound the shared pipeline
 // and FrameConstants before invoking this.
-void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup)
+//
+// bUseGPUCulling selects the index-list source for VisibleIndexBuffer:
+//   - GPU cull: the PERSISTENT visible-index buffer (camera-culled compact list
+//     the cull compute wrote on device), bound via its SRV. It is graph-tracked;
+//     the GBuffer pass declares a READ on it (see SetupRenderGraph).
+//   - CPU fallback: the FRAME-INDEXED enabled-index buffer (all enabled slots).
+//     It is NOT graph-tracked, so the binder skips the declared-read check; the
+//     persistent buffer's static graph READ declaration is harmlessly unused.
+void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup, bool bUseGPUCulling)
 {
 	Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
 	if (!pxMaterial)
@@ -485,10 +652,22 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV);
 	}
 
-	// Bind instance buffers
+	// Bind instance buffers. Transform/AnimData are frame-indexed (not graph-
+	// tracked) so the UAV bind is fine. The VisibleIndexBuffer source depends on
+	// the culling mode (see header comment): GPU-cull binds the persistent
+	// graph-tracked buffer (SRV, declared READ by the pass); CPU-fallback binds the
+	// frame-indexed enabled-index buffer (SRV, not graph-tracked → skips the
+	// declared-read check). Both are read-only StructuredBuffer<uint> in the shader.
 	xBinder.BindUAV_Buffer(m_xGBufferShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
 	xBinder.BindUAV_Buffer(m_xGBufferShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
-	xBinder.BindUAV_Buffer(m_xGBufferShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+	if (bUseGPUCulling)
+	{
+		xBinder.BindSRV_Buffer(m_xGBufferShader, "VisibleIndexBuffer", pxGroup->GetVisibleIndexBuffer().GetSRV());
+	}
+	else
+	{
+		xBinder.BindSRV_Buffer(m_xGBufferShader, "VisibleIndexBuffer", pxGroup->GetEnabledIndexBuffer().GetSRV());
+	}
 }
 
 // Emit the draw call(s) for one instance group. GPU-culling path uses an
@@ -509,11 +688,13 @@ static void IssueBatchDraw(Flux_CommandBuffer* pxCmdList, Flux_InstanceGroup* px
 		return;
 	}
 
-	// CPU culling fallback: direct instanced draw
-	uint32_t uVisibleCount = pxGroup->GetVisibleCount();
-	if (uVisibleCount > 0)
+	// CPU culling fallback: direct instanced draw over every ENABLED instance
+	// (the frame-indexed enabled-index buffer bound in BindBatchDescriptors maps
+	// SV_InstanceID -> enabled slot). No camera culling on this path.
+	uint32_t uEnabledCount = pxGroup->GetEnabledCount();
+	if (uEnabledCount > 0)
 	{
-		pxCmdList->DrawIndexed(pxMesh->GetNumIndices(), uVisibleCount);
+		pxCmdList->DrawIndexed(pxMesh->GetNumIndices(), uEnabledCount);
 	}
 }
 
@@ -551,7 +732,9 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
 		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
-		if (!pxGroup || pxGroup->IsEmpty())
+		// HasGPUBuffers skip matches the SetupRenderGraph per-group declaration
+		// guard so the buffers this pass reads were declared on it.
+		if (!pxGroup || pxGroup->IsEmpty() || !pxGroup->HasGPUBuffers())
 		{
 			continue;
 		}
@@ -566,18 +749,29 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		pxCmdList->SetVertexBuffer(pxMesh->GetVertexBuffer());
 		pxCmdList->SetIndexBuffer(pxMesh->GetIndexBuffer());
 
-		xZZ.BindBatchDescriptors(xBinder, pxGroup);
+		xZZ.BindBatchDescriptors(xBinder, pxGroup, bUseGPUCulling);
 		IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
 	}
 }
 
 void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
-	// C2 audit: PURE READER. Called from the shadow cascades' record path; it only
-	// reads frozen group state (GetMesh / GetTransformBuffer / GetVisibleIndexBuffer
-	// / GetVisibleCount) — no UpdateGPUBuffers, no ResetVisibleCount. The mutators it
-	// would otherwise have called assert main-thread-only (AssertMainThreadMutation),
-	// so any future worker-thread mutation here trips immediately.
+	// WIRED into Flux_Shadows::ExecuteShadowCascade (per cascade). Instanced meshes
+	// (incl. the terrain trees) cast shadows over ALL ENABLED casters — there is NO
+	// camera culling here: a shadow caster off-screen (or behind the camera) can
+	// still cast into the view, so the camera-culled GPU compute output
+	// (GetVisibleIndexBuffer) would be WRONG. Instead this draws the frame-indexed
+	// enabled-index buffer (every slot with flags != 0) and GetEnabledCount().
+	//
+	// No render-graph declaration is needed for the buffers read here:
+	//   - The enabled-index buffer + the transform buffer are BOTH frame-indexed
+	//     (Flux_DynamicReadWriteBuffer) → never graph-tracked (their host upload in
+	//     GatherInstancedPacket's Prepare runs on the main thread before any pass
+	//     records, and frame indexing covers cross-frame sync). The binder skips
+	//     the declared-access check for frame-indexed buffers.
+	//   - The shadow depth target write is already declared by the cascade pass.
+	// The shadow shader reads TransformBuffer[VisibleIndexBuffer[i]] — correct for
+	// all enabled casters.
 	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
 		return;
@@ -588,6 +782,12 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 		return;
 	}
 
+	// Bind the instanced shadow pipeline here (not in the caller) so games with no
+	// instanced casters don't pay a redundant per-cascade pipeline bind on the
+	// shared shadow path, and the depth-bias dynamic state the cascade set earlier
+	// carries through (it is per-command-buffer, not per-pipeline).
+	xCmdBuf.SetPipeline(&m_xShadowPipeline);
+
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
 
@@ -597,7 +797,8 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 	for (u_int uGroup = 0; uGroup < m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
 		Flux_InstanceGroup* pxGroup = m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
-		if (!pxGroup || pxGroup->IsEmpty())
+		// HasGPUBuffers skip: the enabled-index + transform buffers must exist.
+		if (!pxGroup || pxGroup->IsEmpty() || !pxGroup->HasGPUBuffers())
 		{
 			continue;
 		}
@@ -617,15 +818,19 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xIdentity, sizeof(xIdentity));
 		xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
-		// Bind instance buffers
+		// Bind instance buffers. BOTH are frame-indexed (not graph-tracked):
+		// TransformBuffer via UAV; the enabled-index list via its SRV (read-only
+		// StructuredBuffer<uint> in the shader). The enabled-index list (not the
+		// camera-culled persistent visible-index buffer) is what makes off-screen
+		// casters still cast.
 		xBinder.BindUAV_Buffer(m_xShadowShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(m_xShadowShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+		xBinder.BindSRV_Buffer(m_xShadowShader, "VisibleIndexBuffer", pxGroup->GetEnabledIndexBuffer().GetSRV());
 
-		// Draw all visible instances
-		uint32_t uVisibleCount = pxGroup->GetVisibleCount();
-		if (uVisibleCount > 0)
+		// Draw all enabled casters (no camera culling for shadows).
+		uint32_t uEnabledCount = pxGroup->GetEnabledCount();
+		if (uEnabledCount > 0)
 		{
-			xCmdBuf.DrawIndexed(pxMesh->GetNumIndices(), uVisibleCount);
+			xCmdBuf.DrawIndexed(pxMesh->GetNumIndices(), uEnabledCount);
 		}
 	}
 }

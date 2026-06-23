@@ -62,6 +62,19 @@ namespace
 	}
 }
 
+void Zenith_TerrainEditor::SetTreeBrushSettings(u_int uTreesPerDab, float fScaleMin,
+	float fScaleMax, float fSpacing, float fMaxSlopeDeg, u_int uSeed)
+{
+	m_xBrush.m_uTreesPerDab    = uTreesPerDab;
+	m_xBrush.m_fTreeScaleMin   = fScaleMin;
+	m_xBrush.m_fTreeScaleMax   = fScaleMax;
+	m_xBrush.m_fTreeSpacing    = fSpacing;
+	m_xBrush.m_fTreeMaxSlopeDeg = fMaxSlopeDeg;
+	// xorshift state must never be zero; uSeed == 0 keeps the fixed default so a
+	// re-authored scene scatters byte-identically.
+	m_uTreeRngState = (uSeed != 0u) ? uSeed : 0x51A7E5u;
+}
+
 bool Zenith_TerrainEditor::EnsureTreeEntities()
 {
 	// Instance groups allocate GPU buffers on first spawn — windowed only.

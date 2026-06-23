@@ -11,11 +11,13 @@ namespace Flux_InstancedMeshesShaders
 	inline constexpr Flux_ShaderDecl xInstancedMesh_ToGBuffer{ "InstancedMesh_ToGBuffer", "InstancedMeshes/Flux_InstancedMesh_ToGBuffer", "vsMain", "fsMain", nullptr, "spirv_1_3", "InstancedMeshes" };
 	inline constexpr Flux_ShaderDecl xInstancedMesh_ToShadowmap{ "InstancedMesh_ToShadowmap", "InstancedMeshes/Flux_InstancedMesh_ToShadowmap", "vsMain", "fsMain", nullptr, "spirv_1_3", "InstancedMeshes" };
 	inline constexpr Flux_ShaderDecl xInstanceCulling{ "InstanceCulling", "InstancedMeshes/Flux_InstanceCulling", nullptr, nullptr, "csMain", "spirv_1_3", "InstancedMeshes" };
+	inline constexpr Flux_ShaderDecl xInstanceReset{ "InstanceReset", "InstancedMeshes/Flux_InstanceReset", nullptr, nullptr, "csMain", "spirv_1_3", "InstancedMeshes" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
 		&xInstancedMesh_ToGBuffer,
 		&xInstancedMesh_ToShadowmap,
 		&xInstanceCulling,
+		&xInstanceReset,
 	};
 }

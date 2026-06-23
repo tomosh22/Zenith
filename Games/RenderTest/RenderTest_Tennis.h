@@ -19,12 +19,16 @@
 namespace RenderTest_Tennis
 {
 	// --- Court layout (world space) ---------------------------------------
-	// The court floats clear of the terrain/play-area. +Z is the long axis
-	// (baseline to baseline), +X is the court width. The net sits at the
-	// centre (Z = fCZ). Surface top is at fSURFACE_Y.
-	constexpr float fCOURT_CX   = 256.0f;
-	constexpr float fCOURT_CZ   = 200.0f;
-	constexpr float fSURFACE_Y  = 70.0f;
+	// The court sits flush on the flattened campus plateau, co-planar with the
+	// player spawn / IK / gun deck (all at deck-top Y = 48.75) so the three
+	// platforms read as one connected campus ringed by hills. +Z is the long
+	// axis (baseline to baseline), +X is the court width. The net sits at the
+	// centre (Z = fCZ). Surface top is at fSURFACE_Y (= the player deck top).
+	// Centred on the 4096 m terrain with the rest of the campus (the court is 56 m
+	// south of the campus centre 2048 — was Z=200 vs the old 256 corner anchor).
+	constexpr float fCOURT_CX   = 2048.0f;
+	constexpr float fCOURT_CZ   = 1992.0f;
+	constexpr float fSURFACE_Y  = 48.75f;
 
 	// Regulation doubles court: 23.77 m long x 10.97 m wide.
 	constexpr float fCOURT_LENGTH = 23.77f;   // along Z
@@ -43,8 +47,8 @@ namespace RenderTest_Tennis
 	constexpr float fNET_HALF_WIDTH = fHALF_WIDTH + 0.5f;   // posts just outside the doubles lines
 
 	// Baselines (where the servers/returners stand) and singles sideline.
-	constexpr float fBASELINE_NEAR_Z = fCOURT_CZ - fHALF_LENGTH;   // 188.115
-	constexpr float fBASELINE_FAR_Z  = fCOURT_CZ + fHALF_LENGTH;   // 211.885
+	constexpr float fBASELINE_NEAR_Z = fCOURT_CZ - fHALF_LENGTH;   // 1980.115
+	constexpr float fBASELINE_FAR_Z  = fCOURT_CZ + fHALF_LENGTH;   // 2003.885
 	constexpr float fSERVICE_LINE_OFFSET = 6.40f;   // service line is 6.40 m from the net
 
 	// --- Ball -------------------------------------------------------------

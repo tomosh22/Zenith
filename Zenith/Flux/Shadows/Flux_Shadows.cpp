@@ -13,6 +13,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
@@ -199,6 +200,14 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 
 	// RenderToShadowMap handles all bindings via shader reflection
 	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+
+	// Instanced meshes (incl. terrain trees) cast shadows over ALL enabled casters
+	// (no camera culling — off-screen casters must still cast). The buffers it
+	// reads are frame-indexed (enabled-index + transform), so no per-cascade graph
+	// ReadBuffer declaration is needed; the cascade pass already declares the depth
+	// target write. RenderToShadowMap binds its own pipeline (only when casters
+	// exist) and early-returns when instanced meshes are disabled / no groups.
+	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
 
 	// #TODO: Enable terrain shadow casting
 	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);

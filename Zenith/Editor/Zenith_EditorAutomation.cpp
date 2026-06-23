@@ -656,6 +656,20 @@ void Zenith_EditorAutomation::AddStep_TerrainErode(int iHydraulicDroplets, int i
 	m_axActions.PushBack(xAction);
 }
 
+void Zenith_EditorAutomation::AddStep_TerrainSetTreeBrush(int iTreesPerDab, float fScaleMin,
+	float fScaleMax, float fSpacing, float fMaxSlopeDeg, int iSeed)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_SET_TREE_BRUSH;
+	xAction.m_aiArgs[0] = iTreesPerDab;
+	xAction.m_aiArgs[1] = iSeed;
+	xAction.m_afArgs[0] = fScaleMin;
+	xAction.m_afArgs[1] = fScaleMax;
+	xAction.m_afArgs[2] = fSpacing;
+	xAction.m_afArgs[3] = fMaxSlopeDeg;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_TerrainSaveTextures()
 {
 	Zenith_EditorAction xAction;
@@ -824,6 +838,13 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 		xTerrainEditor.RunErosion(xParams, true /* synchronous */);
 		break;
 	}
+
+	case Zenith_EditorActionType::TERRAIN_EDITOR_SET_TREE_BRUSH:
+		xTerrainEditor.SetTreeBrushSettings(
+			static_cast<u_int>(xAction.m_aiArgs[0]),
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2],
+			xAction.m_afArgs[3], static_cast<u_int>(xAction.m_aiArgs[1]));
+		break;
 
 	case Zenith_EditorActionType::TERRAIN_EDITOR_SAVE_TEXTURES:
 		xTerrainEditor.SaveTextures();

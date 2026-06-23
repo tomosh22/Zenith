@@ -15499,6 +15499,43 @@ void Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(){
 			static_cast<unsigned long long>(uReferenceHash));
 	}
 
+	// --- Enabled-index list contract (the shared seam now feeding BOTH the shadow
+	//     pass and the CPU-fallback GBuffer draw count). ComputeVisibleIndices is
+	//     the exact list UpdateGPUBuffers uploads into the frame-indexed
+	//     enabled-index buffer and counts into m_uEnabledCount. Characterize it as
+	//     pure CPU logic: every entry is an ENABLED slot, the list is strictly
+	//     ascending (the GBuffer/shadow shaders index TransformBuffer by it, so a
+	//     duplicate or out-of-order entry would be a defect), and the count matches
+	//     the reference visible set. (m_uEnabledCount itself is GPU-coupled via
+	//     UpdateGPUBuffers, so it stays covered by windowed integration.) ---
+	{
+		Flux_InstanceGroup xGroup;
+		xGroup.SeedInstancesForTest(uNUM_INSTANCES, uSEED);
+
+		Zenith_Vector<uint32_t> auEnabled;
+		xGroup.ComputeVisibleIndices(auEnabled);
+		ZENITH_ASSERT_EQ(auEnabled.GetSize(), uReferenceVisible,
+			"InstancedMeshesPrepareDeterminism: enabled-index list size (%u) != reference visible (%u)",
+			auEnabled.GetSize(), uReferenceVisible);
+
+		bool bStrictlyAscending = true;
+		for (uint32_t i = 1; i < auEnabled.GetSize(); ++i)
+		{
+			if (auEnabled.Get(i) <= auEnabled.Get(i - 1)) { bStrictlyAscending = false; break; }
+		}
+		ZENITH_ASSERT_TRUE(bStrictlyAscending,
+			"InstancedMeshesPrepareDeterminism: enabled-index list must be strictly ascending (no dup / out-of-order slot)");
+
+		// Every listed slot must be in-range (a valid TransformBuffer index).
+		bool bInRange = true;
+		for (uint32_t i = 0; i < auEnabled.GetSize(); ++i)
+		{
+			if (auEnabled.Get(i) >= uNUM_INSTANCES) { bInRange = false; break; }
+		}
+		ZENITH_ASSERT_TRUE(bInRange,
+			"InstancedMeshesPrepareDeterminism: enabled-index entry out of [0, %u) range", uNUM_INSTANCES);
+	}
+
 	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = bPrevGPUCulling;
 }
 

@@ -37,7 +37,7 @@ public:
 	// Hung via .Prepare on the first instanced pass; CallPrepareCallbacks runs it on
 	// the main thread BEFORE any record task dispatches. Walks m_apxInstanceGroups
 	// once: per group it does the CPU dirty-bookkeeping + GPU-buffer sync that the
-	// record callbacks used to do concurrently (UpdateGPUBuffers + ResetVisibleCount),
+	// record callbacks used to do concurrently (UpdateGPUBuffers),
 	// uploads the per-group culling constants, and pre-computes the m_uTotalInstances
 	// / m_uVisibleInstances stats. After this returns, every group's state is frozen
 	// and ExecuteCulling / ExecuteInstancedGBuffer are pure readers.
@@ -45,8 +45,9 @@ public:
 
 	// Promoted from a file-static helper so the ExecuteInstancedGBuffer trampoline
 	// can route material/instance-buffer binding through this subsystem's members
-	// (m_xGBufferShader) and g_xEngine's graphics state.
-	void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup);
+	// (m_xGBufferShader) and g_xEngine's graphics state. bUseGPUCulling selects the
+	// VisibleIndexBuffer source (persistent camera-culled vs frame-indexed enabled).
+	void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup, bool bUseGPUCulling);
 
 	uint32_t GetTotalInstanceCount() const   { return m_uTotalInstances; }
 	uint32_t GetVisibleInstanceCount() const { return m_uVisibleInstances; }
@@ -62,6 +63,16 @@ public:
 	Flux_Shader                m_xCullingShader;
 	Flux_Pipeline              m_xCullingPipeline;
 	Flux_RootSig               m_xCullingRootSig;
+
+	// GPU reset compute (zeroes the persistent visible-count + indirect
+	// instanceCount each frame, before culling). Replaces the old out-of-band
+	// host upload of those persistent buffers, which raced the prior frame's
+	// indirect draw read of them (WRITE_AFTER_READ). Built alongside the
+	// culling pipeline in BuildPipelines; dispatched by ExecuteCullReset.
+	Flux_Shader                m_xResetShader;
+	Flux_Pipeline              m_xResetPipeline;
+	Flux_RootSig               m_xResetRootSig;
+
 	Flux_DynamicConstantBuffer m_xCullingConstantsBuffer;
 	bool                       m_bCullingInitialized = false;
 	bool                       m_bCullingEnabled     = true;

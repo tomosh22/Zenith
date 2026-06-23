@@ -219,6 +219,7 @@ enum class Zenith_EditorActionType
 	TERRAIN_EDITOR_AUTO_SPLAT_RULE,
 	TERRAIN_EDITOR_RUN_AUTO_SPLAT,
 	TERRAIN_EDITOR_ERODE,
+	TERRAIN_EDITOR_SET_TREE_BRUSH,
 	TERRAIN_EDITOR_SAVE_TEXTURES,
 	TERRAIN_EDITOR_EXPORT_CHUNKS,
 
@@ -582,6 +583,13 @@ void AddStep_TerrainRunAutoSplat();
 
 	// Synchronous hydraulic + thermal erosion.
 void AddStep_TerrainErode(int iHydraulicDroplets, int iThermalIterations, int iSeed);
+
+	// Configure the TreePaint brush before tree dabs: attempts-per-dab (scaled by
+	// stroke strength), uniform scale range, minimum trunk spacing (m), and the
+	// max slope (deg) trees will sit on. iSeed re-seeds the scatter RNG so a
+	// re-authored scene paints byte-identically (0 => fixed default seed).
+void AddStep_TerrainSetTreeBrush(int iTreesPerDab, float fScaleMin, float fScaleMax,
+	float fSpacing, float fMaxSlopeDeg, int iSeed);
 
 	// Persist Height/Splatmap_RGBA/GrassDensity .ztxtr to the game assets dir.
 void AddStep_TerrainSaveTextures();

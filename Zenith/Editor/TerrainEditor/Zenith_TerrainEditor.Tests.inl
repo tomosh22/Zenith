@@ -9,6 +9,8 @@
 
 #ifdef ZENITH_TESTING
 
+#include "Editor/Zenith_EditorAutomation.h"
+
 namespace
 {
 	// Deterministic FNV-1a over sampled heightfield texels (sampling keeps the
@@ -351,6 +353,66 @@ ZENITH_TEST(TerrainEditor, BrushIndicatorDecalArmsForOneFrame)
 	ZENITH_ASSERT_EQ(xDecals.TickAndPackDense(0.016f), 2u, "Ring decal + editor decal must both pack");
 
 	xDecals.ResetForTest();
+}
+
+ZENITH_TEST(TerrainEditor, SetTreeBrushSettingsWritesFields)
+{
+	Zenith_TerrainEditor xEditor;
+
+	xEditor.SetTreeBrushSettings(40, 0.75f, 1.6f, 2.5f, 34.0f, 4242u);
+
+	ZENITH_ASSERT_EQ(xEditor.m_xBrush.m_uTreesPerDab, 40u, "trees-per-dab must be written");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.m_xBrush.m_fTreeScaleMin, 0.75f, 0.0001f, "scale min must be written");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.m_xBrush.m_fTreeScaleMax, 1.6f, 0.0001f, "scale max must be written");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.m_xBrush.m_fTreeSpacing, 2.5f, 0.0001f, "spacing must be written");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.m_xBrush.m_fTreeMaxSlopeDeg, 34.0f, 0.0001f, "max slope must be written");
+	ZENITH_ASSERT_EQ(xEditor.GetTreeRngState_ForTest(), 4242u, "non-zero seed must seed the scatter RNG");
+
+	// uSeed == 0 keeps the fixed default (the xorshift state must never be zero).
+	xEditor.SetTreeBrushSettings(3, 0.85f, 1.35f, 4.0f, 38.0f, 0u);
+	ZENITH_ASSERT_EQ(xEditor.GetTreeRngState_ForTest(), 0x51A7E5u, "zero seed must fall back to the default RNG seed");
+}
+
+ZENITH_TEST(TerrainEditor, SetTreeBrushSeedIsDeterministic)
+{
+	// Same seed => same scatter RNG state regardless of the other brush params:
+	// this is what makes a re-authored scene's tree placement byte-stable.
+	Zenith_TerrainEditor xA;
+	Zenith_TerrainEditor xB;
+	xA.SetTreeBrushSettings(12, 0.9f, 1.2f, 3.0f, 40.0f, 777u);
+	xB.SetTreeBrushSettings(99, 0.5f, 2.0f, 1.0f, 10.0f, 777u);
+	ZENITH_ASSERT_EQ(xA.GetTreeRngState_ForTest(), xB.GetTreeRngState_ForTest(),
+		"same seed must produce the same scatter RNG state");
+}
+
+ZENITH_TEST(TerrainEditor, SetTreeBrushAutomationStepRoutes)
+{
+	// Packing: the step encodes its args into the action's int/float slots.
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_TerrainSetTreeBrush(40, 0.85f, 1.45f, 3.0f, 34.0f, 4242);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one action must be queued");
+	const Zenith_EditorAction& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_SET_TREE_BRUSH,
+		"action type must be TERRAIN_EDITOR_SET_TREE_BRUSH");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 40, "trees-per-dab packs into aiArgs[0]");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[1], 4242, "seed packs into aiArgs[1]");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 0.85f, 0.0001f, "scale min packs into afArgs[0]");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[1], 1.45f, 0.0001f, "scale max packs into afArgs[1]");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[2], 3.0f, 0.0001f, "spacing packs into afArgs[2]");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[3], 34.0f, 0.0001f, "max slope packs into afArgs[3]");
+
+	// Routing: draining the queue drives the global terrain editor's setter,
+	// proving the enum sits in the terrain sub-range and the executor case is
+	// wired. ExecuteNextStep clears the queue when complete, so the packing
+	// asserts above (which read xAction) must precede this.
+	Zenith_TerrainEditor& xEditor = g_xEngine.TerrainEditor();
+	xEditor.SetTreeBrushSettings(1, 0.0f, 0.0f, 0.0f, 0.0f, 1u);  // sentinel (clearly != below)
+	xAuto.Begin();
+	xAuto.ExecuteNextStep();
+	ZENITH_ASSERT_EQ(xEditor.m_xBrush.m_uTreesPerDab, 40u, "executor must route trees-per-dab to the terrain editor");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.m_xBrush.m_fTreeMaxSlopeDeg, 34.0f, 0.0001f, "executor must route max slope");
+	ZENITH_ASSERT_EQ(xEditor.GetTreeRngState_ForTest(), 4242u, "executor must route the seed");
+	xEditor.Close();  // ExecuteTerrainEditorAction auto-opened a standalone session
 }
 
 #endif // ZENITH_TESTING

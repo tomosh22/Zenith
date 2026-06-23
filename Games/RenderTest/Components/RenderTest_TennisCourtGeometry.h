@@ -33,9 +33,9 @@ namespace RenderTest_Tennis
 
 	struct TennisCourt
 	{
-		float m_fCenterX        = 256.0f;
-		float m_fNetZ           = 200.0f;   // == court centre Z
-		float m_fSurfaceY       = 70.0f;
+		float m_fCenterX        = 2048.0f;  // == RenderTest_Tennis::fCOURT_CX (campus centre)
+		float m_fNetZ           = 1992.0f;  // == RenderTest_Tennis::fCOURT_CZ (court centre Z)
+		float m_fSurfaceY       = 48.75f;   // == RenderTest_Tennis::fSURFACE_Y (campus deck-top)
 
 		float m_fSinglesHalfWidth = 4.115f; // fHALF_WIDTH (5.485) - 1.37
 		float m_fDoublesHalfWidth = 5.485f;

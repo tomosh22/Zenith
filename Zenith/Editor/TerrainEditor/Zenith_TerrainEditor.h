@@ -233,6 +233,19 @@ public:
 	void EndStroke();
 	bool IsStrokeActive() const { return m_bStrokeActive; }
 
+	// Configure the TreePaint brush (the ImGui panel and editor automation share
+	// this). Pure field writes into m_xBrush, plus a re-seed of the scatter RNG
+	// so a re-authored scene paints byte-identically (uSeed == 0 keeps a fixed
+	// default seed; the xorshift state must never be zero).
+	void SetTreeBrushSettings(u_int uTreesPerDab, float fScaleMin, float fScaleMax,
+		float fSpacing, float fMaxSlopeDeg, u_int uSeed);
+
+#ifdef ZENITH_TESTING
+	// Test-only: inspect the TreePaint scatter RNG state (seeded by
+	// SetTreeBrushSettings) to pin the byte-stable-save contract.
+	u_int GetTreeRngState_ForTest() const { return m_uTreeRngState; }
+#endif
+
 	// Reset the three CPU maps to their defaults (flat-0 heightfield, full
 	// layer-0 splat, zero grass density) WITHOUT touching disk. From-scratch
 	// authoring scripts run this first so re-running a recipe stays

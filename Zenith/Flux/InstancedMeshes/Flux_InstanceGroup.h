@@ -96,11 +96,24 @@ public:
 	// Per-Frame GPU Update
 	//-------------------------------------------------------------------------
 
-	// Upload dirty instance data to GPU buffers
-	void UpdateGPUBuffers();
-
-	// Reset the visible count for a new frame (called before culling)
-	void ResetVisibleCount();
+	// Upload dirty instance data to GPU buffers.
+	//
+	// Uploaded EVERY frame in BOTH culling modes:
+	//   - Transform + anim buffers (the culling compute and the GBuffer/shadow
+	//     vertex shaders read them).
+	//   - The frame-indexed ENABLED-index buffer (m_xEnabledIndexBuffer): the list
+	//     of every enabled slot, used by the CPU-fallback GBuffer draw and the
+	//     shadow pass (off-screen casters must still cast). Frame-indexed → not
+	//     graph-tracked → its host write never races a prior-frame draw.
+	// The PERSISTENT visible-index buffer is NEVER host-uploaded here: on the GPU
+	// path the culling compute writes it on device (a host upload would race the
+	// prior frame's indirect draw read of it — the WRITE_AFTER_READ this refactor
+	// removes), and on the CPU path it is unused.
+	// m_uEnabledCount / m_uVisibleCount are maintained from the CPU bookkeeping in
+	// both modes. bGPUCulling no longer changes WHAT is uploaded (retained for the
+	// call-site contract); the caller still uses it to gate the culling-constants
+	// upload + stats.
+	void UpdateGPUBuffers(bool bGPUCulling);
 
 	// Device-independent CPU bookkeeping shared by UpdateGPUBuffers and the
 	// headless determinism test: collect the indices of every ENABLED instance
@@ -117,6 +130,12 @@ public:
 
 	uint32_t GetInstanceCount() const { return m_uInstanceCount; }
 	uint32_t GetVisibleCount() const { return m_uVisibleCount; }
+	// Count of ENABLED instances (every slot with flags != 0), in BOTH culling
+	// modes. This is the draw count for the CPU-fallback GBuffer path and the
+	// shadow path (which must include off-screen casters → no camera culling).
+	// Maintained by UpdateGPUBuffers from the same ComputeVisibleIndices list that
+	// fills m_xEnabledIndexBuffer.
+	uint32_t GetEnabledCount() const { return m_uEnabledCount; }
 	bool IsEmpty() const { return m_uInstanceCount == 0; }
 
 	// Additive test accessor (determinism / thread-safety regression). Returns an
@@ -146,27 +165,53 @@ public:
 	// run on multiple worker threads concurrently (the culling + GBuffer record
 	// tasks dispatch in parallel), so a reader-side TryLock sentinel would
 	// false-positive across those concurrent readers — the thread-safety guarantee
-	// is therefore enforced on the WRITE side instead (see UpdateGPUBuffers /
-	// ResetVisibleCount, which assert main-thread-only via AssertMainThreadMutation).
+	// is therefore enforced on the WRITE side instead (see UpdateGPUBuffers,
+	// which asserts main-thread-only via AssertMainThreadMutation).
 	Flux_MeshInstance* GetMesh() const { return m_pxMesh; }
 	Zenith_MaterialAsset* GetMaterial() const { return m_xMaterial.GetDirect(); }
 	Flux_AnimationTexture* GetAnimationTexture() const { return m_pxAnimationTexture; }
 	const Flux_InstanceBounds& GetBounds() const { return m_xBounds; }
 
-	// GPU buffer access for rendering
-	const Flux_ReadWriteBuffer& GetTransformBuffer() const { return m_xTransformBuffer; }
-	const Flux_ReadWriteBuffer& GetAnimDataBuffer() const { return m_xAnimDataBuffer; }
+	// GPU buffer access for rendering.
+	//
+	// Transform + anim buffers are HOST-uploaded every frame (UpdateGPUBuffers),
+	// so they are frame-indexed (Flux_DynamicReadWriteBuffer): the upload writes
+	// the current frame's physical buffer, never racing the prior frame's draw
+	// read of a different physical buffer. They are NOT graph-tracked (a pointer
+	// captured at SetupRenderGraph time would go stale — see Flux_Buffers.h's
+	// render-graph contract). The culling/GBuffer/shadow passes bind them per
+	// frame via GetUAV(), which resolves the current frame automatically.
+	//
+	// Visible-index / visible-count / indirect buffers are GPU-WRITTEN ONLY
+	// (by the reset + culling compute) and GPU-read by the indirect draw, so
+	// they stay PERSISTENT (single buffer) and ARE graph-tracked via
+	// .ReadsBuffer/.WritesBuffer in SetupRenderGraph — the graph synthesises the
+	// reset->cull->draw barriers. GPU-queue work is serialised across frames by
+	// submission order, so a persistent GPU-only buffer has no cross-frame hazard.
+	const Flux_DynamicReadWriteBuffer& GetTransformBuffer() const { return m_xTransformBuffer; }
+	const Flux_DynamicReadWriteBuffer& GetAnimDataBuffer() const { return m_xAnimDataBuffer; }
 	const Flux_ReadWriteBuffer& GetVisibleIndexBuffer() const { return m_xVisibleIndexBuffer; }
 	const Flux_ReadWriteBuffer& GetBoundsBuffer() const { return m_xBoundsBuffer; }
 	const Flux_IndirectBuffer& GetIndirectBuffer() const { return m_xIndirectBuffer; }
 	const Flux_ReadWriteBuffer& GetVisibleCountBuffer() const { return m_xVisibleCountBuffer; }
+	// All-enabled index list, frame-indexed (host-uploaded every frame, NOT
+	// graph-tracked). The CPU-fallback GBuffer and the shadow pass bind its SRV
+	// (StructuredBuffer<uint>); never bind it via the graph's ReadBuffer/WriteBuffer.
+	const Flux_DynamicReadWriteBuffer& GetEnabledIndexBuffer() const { return m_xEnabledIndexBuffer; }
 
-	Flux_ReadWriteBuffer& GetTransformBuffer() { return m_xTransformBuffer; }
-	Flux_ReadWriteBuffer& GetAnimDataBuffer() { return m_xAnimDataBuffer; }
+	Flux_DynamicReadWriteBuffer& GetTransformBuffer() { return m_xTransformBuffer; }
+	Flux_DynamicReadWriteBuffer& GetAnimDataBuffer() { return m_xAnimDataBuffer; }
 	Flux_ReadWriteBuffer& GetVisibleIndexBuffer() { return m_xVisibleIndexBuffer; }
 	Flux_ReadWriteBuffer& GetBoundsBuffer() { return m_xBoundsBuffer; }
 	Flux_IndirectBuffer& GetIndirectBuffer() { return m_xIndirectBuffer; }
 	Flux_ReadWriteBuffer& GetVisibleCountBuffer() { return m_xVisibleCountBuffer; }
+	Flux_DynamicReadWriteBuffer& GetEnabledIndexBuffer() { return m_xEnabledIndexBuffer; }
+
+	// True once InitialiseGPUBuffers has run for this group (capacity > 0). The
+	// SetupRenderGraph per-group declaration loop and the execute callbacks skip
+	// groups whose buffers don't exist yet so a freshly-created-but-empty group
+	// (declared after a RequestGraphRebuild) never binds an invalid handle.
+	bool HasGPUBuffers() const { return m_bBuffersInitialised; }
 
 private:
 	//-------------------------------------------------------------------------
@@ -176,8 +221,8 @@ private:
 	void DestroyGPUBuffers();
 	void MarkDirty(uint32_t uInstanceID);
 
-	// Thread-safety sentinel for the per-frame GPU-sync mutators (UpdateGPUBuffers /
-	// ResetVisibleCount). The WS7 keystone makes the main-thread .Prepare gather the
+	// Thread-safety sentinel for the per-frame GPU-sync mutator (UpdateGPUBuffers).
+	// The WS7 keystone makes the main-thread .Prepare gather the
 	// SINGLE writer of this state; record callbacks are pure readers. Asserting
 	// main-thread-only here means a FUTURE attempt to mutate from a worker-thread
 	// record callback (the latent race C1C2 removed) trips immediately. This is the
@@ -199,16 +244,32 @@ private:
 
 	uint32_t m_uInstanceCount = 0;
 	uint32_t m_uVisibleCount = 0;
+	// Count of enabled slots (flags != 0), recomputed every frame in
+	// UpdateGPUBuffers alongside m_xEnabledIndexBuffer. Draw count for the
+	// CPU-fallback GBuffer + the shadow pass.
+	uint32_t m_uEnabledCount = 0;
 	uint32_t m_uCapacity = 0;
 	bool m_bBuffersInitialised = false;
+	// True once this group has requested a render-graph rebuild (on its FIRST
+	// GPU-buffer init, when the persistent buffers transition from no-VRAM to
+	// valid-VRAM and SetupRenderGraph's declarations start taking effect). A later
+	// Reserve-driven grow reuses the SAME stable Flux_Buffer objects (the graph
+	// keys barriers by C++ object address, not VRAM handle), so it needs NO
+	// rebuild — see InitialiseGPUBuffers. Prevents per-grow rebuild thrash.
+	bool m_bEverRequestedRebuild = false;
 	bool m_bTransformsDirty = false;
 	bool m_bAnimDataDirty = false;
 
 	//-------------------------------------------------------------------------
 	// GPU Buffers
 	//-------------------------------------------------------------------------
-	Flux_ReadWriteBuffer m_xTransformBuffer;      // mat4[] - per-instance transforms
-	Flux_ReadWriteBuffer m_xAnimDataBuffer;       // Flux_InstanceAnimData[]
+	// Host-uploaded every frame -> frame-indexed (see accessor comment above).
+	Flux_DynamicReadWriteBuffer m_xTransformBuffer;  // mat4[] - per-instance transforms
+	Flux_DynamicReadWriteBuffer m_xAnimDataBuffer;   // Flux_InstanceAnimData[]
+	// All-enabled slot indices, host-uploaded every frame -> frame-indexed (NOT
+	// graph-tracked). Feeds the CPU-fallback GBuffer draw and the shadow pass.
+	Flux_DynamicReadWriteBuffer m_xEnabledIndexBuffer; // uint32[] - indices of enabled instances
+	// GPU-written/read only -> persistent + graph-tracked.
 	Flux_ReadWriteBuffer m_xVisibleIndexBuffer;   // uint32[] - indices of visible instances
 	Flux_ReadWriteBuffer m_xBoundsBuffer;         // vec4[] - bounding spheres for culling (constant)
 	Flux_IndirectBuffer m_xIndirectBuffer;        // VkDrawIndexedIndirectCommand

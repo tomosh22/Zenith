@@ -2,6 +2,7 @@
 
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Core/Zenith_Engine.h"  // g_xEngine.Threading().IsMainThread() (WS7 mutation guard)
+#include "Flux/Flux_RendererImpl.h"  // g_xEngine.FluxRenderer().RequestGraphRebuild() on buffer (re)init
 
 //=============================================================================
 // VkDrawIndexedIndirectCommand structure (matches Vulkan spec)
@@ -72,6 +73,12 @@ Flux_InstanceGroup::~Flux_InstanceGroup()
 
 void Flux_InstanceGroup::SetMesh(Flux_MeshInstance* pxMesh)
 {
+	// The indirect command's static fields (incl. indexCount) are written on
+	// device by the GPU reset compute pass every frame, from the CURRENT mesh's
+	// index count (see Flux_InstanceReset.slang / ExecuteCullReset). So a runtime
+	// mesh swap needs no host upload here — the next frame's reset picks up the
+	// new index count, and there is no host write to race the prior frame's
+	// in-flight indirect draw.
 	m_pxMesh = pxMesh;
 }
 
@@ -267,33 +274,74 @@ void Flux_InstanceGroup::InitialiseGPUBuffers()
 	if (m_uCapacity == 0)
 		return;
 
-	// Transform buffer (mat4 per instance)
+	// Transform + anim buffers are HOST-uploaded every frame -> frame-indexed
+	// (one physical buffer per frame-in-flight). InitialiseDynamicReadWriteBuffer
+	// fills all MAX_FRAMES_IN_FLIGHT slots; passing nullptr leaves them empty and
+	// the per-frame UpdateGPUBuffers upload fills the current frame's slot.
 	const size_t ulTransformSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
-	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, ulTransformSize, m_xTransformBuffer);
+	m_pxVulkanMemory->InitialiseDynamicReadWriteBuffer(nullptr, ulTransformSize, m_xTransformBuffer);
 
-	// Animation data buffer
 	const size_t ulAnimDataSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
-	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, ulAnimDataSize, m_xAnimDataBuffer);
+	m_pxVulkanMemory->InitialiseDynamicReadWriteBuffer(nullptr, ulAnimDataSize, m_xAnimDataBuffer);
 
-	// Visible index buffer (worst case: all visible)
+	// Visible index buffer (worst case: all visible). GPU-written by the culling
+	// compute; persistent + graph-tracked (no host upload of it on the GPU path).
 	const size_t ulVisibleIndexSize = m_uCapacity * sizeof(uint32_t);
 	m_pxVulkanMemory->InitialiseReadWriteBuffer(nullptr, ulVisibleIndexSize, m_xVisibleIndexBuffer);
+
+	// Enabled-index buffer (the list of every ENABLED slot, no camera culling).
+	// HOST-uploaded every frame -> frame-indexed (one physical buffer per
+	// frame-in-flight), so it is NEVER graph-tracked and its host write never
+	// races the prior frame's draw. Used by the CPU-fallback GBuffer draw (in
+	// place of the persistent visible-index buffer the GPU-cull compute owns) and
+	// by the shadow pass (which must include off-screen casters, so it cannot use
+	// the camera-culled GPU output).
+	const size_t ulEnabledIndexSize = m_uCapacity * sizeof(uint32_t);
+	m_pxVulkanMemory->InitialiseDynamicReadWriteBuffer(nullptr, ulEnabledIndexSize, m_xEnabledIndexBuffer);
 
 	// Bounds buffer (single bounding sphere, replicated conceptually but stored once)
 	// Actually we store per-instance bounds in case we want per-instance bounds later
 	const size_t ulBoundsSize = sizeof(Flux_InstanceBounds);
 	m_pxVulkanMemory->InitialiseReadWriteBuffer(&m_xBounds, ulBoundsSize, m_xBoundsBuffer);
 
-	// Indirect draw command buffer
+	// Indirect draw command buffer. NO host data is uploaded into it: the GPU
+	// reset compute pass writes ALL five VkDrawIndexedIndirectCommand words every
+	// frame (indexCount from the current mesh, the rest zeroed) and the culling
+	// compute then atomically increments instanceCount[1]. This removes the old
+	// host seed of the static fields, which a runtime SetMesh swap would have
+	// raced against the prior frame's in-flight indirect draw.
 	m_pxVulkanMemory->InitialiseIndirectBuffer(sizeof(Flux_DrawIndexedIndirectCommand), m_xIndirectBuffer);
 
-	// Visible count buffer (single uint32 for atomic counter)
+	// Visible count buffer (single uint32 atomic counter). Seeded to 0 here; the
+	// GPU reset pass zeroes it each frame thereafter (no host re-upload).
 	uint32_t uZero = 0;
 	m_pxVulkanMemory->InitialiseReadWriteBuffer(&uZero, sizeof(uint32_t), m_xVisibleCountBuffer);
 
 	m_bBuffersInitialised = true;
 	m_bTransformsDirty = true;
 	m_bAnimDataDirty = true;
+
+	// The persistent visible-index/count/indirect buffers are graph-tracked by
+	// their (stable) Flux_Buffer address; the per-group Read/Write declarations in
+	// Flux_InstancedMeshesImpl::SetupRenderGraph are gated on HasGPUBuffers(). A
+	// group is typically REGISTERED (which requests a rebuild) before its first
+	// instance is added — i.e. before these buffers exist — so that earlier rebuild
+	// ran while HasGPUBuffers() was still false and skipped this group. The graph
+	// only needs re-declaring on the FIRST init, when these buffers transition from
+	// no-VRAM to valid-VRAM so SetupRenderGraph's declarations start taking effect.
+	//
+	// A later Reserve-driven grow re-allocates VRAM but reuses the SAME stable
+	// Flux_Buffer member objects (the graph keys barriers by the C++ object
+	// address, not the VRAM handle), so its declarations are already in place — a
+	// rebuild then would re-declare byte-identical pointers for no benefit while
+	// thrashing the (cached-barrier) graph. So only request the rebuild ONCE, on
+	// first initialisation. (Group register/unregister still requests a rebuild —
+	// that's a SET change, handled in Register/UnregisterInstanceGroup.)
+	if (!m_bEverRequestedRebuild)
+	{
+		m_bEverRequestedRebuild = true;
+		g_xEngine.FluxRenderer().RequestGraphRebuild();
+	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "[InstanceGroup] Initialised GPU buffers for %u instances", m_uCapacity);
 }
@@ -303,12 +351,12 @@ void Flux_InstanceGroup::DestroyGPUBuffers()
 	if (!m_bBuffersInitialised)
 		return;
 
-	// Queue buffers for deferred deletion
-	if (m_xTransformBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xTransformBuffer);
-
-	if (m_xAnimDataBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xAnimDataBuffer);
+	// Queue buffers for deferred deletion. The dynamic (frame-indexed) destroy
+	// helpers free every frame-in-flight slot; they no-op on already-invalid
+	// slots, so an unconditional call is safe.
+	m_pxVulkanMemory->DestroyDynamicReadWriteBuffer(m_xTransformBuffer);
+	m_pxVulkanMemory->DestroyDynamicReadWriteBuffer(m_xAnimDataBuffer);
+	m_pxVulkanMemory->DestroyDynamicReadWriteBuffer(m_xEnabledIndexBuffer);
 
 	if (m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 		m_pxVulkanMemory->DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
@@ -325,17 +373,32 @@ void Flux_InstanceGroup::DestroyGPUBuffers()
 	m_bBuffersInitialised = false;
 }
 
-void Flux_InstanceGroup::UpdateGPUBuffers()
+void Flux_InstanceGroup::UpdateGPUBuffers(bool bGPUCulling)
 {
 	// WS7: single-writer guard. Relocated to the main-thread Prepare gather; a
 	// future worker-thread record-callback mutation trips immediately.
 	AssertMainThreadMutation("UpdateGPUBuffers");
 
+	// bGPUCulling no longer changes WHAT is uploaded: the transform/anim buffers
+	// and the frame-indexed enabled-index buffer are uploaded every frame in both
+	// modes (see below). The persistent visible-index buffer is owned by the GPU
+	// cull compute on device and is never host-uploaded here. The parameter is
+	// retained for the documented contract / call-site clarity.
+	(void)bGPUCulling;
+
 	if (!m_bBuffersInitialised || m_uCapacity == 0)
 		return;
 
-	// Upload transform data if dirty
-	if (m_bTransformsDirty)
+	// Transform + anim buffers are frame-indexed (Flux_DynamicReadWriteBuffer):
+	// GetBuffer() resolves the CURRENT frame's physical buffer, so this host
+	// upload only ever writes the slot the GPU isn't reading this frame — no race
+	// with the prior frame's draw, and no graph tracking required.
+	//
+	// NOTE: a frame-indexed buffer has a distinct physical buffer per frame, so a
+	// dirty flag cleared after uploading frame N's slot would wrongly skip frame
+	// N+1's slot. Upload every frame regardless of the dirty flags (the data is
+	// small relative to the per-frame draw cost, and the previous single-buffer
+	// dirty-skip optimisation is unsafe once the buffer is frame-indexed).
 	{
 		const size_t ulSize = m_uCapacity * sizeof(Zenith_Maths::Matrix4);
 		m_pxVulkanMemory->UploadBufferData(
@@ -345,8 +408,6 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 		m_bTransformsDirty = false;
 	}
 
-	// Upload animation data if dirty
-	if (m_bAnimDataDirty)
 	{
 		const size_t ulSize = m_uCapacity * sizeof(Flux_InstanceAnimData);
 		m_pxVulkanMemory->UploadBufferData(
@@ -356,26 +417,35 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 		m_bAnimDataDirty = false;
 	}
 
-	// Phase 1: Populate visible index buffer with sequential indices (no GPU culling)
-	// This will be replaced by compute shader output in Phase 2.
-	// The CPU bookkeeping (which slots are visible + the visible count) is factored
-	// into ComputeVisibleIndices so the headless determinism test can exercise the
-	// EXACT same computation without a live allocator; only the upload below is
-	// device-dependent.
+	// CPU bookkeeping (which slots are ENABLED + the count) is factored into
+	// ComputeVisibleIndices so the headless determinism test can exercise the EXACT
+	// same computation without a live allocator. The list of enabled slots is
+	// uploaded EVERY frame in BOTH culling modes into the frame-indexed
+	// m_xEnabledIndexBuffer:
+	//   - CPU-fallback GBuffer: reads this list instead of the persistent
+	//     visible-index buffer (which only the GPU-cull compute writes).
+	//   - Shadows (both modes): must include OFF-screen casters, so they use this
+	//     all-enabled list rather than the camera-culled GPU output.
+	// The persistent visible-index buffer is NEVER host-uploaded here — on the GPU
+	// path the culling compute owns it on device (a host upload would race the
+	// prior frame's indirect draw read of it, the WRITE_AFTER_READ this refactor
+	// removes), and on the CPU path it is unused. m_xEnabledIndexBuffer is
+	// frame-indexed, so its host write is never graph-tracked and never races.
 	{
-		Zenith_Vector<uint32_t> auVisibleIndices;
-		ComputeVisibleIndices(auVisibleIndices);
+		Zenith_Vector<uint32_t> auEnabledIndices;
+		ComputeVisibleIndices(auEnabledIndices);
 
-		if (auVisibleIndices.GetSize() > 0)
+		if (auEnabledIndices.GetSize() > 0)
 		{
-			const size_t ulSize = static_cast<size_t>(auVisibleIndices.GetSize()) * sizeof(uint32_t);
+			const size_t ulSize = static_cast<size_t>(auEnabledIndices.GetSize()) * sizeof(uint32_t);
 			m_pxVulkanMemory->UploadBufferData(
-				m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle,
-				auVisibleIndices.GetDataPointer(),
+				m_xEnabledIndexBuffer.GetBuffer().m_xVRAMHandle,
+				auEnabledIndices.GetDataPointer(),
 				ulSize);
 		}
 
-		m_uVisibleCount = auVisibleIndices.GetSize();
+		m_uEnabledCount = auEnabledIndices.GetSize();
+		m_uVisibleCount = m_uEnabledCount;
 	}
 
 	// Clear dirty flags
@@ -383,41 +453,6 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	{
 		m_abDirty.Get(i) = false;
 	}
-}
-
-void Flux_InstanceGroup::ResetVisibleCount()
-{
-	// WS7: single-writer guard (see UpdateGPUBuffers).
-	AssertMainThreadMutation("ResetVisibleCount");
-
-	if (!m_bBuffersInitialised)
-		return;
-
-	// Reset the atomic counter to 0 for culling pass
-	uint32_t uZero = 0;
-	m_pxVulkanMemory->UploadBufferData(
-		m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle,
-		&uZero,
-		sizeof(uint32_t));
-
-	// Also reset the indirect command instance count
-	// The culling shader will write the actual visible count
-	if (m_pxMesh)
-	{
-		Flux_DrawIndexedIndirectCommand xCmd = {};
-		xCmd.m_uIndexCount = m_pxMesh->GetNumIndices();
-		xCmd.m_uInstanceCount = 0;  // Will be set by culling
-		xCmd.m_uFirstIndex = 0;
-		xCmd.m_iVertexOffset = 0;
-		xCmd.m_uFirstInstance = 0;
-
-		m_pxVulkanMemory->UploadBufferData(
-			m_xIndirectBuffer.GetBuffer().m_xVRAMHandle,
-			&xCmd,
-			sizeof(xCmd));
-	}
-
-	m_uVisibleCount = 0;
 }
 
 void Flux_InstanceGroup::ComputeVisibleIndices(Zenith_Vector<uint32_t>& xauVisibleOut) const
