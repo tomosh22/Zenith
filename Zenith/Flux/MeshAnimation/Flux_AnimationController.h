@@ -5,6 +5,7 @@
 #include "Flux_AnimationStateMachine.h"
 #include "Flux_InverseKinematics.h"
 #include "Flux_AnimationLayer.h"
+#include "Flux/Flux_Buffers.h"  // Flux_DynamicConstantBuffer m_xBoneBuffer (was transitively via the deleted Flux_MeshAnimation.h)
 #include "AssetHandling/Zenith_AssetHandle.h"
 
 //=============================================================================

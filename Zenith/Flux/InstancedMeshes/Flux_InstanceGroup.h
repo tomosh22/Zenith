@@ -186,8 +186,19 @@ public:
 	// (by the reset + culling compute) and GPU-read by the indirect draw, so
 	// they stay PERSISTENT (single buffer) and ARE graph-tracked via
 	// .ReadsBuffer/.WritesBuffer in SetupRenderGraph — the graph synthesises the
-	// reset->cull->draw barriers. GPU-queue work is serialised across frames by
-	// submission order, so a persistent GPU-only buffer has no cross-frame hazard.
+	// reset->cull->draw barriers WITHIN a frame.
+	//
+	// Cross-frame safety is NOT free from submission order (an earlier comment here
+	// wrongly claimed it was): with MAX_FRAMES_IN_FLIGHT>1 the GPU work of
+	// consecutive frames OVERLAPS — the per-frame fence only frees the slot last
+	// used by frame N-1, and no semaphore chains frame N -> N+1 — so frame N+1's
+	// reset/cull would overwrite these while frame N's indirect draw still reads
+	// them (WRITE_AFTER_READ -> flicker) if nothing ordered them. That ordering is
+	// provided by Flux_RenderGraph::SynthesizeBarriers' cyclic buffer-state seed:
+	// it seeds each persistent buffer's incoming state with its LAST access this
+	// frame, so the first access (the reset's write) emits a barrier whose source
+	// is the prior frame's draw read — i.e. the reset waits for that read. So these
+	// can stay single + persistent; the graph (not submission order) makes them safe.
 	const Flux_DynamicReadWriteBuffer& GetTransformBuffer() const { return m_xTransformBuffer; }
 	const Flux_DynamicReadWriteBuffer& GetAnimDataBuffer() const { return m_xAnimDataBuffer; }
 	const Flux_ReadWriteBuffer& GetVisibleIndexBuffer() const { return m_xVisibleIndexBuffer; }

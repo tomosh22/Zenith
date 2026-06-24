@@ -15291,17 +15291,27 @@ void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW(){
 	const Flux_RenderGraph_Pass* pxA = xGraph.GetPasses().Get(xPassA.m_uIndex);
 	const Flux_RenderGraph_Pass* pxB = xGraph.GetPasses().Get(xPassB.m_uIndex);
 
-	// Pass A is the first writer — UNDEFINED → READWRITE_UAV is technically a
-	// "barrier" too because the new-side is a write, so we expect ONE entry
-	// on A (the discard / first-touch barrier).
+	// Pass A is the first writer in execution order. The cyclic seed
+	// (SynthesizeBarriers' pre-pass) seeds the buffer to its LAST access this frame
+	// — pass B's READWRITE_UAV — so pass A's first-touch barrier is now RW→RW (the
+	// cross-frame WAW ordering frame N+1's pass A after frame N's pass B), NOT the
+	// old UNDEFINED→RW discard. Exactly one buffer barrier, and its source is now
+	// deterministic (the seed), so pin it.
 	u_int uABufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxABarrier = nullptr;
 	for (u_int u = 0; u < pxA->m_xPrologueBarriers.GetSize(); u++)
 	{
 		const Flux_RenderGraph_Barrier& rxBar = pxA->m_xPrologueBarriers.Get(u);
 		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
 			uABufferBarriers++;
+			pxABarrier = &rxBar;
+		}
 	}
-	ZENITH_ASSERT_EQ(uABufferBarriers, 1, "TestRenderGraphBufferBarrierRMW: pass A expected 1 buffer barrier (UNDEFINED→RW), got %u", uABufferBarriers);
+	ZENITH_ASSERT_EQ(uABufferBarriers, 1, "TestRenderGraphBufferBarrierRMW: pass A expected 1 buffer barrier (cyclic RW→RW), got %u", uABufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxABarrier, "TestRenderGraphBufferBarrierRMW: pass A buffer barrier missing");
+	ZENITH_ASSERT_EQ(pxABarrier->m_eSrcAccess, RESOURCE_ACCESS_READWRITE_UAV, "TestRenderGraphBufferBarrierRMW: pass A src expected READWRITE_UAV (cyclic seed from pass B), got %d", (int)pxABarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxABarrier->m_eDstAccess, RESOURCE_ACCESS_READWRITE_UAV, "TestRenderGraphBufferBarrierRMW: pass A dst expected READWRITE_UAV, got %d", (int)pxABarrier->m_eDstAccess);
 
 	// Pass B is the second writer — must have exactly ONE buffer barrier
 	// (RW→RW write-after-write). This is the load-bearing assertion that
@@ -15412,6 +15422,121 @@ void Zenith_UnitTests::TestRenderGraphStorageBufferSRVBarrier(){
 	ZENITH_ASSERT_EQ(pxBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "TestRenderGraphStorageBufferSRVBarrier: src expected WRITE_UAV, got %d", (int)pxBarrier->m_eSrcAccess);
 	ZENITH_ASSERT_EQ(pxBarrier->m_eDstAccess, RESOURCE_ACCESS_READ_BUFFER_SRV, "TestRenderGraphStorageBufferSRVBarrier: dst expected READ_BUFFER_SRV, got %d", (int)pxBarrier->m_eDstAccess);
 	ZENITH_ASSERT_EQ(pxBarrier->m_xResource.AsBuffer(), &xBuffer.GetBuffer(), "TestRenderGraphStorageBufferSRVBarrier: barrier targets wrong buffer");
+
+}
+
+// Cross-frame cyclic seed: the graph is compiled once and re-executed every frame,
+// so a persistent buffer carries its last access across the frame boundary. A
+// buffer WRITTEN (pass A) then READ (pass B) within a frame must, after the fix,
+// get a barrier on pass A (the FIRST access) whose SOURCE is the read access — so
+// frame N+1's write waits for frame N's read. This is the regression guard for the
+// instanced-mesh flicker (reset-write racing the prior frame's indirect-draw read);
+// before the cyclic seed, pass A's first-touch write barrier sourced UNDEFINED
+// (TOP_OF_PIPE) and waited for nothing.
+ZENITH_TEST(Core, RenderGraphCyclicBufferBarrier) { Zenith_UnitTests::TestRenderGraphCyclicBufferBarrier(); }
+void Zenith_UnitTests::TestRenderGraphCyclicBufferBarrier(){
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xBuffer;
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	// A writes the buffer (cull/reset compute), B reads it as indirect args (the
+	// indirect draw). Order A -> B, exactly the instanced cull-output pattern.
+	Flux_PassHandle xPassA = xGraph.AddPass("WritesBuffer", EmptyRecordCallback);
+	xGraph.WriteBuffer(xPassA, xBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xPassB = xGraph.AddPass("ReadsIndirectArgs", EmptyRecordCallback);
+	xGraph.ReadBuffer(xPassB, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPassA.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xPassB.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	// Pass A (the FIRST access this frame) must carry a buffer barrier whose SOURCE
+	// is the buffer's LAST access (B's indirect-arg read), proving the cyclic seed
+	// orders frame N+1's write after frame N's read.
+	const Flux_RenderGraph_Pass* pxA = xGraph.GetPasses().Get(xPassA.m_uIndex);
+	u_int uABufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxABarrier = nullptr;
+	for (u_int u = 0; u < pxA->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxA->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uABufferBarriers++;
+			pxABarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uABufferBarriers, 1, "TestRenderGraphCyclicBufferBarrier: write pass expected 1 cross-frame buffer barrier, got %u", uABufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxABarrier, "TestRenderGraphCyclicBufferBarrier: write pass cross-frame barrier missing (cyclic seed not applied)");
+	ZENITH_ASSERT_EQ(pxABarrier->m_eSrcAccess, RESOURCE_ACCESS_READ_INDIRECT_ARG, "TestRenderGraphCyclicBufferBarrier: write pass src expected READ_INDIRECT_ARG (prior-frame read), got %d", (int)pxABarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxABarrier->m_eDstAccess, RESOURCE_ACCESS_WRITE_UAV, "TestRenderGraphCyclicBufferBarrier: write pass dst expected WRITE_UAV, got %d", (int)pxABarrier->m_eDstAccess);
+	ZENITH_ASSERT_EQ(pxABarrier->m_xResource.AsBuffer(), &xBuffer.GetBuffer(), "TestRenderGraphCyclicBufferBarrier: write-pass barrier targets wrong buffer");
+
+	// The normal intra-frame producer->consumer barrier must STILL be present on B
+	// (the cyclic seed must not disturb same-frame ordering).
+	const Flux_RenderGraph_Pass* pxB = xGraph.GetPasses().Get(xPassB.m_uIndex);
+	u_int uBBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxBBarrier = nullptr;
+	for (u_int u = 0; u < pxB->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxB->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uBBufferBarriers++;
+			pxBBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uBBufferBarriers, 1, "TestRenderGraphCyclicBufferBarrier: read pass expected its intra-frame barrier, got %u", uBBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxBBarrier, "TestRenderGraphCyclicBufferBarrier: read pass intra-frame barrier missing");
+	ZENITH_ASSERT_EQ(pxBBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "TestRenderGraphCyclicBufferBarrier: read pass src expected WRITE_UAV, got %d", (int)pxBBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxBBarrier->m_eDstAccess, RESOURCE_ACCESS_READ_INDIRECT_ARG, "TestRenderGraphCyclicBufferBarrier: read pass dst expected READ_INDIRECT_ARG, got %d", (int)pxBBarrier->m_eDstAccess);
+
+}
+
+// Companion to the cyclic-barrier test: proves the seed is "adds-only". A buffer
+// that is only ever READ in the frame (two readers, no writer) seeds to a read
+// state; the first access is also a read, so read-after-read must collapse to ZERO
+// barriers. This is the load-bearing property that keeps the engine-wide seed from
+// injecting a spurious cross-frame barrier onto every read-only persistent buffer
+// (cluster-light SRVs, terrain LOD SRVs, etc.). If AccessIsWrite ever
+// mis-classified a READ_* access as a write, this fails loudly.
+ZENITH_TEST(Core, RenderGraphCyclicReadOnlyNoBarrier) { Zenith_UnitTests::TestRenderGraphCyclicReadOnlyNoBarrier(); }
+void Zenith_UnitTests::TestRenderGraphCyclicReadOnlyNoBarrier(){
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xBuffer;
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	// Two readers, NO writer.
+	Flux_PassHandle xPassA = xGraph.AddPass("ReadsA", EmptyRecordCallback);
+	xGraph.ReadBuffer(xPassA, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
+	Flux_PassHandle xPassB = xGraph.AddPass("ReadsB", EmptyRecordCallback);
+	xGraph.ReadBuffer(xPassB, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPassA.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xPassB.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	const Flux_RenderGraph_Pass* pxA = xGraph.GetPasses().Get(xPassA.m_uIndex);
+	const Flux_RenderGraph_Pass* pxB = xGraph.GetPasses().Get(xPassB.m_uIndex);
+
+	u_int uA = 0, uB = 0;
+	for (u_int u = 0; u < pxA->m_xPrologueBarriers.GetSize(); u++)
+		if (pxA->m_xPrologueBarriers.Get(u).m_xResource.GetKind() == Flux_GraphResourceKind::Buffer) uA++;
+	for (u_int u = 0; u < pxB->m_xPrologueBarriers.GetSize(); u++)
+		if (pxB->m_xPrologueBarriers.Get(u).m_xResource.GetKind() == Flux_GraphResourceKind::Buffer) uB++;
+
+	// First access (after the cyclic seed sets the buffer to its last READ) must
+	// emit NOTHING — read-after-read collapses. Likewise the second reader.
+	ZENITH_ASSERT_EQ(uA, 0, "TestRenderGraphCyclicReadOnlyNoBarrier: first reader expected 0 buffer barriers (read-after-read collapse under cyclic seed), got %u", uA);
+	ZENITH_ASSERT_EQ(uB, 0, "TestRenderGraphCyclicReadOnlyNoBarrier: second reader expected 0 buffer barriers (read-after-read), got %u", uB);
 
 }
 

@@ -56,7 +56,8 @@ public:
 	Zenith_Vector<Flux_InstanceGroup*> m_apxInstanceGroups;
 
 	Flux_Shader                m_xGBufferShader;
-	Flux_Pipeline              m_xGBufferPipeline;
+	Flux_Pipeline              m_xGBufferPipeline;          // one-sided (CULL_MODE_BACK)
+	Flux_Pipeline              m_xGBufferPipelineTwoSided;  // two-sided (CULL_MODE_NONE) for m_bTwoSided materials
 	Flux_Shader                m_xShadowShader;
 	Flux_Pipeline              m_xShadowPipeline;
 

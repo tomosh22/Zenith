@@ -164,14 +164,25 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\RenderTest_BootstrapComponent.h" />
     <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h" />
     <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
     <ClInclude Include="..\Components\RenderTest_GunComponent.h" />
     <ClInclude Include="..\Components\RenderTest_JetpackComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
+    <ClInclude Include="..\Components\RenderTest_Tennis.Tests.inl" />
+    <ClInclude Include="..\Components\RenderTest_TennisAgentComponent.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisBTNodes.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisCourtGeometry.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisDecision.h" />
     <ClInclude Include="..\Components\RenderTest_TennisMatchComponent.h" />
     <ClInclude Include="..\Components\RenderTest_TennisPlayerComponent.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisRng.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisSpin.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisTelemetry.h" />
+    <ClInclude Include="..\Components\RenderTest_TennisTypes.h" />
+    <ClInclude Include="..\Components\RenderTest_Testbed.Tests.inl" />
     <ClInclude Include="..\RenderTest_Guns.h" />
     <ClInclude Include="..\RenderTest_Jetpack.h" />
     <ClInclude Include="..\RenderTest_Tennis.h" />

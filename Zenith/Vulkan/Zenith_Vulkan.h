@@ -130,6 +130,11 @@ public:
 
 	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler);
 	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler);
+	// NEAREST/point filter, NO anisotropy, clamp addressing. For data textures
+	// whose texels must be read EXACTLY (e.g. VAT vertex-animation position
+	// textures: adjacent columns are different mesh vertices, adjacent rows are
+	// different frames — any linear cross-blend corrupts positions).
+	static void InitialisePointClamp(Zenith_Vulkan_Sampler& xSampler);
 
 	vk::Sampler m_xSampler;
 };

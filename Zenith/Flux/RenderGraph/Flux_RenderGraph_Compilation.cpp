@@ -1490,6 +1490,57 @@ namespace
         else
             ProcessImageAccess(pxPass, rxUsage, xTracker);
     }
+
+    // Cross-frame cyclic seed (buffers only). The graph is compiled ONCE and the
+    // SAME pass order is re-executed every frame, so a persistent buffer
+    // physically carries its contents AND its last access across the frame
+    // boundary. But SynthesizeBarriers rebuilds from an empty tracker, so without
+    // this the FIRST access of a buffer in the frame sees UNDEFINED state and gets
+    // a UNDEFINED->access barrier whose source stage is TOP_OF_PIPE — it waits for
+    // NOTHING, in particular not for that buffer's read/write in the PREVIOUS
+    // frame. With MAX_FRAMES_IN_FLIGHT>1 the GPU work of consecutive frames
+    // overlaps (the per-frame fence only frees the slot from frame N-1, and no
+    // semaphore chains frame N->N+1), so a per-frame GPU write of a persistent
+    // buffer can race the prior frame's read of it (e.g. the instanced-mesh
+    // reset/cull rewriting the visible-index / indirect-args while the prior
+    // frame's indirect draw still reads them -> WRITE_AFTER_READ -> flicker).
+    //
+    // Seeding each buffer's state with its LAST PostPassAccess this frame makes the
+    // first access emit the correct cyclic WAR/WAW barrier (its source IS the
+    // prior frame's final access, because the order is identical). A pipeline
+    // barrier's source scope covers all earlier-submitted queue work, so this
+    // orders frame N+1's first write after frame N's last read of the same buffer.
+    // Read-only buffers seed to a read state -> first access is also a read ->
+    // read-after-read collapses to no barrier, so nothing spurious is added.
+    //
+    // Buffers ONLY: there are no transient buffers (CreateTransient is
+    // texture-only), so every graph buffer is a stable subsystem-owned Flux_Buffer.
+    // Images are excluded — transient images alias by pool and their cross-frame /
+    // handoff synchronisation is owned by the aliasing barriers + layout tracking,
+    // which a naive cyclic seed would fight.
+    //
+    // INVARIANT (cheap-toggle path): the seed reflects the CURRENT frame's enabled
+    // mask, and is correct only because the EXECUTED pass order is byte-identical to
+    // the prior frame for the buffers it touches. The SetEnabled cheap toggle re-runs
+    // SynthesizeBarriers WITHOUT a topological re-sort (Flux_RenderGraph_Execution.cpp
+    // m_bEnabledMaskDirty path), so on the frame a toggle flips, a buffer whose LAST
+    // accessor is that togglable pass would get a seed that disagrees with the
+    // in-flight prior-frame GPU access → a missing/wrong-src cross-frame barrier. This
+    // is safe TODAY because every SetEnabled site toggles IMAGE-only passes (Fog/IBL/
+    // SSGI/SSR/Skybox) and the seed only touches buffers — no seeded buffer has a
+    // togglable accessor. If you ever add a SetEnabled-togglable pass that reads or
+    // writes a persistent Flux_Buffer, route that toggle through MarkDirty() (full
+    // Compile + re-seed) like Fog's technique swap does, NOT the cheap mask toggle.
+    void SeedCyclicBufferState(const Flux_RenderGraph_ResourceUsage& rxUsage,
+                               BarrierStateTracker& xTracker)
+    {
+        if (rxUsage.m_xResource.GetKind() != Flux_GraphResourceKind::Buffer)
+            return;
+        Flux_Buffer* pxBuffer = rxUsage.m_xResource.AsBuffer();
+        if (pxBuffer == nullptr || !pxBuffer->m_xVRAMHandle.IsValid())
+            return;
+        xTracker.SetBufferState(pxBuffer, PostPassAccess(rxUsage.m_eAccess));
+    }
 }
 
 void Flux_RenderGraph::SynthesizeBarriers()
@@ -1501,6 +1552,22 @@ void Flux_RenderGraph::SynthesizeBarriers()
     // never incrementally. Per-subresource image state and per-buffer state live
     // in the tracker.
     BarrierStateTracker xTracker;
+
+    // Cross-frame cyclic seed (buffers only) — see SeedCyclicBufferState. Walk the
+    // SAME pass order (and reads-before-writes per pass) as the main loop below so
+    // each persistent buffer's seeded state is EXACTLY its final access this frame;
+    // the main loop's first access then sees that prior-frame state and emits the
+    // cross-frame WAR/WAW barrier that the old "fresh UNDEFINED every frame"
+    // behaviour silently dropped. Images are intentionally not seeded here.
+    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
+    {
+        Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
+        if (!IsPassEffectivelyEnabled(pxPass)) continue;
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
+            SeedCyclicBufferState(it.GetData(), xTracker);
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
+            SeedCyclicBufferState(it.GetData(), xTracker);
+    }
 
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
     {

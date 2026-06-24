@@ -277,52 +277,6 @@ void Flux_SkeletonPose::InitFromBindPose(const Zenith_SkeletonAsset& xSkeleton)
 	}
 }
 
-void Flux_SkeletonPose::ComputeModelSpaceMatricesRecursive(const Flux_MeshAnimation::Node* pxNode,
-	const Zenith_Maths::Matrix4& xParentTransform,
-	const Flux_MeshGeometry& xGeometry)
-{
-	const std::string& strNodeName = pxNode->m_strName;
-
-	// Start with node's default transform
-	Zenith_Maths::Matrix4 xNodeTransform = pxNode->m_xTrans;
-
-	// If this node corresponds to a bone, use the sampled local pose
-	const std::pair<uint32_t, Zenith_Maths::Matrix4>* pxIdAndOffset = xGeometry.m_xBoneNameToIdAndOffset.TryGet(strNodeName);
-	if (pxIdAndOffset != nullptr)
-	{
-		uint32_t uBoneIndex = pxIdAndOffset->first;
-		if (uBoneIndex < FLUX_MAX_BONES)
-		{
-			xNodeTransform = m_axLocalPoses[uBoneIndex].ToMatrix();
-		}
-	}
-
-	// Compute global transform
-	Zenith_Maths::Matrix4 xGlobalTransform = xParentTransform * xNodeTransform;
-
-	// Store model-space matrix for this bone
-	if (pxIdAndOffset != nullptr)
-	{
-		uint32_t uBoneIndex = pxIdAndOffset->first;
-		if (uBoneIndex < FLUX_MAX_BONES)
-		{
-			m_axModelSpaceMatrices[uBoneIndex] = xGlobalTransform;
-		}
-	}
-
-	// Recurse to children
-	for (uint32_t i = 0; i < pxNode->m_uChildCount; ++i)
-	{
-		ComputeModelSpaceMatricesRecursive(&pxNode->m_xChildren.Get(i), xGlobalTransform, xGeometry);
-	}
-}
-
-void Flux_SkeletonPose::ComputeModelSpaceMatrices(const Flux_MeshAnimation::Node& xRootNode,
-	const Flux_MeshGeometry& xGeometry)
-{
-	ComputeModelSpaceMatricesRecursive(&xRootNode, glm::mat4(1.0f), xGeometry);
-}
-
 void Flux_SkeletonPose::ComputeModelSpaceMatricesFlat(const Flux_MeshGeometry&)
 {
 	// Simple flat hierarchy: each bone's model space = its local pose

@@ -7,7 +7,6 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
-#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"

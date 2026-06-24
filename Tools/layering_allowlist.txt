@@ -28,7 +28,6 @@ Zenith/EntityComponent/Components/Zenith_InstancedMeshComponent.cpp => Flux/Inst
 Zenith/EntityComponent/Components/Zenith_InstancedMeshComponent.cpp => Flux/InstancedMeshes/Flux_InstanceGroup.h
 Zenith/EntityComponent/Components/Zenith_InstancedMeshComponent.cpp => Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h
 Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/Flux_ModelInstance.h
-Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshAnimation/Flux_MeshAnimation.h
 Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshAnimation/Flux_SkeletonInstance.h
 Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshGeometry/Flux_MeshGeometry.h
 Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp => Flux/MeshGeometry/Flux_MeshInstance.h

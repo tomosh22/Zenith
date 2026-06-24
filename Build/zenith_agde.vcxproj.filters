@@ -541,9 +541,6 @@
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp">
-      <Filter>Flux\MeshAnimation</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
@@ -2112,6 +2109,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.Tests.inl">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -2371,6 +2371,9 @@
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AttachmentComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AttachmentComponent.Tests.inl">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
@@ -2655,9 +2658,6 @@
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h">
-      <Filter>Flux\MeshAnimation</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
@@ -2751,12 +2751,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.slang">
-      <Filter>Flux\Shaders\ComputeTest</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.slang">
-      <Filter>Flux\Shaders\ComputeTest</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_Apply.slang">
       <Filter>Flux\Shaders\Decals</Filter>
     </ClInclude>
@@ -2790,13 +2784,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.slang">
-      <Filter>Flux\Shaders\Fog</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\AnimatedMeshes.h">
-      <Filter>Flux\Shaders\Generated</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\ComputeTest.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Decals.h">
@@ -2806,9 +2794,6 @@
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DynamicLights.h">
-      <Filter>Flux\Shaders\Generated</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\FluxShaderProgram.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Fog.h">
@@ -2910,7 +2895,13 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToShadowmap.slang">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceReset.slang">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang">
+      <Filter>Flux\Shaders\MaterialPreview</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Forward.slang">
       <Filter>Flux\Shaders\MaterialPreview</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Tonemap.slang">
@@ -2953,9 +2944,6 @@
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Blur.slang">
-      <Filter>Flux\Shaders\SSAO</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Upsample.slang">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseH.slang">
@@ -3042,6 +3030,9 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_UnownedEngineShaders.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h">
       <Filter>Flux\SSAO</Filter>
     </ClInclude>
@@ -3111,6 +3102,9 @@
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h">
       <Filter>Input</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Input\Zenith_Input.Tests.inl">
+      <Filter>Input</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h">
       <Filter>Input</Filter>
     </ClInclude>
@@ -3169,6 +3163,9 @@
       <Filter>TaskSystem</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h">
+      <Filter>Telemetry</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.Tests.inl">
       <Filter>Telemetry</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h">
@@ -3485,9 +3482,6 @@
     </Filter>
     <Filter Include="Flux\Shaders\Common">
       <UniqueIdentifier>{69171996-a11b-940f-8826-64d9fb56053a}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Flux\Shaders\ComputeTest">
-      <UniqueIdentifier>{613a55c0-df80-e2bf-eb95-76784e3786a6}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Decals">
       <UniqueIdentifier>{0d7747a5-91e0-2724-7ed5-7014e7744686}</UniqueIdentifier>

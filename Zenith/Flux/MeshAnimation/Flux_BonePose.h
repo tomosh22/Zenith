@@ -1,7 +1,6 @@
 #pragma once
 #include "Maths/Zenith_Maths.h"
 #include "Flux_AnimationClip.h"
-#include "Flux_MeshAnimation.h"
 #include "Collections/Zenith_Vector.h"
 #include <string>
 
@@ -115,11 +114,6 @@ public:
 	// Call this before SampleFromClip to ensure non-animated bones have correct bind pose values
 	void InitFromBindPose(const Zenith_SkeletonAsset& xSkeleton);
 
-	// Compute model-space matrices from local poses using skeleton hierarchy
-	// Must be called after setting local poses and before computing skinning matrices
-	void ComputeModelSpaceMatrices(const struct Flux_MeshAnimation::Node& xRootNode,
-		const Flux_MeshGeometry& xGeometry);
-
 	// Alternative: compute model space from a flat bone hierarchy (for clips without node tree)
 	void ComputeModelSpaceMatricesFlat(const Flux_MeshGeometry& xGeometry);
 
@@ -161,11 +155,6 @@ public:
 	void CopyFrom(const Flux_SkeletonPose& xOther);
 
 private:
-	// Recursive helper for computing model-space matrices
-	void ComputeModelSpaceMatricesRecursive(const struct Flux_MeshAnimation::Node* pxNode,
-		const Zenith_Maths::Matrix4& xParentTransform,
-		const Flux_MeshGeometry& xGeometry);
-
 	uint32_t m_uNumBones = 0;
 
 	// Local space poses (one per bone, indexed by bone ID)

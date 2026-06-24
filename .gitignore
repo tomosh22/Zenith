@@ -99,3 +99,8 @@ imgui.ini
 # Brush-indicator decal textures are regenerated at every editor boot
 # (Zenith_TerrainEditor::RegenerateBrushTextures).
 Zenith/Assets/Textures/Brushes/
+
+# Telemetry kill-safe test artifact (Zenith_Telemetry.Tests.inl writes this into the
+# CWD). Narrow to the exact filename so it does NOT shadow the tracked
+# Build/dp_telemetry/seed_matrix/*.telemetry.ztlm baselines.
+ztlm_flushsnapshot_test.ztlm

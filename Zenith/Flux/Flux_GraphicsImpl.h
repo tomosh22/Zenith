@@ -132,6 +132,9 @@ public:
 	// Samplers (initialised in InitialiseSamplers).
 	Flux_Sampler                m_xRepeatSampler;
 	Flux_Sampler                m_xClampSampler;
+	// NEAREST/no-aniso/clamp — for data textures that must be read per-texel
+	// exactly (VAT position textures). Bound explicitly via BindSRV's sampler arg.
+	Flux_Sampler                m_xPointSampler;
 
 	// Shared geometry / per-frame UBO.
 	Flux_MeshGeometry           m_xQuadMesh;

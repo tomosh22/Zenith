@@ -34,6 +34,7 @@ public:
 
 	static void InitialiseRepeat(Zenith_D3D12_Sampler& /*xSampler*/) { }
 	static void InitialiseClamp(Zenith_D3D12_Sampler& /*xSampler*/) { }
+	static void InitialisePointClamp(Zenith_D3D12_Sampler& /*xSampler*/) { }
 };
 
 // ----------------------------------------------------------------------------

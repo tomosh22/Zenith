@@ -167,15 +167,12 @@ public:
 	u_int64 m_ulReservedPositionDataSize = 0;
 
 
-	class Flux_MeshAnimation* m_pxAnimation = nullptr;
-
-	// New animation system - AnimationController provides state machines, blending, and IK
-	// When both are present, prefer the new controller for rendering
+	// AnimationController provides state machines, blending, and IK.
 	Flux_AnimationController* m_pxAnimationController = nullptr;
 
 	// Check if this mesh has any animation system available
-	bool HasAnimation() const { return m_pxAnimation != nullptr || m_pxAnimationController != nullptr; }
+	bool HasAnimation() const { return m_pxAnimationController != nullptr; }
 
-	// Get bone buffer for rendering - prefers new controller if available
+	// Get bone buffer for rendering
 	const Flux_DynamicConstantBuffer* GetBoneBuffer() const;
 };

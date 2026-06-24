@@ -112,6 +112,16 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+		// Backface-cull. Flux_PipelineSpecification defaults to CULL_MODE_NONE, but
+		// instanced meshes are AUTHORED for backface culling: the procedural tree
+		// leaf cards emit BOTH triangle windings per quad (coplanar duplicates) so a
+		// leaf is visible from either side AFTER the backface cull drops the away-
+		// facing winding (CreateTreeLeavesMesh, Tools/Zenith_Tools_TreeAssetExport.cpp:
+		// "the instanced pipeline backface-culls; leaves must read from both sides").
+		// With CULL_MODE_NONE both coplanar windings drew at once and z-fought; the
+		// leaves' 7.5deg VAT sway shifted the per-pixel depth contest every frame ->
+		// the canopy flickered (trunk is single-winding solid, so it was stable).
+		xPipelineSpec.m_eCullMode = CULL_MODE_BACK;
 
 		m_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
@@ -123,6 +133,14 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 		}
 
 		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipeline, xPipelineSpec);
+
+		// Two-sided variant (CULL_MODE_NONE) for materials flagged m_bTwoSided, mirroring
+		// StaticMeshes/AnimatedMeshes: ExecuteInstancedGBuffer selects per-group so a
+		// two-sided instanced material keeps its back faces (its shader normal-flip stays
+		// meaningful). The double-winding leaf cards are NOT flagged two-sided, so they
+		// stay on the one-sided CULL_MODE_BACK pipeline above -> the flicker fix is preserved.
+		xPipelineSpec.m_eCullMode = CULL_MODE_NONE;
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineTwoSided, xPipelineSpec);
 	}
 
 	// Shadow pipeline
@@ -132,6 +150,9 @@ void Flux_InstancedMeshesImpl::BuildPipelines()
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &m_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+		// Match the GBuffer: backface-cull so the leaf cards' coplanar double-winding
+		// doesn't double-write the shadow depth (same authoring contract as above).
+		xShadowPipelineSpec.m_eCullMode = CULL_MODE_BACK;
 		// Fixed-function slope-scaled depth bias (set per-cascade via vkCmdSetDepthBias
 		// in Flux_Shadows::ExecuteShadowCascade). Dynamic so it is runtime-tunable.
 		xShadowPipelineSpec.m_bDepthBias = true;
@@ -196,6 +217,20 @@ void Flux_InstancedMeshesImpl::Shutdown()
 {
 	ClearAllGroups();
 	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xCullingConstantsBuffer);
+
+	// Pipelines reference their shaders, so destroy pipelines first (mirrors
+	// Flux_StaticMeshesImpl::Shutdown). Reset() is idempotent on an unbuilt
+	// pipeline/shader, so this is safe even if GPU culling never initialised.
+	m_xGBufferPipeline.Reset();
+	m_xGBufferPipelineTwoSided.Reset();
+	m_xShadowPipeline.Reset();
+	m_xCullingPipeline.Reset();
+	m_xResetPipeline.Reset();
+	m_xGBufferShader.Reset();
+	m_xShadowShader.Reset();
+	m_xCullingShader.Reset();
+	m_xResetShader.Reset();
+
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes shutdown");
 }
 
@@ -389,8 +424,9 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 	Zenith_Maths::Vector3 xCameraPos(0.0f);
 	if (bUseGPUCulling)
 	{
-		xViewProjMatrix = g_xEngine.FluxGraphics().GetViewProjMatrix();
-		xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
+		Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+		xViewProjMatrix = xGraphics.GetViewProjMatrix();
+		xCameraPos = xGraphics.GetCameraPosition();
 	}
 
 	for (u_int uGroup = 0; uGroup < xSelf.m_apxInstanceGroups.GetSize(); ++uGroup)
@@ -577,10 +613,11 @@ static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void*)
 //     persistent buffer's static graph READ declaration is harmlessly unused.
 void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup, bool bUseGPUCulling)
 {
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
 	if (!pxMaterial)
 	{
-		pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+		pxMaterial = xGraphics.m_xBlankMaterial.GetDirect();
 	}
 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
@@ -642,14 +679,21 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 	xBinder.BindSRV(m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_ROUGHNESS_METALLIC)->m_xSRV);
 	xBinder.BindSRV(m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_OCCLUSION)->m_xSRV);
 
-	// Bind animation texture (VAT) if available, else bind blank texture
+	// Bind animation texture (VAT) if available, else bind blank texture.
+	// The VAT position texture MUST be sampled with the POINT (nearest/no-aniso)
+	// sampler: its texels are exact per-(vertex,frame) positions, and adjacent
+	// columns are different mesh vertices metres apart — the default linear+aniso
+	// sampler cross-blends them, and because both vertices animate the blended
+	// position varies every frame, distorting/jittering the whole mesh (only
+	// visible while the animation advances). See InitialisePointClamp.
 	if (bHasVAT)
 	{
-		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV);
+		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV,
+			&xGraphics.m_xPointSampler);
 	}
 	else
 	{
-		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV);
+		xBinder.BindSRV(m_xGBufferShader, "g_xAnimationTex", &xGraphics.m_xWhiteTexture.GetDirect()->m_xSRV);
 	}
 
 	// Bind instance buffers. Transform/AnimData are frame-indexed (not graph-
@@ -719,38 +763,57 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		return;
 	}
 
-	pxCmdList->SetPipeline(&xZZ.m_xGBufferPipeline);
-
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-
 	const bool bUseGPUCulling = xZZ.m_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && xZZ.m_bCullingInitialized;
 
-	for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
+	// Two cull passes, mirroring StaticMeshes/AnimatedMeshes: pass 0 is one-sided
+	// (CULL_MODE_BACK — the default the double-winding leaf cards rely on), pass 1 is
+	// two-sided (CULL_MODE_NONE, for materials flagged m_bTwoSided so their back faces +
+	// shader normal-flip stay meaningful). Each group draws in exactly one pass; the
+	// pipeline + FrameConstants are bound once per pass. Almost all groups are one-sided,
+	// so pass 1 is usually empty.
+	for (u_int uCullPass = 0; uCullPass < 2; ++uCullPass)
 	{
-		Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
-		// HasGPUBuffers skip matches the SetupRenderGraph per-group declaration
-		// guard so the buffers this pass reads were declared on it.
-		if (!pxGroup || pxGroup->IsEmpty() || !pxGroup->HasGPUBuffers())
+		const bool bTwoSidedPass = (uCullPass == 1);
+		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
+		// FrameConstants (set 0 - per-frame data), bound once per pass after SetPipeline.
+		xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+
+		for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
 		{
-			continue;
+			Flux_InstanceGroup* pxGroup = xZZ.m_apxInstanceGroups.Get(static_cast<u_int>(uGroup));
+			// HasGPUBuffers skip matches the SetupRenderGraph per-group declaration
+			// guard so the buffers this pass reads were declared on it.
+			if (!pxGroup || pxGroup->IsEmpty() || !pxGroup->HasGPUBuffers())
+			{
+				continue;
+			}
+
+			// Bin by cull mode: each group renders in exactly one pass. A null material
+			// falls to the one-sided pass (the blank fallback BindBatchDescriptors uses is
+			// opaque/one-sided), matching the descriptor it will bind.
+			Zenith_MaterialAsset* pxGroupMat = pxGroup->GetMaterial();
+			const bool bGroupTwoSided = (pxGroupMat != nullptr) && pxGroupMat->GetResolved().m_xParams.m_bTwoSided;
+			if (bGroupTwoSided != bTwoSidedPass)
+			{
+				continue;
+			}
+
+			Flux_MeshInstance* pxMesh = pxGroup->GetMesh();
+			if (!pxMesh)
+			{
+				continue;
+			}
+
+			// Set vertex and index buffers from mesh
+			pxCmdList->SetVertexBuffer(pxMesh->GetVertexBuffer());
+			pxCmdList->SetIndexBuffer(pxMesh->GetIndexBuffer());
+
+			xZZ.BindBatchDescriptors(xBinder, pxGroup, bUseGPUCulling);
+			IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
 		}
-
-		Flux_MeshInstance* pxMesh = pxGroup->GetMesh();
-		if (!pxMesh)
-		{
-			continue;
-		}
-
-		// Set vertex and index buffers from mesh
-		pxCmdList->SetVertexBuffer(pxMesh->GetVertexBuffer());
-		pxCmdList->SetIndexBuffer(pxMesh->GetIndexBuffer());
-
-		xZZ.BindBatchDescriptors(xBinder, pxGroup, bUseGPUCulling);
-		IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
 	}
 }
 
@@ -790,6 +853,7 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
 	// Shadow pass: DrawConstants + ShadowMatrix + transform/visible-index
 	// SSBOs only — Slang reflection won't show FrameConstants.
@@ -813,18 +877,41 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 		xCmdBuf.SetVertexBuffer(pxMesh->GetVertexBuffer());
 		xCmdBuf.SetIndexBuffer(pxMesh->GetIndexBuffer());
 
-		// Bind shadow matrix
-		Zenith_Maths::Matrix4 xIdentity = glm::identity<glm::mat4>();
-		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xIdentity, sizeof(xIdentity));
+		// VAT params: the shadow shader applies the SAME vertex animation as the
+		// GBuffer so its depth matches the lit geometry. Without this the shadow map
+		// holds the rest pose while the GBuffer holds the swayed pose -> misaligned
+		// self-shadowing that flickers as the trees animate. Only g_xEmissiveParams
+		// (m_xAnimTexParams) is read by the shadow shader; the rest is zeroed.
+		Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
+		const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
+
+		InstancedMeshPushConstants xShadowConstants = {};
+		xShadowConstants.m_xModelMatrix = glm::identity<glm::mat4>();
+		xShadowConstants.m_xAnimTexParams = bHasVAT
+			? Zenith_Maths::Vector4(static_cast<float>(pxAnimTex->GetTextureWidth()),
+				static_cast<float>(pxAnimTex->GetTextureHeight()), 1.0f, 0.0f)
+			: Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xShadowConstants, sizeof(xShadowConstants));
 		xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
-		// Bind instance buffers. BOTH are frame-indexed (not graph-tracked):
-		// TransformBuffer via UAV; the enabled-index list via its SRV (read-only
+		// Bind instance buffers. Transform/AnimData are frame-indexed (not graph-
+		// tracked) -> UAV bind; the enabled-index list via its SRV (read-only
 		// StructuredBuffer<uint> in the shader). The enabled-index list (not the
 		// camera-culled persistent visible-index buffer) is what makes off-screen
-		// casters still cast.
+		// casters still cast. The VAT position texture uses the POINT sampler (exact
+		// per-texel reads), matching the GBuffer bind.
 		xBinder.BindUAV_Buffer(m_xShadowShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(m_xShadowShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
 		xBinder.BindSRV_Buffer(m_xShadowShader, "VisibleIndexBuffer", pxGroup->GetEnabledIndexBuffer().GetSRV());
+		if (bHasVAT)
+		{
+			xBinder.BindSRV(m_xShadowShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV,
+				&xGraphics.m_xPointSampler);
+		}
+		else
+		{
+			xBinder.BindSRV(m_xShadowShader, "g_xAnimationTex", &xGraphics.m_xWhiteTexture.GetDirect()->m_xSRV);
+		}
 
 		// Draw all enabled casters (no camera culling for shadows).
 		uint32_t uEnabledCount = pxGroup->GetEnabledCount();

@@ -663,6 +663,15 @@ public:
 	// writes the LOD level buffer, GBuffer vertex shader samples it as
 	// StructuredBuffer<uint>).
 	static void TestRenderGraphStorageBufferSRVBarrier();
+	// Cross-frame cyclic barrier seed: a persistent buffer written then read in a
+	// frame must get a barrier on its FIRST access (the write) sourced from its
+	// LAST access (the read), so frame N+1's write waits for frame N's read
+	// (the instanced-mesh reset-vs-prior-draw flicker regression).
+	static void TestRenderGraphCyclicBufferBarrier();
+	// Cyclic seed is "adds-only": a read-only buffer (two readers, no writer) must
+	// collapse to ZERO barriers on its first access (read-after-read), proving the
+	// seed injects nothing spurious onto the engine's read-only persistent buffers.
+	static void TestRenderGraphCyclicReadOnlyNoBarrier();
 
 	// WS7 keystone (C1C2): InstancedMeshes Prepare-gather determinism / thread-safety
 	// regression. With GPU culling forced OFF (the path that used to double-call
@@ -743,6 +752,12 @@ public:
 	static void TestRootMotionRotationSingleKeyframe();
 	static void TestRootMotionRotationInterpolatesBetween();
 	static void TestRootMotionRotationPastEnd();
+	// Flux_BoneChannel end-of-clip clamp (regression for the instanced-tree leaf
+	// "teleport": GetRotationIndex/Position/Scale used to extrapolate the first
+	// segment at/past the last keyframe, corrupting the final VAT-baked frame).
+	static void TestBoneChannelRotationClampsAtClipEnd();
+	static void TestBoneChannelPositionClampsAtClipEnd();
+	static void TestBoneChannelScaleClampsAtClipEnd();
 
 	// RenderTest input-simulator tests (RenderTest_FollowCameraComponent +
 	// RenderTest_PlayerComponent driven via Zenith_InputSimulator). Each test

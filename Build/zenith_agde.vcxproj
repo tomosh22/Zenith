@@ -558,6 +558,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialParamTable.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.h" />
@@ -645,6 +646,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AIAgentComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AttachmentComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AttachmentComponent.Tests.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_GraphComponent.h" />
@@ -739,7 +741,6 @@
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BonePose.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.h" />
-    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.h" />
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
@@ -771,8 +772,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialSurface.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_Apply.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_NormalsCopy.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang" />
@@ -784,13 +783,10 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Light.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\AnimatedMeshes.h" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\ComputeTest.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Decals.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DeferredShading.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DynamicLights.h" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\FluxShaderProgram.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Fog.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Gizmos.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HDR.h" />
@@ -824,7 +820,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToShadowmap.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceReset.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Forward.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Tonemap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.slang" />
@@ -839,7 +837,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_TransmittanceLUT.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Blur.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Upsample.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseH.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseV.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.slang" />
@@ -868,6 +865,7 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderDecl.h" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_UnownedEngineShaders.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGIImpl.h" />
@@ -891,6 +889,7 @@
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderFeatures.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
+    <ClInclude Include="..\Zenith\Input\Zenith_Input.Tests.inl" />
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h" />
@@ -911,6 +910,7 @@
     <ClInclude Include="..\Zenith\Scripting\Zenith_Scripting.Tests.inl" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h" />
+    <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.Tests.inl" />
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIButton.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UICanvas.h" />
@@ -1383,7 +1383,6 @@
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_BonePose.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.cpp" />
-    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp" />

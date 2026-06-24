@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux_MeshGeometry.h"
-#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 
 void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
@@ -767,20 +766,6 @@ Zenith_Maths::Vector3 Flux_MeshGeometry::GenerateTangent(uint32_t a, uint32_t b,
 
 const Flux_DynamicConstantBuffer* Flux_MeshGeometry::GetBoneBuffer() const
 {
-	// Only use new animation controller if it has actual animation content
-	// This prevents an empty controller from overriding the working legacy system
-	if (m_pxAnimationController && m_pxAnimationController->HasAnimationContent())
-	{
-		return &m_pxAnimationController->GetBoneBuffer();
-	}
-
-	// Fall back to legacy animation system
-	if (m_pxAnimation)
-	{
-		return &m_pxAnimation->m_xBoneBuffer;
-	}
-
-	// Last resort: return the controller's buffer even if empty (for meshes without legacy animation)
 	if (m_pxAnimationController)
 	{
 		return &m_pxAnimationController->GetBoneBuffer();

@@ -206,6 +206,15 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 }
 #endif // ZENITH_TOOLS
 
+// When fTime is at/after the LAST keyframe the loop finds no segment. It must return
+// the LAST keyframe index (size-1) so Sample*() CLAMPS to the last keyframe (its
+// p1Index>=size guard returns that keyframe). The old `return 0` returned the FIRST
+// segment, so Sample*() computed scaleFactor = fTime/firstSegLen (huge) and
+// EXTRAPOLATED the first segment far past it — a wildly wrong pose at the clip end.
+// A VAT bake samples its final frame at exactly t=duration (the last keyframe time),
+// so that corrupted the last baked frame, making instanced trees lurch for one frame
+// at every loop wrap. (Sample*() handle the size 0/1 cases before calling these, so
+// size>=2 here and size-1>=1.)
 uint32_t Flux_BoneChannel::GetPositionIndex(float fTime) const
 {
 	for (u_int i = 0; i < m_xPositions.GetSize() - 1; ++i)
@@ -213,7 +222,7 @@ uint32_t Flux_BoneChannel::GetPositionIndex(float fTime) const
 		if (fTime < m_xPositions.Get(i + 1).second)
 			return i;
 	}
-	return 0;
+	return m_xPositions.GetSize() - 1;
 }
 
 uint32_t Flux_BoneChannel::GetRotationIndex(float fTime) const
@@ -223,7 +232,7 @@ uint32_t Flux_BoneChannel::GetRotationIndex(float fTime) const
 		if (fTime < m_xRotations.Get(i + 1).second)
 			return i;
 	}
-	return 0;
+	return m_xRotations.GetSize() - 1;
 }
 
 uint32_t Flux_BoneChannel::GetScaleIndex(float fTime) const
@@ -233,7 +242,7 @@ uint32_t Flux_BoneChannel::GetScaleIndex(float fTime) const
 		if (fTime < m_xScales.Get(i + 1).second)
 			return i;
 	}
-	return 0;
+	return m_xScales.GetSize() - 1;
 }
 
 float Flux_BoneChannel::GetScaleFactor(float fLastTime, float fNextTime, float fAnimTime) const

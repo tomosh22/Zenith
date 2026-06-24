@@ -59,6 +59,7 @@ void Flux_GraphicsImpl::InitialiseSamplers()
 {
 	Flux_Sampler::InitialiseRepeat(m_xRepeatSampler);
 	Flux_Sampler::InitialiseClamp(m_xClampSampler);
+	Flux_Sampler::InitialisePointClamp(m_xPointSampler);
 }
 
 void Flux_GraphicsImpl::Initialise()

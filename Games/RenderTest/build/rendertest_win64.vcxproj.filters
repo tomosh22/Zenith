@@ -22,6 +22,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\RenderTest_BootstrapComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
@@ -40,10 +43,40 @@
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_Tennis.Tests.inl">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisAgentComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisBTNodes.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisCourtGeometry.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisDecision.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\RenderTest_TennisMatchComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_TennisPlayerComponent.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisRng.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisSpin.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisTelemetry.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_TennisTypes.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_Testbed.Tests.inl">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\RenderTest_Guns.h" />

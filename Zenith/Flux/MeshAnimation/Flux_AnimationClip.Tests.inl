@@ -175,3 +175,78 @@ void Zenith_UnitTests::TestRootMotionRotationPastEnd()
 	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xResult, xQ1),
 		"fTime past last rotation keyframe must clamp to back value");
 }
+
+// ============================================================================
+// Flux_BoneChannel end-of-clip sampling (regression for the instanced-tree leaf
+// "teleport").
+//
+// GetRotationIndex/Position/Scale used to `return 0` (the FIRST segment) when
+// fTime was at/past the last keyframe. Sample*() then computed
+// scaleFactor = (fTime - firstKeyTime) / firstSegLen — a huge value — and
+// EXTRAPOLATED the first segment instead of holding the last keyframe. A VAT bake
+// samples its final frame at EXACTLY t=duration (the last keyframe time), so that
+// corrupted the last baked frame; the GPU two-tap lerp reached into it at every
+// loop wrap, making each instanced tree lurch for one frame (phase-staggered ->
+// scattered across the forest, only while animating, with a correct anim time).
+// The fix returns the last keyframe index so Sample*() clamps to it.
+// ============================================================================
+
+ZENITH_TEST(Animation, BoneChannelRotationClampsAtClipEnd) { Zenith_UnitTests::TestBoneChannelRotationClampsAtClipEnd(); }
+void Zenith_UnitTests::TestBoneChannelRotationClampsAtClipEnd()
+{
+	Flux_BoneChannel xChannel;
+	const Zenith_Maths::Quat xQ0 = glm::angleAxis(glm::radians(0.0f),  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	const Zenith_Maths::Quat xQ1 = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	const Zenith_Maths::Quat xQ2 = glm::angleAxis(glm::radians(3.0f),  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	xChannel.AddRotationKeyframe(0.0f,  xQ0);
+	xChannel.AddRotationKeyframe(10.0f, xQ1);
+	xChannel.AddRotationKeyframe(20.0f, xQ2);  // last keyframe (a near-rest "loop close")
+	xChannel.SortKeyframes();
+
+	// At EXACTLY the last keyframe time — the VAT-bake case. Must be the last keyframe,
+	// NOT a wild extrapolation of the first segment (the old return-0 bug gave
+	// slerp(xQ0, xQ1, 2.0) ~= 60deg here).
+	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xChannel.SampleRotation(20.0f), xQ2),
+		"SampleRotation at the last keyframe time must return the last keyframe");
+	// Past the end clamps to the last keyframe (no extrapolation).
+	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xChannel.SampleRotation(50.0f), xQ2),
+		"SampleRotation past the clip end must clamp to the last keyframe");
+	// The fix must not disturb interior sampling.
+	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xChannel.SampleRotation(0.0f), xQ0),
+		"SampleRotation at t=0 must return the first keyframe");
+	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xChannel.SampleRotation(10.0f), xQ1),
+		"SampleRotation at an interior keyframe time must return that keyframe");
+}
+
+ZENITH_TEST(Animation, BoneChannelPositionClampsAtClipEnd) { Zenith_UnitTests::TestBoneChannelPositionClampsAtClipEnd(); }
+void Zenith_UnitTests::TestBoneChannelPositionClampsAtClipEnd()
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xChannel.AddPositionKeyframe(10.0f, Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f));
+	xChannel.AddPositionKeyframe(20.0f, Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+	xChannel.SortKeyframes();
+
+	// Old bug: GetPositionIndex returned 0 -> mix(p0,p1, fTime/firstSegLen) extrapolated.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(20.0f), Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f)),
+		"SamplePosition at the last keyframe time must return the last keyframe");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(50.0f), Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f)),
+		"SamplePosition past the clip end must clamp to the last keyframe");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(5.0f), Zenith_Maths::Vector3(2.5f, 0.0f, 0.0f)),
+		"SamplePosition mid-first-segment must interpolate (t=5 -> halfway to (5,0,0))");
+}
+
+ZENITH_TEST(Animation, BoneChannelScaleClampsAtClipEnd) { Zenith_UnitTests::TestBoneChannelScaleClampsAtClipEnd(); }
+void Zenith_UnitTests::TestBoneChannelScaleClampsAtClipEnd()
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddScaleKeyframe(0.0f,  Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	xChannel.AddScaleKeyframe(10.0f, Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+	xChannel.AddScaleKeyframe(20.0f, Zenith_Maths::Vector3(1.5f, 1.5f, 1.5f));
+	xChannel.SortKeyframes();
+
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SampleScale(20.0f), Zenith_Maths::Vector3(1.5f, 1.5f, 1.5f)),
+		"SampleScale at the last keyframe time must return the last keyframe");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SampleScale(50.0f), Zenith_Maths::Vector3(1.5f, 1.5f, 1.5f)),
+		"SampleScale past the clip end must clamp to the last keyframe");
+}
