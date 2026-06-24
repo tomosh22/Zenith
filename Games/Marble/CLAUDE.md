@@ -10,11 +10,11 @@ A physics-based ball rolling game demonstrating Jolt Physics integration and dyn
 | **Collision Shapes** | `COLLISION_VOLUME_TYPE_SPHERE/AABB` | Sphere for ball, AABB for platforms |
 | **Impulse-Based Movement** | `Zenith_Physics::AddImpulse` | Physics-based input response |
 | **Camera Following** | `Zenith_CameraComponent` | Smooth follow with look-at |
-| **Procedural Geometry** | `Flux_MeshGeometry::GenerateUVSphere` | Runtime sphere mesh generation |
+| **Procedural Geometry** | `GenerateUVSphere()` (file-static helper in `Marble.cpp`) | Runtime sphere mesh generation into a `Flux_MeshGeometry` |
 | **Game State Machine** | `MarbleGameState` enum | Playing/Paused/Won/Lost states |
 | **Distance-Based Pickups** | Manual distance check | Simple collectible system |
 | **Entity Lifetime** | `Zenith_Scene::Destroy` | Dynamic entity creation/destruction |
-| **Multi-Scene Management** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **Multi-Scene Management** | `Zenith_SceneManager` | `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `SetActiveScene()`, `UnloadScene()`, `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `SetScenePaused()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -25,7 +25,7 @@ Games/Marble/
   Marble.cpp                     # Project entry points, resource initialization
   Components/
     Marble_GameComponent.h       # Main coordinator component (uses modules below)
-    Marble_Config.h              # DataAsset for game configuration
+    Marble_Config.h              # DataAsset for game configuration (defined + serializable, but not yet instantiated/referenced; included in Marble.cpp only)
     Marble_Input.h               # Camera-relative physics input
     Marble_PhysicsController.h   # Ball movement via Jolt Physics
     Marble_CameraFollow.h        # Smooth camera tracking
@@ -63,7 +63,8 @@ registered via `Marble_RegisterGraphNodes()`.
 **Equivalence proof:** `Tests/Test_MarbleCharacterization.cpp` (headless OK):
 `Marble_TimerFlow_Test` pins the countdown rate (±1 s over 600 fixed-dt
 frames) + LOST at expiry with time clamped to 0; `Marble_FallLoss_Test` rolls
-off via held W (real input) and requires LOST with >5 s remaining.
+off via held W (real input injected through `Zenith_InputSimulator`:
+`SetKeyHeld`/`SetFixedDt`/`ClearFixedDt`) and requires LOST with >5 s remaining.
 
 ```
 marble.exe --all-automated-tests --headless --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
@@ -72,7 +73,7 @@ marble.exe --all-automated-tests --headless --exit-after-frames 30000 --fixed-dt
 ## Module Breakdown
 
 ### Marble.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_CreateScenes`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_RegisterEditorAutomationSteps`, `Project_LoadInitialScene` (scenes are built via `Zenith_EditorAutomation` steps in `Project_RegisterEditorAutomationSteps`, e.g. `AddStep_CreateScene`/`AddStep_SaveScene`)
 
 Demonstrates:
 - Procedural UV sphere generation with tangent calculation
@@ -140,15 +141,15 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-Persistent scene holds GameManager entity (Camera + UI + MarbleGame component) with DontDestroyOnLoad. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
+The engine's persistent scene (`Zenith_SceneManager::GetPersistentScene()`) holds the GameManager entity (Camera + UI + MarbleGame component); there is no explicit `DontDestroyOnLoad()` call. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
 
 ### Game State Machine
 ```
-MAIN_MENU → PLAYING → PAUSED → GAME_OVER → MAIN_MENU
+MAIN_MENU → PLAYING → {PAUSED / WON / LOST} → MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-Uses `CreateEmptyScene("Level")` + `SetActiveScene()` to start, `UnloadScene()` to return to menu, and `SetScenePaused()` for pausing.
+Uses `LoadScene("Level", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene()` to start the level, `UnloadScene()` then `LoadSceneByIndex(0, SCENE_LOAD_SINGLE)` to return to the menu, and `SetScenePaused()` for pausing. Scenes themselves are boot-authored via `Zenith_EditorAutomation` (`AddStep_CreateScene`/`AddStep_SaveScene`) and loaded by `Project_LoadInitialScene`.
 
 ## Learning Path
 
@@ -190,10 +191,10 @@ Project camera-to-target vector onto XZ plane (zero Y, normalize) to get forward
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + MarbleGame component) - DontDestroyOnLoad
-- **PlayerBall** - The player-controlled marble with physics
-- **StartPlatform** - Initial platform where player spawns
-- **GoalPlatform** - Final destination platform
+- **GameManager** - Persistent entity (Camera + UI + MarbleGame component) - lives in the engine's persistent scene
+- **Ball** - The player-controlled marble with physics
+- **Platform** - Initial platform where player spawns
+- **Goal** - Final destination platform
 - **Platform_X** - Multiple floating platform entities
 - **Collectible_X** - Coin/gem pickup entities scattered on platforms
 
@@ -226,10 +227,10 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 - Timer counting down from 60 seconds (or configured time)
 - Collectibles visible on nearby platforms
 
-### HUD Elements (Top-Right)
+### HUD Elements (Top-Left)
 - **"Score: 0"** - Current score from collectibles
-- **"Time: 60"** - Countdown timer in seconds
-- **"Collected: 0/10"** - Collectibles gathered vs total
+- **"Time: 60.0"** - Countdown timer in seconds
+- **"Collected: 0 / 5"** - Collectibles gathered vs total
 
 ### Gameplay Actions
 1. **Rolling**: Ball responds to physics impulses from input

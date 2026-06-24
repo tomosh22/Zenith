@@ -40,16 +40,15 @@ Procedural grass rendering system with GPU instancing, wind animation, and LOD-b
 
 | File | Purpose |
 |------|---------|
-| `Flux_Grass.h` | Class declaration, instance struct, configuration |
+| `Flux_GrassImpl.h` | `Flux_GrassImpl` class declaration, instance struct, configuration (accessed via `g_xEngine.Grass()`) |
 | `Flux_Grass.cpp` | Implementation - chunk management, rendering |
+| `Flux_Grass_Shaders.h` | Shader program decls owned by the Grass feature |
 
 ## Shaders
 
 | Shader | Location | Purpose |
 |--------|----------|---------|
-| `Flux_Grass.vert` | `Shaders/Vegetation/` | Vertex shader with wind animation |
-| `Flux_Grass.frag` | `Shaders/Vegetation/` | Fragment shader with lighting |
-| `Flux_Wind.fxh` | `Shaders/Vegetation/` | Wind animation functions |
+| `Flux_Grass.slang` | `Shaders/Vegetation/` | Slang module with vertex + fragment stages and inline wind animation (helpers ported from the old `Flux_Wind.fxh`) |
 
 ## Configuration Constants
 
@@ -62,6 +61,8 @@ namespace GrassConfig
     fLOD2_DISTANCE = 100.0f;           // Billboard
     fMAX_DISTANCE = 200.0f;            // Culled
     fCHUNK_SIZE = 64.0f;               // Matches terrain
+    uMAX_INSTANCES_PER_CHUNK = 65536;  // Per-chunk instance limit
+    uMAX_VISIBLE_CHUNKS = 64;          // Simultaneous active chunks
     uMAX_TOTAL_INSTANCES = 2000000;    // 2M blades max
 }
 ```
@@ -84,16 +85,15 @@ struct GrassBladeInstance
 
 | Path | Type | Description |
 |------|------|-------------|
-| `Flux/Grass/Enable` | bool | Enable/disable grass |
 | `Flux/Grass/DebugMode` | uint | Debug visualization mode (0-9) |
 | `Flux/Grass/DensityScale` | float | Density multiplier (0-5) |
 | `Flux/Grass/MaxDistance` | float | Maximum render distance (50-500) |
-| `Flux/Grass/WindEnabled` | bool | Enable wind animation |
 | `Flux/Grass/WindStrength` | float | Wind intensity (0-5) |
-| `Flux/Grass/CullingEnabled` | bool | Enable frustum culling |
 | `Flux/Grass/ShowChunkGrid` | bool | Show chunk wireframes |
 | `Flux/Grass/FreezeLOD` | bool | Lock LOD selection |
 | `Flux/Grass/ForcedLOD` | uint | Forced LOD level (0-3) |
+
+Enable, WindEnabled, and CullingEnabled are controlled via `Zenith_GraphicsOptions` (`m_bGrassEnabled` / `m_bGrassWindEnabled` / `m_bGrassCullingEnabled`), not registered as debug variables.
 
 ## Debug Modes
 
@@ -121,69 +121,66 @@ The wind system uses layered sine waves for natural movement: primary wave (larg
 | LOD0 | 0-20m | Full density, full geometry |
 | LOD1 | 20-50m | 50% density |
 | LOD2 | 50-100m | 25% density, simplified |
-| Culled | 100m+ | Not rendered |
+| LOD3 | 100-200m | 12.5% density |
+| Culled | 200m+ | Not rendered |
 
 Density reduction happens at generation time by skipping blades based on distance to camera.
 
 ## Pass placement
 
-Grass renders in the foliage pass, which declares:
+Grass renders in a forward `"Grass"` pass that runs **after** DeferredShading (the HDR clear + lighting have already happened), which declares:
 
-- `Reads(scene depth)` — for early-Z testing against terrain
-- `Writes(G-buffer MRTs, scene depth)` — appends grass fragments to the deferred G-buffer
+- `Reads(scene depth as RESOURCE_ACCESS_READ_DEPTH)` — binds scene depth as a READ-ONLY depth attachment, so blades depth-test against the opaque scene without writing depth
+- `Writes(HDR scene target)` — blends lit grass fragments directly into the HDR scene (not the G-buffer)
 
-Topological sort places the foliage pass **after** the opaque mesh / terrain passes (they write the depth and G-buffer first) and **before** any pass that reads completed G-buffer attachments (HiZ generation, deferred shading, fog application). There is no explicit ordering enum.
+Topological sort derives this placement from the declared Reads/Writes (no explicit ordering enum). The pass does NOT clear either attachment — both carry live scene contents.
 
 This placement gives:
-- Proper depth testing against terrain
-- Grass receives fog in the deferred lighting pass
+- Proper depth testing against the already-rendered opaque scene
+- Grass is lit/translucent in the forward shader (self-shades via translucency)
 - Can cast shadows (future)
 
 ## Integration Points
 
 **Uses:**
-- `Flux_Graphics::GetHDRSceneTargetSetupWithDepth()` for depth testing
-- `Flux_Graphics::s_xFrameConstantsBuffer` for camera/sun
-- Terrain chunk load/unload events for grass generation
+- `Flux_Graphics::GetHDRSceneTarget()` / scene depth for the forward pass
+- `Flux_Graphics::m_xFrameConstantsBuffer` for camera/sun
+- Terrain mesh geometry for procedural blade placement
 
 **Terrain Integration:**
-```cpp
-// In terrain loading code
-void OnChunkLoaded(const Vector3& xCenter, float fSize)
-{
-    Flux_Grass::OnTerrainChunkLoaded(xCenter, fSize);
-}
+Grass generation is triggered by handing the subsystem the terrain mesh geometry. `GenerateFromTerrain` distributes blades across the mesh triangles (sampling the optional painted density map at each centroid / blade):
 
-void OnChunkUnloaded(const Vector3& xCenter)
-{
-    Flux_Grass::OnTerrainChunkUnloaded(xCenter);
-}
+```cpp
+// xTerrainMesh is the baked terrain Flux_MeshGeometry
+g_xEngine.Grass().GenerateFromTerrain(xTerrainMesh);
+```
+
+**Painted density map** (terrain editor / `GrassDensity.ztxtr`): a `[0,1]` map, row-major over the terrain's world footprint, multiplied into placement density inside `GenerateFromTerrain`:
+
+```cpp
+g_xEngine.Grass().SetDensityMap(pfData, uWidth, uHeight, fWorldSize); // data is COPIED; nullptr/0 clears
+float fDensity = g_xEngine.Grass().SampleDensityMap(fWorldX, fWorldZ); // bilinear; 1.0 when no map set
 ```
 
 ## Initialization Order
 
-Grass must be initialized AFTER:
-- `Flux_HDR` (renders to HDR target)
-- `Flux_Terrain` (uses terrain data for placement)
+In the **feature-registry order** (`Flux_FeatureRegistry.cpp` `RegisterDefaultFeatures()`), Grass is registered after `Terrain` and `DeferredShading` but **before** `HDR`, so Grass initializes before `Flux_HDR` (init order is dependency-safe beyond "FluxGraphics first" — see [Flux/CLAUDE.md](../CLAUDE.md)).
 
-```cpp
-Flux_Terrain::Initialise();
-Flux_Grass::Initialise();       // After terrain
-```
+The load-bearing ordering is the **render-graph declaration order**: the `"Grass"` pass declares after DeferredShading (so it renders over the lit HDR scene once DeferredShading has cleared and filled the HDR target) but before Fog/Particles (so atmosphere composites over the blades). Terrain is registered before Grass because `GenerateFromTerrain` consumes the terrain mesh for placement.
 
 ## Common Operations
 
 ### Configure from game code:
 ```cpp
-Flux_Grass::SetDensityScale(1.5f);  // 150% density
-Flux_Grass::SetWindStrength(2.0f);   // Strong wind
-Flux_Grass::SetWindDirection(Vector2(1.0f, 0.3f));
+g_xEngine.Grass().SetDensityScale(1.5f);  // 150% density
+g_xEngine.Grass().SetWindStrength(2.0f);   // Strong wind
+g_xEngine.Grass().SetWindDirection(Vector2(1.0f, 0.3f));
 ```
 
 ### Get stats:
 ```cpp
-u_int uBlades = Flux_Grass::GetVisibleBladeCount();
-float fMB = Flux_Grass::GetBufferUsageMB();
+u_int uBlades = g_xEngine.Grass().GetVisibleBladeCount();
+float fMB = g_xEngine.Grass().GetBufferUsageMB();
 ```
 
 ## Performance Budget

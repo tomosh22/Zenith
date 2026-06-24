@@ -19,7 +19,10 @@ Release builds (verified by `Test_ProcLevel_DeterminismCheck`).
 ```
 DevilsPlayground.cpp                 # Project_* lifecycle hooks; authors FrontEnd + ProcLevel scenes
 Source/
-  PublicInterfaces.h / .cpp          # DP_Player / DP_Items / DP_Interactables / DP_AI / DP_Fog / DP_Win / DP_Query
+  PublicInterfaces.h                 # Aggregator header only; each namespace owns DP_Player.h / DP_Items.h /
+                                     #   DP_Interactables.h / DP_AI.h / DP_Fog.h / DP_Win.h / DP_Night.h / DP_Query.h.
+                                     #   State lives in the individual DP_*.cpp anon namespaces (no PublicInterfaces.cpp).
+                                     #   Also includes DPCommonTypes.h (shared Vec2/Vec3/Vec4/Quat aliases + DP_On* event structs)
   DevilsPlayground_Tags.h            # DP_ItemTag enum + helpers
   DPInputActions.h                   # WASD/Q-E/F/Space/Esc/click readers
   DPFogPass.h / .cpp                 # Registers DP_Fog as a generic game render feature + force-disables engine fog
@@ -50,7 +53,7 @@ Components/
   DPPauseMenuController_Component.h  # Esc-toggle overlay
   DPFogPass_Component.h              # Per-frame fog-hole rebuild
   DPProcLevelBootstrap_Component.{h,cpp} # ProcLevel-scene component: calls Generate() in OnAwake + spawns layout
-Tests/                                 # 138 registered tests as of 2026-06-13
+Tests/                                 # 140+ registered tests (see `devilsplayground.exe --list-automated-tests` for the current count)
                                        # Full list: `devilsplayground.exe --list-automated-tests`
                                        # See Tests/CLAUDE.md for the convention guide + index
 Assets/
@@ -122,10 +125,11 @@ they live in the engine, not here, but the port is the primary client.
 
 ## Public-interface contract
 
-`Source/PublicInterfaces.h` is the single contract every behaviour talks
-through. State lives in `PublicInterfaces.cpp`'s anonymous namespace.
-Behaviours read/write via the namespace functions only — they do **not**
-reach into each other's headers.
+`Source/PublicInterfaces.h` is an aggregator header that re-exports the
+per-namespace headers (`DP_Player.h`, `DP_Items.h`, …); there is no
+`PublicInterfaces.cpp`. State lives in each namespace's own
+`DP_*.cpp` anonymous namespace. Behaviours read/write via the namespace
+functions only — they do **not** reach into each other's headers.
 
 | Namespace | Owned by | Notes |
 |---|---|---|
@@ -135,6 +139,7 @@ reach into each other's headers.
 | `DP_AI` | Priest + noise/door graph nodes | `EmitNoise` wraps `Zenith_PerceptionSystem::EmitSoundStimulus`; BB key constants |
 | `DP_Fog` | DPFogPass_Component | `ClearAllFogHoles` → `RegisterFogHole(*N)` per frame |
 | `DP_Win` | DPPentagram | Bitmask of 5 objectives; dispatches `DP_OnVictory` event when `popcount(mask) >= night.reagents_required_for_victory` (default 3-of-5 since 2026-05-22; old 5/5 behaviour reachable by setting tuning value to 5) |
+| `DP_Night` | DPFogPass_Component | `StartNight(duration)` / `TickNight(dt)` / `GetNightTimeRemaining()` / `IsNightActive()`. Fires `DP_OnRunLost{Dawn}` exactly once on cross-zero. |
 | `DP_Query` | every component that needs it | Template helpers — `DP_Query::ForEachComponentInActiveScene<T>` (thin wrapper over the scene's `Query<T>()` + null-scene guard); `ForEachComponentInLoadedScenes<T>` for all loaded scenes |
 
 ## Test runner
@@ -143,6 +148,9 @@ Build first (the post-build slang.dll copy step fails because the system
 lacks `pwsh.exe` — copy DLLs from `Games/Combat/.../*.dll` to the
 DP output dir if you see DLL_NOT_FOUND).
 
+All command paths in this section (`Build/...`, `Tools/...`) are relative
+to the **Zenith repo root**, not this game directory — run them from there.
+
 ```
 msbuild Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless
@@ -150,7 +158,8 @@ powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless
 
 Default mode is **batch** — every registered test runs in one process
 via `--all-automated-tests`. Engine boot (~25 s) happens once, so the
-suite finishes in ~65 s for ~120 tests vs ~10 min in per-process mode.
+whole suite finishes in roughly a minute vs ~10 min in per-process mode
+(see `devilsplayground.exe --list-automated-tests` for the current count).
 
 Add `-PerProcess` to the runner for the legacy fork-per-test path
 (slower but bullet-proof against state leaks). `-Filter <substring>`
@@ -159,8 +168,12 @@ also forces per-process (the engine batch flag has no built-in filter).
 Between batched tests the harness force-reloads scene 0 (so
 entity-managed side-tables clear via OnDestroy) and fires every
 hook registered with `Zenith_AutomatedTestRunner::RegisterBetweenTestsHook`.
-DevilsPlayground.cpp's hook resets `DP_Player`, `DP_Win`, `DP_Fog`, and
-`DP_AI`'s persistent globals.
+DevilsPlayground.cpp's hook resets `DP_Fog::ClearAllFogHoles/ClearAllMemoryReveals`,
+`DP_AI::ResetLevelNavMesh`, `DPPauseMenuController_Component::ResetForTest`,
+`Zenith_PerceptionSystem::Reset`, `DP_Particles::ClearEmitterEntities/ResetBurstCountsForTest`,
+and `DP_Tutorial::ResetForNewRun`. (As of 2026-05-22, `DP_Player` / `DP_Win` /
+`DP_Night` state are cleared on the scene 0 reload via OnDestroy instead of in
+this hook.)
 
 ## Telemetry + seed-matrix tooling
 

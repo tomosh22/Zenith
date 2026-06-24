@@ -8,7 +8,7 @@ A classic box-pushing puzzle game demonstrating core Zenith engine features.
 |---------|--------------|-------|
 | **Entity-Component System** | `Zenith_Entity`, `Zenith_Scene` | Entity creation, component attachment |
 | **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks (OnAwake, OnStart, OnUpdate) |
-| **Prefab System** | `Zenith_Prefab`, `Zenith_Scene::Instantiate` | Entity templates for tiles, boxes, player |
+| **Prefab System** | `Zenith_Prefab::Instantiate()` (method on prefab object), `Zenith_Prefab` | Entity templates for tiles, boxes, player |
 | **Input Handling** | `Zenith_Input` | Keyboard input polling |
 | **UI System** | `Zenith_UIComponent`, `Zenith_UIText` | Text elements with anchoring |
 | **Model Rendering** | `Zenith_ModelComponent`, `Flux_MeshGeometry` | 3D mesh rendering with materials |
@@ -16,7 +16,7 @@ A classic box-pushing puzzle game demonstrating core Zenith engine features.
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Serialization** | `Zenith_DataStream` | Behavior state persistence |
 | **Camera** | `Zenith_CameraComponent` | Orthographic top-down view |
-| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **Multi-Scene** | `Zenith_SceneSystem` | `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `SetActiveScene()`, `UnloadScene()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -34,18 +34,20 @@ Games/Sokoban/
     Sokoban_LevelGenerator.h     # Procedural level generation
     Sokoban_Solver.h             # BFS solver for level validation
     Sokoban_UIManager.h          # HUD text management
+    Sokoban_Animation.h          # Smooth grid-step animation for player/boxes, dust emitter driving
   Assets/
-    Scenes/Sokoban.zscen          # Serialized scene
+    Scenes/MainMenu.zscen         # Main menu scene (build index 0)
+    Scenes/Sokoban.zscen          # Gameplay scene (build index 1)
 ```
 
 ## Module Breakdown
 
 ### Sokoban.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_CreateScenes`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_LoadInitialScene` (primary entry points); also `Project_GetGameAssetsDirectory`, `Project_SetGraphicsOptions`, `Project_Shutdown`
 
 Demonstrates:
 - Project lifecycle hooks
-- Procedural geometry creation (`Flux_MeshGeometry::GenerateUnitCube`)
+- Procedural geometry creation (`Zenith_MeshGeometryAsset::CreateUnitCube`)
 - Runtime texture creation for materials
 - Prefab creation for runtime instantiation
 - Scene setup with camera and UI entities
@@ -111,11 +113,19 @@ Demonstrates:
 - Dynamic text updates
 - UI anchor/pivot system (TopRight positioning)
 
+### Sokoban_Animation.h - Grid-Step Animation
+**Engine APIs:** `Zenith_ParticleEmitterComponent`
+
+Demonstrates:
+- Smooth grid-step interpolation for player movement and box pushes
+- Driving a dust-trail particle emitter (the DustEmitter entity in the Sokoban scene) during a step
+- Resolving an emitter by entity ID across scenes
+
 ## Multi-Scene Architecture
 
 ### Entity Layout
-- **Persistent scene**: GameManager entity (Camera + UI + SokobanGame component + ParticleEmitter), marked with `DontDestroyOnLoad()`
-- **Puzzle scene** (`m_xPuzzleScene`): Floor tiles, walls, boxes, targets, player - created/destroyed per level
+- **Sokoban scene** (build index 1): GameManager entity (Camera + UI + SokobanGame component) plus a separate DustEmitter entity (its own `ParticleEmitterComponent`). Loaded with `SCENE_LOAD_SINGLE` when Play is clicked (the MainMenu scene at index 0 is loaded first, then replaced).
+- **Puzzle scene** (`m_xPuzzleScene`): Floor tiles, walls, boxes, targets, player - loaded additively (`SCENE_LOAD_ADDITIVE_WITHOUT_LOADING`) on top of the Sokoban scene and created/destroyed per level. Not pre-registered as a build index; created dynamically at runtime.
 
 ### Game State Machine
 ```
@@ -127,7 +137,7 @@ MAIN_MENU  -->  PLAYING  -->  MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-Scene transitions use `CreateEmptyScene("Puzzle")` + `SetActiveScene()` to start, `UnloadScene()` + `CreateEmptyScene()` to reset levels, and `UnloadScene()` to return to menu. The `m_xPuzzleScene` handle is invalidated after unloading.
+Clicking Play loads the Sokoban scene via `LoadSceneByIndex(1, SCENE_LOAD_SINGLE)`. From there, gameplay uses `LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene()` to start a level, `UnloadScene()` + `LoadScene()` to reset levels, and `LoadSceneByIndex(0, SCENE_LOAD_SINGLE)` to return to the MainMenu scene (the puzzle scene is unloaded first during cleanup). The `m_xPuzzleScene` handle is invalidated after unloading.
 
 ## Learning Path
 
@@ -155,7 +165,7 @@ Scene transitions use `CreateEmptyScene("Puzzle")` + `SetActiveScene()` to start
 ## Key Patterns
 
 ### Prefab Instantiation
-Create entity from prefab via `Zenith_Scene::Instantiate()`, set transform position, then add components (model, collider, etc.).
+Create entity from prefab via `Zenith_Prefab::Instantiate()` (called on the prefab object), set transform position, then add components (model, collider, etc.).
 
 ### Component Lifecycle
 `OnAwake()` = runtime creation only, `OnStart()` = before first update, `OnUpdate(float fDt)` = every frame.
@@ -168,15 +178,16 @@ Find UI elements via `xUI.FindElement<Zenith_UIText>("Name")` and call `SetText(
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + SokobanGame component + ParticleEmitter) - `DontDestroyOnLoad`
+- **GameManager** - Entity in the Sokoban scene (Camera + UI + SokobanGame component)
+- **DustEmitter** - Separate entity in the same scene with its own `ParticleEmitterComponent`
 
 ### Viewport
 - **Top-down orthographic view** of a procedurally generated puzzle grid
 - **Gray floor tiles** filling the puzzle area
 - **Brown/tan wall blocks** defining the puzzle boundaries
-- **Blue box entities** that can be pushed by the player
+- **Orange/tan box entities** that can be pushed by the player
 - **Green target positions** where boxes need to be placed
-- **Red player entity** (cube shape) at the starting position
+- **Blue player entity** (cube shape) at the starting position
 
 ### Properties Panel (when GameManager selected)
 - **Grid size** - Puzzle dimensions
@@ -193,15 +204,15 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 ## Gameplay View (What You See When Playing)
 
 ### Initial State
-- Player (red cube) positioned at starting location
-- 3-5 boxes (blue cubes) scattered on the grid
+- Player (blue cube) positioned at starting location
+- 2-5 boxes (orange/tan cubes) scattered on the grid
 - Equal number of target positions (green markers on floor)
 - Walls forming a contained puzzle area
 
 ### HUD Elements (Top-Right)
 - **"Moves: 0"** - Move counter
-- **"Pushes: 0"** - Push counter
-- **"Boxes: 0/3"** - Boxes on targets counter
+- **"Boxes: 0 / 3"** - Boxes on targets counter
+- **"Min Moves: 0"** - Minimum moves needed to solve (from BFS solver)
 
 ### Gameplay Actions
 1. **Movement**: Player slides smoothly to adjacent tile
@@ -222,7 +233,7 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T1.1 | Launch sokoban.exe | Window opens with orthographic view of puzzle |
 | T1.2 | Check console output | Level generation logs appear without errors |
 | T1.3 | Verify entity count | GameManager entity visible in hierarchy |
-| T1.4 | Check HUD | Moves, Pushes, and Boxes counters display at 0 |
+| T1.4 | Check HUD | Moves, Boxes, and Min Moves counters display at 0 |
 
 ### T2: Menu Navigation
 | Step | Action | Expected Result |
@@ -257,14 +268,13 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T5.1 | Push box into empty space | Box moves, player moves into box's old position |
 | T5.2 | Push box into wall | Neither box nor player moves |
 | T5.3 | Push box into another box | Neither box nor player moves |
-| T5.4 | Push box onto target | Box placed, "Boxes: X/Y" counter updates |
-| T5.5 | Check HUD after push | Pushes counter increments by 1 |
+| T5.4 | Push box onto target | Box placed, "Boxes: X / Y" counter updates |
 
 ### T6: Win Condition
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | T6.1 | Place all boxes on targets | "Level Complete!" message appears |
-| T6.2 | Press any move key after win | New level generates |
+| T6.2 | Press R after win | New level generates |
 | T6.3 | Verify new level | Different puzzle layout from previous |
 
 ### T7: Level Reset

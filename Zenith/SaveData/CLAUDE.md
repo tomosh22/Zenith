@@ -16,7 +16,8 @@ Engine-level save data system for persisting game state to disk. Built on `Zenit
 | `Initialise(szGameName)` | Set up save directory for this game |
 | `GetSaveDirectory()` | Get platform-specific writable save path |
 | `Save(szSlot, uVersion, pfnWrite, pUserData)` | Write game data to a named slot |
-| `Load(szSlot, pfnRead, pUserData)` | Read game data from a named slot |
+| `Load(szSlot, pfnRead, pUserData)` | Read game data from a named slot (thin wrapper: `return LoadEx(...).IsOk();`) |
+| `LoadEx(szSlot, pfnRead, pUserData)` | Graceful-load variant returning a `Zenith_Status` with the specific failure reason (`SUCCESS`, `FILE_NOT_FOUND`, `BAD_MAGIC`, `VERSION_MISMATCH`, `CORRUPT_DATA`) |
 | `SlotExists(szSlot)` | Check if a save file exists |
 | `DeleteSlot(szSlot)` | Remove a save file |
 | `ComputeCRC32(pData, ulSize)` | CRC32 utility |
@@ -71,6 +72,18 @@ if (Zenith_SaveData::Load("autosave", ReadSave, &xLoaded)) {
 
 - Windows: `%APPDATA%/Zenith/<GameName>/`
 - Android: `<internal files>/Zenith/<GameName>/`
+- Slot files are named `<save directory>/<slot>` + the `ZENITH_SAVE_EXT` extension (`.zsave`, defined in `Zenith/FileAccess/Zenith_FileAccess.h`)
+
+## Test Instrumentation
+
+Guarded by `ZENITH_INPUT_SIMULATOR` (compiled out of shipping builds) for headless save tests (MVP-0.4.3):
+
+| API | Purpose |
+|-----|---------|
+| `WrittenSlot` struct | Records a `Save()` call: `m_strSlotName`, `m_uGameVersion`, raw `m_xPayload` bytes (no header/CRC) |
+| `GetWrittenSlotsForTest()` | Every `Save()` since the last `ClearForTest`, in order |
+| `SetReadbackForTest(szSlot, uGameVersion, pData, ulSize)` | Stage a payload so the next `Load(szSlot, ...)` returns it via the read callback instead of reading disk |
+| `ClearForTest()` | Wipe the recording log + readback stash (disk files untouched) |
 
 ## Key Design Decisions
 

@@ -13,7 +13,11 @@ Players slide colored polyomino shapes across a grid to match them with cats of 
 - `Components/TilePuzzle_Types.h` - Game state enums, shape definitions, level data structures
 - `Components/TilePuzzle_LevelGenerator.h` - Procedural level generation via reverse scramble
 - `Components/TilePuzzle_Rules.h` - Shared game rules (single source of truth for solver and gameplay)
-- `Components/TilePuzzle_Solver.h` - BFS level solver (standalone, not used by generator)
+- `Components/TilePuzzle_Solver.h` - BFS level solver used for solvability verification and difficulty assessment during level generation
+- `Components/TilePuzzle_ConditionalValidator.h` - Validates conditional shapes by re-solving with the threshold removed; drops conditions that don't change the minimum move count
+- `Components/TilePuzzleLevelData_Serialize.h` - Binary `.tlvl` serialization for `TilePuzzleLevelData` (magic `TPLV`, version 2; shape definitions inlined)
+- `Components/TilePuzzle_AssetGen.h` - SDF-based procedural texture/asset generation (`TilePuzzle_SDF` helpers)
+- `Components/TilePuzzle_MetaGame.h` - Meta-game systems (cat cafe, victory overlay, coins, energy/lives, daily puzzle, star rendering) mixed into `TilePuzzle_GameComponent` via inclusion (not standalone)
 - `Components/TilePuzzle_SaveData.h` - Save/load system with per-level records
 
 ## Game Rules
@@ -83,22 +87,19 @@ Every scramble move is validated by `CanMoveShape`. The reverse of any valid mov
 
 ## Difficulty System
 
-Levels cycle through three tiers: **Normal** (level 1, 4, 7...), **Hard** (level 2, 5, 8...), **Very Hard** (level 3, 6, 9...) using `(levelNumber - 1) % 3`.
+`GetDifficultyForLevel(uLevelNumber)` in `TilePuzzle_LevelGenerator.h` maps the level number (1-100) onto a **7-tier progressive difficulty curve**. There is no `% 3` cycling — each tier covers a contiguous level range and most parameters are min-max ranges (the generator picks a value within the range per level).
 
-All difficulty parameters are `static constexpr` constants at the top of `TilePuzzle_LevelGenerator.h`, easily tunable:
+| Tier | Levels | Grid (WxH) | Colors | Cats/color | Blockers | Blocker-cats | Max shape size | Conditional shapes (threshold) | Scramble moves |
+|------|--------|-----------|--------|-----------|----------|--------------|----------------|--------------------------------|----------------|
+| Tutorial Early | 1-5 | 5-6 x 5-6 | 1-2 | 1 | 0 | 0 | 1 (single-cell only) | 0 | 50 |
+| Tutorial Late | 6-10 | 5-6 x 5-6 | 1-2 | 1 | 0 | 0 | 2 (multi-cell introduced) | 0 | 50 |
+| Easy | 11-25 | 6-7 x 6-7 | 2 | 1-2 | 1-2 | 0 | 1-3 | 0 | 100 |
+| Medium | 26-45 | 7-8 x 7-8 | 2-3 | 2 | 1-2 | 1 (introduced @26) | 2-3 | 0 | 200 |
+| Hard | 46-65 | 8 x 8 | 3 | 2-3 | 1-2 | 1 | 3-4 | 1 (introduced @46), threshold 2 | 400 |
+| Expert | 66-80 | 8-9 x 8-9 | 3-4 | 2-3 | 1-2 | 1 | 3-4 | 1, threshold 2 | 500 |
+| Master | 81-100 | 8 x 8 | 3 | 3 | 1-2 | 1 | 3-4 | 1, threshold `s_uGenMaxConditionalThreshold` | `s_uGenScrambleMoves` |
 
-| Parameter | Normal | Hard | Very Hard |
-|-----------|--------|------|-----------|
-| Grid size | 6x8 | 7x9 | 10x12 |
-| Colors | 2 | 3 | 3 |
-| Cats per color | 2 | 2 | 4 |
-| Shapes per color | 2 | 2 | 2 |
-| Blockers | 4 | 8 | 12 |
-| Max shape size | 2 | 3 | 4 |
-| Scramble moves | 15 | 30 | 60 |
-| Blocker-cats | 0 | 2 | 2 |
-| Conditional shapes | 0 | 0 | 1 |
-| Conditional threshold | 0 | 0 | 2 |
+`uNumColors` is clamped to `TILEPUZZLE_COLOR_COUNT` and `uMaxShapeSize` to 4. Several Master-tier values fall back to `static constexpr` `s_uGen*` constants at the top of `TilePuzzle_LevelGenerator.h`, which are easily tunable.
 
 The grid has a 1-cell empty border, so playable area is `(width-2) x (height-2)`.
 
@@ -116,7 +117,20 @@ Rules operate on `ShapeState` and `CatState` structs that contain only logical d
 
 ## Shape Definitions
 
-Shapes are defined as templates (`TilePuzzleShapeDefinition`) containing a list of relative cell offsets from an origin point and a draggable flag. Predefined shapes are available in the `TilePuzzleShapes` namespace: Single, Domino, L, T, I, S, Z, O.
+Shapes are defined as templates (`TilePuzzleShapeDefinition`) containing a list of relative cell offsets from an origin point and a draggable flag. Predefined shapes are available in the `TilePuzzleShapes` namespace (`TilePuzzle_Types.h`) via `GetSingleShape`/`GetDominoShape`/`GetLShape`/`GetTShape`/`GetIShape`/`GetSShape`/`GetZShape`/`GetOShape` (or `GetShape(eType)`), each returning the cell offsets for that polyomino:
+
+| Shape | Type enum | Cells (offsets) |
+|-------|-----------|-----------------|
+| Single | `TILEPUZZLE_SHAPE_SINGLE` | `{0,0}` |
+| Domino | `TILEPUZZLE_SHAPE_DOMINO` | `{0,0},{1,0}` |
+| L | `TILEPUZZLE_SHAPE_L` | `{0,0},{1,0},{2,0},{2,1}` |
+| T | `TILEPUZZLE_SHAPE_T` | `{0,0},{1,0},{2,0},{1,1}` |
+| I | `TILEPUZZLE_SHAPE_I` | `{0,0},{1,0},{2,0}` |
+| S | `TILEPUZZLE_SHAPE_S` | `{1,0},{2,0},{0,1},{1,1}` |
+| Z | `TILEPUZZLE_SHAPE_Z` | `{0,0},{1,0},{1,1},{2,1}` |
+| O | `TILEPUZZLE_SHAPE_O` | `{0,0},{1,0},{0,1},{1,1}` |
+
+`RotateShape90` rotates a definition 90° clockwise and re-normalizes the offsets.
 
 Shape instances (`TilePuzzleShapeInstance`) store a pointer to their definition plus runtime position and color. The generator stores definitions in a static `Zenith_Vector` via `GetShapeDefinitions()`. Because shape instances hold raw pointers into this vector, `Reserve()` must be called before any `PushBack()` to prevent reallocation and dangling pointers.
 
@@ -289,10 +303,10 @@ Puzzle scene (created/destroyed per level):
 ### T3: Level Generation
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T3.1 | Play level 1 (Normal) | 6x6 grid, 2 colors, level is solvable |
-| T3.2 | Play level 2 (Hard) | 7x7 grid, 3 colors, level is solvable |
-| T3.3 | Play level 3 (Very Hard) | 10x10 grid, 3 colors, 2 cats/color, level is solvable |
-| T3.4 | Play levels 4-9 | Difficulty cycle repeats correctly |
+| T3.1 | Play level 1 (Tutorial Early) | 5-6 x 5-6 grid, 1-2 colors, 1 cat/color, single-cell shapes only, level is solvable |
+| T3.2 | Play level 6 (Tutorial Late) | 5-6 x 5-6 grid, 1-2 colors, multi-cell shapes (max size 2), level is solvable |
+| T3.3 | Play level 81+ (Master) | 8x8 grid, 3 colors, 3 cats/color, all mechanics combined, level is solvable |
+| T3.4 | Play levels spanning tier boundaries (e.g. 5/6, 10/11, 45/46) | Difficulty steps up at each tier boundary |
 | T3.5 | Generation speed | All levels generate near-instantly (no multi-second delays) |
 
 ### T4: Shape Movement

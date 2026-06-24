@@ -53,7 +53,7 @@ The solver (`TilePuzzle_Solver.h`) counts minimum **player moves** (not cell mov
 - Bits [40..47]: shape 3 packed position
 - Bits [48..55]: shape 4 packed position
 - Bits [56..63]: unused
-- Supports up to 5 draggable shapes with grid dimensions up to 15x15
+- Supports up to 5 draggable shapes with grid dimensions up to 16x16
 - Constants: `s_uMaxSolverShapes = 5`, `s_uMaxSolverCats = 16`
 
 **Inner state** — Single `uint64_t`: bits [47..40]=X, [39..32]=Y, [31..0]=eliminatedMask (32-bit mask to track mid-drag eliminations).
@@ -74,7 +74,7 @@ The tool uses a two-tier BFS to find deeper solutions. Limits scale with the `--
 |-----------|-----------|------------|-------------------|
 | < 10 | 500K | 3-5M | 5 |
 | 10-19 | 1M | 5M | 5 |
-| >= 20 | 2M | 7M | 1 |
+| >= 20 | 1M | 5M | 0 |
 
 1. **Fast pass**: All candidates verified at the fast limit. Quickly identifies solutions up to ~12-15 moves
 2. **Deep pass**: Unsolvable candidates (those exceeding the fast limit) are re-verified at the deep limit. These candidates have large BFS state spaces that may contain deep solutions the fast solver couldn't verify
@@ -171,7 +171,7 @@ tilepuzzlelevelgen.exe --count 50 --min-moves 15 --output path/to/output --seed 
 | `--count N` | *required* | Number of levels to generate (must be > 0) |
 | `--min-moves N` | *required* | Minimum solver moves target (saves best on timeout) |
 | `--output DIR` | `LEVELGEN_OUTPUT_DIR` | Output directory |
-| `--timeout N` | 1800 (30 min) | Per-level time budget in seconds |
+| `--timeout N` | 7200 (2 hours) | Per-level time budget in seconds |
 | `--seed N` | random (`rand()`) | Starting seed counter (each round increments) |
 
 ## Parameter Ranges
@@ -185,15 +185,15 @@ All generation parameters are randomized per retry round, with ranges biased by 
 | Grid size | 5-10 | 6-9 | 8-10 | 9-10 |
 | Colors | 2-5 | 3-5 | 4-5 | 5 |
 | Cats/color | 1-2 | 1-2 | 2 | 2 |
-| Blockers | 0-3 | 0-2 | 1-2 | 2 |
+| Blockers | 0-3 | 0-2 | 1-2 | 2-3 |
 | Blocker cats | 0-2 (capped at blockers) | 0-2 | 0-2 | 1-2 (min 1 if blockers>=1) |
 | Shape complexity | 1-4 | 2-4 | 2-4 | 2-4 |
-| Scramble moves | 100-1500 | 200-1000 | 300-1000 | 300-1000 |
+| Scramble moves | 100-1500 | 200-1000 | 300-1000 | 300-1500 |
 | Cond shapes | 0-3 (capped at colors-1) | 0-3 | 1-3 | 1-3 |
-| Cond threshold | 0 or 1-5 | 0 or 1-5 | 0 or 1-4 | 0 or 1-4 |
-| Solver limit | 500K | 500K | 1M | 2M |
-| Deep solver limit | 3-5M | 3-5M | 5M | 7M |
-| Deep verif/worker | 5 | 5 | 5 | 1 |
+| Cond threshold | 0 or 1-5 | 0 or 1-5 | 0 or 1-5 (10-14) / 0 or 1-4 (>=15) | 0 or 1-4 |
+| Solver limit | 500K | 500K | 1M | 1M |
+| Deep solver limit | 3-5M | 3-5M | 5M | 5M |
+| Deep verif/worker | 5 | 5 | 5 | 0 |
 | Attempts/round | 3000 | 3000 | 2000 | 500 |
 | Scramble mode | RANDOM | RANDOM | REVERSE_BFS or GUIDED | GUIDED |
 | Min solver moves | 4 | 4 | 4 | 4 |
@@ -206,7 +206,7 @@ All generation parameters are randomized per retry round, with ranges biased by 
 
 ### Game Defaults (in `TilePuzzle_LevelGenerator.h`)
 
-The `static constexpr` values in `TilePuzzle_LevelGenerator.h` define defaults for in-game generation (8x8 grid, 3 colors, 3 cats/color, etc.). The tool's `RandomizeDifficultyParams` overrides these entirely. The `GetDifficultyForLevel()` function provides a 6-tier progressive difficulty curve for in-game use (Tutorial through Master).
+The `static constexpr` values in `TilePuzzle_LevelGenerator.h` define defaults for in-game generation (8x8 grid, 3 colors, 3 cats/color, etc.). The tool's `RandomizeDifficultyParams` overrides these entirely. The `GetDifficultyForLevel()` function provides a 7-tier progressive difficulty curve for in-game use (Tutorial through Master).
 
 ### Shape Complexity Values
 
@@ -292,4 +292,4 @@ Worker RNG seeds are derived from `levelNumber * 7919 + 104729 + workerIndex * 3
 
 ### Long-Running Processes
 
-Each level can take up to the timeout duration (default 1800s / 30 min). The timeout is checked after each round completes, so actual time may exceed the timeout by one round duration. For multi-level runs, total time = levels x (timeout + ~1 round overhead).
+Each level can take up to the timeout duration (default 7200s / 2 hours). The timeout is checked after each round completes, so actual time may exceed the timeout by one round duration. For multi-level runs, total time = levels x (timeout + ~1 round overhead).

@@ -29,12 +29,14 @@ DPVillager_Component.h            # Possessable villager. Holds the per-archetyp
                                   #   (Farmhand 45 s / Devout 45 / Beggar 37.5 / Child 22.5
                                   #   as of 2026-05-22) + WASD movement (camera-relative;
                                   #   matches DPInputActions). States: Idle / Possessed /
-                                  #   Fainted / Dead. Sprint (Shift) drains life at +1.5 s/s
+                                  #   Fainted / Dead. Sprint (Shift) drains life at +1.75 s/s
                                   #   over base. Walk-quiet (Ctrl) uses 0.875x jog speed +
                                   #   0.25x footstep loudness.
-DPOrbitCamera_Component.h         # Orbit camera over the possessed villager. Q/E yaw + mouse-
-                                  #   wheel zoom (EXT-4). Not a Zenith_CameraComponent (which
-                                  #   is FPS-only); own implementation of the orbit math.
+DPOrbitCamera_Component.h         # Orbit camera over the map centre (pinned at ~50, 0, 50; does
+                                  #   NOT follow the possessed villager). Q/E yaw + mouse-wheel
+                                  #   zoom (EXT-4). Not a Zenith_CameraComponent (which is
+                                  #   FPS-only); own implementation of the orbit math. Gym
+                                  #   scenes can override the target via SetOrbitTarget().
 DPHUDController_Component.h       # The HUD. Life bar (colour gradient) + held-item readout +
                                   #   objective counter + per-state banner. Subscribes to
                                   #   DP_OnVictory + DP_OnRunLost (per-cause copy: "CAUGHT BY
@@ -173,7 +175,7 @@ the runtime + conversion playbook). The split:
 | `DPTryOpenDoor` / `DPAnimateDoorLeaves` | DPDoubleDoor interact / OnUpdate |
 | `DPOpenChest` / `DPAdvanceChestLid` | DPChest interact / OnUpdate |
 | `DPRequestQuit` | DPMainMenuController OnQuitClicked |
-| `DPDoorHandleInteract` / `DPDoorAdvanceAnim` | DPDoor HandleInteractInternal / OnUpdate animation |
+| `DPDoorHandleInteract` / `DPDoorAdvanceAnim` | DPDoor HandleInteract / OnUpdate animation |
 
 Registered via `DP_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
 The deleted components (DPPentagram / DPChest / DPDoubleDoor /
@@ -215,7 +217,8 @@ private:
 Registration is two-part, both in `DevilsPlayground.cpp`:
 
 1. File-scope `ZENITH_REGISTER_COMPONENT(DPFoo_Component, "DPFoo", <order>)`
-   macro (orders 100-117, unique). The macro enqueues a thunk drained by the
+   macro (orders 100-119, with gaps at 105, 113, 114, 116, 117; currently 15
+   components registered). The macro enqueues a thunk drained by the
    meta-registry seal; post-seal registration re-finalizes, so either order
    is safe.
 2. Editor mirror in `Project_RegisterGameComponents()`:

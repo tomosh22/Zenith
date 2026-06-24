@@ -16,7 +16,7 @@ Stores animation keyframe data loaded from `.zanim` files.
 
 **Sampling:** `SamplePosition/Rotation/Scale(float fTime)` interpolates between keyframes. Uses linear interpolation for position/scale, spherical linear interpolation (slerp) for rotation.
 
-**Loading:** `LoadFromAssimp()` imports from Assimp's `aiAnimation` structure. `LoadFromZanimFile()` loads the binary format.
+**Loading:** `LoadFromAssimp()` (tools-only) imports from Assimp's `aiAnimation` structure. Binary `.zanim` files are loaded through the asset system via `Zenith_AnimationAsset::LoadFromFile()` (AssetHandling/Zenith_AnimationAsset.cpp), which calls `Flux_AnimationClip::ReadFromDataStream()` for deserialization.
 
 ### Flux_SkeletonInstance
 Runtime skeleton state for a single animated entity.
@@ -129,8 +129,11 @@ If transitions are checked during an active transition AND the transition condit
 
 ### AnimatorStateInfo (Flux_AnimatorStateInfo)
 Runtime state introspection struct (Unity's `GetCurrentAnimatorStateInfo()`):
-- `m_szStateName` - Current state name
+- `m_strStateName` - Current state name
 - `m_fNormalizedTime` - Progress [0-1], integer part = loop count
+- `m_fLength` - Clip duration in seconds
+- `m_fSpeed` - Playback rate
+- `m_bHasLooped` - True once normalized time has exceeded 1.0 (past first cycle)
 - `m_bIsTransitioning` / `m_fTransitionProgress` - Transition state
 - `IsName(const char*)` - Name comparison
 
@@ -169,7 +172,9 @@ MeshAnimation/
   Flux_SkeletonInstance.h/cpp        - Runtime skeleton state
   Flux_BonePose.h/cpp                - Bone transform utilities (Blend, MaskedBlend, AdditiveBlend)
   Flux_BlendTree.h/cpp               - Animation blending (Clip, 1D, 2D, Masked nodes)
-  Flux_InverseKinematics.h/cpp       - IK solving (FABRIK, CCD)
+  Flux_InverseKinematics.h/cpp       - IK solving (FABRIK)
+  Flux_AnimationClip.Tests.inl       - Unit tests for animation clip storage/sampling
+  Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes
 ```
 
 ## Constants

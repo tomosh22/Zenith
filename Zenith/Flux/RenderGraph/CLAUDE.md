@@ -20,14 +20,16 @@ Setup, Compile, and Execute are the three lifecycle phases — kept in separate 
 ## Lifecycle
 
 ```
-Setup    Compile             Execute
------    -------             -------
-each     Validate            Prepare callbacks (CPU)
-sub-     BuildAdjacency      Queue passes (topo order)
-system   TopologicalSort     RecordFrame: backend records each pass's callback
-calls    SynthesizeBarriers    directly into per-worker command buffers
-AddPass  AllocateTransients    (parallel slices; barriers inline)
+Setup    Compile              Execute
+-----    -------              -------
+each     BuildResourceTraffic Prepare callbacks (CPU)
+sub-     Validate             Queue passes (topo order)
+system   TopologicalSort      RecordFrame: backend records each pass's callback
+calls    AllocateTransients     directly into per-worker command buffers
+AddPass  SynthesizeBarriers     (parallel slices; barriers inline)
 ```
+
+Compile has more steps than shown (see the numbered list below for the full, exact order); the diagram lists only the major phases. Note `BuildResourceTraffic` runs first, `BuildAdjacency` is internal to `TopologicalSort` (`BuildAdjacencyFromTraffic`), and `SynthesizeBarriers` runs **after** `AllocateTransients`.
 
 ### Setup phase (per frame, after Initialise)
 
@@ -46,13 +48,18 @@ xGraph.AddPass("HiZ Mip", ExecuteHiZMip)
 
 `Flux_RenderGraph::Compile()` runs once per dirty cycle (after Setup, or after `MarkDirty()` from a `SetEnabled` toggle). The order is fixed:
 
-1. `Validate()` — orphaned reads, unused transients, attachment counts, memory-flag compatibility.
-2. `BuildAdjacencyFromTraffic()` — for every resource: every reader gets an edge from every writer; writers chain in declaration order to preserve write-write hazard ordering.
-3. `AddExplicitDependencies()` — `DependsOn(handle)` declarations are added as extra edges.
-4. `TopologicalSort()` — Kahn's algorithm produces `m_xExecutionOrder`. Cycles fail the compile loudly.
-5. `ComputeResourceLifetimes()` — for each resource, record `(firstWrite, lastRead, lastWrite)` as topological-order indices. The aliasing packer compares these as time intervals.
-6. `SynthesizeBarriers()` — for each transition between consecutive passes that touch the same subresource with incompatible accesses, emit a `Flux_RenderGraph_Barrier` into the destination pass's prologue. The graph is the **sole** barrier authority — subsystems never insert manual transitions.
-7. Transient allocation and aliasing pack (if `IsAliasingEnabled()` and the backend supports `SupportsTransientAliasing()`).
+1. `BuildResourceTraffic()` — walks every pass's declared Reads/Writes into the per-resource reader/writer traffic tables the later steps consume.
+2. `Validate()` — orphaned reads, unused transients, attachment counts, memory-flag compatibility.
+3. `TopologicalSort()` — internally calls `BuildAdjacencyFromTraffic()` (for every resource: every reader gets an edge from every writer; writers chain in declaration order to preserve write-write hazard ordering) then `AddExplicitDependencies()` (`DependsOn(handle)` declarations become extra edges), then runs Kahn's algorithm to produce `m_xExecutionOrder`. Cycles fail the compile loudly.
+4. `ComputeResourceLifetimes()` — for each resource, record `(firstWrite, lastRead, lastWrite)` as topological-order indices. The aliasing packer compares these as time intervals.
+5. `ComputeTransientLifetimes()` — derives the per-transient first-use/last-use intervals used by aliasing.
+6. `AssignAliasingGroups()` — packs non-overlapping transients into shared aliasing pool slots.
+7. `InferPassAttachments()` — resolves each pass's colour/depth attachment set from its declared Writes.
+8. `MarkPassesAsComputeOrGraphics()` — classifies each pass as compute or graphics from its attachments/dispatch usage.
+9. `ResolveClearFlags()` — marks the first writer of each attachment subresource as the clear owner.
+10. `AllocateTransients()` — allocates transient VRAM (sharing aliased slots when `IsAliasingEnabled()` and the backend supports `SupportsTransientAliasing()`).
+11. `SynthesizeBarriers()` — for each transition between consecutive passes that touch the same subresource with incompatible accesses, emit a `Flux_RenderGraph_Barrier` into the destination pass's prologue. The graph is the **sole** barrier authority — subsystems never insert manual transitions.
+12. `SynthesizeAliasingBarriers()` — emits the aliasing hand-off memory barriers for transients reusing a pool slot this frame.
 
 ### Execute phase
 
@@ -92,7 +99,7 @@ Subsystems must never call `vkCmdPipelineBarrier` or insert `Flux_CommandImageTr
 TerrainGBuffer -> StaticMeshesGBuffer -> AnimatedMeshesGBuffer -> Foliage -> HiZ -> SSAO -> SSR Raymarch -> ... -> Tonemap
 ```
 
-It is bound to a debug variable button at `Render/RenderGraph/Print Pass Order` (`Flux.cpp:207`). When you're trying to figure out why a pass runs where it does, click the button and read the resulting log line — it is the live source of truth, ahead of any documentation.
+It is bound to a debug variable button at `Render/RenderGraph/Print Pass Order` (`Flux.cpp:345`). When you're trying to figure out why a pass runs where it does, click the button and read the resulting log line — it is the live source of truth, ahead of any documentation.
 
 Passes that are not *effectively enabled* appear suffixed with `(disabled)`. The string is empty before the first successful Compile. Note: a pass that is **force-disabled** (see below) is excluded from the execution order entirely — it does not appear in this list at all. The `(disabled)` suffix is for a pass still in the order whose base bit is off (the `SetEnabled` cheap-toggle case).
 
@@ -117,7 +124,7 @@ Each pass carries a system-owned base `m_bEnabled` (written only by `SetEnabled`
    ```
 2. **Stale transient handles** trip an assertion. Compile invalidates the generation counter; re-acquire transients from `xGraph.CreateTransient` after every recompile.
 3. **Conditional passes** — call `xGraph.SetEnabled(handle, bEnabled)` and the pass's edges still exist in the adjacency, but the record dispatch is skipped. Do not delete the `AddPass` call; toggle the flag.
-4. **`HOST_TRANSFER_WRITE` is synthetic** — never appears in a pass's read/write list. It is pushed via `Flux_RenderGraph::MarkBufferHostWritten` (called by the memory manager when uploading) so the next reader gets a TransferWrite -> ShaderRead barrier.
+4. **`HOST_TRANSFER_WRITE` is synthetic** — a buffer-only `ResourceAccess` that never appears in a pass's read/write list. It marks the synthetic predecessor for a host-issued staging upload so the next reader gets a TransferWrite -> ShaderRead barrier in its prologue. (There is **no** `Flux_RenderGraph::MarkBufferHostWritten` function — that name in the `Flux_Enums.h` comment and the surrounding "no `MarkBufferHostWritten`" notes refers to an API that does not exist; frame-indexed buffers are intentionally invisible to the graph, see `Flux_FrameIndexedBufferBase`.)
 
 ## Cross-references
 

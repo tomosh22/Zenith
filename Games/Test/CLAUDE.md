@@ -23,7 +23,9 @@ Tests/
   Test_ShootCharacterization.cpp      # Shoot-action characterization test
 Assets/
   Scenes/                             # MainMenu.zscen (index 0), Test.zscen (index 1) —
-                                      #   boot-authored via editor automation
+                                      #   boot-authored via editor automation.
+                                      #   terrain_test.zscen is orphaned: on disk but
+                                      #   unreferenced by code or build indices.
   Graphs/                             # Boot-authored Behaviour Graphs (regenerated every
                                       #   tools boot): Test_Spinner / Test_Spring /
                                       #   Test_PlayerActions .bgraph

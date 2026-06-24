@@ -2,7 +2,7 @@
 
 ## Overview
 
-Multi-technique volumetric fog rendering system with runtime technique switching via debug variables.
+Multi-technique volumetric fog rendering system with runtime technique switching via the `Graphics/Fog/Technique` graphics option (`Zenith_GraphicsOptions::Get().m_uVolFogTechnique`).
 
 **All techniques are spatial-only** (no temporal effects, history buffers, or reprojection).
 
@@ -10,11 +10,12 @@ Multi-technique volumetric fog rendering system with runtime technique switching
 
 | File | Purpose |
 |------|---------|
-| `Flux_Fog.h/.cpp` | Orchestrator - technique selection and initialization |
-| `Flux_VolumeFog.h/.cpp` | Shared infrastructure - noise textures, froxel grids |
-| `Flux_GodRaysFog.h/.cpp` | Technique 3: Screen-space god rays |
-| `Flux_RaymarchFog.h/.cpp` | Technique 2: Ray marching with procedural noise |
-| `Flux_FroxelFog.h/.cpp` | Technique 1: Froxel-based volumetric fog |
+| `Flux_Fog.cpp` / `Flux_FogImpl.h` | Orchestrator - technique selection and initialization |
+| `Flux_Fog_Shaders.h` | Shader declarations for the whole fog system (`Flux_FogShaders::apxALL`) |
+| `Flux_VolumeFog.cpp` / `Flux_VolumeFogImpl.h` | Shared infrastructure - noise textures, froxel grids |
+| `Flux_GodRaysFog.cpp` / `Flux_GodRaysFogImpl.h` | Technique 3: Screen-space god rays |
+| `Flux_RaymarchFog.cpp` / `Flux_RaymarchFogImpl.h` | Technique 2: Ray marching with procedural noise |
+| `Flux_FroxelFog.cpp` / `Flux_FroxelFogImpl.h` | Technique 1: Froxel-based volumetric fog |
 
 ## Techniques
 
@@ -28,17 +29,26 @@ Multi-technique volumetric fog rendering system with runtime technique switching
 ## Debug Variables
 
 ### Technique Selection
+Technique is a `Zenith_GraphicsOptions` flag (`Zenith_GraphicsOptions::Get().m_uVolFogTechnique`), registered as `Graphics/Fog/Technique` — NOT under the `Render/Volumetric Fog/` debug-variable tree. The Debug Mode below is a genuine debug variable registered by `Flux_Fog.cpp`.
 ```
-Render/Volumetric Fog/Technique     [uint: 0-3]
-Render/Volumetric Fog/Debug Mode    [uint: 0-15]
+Graphics/Fog/Technique              [uint: 0-3]
+Render/Volumetric Fog/Debug Mode    [uint: 0-23]
 ```
 
 ### Shared Parameters
+Registered by `Flux_VolumeFog.cpp` (shared froxel/raymarch infrastructure):
 ```
-Render/Volumetric Fog/Shared/Colour          [vec3]
+Render/Volumetric Fog/Shared/Colour          [vec4]
 Render/Volumetric Fog/Shared/Density         [float]
 Render/Volumetric Fog/Shared/Scattering      [float]
 Render/Volumetric Fog/Shared/Absorption      [float]
+```
+
+Note: the **Simple** technique has its OWN parameters, registered separately by `Flux_Fog.cpp` under `Render/Fog/` (NOT under `Shared/`):
+```
+Render/Fog/Colour                            [vec4]
+Render/Fog/Density                           [float]
+Render/Fog/Phase G                           [float]
 ```
 
 ### Technique-Specific
@@ -47,14 +57,27 @@ Render/Volumetric Fog/Froxel/Debug Slice Index  [uint]
 Render/Volumetric Fog/Froxel/Near Z             [float]
 Render/Volumetric Fog/Froxel/Far Z              [float]
 Render/Volumetric Fog/Froxel/Phase G            [float]
+Render/Volumetric Fog/Froxel/Noise Scale        [float]
+Render/Volumetric Fog/Froxel/Noise Speed        [float]
+Render/Volumetric Fog/Froxel/Height Base        [float]
+Render/Volumetric Fog/Froxel/Height Falloff     [float]
+Render/Volumetric Fog/Froxel/Shadow Bias        [float]
+Render/Volumetric Fog/Froxel/Shadow Cone Radius [float]
 
-Render/Volumetric Fog/Raymarch/Step Count       [uint]
-Render/Volumetric Fog/Raymarch/Noise Scale      [float]
-Render/Volumetric Fog/Raymarch/Max Distance     [float]
+Render/Volumetric Fog/Raymarch/Step Count        [uint]
+Render/Volumetric Fog/Raymarch/Noise Scale       [float]
+Render/Volumetric Fog/Raymarch/Noise Speed       [float]
+Render/Volumetric Fog/Raymarch/Max Distance      [float]
+Render/Volumetric Fog/Raymarch/Height Falloff    [float]
+Render/Volumetric Fog/Raymarch/Phase G           [float]
+Render/Volumetric Fog/Raymarch/Shadow Bias       [float]
+Render/Volumetric Fog/Raymarch/Shadow Cone Radius [float]
 
 Render/Volumetric Fog/God Rays/Sample Count     [uint]
 Render/Volumetric Fog/God Rays/Decay            [float]
 Render/Volumetric Fog/God Rays/Exposure         [float]
+Render/Volumetric Fog/God Rays/Density          [float]
+Render/Volumetric Fog/God Rays/Weight           [float]
 ```
 
 ## Debug Visualization Modes
@@ -97,29 +120,31 @@ Set `Render/Volumetric Fog/Debug Mode` to visualize internals:
 Located in `Shaders/Fog/`:
 
 ### Includes
+Shared shader helpers are Slang modules under `Shaders/Common/` (the old `*.fxh` HLSL headers were ported to `.slang`):
 | File | Purpose |
 |------|---------|
-| `Flux_VolumetricCommon.fxh` | Beer-Lambert, phase functions, froxel utilities |
+| `Common/Volumetric.slang` | Beer-Lambert, phase functions, froxel utilities |
 
 ### Per-Technique
+Each per-stage file is a single `.slang` module (vertex/fragment/compute entry points within one file), not separate `.frag`/`.comp` files:
 | File | Pass |
 |------|------|
-| `Flux_Fog.frag` | Simple exponential fog |
-| `Flux_GodRays.frag` | God rays radial blur |
-| `Flux_RaymarchFog.frag` | Ray marching application |
-| `Flux_FroxelFog_Inject.comp` | Density injection |
-| `Flux_FroxelFog_Light.comp` | Lighting accumulation |
-| `Flux_FroxelFog_Apply.frag` | Froxel application |
+| `Flux_Fog.slang` | Simple exponential fog |
+| `Flux_GodRays.slang` | God rays radial blur |
+| `Flux_RaymarchFog.slang` | Ray marching application |
+| `Flux_FroxelFog_Inject.slang` | Density injection |
+| `Flux_FroxelFog_Light.slang` | Lighting accumulation |
+| `Flux_FroxelFog_Apply.slang` | Froxel application |
 
 ## Pass placement
 
-Volume fog registers three passes with the render graph; ordering comes from declared Read/Write dependencies, not from any enum:
+Volume fog registers **six** passes with the render graph up front — one `Fog_Simple`, three Froxel passes (`Fog_FroxelInject` / `Fog_FroxelLight` / `Fog_FroxelApply`), one `Fog_Raymarch` and one `Fog_GodRays`. `ApplyTechniqueSelectionToGraph` toggles which passes are enabled per frame (only the active technique's passes run). Ordering comes from declared Read/Write dependencies, not from any enum. The Froxel rows below are its three passes:
 
 | Pass | Type | Reads | Writes |
 |------|------|-------|--------|
 | Density injection | compute | (input parameters only) | froxel density volume |
-| Lighting pass | compute | froxel density volume, shadow cascades | froxel lit volume |
-| Application pass | graphics | froxel lit volume, scene depth | HDR scene |
+| Lighting pass | compute | froxel density volume, shadow cascades | froxel lighting and scattering volumes |
+| Application pass | graphics | froxel lighting and scattering volumes, scene depth | HDR scene |
 
 The application pass naturally runs after deferred shading writes the HDR scene and before tonemap reads it.
 
@@ -131,41 +156,46 @@ A game that ships its own fog (e.g. DevilsPlayground's `DP_Fog`) disables the en
 
 ### Orchestration Pattern
 
-`Flux_Fog::Render()` selects technique based on `dbg_uVolFogTechnique`:
+`Flux_FogImpl::ApplyTechniqueSelectionToGraph()` selects the technique each frame by toggling pass enable bits based on `Zenith_GraphicsOptions::Get().m_uVolFogTechnique`:
 
 ```cpp
-switch (dbg_uVolFogTechnique)
-{
-    case 0: RenderSimpleFog(); break;
-    case 1: Flux_FroxelFog::Render(); break;
-    case 2: Flux_RaymarchFog::Render(); break;
-    case 3: Flux_GodRaysFog::Render(); break;
-}
+const u_int uTechnique = Zenith_GraphicsOptions::Get().m_uVolFogTechnique;
+xGraph.SetEnabled(m_xSimpleFogPass,    uTechnique == 0);
+xGraph.SetEnabled(m_xFroxelInjectPass, uTechnique == 1);
+xGraph.SetEnabled(m_xFroxelLightPass,  uTechnique == 1);
+xGraph.SetEnabled(m_xFroxelApplyPass,  uTechnique == 1);
+xGraph.SetEnabled(m_xRaymarchPass,     uTechnique == 2);
+xGraph.SetEnabled(m_xGodRaysPass,      uTechnique == 3);
 ```
+
+Each pass's execute callback (`ExecuteSimpleFog`, `ExecuteFroxelInject`, `ExecuteFroxelLight`, `ExecuteFroxelApply`, `ExecuteRaymarch`, `ExecuteGodRays`) is invoked by the render graph in topological order for whichever passes are enabled.
 
 ### Shared Resources
 
 `Flux_VolumeFog` provides:
-- 3D noise texture (64^3 Perlin-Worley)
+- 3D noise texture (64^3 FBM built from gradient/Perlin-style noise)
 - Blue noise texture (64x64)
-- Froxel grid allocation (160x90x64)
+- Froxel grids (three 160x90x64 volumes: density, lighting, and scattering)
 
 ### Technique Pattern
 
-Each technique follows the pattern:
+Most techniques (Raymarch, God Rays) follow the pattern:
 ```cpp
-void Initialise();    // Create resources, pipelines
-void Reset();         // Clear state on scene change
-void Render(void*);   // Main render function
+void Initialise();                      // Create resources
+void BuildPipelines();                  // (Re)build pipelines (hot-reload)
+void Reset();                           // Clear state on scene change
+void Render(Flux_CommandBuffer*);       // Main render function
 ```
+
+The Froxel technique is the exception: instead of a single `Render()`, it uses a three-pass pattern — `RenderInject()` / `RenderLight()` / `RenderApply()` (`Flux_FroxelFogImpl.h`) — matching its three render-graph passes.
 
 ## Adding New Techniques
 
-1. Create `Flux_NewTechnique.h/.cpp` following existing pattern
+1. Create `Flux_NewTechnique.cpp` / `Flux_NewTechniqueImpl.h` following existing pattern
 2. Add include and initialization call in `Flux_Fog.cpp`
-3. Add case to switch in `Flux_Fog::Render()`
+3. Register a pass and toggle its enable bit in `Flux_FogImpl::ApplyTechniqueSelectionToGraph()`
 4. Add debug variables in `Initialise()`
-5. Add shaders to `Shaders/Fog/`
+5. Add `.slang` shaders to `Shaders/Fog/` and declare them in `Flux_Fog_Shaders.h`
 6. Update this documentation
 
 ## Key Algorithms
@@ -174,7 +204,7 @@ void Render(void*);   // Main render function
 `transmittance = exp(-density * distance)`
 
 ### Henyey-Greenstein Phase Function
-Standard HG phase function with asymmetry parameter `g` controlling forward/backward scattering bias. Defined in `Flux_VolumetricCommon.fxh`.
+Standard HG phase function with asymmetry parameter `g` controlling forward/backward scattering bias. Defined in `Shaders/Common/Volumetric.slang`.
 
 ### Froxel Exponential Depth
 `linearDepth = nearZ * pow(farZ / nearZ, sliceNorm)` - exponential depth distribution concentrates slices near camera.
@@ -197,7 +227,7 @@ viewPos /= viewPos.w;
 float linearDepth = viewPos.z;  // Use positive Z, NOT -viewPos.z
 ```
 
-For world position reconstruction, use `GetWorldPosFromDepthTex()` from `Common.fxh` which handles this correctly.
+For world position reconstruction, use `GetWorldPosFromDepthTex()` from the `Shaders/Common/Frame.slang` module, which handles this correctly.
 
 ## Debugging Tips
 

@@ -6,6 +6,7 @@ Custom container implementations optimized for engine use.
 
 - `Zenith_Vector.h` - Dynamic array
 - `Zenith_HashMap.h` - Open-addressed hash map
+- `Zenith_HashSet.h` - Hash set wrapper over HashMap with O(1) insert/remove/contains
 - `Zenith_MemoryPool.h` - Fixed-capacity object pool
 - `Zenith_CircularQueue.h` - Fixed-capacity FIFO queue
 
@@ -14,6 +15,8 @@ Custom container implementations optimized for engine use.
 Dynamic array with automatic resizing. Provides standard array operations: push/pop, indexed access, iteration, reserve, clear. Supports serialization via `WriteToDataStream()` and `ReadFromDataStream()`.
 
 Custom iterator pattern: construct iterator with vector, call `Done()` to check completion, `Next()` to advance, `GetData()` to access element.
+
+Also provides standard `begin()`/`end()` returning raw `T*`/`const T*` into the contiguous storage (added per W5.4 remediation) for range-for and `<algorithm>` support — purely additive; index loops and the custom iterator remain the primary patterns.
 
 ## Zenith_HashMap<K, V, Hasher>
 
@@ -32,11 +35,15 @@ API:
 
 Iteration order is *slot order*, dependent on hash distribution and current capacity — it is not insertion-order and differs from `std::unordered_map`'s bucket order. Don't rely on iteration order for correctness.
 
+## Zenith_HashSet<K, Hasher>
+
+Set wrapper over `Zenith_HashMap` (one-byte placeholder value per slot), sharing its probing, rehashing, lazy allocation, and iterator-invalidation semantics. API: `Insert(k)` (returns true if newly inserted), `Remove(k)`, `Contains(k)`, `Clear()`, `Reserve()`, `GetSize()`, `GetCapacity()`, `IsEmpty()`, `WriteToDataStream`/`ReadFromDataStream`, and an `Iterator` exposing `GetKey()`.
+
 ## Zenith_MemoryPool<T, uCount>
 
 Fixed-capacity object pool for frequent alloc/dealloc scenarios. Template parameters specify element type and compile-time capacity. Pre-allocates single contiguous block with free-list tracking. O(1) allocation and deallocation. In-place construction via placement new. Validates pointers on deallocate with bounds checking and double-free detection.
 
-Non-copyable. Ideal for frequently recycled objects like tasks, entities, command buffers.
+Non-copyable. Thread-safe: all public methods are protected by an internal mutex (`Zenith_ScopedMutexLock`), so concurrent `Allocate`/`Deallocate` from multiple threads is safe. Ideal for frequently recycled objects like tasks, entities, command buffers.
 
 ## Zenith_CircularQueue<T, uCapacity>
 

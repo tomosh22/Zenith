@@ -18,8 +18,8 @@ A tactical demonstration game showcasing all Zenith AI system features:
 | **Perception System** | `Zenith_PerceptionSystem` | Sight cones, hearing, damage awareness |
 | **Squad Tactics** | `Zenith_Squad`, `Zenith_Formation` | Formations, roles, coordinated flanking |
 | **Tactical Points** | `Zenith_TacticalPointSystem` | Cover and flanking position evaluation |
-| **Debug Visualization** | `Zenith_AIDebugVariables` | Toggle visualization of AI internals |
-| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **Debug Visualization** | `Zenith_AIDebugVariables` (namespace, not a class — static toggle variables) | Toggle visualization of AI internals |
+| **Multi-Scene** | `Zenith_SceneSystem` | `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `SetActiveScene()`, `UnloadScene()`, `SetScenePaused()` |
 | **Menu Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## Project Structure
@@ -42,9 +42,7 @@ Games/AIShowcase/
 | WASD | Move player |
 | Space | Attack/Make sound (emits hearing stimulus) |
 | 1-5 | Change squad formation (Line, Wedge, Column, Circle, Skirmish) |
-| Click / Touch | Select menu button |
-| W/S or Up/Down | Navigate menu |
-| Enter | Activate focused button |
+| Click / Touch | Select menu button (single Play button, kept focused for activation) |
 | Escape | Return to menu / Pause |
 | P | Pause/Resume |
 | R | Reset demo |
@@ -88,11 +86,16 @@ Games/AIShowcase/
 5. **Skirmish** - Combat spread
 
 #### Roles
+
+The engine `SquadRole` enum (`Zenith/AI/Squad/Zenith_Formation.h`) defines six roles:
 - **Leader** - Commands squad, others follow
 - **Assault** - Front-line combat
-- **Flanker** - Attacks from sides
 - **Support** - Suppressing fire
+- **Flanker** - Attacks from sides
 - **Overwatch** - Long-range cover
+- **Medic** - Support/healing role
+
+AIShowcase only demonstrates three of them — `CreateSquad()` assigns **Leader**, **Assault**, and **Flanker** (see `AIShowcase_GameComponent.h`).
 
 #### Coordination
 - Shared target knowledge between squad members
@@ -143,8 +146,8 @@ Access via the AIShowcase properties panel checkbox or Zenith_DebugVariables sys
 ## Multi-Scene Architecture
 
 ### Entity Layout
-- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + AIShowcaseGame component (AIShowcase_GameComponent). Survives scene transitions.
-- **Arena scene** (`m_xArenaScene`, named "Arena"): Contains all level entities (floor, walls, obstacles, player, enemies). Created on play, destroyed on return to menu.
+- **Persistent scene**: `GameManager` entity with Camera + UIComponent + AIShowcaseGame component (AIShowcase_GameComponent). Created at boot and persists architecturally as the Arena scene loads additively; survives scene transitions.
+- **Arena scene** (`m_xArenaScene`, named "Arena"): Contains all level entities (floor, walls, obstacles, player, enemies). Loaded additively on play (`SCENE_LOAD_ADDITIVE_WITHOUT_LOADING`), unloaded on return to menu.
 
 ### Game State Machine
 ```
@@ -156,10 +159,10 @@ MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
 
 ### Scene Transition Pattern
 
-Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start gameplay, `SetScenePaused(scene, true/false)` for pause/resume, and `UnloadScene()` to return to menu.
+Uses `LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene()` to start gameplay, `SetScenePaused(scene, true/false)` for pause/resume, and `LoadSceneByIndex(0, SCENE_LOAD_SINGLE)` to return to menu (`UnloadScene(m_xArenaScene)` is called during arena cleanup, not as the return-to-menu mechanism).
 
 ### Editor View / Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UIComponent + AIShowcaseGame component) - DontDestroyOnLoad
+- **GameManager** - Persistent entity (Camera + UIComponent + AIShowcaseGame component)
 - *(Arena scene "Arena", created at runtime)*
   - **Floor** - Arena ground plane with collider
   - **Wall_X** - Arena boundary walls
@@ -191,23 +194,28 @@ Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start gameplay, `SetSce
 
 ## Resources
 
+Members of the `AIShowcaseResources` struct (`AIShowcase_GameComponent.h`), accessed via `AIShowcase::Resources()`.
+
 ### Geometry
-- `g_pxCubeGeometry` - Unit cube for obstacles/walls
-- `g_pxSphereGeometry` - Sphere for effects
-- `g_pxCylinderGeometry` - Cylinder for agents
+- `m_pxCubeGeometry` - Unit cube for obstacles/walls
+- `m_pxSphereGeometry` - Sphere for effects
+- `m_pxCylinderGeometry` - Cylinder for agents
 
 ### Materials
-- `g_pxFloorMaterial` - Dark gray floor
-- `g_pxWallMaterial` - Brown walls
-- `g_pxObstacleMaterial` - Gray obstacles
-- `g_pxPlayerMaterial` - Blue player
-- `g_pxEnemyMaterial` - Red enemies
-- `g_pxLeaderMaterial` - Gold squad leaders
-- `g_pxFlankerMaterial` - Orange flankers
+These are `MaterialHandle` values (`m_x` prefix), not pointers.
+- `m_xFloorMaterial` - Dark gray floor
+- `m_xWallMaterial` - Brown walls
+- `m_xObstacleMaterial` - Gray obstacles
+- `m_xPlayerMaterial` - Blue player
+- `m_xEnemyMaterial` - Red enemies
+- `m_xLeaderMaterial` - Gold squad leaders
+- `m_xFlankerMaterial` - Orange flankers
+- `m_xCoverPointMaterial` - Green cover-point markers
+- `m_xPatrolPointMaterial` - Blue patrol-point markers
 
 ## Building
 
-1. Regenerate solution:
+1. Regenerate solution (`Build/` is the repo root directory — from `Games/AIShowcase/` use `cd ../../Build`):
    ```batch
    cd Build
    Sharpmake_Build.bat
@@ -249,8 +257,6 @@ Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start gameplay, `SetSce
 | T1.1 | Launch aishowcase.exe | Main menu displayed with Play button |
 | T1.2 | Click Play button | Arena loads, menu hidden, HUD visible |
 | T1.3 | Press Escape (while playing) | Returns to main menu, arena unloaded |
-| T1.4 | Use W/S or Up/Down arrows | Menu button focus navigates |
-| T1.5 | Press Enter on focused button | Activates the focused button |
 
 ### T2: Scene Transitions
 | Step | Action | Expected Result |

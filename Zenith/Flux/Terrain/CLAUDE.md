@@ -11,9 +11,16 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 ## Files
 
 - `Flux_TerrainConfig.h` - Central configuration (grid size, LOD distances, buffer sizes)
-- `Flux_Terrain.h/cpp` - Rendering coordination, compute culling dispatch
-- `Flux_TerrainStreamingManager.h/cpp` - LOD streaming and buffer management
-- `Flux_TerrainCulling.comp` - GPU compute shader for frustum culling
+- `Flux_Terrain.cpp` / `Flux_TerrainImpl.h` - Rendering coordination, compute culling dispatch (`Flux_TerrainImpl` class)
+- `Flux_TerrainStreamingManager.cpp` / `Flux_TerrainStreamingManagerImpl.h` - LOD streaming and buffer management (public API reached via `Zenith_TerrainComponent`; the impl header holds the implementation)
+- `Flux_TerrainGPUStructs.h` - GPU-side struct definitions (chunk data, per-LOD offsets/counts)
+- `Flux_Terrain_Shaders.h` - Shader program declarations (`Flux_ShaderDecl` + `apxALL`)
+- Shaders in `Zenith/Flux/Shaders/Terrain/` (all `.slang`):
+  - `Flux_TerrainCulling.slang` - GPU compute shader for frustum culling
+  - `Flux_TerrainResetCounters.slang` - GPU compute shader that zeroes the visible-count atomics
+  - `Flux_Terrain_ToGBuffer.slang` - G-buffer (splatmap 4-material blend)
+  - `Flux_Terrain_ToShadowmap.slang` - shadow-cascade depth
+- The Terrain feature also OWNS the Water shader: `xWater` is declared in `Flux_TerrainShaders::apxALL` (`Flux_Terrain_Shaders.h`) and instantiated in `Flux_Terrain.cpp` (`m_xWaterShader`/`m_xWaterPipeline`). Its source lives at `Zenith/Flux/Shaders/Water/Flux_Water.slang` and its `m_szSubsystem` is `"Water"` (controls only generated-header grouping → `Generated/Water.h`); pipeline/compile/hot-reload all run through the Terrain subsystem.
 
 ## Core Architecture
 
@@ -46,7 +53,7 @@ Single vertex and index buffer per terrain component containing all chunks:
 
 ### Frame Update Sequence
 
-**1. CPU Streaming Phase** (`UpdateStreaming()`)
+**1. CPU Streaming Phase** (`UpdateStreamingForTerrain()`)
 - Runs each frame with camera position
 - Only considers "active set" (16 chunk radius around camera)
 - For each chunk in active set:
@@ -63,20 +70,20 @@ Single vertex and index buffer per terrain component containing all chunks:
   - Buffer offsets and counts for each LOD
 - Upload to GPU buffer if residency changed (marked dirty during streaming)
 
-**3. GPU Compute Culling** (`DispatchCullingCompute()`)
+**3. GPU Compute Culling** (`ExecuteCulling()`)
 - Bind frustum planes (extracted from view-projection matrix)
 - Bind chunk data buffer (AABBs + LOD info)
 - Bind output buffer for indirect draw commands
 - Dispatch compute shader: 64 threads per workgroup, processing all 4,096 chunks
 
-**4. GPU Compute Execution** (Shader: `Flux_TerrainCulling.comp`)
+**4. GPU Compute Execution** (Shader: `Flux_TerrainCulling.slang`)
 - Each thread processes one chunk
 - Test AABB against 6 frustum planes (early-out on near/far)
 - If visible: calculate distance to camera, select LOD
 - Write `DrawIndexedIndirectCommand` to output buffer
 - Atomically increment visible count
 
-**5. GPU Rendering** (`RenderToGBuffer()`)
+**5. GPU Rendering** (`ExecuteGBuffer()`)
 - Bind terrain pipeline (shaders, render targets)
 - Bind unified vertex/index buffers
 - Bind material textures
@@ -93,7 +100,7 @@ Only chunks within 16-chunk radius of camera considered for streaming updates. R
 
 ### Stream In Process
 When chunk needs LOD_HIGH:
-1. Load mesh from file (`Render_[LOD]_X_Y.zmesh`)
+1. Load mesh from file (`Render_X_Y.zmesh`)
 2. Allocate space in streaming region via allocator
 3. If allocation fails: evict distant chunks until space available
 4. Upload vertex/index data to GPU at calculated absolute offset
@@ -158,14 +165,13 @@ explicit bake (full re-export + render re-init) refreshes it.
 `Zenith_TerrainComponent` in EntityComponent system:
 - Owns unified vertex/index buffers
 - Owns separate physics mesh (no LOD, all chunks combined)
-- Stores two materials for texture blending
+- Stores four materials for texture blending (`TERRAIN_MATERIAL_COUNT = 4`; an RGBA8 splatmap selects between the 4 materials)
 - Registers buffers with streaming manager on creation
 - Calls `UpdateCullingAndLod()` each frame during scene update
 
 ### Physics System
 Terrain collision uses separate mesh, not render LODs:
-- Single combined mesh for all 4,096 chunks
-- Subdivided into 64 regions for Jolt Physics contact handling
+- Single combined mesh for all 4,096 chunks (no subdivision) — `LoadCombinedPhysicsGeometry()` loads each `Physics_X_Y.zmesh` and `Flux_MeshGeometry::Combine()`s them into one unified Jolt mesh
 - Always resident, never streamed
 - Generated at component initialization
 

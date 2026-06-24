@@ -10,6 +10,8 @@ Android-specific implementations for windowing (ANativeWindow), threading (pthre
 - `Zenith_OS_Include.h` - Platform aggregator, defines `Zenith_Mutex`/`Zenith_Semaphore` aliases
 - `Multithreading/Zenith_Android_Multithreading.h` - pthread mutex and POSIX semaphore wrappers
 - `Callstack/Zenith_Android_Callstack.h` - libunwind/dladdr-based stack trace capture
+- `FileAccess/Zenith_Android_FileAccess.cpp` - Android file access (AAssetManager for APK assets, filesystem fallback for writable storage)
+- `Zenith_Android_DebugBreak.cpp` - `Zenith_DebugBreak()` via `raise(SIGTRAP)` (with assert-capture support)
 
 ## Window (Zenith_Window)
 
@@ -31,7 +33,7 @@ Singleton wrapping `ANativeWindow*`. Requires `SetAndroidApp()` before initializ
 Touch events are translated to `ZENITH_MOUSE_BUTTON_1` presses for compatibility:
 - Touch DOWN = mouse button press
 - Touch MOVE = mouse position update
-- Touch UP = mouse button release
+- Touch UP = clears internal `m_bTouchDown` flag only (no release callback)
 
 Cursor capture functions are no-ops on Android.
 
@@ -39,7 +41,7 @@ Cursor capture functions are no-ops on Android.
 
 ### Zenith_Android_Mutex
 
-Wraps `pthread_mutex_t`. No profiling template (single variant).
+Wraps `pthread_mutex_t`. Template `Zenith_Android_Mutex_T<bool bEnableProfiling = true>`; `Lock()` has two explicit specializations: `<true>` with profiling zone markers, `<false>` without.
 
 | Function | Description |
 |----------|-------------|
@@ -67,12 +69,12 @@ Uses `_Unwind_Backtrace` for capture, `dladdr` + `__cxa_demangle` for symbol res
 ## Platform Aliases (Zenith_OS_Include.h)
 
 ```cpp
-#define Zenith_Mutex Zenith_Android_Mutex
-#define Zenith_Mutex_NoProfiling Zenith_Android_Mutex
+#define Zenith_Mutex Zenith_Android_Mutex_T<true>
+#define Zenith_Mutex_NoProfiling Zenith_Android_Mutex_T<false>
 #define Zenith_Semaphore Zenith_Android_Semaphore
 ```
 
-Note: Both mutex aliases map to the same type (no profiling variant on Android).
+Note: `Zenith_Mutex` maps to `Zenith_Android_Mutex_T<true>` (profiling enabled), while `Zenith_Mutex_NoProfiling` maps to `Zenith_Android_Mutex_T<false>` (profiling disabled). Both use the same template class with a different parameter value.
 
 ## Android Build & Deployment
 
@@ -160,7 +162,8 @@ Android does not have the Slang shader compiler at runtime. Shaders must be pre-
 Each game has `Games/<Game>/Android/app/build.gradle` that bundles:
 - `../../Assets` - Game-specific assets
 - `../../../../Zenith/Assets` - Engine assets (fonts, default textures, etc.)
-- `../../../../Zenith/Flux/Shaders` - Pre-compiled shaders (`.spv` + `.spv.refl`)
+
+TilePuzzle additionally bundles `../../../../Zenith/Flux/Shaders` - pre-compiled shaders (`.spv` + `.spv.refl`) for runtime loading.
 
 ### Known Constraints
 

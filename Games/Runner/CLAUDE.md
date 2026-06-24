@@ -14,7 +14,7 @@ An infinite runner game demonstrating Animation State Machine and Terrain featur
 | **Prefab Instantiation** | `Zenith_Prefab`, `Zenith_Scene::Instantiate` | Runtime entity creation |
 | **UI Text** | `Zenith_UIComponent`, `Zenith_UIText` | Distance, score, speed HUD |
 | **DataAsset System** | `Runner_Config` | Configurable gameplay parameters |
-| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **Multi-Scene** | `Zenith_SceneManager` | `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `UnloadScene()`, `SetActiveScene()` |
 | **Menu Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -162,8 +162,8 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + RunnerGame component (Runner_GameComponent). Survives scene transitions.
-- **Game scene** (`m_xGameScene`, named "Run"): Contains all level entities (player, terrain chunks, obstacles, collectibles, particles). Created on play, destroyed on return to menu.
+- **Boot-authored scenes**: Two separate scenes, each with their own `GameManager` entity (Camera + UIComponent + RunnerGame component). `MainMenu` (build index 0) handles menu UI/state; `Runner` (build index 1) handles gameplay UI/loop. Scene transitions use `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)` to unload one and load the other, so each `GameManager` is created when its scene loads and destroyed when unloaded — there is no `DontDestroyOnLoad()` persistence.
+- **Game scene** (`m_xGameScene`, named "Run"): An additive in-memory scene (`LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, not a `.zscen` file) holding all level entities (player, terrain chunks, obstacles, collectibles, particles). Created on play, destroyed on return to menu.
 
 ### Game State Machine
 ```
@@ -178,7 +178,7 @@ MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
 
 ### Scene Transition Pattern
 
-Uses `CreateEmptyScene("Run")` + `SetActiveScene()` to start, `SetScenePaused()` for pause/resume, and `UnloadScene()` to return to menu.
+Uses `LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene()` to start, `SetScenePaused()` for pause/resume, and `UnloadScene()` + `LoadSceneByIndex(0, SCENE_LOAD_SINGLE)` to return to menu.
 
 ## Learning Path
 
@@ -233,9 +233,9 @@ For real terrain: `SampleHeightAt(fX, fZ)`. For this demo: simple chunk-based he
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UIComponent + RunnerGame component) - DontDestroyOnLoad
+- **GameManager** - Per-scene entity (Camera + UIComponent + RunnerGame component); a separate instance lives in each boot-authored scene (MainMenu / Runner), created on scene load and destroyed on unload (no DontDestroyOnLoad)
 - *(Game scene "Run", created at runtime)*
-  - **Player** - Character entity (capsule) in the center lane
+  - **Runner** - Character entity (capsule) in the center lane
   - **TerrainChunk_X** - Procedural terrain chunk entities ahead of player
   - **Obstacle_X** - Spawned obstacle entities in lanes
   - **Collectible_X** - Coin/gem pickup entities in lanes
@@ -243,26 +243,16 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 ### Viewport
 - **Third-person perspective** view behind and above the character
 - **Character** (capsule) running forward on the center lane
-- **Gray terrain chunks** forming the ground ahead and behind
+- **Brown/tan terrain chunks** forming the ground ahead and behind
 - **Red obstacles** (cubes of various heights) in lanes
 - **Yellow/gold spheres** as collectible coins in lanes
 - **Three visible lanes** with lane markers on terrain
 
 ### Properties Panel (when RunnerGame selected)
-- **Movement section** - Base speed, max speed, acceleration, lane width
-- **Jump section** - Jump force, gravity, max jump duration
-- **Slide section** - Slide duration, speed boost multiplier
-- **Terrain section** - Chunk size, visible chunk count
-- **Spawning section** - Obstacle frequency, collectible frequency
-- **Debug section** - FPS, entity count, current speed
-
-### Console Output on Boot
-```
-[Runner] Initializing endless runner
-[Runner] Created X terrain chunks
-[Runner] Player spawned in center lane
-[Runner] Animation driver initialized
-```
+`RenderPropertiesPanel()` is a read-only status readout (no editable tuning sections):
+- **State** - Current `RunnerGameState` (MENU / PLAYING / PAUSED / GAME_OVER)
+- When not in the menu: **Distance**, **Score**, **High Score**, **Speed**, **Character** state (RUNNING / JUMPING / SLIDING / DEAD), and **Lane** index
+- Buttons - **Start Game** (in menu) or **Reset Game** / **Return to Menu** (otherwise)
 
 ## Gameplay View (What You See When Playing)
 
@@ -273,14 +263,13 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 - Some obstacles and collectibles spawned in lanes
 - HUD showing Distance: 0, Score: 0, Speed: 15
 
-### HUD Elements (Top-Right)
+### HUD Elements (Top-Left)
 - **"Distance: 0m"** - Distance traveled in meters
 - **"Score: 0"** - Points from collected items
-- **"Speed: 15"** - Current running speed
+- **"Speed: 15.0"** - Current running speed
 
-### HUD Elements (Center, Fading)
-- **"A/D or ←/→: Switch Lanes"** - Control hint (fades after 3 seconds)
-- **"Space: Jump, S: Slide"** - Control hint (fades after 3 seconds)
+### HUD Elements (Top-Left, Distance-Based Fading)
+- **"A/D: Lanes | Space/W: Jump | S: Slide | R: Reset | Esc: Menu"** - Control hint (fades after 100m distance)
 
 ### Gameplay Actions
 1. **Running**: Character automatically moves forward at increasing speed

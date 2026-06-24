@@ -9,6 +9,11 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 ## Files
 
 - `Zenith_Editor.h/cpp` - Main controller, mode management
+- `Zenith_Editor_Menu.cpp` - Main menu bar rendering and callbacks
+- `Zenith_Editor_SceneOps.cpp` - Scene load/save/new + deferred scene operations
+- `Zenith_EditorQuery.cpp` - Editor-side scene queries (entity/component lookup)
+- `Zenith_EditorSceneAccess.h` - Header-only friend-class wrapper exposing the editor-only `Zenith_SceneData` verbs (Save/LoadFromFile, RemoveEntity, SetMainCameraEntity, etc.) to editor code; `Zenith_Editor` is a namespace and cannot itself be `friend`ed, so this class is
+- `Zenith_SceneGraphDebug.h/cpp` - Scene-graph debug visualization helpers
 - `Zenith_SelectionSystem.h/cpp` - Entity picking via raycasting (ray-AABB, ray-triangle)
 - `Zenith_Gizmo.h/cpp` - Screen-to-world ray conversion utilities
 - `Zenith_UndoSystem.h/cpp` - Command pattern undo/redo with history stack
@@ -36,7 +41,8 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
   Editor Automation" below for the graph verbs.
 - `Zenith_ImGuiInputBridge.h/cpp` - Pumps `Zenith_InputSimulator` state into ImGui
   (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
-- `Panels/` - Panel implementations (Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, TerrainEditor, Toolbar, Viewport)
+- `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
+- `Panels/` - Panel implementations (Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, TerrainEditor, Toolbar, VariantEditor, Viewport)
 
 ## Related Systems
 
@@ -190,7 +196,7 @@ Horizontal button bar below menu:
 Lists all scene entities with selection and manipulation:
 - Each entity shown as: `EntityName [ComponentCount]`
 - Falls back to `Entity_{ID}` if no name set
-- Click to select entity (single selection only)
+- Click to select entity (Ctrl+click to toggle multi-selection, Shift+click for range selection)
 - Right-click context menu for deletion
 - "+ Create Entity" button at bottom
 
@@ -224,7 +230,7 @@ Renders game scene as ImGui texture with interaction handling:
 **Viewport-Relative Input:**
 - Mouse position converted from screen-space to viewport-relative
 - Ray casting accounts for viewport offset within ImGui window
-- Only processes input when `s_bViewportHovered` flag set
+- Only processes input when `m_xEditorState.m_xViewport.m_bHovered` flag set
 
 ### Content Browser
 
@@ -324,20 +330,28 @@ and appends the slot). Each graph step is wrapped in `GraphActionChecked`,
 which asserts on failure so an authoring typo (wrong node type/occurrence/pin)
 surfaces at boot, not as a silently-empty graph.
 
-`ExecuteAction` routes two CONTIGUOUS enum ranges to sub-executors before its
+Material assets are authored the same boot-time way via the `AddStep_Material*`
+verbs (`AddStep_MaterialCreate`, `AddStep_MaterialOpen`,
+`AddStep_MaterialSetParam{Float,Color,Int}`, `AddStep_MaterialSetTexture`,
+`AddStep_MaterialSet{Parent,Override,PreviewMesh,PreviewLight}`,
+`AddStep_MaterialSave`), routed to `ExecuteMaterialAction` (see below).
+
+`ExecuteAction` routes three CONTIGUOUS enum ranges to sub-executors before its
 main switch — terrain-editor actions → `ExecuteTerrainEditorAction`, UI actions
-(`CREATE_UI_TEXT` .. `SET_UI_SCROLL_VIEW_CONTENT_SIZE`) → `ExecuteUIAction` —
-keeping the dispatcher inside the complexity gate. Keep those ranges contiguous
+(`CREATE_UI_TEXT` .. `SET_UI_SCROLL_VIEW_CONTENT_SIZE`) → `ExecuteUIAction`, and
+material actions (`MATERIAL_CREATE` .. `MATERIAL_SAVE`) → `ExecuteMaterialAction`
+— keeping the dispatcher inside the complexity gate. Keep those ranges contiguous
 when adding action types.
 
 ## Selection System
 
 ### Selection Model
 
-Single entity selection using EntityID:
-- `s_uSelectedEntityID` stores current selection
+Multi-entity selection using EntityID:
+- `m_xEditorState.m_xSelection.m_xSelectedEntityIDs` (unordered_set) stores the set of selected entities; `m_uPrimarySelectedEntityID` tracks the primary selection for gizmo operations and UI display
 - ID-based (not pointer) for safety across scene reloads
 - Selection cleared when entity deleted or scene loaded
+- API: `SelectEntity` / `ToggleEntitySelection` / `GetSelectedEntityIDs` / `HasMultiSelection`
 
 ### Selection Methods
 
@@ -391,7 +405,7 @@ Editor integrates with Flux_Gizmos for 3D transform manipulation. Architecture s
 ### Zenith_Gizmo (Utilities)
 
 Located in `Editor/Zenith_Gizmo.h/cpp`, provides one helper:
-- `ScreenToWorldRay()` - Converts 2D viewport coords to 3D world ray (screen → viewport → clip → world)
+- `ScreenToWorldRay()` - Converts 2D viewport coords to 3D world ray (screen → viewport → clip → world). Signature: `Vector3 ScreenToWorldRay(const Vector2& mousePos, const Vector2& viewportPos, const Vector2& viewportSize, const Matrix4& viewMatrix, const Matrix4& projMatrix)` — `mousePos`/`viewportPos`/`viewportSize` give the viewport-relative position used for NDC conversion; returns the normalized world-space ray direction (origin is the camera position)
 
 (The legacy ImGui-drawlist translate gizmo that used to live here was superseded by Flux_Gizmos and has been deleted.)
 
@@ -462,11 +476,16 @@ Base class `Zenith_UndoCommand` requires:
 
 ### Command Types
 
-**TransformEdit** (the only command type):
+**TransformEdit:**
 - Stores: EntityID, before/after position, rotation, scale
 - Execute: Apply "after" transform
 - Undo: Restore "before" transform
 - Created automatically by gizmo interactions
+
+**TerrainEdit** (`Zenith_UndoCommand_TerrainEdit`, `TerrainEditor/Zenith_TerrainEditorUndo.h`):
+- Stores: the bounding texel rect of everything one brush stroke (or auto-splat run) touched on ONE map, with before/after byte copies
+- Execute/Undo: rewrite the after-/before-region via `Zenith_TerrainEditor::WriteMapRegion`, re-marking dirty chunks / GPU flags so the visuals follow
+- Created by terrain brush strokes and auto-splat operations; byte footprint reported to the editor's live-undo budget
 
 (The never-instantiated CreateEntity/DeleteEntity command stubs were deleted; entity deletion from the hierarchy panel is not undoable.)
 
@@ -586,11 +605,11 @@ All editor operations execute on main thread only:
 
 ### Viewport Hover Detection
 
-`s_bViewportHovered` flag determines input eligibility:
+`m_xEditorState.m_xViewport.m_bHovered` flag determines input eligibility:
 - Set to true when mouse inside viewport panel bounds
 - Gizmo interaction only processes when true
 - Object picking only when hovered
-- Camera controls always active (not viewport-dependent)
+- Camera controls require viewport hover OR right-click drag (viewport-dependent)
 
 ### Input Priority
 
@@ -675,10 +694,6 @@ Gizmo mode keys (W/E/R) only active when:
 - 100 command limit prevents unbounded memory growth
 
 ## Known Limitations
-
-### Multi-Selection
-- Multi-entity selection supported (SelectEntity, ToggleEntitySelection)
-- Gizmo system operates on selected entities
 
 ### Component Reordering
 - Components appear in registration order (hardcoded)

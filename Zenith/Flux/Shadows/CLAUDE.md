@@ -4,7 +4,7 @@ Sun (directional) shadows via a 4-cascade CSM. Depth-only D32_SFLOAT maps at
 `ZENITH_FLUX_CSM_RESOLUTION` (2048²) each, rendered by `SetupRenderGraph`'s four
 "Shadow Cascade N" passes (recorded in parallel; cascade 0 owns the once-per-frame
 CPU matrix update via its `Prepare` callback). The deferred lighting pass
-(`DeferredShading/Flux_DeferredShading.slang`) samples them.
+(`Shaders/DeferredShading/Flux_DeferredShading.slang`) samples them.
 
 ## Method (AAA baseline, no-TAA-safe)
 
@@ -31,7 +31,7 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
 - **Depth bias is fixed-function only** — never in the sampling shader. The
   caster pipelines (Static/Animated/Instanced/Terrain `*_ToShadowmap`) enable
   `m_bDepthBias` + `m_bDynamicDepthBias`, and `ExecuteShadowCascade` sets the
-  slope/constant factors per cascade via `Flux_CommandSetDepthBias`
+  slope/constant factors per cascade via `SetDepthBias()`
   (→ `vkCmdSetDepthBias`). Slope-scaled bias carries the load (it works on D32
   float where a constant bias is unreliable). Tunable: Render/Shadows → Depth
   Bias Constant / Slope.
@@ -55,7 +55,7 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
 - `ShadowSampling` CB (binding 24, set 0) carries per-cascade split view-depths /
   world-per-texel / depth-range + global filter params. GPU mirror is
   `Flux_ShadowSamplingGPU` (`Flux_ShadowsImpl.h`); it MUST match
-  `ShadowSamplingLayout` in `Flux_DeferredShading.slang` byte-for-byte (6× float4,
+  `ShadowSamplingLayout` in `Shaders/DeferredShading/Flux_DeferredShading.slang` byte-for-byte (6× float4,
   no scalar straddling). Seeded with sane defaults at Initialise so a
   shadows-disabled boot can't feed garbage tap counts to the PCF loop.
 

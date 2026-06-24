@@ -22,12 +22,14 @@ Each agent maintains a list of perceived targets:
 ```cpp
 struct Zenith_PerceivedTarget
 {
-    Zenith_EntityID m_xEntityID;        // Target entity
+    Zenith_EntityID m_xEntityID;              // Target entity
     Zenith_Maths::Vector3 m_xLastKnownPosition;
-    float m_fTimeSinceLastSeen;
-    float m_fAwareness;                 // 0.0 to 1.0
-    bool m_bCurrentlyVisible;
-    uint32_t m_uStimulusMask;           // SIGHT | HEARING | DAMAGE
+    Zenith_Maths::Vector3 m_xEstimatedVelocity;   // For position prediction
+    float m_fTimeSinceLastSeen = 0.0f;
+    float m_fAwareness = 0.0f;                // 0.0 to 1.0
+    bool m_bCurrentlyVisible = false;
+    uint32_t m_uStimulusMask = 0;             // SIGHT | HEARING | DAMAGE
+    bool m_bHostile = false;                  // Target hostility state
 };
 ```
 
@@ -44,6 +46,8 @@ struct Zenith_SightConfig
     float m_fPeripheralMultiplier = 0.5f; // Awareness gain rate in peripheral
     float m_fEyeHeight = 1.6f;            // Eye height from entity origin
     bool m_bRequireLineOfSight = true;   // Use raycasts for occlusion
+    float m_fAwarenessGainRate = 2.0f;   // Awareness gain per second when visible
+    float m_fAwarenessDecayRate = 0.5f;  // Awareness loss per second when not visible
 };
 ```
 
@@ -66,20 +70,33 @@ hemisphere.
 
 ### Awareness Mechanics
 
-- Awareness increases when target visible
+- Awareness increases when target visible (gain rate defaults to `2.0` per second)
 - Gain rate based on distance (closer = faster)
 - Peripheral vision has reduced gain rate
-- Awareness decays when target not visible
-- Target forgotten when awareness reaches 0
+- Awareness decays when target not visible (decay rate defaults to `0.5` per second)
+- Target removed automatically when awareness reaches `0.0` (there is no separate forget-threshold field)
 
 ### Line of Sight
 
 When `m_bRequireLineOfSight = true`:
 - Raycasts from eye position to target
 - Checks for collider occlusion
-- Blocked targets still get reduced awareness gain
+- Blocked targets are not updated; they do not gain awareness while blocked
 
 ## Hearing Perception
+
+### Configuration
+
+```cpp
+struct Zenith_HearingConfig
+{
+    float m_fMaxRange = 20.0f;          // Maximum hearing distance
+    float m_fLoudnessThreshold = 0.1f;  // Minimum loudness to detect
+    bool m_bCheckOcclusion = false;     // Check for wall occlusion
+};
+```
+
+Set per agent via `Zenith_PerceptionSystem::SetHearingConfig(xAgentID, xConfig)`.
 
 ### Sound Stimuli
 
@@ -95,7 +112,7 @@ Zenith_PerceptionSystem::EmitSoundStimulus(
 ### Detection
 
 - Sound attenuates with distance
-- Audible if: `loudness * (1 - distance/radius) > threshold`
+- Audible if: `loudness * (1 - distance/radius) >= threshold`
 - Detected sounds trigger awareness gain
 - Position stored in last known location
 
@@ -130,14 +147,15 @@ Zenith_PerceptionSystem::EmitDamageStimulus(
 
 ### Memory Decay
 
+Awareness gain/decay rates live on `Zenith_SightConfig` (see *Sight Perception*):
+
 ```cpp
-struct Zenith_SightConfig
-{
-    float m_fAwarenessGainRate = 0.5f;   // Per second when visible
-    float m_fAwarenessDecayRate = 0.1f;  // Per second when not visible
-    float m_fForgetThreshold = 0.0f;     // Remove target at this awareness
-};
+float m_fAwarenessGainRate = 2.0f;   // Per second when visible
+float m_fAwarenessDecayRate = 0.5f;  // Per second when not visible
 ```
+
+There is no forget-threshold field — a target is removed automatically once its
+awareness decays to `0.0`.
 
 ### Prediction
 
@@ -167,8 +185,11 @@ Zenith_PerceptionSystem::UnregisterAgent(xEntityID);
 ### Target Registration
 
 ```cpp
-// Register entity as perceivable target
-Zenith_PerceptionSystem::RegisterTarget(xTargetID, "Enemy");
+// Register entity as perceivable target (bHostile defaults to true)
+Zenith_PerceptionSystem::RegisterTarget(xTargetID, true);  // true = hostile
+
+// Change hostility of a registered target later
+Zenith_PerceptionSystem::SetTargetHostile(xTargetID, false);
 
 // Unregister
 Zenith_PerceptionSystem::UnregisterTarget(xTargetID);
@@ -186,8 +207,13 @@ Zenith_EntityID xTarget = Zenith_PerceptionSystem::GetPrimaryTarget(xAgentID);
 // Get awareness of specific target
 float fAwareness = Zenith_PerceptionSystem::GetAwarenessOf(xAgentID, xTargetID);
 
-// Check if target currently visible
-bool bVisible = Zenith_PerceptionSystem::IsTargetVisible(xAgentID, xTargetID);
+// Check if an agent is aware of a specific target
+bool bAware = Zenith_PerceptionSystem::IsAwareOf(xAgentID, xTargetID);
+
+// Get the most-recent heard sound stimulus (bridges hearing into BT blackboard
+// investigate positions); m_bValid is false when nothing has been heard
+Zenith_PerceptionSystem::Zenith_LastHeardSound xSound =
+    Zenith_PerceptionSystem::GetLastHeardSoundFor(xAgentID);
 ```
 
 ## Debug Visualization
@@ -208,10 +234,13 @@ Enable via `Zenith_AIDebugVariables`:
 Zenith_BTCondition_HasTarget("TargetEntity")
 
 // Check if target visible with minimum awareness
-Zenith_BTCondition_CanSeeTarget("TargetEntity", 0.5f)
+// (min awareness is set via SetMinAwareness, not the constructor)
+Zenith_BTCondition_CanSeeTarget cond("TargetEntity");
+cond.SetMinAwareness(0.5f);
 
 // Check if any targets perceived
-Zenith_BTCondition_HasAwareness(0.3f)
+Zenith_BTCondition_HasAwareness cond;
+cond.SetMinAwareness(0.3f);
 ```
 
 ### Action Nodes

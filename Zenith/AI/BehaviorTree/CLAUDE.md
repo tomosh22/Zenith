@@ -90,7 +90,7 @@ Always returns SUCCESS regardless of child result
 Repeats child N times (or infinite with `REPEAT_INFINITE = -1`, the default)
 
 ### Zenith_BTCooldown
-After child succeeds, blocks execution for duration
+After child completes (returns its status, SUCCESS or FAILURE), returns FAILURE on subsequent ticks for the cooldown duration
 
 ### Zenith_BTConditionalLoop
 Repeats child while condition is true
@@ -197,7 +197,7 @@ auto* pxRoot = new Zenith_BTSelector();
 // Attack branch
 auto* pxAttackSeq = new Zenith_BTSequence();
 pxAttackSeq->AddChild(new Zenith_BTCondition_HasTarget("Target"));
-pxAttackSeq->AddChild(new Zenith_BTAction_MoveToEntity("Target", 2.0f));
+pxAttackSeq->AddChild(new Zenith_BTAction_MoveToEntity("Target")); // default 2.0f radius; change via SetAcceptanceRadius()
 // pxAttackSeq->AddChild(new Zenith_BTAction_Attack("Target"));
 
 // Patrol branch
@@ -223,10 +223,7 @@ xAIComponent.SetBehaviorTree(pxTree);
 
 ### Logging
 
-All nodes log to LOG_CATEGORY_AI. Enable verbose logging to see:
-- Node execution (OnEnter/OnExit/Execute)
-- Status changes
-- Blackboard modifications
+Only the explicit `Log` action (`Zenith_BTAction_Log`) logs to `LOG_CATEGORY_AI`. Composite nodes, decorator nodes, and the `Zenith_BehaviorTree` framework do not automatically log node execution, status changes, or blackboard modifications.
 
 ## Performance Notes
 

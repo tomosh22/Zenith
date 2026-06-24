@@ -14,19 +14,23 @@ Zenith/
 ├── EntityComponent/   # Concrete components + ECS<->engine glue (see EntityComponent/CLAUDE.md)
 ├── Scripting/         # Behaviour Graph runtime: visual scripting interpreter (see Scripting/CLAUDE.md)
 ├── Flux/              # Vulkan renderer (see Flux/CLAUDE.md)
+│   ├── Decals/        # Deferred decals (see Flux/Decals/CLAUDE.md)
 │   ├── Fog/           # Volumetric fog (see Flux/Fog/CLAUDE.md)
 │   ├── Gizmos/        # Editor gizmos (see Flux/Gizmos/CLAUDE.md)
 │   ├── HDR/           # HDR pipeline (see Flux/HDR/CLAUDE.md)
 │   ├── HiZ/           # Hierarchical Z-buffer (see Flux/HiZ/CLAUDE.md)
 │   ├── IBL/           # Image-based lighting (see Flux/IBL/CLAUDE.md)
 │   ├── MeshAnimation/ # Skeletal animation (see Flux/MeshAnimation/CLAUDE.md)
+│   ├── RenderGraph/   # Render graph compile/execute (see Flux/RenderGraph/CLAUDE.md)
+│   ├── Shadows/       # Cascaded shadow maps (see Flux/Shadows/CLAUDE.md)
 │   ├── SSR/           # Screen-space reflections (see Flux/SSR/CLAUDE.md)
 │   ├── SSGI/          # Screen-space GI (see Flux/SSGI/CLAUDE.md)
 │   ├── Terrain/       # Terrain rendering (see Flux/Terrain/CLAUDE.md)
 │   ├── Vegetation/    # Grass system (see Flux/Vegetation/CLAUDE.md)
-│   └── ...            # + AnimatedMeshes, DeferredShading, DynamicLights,
-│                      #   InstancedMeshes, Particles, Primitives, Shadows,
-│                      #   Skybox, SSAO, StaticMeshes, Text, and more
+│   └── ...            # + AnimatedMeshes, Backend, DeferredShading, DynamicLights,
+│                      #   InstancedMeshes, MaterialPreview, MeshGeometry, Particles,
+│                      #   Present, Primitives, Quads, SDFs, SceneGraph, Shaders, Skybox,
+│                      #   Slang, SSAO, StaticMeshes, Text, Translucency, and more
 ├── AI/                # AI systems (see AI/CLAUDE.md)
 │   ├── BehaviorTree/  # Decision-making (see AI/BehaviorTree/CLAUDE.md)
 │   ├── Navigation/    # NavMesh pathfinding (see AI/Navigation/CLAUDE.md)
@@ -36,6 +40,7 @@ Zenith/
 ├── TaskSystem/        # Task parallelism (see TaskSystem/CLAUDE.md)
 ├── Physics/           # Jolt Physics integration (see Physics/CLAUDE.md)
 ├── Vulkan/            # Vulkan backend (see Vulkan/CLAUDE.md)
+├── D3D12/             # No-op null render backend (Flux neutrality proof) (see D3D12/CLAUDE.md)
 ├── Core/              # Core utilities (see Core/CLAUDE.md)
 ├── Collections/       # Custom containers (see Collections/CLAUDE.md)
 ├── Maths/             # GLM wrapper (see Maths/CLAUDE.md)
@@ -43,9 +48,12 @@ Zenith/
 ├── Windows/           # Windows platform layer (see Windows/CLAUDE.md)
 ├── Android/           # Android platform layer (see Android/CLAUDE.md)
 ├── DataStream/        # Binary serialization (see DataStream/CLAUDE.md)
+├── SaveData/          # Save/load persistence (see SaveData/CLAUDE.md)
 ├── DebugVariables/    # Runtime debug variable tree (see DebugVariables/CLAUDE.md)
 ├── Input/             # Input handling (see Input/CLAUDE.md)
 ├── Profiling/         # CPU profiling system (see Profiling/CLAUDE.md)
+├── Telemetry/         # Runtime telemetry capture
+├── UnitTests/         # Unit-test harness
 ├── Prefab/            # Prefab system (see Prefab/CLAUDE.md)
 ├── UI/                # UI framework (see UI/CLAUDE.md)
 └── FileAccess/        # File system abstraction (see FileAccess/CLAUDE.md)
@@ -159,7 +167,7 @@ This generates:
 Each project supports these configurations. Every win64 config is prefixed by the
 render backend (`Vulkan_` = the real renderer; `D3D12_` = the no-op null backend
 that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
-`D3D12_` rows are identical with the prefix swapped. agde is Vulkan-only (no prefix).
+`D3D12_` rows are identical with the prefix swapped. agde is Vulkan-only (`Vulkan_` prefix on all configs).
 
 | Configuration | Platform | Tools | Description |
 |--------------|----------|-------|-------------|
@@ -168,8 +176,8 @@ that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
 | `Vulkan_vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
 | `Vulkan_vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
 | `D3D12_vs2022_Debug_Win64_False` | Windows | No | Null-backend link/neutrality proof (+ _True / Release variants) |
-| `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
-| `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
+| `Vulkan_arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
+| `Vulkan_arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
 
 ### Projects
 
@@ -178,7 +186,7 @@ that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
 | ZenithTools | Asset tools (Windows only) | Executable (.exe) |
-| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground | Executable (.exe) / Shared lib (.so) |
+| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 
@@ -194,7 +202,7 @@ sokoban.exe
 > with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer)
 > or `D3D12_vs2022_Debug_Win64_False` (a no-op null backend that proves the Flux
 > surface is backend-neutral; see `Zenith/D3D12/CLAUDE.md`). The output dir is the
-> lowercased config name. agde is Vulkan-only (no prefix change there).
+> lowercased config name. agde is Vulkan-only (`Vulkan_` prefix on all configs).
 
 **Using Visual Studio:**
 1. Open `Build\zenith_win64.sln`
@@ -237,7 +245,7 @@ msbuild %*
 
 **Usage:**
 ```batch
-CleanBuild.bat zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
+CleanBuild.bat zenith_win64.sln /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
 **Alternative - Manual Cleanup:**
@@ -281,3 +289,9 @@ Located in `Build/`:
 - `Sharpmake_FluxCompiler.cs` - Shader compiler project
 - `Sharpmake_Games.cs` - Game project template
 - `Sharpmake_ZenithTools.cs` - Asset tools project
+- `Sharpmake_ZenithAI.cs` - AI module project
+- `Sharpmake_ZenithECS.cs` - ECS module project
+- `Sharpmake_ZenithPhysics.cs` - Physics module project
+- `Sharpmake_SentinelAI.cs` / `Sharpmake_SentinelECS.cs` / `Sharpmake_SentinelPhysics.cs` - Sentinel test modules
+- `Sharpmake_FreeType.cs` / `Sharpmake_Msdfgen.cs` / `Sharpmake_MsdfAtlasGen.cs` - Font/text dependency projects
+- `Sharpmake_TilePuzzleLevelGen.cs` / `Sharpmake_TilePuzzleRegistryViewer.cs` - TilePuzzle tooling projects

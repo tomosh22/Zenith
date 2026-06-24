@@ -7,7 +7,7 @@
 
 ## Overview
 
-Work-stealing task system for parallelizing CPU work across worker threads. Uses circular queue with mutex protection and semaphore synchronization.
+Shared task queue system for parallelizing CPU work across a worker thread pool. A single centralized circular queue (protected by one global mutex) is drained by all workers, with semaphore synchronization.
 
 ## Core Classes
 
@@ -22,9 +22,11 @@ Submission API on the engine instance. Call `g_xEngine.Tasks().SubmitTask()` or 
 
 ## Configuration
 
-Worker threads defined in `Core/ZenithConfig.h` as `FLUX_NUM_WORKER_THREADS = 8`.
+Task system dynamically creates worker threads at initialization: one per hardware thread minus 1 (the main thread is reserved), with at least 1 worker and capped at 16. Formula: `(hardware_concurrency > 1) ? (hardware_concurrency - 1) : 1`, then clamped to a maximum of 16.
 
-Task system dynamically creates `min(hardware_concurrency - 1, 16)` threads at initialization.
+The task queue has a fixed capacity of `uMAX_TASKS` (128); a submit fails (returning the task as resubmittable) when the queue is full.
+
+`GetNumWorkerThreads()` returns the worker count for sizing a `Zenith_DataParallelTask`'s invocation count. It may be 0 before `Initialise()` / on a single-core box, so callers must clamp to at least 1.
 
 ## Related Components
 

@@ -41,7 +41,7 @@ Games/CityBuilder/
   Components/            # the 3 game ECS components — see Components/CLAUDE.md
   Tests/                 # Zenith_AutomatedTest coverage — see Tests/CLAUDE.md
   Assets/                # Scenes (City.zscen), Terrain (baked heightmap + chunk meshes), UI/Icons
-  Build/ , Android/      # generated solution output + Android (AGDE) project
+  build/                 # generated solution output
 ```
 `CityBuilder.cpp` bakes the terrain (4096px heightmap from `CB_TerrainGen::HillNorm` + 4 materials +
 splatmap, marker-gated `terrain_hills_vN`) and the 20 toolbar icons (`CB_UI_ICONS_VERSION`, tools-build),
@@ -111,6 +111,8 @@ CB_RoadGraph.{h,cpp}       # nodes + spline segments; snap, AUTO-INTERSECTIONS (
                            #   SplitSegmentAt / FindOrSplitNodeAt → X + T junctions), ref-count/bulldoze;
                            #   connectivity telemetry (CountConnectedComponents / CountJunctions); serialize
 CB_RoadMesh.h              # terrain-following road-ribbon triangle generation
+CB_ToolSystem.{h,cpp}      # CB_ETool enum (14 tools) + the terrain-aware mouse picker
+                           #   (PickGroundPoint ray-marches the heightfield); tool-selection hotkeys
 CB_RoadController.{h,cpp}  # owns the graph; the road/zone/service/bulldoze tools (reads the
                            #   camera-unproject picker); services sub-type cycle; ribbon render
 CB_Zoning.{h,cpp}          # per-segment frontage lots (placed with IsLotPositionClear: kept clear of
@@ -186,7 +188,8 @@ density (level-up) additionally needs **land value** (happiness from service cov
   `CB_HumanSession` (the headline **pure-input** playthrough: drives the game ONLY through
   `Zenith_InputSimulator` — simulated mouse moves/clicks/wheel + key presses, with NO direct
   subsystem calls — to build a sizeable city and exercise EVERY mechanic: roads (all 3
-  classes), R/C/I zones + parks, all 11 utility/service types via the 6-cycle, districts +
+  classes), R/C/I zones + parks, all 11 utility/service types (8 via the key-6 service
+  cycle, power + water on keys 7/8, parks via zoning), districts +
   the 4 policies, transit lines, conduits, terraform, bulldoze, loans/tax, speed/pause,
   save/load + a fire drill. Authored as a flat input "script" (`g_xScript`) processed one
   action per frame; PROBE actions snapshot state + Verify asserts a solvent, served city

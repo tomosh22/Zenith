@@ -2,7 +2,7 @@
 
 ## Overview
 
-High Dynamic Range rendering pipeline that enables proper handling of bright light sources, bloom effects, and tone mapping for photorealistic output. The system renders the scene to a 16-bit floating-point HDR buffer, applies bloom, and then tone maps to the final LDR output.
+High Dynamic Range rendering pipeline that enables proper handling of bright light sources, bloom effects, and tone mapping for photorealistic output. The system renders the scene to a 16-bit floating-point HDR buffer, applies bloom, and then tone maps to the final LDR output. The default tone-mapping operator is `TONEMAPPING_AGX` (modern filmic); all operators are implemented in `Flux_ToneMapping.slang`.
 
 ## Architecture
 
@@ -31,17 +31,20 @@ Scene Rendering (Deferred Shading, SSAO, Fog, Particles, SDFs)
 
 | File | Purpose |
 |------|---------|
-| `Flux_HDR.h` | Class declaration, enums (ToneMappingOperator, HDR_DebugMode) |
+| `Flux_HDRImpl.h` | Class declaration (`Flux_HDRImpl`), enums (ToneMappingOperator, HDR_DebugMode) |
 | `Flux_HDR.cpp` | Implementation - bloom, tone mapping, render targets |
+| `Flux_HDR_Shaders.h` | Shader-program decls owned by the HDR feature (`Flux_HDRShaders::apxALL`) |
 
 ## Shaders
 
 | Shader | Location | Purpose |
 |--------|----------|---------|
-| `Flux_ToneMapping.frag` | `Shaders/HDR/` | Final tone mapping with ACES/Reinhard/Uncharted2/Neutral operators |
-| `Flux_BloomThreshold.frag` | `Shaders/HDR/` | Extracts bright areas using soft threshold |
-| `Flux_BloomDownsample.frag` | `Shaders/HDR/` | 13-tap downsample filter for blur |
-| `Flux_BloomUpsample.frag` | `Shaders/HDR/` | 9-tap tent filter upsample with blur |
+| `Flux_ToneMapping.slang` | `Shaders/HDR/` | Final tone mapping with AGX/ACES/ACES_FITTED/Reinhard/Uncharted2/Neutral operators |
+| `Flux_BloomThreshold.slang` | `Shaders/HDR/` | Extracts bright areas using soft threshold |
+| `Flux_BloomDownsample.slang` | `Shaders/HDR/` | 13-tap downsample filter for blur |
+| `Flux_BloomUpsample.slang` | `Shaders/HDR/` | 9-tap tent filter upsample with blur |
+| `Flux_Luminance.slang` | `Shaders/HDR/` | Compute pass building the luminance histogram |
+| `Flux_Adaptation.slang` | `Shaders/HDR/` | Compute pass deriving the adapted exposure from the histogram |
 
 ## Render Targets
 
@@ -71,8 +74,8 @@ HDR registers these passes with the render graph; ordering is derived from Read/
 
 | Pass | Status | Reads | Writes |
 |------|--------|-------|--------|
-| Luminance histogram | future | HDR scene | luminance buffer |
-| Exposure adaptation | future | luminance buffer | exposure constant |
+| Luminance histogram (`HDR_LuminanceHistogram`, compute) | active | HDR scene | histogram buffer |
+| Exposure adaptation (`HDR_Adaptation`, compute) | active | histogram buffer | exposure buffer |
 | Bloom (downsample + blur + composite) | active | HDR scene | bloom mip chain |
 | Tonemap (HDR → LDR) | active | HDR scene, bloom output, exposure | swapchain LDR target |
 
@@ -81,25 +84,33 @@ The tonemap pass naturally runs after anything that writes the HDR scene (deferr
 ## Tone Mapping Operators
 
 ```cpp
-TONEMAPPING_ACES           // Academy Color Encoding System (default)
+TONEMAPPING_ACES           // Academy Color Encoding System
 TONEMAPPING_ACES_FITTED    // Faster ACES approximation
 TONEMAPPING_REINHARD       // Simple Reinhard curve
 TONEMAPPING_UNCHARTED2     // Uncharted 2 filmic curve
 TONEMAPPING_NEUTRAL        // Neutral/minimal curve
+TONEMAPPING_AGX            // Modern filmic curve (default)
 ```
 
 ## Debug Variables (via Zenith_DebugVariables)
 
+HDR/auto-exposure enable (and bloom enable) live on `Zenith_GraphicsOptions`
+(`Graphics/...` path), **not** these debug variables. The variables below are only
+what `RegisterDebugVariables()` actually registers (tools builds).
+
 | Path | Type | Description |
 |------|------|-------------|
-| `Flux/HDR/Enable` | bool | Enable/disable HDR |
 | `Flux/HDR/DebugMode` | uint | Debug visualization mode |
 | `Flux/HDR/Exposure` | float | Manual exposure (0.01-10.0) |
-| `Flux/HDR/AutoExposure` | bool | Enable auto-exposure |
-| `Flux/HDR/BloomEnabled` | bool | Enable bloom |
 | `Flux/HDR/BloomIntensity` | float | Bloom intensity (0.0-2.0) |
 | `Flux/HDR/BloomThreshold` | float | Bloom threshold (0.0-5.0) |
 | `Flux/HDR/ToneMappingOperator` | uint | Select tone mapping curve |
+| `Flux/HDR/ShowHistogram` | bool | Overlay the luminance histogram |
+| `Flux/HDR/FreezeExposure` | bool | Freeze auto-exposure adaptation |
+| `Flux/HDR/AdaptationSpeed` | float | Eye-adaptation speed (0.1-10.0) |
+| `Flux/HDR/TargetLuminance` | float | Auto-exposure target luminance (0.01-1.0) |
+| `Flux/HDR/MinExposure` | float | Auto-exposure lower clamp (0.01-1.0) |
+| `Flux/HDR/MaxExposure` | float | Auto-exposure upper clamp (1.0-20.0) |
 
 ## Debug Modes
 
@@ -113,13 +124,14 @@ HDR_DEBUG_BLOOM_MIPS       // Grid of bloom mip levels
 HDR_DEBUG_PRE_TONEMAP      // Raw HDR clamped to [0,1]
 HDR_DEBUG_CLIPPING         // Highlight clipped pixels
 HDR_DEBUG_EV_ZONES         // Zone system overlay
+HDR_DEBUG_TONEMAP_PASS_TEST // Tone-map pass validation
+HDR_DEBUG_RAW_HDR_TEXTURE  // Raw HDR texture display
 ```
 
 ## Integration Points
 
 Systems that render to HDR target:
-- `Flux_DeferredShading` - Main lighting pass
-- `Flux_SSAO` - Ambient occlusion
+- `Flux_DeferredShading` - Main lighting pass (SSAO's blurred output is read here and folded into the ambient term; SSAO does not write the HDR target directly)
 - `Flux_Fog` (all variants) - Atmospheric fog
 - `Flux_Particles` - Particle effects (with depth)
 - `Flux_SDFs` - Signed distance fields (with depth)
@@ -158,9 +170,16 @@ Flux_ShaderResourceView& srv = g_xEngine.FluxGraphics().GetHDRSceneSRV();
 - Target GPU time: ~1.5ms for bloom + ~0.5ms for tone mapping (1080p)
 - VRAM usage: ~55MB for HDR target + bloom chain
 
+## Auto-Exposure / Luminance
+
+Auto-exposure runs as two active compute passes (see Pass placement). `Flux_Luminance.slang`
+builds a 256-bin luminance histogram from the HDR scene into `m_xHistogramBuffer`;
+`Flux_Adaptation.slang` derives the adapted exposure (target luminance, min/max clamp,
+adaptation speed) into `m_xExposureBuffer`, which the tonemap pass consumes. Whether
+auto-exposure is engaged is owned by `Zenith_GraphicsOptions`; the per-frame tuning lives
+in the `Flux/HDR/*` debug variables (TargetLuminance, AdaptationSpeed, Min/MaxExposure,
+FreezeExposure, ShowHistogram).
+
 ## Future Work
 
-- Luminance histogram computation (compute shader)
-- Auto-exposure based on histogram
-- Eye adaptation with temporal smoothing
 - Volumetric light scattering integration

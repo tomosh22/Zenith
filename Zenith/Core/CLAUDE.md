@@ -15,6 +15,7 @@ Engine core utilities, configuration, and main loop.
 - `Zenith_GraphicsOptions.h/cpp` - Set once by `Project_SetGraphicsOptions`, read-only after
 
 ### Subdirectories
+- `Callstack/` - Callstack capture and symbolication (`Zenith_Callstack`) used by memory tracking and editor panels
 - `Memory/` - Memory management system
 - `Multithreading/` - Threading utilities
 
@@ -36,7 +37,7 @@ Main loop controller and timing manager. Executes frame sequence:
 5. Synchronization
 6. End frame (present)
 
-Provides `GetDt()` for delta time and `GetTimePassed()` for accumulated time. Uses high-resolution clock for timing.
+Per-frame timing state (`GetDt()`, `GetTimePassed()`) was moved onto `FrameContext` (Phase 2 refactor) and is read via `g_xEngine.Frame().GetDt()` / `g_xEngine.Frame().GetTimePassed()`. `Zenith_Core` itself exports the main loop (`Zenith_MainLoop`) and the per-frame timer tick (`UpdateTimers`), which writes the new frame's dt / accumulated time into `g_xEngine.Frame()` using a high-resolution clock.
 
 ## ZenithConfig.h
 

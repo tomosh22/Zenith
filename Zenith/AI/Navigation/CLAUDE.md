@@ -23,17 +23,26 @@ Stores the navigation mesh data structure:
 - `IsPointOnNavMesh()`: Check if a point is on walkable surface
 - `Raycast()`: Test line-of-sight on navmesh
 - `ProjectPoint()`: Project point onto navmesh surface
+- `GetRandomReachablePointInRadius()`: Sample a uniformly-random walkable point path-connected to a center within a horizontal radius (Unreal-style; disconnected islands excluded)
+
+**Dynamic obstacles** (carve transient obstacles like doors without regenerating the mesh):
+- `SetPolygonBlocked()`: Toggle a polygon's BLOCKED flag (skipped by `FindPath`); `const`, mutates flag via internal `const_cast`
+- `SetBlockedAtPoint()`: Block/unblock every polygon whose footprint contains a world point
+- `StitchPortalAt()`: Add a mutual neighbor link between walkable polygons either side of a point (bridges wall-separated regions; used by DPDoor)
 
 ### Zenith_NavMeshGenerator
 
-Generates navmesh from scene geometry using Recast-style pipeline:
+Generates navmesh from raw geometry using Recast-style pipeline. Geometry
+collection is **engine-side**: `Zenith_AINavGeometry::GenerateFromScene` gathers
+triangles from static ColliderComponents and calls the leaf entry point
+`GenerateFromGeometry(verts, indices, xConfig)`, which begins at voxelization:
 
-1. **CollectGeometry**: Queries all static ColliderComponents for triangles
-2. **Voxelization**: Converts triangles to 3D heightfield grid
-3. **Span Filtering**: Removes non-walkable cells (steep slopes, low clearance)
+1. **Voxelization**: Converts triangles to 3D heightfield grid
+2. **Span Filtering**: Removes non-walkable cells (steep slopes, low clearance)
+3. **Build Compact Heightfield**: Packs walkable spans into a flat, cache-friendly array indexed by (x, z) for efficient flood-fill and contour operations
 4. **Region Building**: Flood-fills connected walkable areas
-5. **Contour Tracing**: Extracts boundary polygons from regions
-6. **Polygon Building**: Triangulates and builds convex polygon mesh
+5. **Contour Tracing**: Traces per-region boundary contours (currently populated but not consumed — polygon building works directly from spans)
+6. **Polygon Building**: Builds convex quad polygon mesh from walkable spans (one quad per walkable span, CCW winding); does not use the traced contours
 7. **Adjacency**: Computes neighbor relationships
 
 **Configuration Parameters**:
@@ -50,14 +59,22 @@ Generates navmesh from scene geometry using Recast-style pipeline:
 A* pathfinding on polygon graph:
 
 - **Node**: Each polygon is a graph node
-- **Edge Cost**: Euclidean distance between polygon centers
-- **Heuristic**: Euclidean distance to goal polygon
+- **Edge Cost**: Euclidean distance between polygon centers, multiplied by the neighbor polygon's cost multiplier (`m_fCost`)
+- **Heuristic**: Euclidean distance to the projected endpoint (the goal point projected onto the nearest polygon, not the polygon center)
 - **Path Smoothing**: String-pulling via line-of-sight checks
 
 **Path Results**:
 - `SUCCESS`: Complete path found
 - `PARTIAL`: Path to nearest reachable point
 - `FAILED`: No path possible
+
+**Batch API**: `FindPathsBatch(PathRequest*, uNumRequests)` computes many paths in
+parallel via `Zenith_DataParallelTask`, writing each result into `PathRequest::m_xResult`;
+blocks until all are done.
+
+**Test harness**: `Zenith_NavMeshTestPathfinder.h` is a test-only shim (gated behind
+`ZENITH_INPUT_SIMULATOR`) wrapping `Zenith_Pathfinding::FindPath` so test bots route on the
+same navmesh the production agents use; not part of the runtime path.
 
 ### Zenith_NavMeshAgent
 
@@ -105,7 +122,7 @@ Zenith_NavMesh* pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(xScene, xCon
 
 ```cpp
 Zenith_PathResult xResult = Zenith_Pathfinding::FindPath(xNavMesh, xStart, xEnd);
-if (xResult.m_eStatus == Zenith_PathResult::SUCCESS)
+if (xResult.m_eStatus == Zenith_PathResult::Status::SUCCESS)
 {
     for (auto& xWaypoint : xResult.m_axWaypoints)
     {
@@ -134,7 +151,7 @@ The navmesh uses a 2D spatial grid for acceleration:
 - Divides world XZ plane into cells
 - Each cell stores polygon indices that overlap it
 - Point queries only check relevant cell's polygons
-- Cell size configurable (default 10x10 units)
+- Cell size: 5.0 units (fixed `m_fGridCellSize`, not configurable)
 
 ## Path Smoothing Algorithm
 

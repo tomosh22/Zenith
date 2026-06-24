@@ -7,15 +7,16 @@ A first-person terrain exploration experience demonstrating atmospheric renderin
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
 | **Terrain System** | `Zenith_TerrainComponent` | Large-scale terrain rendering with LOD streaming |
-| **Skybox Rendering** | `Flux_Skybox` | Dynamic sky with day/night cycle |
-| **Fog Effects** | `Flux_Fog` | Atmospheric depth fog |
-| **Cascaded Shadow Maps** | `Flux_Shadows` | 4-cascade shadow system |
-| **SSAO** | `Flux_SSAO` | Screen-space ambient occlusion |
+| **Instanced Vegetation** | `Zenith_InstancedMeshComponent` | 10,000 instanced trees scattered across the terrain (height/slope-filtered) |
+| **Skybox Rendering** | `Flux_SkyboxImpl` | Dynamic sky with day/night cycle |
+| **Fog Effects** | `Flux_FogImpl` | Atmospheric depth fog |
+| **Cascaded Shadow Maps** | `Flux_ShadowsImpl` | 4-cascade shadow system |
+| **SSAO** | `Flux_SSAOImpl` | Screen-space ambient occlusion |
 | **First-Person Camera** | `Zenith_CameraComponent` | Mouse-look + WASD movement |
 | **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration serialization |
 | **UI System** | `Zenith_UIComponent` | Minimal HUD overlay |
-| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **Multi-Scene** | `Zenith_SceneSystem` | `LoadSceneByIndex()` with `SCENE_LOAD_SINGLE`, `RegisterSceneBuildIndex()`, `UnloadScene()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -32,7 +33,8 @@ Games/Exploration/
     Exploration_AtmosphereController.h # Day/night cycle + weather
     Exploration_UIManager.h          # Minimal HUD
   Assets/
-    Scenes/Exploration.zscen         # Serialized scene
+    Scenes/MainMenu.zscen            # Serialized main-menu scene (build index 0)
+    Scenes/Exploration.zscen         # Serialized gameplay scene (build index 1)
 ```
 
 ## Module Breakdown
@@ -77,7 +79,7 @@ Demonstrates:
 - LOD distance visualization
 
 ### Exploration_AtmosphereController.h - Day/Night + Weather
-**Engine APIs:** `Flux_Graphics`, `Flux_Skybox`, `Flux_Fog`
+**Engine APIs:** `Flux_Graphics`, `Flux_SkyboxImpl`, `Flux_FogImpl`
 
 Demonstrates:
 - Day/night cycle with sun position animation
@@ -100,10 +102,10 @@ Demonstrates:
 
 ### Entity Layout
 
-The game uses two scenes:
+The game uses two scenes, each registered to a build index and loaded one at a time with `SCENE_LOAD_SINGLE` (loading one fully unloads the other — there is no persistent scene):
 
-- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and the ExplorationGame component (Exploration_GameComponent). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
-- **World Scene** (`m_xWorldScene`, named "World"): Contains terrain, atmosphere objects, and all world entities. Created when entering gameplay, unloaded when returning to menu.
+- **Main Menu Scene** (build index 0, named "MainMenu"): Contains the `MenuManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent` (title + Play button), and the ExplorationGame component (Exploration_GameComponent).
+- **Exploration Scene** (build index 1, named "Exploration"): Contains the `GameManager` entity (camera + ExplorationGame component) plus the procedurally generated terrain and all world entities. Loaded via `LoadSceneByIndex(1, SCENE_LOAD_SINGLE)` when entering gameplay, replaced by the menu scene when returning.
 
 ### Game State Machine
 
@@ -115,7 +117,7 @@ There is no pause state. Pressing Escape from gameplay returns directly to the m
 
 ### Scene Transition Pattern
 
-Uses `CreateEmptyScene("World")` + `SetActiveScene()` to enter gameplay, `UnloadScene()` to return to menu. GameManager persists via DontDestroyOnLoad.
+Uses `LoadSceneByIndex(1, SCENE_LOAD_SINGLE)` to enter gameplay and `LoadSceneByIndex(0, SCENE_LOAD_SINGLE)` to return to the menu. Because `SCENE_LOAD_SINGLE` keeps only one scene active, each transition fully unloads the previous scene and loads the next — nothing persists across the transition.
 
 ## Learning Path
 
@@ -153,22 +155,20 @@ Sample terrain height at player XZ position and add eye height offset for camera
 Animate sun direction based on time-of-day (0.0-1.0) using cosine/sine for circular arc, then normalize.
 
 ### Fog Configuration by Weather
-Set target fog density per weather state (clear=0.0001, foggy=0.001), then smoothly interpolate current density toward target each frame.
+Set target fog density per weather state (clear=0.00015, foggy=0.0015), then smoothly interpolate current density toward target each frame.
 
 ## Terrain System Integration
 
 The game demonstrates terrain features from `Flux/Terrain/`:
 
 - **GPU-Driven Culling:** 4096 chunks culled via compute shader
-- **LOD Streaming:** LOD0-2 streamed based on camera distance
-- **Always-Resident LOD3:** Fallback ensures no terrain holes
+- **LOD Streaming:** LOD_HIGH streamed based on camera distance
+- **Always-Resident LOD_LOW:** Fallback ensures no terrain holes
 - **Cascaded Shadows:** 4 cascade levels for shadow quality
 
 Distance thresholds for LOD (from `Flux_TerrainConfig.h`):
-- LOD0: 0 - 632m (highest detail)
-- LOD1: 632 - 1000m
-- LOD2: 1000 - 1414m
-- LOD3: 1414m+ (always loaded)
+- LOD_HIGH (0): 0 - 1000m (highest detail, streamed dynamically)
+- LOD_LOW (1): 1000m+ (always-resident fallback, never evicted)
 
 ## Building
 
@@ -205,16 +205,18 @@ On the very first launch, the game will generate terrain mesh data:
 [Exploration] Exporting terrain meshes (this may take a while)...
 [Exploration] Terrain mesh export complete!
 ```
-This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may take several minutes.
+This process generates LOD_HIGH, LOD_LOW, and physics collision mesh files for all 4096 terrain chunks (plus the four PBR material texture sets and a splatmap) and may take several minutes.
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + ExplorationGame component) - `DontDestroyOnLoad`
-- **Terrain** - Terrain entity with Zenith_TerrainComponent (in World scene)
+- **MenuManager** - Menu-scene entity (Camera + UI + ExplorationGame component) - build index 0 ("MainMenu")
+- **GameManager** - Gameplay-scene entity (Camera + ExplorationGame component) - build index 1 ("Exploration")
+- **Terrain** - Terrain entity with Zenith_TerrainComponent (in the Exploration scene)
 
 ### Viewport
 - **First-person perspective** view at eye height on the terrain
 - **Rolling hills terrain** with procedural height variation
 - **Grass/rock materials** blending based on terrain height
+- **Instanced trees** (10,000 via `SpawnInstancedTrees`) scattered across the terrain, skipping water-level lows and steep highs
 - **Dynamic sky** with sun position based on time of day
 - **Atmospheric fog** fading distant terrain into the sky
 - **Cascaded shadows** from the sun direction
@@ -255,13 +257,14 @@ This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may 
 - Mouse not captured (click to capture)
 
 ### HUD Elements (Top-Left, Toggle with Tab)
-- **Time**: "12:30 PM" - Current time of day
+- **Time**: "12:30" - Current time of day (24-hour format)
 - **Weather**: "Clear" - Current weather state
-- **Position**: "X: 0.0, Y: 50.0, Z: 0.0" - Player coordinates
-- **Chunk**: "(32, 32)" - Current terrain chunk
-- **LOD**: "LOD0" - Current chunk's LOD level
+- **Position**: "Position: 0, 50, 0" - Player coordinates
+- **Chunk**: "Chunk: 32, 32" - Current terrain chunk
+- **LOD**: "Terrain LOD: HIGH (Resident: LOD0)" - Current chunk's LOD level (HIGH or LOW)
 - **FPS**: "60.0" - Frame rate
-- **VRAM**: "128.5 / 256.0 MB" - Vertex buffer usage
+
+Vertex buffer / VRAM usage is not a separate HUD element; it appears only in the **Streaming** debug line (`Streaming: %.0f/%.0f MB | HiLOD: %u | Rate: %u/frame`) shown when the debug HUD is toggled on.
 
 ### Gameplay Actions
 1. **Mouse Look**: Click to capture mouse, move mouse to look around

@@ -17,7 +17,7 @@ public:
 	Flux_HiZImpl(const Flux_HiZImpl&) = delete;
 	Flux_HiZImpl& operator=(const Flux_HiZImpl&) = delete;
 
-	// Supports up to 4096x4096 (12 mip levels).
+	// 12-mip chain: a full chain for max dimension up to 4095 (covers ~4K); larger clamps.
 	static constexpr u_int uHIZ_MAX_MIPS = 12;
 
 	void Initialise();

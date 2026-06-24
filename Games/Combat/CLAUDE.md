@@ -10,7 +10,6 @@ An arena-based combat game demonstrating Animation State Machines, Inverse Kinem
 | **Animation State Machine** | `Flux_AnimationStateMachine` | Complex combat animation states with transitions, any-state transitions |
 | **Animation Parameters** | `Flux_AnimationParameters` | Float/Bool/Trigger parameters for state control |
 | **AnimatorStateInfo** | `Flux_AnimatorStateInfo` | Runtime state introspection (normalized time, state name) |
-| **CrossFade** | `Flux_AnimationStateMachine::CrossFade` | Force-transition bypassing conditions |
 | **Inverse Kinematics** | `Flux_IKSolver`, `SolveLookAtIK` | Foot placement IK and head look-at |
 | **Event System** | `Zenith_EventDispatcher` | Custom damage/death events with deferred dispatch |
 | **Entity Queries** | `Zenith_Query` | Finding enemies within attack radius |
@@ -52,7 +51,7 @@ Games/Combat/
 ## Module Breakdown
 
 ### Combat.cpp - Entry Points
-**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_CreateScenes`, `Project_LoadInitialScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterGameComponents`, `Project_RegisterEditorAutomationSteps`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Procedural capsule geometry generation for characters
@@ -84,11 +83,10 @@ Demonstrates:
 
 Demonstrates:
 - Using `Zenith_AnimatorComponent` (separate from `Zenith_ModelComponent`) for animation
-- Creating combat animation states (Idle, Walk, LightAttack1-3, HeavyAttack, Dodge, Hit, Death)
-- Parameter-driven transitions (Speed float, IsAttacking bool, AttackTrigger trigger)
+- Creating combat animation states (Idle, Walk, Attack1-3, Dodge, Hit, Death)
+- Parameter-driven transitions (Speed float, AttackTrigger trigger, DodgeTrigger trigger, HitTrigger trigger, DeathTrigger trigger)
 - Any-State transitions for Hit and Death (fire from any current state)
 - `AnimatorStateInfo` queries for hit-frame detection (`IsAttackHitFrame()`)
-- `CrossFade()` for force-transitioning to states without conditions
 - Combo system with timed transition windows
 - Exit time conditions for attack recovery
 
@@ -188,7 +186,7 @@ damage-event path), `Combat_ComboTimer_Test`.
 ## Multi-Scene Architecture
 
 ### Entity Layout
-Persistent scene holds GameManager entity (Camera + UI + Combat_GameComponent) with DontDestroyOnLoad. Arena scene holds level entities (arena floor/walls, player, enemies), created/destroyed on transitions.
+Persistent scene holds GameManager entity (Camera + UI + Combat_GameComponent), kept alive across transitions via the `SCENE_LOAD_ADDITIVE_WITHOUT_LOADING` flag on the Arena load. Arena scene holds level entities (arena floor/walls, player, enemies), created/destroyed on transitions.
 
 ### Game State Machine
 ```
@@ -196,7 +194,7 @@ MAIN_MENU → PLAYING → PAUSED → GAME_OVER → MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start, `UnloadScene()` to return to menu, and `SetScenePaused()` for pausing.
+Uses `LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene()` to start, `UnloadScene()` to return to menu, and `SetScenePaused()` for pausing.
 
 ## Learning Path
 
@@ -237,15 +235,10 @@ Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start, `UnloadScene()` 
           +-------------+-------------+           |
           |             |             |           |
           v             v             v           |
-    +---------+   +-----------+  +---------+      |
-    |LightAtk1|-->|LightAtk2  |->|LightAtk3|------+
-    +---------+   +-----------+  +---------+      |
+    +---------+   +---------+   +---------+        |
+    | Attack1 |-->| Attack2 |-->| Attack3 |-------+
+    +---------+   +---------+   +---------+        |
                         |                         |
-                        v                         |
-                  +-----------+                   |
-                  | HeavyAtk  |-------------------+
-                  +-----------+
-                        |
               HitTrigger v
                     +-------+
                     |  Hit  |---------------------+
@@ -296,12 +289,14 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 - **Debug section** - Show hitboxes, FPS counter
 
 ### Console Output on Boot
+Resource setup logs the stick-figure mesh/model path (or the capsule fallback), e.g.:
 ```
-[Combat] Initializing combat arena
-[Combat] Registering damage event handlers
-[Combat] Player spawned at center
-[Combat] Spawned 3 enemies
+[Combat] Loaded stick figure mesh from <path>
+[Combat] Created model asset at <path>      (first boot)
+[Combat] Using model asset at <path>         (subsequent boots)
+[Combat] Stick figure assets not found (...), using capsule fallback
 ```
+On shutdown: `[Combat] Resources cleaned up`.
 
 ## Gameplay View (What You See When Playing)
 

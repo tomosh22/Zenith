@@ -18,7 +18,7 @@ A resource gathering and crafting survival game demonstrating advanced Zenith en
 | **Materials/Textures** | `Zenith_MaterialAsset` | Color-coded materials for game objects |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Camera** | `Zenith_CameraComponent` | Third-person follow camera |
-| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **Multi-Scene** | `Zenith_SceneManager` | `LoadSceneByIndex()`, `LoadScene()`, `SetActiveScene()`, `UnloadScene()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -39,7 +39,8 @@ Games/Survival/
     Survival_TaskProcessor.h     # Background task management
     Survival_UIManager.h         # HUD updates
   Assets/
-    Scenes/Survival.zscen        # Serialized scene
+    Scenes/MainMenu.zscen        # Serialized main-menu scene (build index 0)
+    Scenes/Survival.zscen        # Serialized gameplay scene (build index 1)
 ```
 
 ## Key Systems
@@ -132,10 +133,10 @@ Use `scene.Query<ComponentA, ComponentB>()` with `.Count()`, `.First()`, `.Any()
 
 ### Entity Layout
 
-The game uses two scenes:
+The game uses two serialized scenes, registered by build index in `Project_LoadInitialScene` (`Survival.cpp`): `MainMenu.zscen` (index 0, the entry scene with the Play button) and `Survival.zscen` (index 1, gameplay). At runtime:
 
-- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and the SurvivalGame component (Survival_GameComponent). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
-- **World Scene** (`m_xWorldScene`, named "World"): Contains the player, resource nodes (trees, rocks, berry bushes), ground plane, and all world entities. Created when entering gameplay, unloaded when returning to menu.
+- **Manager Scene** (the active `.zscen`): Each scene authors its own manager entity carrying `Zenith_CameraComponent`, `Zenith_UIComponent`, and the SurvivalGame component (Survival_GameComponent) — `MenuManager` in `MainMenu.zscen`, `GameManager` in `Survival.zscen`. There is no persistent entity; switching between menu and gameplay swaps the whole scene via `LoadSceneByIndex(index, SCENE_LOAD_SINGLE)`.
+- **World Scene** (`m_xWorldScene`, named "World"): Contains the player, resource nodes (trees, rocks, berry bushes), ground plane, and all world entities. Loaded additively on top of the gameplay scene via `LoadScene("World", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` when entering gameplay, and `UnloadScene()`d when returning to menu.
 
 ### Game State Machine
 
@@ -147,7 +148,7 @@ There is no pause state. Pressing Escape from gameplay returns directly to the m
 
 ### Scene Transition Pattern
 
-Uses `CreateEmptyScene("World")` + `SetActiveScene()` to start gameplay, `UnloadScene()` to return to menu. GameManager persists via DontDestroyOnLoad.
+Switching menu/gameplay swaps scenes via `LoadSceneByIndex(index, SCENE_LOAD_SINGLE)`. Entering gameplay additively loads the world with `LoadScene("World", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene()`; returning to menu calls `UnloadScene()` on the world scene and reloads index 0. There is no persistent entity — each scene authors its own manager.
 
 ## Controls
 
@@ -218,7 +219,7 @@ survival.exe
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **GameManager** - Persistent entity (Camera + UI + Script) - `DontDestroyOnLoad`
+- **GameManager** - Per-scene manager entity (Camera + UI + SurvivalGame component) authored in `Survival.zscen` (the menu scene authors an equivalent `MenuManager`)
 - **Player** - Player character entity (capsule) at world origin (in World scene)
 - **Tree_X** - Multiple tree resource entities scattered around (in World scene)
 - **Rock_X** - Multiple rock resource entities scattered around (in World scene)
@@ -228,8 +229,8 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 ### Viewport
 - **Third-person perspective** view behind and above the player
 - **Player character** (green capsule) at spawn point
-- **Trees** (brown vertical cylinders with green sphere tops) scattered around
-- **Rocks** (gray cubes) scattered around
+- **Trees** (tall green cubes) scattered around
+- **Rocks** (gray spheres) scattered around
 - **Berry bushes** (small purple spheres) scattered around
 - **Flat ground plane** as the play area
 
@@ -243,10 +244,12 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 ```
 [Survival] Initializing world
 [Survival] Spawning resource nodes...
-[Survival] Created 10 trees, 8 rocks, 6 berry bushes
+[Survival] Created 15 trees, 10 rocks, 8 berry bushes
 [Survival] Player spawned at origin
 [Survival] Event system initialized
 ```
+
+(The console output above is illustrative of the boot sequence; these exact strings are not emitted by the code.)
 
 ## Gameplay View (What You See When Playing)
 
@@ -260,8 +263,8 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 - **"Wood: 0"** - Wood resource count
 - **"Stone: 0"** - Stone resource count
 - **"Berries: 0"** - Berries count
-- **"Axe: No"** - Tool ownership status
-- **"Pickaxe: No"** - Tool ownership status
+- **"Axe: 0"** - Tool count (0 if not owned, 1+ if owned)
+- **"Pickaxe: 0"** - Tool count (0 if not owned, 1+ if owned)
 - **"[E] Harvest"** - Interaction prompt (when near resource)
 
 ### Center Screen (Contextual)
@@ -319,7 +322,7 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T4.1 | Press 1 with no materials | "Not enough materials" message |
 | T4.2 | Gather 3 wood, 2 stone | Inventory shows materials |
 | T4.3 | Press 1 | "Crafted Axe!" message, materials consumed |
-| T4.4 | Check inventory | "Axe: Yes" displayed |
+| T4.4 | Check inventory | "Axe: 1" displayed |
 | T4.5 | Gather 2 wood, 3 stone | Materials for pickaxe ready |
 | T4.6 | Press 2 | "Crafted Pickaxe!" message |
 

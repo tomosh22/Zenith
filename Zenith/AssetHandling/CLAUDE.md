@@ -18,7 +18,7 @@ The **unified asset management system** for all asset types. This singleton prov
 
 ```cpp
 // Load asset from file (returns cached if already loaded)
-Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("Assets/tex.ztxtr");
+Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("game:Textures/tex.ztxtr");
 
 // Create procedural asset (generates unique path like "procedural://texture_0")
 Zenith_TextureAsset* pProc = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
@@ -54,6 +54,7 @@ using SkeletonHandle = Zenith_AssetHandle<Zenith_SkeletonAsset>;
 using ModelHandle = Zenith_AssetHandle<Zenith_ModelAsset>;
 using AnimationHandle = Zenith_AssetHandle<Zenith_AnimationAsset>;
 using MeshGeometryHandle = Zenith_AssetHandle<Zenith_MeshGeometryAsset>;
+using FontHandle = Zenith_AssetHandle<Zenith_FontAsset>;
 using PrefabHandle = Zenith_AssetHandle<Zenith_Prefab>;
 ```
 
@@ -108,11 +109,15 @@ Zenith_TextureAsset* pProcTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset
 pMat->SetDiffuseTexture(TextureHandle(pProcTex));
 ```
 
+### Texture Slots
+
+Materials expose nine texture slots via the `MaterialTextureSlot` enum (`Zenith_MaterialParamTable.h`): `MATERIAL_TEXTURE_BASE_COLOR`, `MATERIAL_TEXTURE_NORMAL`, `MATERIAL_TEXTURE_ROUGHNESS_METALLIC`, `MATERIAL_TEXTURE_OCCLUSION`, `MATERIAL_TEXTURE_EMISSIVE`, `MATERIAL_TEXTURE_HEIGHT`, `MATERIAL_TEXTURE_DETAIL_ALBEDO`, `MATERIAL_TEXTURE_DETAIL_NORMAL`, `MATERIAL_TEXTURE_DETAIL_MASK`. The `SetDiffuseTexture`/`SetNormalTexture`-style accessors are legacy wrappers over the base-colour and normal slots.
+
 ### Default Textures
 
 Materials use default textures when slots are unset:
-- `s_pxDefaultWhite` - White 1x1 texture
-- `s_pxDefaultNormal` - Flat normal (128, 128, 255)
+- `s_xDefaultWhite` - White 1x1 texture
+- `s_xDefaultNormal` - Flat normal (128, 128, 255)
 
 These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 
@@ -289,6 +294,12 @@ AssetHandling/
   Zenith_SkeletonAsset.h/cpp  - Skeleton hierarchy and bind pose
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
   Zenith_AnimationAsset.h/cpp - Animation clips
+  Zenith_BehaviourGraphAsset.h/cpp - Behaviour Graph asset (wraps a serialized Zenith_GraphDefinition; .bgraph)
   Zenith_MeshGeometryAsset.h/cpp  - Wrapper for Flux_MeshGeometry
+  Zenith_FontAsset.h/cpp          - Font asset (.zfont glyph metrics + atlas)
+  Zenith_MaterialParamTable.h/cpp - Material parameter reflection table (names/types/ranges/groups)
+  Zenith_PropertyTuning.h/cpp     - Live .ztune file bindings for reflected properties
+  Zenith_Image.h/cpp              - Single-channel 32-bit float image container (tools/terrain)
+  Zenith_AssetHandle.cpp          - Explicit handle template instantiations
   Zenith_FileWatcher.h/cpp        - File system change watching
 ```

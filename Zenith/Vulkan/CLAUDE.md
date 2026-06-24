@@ -10,8 +10,14 @@ Vulkan rendering backend providing GPU resource management, command buffer recor
 |------|---------|
 | `Zenith_Vulkan.h/.cpp` | Core Vulkan initialization, device management |
 | `Zenith_Vulkan_MemoryManager.h/.cpp` | VRAM allocation, texture/buffer creation, staging buffer |
+| `Zenith_Vulkan_MemoryManager_{Buffers,Textures,Views,Aliasing,Registries}.cpp`, `..._Internal.h` | MemoryManager implementation split by concern (buffer/texture/view creation, memory aliasing, handle registries) |
 | `Zenith_Vulkan_CommandBuffer.h/.cpp` | Command buffer recording, barrier management |
-| `Zenith_Vulkan_Pipeline.h/.cpp` | Pipeline and root signature construction |
+| `Zenith_Vulkan_Pipeline.h/.cpp` | Pipeline, shader, and root signature construction (declares `Zenith_Vulkan_Shader`, `Zenith_Vulkan_RootSig`/`RootSigBuilder`, graphics + compute pipeline builders) |
+| `Zenith_Vulkan_ComputePipelineBuilder.cpp`, `Zenith_Vulkan_Shader.cpp` | Compute-pipeline-builder and shader implementation TUs (classes declared in `Zenith_Vulkan_Pipeline.h`) |
+| `Zenith_Vulkan_Buffer.h/.cpp`, `Zenith_Vulkan_Texture.h/.cpp` | GPU buffer and texture resource wrappers |
+| `Zenith_Vulkan_Swapchain.h/.cpp` | Swapchain acquire/present, screenshot capture |
+| `Zenith_Vulkan_Platform.h`, `Zenith_PlatformGraphics_Include.h` | Platform glue + `Flux_*` backend type aliases (e.g. `Flux_Pipeline`, `Flux_Shader`, `Flux_RootSig`) |
+| `Zenith_Vulkan_ImGuiIntegration.cpp` | Vulkan implementation of ImGui integration (`ZENITH_TOOLS`-only): `RegisterTexture`, `UnregisterTexture`, `ProcessDeferredUnregistrations`, `GetImTextureID` |
 
 ## Texture Type Support
 
@@ -141,12 +147,38 @@ See `Profiling/CLAUDE.md`.
 
 ## Pipeline Construction
 
+### Backend type aliases
+
+Engine code never names `Zenith_Vulkan_*` types directly — it uses the backend-neutral
+`Flux_*` aliases defined in `Zenith_PlatformGraphics_Include.h` (and `Flux/Flux_Fwd.h`),
+which resolve to the Vulkan classes here or the D3D12 null-backend equivalents:
+`Flux_Pipeline`, `Flux_PipelineBuilder`, `Flux_Shader`, `Flux_RootSig`,
+`Flux_RootSigBuilder`, `Flux_ComputePipelineBuilder`.
+
+### Shaders and root signatures
+
+- `Zenith_Vulkan_Shader` (`Flux_Shader`) is initialised from a `Flux_ShaderDecl` via
+  `Initialise(xDecl)` — on Windows it compiles the registered Slang program at runtime,
+  otherwise it loads precompiled `.spv` + `.spv.refl` artifacts. `InitialiseEx` returns a
+  `Zenith_Status` instead of hard-asserting on failure.
+- `Zenith_Vulkan_RootSig` (`Flux_RootSig`) holds the `vk::PipelineLayout m_xLayout`,
+  descriptor-set layouts, and reflection data for name-based binding lookup
+  (`GetBinding(szName)`). Build one with `Zenith_Vulkan_RootSigBuilder::FromSpecification`
+  (manual) or `FromReflection` (auto-generated from shader reflection).
+
 ### Graphics Pipeline
 
 ```cpp
 Flux_PipelineSpecification xSpec;
 xSpec.m_pxShader = &s_xShader;
-xSpec.m_pxTargetSetup = &s_xTargetSetup;
+// Render target setup is specified via individual fields (no m_pxTargetSetup):
+xSpec.m_aeColourAttachmentFormats[0] = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+xSpec.m_uNumColourAttachments = 1;
+xSpec.m_eColourLoadAction = LOAD_ACTION_CLEAR;
+xSpec.m_eColourStoreAction = STORE_ACTION_STORE;
+xSpec.m_eDepthStencilFormat = TEXTURE_FORMAT_D32_SFLOAT;
+xSpec.m_eDepthStencilLoadAction = LOAD_ACTION_CLEAR;
+xSpec.m_eDepthStencilStoreAction = STORE_ACTION_STORE;
 xSpec.m_xPipelineLayout.m_uNumBindingGroups = 1;
 xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_BUFFER;
 xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[1].m_eType = BINDING_TYPE_TEXTURE;
@@ -157,10 +189,16 @@ Flux_PipelineBuilder::FromSpecification(s_xPipeline, xSpec);
 ### Compute Pipeline
 
 ```cpp
-Zenith_Vulkan_ComputePipelineBuilder xBuilder;
-xBuilder.WithShader(xComputeShader);
-xBuilder.WithLayout(xRootSig);
-xBuilder.Build(s_xComputePipeline);
+// Recommended one-call helper — combines WithShader + WithLayout + Build and
+// assigns the root signature into the pipeline's m_xRootSig slot.
+Zenith_Vulkan_ComputePipelineBuilder::BuildFromShader(s_xComputePipeline, xComputeShader, xRootSig);
+
+// The fluent form is also available. Note WithLayout() takes a vk::PipelineLayout,
+// so pass xRootSig.m_xLayout (not the Zenith_Vulkan_RootSig object):
+//   Zenith_Vulkan_ComputePipelineBuilder xBuilder;
+//   xBuilder.WithShader(xComputeShader);
+//   xBuilder.WithLayout(xRootSig.m_xLayout);
+//   xBuilder.Build(s_xComputePipeline);
 ```
 
 ## Handle System

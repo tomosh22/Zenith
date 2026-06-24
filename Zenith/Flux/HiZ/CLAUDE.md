@@ -21,13 +21,14 @@ There is no explicit ordering enum — the dependency declarations alone produce
 |------|---------|
 | [Flux_HiZImpl.h](Flux_HiZImpl.h) | `Flux_HiZImpl` class declaration, constants |
 | [Flux_HiZ.cpp](Flux_HiZ.cpp) | Implementation, pipeline setup |
-| [../Shaders/HiZ/Flux_HiZ_Generate.comp](../Shaders/HiZ/Flux_HiZ_Generate.comp) | Compute shader for mip generation |
+| [Flux_HiZ_Shaders.h](Flux_HiZ_Shaders.h) | Shader `Flux_ShaderDecl`s + `apxALL[]` |
+| [../Shaders/HiZ/Flux_HiZ_Generate.slang](../Shaders/HiZ/Flux_HiZ_Generate.slang) | Slang compute shader for mip generation |
 
 ## Implementation Details
 
 ### Render Target
 
-- **Format:** `R32_SFLOAT` (single-channel 32-bit float)
+- **Format:** `R32G32_SFLOAT` (two-channel 32-bit float: R = min depth, G = max depth)
 - **Size:** Full resolution with complete mip chain
 - **Memory Flags:** `MEMORY_FLAGS__UNORDERED_ACCESS | MEMORY_FLAGS__SHADER_READ`
 
@@ -38,7 +39,7 @@ The HiZ chain is a render-graph **transient** (created in `SetupRenderGraph` via
 on demand from the transient attachment:
 
 ```cpp
-static constexpr u_int uHIZ_MAX_MIPS = 12;  // Supports up to 4096x4096
+static constexpr u_int uHIZ_MAX_MIPS = 12;  // full mip chain up to ~4K (max dimension <= 4095); larger clamps
 
 Flux_ShaderResourceView&          GetMipSRV(u_int uMip);  // Read previous mip — GetHiZBuffer().SRV(uMip)
 Flux_UnorderedAccessView_Texture& GetMipUAV(u_int uMip);  // Write current mip — GetHiZBuffer().UAV(uMip)
@@ -46,18 +47,28 @@ Flux_UnorderedAccessView_Texture& GetMipUAV(u_int uMip);  // Write current mip �
 
 ### Mip Generation Algorithm
 
-1. **Mip 0:** Copy depth from main depth buffer
-2. **Mips 1-N:** Sample 2x2 from previous mip, write minimum depth
+The shader is a single Slang compute module (`Flux_HiZ_Generate.slang`), writing
+both channels (`R` = min depth, `G` = max depth) every dispatch.
 
-```glsl
-// For mip > 0: sample 2x2 from previous mip and take minimum
-vec4 xDepths;
-xDepths.x = textureLod(g_xInputMip, xUV + vec2(-0.5, -0.5) * xTexelSize, 0).r;
-xDepths.y = textureLod(g_xInputMip, xUV + vec2( 0.5, -0.5) * xTexelSize, 0).r;
-xDepths.z = textureLod(g_xInputMip, xUV + vec2(-0.5,  0.5) * xTexelSize, 0).r;
-xDepths.w = textureLod(g_xInputMip, xUV + vec2( 0.5,  0.5) * xTexelSize, 0).r;
+1. **Mip 0:** Sample the main depth buffer 1:1. One HiZ texel maps to one depth
+   texel, so min and max are set equal (`fMinDepth = fMaxDepth = fDepth`). Min/max
+   divergence only begins at mip 1+.
+2. **Mips 1-N:** Sample 2x2 from the previous mip; take min of the `.r` (min) lanes
+   and max of the `.g` (max) lanes.
 
-float fMinDepth = min(min(xDepths.x, xDepths.y), min(xDepths.z, xDepths.w));
+```slang
+// For mip > 0: sample 2x2 from previous mip's .rg (min,max) channels
+float2 xTexelSize = 1.0 / float2(pushConstants.u_uOutputWidth * 2,
+                                 pushConstants.u_uOutputHeight * 2);
+float2 xBaseUV = (float2(xPixelCoords) * 2.0 + 0.5) * xTexelSize;
+
+float2 d00 = g_xInputTex.SampleLevel(xBaseUV, 0).rg;
+float2 d10 = g_xInputTex.SampleLevel(xBaseUV + float2(xTexelSize.x, 0.0), 0).rg;
+float2 d01 = g_xInputTex.SampleLevel(xBaseUV + float2(0.0, xTexelSize.y), 0).rg;
+float2 d11 = g_xInputTex.SampleLevel(xBaseUV + xTexelSize, 0).rg;
+
+float fMinDepth = min(min(d00.r, d10.r), min(d01.r, d11.r));
+float fMaxDepth = max(max(d00.g, d10.g), max(d01.g, d11.g));
 ```
 
 ### Barrier Handling
@@ -74,17 +85,22 @@ before each pass executes, outside any active render pass so
 For the HiZ chain, each per-mip pass uses the fluent builder:
 
 ```cpp
-xGraph.AddPass(szPassName, ExecuteHiZMip)
-    .UserData(uMip)                                          // typed, no void* cast
-    .ReadsTransient (m_xHiZBufferHandle, READ_SRV, uMip-1, 1) // previous mip
-    .WritesTransient(m_xHiZBufferHandle, WRITE_UAV, uMip, 1); // current mip
+const Flux_PassHandle xPass = xGraph.AddPass(szPassName, ExecuteHiZMip)
+    .UserData(uMip)                                                       // typed, no void* cast
+    .WritesTransient(m_xHiZBufferHandle, RESOURCE_ACCESS_WRITE_UAV, uMip, 1); // current mip
+if (uMip == 0)
+    xGraph.Read(xPass, g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+else
+    xGraph.ReadTransient(xPass, m_xHiZBufferHandle, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1); // previous mip
 ```
 
-From those declarations the graph emits:
-- Mip pass `N`: `UNDEFINED → WRITE_UAV` (GENERAL) on mip `N` before the dispatch
-- Mip pass `N+1`: `WRITE_UAV → READ_SRV` (SHADER_READ_ONLY) on mip `N` before the dispatch
+The write is chained on the builder; the read is a separate `Read`/`ReadTransient`
+call against the returned `Flux_PassHandle` (mip 0 reads the scene depth attachment,
+mip N>0 reads the single prior mip). From those declarations the graph emits:
+- Mip pass `N`: `UNDEFINED → RESOURCE_ACCESS_WRITE_UAV` (GENERAL) on mip `N` before the dispatch
+- Mip pass `N+1`: `RESOURCE_ACCESS_WRITE_UAV → RESOURCE_ACCESS_READ_SRV` (SHADER_READ_ONLY) on mip `N` before the dispatch
 - The next graphics consumer (SSR / SSGI / SSAO) declaring `Read(... 0, m_uMipCount)` triggers
-  `WRITE_UAV → READ_SRV` on the final mip before its render pass begins
+  `RESOURCE_ACCESS_WRITE_UAV → RESOURCE_ACCESS_READ_SRV` on the final mip before its render pass begins
 
 No inline `Flux_CommandImageTransition` calls live in `ExecuteHiZMip` — the
 graph owns synchronisation end-to-end. Per-(mip, layer) state tracking
@@ -128,14 +144,12 @@ graph callback (`void(*)(Flux_CommandBuffer*, void*)`) — cannot capture `this`
 so they likewise re-enter via `g_xEngine.HiZ()` to reach the singleton
 instance.
 
-## Debug Variables
+## Enable Flag
 
-| Path | Type | Description |
-|------|------|-------------|
-| `Flux/HiZ/Enable` | bool | Enable/disable Hi-Z generation |
-| `Flux/HiZ/Textures/Mip0` | texture | Full resolution depth |
-| `Flux/HiZ/Textures/Mip2` | texture | Quarter resolution |
-| `Flux/HiZ/Textures/Mip4` | texture | 1/16 resolution |
+Hi-Z generation is gated by `Zenith_GraphicsOptions::Get().m_bHiZEnabled` (see
+`Core/Zenith_GraphicsOptions.h`), checked by `IsEnabled()` — it is **not** a
+registered debug variable. The enable bit lives with the other render-feature
+toggles in `Zenith_GraphicsOptions`, not under a `Flux/HiZ/...` debug-variable path.
 
 ## Usage
 
@@ -166,7 +180,7 @@ if (fObjectNearZ > fMinHiZ)
 
 ## Performance Considerations
 
-- Compute shader uses 8x8 workgroups
+- Compute shader uses 8x16 (= 128-thread) workgroups
 - Sequential mip dispatch (mip N depends on mip N-1)
 - Total dispatches = mip count (typically 10-12 for 1080p/4K)
 - GPU memory: ~1.33x main depth buffer (due to mip pyramid)

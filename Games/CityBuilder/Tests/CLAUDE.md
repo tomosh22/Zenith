@@ -57,12 +57,12 @@ pwsh ./Tools/run_cb_tests.ps1 -Filter CB_HumanSession
 
 | Test | File | ~Frames | What it does |
 |---|---|---|---|
-| **CB_HumanSession** | `CB_HumanSession.cpp` | 4000 (~67s) | **The headline pure-input playthrough.** Drives the game ONLY through `Zenith_InputSimulator` (mouse moves/clicks/wheel + keys, zero direct subsystem calls) to build a sizeable city and exercise EVERY mechanic. Authored as a flat `g_xScript` of `Act`s processed one/frame; `PROBE` actions snapshot state + `Verify` asserts. `SetMouseFrac` applies a `SPREAD` factor so the crossing grid's blocks are large enough for correct (non-overlapping) frontage. Asserts a solvent, served (~60-building) city AND that each mechanic fired AND road-graph parity (1 component, ≥4 junctions) AND traffic telemetry AND **placement-ghost telemetry** (`residentialToolGhosts>0`, `noToolGhosts==0`). |
-| CB_CityGrow | `CB_CityGrow.cpp` | ~520 | free-form road grid + R/C/I zoning + utilities + services; asserts segments/buildings/pop/services after live growth. |
-| CB_RoadDraw | `CB_RoadDraw.cpp` | ~300 | draw a curved, tangent-continuous multi-segment road via the live controller; asserts ≥3 segments + a curved one. |
-| CB_RoadGhost | `CB_RoadGhost.cpp` | ~1000 | the road-draw ghost preview: sweep the cursor (green preview), park on a node (cyan snap); asserts preview vertices. |
-| CB_UIShowcase | `CB_UIShowcase.cpp` | ~1000 | build a small city, rotate a simulated hover across toolbar buttons so icons + tooltips show (screenshot aid). |
-| CB_TerrainShowcase | `CB_TerrainShowcase.cpp` | ~3200 | roads/zones on rolling terrain; tilts the camera low-oblique to show hill relief (default top-down masks it); holds for a screenshot. |
+| **CB_HumanSession** | `CB_HumanSession.cpp` | 4000 (~67s) | **The headline pure-input playthrough.** Drives the game ONLY through `Zenith_InputSimulator` (mouse moves/clicks/wheel + keys, zero direct subsystem calls) to build a sizeable city and exercise EVERY mechanic. Authored as a flat `g_xScript` of `Act`s processed one/frame; `PROBE` actions snapshot state + `Verify` asserts. `SetMouseFrac` applies a `SPREAD` factor so the crossing grid's blocks are large enough for correct (non-overlapping) frontage. Asserts a solvent, served (30+ building) city AND that each mechanic fired AND road-graph parity (1 component, ≥4 junctions) AND traffic telemetry AND **placement-ghost telemetry** (`residentialToolGhosts>0`, `noToolGhosts==0`). |
+| CB_CityGrow | `CB_CityGrow.cpp` | ~420 | free-form road grid + R/C/I zoning + utilities + services; asserts segments/buildings/pop/services after live growth. |
+| CB_RoadDraw | `CB_RoadDraw.cpp` | ~240 | draw a curved, tangent-continuous multi-segment road via the live controller; asserts ≥3 segments + a curved one. |
+| CB_RoadGhost | `CB_RoadGhost.cpp` | ~900 | the road-draw ghost preview: sweep the cursor (green preview), park on a node (cyan snap); asserts preview vertices. |
+| CB_UIShowcase | `CB_UIShowcase.cpp` | ~900 | build a small city, rotate a simulated hover across toolbar buttons so icons + tooltips show (screenshot aid). |
+| CB_TerrainShowcase | `CB_TerrainShowcase.cpp` | ~3000 | roads/zones on rolling terrain; tilts the camera low-oblique to show hill relief (default top-down masks it); holds for a screenshot. |
 
 ## Notes
 

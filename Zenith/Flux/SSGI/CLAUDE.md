@@ -5,7 +5,7 @@
 The SSGI (Screen Space Global Illumination) system provides real-time indirect diffuse lighting by ray marching through the Hi-Z depth buffer. Multiple rays per pixel sample the hemisphere above each surface, accumulating bounced light from nearby geometry.
 
 The system uses a four-pass architecture:
-1. **Ray March** (half-res) - Multi-ray hemisphere sampling with HiZ acceleration
+1. **Ray March** (quarter-res by default) - Multi-ray hemisphere sampling with HiZ acceleration
 2. **Upsample** - Bilateral upsample from half to full resolution
 3. **Denoise H** - Horizontal half of the separable joint bilateral filter
 4. **Denoise V** - Vertical half of the separable joint bilateral filter
@@ -23,7 +23,7 @@ The render graph schedules these passes via Read/Write declarations; there is no
 | Pass | Reads | Writes |
 |------|-------|--------|
 | HiZ generation | scene depth | HiZ chain (mip pyramid) |
-| SSGI raymarch | HiZ chain, G-buffer (normals, diffuse) | SSGI raymarch target |
+| SSGI raymarch | HiZ chain, G-buffer (normals, material, diffuse) | SSGI raymarch target |
 | SSGI upsample | SSGI raymarch, depth | SSGI full-res |
 | SSGI denoise H | SSGI full-res, depth | SSGI denoise intermediate |
 | SSGI denoise V | SSGI denoise intermediate, depth | SSGI final |
@@ -33,8 +33,9 @@ The render graph schedules these passes via Read/Write declarations; there is no
 
 | File | Purpose |
 |------|---------|
-| [Flux_SSGI.h](Flux_SSGI.h) | Class declaration, debug mode enum |
-| [Flux_SSGI.cpp](Flux_SSGI.cpp) | Implementation, pipeline setup, render passes |
+| [Flux_SSGIImpl.h](Flux_SSGIImpl.h) | Class declaration (`Flux_SSGIImpl`), debug mode enum, `Flux_SSGISelection` selector struct |
+| [Flux_SSGI_Shaders.h](Flux_SSGI_Shaders.h) | Shader decls (`apxALL`) owned by the feature |
+| [Flux_SSGI.cpp](Flux_SSGI.cpp) | Implementation, pipeline setup, render passes, render-graph setup |
 | [../Shaders/SSGI/Flux_SSGI_RayMarch.slang](../Shaders/SSGI/Flux_SSGI_RayMarch.slang) | HiZ ray marching, hemisphere sampling |
 | [../Shaders/SSGI/Flux_SSGI_Upsample.slang](../Shaders/SSGI/Flux_SSGI_Upsample.slang) | Bilateral upsample shader |
 | [../Shaders/SSGI/Flux_SSGI_DenoiseH.slang](../Shaders/SSGI/Flux_SSGI_DenoiseH.slang) | Separable joint bilateral — horizontal half |
@@ -46,7 +47,7 @@ The render graph schedules these passes via Read/Write declarations; there is no
 
 | Target | Resolution | Format | Purpose |
 |--------|------------|--------|---------|
-| `s_xRawResult` | Half | RGBA16F | RGB = indirect color, A = confidence |
+| `s_xRawResult` | Divisor-based (quarter-res by default) | RGBA16F | RGB = indirect color, A = confidence |
 | `s_xResolved` | Full | RGBA16F | Upsampled result |
 | `s_xDenoiseH` | Full | RGBA16F | Horizontal-blurred intermediate (between H and V) |
 | `s_xDenoised` | Full | RGBA16F | Final denoised output (V pass result) |
@@ -68,7 +69,7 @@ The render graph schedules these passes via Read/Write declarations; there is no
 4. Accumulate with confidence weighting
 5. Output average color and confidence
 
-**Output:** `s_xRawResult` (half-resolution RGBA16F)
+**Output:** `s_xRawResult` (divisor-based resolution; quarter-res by default; RGBA16F)
 
 ### Pass 2: Bilateral Upsample
 
@@ -129,32 +130,45 @@ if (g_bSSGIEnabled != 0)
 
 ## Public Interface
 
+`Flux_SSGIImpl` derives from the CRTP base `Flux_ScreenSpaceEffectBase<Flux_SSGIImpl>` and is accessed as a singleton instance via `g_xEngine.SSGI()` (returning `Flux_SSGIImpl&`) — the methods are instance methods, not statics on a `Flux_SSGI` class.
+
 ```cpp
-class Flux_SSGI
+class Flux_SSGIImpl : public Flux_ScreenSpaceEffectBase<Flux_SSGIImpl>
 {
 public:
-    static void Initialise();
-    static void Shutdown();
-    static void Reset();
+    void Initialise();
+    void BuildPipelines();
+    void ShutdownImpl();                                  // CRTP hook (SSGI owns no CBV → no-op)
 
-    static void Render(void*);
-    static void SubmitRenderTask();
-    static void WaitForRenderTask();
+    void SetupRenderGraph(Flux_RenderGraph& xGraph);      // declares the four SSGI passes
+    void ApplyDenoiseSelectionToGraph(Flux_RenderGraph& xGraph);
+
+    u_int ComputeEffectiveBinarySearchIterations() const; // resolution-scaled hit refinement
+    void UpdateSSGIConstants();
 
     // For deferred shading to sample
-    static Flux_ShaderResourceView& GetSSGISRV();
-    static bool IsEnabled();
-    static bool IsInitialised();
+    Flux_ShaderResourceView& GetSSGISRV();
+    bool IsEnabled() const;                               // gated on Zenith_GraphicsOptions::m_bSSGIEnabled
+
+    // Per-pass transient attachments
+    Flux_RenderAttachment& GetRawResultAttachment();
+    Flux_RenderAttachment& GetResolvedAttachment();
+    Flux_RenderAttachment& GetDenoisedAttachment();
 };
 ```
+
+Enable/disable is **not** a debug variable: `IsEnabled()` returns `Zenith_GraphicsOptions::Get().m_bSSGIEnabled && m_bInitialised`. The denoise toggle is likewise owned by Graphics Options (`m_bSSGIDenoiseEnabled`).
+
+The committed-handle selector (`Flux_CommittedHandleSelector<Flux_SSGISelection>`, where `Flux_SSGISelection = {bool m_bDenoise, u_int m_uDivisor}`) tracks which transient the deferred pass reads (Denoised when denoise is on, Resolved otherwise) and triggers a graph rebuild when either the denoise toggle or the raymarch resolution divisor diverges from the committed selection.
 
 ## Debug Variables
 
 ### Ray Marching
 
+SSGI's enable/disable toggle is **not** a debug variable — it lives in Graphics Options (`Zenith_GraphicsOptions::m_bSSGIEnabled`); see `IsEnabled()`.
+
 | Path | Type | Range | Default | Description |
 |------|------|-------|---------|-------------|
-| `Flux/SSGI/Enable` | bool | - | true | Enable/disable SSGI |
 | `Flux/SSGI/DebugMode` | uint | 0-4 | 0 | Visualization mode |
 | `Flux/SSGI/Intensity` | float | 0-2 | 1.0 | GI intensity multiplier |
 | `Flux/SSGI/MaxDistance` | float | 1-100 | 30.0 | Max ray distance (world units) |
@@ -177,9 +191,10 @@ multi-ray loop also early-exits when average per-ray confidence exceeds `0.95`
 does the same orthogonally. Total separable footprint is `(2r+1)+(2r+1)` taps
 vs `(2r+1)²` for the old non-separable kernel.
 
+The denoise enable toggle is owned by Graphics Options (`Zenith_GraphicsOptions::m_bSSGIDenoiseEnabled`), not registered as a debug variable; it is read into the denoise push constants each bind.
+
 | Path | Type | Range | Default | Description |
 |------|------|-------|---------|-------------|
-| `Flux/SSGI/Denoise/Enable` | bool | - | true | Enable both H and V passes |
 | `Flux/SSGI/Denoise/KernelRadius` | uint | 1-8 | **3** | Per-axis filter radius (pixels) |
 | `Flux/SSGI/Denoise/SpatialSigma` | float | 0.5-4 | **1.5** | Spatial Gaussian sigma (tighter for the smaller separable kernel) |
 | `Flux/SSGI/Denoise/DepthSigma` | float | 0.01-0.1 | 0.02 | Depth threshold (% of depth) |
@@ -226,7 +241,7 @@ Minimum confidence is clamped to 0.02 to prevent black holes.
 |---------|------------|--------------------|--------------|
 | RaysPerPixel | 1 | 2 | 4-8 |
 | KernelRadius (per-axis) | 1-2 | 3 | 5-8 |
-| StepCount | 16 | 32 | 48-64 |
+| StepCount | 16 | 24 | 48-64 |
 | BinarySearchIterations | 1 | 2 | 3-4 |
 
 ### Edge Preservation

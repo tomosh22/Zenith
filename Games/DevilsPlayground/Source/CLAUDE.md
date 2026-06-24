@@ -9,10 +9,16 @@ headers, and they don't carry their own state buckets.
 ## File map
 
 ```
-PublicInterfaces.{h,cpp}      # DP_Player / DP_Items / DP_Interactables / DP_AI / DP_Fog /
-                              #   DP_Win / DP_Night / DP_Query / DP_Save -- the contract every
-                              #   behaviour talks through. State lives in PublicInterfaces.cpp's
-                              #   anonymous namespace.
+PublicInterfaces.h            # Convenience header aggregating all DP_* namespaces (DP_Player /
+                              #   DP_Items / DP_Interactables / DP_AI / DP_Fog / DP_Win / DP_Night /
+                              #   DP_Query) -- the contract every behaviour talks through. Each
+                              #   namespace owns its own header (DP_Player.h, DP_Items.h, ...); state
+                              #   lives in each DP_*.cpp's anonymous namespace, not a single
+                              #   PublicInterfaces.cpp (which does not exist). (DP_Save is a sibling
+                              #   header, NOT part of the PublicInterfaces aggregator.)
+DPCommonTypes.h               # Shared type aliases (Vec2/Vec3/Vec4/Quat) + the DP_On* event structs
+                              #   dispatched via Zenith_EventDispatcher. Extracted 2026-05-22 from
+                              #   PublicInterfaces.h; used by every DP_* namespace.
 DevilsPlayground_Tags.h       # DP_ItemTag enum + helpers (Iron / Key / Objective1-5 / SkeletonKey /
                               #   Spike). Used by DPItemBase + the side-tables in DP_Items.
 DPInputActions.h              # WASD / Q-E / F / Space / Esc / Shift / Ctrl / G / click readers.
@@ -26,12 +32,15 @@ DPMaterials.{h,cpp}           # Tinted-cube material side-table. Maps DP_ItemTag
                               #   language until S2 art arrives.
 
 DPTelemetry.{h,cpp}           # Binary telemetry recorder hooks. RAII `Hooks` struct subscribes to
-                              #   9 DP event types + the per-frame entity sampler and routes them
-                              #   into the engine's Zenith_Telemetry recorder. v3 adds AI intent,
-                              #   life timer, held item, camera, per-frame perf, and 12 event
-                              #   types (Apprehend lifecycle, PerceptionContactBegin/End, etc).
+                              #   the DP event types + the per-frame entity sampler and routes them
+                              #   into the engine's Zenith_Telemetry recorder. The DPEventType enum
+                              #   has 24 entries as of v3 (12 in the phase-2 baseline; phase-5 + v3
+                              #   added Apprehend lifecycle, PerceptionContactBegin/End, DoorClosed,
+                              #   etc). v3 also adds AI intent, life timer, held item, camera, and
+                              #   per-frame perf to each snapshot.
 DPTelemetryAnalyzer.{h,cpp}   # Verdict library reading a .ztlm + applying pass/fail criteria.
-                              #   14-criterion stable enum; per-criterion reason strings.
+                              #   20-criterion stable enum (append-only; HeaderMagicValid through
+                              #   PriestMoved); per-criterion reason strings.
 
 DP_Archetypes.{h,cpp}         # Loads Config/Archetypes.json; exposes `Get(id)` -> const ref to
                               #   archetype data (life timer, abilities, tint). Filter "mvp": true
@@ -52,6 +61,17 @@ DP_Tuning.{h,cpp}             # Loads Config/Tuning.json at startup, flattens do
                               #   numerical-value lookup; every gameplay constant routes through
                               #   it.
 
+DPResources.h                 # Per-archetype Zenith_Prefab templates + the process-wide PrefabHandle
+                              #   manager (`Resources()`). Header-only by design (several spawn sites are
+                              #   header-only behaviours). Baked once at startup; runtime spawn paths
+                              #   (bootstrap / item manager / forge / held-item visual) Instantiate them.
+DPTutorial.{h,cpp}            # First-encounter tutorialisation (`DP_Tutorial` namespace): one-time tips
+                              #   on the rising-edge of significant events + "shown" flag table; resets
+                              #   at run-start. DPHUDController reads the active tip each frame.
+DPParticles.{h,cpp}           # In-world particle telegraphs (`DP_Particles` namespace): registers
+                              #   emitter configs + subscribes DP events to Burst() calls; manages the
+                              #   per-scene emitter entity lifecycle (EnsureEmittersInScene).
+
 DPUI.h                        # UI helpers (text formatting, anchor + size utilities).
 
 DPProcLevel/                  # Procgen level generator. See below.
@@ -68,10 +88,10 @@ a sibling behaviour's header.
 |---|---|---|
 | `DP_Player` | Possession + held-item table | `GetPossessedVillager` / `SetPossessedVillager` / `TryVoluntaryPossessSwitch` (cooldown + range gates) / `GetHeldItemTag` / `SetHeldItem` / `RemoveHeldItem` (early-returns on no-held, SourceBugFixed) / scent table / `ResetForNewRun` (canonical reset; clears per-run state). Anchor position tracking for possession-range checks. |
 | `DP_Items` | Side-table EntityID → DP_ItemTag | `GetItemTag(id)` / `FindItemByTag(tag)` (returns INVALID_ENTITY_ID on miss; SourceBugFixed) / `GetItemWorldPos(id)`. Populated by DPItemBase OnAwake; depopulated OnDestroy. |
-| `DP_Interactables` | Marker for non-behaviour interactables | Currently a no-op stub. Reserved for proximity-only world entities. |
+| `DP_Interactables` | Marker for non-behaviour interactables | `MarkAsInteractable(id, kind, userData)` is a W0 no-op stub (reserved for proximity-only world entities). `FindNearestInteractableType(villager)` is fully implemented — the HUD InteractHint readout uses it to name the nearest in-range interactable. |
 | `DP_AI` | Priest blackboard bridge + noise emission | `EmitNoise(pos, loudness, radius)` → wraps `Zenith_PerceptionSystem::EmitSoundStimulus`. `NotifyAllPriestsOfInvestigatePos(vec3)` is the direct-BB fanout for map-wide stimuli (BellSoul) that bypasses the perception-clamp. Defines BB key constants (`BB_KEY_TARGET_WITH_DEVIL`, `BB_KEY_HAS_INVESTIGATE_POS`, etc). |
-| `DP_Fog` | Fog-of-war hole registry | `ClearAllFogHoles()` + `RegisterFogHole(pos, radius)`. DPFogPass_Component drives this every frame. |
-| `DP_Win` | Victory state | `GetCollectedObjectivesMask()` (bitmask of 5 objectives) / `DepositObjective(tag)` / `HasWon()` / `DP_OnVictory` event dispatched when `popcount(mask) >= night.reagents_required_for_victory` (default 3-of-5 since 2026-05-22; was `mask == 0b11111` strict-5-of-5 before). The win threshold is a single tuning knob -- bump it to 5 to restore the all-of-5 design. |
+| `DP_Fog` | Fog-of-war hole registry | `ClearAllFogHoles()` + `RegisterFogHole(id, radius)` (id is a Zenith_EntityID — the hole is placed at that entity's current position; `RegisterAllVillagerFogHoles(radius)` is the per-villager forwarder). DPFogPass_Component drives this every frame. |
+| `DP_Win` | Victory state | `GetCollectedObjectivesMask()` (bitmask of 5 objectives) / `NotifyObjectiveCollected(tag)` / `HasWon()` / `DP_OnVictory` event dispatched when `popcount(mask) >= night.reagents_required_for_victory` (default 3-of-5 since 2026-05-22; was `mask == 0b11111` strict-5-of-5 before). The win threshold is a single tuning knob -- bump it to 5 to restore the all-of-5 design. |
 | `DP_Night` | Dawn timer | `StartNight(duration)` / `TickNight(dt)` / `GetNightTimeRemaining()` / `IsNightActive()`. Fires `DP_OnRunLost{Dawn}` exactly once on cross-zero. |
 | `DP_Query` | Template helpers | `ForEachComponentInActiveScene<T>(lambda)` — iterate game components by type (thin wrapper over the scene's `Query<T>()` with the null-scene guard); `ForEachComponentInLoadedScenes<T>` is the all-loaded-scenes variant. |
 | `DP_Save` | Run state serialisation | `DP_RunState` struct + binary round-trip via Zenith_SaveData. Schema versioned (`uSchemaVersion = 1`); future versions migrate or fall back to default. |
@@ -125,14 +145,17 @@ The recorder is a binary stream (`.ztlm`) + a sidecar JSON. Engine
 piece lives in `Zenith/Telemetry/`; DP-specific subscription lives
 here.
 
-`DPTelemetry::Hooks` is a RAII helper: construct → subscribes to the 9
+`DPTelemetry::Hooks` is a RAII helper: construct → subscribes to the
 DP event types via `Zenith_EventDispatcher`; destruct → unsubscribes.
 The recorder samples the world every `samplePeriodFrames` (default 6 =
 10 Hz at 60 Hz fixed-dt) and emits an `EntitySnapshot` per visible
 entity. v3 added `uHeldItemTag`, `fLifeRemaining`, `aiIntent` (priest
 BT branch), camera state, and per-frame `frameMs`.
 
-Event types (12 active as of v3):
+Event types (24 active as of v3; a representative subset is shown below —
+the enum in `DPTelemetry.h` also defines `ItemDrop`, `InteractionBegin`,
+`InteractionCancel`, `Victory`, `BellRing`, `PriestStateChange`,
+`PossessedSwitched`, and `DoorClosed`):
 
 ```
 PossessionChanged          Re-possession or first possession
@@ -154,9 +177,11 @@ RunLost                    Aggregate event with cause enum
 ```
 
 The analyser (`DPTelemetryAnalyzer`) reads a `.ztlm` and applies the
-14-criterion verdict library — `VictoryFired`, `AnySprintFrame`,
-`AnyWalkQuietFrame`, `PriestInvestigatedAtLeastOnce`, etc. Each
-criterion returns `Pass | Fail | NotApplicable` + a reason string.
+20-criterion verdict library — `HeaderMagicValid`, `FramesRecorded`,
+`VictoryFired`, `AnySprintFrame`, `AnyWalkQuietFrame`, through
+`PriestMoved` (the priest-liveness gate, added 2026-05-17). The
+`Criterion` enum is append-only. Each criterion returns
+`Pass | Fail | NotApplicable` + a reason string.
 
 ## DP_Tuning
 
@@ -191,8 +216,9 @@ Three guarded ports from the UE5 source map (each marked
 
 If a new behaviour needs cross-cutting state, the right pattern is:
 
-1. Declare a new `DP_Foo` namespace in `PublicInterfaces.h`.
-2. Put state in `PublicInterfaces.cpp`'s anonymous namespace.
+1. Declare a new `DP_Foo` namespace in its own `DP_Foo.h`, and add the
+   include to the `PublicInterfaces.h` aggregator.
+2. Put state in `DP_Foo.cpp`'s anonymous namespace.
 3. Expose getters/setters/lifecycle hooks from the namespace.
 4. Add a between-tests reset in `DevilsPlayground.cpp`'s
    `Project_RegisterBetweenTestsHook` so batched tests don't leak

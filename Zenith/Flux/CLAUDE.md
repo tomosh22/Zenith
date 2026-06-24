@@ -62,11 +62,11 @@ For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, t
 ## Files
 
 ### Core
-- `Flux.h/cpp` - Main rendering infrastructure, pipeline specification, `Flux_SurfaceInfo`
+- `Flux.h/cpp` - Main rendering infrastructure, pipeline specification (`Flux_SurfaceInfo` and the view types live in `Flux_Types.h`)
 - `Flux_Buffers.h/cpp` - Buffer management
 - `Flux_RecordValidation.h` - Shared inline asserts (pipeline/view/draw-constant validity) called by both backends' recorder methods
 - `Flux_Enums.h` - Rendering enums (ResourceAccess, TextureFormat, BlendFactor, DepthCompareFunc, MeshTopology, ShaderDataType, BindingType, LoadAction, StoreAction, MRTIndex, etc.)
-- `Flux_Graphics.h/cpp` - Global graphics state, frame constants
+- `Flux_GraphicsImpl.h` - Global graphics state, frame constants (`Flux_GraphicsImpl` class with `FrameConstants`); `Flux_Graphics.cpp` holds thin static forwards onto it (no `Flux_Graphics.h`)
 - `Flux_RenderTargets.h/cpp` - Render target management
 - `Flux_Types.h` - Type definitions, `IsCompressedFormat()` helper
 
@@ -91,6 +91,26 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Text/` - Text rendering
 - `Primitives/` - Debug primitives
 - `Gizmos/` - Editor gizmos (see Gizmos/CLAUDE.md)
+- `InstancedMeshes/` - GPU-instanced static geometry (cull + indirect draw)
+- `DynamicLights/` - Clustered dynamic lighting (gather/upload front-end)
+- `HDR/` - HDR bloom + tonemap pipeline (see HDR/CLAUDE.md)
+- `HiZ/` - Hierarchical Z-buffer generation (see HiZ/CLAUDE.md)
+- `IBL/` - Image-based lighting (see IBL/CLAUDE.md)
+- `SSR/` - Screen-space reflections (see SSR/CLAUDE.md)
+- `SSGI/` - Screen-space global illumination (see SSGI/CLAUDE.md)
+- `Decals/` - Deferred decals (see Decals/CLAUDE.md)
+- `Vegetation/` - Grass / foliage system (see Vegetation/CLAUDE.md)
+- `Translucency/` - Forward translucent pass
+- `SDFs/` - Signed distance field rendering
+- `Quads/` - Textured/UI quad rendering
+- `Present/` - Final-RT → backbuffer blit (backend-neutral present)
+- `SceneGraph/` - Render scene snapshot + culling
+- `MaterialPreview/` - Material preview rendering (tools)
+- `MeshGeometry/` - Shared mesh geometry buffers
+- `Shaders/` - `.slang` shader sources (`Common/` shared helper modules)
+- `Slang/` - Shader catalog + Slang compilation glue (`Flux_ShaderCatalog`)
+- `Backend/` - Backend concept conformance asserts (`Flux_BackendConformance.cpp`)
+- `RenderGraph/` - Render graph lifecycle, barrier synthesis, builder API (see RenderGraph/CLAUDE.md)
 
 ## Architecture
 
@@ -125,7 +145,7 @@ Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Loca
 The renderer is backend-agnostic. `Flux_Backend.h` aggregates the seven C++20 concepts that any backend must satisfy: `FluxBackendDevice`, `FluxBackendMemoryAlloc`, `FluxBackendMemoryDelete`, `FluxBackendCommandRecorder`, `FluxBackendSync`, `FluxBackendPresentation`, and the shader/pipeline-builder family (`FluxBackendShader`, `FluxBackendPipelineBuilder`, `FluxBackendComputePipelineBuilder`, `FluxBackendRootSigBuilder`). `Backend/Flux_BackendConformance.cpp` static-asserts the active backend against each concept, so signature drift fails the build instead of the first frame. Adding a second backend (DX12 / Metal / WebGPU) means providing classes that satisfy each concept and adding the conformance asserts.
 
 ### Feature Registry & automatic shader hot-reload
-`Flux_FeatureRegistry` (`Flux_FeatureRegistry.h/.cpp`) is the one table `Flux_RendererImpl` walks for init / render-graph setup / shutdown. Each `Flux_FeatureDesc` carries up to four captureless trampolines — `Initialise` / `SetupRenderGraph` / `Shutdown` / `BuildPipelines`. **A feature is added with exactly ONE call** — `RegisterFeature<&Zenith_Engine::Foo>(reg, "Foo")` — placed in render-graph declaration order inside `RegisterDefaultFeatures()`. That single call drives all three walks: **init** (registration order, forward), **setup** (the feature's `SetupRenderGraph` is auto-appended at the call site), and **shutdown** (reverse registration order, auto). The helper resolves each trampoline at compile time with a `requires` check, wiring only the methods `Foo` implements — so the former "irregulars" need no special casing: FluxGraphics omits `SetupRenderGraph`/`BuildPipelines`, DynamicLights omits both (gather/upload front-end), Fog omits `Shutdown` (RAII; its `BuildPipelines` rebuilds all fog techniques).
+`Flux_FeatureRegistry` (`Flux_FeatureRegistry.h/.cpp`) is the one table `Flux_RendererImpl` walks for init / render-graph setup / shutdown. Each `Flux_FeatureDesc` carries up to four captureless trampolines — `Initialise` / `SetupRenderGraph` / `Shutdown` / `BuildPipelines`. **A feature is added with exactly ONE call** — `RegisterFeature<&Zenith_Engine::Foo>(reg, "Foo")` — placed in render-graph declaration order inside `RegisterDefaultFeatures()`. That single call drives all three walks: **init** (registration order, forward), **setup** (the feature's `SetupRenderGraph` is auto-appended at the call site), and **shutdown** (reverse registration order, auto). The helper resolves each trampoline at compile time with a `requires` check, wiring only the methods `Foo` implements — so the former "irregulars" need no special casing: FluxGraphics omits `SetupRenderGraph`/`BuildPipelines`, DynamicLights omits both (gather/upload front-end), Fog has a no-op `Shutdown()` (RAII; its `BuildPipelines` rebuilds all fog techniques).
 
 This works because init/shutdown are dependency-safe in ANY order beyond "FluxGraphics first" — every subsystem's `Initialise`/`Shutdown` touches only foundation (FluxGraphics/memory/backend) + its own state, never another feature. Only the **render-graph declaration order** is load-bearing (producer-before-consumer; see the ORDERING note in `Flux_FeatureRegistry.h`), and that's the order you write the calls in. Every entry in `RegisterDefaultFeatures()` is now a `RegisterFeature<>` call — no hand-written `AddSetupStep` irregulars remain. The former final-RT layout-transition step is now `Flux_Present::SetupRenderGraph` (the `Present` feature also owns the backend-neutral final-RT→backbuffer blit pipeline the swapchain records with), and the transient-creation step is `FluxGraphics::SetupRenderGraph`. `AddSetupStep` stays the primitive `RegisterFeature` uses to append a feature's setup, and remains available for out-of-tree (game) owners. (All shared cross-feature transients — G-buffer / depth / final-RT / HDR scene — are created up front by `FluxGraphics::SetupRenderGraph`, the first feature, which is why FluxGraphics owns the HDR scene target rather than HDR.) `RegisterFeature` is constrained on the `FluxRenderFeature` C++20 concept (a feature type exposes all four lifecycle methods — `Initialise` / `SetupRenderGraph` / `Shutdown` / `BuildPipelines`, a no-op stub where it has nothing to do), so passing a non-feature accessor — or a feature missing a method — is a clear compile error at the call site. **If a render system can't fit the one-liner, fix the render system** rather than adding bespoke registration.
 
@@ -154,19 +174,19 @@ Key constants in `Core/ZenithConfig.h`:
 
 **View Space Convention:** The engine uses **+Z forward** in view space (not -Z like OpenGL convention). When extracting linear depth from view-space positions, use `viewPos.z` directly without negation. See `Fog/CLAUDE.md` for depth reconstruction details.
 
-**World Position Reconstruction:** Use `GetWorldPosFromDepthTex()` from `Shaders/Common.fxh` for reconstructing world positions from the depth buffer - it handles the view/projection inverse transforms correctly.
+**World Position Reconstruction:** Use `GetWorldPosFromDepthTex()` from `Shaders/Common/Frame.slang` for reconstructing world positions from the depth buffer - it handles the view/projection inverse transforms correctly.
 
 ## Design Rationale
 
 ### Why View Wrapper Structs Are Separate Types
 
-The view types (`Flux_ShaderResourceView`, `Flux_RenderTargetView`, `Flux_DepthStencilView`, etc.) may appear duplicated since they have identical structure. However, this design is intentional:
+The view types (`Flux_ShaderResourceView`, `Flux_UnorderedAccessView_Texture`/`_Buffer`, `Flux_RenderTargetView`, `Flux_DepthStencilView`, etc.) may appear duplicated since several share a near-identical structure (only `Flux_RenderTargetView` and `Flux_DepthStencilView` are truly identical — two members each; `Flux_ShaderResourceView` adds base-mip/mip-count fields, `Flux_UnorderedAccessView_Texture` adds a mip level, and the buffer variants use `BufferDescriptorHandle` instead of `ImageViewHandle`). Keeping them as separate types is intentional:
 
 1. **Compile-Time Type Safety**: Separate types prevent accidentally passing an RTV where a DSV is expected. The compiler catches these errors, avoiding subtle runtime bugs.
 
 2. **API Semantics Mirror Vulkan/D3D12**: The view types follow established graphics API conventions (D3D12's SRV/UAV/RTV/DSV pattern). Developers familiar with these APIs understand the semantic distinctions.
 
-3. **View-Specific Extensions**: While currently identical, separate types allow adding view-specific fields later (e.g., mip levels for SRVs, array slices for RTVs) without breaking existing code.
+3. **View-Specific Extensions**: Separate types let each view carry the fields it actually needs (e.g., base-mip/mip-count on SRVs, a mip level on texture UAVs) and allow adding more later (e.g., array slices for RTVs) without breaking existing code.
 
 4. **No Runtime Overhead**: The separate types add zero runtime cost - they're just naming conventions that the compiler optimizes away.
 
@@ -185,4 +205,4 @@ ordered worker stage. To add a new GPU operation, add the method to the
 
 ### Buffer Wrapper Classes (Candidate for Simplification)
 
-Note: The buffer wrapper classes (`Flux_VertexBuffer`, `Flux_DynamicVertexBuffer`, etc.) DO represent genuine code duplication. Seven classes follow two patterns (single-buffer vs frame-indexed-array), and template consolidation could reduce ~100 lines while preserving type safety. This is a candidate for future simplification.
+Note: The buffer wrapper classes (`Flux_VertexBuffer`, `Flux_DynamicVertexBuffer`, etc.) DO represent genuine code duplication. Eight classes follow two patterns (single-buffer vs frame-indexed-array), and template consolidation could reduce ~100 lines while preserving type safety. This is a candidate for future simplification.

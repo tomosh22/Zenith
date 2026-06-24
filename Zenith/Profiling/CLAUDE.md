@@ -45,7 +45,7 @@ name (content-deduped) into an owned arena, so any caller string is lifetime-saf
 
 ### Lock-free hot path (SPSC rings)
 Each producing thread owns a bounded **single-producer/single-consumer ring**
-(`Zenith_ProfileThreadBuffer`, ~192 KiB) published into a fixed atomic table by stable
+(`Zenith_Profiling::ThreadBuffer`, ~256-260 KiB) published into a fixed atomic table by stable
 thread id and cached in a `thread_local`. `BeginProfileZone` pushes onto a producer-private
 in-flight stack; `EndProfileZone` writes a complete event and publishes it with **one
 release-store** — no lock, no hashmap, no `g_xEngine` reach (~64 ns/scope, dominated by the
@@ -134,7 +134,8 @@ timeline.
 
 ## Compile-out (`ZENITH_PROFILING_ENABLED`)
 
-Defaults to 1. A shipping/Retail config defines it to 0 (wired in `Sharpmake_Common.cs`):
+Defaults to 1. Every config that exists today defines it to 1 (wired in `Sharpmake_Common.cs`);
+a future shipping/Retail axis will flip it to 0 there to strip the profiler for zero overhead. When 0,
 the zone macros and `ScopeZone` compile to nothing, the per-task profiling calls drop out,
 and every subsystem method becomes a no-op stub. The subsystem object is still allocated
 (inert) so engine/editor wiring needs no per-call-site gating.
@@ -154,7 +155,7 @@ and every subsystem method becomes a no-op stub. The subsystem object is still a
 
 - `Zenith_ProfileZoneID` — dense `u_int`; `ZENITH_PROFILE_ZONE_NULL` / `_OVERFLOW` are
   reserved sentinels resolved by `GetZoneName`.
-- `Zenith_ProfileEvent` — `{begin, end ticks, zone id, depth, optional label}`.
+- `Zenith_Profiling::Event` — `{begin, end ticks, zone id, depth, optional label}`.
 - The thread-buffer table never reallocates; the zone descriptor table is fixed-capacity
   with an atomic-published count, so the UI reads it lock-free while a worker appends.
 - Teardown: producer threads `UnregisterThread()` on exit; `Shutdown()` frees the main ring

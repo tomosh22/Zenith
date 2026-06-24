@@ -119,7 +119,7 @@ AI/
 
 ```cpp
 // Add the component
-auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>(xEntity);
+auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>();
 
 // Configure behavior tree
 xAI.SetBehaviorTree(pxPatrolTree);

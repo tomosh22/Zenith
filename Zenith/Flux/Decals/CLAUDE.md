@@ -15,7 +15,7 @@ lighting all interact with the decal correctly.
 
 | File | Purpose |
 |------|---------|
-| [Flux_Decals.h](Flux_Decals.h) | Public API: `Initialise`, `Shutdown`, `BuildPipelines`, `SetupRenderGraph`, `SpawnDecal` |
+| [Flux_DecalsImpl.h](Flux_DecalsImpl.h) | Public API: `Initialise`, `Shutdown`, `BuildPipelines`, `SetupRenderGraph`, `SpawnDecal` |
 | [Flux_Decals.cpp](Flux_Decals.cpp) | Implementation: CPU pool, GPU buffer upload, two-pass setup, basis math |
 | [../Shaders/Decals/Flux_Decals_NormalsCopy.slang](../Shaders/Decals/Flux_Decals_NormalsCopy.slang) | Pre-Apply: copy live normalsAmbient → transient |
 | [../Shaders/Decals/Flux_Decals_Apply.slang](../Shaders/Decals/Flux_Decals_Apply.slang) | Apply: instanced cube → blend into 3 G-buffer MRTs |
@@ -40,7 +40,8 @@ is one extra full-screen RGBA16F bandwidth, not a permanent allocation.
 ## Pass placement
 
 Inserted between the **G-buffer writers** (Terrain, StaticMeshes, Primitives,
-AnimatedMeshes, InstancedMeshes — Grass and Skybox don't qualify) and the
+AnimatedMeshes, InstancedMeshes, Skybox — Grass does not qualify because it
+writes the forward-lit HDR target, not G-buffer MRTs) and the
 **G-buffer readers** (HiZ, SSR, SSGI, SSAO, DeferredShading). Source-side
 registration order matters — the topo sort's `FindBestWriter` picks the
 nearest writer in declaration order, so registering Decals after the geometry
@@ -74,9 +75,10 @@ struct DecalInstance
     Zenith_Maths::Matrix4 m_xWorld;          // 64
     Zenith_Maths::Matrix4 m_xWorldInverse;   // 64 — precomputed; no inverse() in shader
     Zenith_Maths::Vector4 m_xAxisOpacity;    // 16 — xyz = unit-length projection axis, w = fade opacity
-    Zenith_Maths::Vector4 m_xParams;         // 16 — x = normal-alignment threshold, yzw reserved
+    Zenith_Maths::Vector4 m_xParams;         // 16 — x = normal-alignment threshold, y = mode (0 = procedural, 1 = brush indicator), zw reserved
+    Zenith_Maths::Vector4 m_xColour;         // 16 — brush-indicator tint (rgb) + master alpha (w); unused by mode 0
 };
-static_assert(sizeof(DecalInstance) == 160, ...);
+static_assert(sizeof(DecalInstance) == 176, ...);
 ```
 
 The projection axis lives in `m_xAxisOpacity.xyz` so the shader doesn't have
@@ -102,7 +104,7 @@ copy, never the sparse ring.
 Both passes are always-enabled. We tried gating via
 `Flux_RenderGraph::SetEnabled` to skip work when `uActiveDecalCount == 0`,
 but the render graph deliberately skips Prepare callbacks for disabled
-passes (`Flux_RenderGraph_Execution.cpp:144`) — disabling the pass would
+passes (`Flux_RenderGraph_Execution.cpp:155`) — disabling the pass would
 prevent Prepare from ticking lifetimes, which would mean the active count
 could never lift off zero once it was at zero. The trade-off: when no
 decals are active, the Execute callbacks early-out at the top without

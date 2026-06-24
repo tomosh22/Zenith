@@ -8,6 +8,7 @@
 
 - `Zenith_DataStream.h` - Header-only implementation (all logic is inline/template)
 - `Zenith_DataStream.cpp` - Includes precompiled header only
+- `Zenith_StreamEnvelope.h` / `Zenith_StreamEnvelope.cpp` - Reusable binary header ("envelope") for typed-asset payloads (see below)
 
 ## API
 
@@ -18,9 +19,12 @@
 - Move semantics supported, copy is deleted
 
 ### Read/Write
-- `WriteData(pData, ulSize)` / `ReadData(pData, ulSize)` - Raw bytes
+- `WriteData(pData, ulSize)` / `ReadData(pData, ulSize)` - Raw bytes (`Write()` / `Read()` are thin aliases for these)
 - `operator<<(value)` / `operator>>(value)` - Type-dispatched serialization
 - `SetCursor()` / `GetCursor()` / `SkipBytes()` - Cursor management
+- `GetCapacity()` - Buffer capacity in bytes; for an owned write stream this is NOT the bytes written (use `GetCursor()` for that)
+- `GetData()` (const and mutable) - Direct access to the underlying buffer pointer
+- `IsValid()` - True if buffer is non-null with non-zero size (useful after `ReadFromFile`)
 
 ### File I/O
 - `ReadFromFile(szFilename)` - Load file contents into stream
@@ -57,6 +61,15 @@ Built-in `<<`/`>>` specializations for:
 - **Bounds checks**: Both debug asserts and runtime safety checks on all reads
 - **Null checks**: All read/write operations validate pointers
 - **Resize failure handling**: Prevents infinite loop if reallocation fails
+
+## Stream Envelope
+
+`Zenith_StreamEnvelope.h` provides a reusable binary header that prefixes a typed-asset payload, generalizing the bespoke magic+version blocks that live inline in paths like `Zenith_SceneData` and `Zenith_AssetRegistry`.
+
+- `Zenith_StreamHeader` struct - 4 `u_int` fields: magic, envelope version, asset type id, schema version
+- Constants: `uSTREAM_ENVELOPE_MAGIC = 0x5A4E5448` ("ZNTH"), `uSTREAM_ENVELOPE_VERSION_CURRENT = 1`
+- `Zenith_WriteStreamHeader(xStream, uAssetTypeId, uSchemaVersion)` - writes the header at the current cursor, before the payload
+- `Zenith_ReadStreamHeader(xStream, uExpectedTypeId)` - non-destructive peek returning `Zenith_Result<Zenith_StreamHeader>`; on any error (`BAD_MAGIC` / `VERSION_MISMATCH` / `INVALID_ARGUMENT`) it restores the cursor so a legacy headerless stream can be rewound and read by the old path
 
 ## Key Patterns
 

@@ -24,7 +24,7 @@ class Zenith_NavMeshAgent;
  * - Perception integration (via PerceptionSystem)
  *
  * Usage:
- *   auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>(xEntity);
+ *   auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>();
  *   xAI.SetBehaviorTree(pxPatrolTree);
  *   xAI.GetBlackboard().SetFloat("PatrolRadius", 10.0f);
  */

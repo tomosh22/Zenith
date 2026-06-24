@@ -44,16 +44,17 @@ Manages tactical positions in the world:
 
 ### Built-in Formations
 
-**Line**: Members spread horizontally
+**Line**: Members spread horizontally (leader + 6 members at x = ±2, ±4, ±6)
 ```
-    [2]  [0/L]  [1]  [3]  [4]
+[5]  [2]  [0/L]  [1]  [3]  [4]  [6]
 ```
 
-**Wedge**: V-shape with leader at front
+**Wedge**: V-shape with leader at front (leader + 6 members, 3 rows deep)
 ```
         [0/L]
       [1]  [2]
     [3]      [4]
+  [5]          [6]
 ```
 
 **Column**: Single file
@@ -64,11 +65,12 @@ Manages tactical positions in the world:
 [3]
 ```
 
-**Circle**: Defensive perimeter
+**Circle**: Defensive perimeter (leader + 6 members on a ring, radius 3)
 ```
      [1]
   [5]   [2]
 [4] [0/L] [3]
+     [6]
 ```
 
 **Skirmish**: Spread for combat
@@ -76,6 +78,7 @@ Manages tactical positions in the world:
   [1]     [2]
      [0/L]
   [3]     [4]
+     [5]
 ```
 
 ### Formation API
@@ -89,8 +92,8 @@ Zenith_Maths::Vector3 xPos = pxSquad->GetFormationPositionFor(xMemberID);
 
 // Custom formation
 Zenith_Formation xCustom("Custom");
-xCustom.AddSlot(Vector3(0,0,0), SquadRole::LEADER, 10.0f);
-xCustom.AddSlot(Vector3(2,0,-1), SquadRole::ASSAULT, 5.0f);
+xCustom.AddSlot(Zenith_Maths::Vector3(0,0,0), SquadRole::LEADER, 10.0f);
+xCustom.AddSlot(Zenith_Maths::Vector3(2,0,-1), SquadRole::ASSAULT, 5.0f);
 xCustom.SetSpacing(3.0f);
 ```
 
@@ -131,7 +134,7 @@ pxSquad->ShareTargetInfo(xTargetID, xPosition, xReportingMember);
 if (pxSquad->IsTargetKnown(xTargetID))
 {
     const auto* pxTarget = pxSquad->GetSharedTarget(xTargetID);
-    Vector3 xLastKnown = pxTarget->m_xLastKnownPosition;
+    Zenith_Maths::Vector3 xLastKnown = pxTarget->m_xLastKnownPosition;
 }
 
 // Mark target as engaged
@@ -174,14 +177,14 @@ Zenith_TacticalPointSystem::UnregisterPoint(uID);
 
 ```cpp
 // Find best cover from threat
-Vector3 xCover = Zenith_TacticalPointSystem::FindBestCoverPosition(
+Zenith_Maths::Vector3 xCover = Zenith_TacticalPointSystem::FindBestCoverPosition(
     xAgentID,
     xThreatPosition,
     20.0f  // Max distance
 );
 
 // Find flank position
-Vector3 xFlank = Zenith_TacticalPointSystem::FindBestFlankPosition(
+Zenith_Maths::Vector3 xFlank = Zenith_TacticalPointSystem::FindBestFlankPosition(
     xAgentID,
     xTargetPosition,
     xTargetFacing,
@@ -190,7 +193,7 @@ Vector3 xFlank = Zenith_TacticalPointSystem::FindBestFlankPosition(
 );
 
 // Find overwatch position
-Vector3 xOverwatch = Zenith_TacticalPointSystem::FindBestOverwatchPosition(
+Zenith_Maths::Vector3 xOverwatch = Zenith_TacticalPointSystem::FindBestOverwatchPosition(
     xAgentID,
     xAreaToWatch,
     10.0f,  // Min distance
@@ -264,7 +267,7 @@ BTNodeStatus Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBB, float fDt)
     if (pxSquad)
     {
         // Get formation position
-        Vector3 xFormPos = pxSquad->GetFormationPositionFor(xAgent.GetEntityID());
+        Zenith_Maths::Vector3 xFormPos = pxSquad->GetFormationPositionFor(xAgent.GetEntityID());
 
         // Check for shared targets
         Zenith_EntityID xTarget = pxSquad->GetPriorityTarget();

@@ -35,8 +35,9 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   OnDestroy, OnCollisionEnter/Stay/Exit, Timer, Custom), `Zenith_GraphContext`
   (`m_xSelf`, `m_fDt`, graph/blackboard pointers, optional
   `m_pxEventPayload`), and the node base class (`Execute`, `GetTypeName`,
-  `MatchesCustomEvent`, optional `OnEnter`/`OnExit` — OnEnter fires when a
-  chain first reaches the node, not on RUNNING-resume).
+  `MatchesCustomEvent`, optional `OnEnter`/`OnExit` — declared on the base
+  class but **not yet called by the runtime** (`RunChainFromPin` only invokes
+  `Execute`); reserved for future chain-lifecycle hooks).
 - `Zenith_GraphNodeRegistry.{h,cpp}` — `RegisterNodeType<T>(name, eventType,
   outputCount, bFlowNode, category)` derives the create-fn, property table
   (via `ZENITH_PROPERTY`), and type version from the node class; name-keyed;
@@ -53,9 +54,10 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   version 1; UNKNOWN node types preserved verbatim as unresolved nodes — a
   future/missing node never silently drops from the asset) and the runtime
   `Zenith_BehaviourGraph` instance (see "Execution model").
-- `Zenith_Scripting.Tests.inl` — execution order, RUNNING suspension/resume,
-  flow semantics, blackboard, serialization round-trip, unresolved-node
-  preservation, custom events, and the 1000-entity OnUpdate benchmark.
+- `Zenith_Scripting.Tests.inl` — chain execution order/params, RUNNING
+  suspension/resume, branch flow semantics, serialization round-trip,
+  unresolved-node preservation, custom-event name matching, blackboard
+  type-safe migration, and corrupt-definition rejection.
 
 ## Execution model
 
@@ -69,6 +71,11 @@ seeded from the declared variables.
   ~free. `FireEvent(eType, ctx)` snapshots the source list, then runs each
   source; `FireCustomEvent(szName, ctx)` additionally filters sources by
   `MatchesCustomEvent`.
+- **Sources gate themselves:** an event source's own `Execute` returns
+  SUCCESS/FAILURE to decide whether its chain runs that fire (most sources
+  return SUCCESS every fire; Timer accumulates `m_fDt` and only succeeds once it
+  reaches its interval, then subtracts it). Downstream action/flow nodes, by
+  contrast, always `Execute` when the chain reaches them.
 - **Chains:** one outgoing edge per (node, pin). A plain node's SUCCESS
   auto-continues from its pin 0; FAILURE aborts the chain; flow nodes
   (`bFlowNode`, e.g. Branch/Loop) drive their own output pins from inside
@@ -87,8 +94,9 @@ seeded from the declared variables.
 
 - **Unresolved nodes are preserved, never dropped.** A `.bgraph` containing a
   node type this build doesn't register still loads, runs (chains through the
-  missing node fail gracefully, warned once), round-trips on save, and renders
-  error-red in the editor. Pinned by unit test and by the windowed DP tests
+  missing node fail gracefully, warned once per node — `NodeInstance` carries an
+  `m_bWarnedUnresolved` latch so a hot chain doesn't spam the log), round-trips
+  on save, and renders error-red in the editor. Pinned by unit test and by the windowed DP tests
   `Test_GraphEditorLiveAuthoring` / `Test_GraphEditorScreenshotTour`.
 - **Hot reload happens only at the main loop's safe point** (never
   mid-dispatch — asserted via `Zenith_GraphComponent::IsDispatchInProgress`),

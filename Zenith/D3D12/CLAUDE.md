@@ -71,5 +71,5 @@ Selected by the Sharpmake `RenderBackend` fragment (`D3D12_*` configs define
 Build + link any game in a `D3D12_*` config (CI does CityBuilder + DevilsPlayground):
 a clean link with zero unresolved externals = every concept AND non-concept call
 the engine makes is satisfied by a second backend. CityBuilder runs `CB_HumanSession`
-to `passed:true` (2930 frames, 0 asserts) on this backend — a full gameplay session
+to `passed:true` (4000 frames, 0 asserts) on this backend — a full gameplay session
 on a no-op renderer, presenting a blank window.

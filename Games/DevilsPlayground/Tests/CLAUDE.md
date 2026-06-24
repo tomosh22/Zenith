@@ -1,6 +1,7 @@
 # DevilsPlayground/Tests
 
-138 registered automated tests across 116 .cpp files (as of 2026-06-12).
+140+ registered automated tests across 119+ .cpp files (run
+`devilsplayground.exe --list-automated-tests` for the current count).
 The full list is `devilsplayground.exe --list-automated-tests`. The DP
 suite is the primary quality gate; the bar for any new change is "the
 full headless batch stays green."
@@ -34,8 +35,15 @@ Between batched tests the harness:
    clear via `OnDestroy`.
 2. Fires every hook registered with
    `Zenith_AutomatedTestRunner::RegisterBetweenTestsHook`.
-   `DevilsPlayground.cpp`'s hook resets `DP_Player`, `DP_Win`,
-   `DP_Fog`, `DP_AI`, and `DP_Night`'s persistent globals.
+   `DevilsPlayground.cpp`'s hook calls
+   `DP_Fog::ClearAllFogHoles`/`ClearAllMemoryReveals`,
+   `DP_AI::ResetLevelNavMesh`,
+   `DPPauseMenuController_Component::ResetForTest`,
+   `Zenith_PerceptionSystem::Reset`,
+   `DP_Particles::ClearEmitterEntities`/`ResetBurstCountsForTest`, and
+   `DP_Tutorial::ResetForNewRun`. Other state (`DP_Player`, `DP_Win`,
+   `DP_Night`) is cleared via `OnDestroy` when scene 0 is reloaded in
+   step 1.
 3. Clears the input simulator's held-keys + key-press queue.
 
 ## Test naming convention
@@ -60,8 +68,10 @@ prefix lets the runner's `-Tier 1` flag filter by phase.
 
 Some tests need a GPU (model rendering, material upload, etc) and
 register with `m_bRequiresGraphics = true`. In headless mode the
-harness counts these as PASSED-skipped — the runner reports `35/35`
-when 24 actually executed and 11 skipped.
+harness counts these as PASSED-skipped — the runner's summary counts
+skipped graphics tests as passed, so the reported pass count includes
+tests that were never actually executed (currently ~14 of the suite
+require graphics).
 
 **Manual-only tests** (the 8 `PersonalityPlaythrough_*` balance harnesses)
 set `m_bManualOnly = true` and are excluded from the `--all-automated-tests`
@@ -95,13 +105,15 @@ toggles a small bundle of input-layer flags — adding a new one is
 PersonalityPlaythrough_Casual       Walks normally, single F-press, runs the pause overlay
                                     test, engages every system. Reference recording.
 PersonalityPlaythrough_Stealth      Holds Ctrl while walking (walk-quiet, 0.875x speed of
-                                    jog as of 2026-05-22, halved footstep loudness x0.25).
+                                    jog as of 2026-05-22, quarter footstep loudness x0.25).
                                     Skips the noise machine entirely.
 PersonalityPlaythrough_Speedrunner  Adaptive sprint -- holds Shift only while the next
                                     target is > 5 m away; walks close approaches. Runs
                                     the full bootstrap chain. Sprint life-cost is now
-                                    1.5/s (was 1.0 -- bumped 2026-05-22 because cheap
-                                    sprint let Speedrunner win 100% of seeds).
+                                    1.75/s (was 3.0 -> 1.5 -> 1.0, bumped back to 1.5 on
+                                    2026-05-22 because cheap sprint at 1.0 let Speedrunner
+                                    win 100% of seeds; then 2.0, finally settled at 1.75
+                                    in the 2026-05-26 doors-at-DoorPoints pass).
 PersonalityPlaythrough_Zealot       Skips the entire iron/forge/door/chest/noise
                                     bootstrap -- jumps straight from possession to the
                                     objective-deliver loop. Adaptive sprint between
@@ -342,28 +354,28 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 | Cluster | Tests |
 |---|---|
 | Pause | `Test_P1Pause_TimerStopsOnEscape`, `Test_P1Pause_InputSimDuringPause` |
-| NavMesh | `Test_P1NavMesh_PathRespectsWalls`, `Test_P1NavMesh_ClosedDoorBlocksPath`, `Test_T1NavMesh_GeneratorPerfOnProcLevel`, `Test_T1NavMesh_BTUnitsCanFollowRealPath` |
-| Apprehend | `Test_P1Apprehend_SwitchBreaksChannel`, `Test_P1Apprehend_OutOfRangeIgnored`, `Test_P1Apprehend_PriestStandsStillDuringChannel` |
+| NavMesh | `Test_P1NavMesh_PathRespectsWalls`, `Test_P1NavMesh_ClosedDoorBlocksPath`, `Test_T1NavMesh_GeneratorPerf`, `Test_T1NavMesh_BTUnitsCanFollowRealPath` |
+| Apprehend | `Test_P1Apprehend_SwitchBreaksChannel`, `Test_P1Apprehend_OutOfRangeIgnored` |
 | Faint / Switch | `Test_P1Faint_RecoversToIdle`, `Test_P1Faint_SystemPossessBypassesGate`, `Test_P1Switch_FaintNotDie`, `Test_P1Switch_BurnOutDoesDie` |
 | Drop | `Test_P1Drop_GoesToGroundAtBodyPosition`, `Test_P1Drop_PickupChainHandoff` |
 | Cooldown | `Test_P1Cooldown_CannotPossessFor1pt5s`, `Test_P1Cooldown_NotAffectedByDeath` |
 | Demon-scent | `Test_P1Scent_AccumulatesOnPossession`, `Test_P1Scent_DecaysOverTime`, `Test_P1Scent_HighestWinsInBlackboard`, `Test_P1Scent_NoBumpWhilePossessing`, `Test_P1Scent_NotificationToBlackboard` |
 | Sprint | `Test_P1Sprint_DrainsLifeFaster`, `Test_P1Sprint_NoDrainWhenNotMoving`, `Test_P1Sprint_WinsTieOverWalkQuiet` |
-| Walk-quiet | `Test_P1WalkQuiet_*` (4 tests) |
+| Walk-quiet | `Test_P1WalkQuiet_FootstepLoudnessHalved` |
 | Possession range | `Test_P1Range_RefusedOutOfRange`, `Test_P1Range_AcceptedInRange`, `Test_P1Range_AnchorMovesWithEachHop` |
 | Priest perception | `Test_P1Priest_DoesNotChasePossessedOutOfSight`, `Test_P1Priest_PursuesAfterLineOfSight` |
 | Save / load | `Test_P1Save_RoundTripMeta`, `Test_P1Save_RobustToCorruption`, `Test_P1Save_VersionMismatchFallsBackToDefault` |
 | Dawn | `Test_P1Dawn_DispatchesRunLost`, `Test_P1Dawn_NoFireWhenNotStarted` |
 | NoVessels | `Test_P1NoVessels_DispatchesRunLost` |
-| Tuning | `Test_P1Tuning_LoadsAndValuesInBand`, `Test_P1Tuning_*ValuesMatchConfig` (3 tests) |
+| Tuning | `Test_P1Tuning_LoadsAndValuesInBand`, `Test_P1Tuning_*ValuesMatchConfig` (2 tests), `Test_P1Villager_TuningMigration` |
 
 ### Phase 2 -- depth
 
 | Cluster | Tests |
 |---|---|
-| Archetypes | `Test_P2Archetype_TimersMatchSpec`, `Test_P2Archetype_DevoutChannel*`, `Test_P2Archetype_ChildCannotCarryTools`, `Test_P2Archetype_BeggarIgnoredByAelfric` |
+| Archetypes | `Test_P2Archetype_TimersMatchSpec`, `Test_P2Archetype_DevoutChannel*`, `Test_P2Archetype_ChildCannotCarryTools`, `Test_P2Archetype_BeggarIgnoredByAelfric`, `Test_P2Villager_ArchetypeStatsApplied` |
 | Reagents | `Test_P2Reagent_UniquePickupChannel`, `Test_P2Reagent_BogWaterEvaporates`, `Test_P2Reagent_BellSoulRingsBell`, `Test_P2BellSoul_*` |
-| Forge | `Test_P2Forge_*` (3 tests: recipe, audible-at-30m, priest-hears-the-hammer) |
+| Forge | `Test_P2Forge_*` (4 tests: recipe variants [Iron→SkeletonKey, Wood→Spike], audible-at-30m, priest-hears-the-hammer) |
 | Fog memory | `Test_P2Fog_AelfricNotRevealed`, `Test_P2Fog_LightAddsHole`, `Test_P2Fog_MemoryDimsAfter10s` |
 | HUD | `Test_P2HUD_TutorialHint` (9 cases), `Test_P2HUD_DetailedReadouts` (9 clusters) |
 | Pause / Menu | `Test_P2Menu_PauseAndMainMenuShortcuts`, `Test_P2Pause_RestartActuallyReloadsScene` |
@@ -371,9 +383,9 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 ### Phase 4 -- acceptance
 
 `Test_P4Playthrough_Night1WinGolden` (MVP-DoD gate),
-`Test_P4Playthrough_LossByApprehend`,
 `Test_P4Playthrough_LossByDawn`,
-`Test_P4Playthrough_LossByNoVessels`.
+`Test_P4Playthrough_LossByNoVessels`,
+`Test_P4UI_RestartPromptAfterRunOver`.
 
 ### Procgen + bot + telemetry
 
@@ -391,3 +403,9 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 `Test_ItemPickup`, `Test_DoubleDoorAndForge`, `Test_GameplaySystems`,
 `Test_VisualWiring`, `Test_FullPlaythrough`, `Test_FrontEndPlay`,
 `Test_PriestBBBridge`, `Test_PriestPursuit`, etc.
+
+### Editor + material + graph tooling (post-2026-06-12)
+
+`Test_EditorSceneCycle`, `Test_MaterialEditorLivePreview`,
+`Test_MaterialShowcase`, `Test_GraphEditorLiveAuthoring`,
+`Test_GraphEditorScreenshotTour`.

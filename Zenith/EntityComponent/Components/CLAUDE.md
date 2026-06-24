@@ -9,6 +9,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_TransformComponent` | Position, rotation, scale (added automatically to all entities) |
 | `Zenith_CameraComponent` | View/projection matrices for rendering |
 | `Zenith_ModelComponent` | Renderable 3D mesh with materials (no animation - use AnimatorComponent) |
+| `Zenith_TweenComponent` | Lightweight property tween system (animates position, scale, rotation over time) |
 | `Zenith_AnimatorComponent` | Skeletal animation **forwarding handle** (auto-discovers skeleton from ModelComponent). The `Flux_AnimationController` lives in `Flux_AnimationControllerStore` (`g_xEngine.AnimationControllers()`), keyed by EntityID — see "AnimatorComponent is a forwarding handle" below |
 | `Zenith_LightComponent` | Dynamic lights (directional, point, spot) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
@@ -17,6 +18,8 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_GraphComponent` | Behaviour Graph host (multiple .bgraph slots per entity, hot-reloadable) |
 | `Zenith_UIComponent` | UI element support |
+| `Zenith_AIAgentComponent` | Behaviour tree execution + blackboard state (AI system integration) |
+| `Zenith_AttachmentComponent` | Bone-attachment that follows a named bone on another entity each frame (e.g. racket in hand, held weapon) |
 
 ## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
 
@@ -81,6 +84,14 @@ void OnDestroy();         // Called before component removal
 
 If a hook is not implemented, it's simply skipped during dispatch.
 
+Additional collision hooks are concept-detected by the same compile-time meta system, dispatched by components handling physics interactions (e.g. `Zenith_GraphComponent` fires these to its behaviour graphs):
+
+```cpp
+void OnCollisionEnter(Zenith_Entity xOther);   // First frame of contact
+void OnCollisionStay(Zenith_Entity xOther);    // While contact persists
+void OnCollisionExit(Zenith_EntityID xOtherID); // Contact ended
+```
+
 ## Component Concept
 
 Components must satisfy the `Zenith_Component` concept defined in `Zenith_Scene.h`:
@@ -90,12 +101,12 @@ Components must satisfy the `Zenith_Component` concept defined in `Zenith_Scene.
 
 ## Serialization Order
 
-Component serialization order is determined by type name in `Zenith_ComponentMeta.cpp::GetSerializationOrder()`. Lower values serialize first. This matters for dependencies (e.g., TerrainComponent must serialize before ColliderComponent that depends on terrain data).
+Component serialization order is determined by the explicit `order` argument passed to `RegisterComponent<T>(name, order)` at registration time (`Zenith_ComponentMeta_Registration.cpp` for the built-ins). Lower values serialize first. This matters for dependencies (e.g., TerrainComponent must serialize before ColliderComponent that depends on terrain data).
 
 Current order (centralised in `Zenith_ComponentMeta_Registration.cpp`):
 Transform (0), Model (10), Tween (12), Animator (15), Camera (20), Light (25),
 Terrain (40), Collider (50), Graph (60), UI (70), InstancedMesh (80),
-ParticleEmitter (85), AIAgent (90).
+ParticleEmitter (85), AIAgent (90), Attachment (95).
 
 New components default to order 1000 (serialized last). Game components use
 orders 100+ (unique per game).
@@ -120,8 +131,18 @@ entity.RemoveComponent<Zenith_MyComponent>();
 
 Use the Query system to iterate entities with specific component combinations:
 
+`Query` lives on `Zenith_SceneData`, not on the opaque `Zenith_Scene` handle. Get the per-scene data via `g_xEngine.Scenes().GetSceneDataAtSlot(uSlot)`, or query every loaded scene at once with `Zenith_SceneSystem::QueryAllScenes`:
+
 ```cpp
-scene.Query<TransformComponent, ColliderComponent>()
+// Single scene:
+Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
+pxSceneData->Query<TransformComponent, ColliderComponent>()
+    .ForEach([](Zenith_EntityID id, TransformComponent& t, ColliderComponent& c) {
+        // Process entities with both components
+    });
+
+// All loaded scenes:
+g_xEngine.Scenes().QueryAllScenes<TransformComponent, ColliderComponent>()
     .ForEach([](Zenith_EntityID id, TransformComponent& t, ColliderComponent& c) {
         // Process entities with both components
     });

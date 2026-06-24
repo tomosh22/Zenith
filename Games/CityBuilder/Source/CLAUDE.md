@@ -32,7 +32,7 @@ terrain separately). Each road segment owns one. Pure math, no engine dep.
 Topological network: ref-counted **nodes** + **segments** (spline + width by class), both soft-deleted
 (`m_bActive`; slot indices stay stable as mesh-cache keys). **Auto-intersections** keep the graph
 connected like SimCity/C:S.
-- `enum CB_ERoadClass { SMALL=0, MEDIUM=1, LARGE=2, COUNT }` → widths **8 / 12 / 16 m** (`ClassWidth`).
+- `enum CB_ERoadClass { CB_ROADCLASS_SMALL=0, CB_ROADCLASS_MEDIUM=1, CB_ROADCLASS_LARGE=2, CB_ROADCLASS_COUNT }` → widths **8 / 12 / 16 m** (`ClassWidth`).
 - `CB_RoadNode { m_xPos, m_uRefs, m_bActive }`; `CB_RoadSegment { m_uNodeA, m_uNodeB, m_xSpline, m_fWidth, m_eClass, m_bActive }`.
 - `AddNode`, `FindNodeNear`, `FindOrAddNode(snap)`, `FindOrSplitNodeAt(snap)` (snap node / T-split / new), `AddSegment`, `RemoveSegment` (frees orphan nodes at ref 0).
 - **`AddSegmentWithJunctions(a,b,spline,class)`** — finds every crossing of the new centreline with active segments (16-sample polylines, skip t∈[0,0.02]∪[0.98,1]), **splits BOTH at each crossing**, inserts junction nodes, chains the new road through them (X-junctions).
@@ -58,7 +58,7 @@ the draw **ghost preview**.
 
 ### CB_ToolSystem.{h,cpp}
 Stateless tool state + the **terrain-aware mouse picker**. The manager calls `Update` each frame; it dispatches to the controller / zoning / building systems.
-- `enum CB_ETool { NONE=0, ZONE_RES=1, ZONE_COM=2, ZONE_IND=3, ZONE_PARK=4, ROAD=5, POLICE=6, POWER=7, WATER=8, BULLDOZE=9, TERRAFORM=10, DISTRICT=11, TRANSIT=12, CONDUIT=13, COUNT }`. (1–3 cast 1:1 to `CB_EZoneType`.)
+- `enum CB_ETool { CB_TOOL_NONE=0, CB_TOOL_ZONE_RES=1, CB_TOOL_ZONE_COM=2, CB_TOOL_ZONE_IND=3, CB_TOOL_ZONE_PARK=4, CB_TOOL_ROAD=5, CB_TOOL_POLICE=6, CB_TOOL_POWER=7, CB_TOOL_WATER=8, CB_TOOL_BULLDOZE=9, CB_TOOL_TERRAFORM=10, CB_TOOL_DISTRICT=11, CB_TOOL_TRANSIT=12, CB_TOOL_CONDUIT=13, CB_TOOL_COUNT }`. (1–3 cast 1:1 to `CB_EZoneType`.)
 - `SetTool`/`GetTool`, `SetBrushRadius`, `SetTerrainField(field)`, `ToolName` (tooltip).
 - **`PickGroundPoint(&x,&z)`** — unprojects the mouse ray and **ray-marches the heightfield** (1024 steps + 20-iter bisect vs `GetRenderSurfaceY`); falls back to a y=0 plane only if no field. This is the ONLY ray-vs-terrain intersection; without it the cursor drifts toward the horizon on hills. `Update()` only reads the tool-selection hotkeys; the free-form tools are applied by `CB_RoadController`.
 
@@ -99,7 +99,7 @@ Header-only **constexpr tuning table** for 20 building types; pure lookup used o
 ## City systems (read by CB_BuildingPlacement's sim)
 
 ### CB_Policy.h
-The four ordinances: `enum CB_EPolicy { RECYCLING=0, FREE_TRANSIT, POLLUTION_CONTROL, PARKS_MANDATE, COUNT }`; `CB_PolicyBit(p)` (1<<i), `CB_PolicyName(p)`. Each policy's effect is scaled by the fraction of buildings it covers.
+The four ordinances: `enum CB_EPolicy { CB_POLICY_RECYCLING=0, CB_POLICY_FREE_TRANSIT=1, CB_POLICY_POLLUTION_CONTROL=2, CB_POLICY_PARKS_MANDATE=3, CB_POLICY_COUNT }`; `CB_PolicyBit(p)` (1<<i), `CB_PolicyName(p)`. Each policy's effect is scaled by the fraction of buildings it covers.
 
 ### CB_Districts.h
 Painted **circular regions** carrying city-wide + per-district policy masks. `CB_District { m_fCentreX/Z, m_fRadius, m_uPolicyMask, m_bActive }`. `PaintDistrict(x,z)` (grows nearest within `MERGE_RADIUS=160`, else new at `DEFAULT_RADIUS=120`), `Set/ToggleCityPolicy`, `Set/ToggleDistrictPolicy`, **`GetPolicyMaskAt(x,z)`** (city mask OR every containing district's mask — the sim's query). Serializable.
@@ -164,7 +164,7 @@ districts + transit + conduits (cross-references by stable slot index). `Save(..
 `enum CB_EZoneType { CB_ZONE_NONE, CB_ZONE_RESIDENTIAL, CB_ZONE_COMMERCIAL, CB_ZONE_INDUSTRIAL, CB_ZONE_PARK, CB_ZONE_COUNT }` — the shared land-use enum (zoning, building defs, tools, events, HUD).
 
 ### CB_SimSpeed.h
-`enum CB_ESimSpeed { CB_SIM_PAUSED=0, SLOW, NORMAL, FAST, ULTRA }` + `inline float CB_SpeedMultiplier(speed)` (0 / 0.5 / 1 / 2 / 4). The manager holds the current speed (`m_eSpeed`); growth is gated on `!= PAUSED` and the traffic dt is scaled by the multiplier.
+`enum CB_ESimSpeed { CB_SIM_PAUSED=0, CB_SIM_SLOW=1, CB_SIM_NORMAL=2, CB_SIM_FAST=3, CB_SIM_ULTRA=4, CB_SIM_SPEED_COUNT }` + `inline float CB_SpeedMultiplier(speed)` (0 / 0.5 / 1 / 2 / 4). The manager holds the current speed (`m_eSpeed`); growth is gated on `!= PAUSED` and the traffic dt is scaled by the multiplier.
 
 ### CB_Events.h
 Plain POD event payloads dispatched via `Zenith_EventDispatcher`: `CB_OnToolSelected`, `CB_OnRoadPlaced`, `CB_OnZonePainted`, `CB_OnServicePlaced`, `CB_OnBuildingGrew`, `CB_OnBulldozed`, `CB_OnPauseToggled`, `CB_OnMilestone`, `CB_OnSaved`, `CB_OnLoaded`. Dispatch is a cheap no-op when nobody subscribes.
