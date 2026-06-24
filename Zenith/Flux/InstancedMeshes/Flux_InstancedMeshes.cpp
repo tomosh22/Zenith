@@ -23,27 +23,28 @@
 #include <vector>
 
 //=============================================================================
-// Push Constants for Instanced Meshes (192 bytes)
-// Mirrors MaterialDrawConstants except the 5th field carries VAT animation
-// params instead of emissive (same 16 bytes, instanced flavour — see
-// Common/DrawConstants.slang). Layout must stay byte-compatible with
-// DrawConstantsLayout: the instanced fragment shader reads the params2/flags
-// fields through the shared accessors.
+// The instanced path uses the SHARED MaterialDrawConstants
+// (BuildMaterialDrawConstants) for all material data — real emissive, full
+// flags, the single authoritative alpha cutout — exactly like StaticMeshes/
+// AnimatedMeshes. VAT animation-texture params (texW, texH, vat-enabled) ride
+// the appended MaterialDrawConstants::m_xVATParams field rather than a separate
+// constant buffer: the backend allows only ONE scratch/draw-constants buffer per
+// descriptor set (Zenith_Vulkan_CommandBuffer::BindDrawConstants), so a second
+// BindDrawConstants on set 1 would clobber the DrawConstants binding. See
+// BuildInstancedVATParams below.
 //=============================================================================
-struct InstancedMeshPushConstants
+
+// Build the per-group VAT params written into MaterialDrawConstants::m_xVATParams:
+// (texture width, texture height, vat-enabled, unused). Zero when the group has no
+// VAT (vat-enabled = 0 -> the shader skips the VAT sample).
+static Zenith_Maths::Vector4 BuildInstancedVATParams(const Flux_AnimationTexture* pxAnimTex)
 {
-	Zenith_Maths::Matrix4 m_xModelMatrix;       // 64 bytes (unused - per-instance in buffer)
-	Zenith_Maths::Vector4 m_xBaseColor;         // 16 bytes
-	Zenith_Maths::Vector4 m_xMaterialParams;    // 16 bytes (metallic, roughness, alphaCutoff, occlusionStrength)
-	Zenith_Maths::Vector4 m_xUVParams;          // 16 bytes (tilingX, tilingY, offsetX, offsetY)
-	Zenith_Maths::Vector4 m_xAnimTexParams;     // 16 bytes (textureWidth, textureHeight, enableVAT, unused)
-	Zenith_Maths::Vector4 m_xMaterialParams2;   // 16 bytes (specular, normalStrength, 0, 0)
-	Zenith_Maths::Vector4 m_xParallaxParams;    // 16 bytes (unused on the instanced path)
-	Zenith_Maths::Vector4 m_xDetailParams;      // 16 bytes (unused on the instanced path)
-	Zenith_Maths::Vector4 m_xFlagsParams;       // 16 bytes (MaterialDrawFlags as uint bits, unused x3)
-};
-static_assert(sizeof(InstancedMeshPushConstants) == sizeof(MaterialDrawConstants),
-	"InstancedMeshPushConstants must stay byte-compatible with MaterialDrawConstants / DrawConstantsLayout");
+	const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
+	return bHasVAT
+		? Zenith_Maths::Vector4(static_cast<float>(pxAnimTex->GetTextureWidth()),
+			static_cast<float>(pxAnimTex->GetTextureHeight()), 1.0f, 0.0f)
+		: Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+}
 
 //=============================================================================
 // Reset compute draw constants (16 bytes). Mirrors ResetDrawConstantsLayout in
@@ -623,61 +624,23 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
 	const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
 
-	// Build and push material constants (instance-aware resolved view).
-	const Zenith_MaterialResolved& xResolved = pxMaterial->GetResolved();
-	const Zenith_MaterialParams& xParams = xResolved.m_xParams;
+	// SHARED material constants (instance-aware resolved view) — identical to the
+	// static/animated mesh path. The per-instance model matrix comes from the
+	// transform buffer, so the constants' model matrix is unused (identity). VAT
+	// params ride the appended m_xVATParams field (single scratch CB per set).
+	MaterialDrawConstants xMaterialConstants;
+	BuildMaterialDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), pxMaterial);
+	xMaterialConstants.m_xVATParams = BuildInstancedVATParams(pxAnimTex);
+	xBinder.BindDrawConstants(m_xGBufferShader, "DrawConstants", &xMaterialConstants, sizeof(xMaterialConstants));
 
-	InstancedMeshPushConstants xPushConstants;
-	xPushConstants.m_xModelMatrix = glm::identity<glm::mat4>();  // Per-instance in buffer
-	xPushConstants.m_xBaseColor = xParams.m_xBaseColor;
-	// Opaque never alpha-tests (cutoff 0 disables the shader's discard);
-	// Masked uses the authored cutoff — same rule as BuildMaterialDrawConstants.
-	const float fAlphaCutoff = (xParams.m_eBlendMode == MATERIAL_BLEND_MASKED) ? xParams.m_fAlphaCutoff : 0.0f;
-	xPushConstants.m_xMaterialParams = Zenith_Maths::Vector4(
-		xParams.m_fMetallic,
-		xParams.m_fRoughness,
-		fAlphaCutoff,
-		xParams.m_fOcclusionStrength
-	);
-	xPushConstants.m_xUVParams = Zenith_Maths::Vector4(
-		xParams.m_xUVTiling.x, xParams.m_xUVTiling.y,
-		xParams.m_xUVOffset.x, xParams.m_xUVOffset.y);
-
-	if (bHasVAT)
+	// Full 9-slot material texture set (named-binder loop, identical to
+	// Flux_StaticMeshesImpl::DrawStaticMesh) so EvaluateMaterialSurface gets the
+	// complete feature set: emissive, height/POM, detail maps, clear coat.
+	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
 	{
-		xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(
-			static_cast<float>(pxAnimTex->GetTextureWidth()),
-			static_cast<float>(pxAnimTex->GetTextureHeight()),
-			1.0f,  // enableVAT = true
-			0.0f   // unused
-		);
+		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
+		xBinder.BindSRV(m_xGBufferShader, GetMaterialTextureBindingName(u), &pxTexture->m_xSRV);
 	}
-	else
-	{
-		xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
-	}
-
-	xPushConstants.m_xMaterialParams2 = Zenith_Maths::Vector4(xParams.m_fSpecular, xParams.m_fNormalStrength, 0.0f, 0.0f);
-	xPushConstants.m_xParallaxParams = Zenith_Maths::Vector4(0.0f, 8.0f, 32.0f, 0.0f);
-	xPushConstants.m_xDetailParams = Zenith_Maths::Vector4(4.0f, 4.0f, 1.0f, 1.0f);
-
-	// Instanced path supports unlit + two-sided normal flip only (POM/detail/
-	// clear coat are mesh-path features; emissive needs the VAT-aliased field).
-	u_int uFlags = 0;
-	if (xParams.m_eShadingModel == MATERIAL_SHADING_UNLIT) uFlags |= MATERIAL_DRAW_FLAG_UNLIT;
-	if (xParams.m_bTwoSided) uFlags |= MATERIAL_DRAW_FLAG_TWO_SIDED_NORMAL_FLIP;
-	Zenith_Maths::Vector4 xFlags(0.0f);
-	memcpy(&xFlags.x, &uFlags, sizeof(u_int));
-	xPushConstants.m_xFlagsParams = xFlags;
-
-	xBinder.BindDrawConstants(m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
-
-	// Bind material textures (instance-aware; emissive slot intentionally
-	// not bound — the instanced shader doesn't declare it).
-	xBinder.BindSRV(m_xGBufferShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_NORMAL)->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_ROUGHNESS_METALLIC)->m_xSRV);
-	xBinder.BindSRV(m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_OCCLUSION)->m_xSRV);
 
 	// Bind animation texture (VAT) if available, else bind blank texture.
 	// The VAT position texture MUST be sampled with the POINT (nearest/no-aniso)
@@ -791,10 +754,25 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 				continue;
 			}
 
+			Zenith_MaterialAsset* pxGroupMat = pxGroup->GetMaterial();
+
+			// Blend-mode parity with StaticMeshes/AnimatedMeshes: translucent/additive
+			// materials don't render in the opaque G-buffer (they belong on the forward
+			// Translucency path). There is no instanced forward path, so such groups simply
+			// don't render — a documented limitation (the instanced consumer is trees:
+			// opaque trunk + masked leaves). Instanced supports OPAQUE + MASKED.
+			if (pxGroupMat != nullptr)
+			{
+				const MaterialBlendMode eBlend = pxGroupMat->GetResolved().m_xParams.m_eBlendMode;
+				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+				{
+					continue;
+				}
+			}
+
 			// Bin by cull mode: each group renders in exactly one pass. A null material
 			// falls to the one-sided pass (the blank fallback BindBatchDescriptors uses is
 			// opaque/one-sided), matching the descriptor it will bind.
-			Zenith_MaterialAsset* pxGroupMat = pxGroup->GetMaterial();
 			const bool bGroupTwoSided = (pxGroupMat != nullptr) && pxGroupMat->GetResolved().m_xParams.m_bTwoSided;
 			if (bGroupTwoSided != bTwoSidedPass)
 			{
@@ -873,26 +851,42 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 			continue;
 		}
 
+		// Material carries the alpha cutoff the shadow FS reads for masked cutout.
+		// Mirror BindBatchDescriptors' blank fallback for a null group material, and
+		// skip translucent/additive casters (parity with the static shadow path).
+		Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
+		if (!pxMaterial)
+		{
+			pxMaterial = xGraphics.m_xBlankMaterial.GetDirect();
+		}
+		const MaterialBlendMode eBlend = pxMaterial->GetResolved().m_xParams.m_eBlendMode;
+		if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+		{
+			continue;
+		}
+
 		// Set vertex and index buffers
 		xCmdBuf.SetVertexBuffer(pxMesh->GetVertexBuffer());
 		xCmdBuf.SetIndexBuffer(pxMesh->GetIndexBuffer());
 
-		// VAT params: the shadow shader applies the SAME vertex animation as the
-		// GBuffer so its depth matches the lit geometry. Without this the shadow map
-		// holds the rest pose while the GBuffer holds the swayed pose -> misaligned
-		// self-shadowing that flickers as the trees animate. Only g_xEmissiveParams
-		// (m_xAnimTexParams) is read by the shadow shader; the rest is zeroed.
+		// Material constants carry the alpha cutoff + UV transform + base-colour tint
+		// the masked-cutout fragment shader reads (opaque materials write cutoff 0 →
+		// the FS uniform-branches out → depth-only). Model matrix is per-instance, so
+		// the constants' matrix is unused (identity).
+		// VAT params: the shadow shader applies the SAME vertex animation as the GBuffer
+		// so its depth matches the lit geometry. Without this the shadow map holds the
+		// rest pose while the GBuffer holds the swayed pose -> misaligned self-shadowing
+		// that flickers as the trees animate. VAT params ride MaterialDrawConstants::
+		// m_xVATParams (single scratch CB per set), matching the GBuffer path.
 		Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
 		const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
 
-		InstancedMeshPushConstants xShadowConstants = {};
-		xShadowConstants.m_xModelMatrix = glm::identity<glm::mat4>();
-		xShadowConstants.m_xAnimTexParams = bHasVAT
-			? Zenith_Maths::Vector4(static_cast<float>(pxAnimTex->GetTextureWidth()),
-				static_cast<float>(pxAnimTex->GetTextureHeight()), 1.0f, 0.0f)
-			: Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xShadowConstants, sizeof(xShadowConstants));
+		MaterialDrawConstants xMaterialConstants;
+		BuildMaterialDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), pxMaterial);
+		xMaterialConstants.m_xVATParams = BuildInstancedVATParams(pxAnimTex);
+		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xMaterialConstants, sizeof(xMaterialConstants));
 		xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
+		xBinder.BindSRV(m_xShadowShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 
 		// Bind instance buffers. Transform/AnimData are frame-indexed (not graph-
 		// tracked) -> UAV bind; the enabled-index list via its SRV (read-only
@@ -932,4 +926,7 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 //=============================================================================
 
 
+// Flux material-binding unit tests (pure CPU). Hosted here so the test TU lives
+// in the Flux module rather than pulling Flux into an AssetHandling test TU.
+#include "Flux/Flux_MaterialBinding.Tests.inl"
 

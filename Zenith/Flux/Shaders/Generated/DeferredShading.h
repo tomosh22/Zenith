@@ -35,8 +35,10 @@ namespace Flux_Generated_DeferredShading
 			unsigned int m_ug_bSSREnabled; // slang=uint offset=36
 			unsigned int m_ug_bSSGIEnabled; // slang=uint offset=40
 			float m_fg_fAmbientFallbackIntensity; // slang=float offset=44
+			unsigned int m_ug_bSSAOEnabled; // slang=uint offset=48
+			unsigned char m_aPad_52[12];
 		};
-		static_assert(sizeof(DeferredShadingConstants_CB) == 48, "DeferredShadingConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(DeferredShadingConstants_CB) == 64, "DeferredShadingConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bVisualiseCSMs) == 0, "DeferredShadingConstants.g_bVisualiseCSMs offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bIBLEnabled) == 4, "DeferredShadingConstants.g_bIBLEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_uDebugMode) == 8, "DeferredShadingConstants.g_uDebugMode offset drifted from Slang reflection");
@@ -49,6 +51,7 @@ namespace Flux_Generated_DeferredShading
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSREnabled) == 36, "DeferredShadingConstants.g_bSSREnabled offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSGIEnabled) == 40, "DeferredShadingConstants.g_bSSGIEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_fg_fAmbientFallbackIntensity) == 44, "DeferredShadingConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSAOEnabled) == 48, "DeferredShadingConstants.g_bSSAOEnabled offset drifted from Slang reflection");
 		inline constexpr const char* kShadowMatrix0_Name = "ShadowMatrix0";
 		inline constexpr unsigned int kShadowMatrix0_Set = 0;
 		inline constexpr unsigned int kShadowMatrix0_Binding = 2;
@@ -169,6 +172,31 @@ namespace Flux_Generated_DeferredShading
 		inline constexpr unsigned int kClusterLightIndices_Binding = 21;
 		inline constexpr unsigned int kClusterLightIndices_DescriptorCount = 1;
 		// kind: StructuredBuffer
+		inline constexpr const char* kg_xGBufferEmissiveTex_Name = "g_xGBufferEmissiveTex";
+		inline constexpr unsigned int kg_xGBufferEmissiveTex_Set = 0;
+		inline constexpr unsigned int kg_xGBufferEmissiveTex_Binding = 22;
+		inline constexpr unsigned int kg_xGBufferEmissiveTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xSSAOTex_Name = "g_xSSAOTex";
+		inline constexpr unsigned int kg_xSSAOTex_Set = 0;
+		inline constexpr unsigned int kg_xSSAOTex_Binding = 23;
+		inline constexpr unsigned int kg_xSSAOTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kShadowSampling_Name = "ShadowSampling";
+		inline constexpr unsigned int kShadowSampling_Set = 0;
+		inline constexpr unsigned int kShadowSampling_Binding = 24;
+		inline constexpr unsigned int kShadowSampling_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct ShadowSampling_CB
+		{
+			unsigned char m_ag_xCascadeSplitViewDepth[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xCascadeWorldPerTexel[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xCascadeDepthRange[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xParams0[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xParams1[16]; // slang=vector offset=64 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xParams2[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(ShadowSampling_CB) == 96, "ShadowSampling_CB size drifted from Slang reflection");
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
 		inline constexpr unsigned int kFrameConstants_Set = 0;
 		inline constexpr unsigned int kFrameConstants_Binding = 0;

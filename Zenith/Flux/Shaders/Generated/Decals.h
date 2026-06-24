@@ -41,6 +41,11 @@ namespace Flux_Generated_Decals
 		inline constexpr unsigned int kDecalBuffer_Binding = 3;
 		inline constexpr unsigned int kDecalBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
+		inline constexpr const char* kg_xBrushTex_Name = "g_xBrushTex";
+		inline constexpr unsigned int kg_xBrushTex_Set = 0;
+		inline constexpr unsigned int kg_xBrushTex_Binding = 4;
+		inline constexpr unsigned int kg_xBrushTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
 		inline constexpr unsigned int kFrameConstants_Set = 0;
 		inline constexpr unsigned int kFrameConstants_Binding = 0;

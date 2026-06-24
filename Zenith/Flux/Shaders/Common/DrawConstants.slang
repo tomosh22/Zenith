@@ -1,15 +1,13 @@
 // =====================================================================
 // Common.DrawConstants — shared Slang module.
 //
-// Per-draw material constants (192 bytes), bound at set=1 binding=0 in
+// Per-draw material constants (208 bytes), bound at set=1 binding=0 in
 // the mesh path. Layout matches C++ MaterialDrawConstants in
-// Flux_MaterialBinding.h — the first five fields must never move (the
-// InstancedMeshes vertex path aliases g_xEmissiveParams as VAT params).
-//
-// The 5th field (g_xEmissiveParams) is repurposed by InstancedMeshes
-// vertex shaders as VAT animation texture parameters — both
-// interpretations read the same 16 bytes; the C++ caller writes the
-// appropriate flavour.
+// Flux_MaterialBinding.h. Every mesh G-buffer/shadow writer — including
+// InstancedMeshes — uses this same layout; g_xEmissiveParams carries real
+// emissive. InstancedMeshes' VAT params ride the appended g_xVATParams field
+// (0 for non-instanced) — not a separate constant buffer, because the backend
+// allows only one scratch/draw-constants buffer per descriptor set.
 //
 // Helper accessors mirror the GLSL macro names from MaterialCommon.fxh.
 // =====================================================================
@@ -20,11 +18,12 @@ public struct DrawConstantsLayout
 	public float4   g_xBaseColor;         // 16 bytes — offset  64 — RGBA tint
 	public float4   g_xMaterialParams;    // 16 bytes — offset  80 — (metallic, roughness, alphaCutoff, occlusionStrength)
 	public float4   g_xUVParams;          // 16 bytes — offset  96 — (tilingX, tilingY, offsetX, offsetY)
-	public float4   g_xEmissiveParams;    // 16 bytes — offset 112 — (R, G, B, intensity) or VAT params for instanced
+	public float4   g_xEmissiveParams;    // 16 bytes — offset 112 — (R, G, B, intensity)
 	public float4   g_xMaterialParams2;   // 16 bytes — offset 128 — (specular, normalStrength, clearCoatStrength, clearCoatRoughness)
 	public float4   g_xParallaxParams;    // 16 bytes — offset 144 — (heightScale, pomMinSteps, pomMaxSteps, unused)
 	public float4   g_xDetailParams;      // 16 bytes — offset 160 — (detailTilingX, detailTilingY, detailNormalStrength, detailAlbedoStrength)
 	public float4   g_xFlagsParams;       // 16 bytes — offset 176 — (MaterialDrawFlags as uint bits, unused x3)
+	public float4   g_xVATParams;         // 16 bytes — offset 192 — InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced
 };
 
 // Bound at set=1 binding=0 by every mesh-path shader. Placed here so a
@@ -62,3 +61,6 @@ public float2 GetDetailTiling()          { return DrawConstants.g_xDetailParams.
 public float  GetDetailNormalStrength()  { return DrawConstants.g_xDetailParams.z; }
 public float  GetDetailAlbedoStrength()  { return DrawConstants.g_xDetailParams.w; }
 public uint   GetMaterialFlags()         { return asuint(DrawConstants.g_xFlagsParams.x); }
+// InstancedMeshes VAT params (0 for non-instanced draws → VAT disabled).
+public float2 GetVATTextureSize()        { return DrawConstants.g_xVATParams.xy; }
+public bool   GetVATEnabled()            { return DrawConstants.g_xVATParams.z > 0.0; }

@@ -13,21 +13,6 @@
 
 namespace Flux_Generated_SSAO
 {
-	// ----- SSAO_Upsample (SSAO/Flux_SSAO_Upsample) -----
-	namespace SSAO_Upsample
-	{
-		inline constexpr const char* kg_xOcclusionTex_Name = "g_xOcclusionTex";
-		inline constexpr unsigned int kg_xOcclusionTex_Set = 0;
-		inline constexpr unsigned int kg_xOcclusionTex_Binding = 0;
-		inline constexpr unsigned int kg_xOcclusionTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 0;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 1;
-		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-	}
-
 	// ----- SSAO_Blur (SSAO/Flux_SSAO_Blur) -----
 	namespace SSAO_Blur
 	{

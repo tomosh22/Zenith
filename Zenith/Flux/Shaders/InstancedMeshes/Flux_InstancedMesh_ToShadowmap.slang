@@ -1,27 +1,35 @@
 // =====================================================================
 // Flux_InstancedMesh_ToShadowmap — Slang module.
 //
-// Subsystem: InstancedMeshes. Depth-only pass for instanced meshes.
-// Per-instance transform from the same TransformBuffer as the G-buffer
-// pass, and — crucially — the SAME VAT (vertex-animation-texture)
+// Subsystem: InstancedMeshes. Depth-only pass for instanced meshes, now
+// with masked alpha cutout so foliage casts cut-out (not solid-quad)
+// shadows. Per-instance transform from the same TransformBuffer as the
+// G-buffer pass, and — crucially — the SAME VAT (vertex-animation-texture)
 // deformation. The shadow geometry MUST match the lit G-buffer geometry:
 // if the shadow map holds the rest pose while the G-buffer holds the
 // swayed pose, the self-shadow test is misaligned, and because the swayed
 // pose changes every frame the misalignment oscillates -> flickering
-// shadow acne across all animated instances (the tree-flicker bug). The
-// extra VAT sample per shadow vertex is the cost of correct animated
-// self-shadowing.
+// shadow acne across all animated instances (the tree-flicker bug).
 //
-// Bindings (mirror the G-buffer pass so the same buffers/params bind):
-//   set=1 binding=0  DrawConstants (g_xEmissiveParams = VAT texW/texH/enable)
-//   set=1 binding=1  ShadowMatrix
-//   set=1 binding=6  TransformBuffer
-//   set=1 binding=7  AnimDataBuffer
-//   set=1 binding=8  VisibleIndexBuffer
-//   set=1 binding=9  g_xAnimationTex (VAT positions per frame)
+// The fragment shader runs the SHARED masked cutout (SampleAlbedoWithCutout
+// in Common.MaterialSurface, identical to the G-buffer path), guarded on
+// GetAlphaCutoff() > 0 so opaque casters never sample and keep their
+// depth-only cost.
+//
+// Bindings (set=1):
+//   binding 0   DrawConstants (alpha cutoff + UV transform + base-colour tint +
+//               g_xVATParams: VAT texW/texH/enable)
+//   binding 1   ShadowMatrix
+//   binding 2   g_xBaseColorTex (masked cutout)
+//   binding 10  TransformBuffer
+//   binding 11  AnimDataBuffer
+//   binding 12  VisibleIndexBuffer
+//   binding 13  g_xAnimationTex (VAT positions per frame; POINT sampler)
 // =====================================================================
 
 import Common.DrawConstants;
+import Common.Material;
+import Common.MaterialSurface;
 
 struct VsIn
 {
@@ -33,15 +41,28 @@ struct VsIn
 	float4 a_xColor     : COLOR;
 };
 
+struct VsOut
+{
+	float4 position    : SV_Position;
+	float2 uv          : TEXCOORD0;
+	float4 vertexColor : TEXCOORD1;
+};
+
 struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
 [[vk::binding(1, 1)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix;
 
-// Read-only in the graphics pipeline (see Flux_InstancedMesh_ToGBuffer
+// Masked cutout texture (matches the G-buffer's base-colour slot by name).
+[[vk::binding(2, 1)]] Sampler2D g_xBaseColorTex;
+
+// Instancing resources at bindings >= 10 (see Flux_InstancedMesh_ToGBuffer
 // for the vertexPipelineStoresAndAtomics rationale).
-[[vk::binding(6, 1)]] StructuredBuffer<float4x4> TransformBuffer;
-[[vk::binding(7, 1)]] StructuredBuffer<uint4>    AnimDataBuffer;
-[[vk::binding(8, 1)]] StructuredBuffer<uint>     VisibleIndexBuffer;
-[[vk::binding(9, 1)]] Sampler2D                  g_xAnimationTex;
+[[vk::binding(10, 1)]] StructuredBuffer<float4x4> TransformBuffer;
+[[vk::binding(11, 1)]] StructuredBuffer<uint4>    AnimDataBuffer;
+[[vk::binding(12, 1)]] StructuredBuffer<uint>     VisibleIndexBuffer;
+[[vk::binding(13, 1)]] Sampler2D                  g_xAnimationTex;
+
+// VAT params live in DrawConstants.g_xVATParams (see Flux_InstancedMesh_ToGBuffer:
+// one scratch/draw-constants buffer per descriptor set, so VAT can't be a 2nd CB).
 
 // VAT lookup — IDENTICAL to Flux_InstancedMesh_ToGBuffer::SampleVAT so the
 // shadow vertex lands at exactly the same world position as the G-buffer
@@ -71,29 +92,44 @@ float3 SampleVAT(uint uVertexID, uint uAnimIndex, float fAnimTime,
 }
 
 [shader("vertex")]
-float4 vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) : SV_Position
+VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
 {
+	VsOut o;
+
 	uint     uInstanceID = VisibleIndexBuffer[instanceId];
 	float4x4 xModelMatrix = TransformBuffer[uInstanceID];
 	uint4    xAnimData    = AnimDataBuffer[uInstanceID];
 
 	// Same VAT deformation as the G-buffer pass (matched bit-for-bit).
 	float3 xLocalPos = input.a_xPosition;
-	bool   bUseVAT  = (DrawConstants.g_xEmissiveParams.z > 0.0) && ((xAnimData.w & 2u) != 0u);
+	bool   bUseVAT  = GetVATEnabled() && ((xAnimData.w & 2u) != 0u);
 	if (bUseVAT)
 	{
 		uint  uAnimIndex  = xAnimData.x & 0xFFFFu;
 		uint  uFrameCount = (xAnimData.x >> 16u) & 0xFFFFu;
 		float fAnimTime   = asfloat(xAnimData.y);
-		uint  uTexWidth   = (uint)DrawConstants.g_xEmissiveParams.x;
-		uint  uTexHeight  = (uint)DrawConstants.g_xEmissiveParams.y;
+		float2 xVATSize   = GetVATTextureSize();
+		uint  uTexWidth   = (uint)xVATSize.x;
+		uint  uTexHeight  = (uint)xVATSize.y;
 		xLocalPos = SampleVAT(vertexId, uAnimIndex, fAnimTime,
 								uFrameCount, uTexWidth, uTexHeight);
 	}
 
 	float3 xWorldPos = mul(xModelMatrix, float4(xLocalPos, 1.0)).xyz;
-	return mul(ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	o.position    = mul(ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	o.uv          = input.a_xUV;
+	o.vertexColor = input.a_xColor;
+	return o;
 }
 
 [shader("fragment")]
-void fsMain() {}
+void fsMain(VsOut input)
+{
+	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
+	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
+	if (GetAlphaCutoff() > 0.0)
+	{
+		SampleAlbedoWithCutout(g_xBaseColorTex,
+			TransformUV(input.uv, GetUVTiling(), GetUVOffset()), input.vertexColor);
+	}
+}

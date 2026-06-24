@@ -666,7 +666,12 @@ void GenerateTreeMaterials(const std::string& strDir)
 		pxLeaves->SetDiffuseTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Leaves_Albedo" ZENITH_TEXTURE_EXT));
 		pxLeaves->SetRoughness(0.78f);
 		pxLeaves->SetMetallic(0.0f);
-		pxLeaves->SetAlphaCutoff(0.45f);   // alpha-tested foliage
+		// Alpha-tested foliage: the leaf albedo's alpha channel is a real leaf-shape mask,
+		// so the material MUST be MASKED — only then does BuildMaterialDrawConstants feed a
+		// non-zero cutoff to the shader's discard (OPAQUE writes cutoff 0). Without this the
+		// leaf cards render as opaque quads (the leaf texture on a black square).
+		pxLeaves->SetBlendMode(MATERIAL_BLEND_MASKED);
+		pxLeaves->SetAlphaCutoff(0.45f);
 		pxLeaves->SaveToFile(strDir + "Tree_Leaves.zmtrl");
 	}
 }

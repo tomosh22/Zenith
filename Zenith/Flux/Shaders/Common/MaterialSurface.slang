@@ -73,6 +73,23 @@ public float2 ParallaxOcclusionUV(Sampler2D xHeightTex, float2 xUV, float3 xView
 	return lerp(xCurUV, xPrevUV, saturate(fWeight));
 }
 
+// Single authoritative masked-alpha cutout — the ONE place the engine samples base
+// colour and applies the Masked-mode discard, so the G-buffer mesh path and the shadow
+// path cut identically. Always samples; multiplies the per-draw base-colour tint and
+// (legacy convention) vertex colour when its alpha > 0; discards when the resulting alpha
+// is below the cutoff. EvaluateMaterialSurface calls this unconditionally for its own
+// transformed xUV (the G-buffer always needs base colour); the shadow fragment shaders
+// wrap the call in their own GetAlphaCutoff() > 0 guard so opaque casters never sample
+// and keep their depth-only cost. May DISCARD (cutoff > 0 = Masked).
+public float4 SampleAlbedoWithCutout(Sampler2D xBaseColorTex, float2 xUV, float4 xVertexColor)
+{
+	float4 xAlbedo = SampleDiffuseWithBaseColor(xBaseColorTex, xUV, DrawConstants.g_xBaseColor);
+	if (xVertexColor.a > 0.0) xAlbedo *= xVertexColor;
+	float fAlphaCutoff = GetAlphaCutoff();
+	if (fAlphaCutoff > 0.0 && xAlbedo.a < fAlphaCutoff) discard;
+	return xAlbedo;
+}
+
 // The uber-material evaluation. xTBN columns are (T, B, N) in world space
 // (BuildTBN from Common.Material); xWorldViewDir points from the surface
 // toward the camera; vertex colour modulates only when its alpha > 0
@@ -100,12 +117,8 @@ public MaterialSurface EvaluateMaterialSurface(
 								   GetHeightScale(), GetPOMMinSteps(), GetPOMMaxSteps());
 	}
 
-	// --- Base colour + vertex tint + alpha test ---
-	float4 xAlbedo = SampleDiffuseWithBaseColor(xBaseColorTex, xUV, DrawConstants.g_xBaseColor);
-	if (xVertexColor.a > 0.0) xAlbedo *= xVertexColor;
-
-	float fAlphaCutoff = GetAlphaCutoff();
-	if (fAlphaCutoff > 0.0 && xAlbedo.a < fAlphaCutoff) discard;
+	// --- Base colour + vertex tint + alpha test (shared with the shadow path) ---
+	float4 xAlbedo = SampleAlbedoWithCutout(xBaseColorTex, xUV, xVertexColor);
 
 	// --- Normal (strength-scaled, optionally detail-blended) ---
 	// The primary normal slot is BC5 (R+G only); reconstruct Z = sqrt(1 - x^2 - y^2).

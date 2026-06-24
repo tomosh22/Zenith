@@ -332,11 +332,11 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
-	// Shadow pass binds only DrawConstants + ShadowMatrix. Slang reflection
-	// drops bindings that the shader doesn't actually reference (this
-	// program imports Common.Frame but reads no FrameConstants field), so
-	// FrameConstants doesn't appear in the reflected layout — binding it
-	// here would fail the name lookup.
+	// Shadow pass binds DrawConstants + ShadowMatrix + the base-colour texture (for the
+	// masked alpha cutout — opaque materials write cutoff 0 and the FS skips the sample).
+	// Slang reflection drops bindings the shader doesn't reference (no FrameConstants
+	// field is read), so FrameConstants doesn't appear in the layout — binding it would
+	// fail the name lookup.
 
 	// Iterate the UNCULLLED shadow packet (EnsureShadowPacket, main thread) — off-screen
 	// casters still cast. Shared across all 4 shadow cascades. No ECS access here — this
@@ -353,19 +353,25 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 			Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
 			if (!pxMeshInstance) continue;
 
-			// Translucent/Additive submeshes don't cast shadows (UE-style).
+			// Mirror the G-buffer blank-material fallback (RenderModelInstanceMeshes) so the
+			// masked-cutout shadow FS always has a base-colour texture to read.
 			Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-			if (pxMaterial)
-			{
-				const MaterialBlendMode eBlend = pxMaterial->GetResolved().m_xParams.m_eBlendMode;
-				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE) continue;
-			}
+			if (!pxMaterial) pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+
+			// Translucent/Additive submeshes don't cast shadows (UE-style).
+			const MaterialBlendMode eBlend = pxMaterial->GetResolved().m_xParams.m_eBlendMode;
+			if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE) continue;
 
 			xCmdBuf.SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
 			xCmdBuf.SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
-			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
+			// Full material constants: the shadow FS reads the alpha cutoff + UV transform +
+			// base-colour tint. Opaque writes cutoff 0 -> the FS uniform-branches out -> depth-only.
+			MaterialDrawConstants xPushConstants;
+			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
+			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindSRV(m_xShadowShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}

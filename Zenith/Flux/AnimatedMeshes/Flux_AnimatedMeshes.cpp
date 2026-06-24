@@ -338,14 +338,26 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, con
 				continue;
 			}
 
+			// Mirror the G-buffer null policy (skinned null-material meshes don't render, so they
+			// don't cast); fetch the material for the masked cutout the shadow FS reads.
+			Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+			if (!pxMaterial) continue;
+			const MaterialBlendMode eBlend = pxMaterial->GetResolved().m_xParams.m_eBlendMode;
+			if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE) continue;
+
 			xCmdBuf.SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
 			xCmdBuf.SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
-			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
+			// Full material constants: the shadow FS reads the alpha cutoff + UV transform.
+			// Opaque writes cutoff 0 -> the FS uniform-branches out -> depth-only cost.
+			MaterialDrawConstants xPushConstants;
+			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
+			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
-			// Bind set 1: bone buffer and shadow matrix (named bindings)
+			// Bind set 1: bone buffer, shadow matrix, base colour (named bindings)
 			xBinder.BindCBV(m_xShadowShader, "Bones", &xBoneBuffer.GetCBV());
 			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindSRV(m_xShadowShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}

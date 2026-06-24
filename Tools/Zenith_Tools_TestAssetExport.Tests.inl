@@ -1,5 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 // ============================================================================
 // StickFigure procedural-clip tests
@@ -297,4 +299,23 @@ void Zenith_UnitTests::TestStickFigureJumpClipReturnsToIdentityAtEnd()
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xIdentity),
 		"Jump Spine last keyframe should be identity");
 	delete pxClip;
+}
+
+// ----- ProceduralTree leaf material regression -------------------------------
+// The leaf albedo's alpha channel is a real leaf-shape mask, so the GENERATED leaf
+// material MUST be MASKED (GenerateTreeMaterials). A regression to OPAQUE makes the
+// leaves render as opaque quads (leaf texture on a black square) — BuildMaterialDraw-
+// Constants only feeds a non-zero cutoff to the shader's discard for MASKED materials.
+// Loads the committed/generated .zmtrl and guards against the SetBlendMode omission.
+ZENITH_TEST(ProceduralTree, LeafMaterialIsAlphaMasked)
+{
+	// Load via the asset registry (the public path; LoadFromFile is private). The
+	// registry resolves the engine: prefix and caches.
+	Zenith_MaterialAsset* pxLeaves = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(
+		"engine:Meshes/ProceduralTree/Tree_Leaves.zmtrl");
+	ZENITH_ASSERT_NOT_NULL(pxLeaves, "Tree_Leaves.zmtrl must load (run a tools boot to (re)generate it)");
+	ZENITH_ASSERT_EQ(pxLeaves->GetBlendMode(), MATERIAL_BLEND_MASKED,
+		"Leaf material must be MASKED so the alpha mask cuts the leaves out");
+	ZENITH_ASSERT_EQ_FLOAT(pxLeaves->GetAlphaCutoff(), 0.45f, 0.0001f,
+		"Leaf alpha cutoff must stay 0.45");
 }

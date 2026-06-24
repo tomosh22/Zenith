@@ -21,16 +21,21 @@ namespace Flux_Generated_Text
 		inline constexpr unsigned int kg_xTexture_Binding = 1;
 		inline constexpr unsigned int kg_xTexture_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr const char* kTextClipConstants_Name = "TextClipConstants";
-		inline constexpr unsigned int kTextClipConstants_Set = 0;
-		inline constexpr unsigned int kTextClipConstants_Binding = 2;
-		inline constexpr unsigned int kTextClipConstants_DescriptorCount = 1;
+		inline constexpr const char* kTextConstants_Name = "TextConstants";
+		inline constexpr unsigned int kTextConstants_Set = 0;
+		inline constexpr unsigned int kTextConstants_Binding = 2;
+		inline constexpr unsigned int kTextConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
-		struct TextClipConstants_CB
+		struct TextConstants_CB
 		{
 			unsigned char m_ag_xClipRect[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xAtlasSizePx[8]; // slang=vector offset=16 arrayCount=2 (no C++ mapping)
+			float m_fg_fAtlasPxRange; // slang=float offset=24
+			float m_fg_fPad; // slang=float offset=28
 		};
-		static_assert(sizeof(TextClipConstants_CB) == 16, "TextClipConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TextConstants_CB) == 32, "TextConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(TextConstants_CB, m_fg_fAtlasPxRange) == 24, "TextConstants.g_fAtlasPxRange offset drifted from Slang reflection");
+		static_assert(offsetof(TextConstants_CB, m_fg_fPad) == 28, "TextConstants.g_fPad offset drifted from Slang reflection");
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
 		inline constexpr unsigned int kFrameConstants_Set = 0;
 		inline constexpr unsigned int kFrameConstants_Binding = 0;

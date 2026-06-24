@@ -7,26 +7,35 @@
 // indirection table (visible-instance compact indices), letting the
 // culling pass cheaply skip culled instances.
 //
-// DrawConstants.g_xEmissiveParams is repurposed as VAT animation
-// texture parameters (texture width, height, vat-enabled flag, unused);
-// the C++ caller writes the appropriate flavour. See Common.DrawConstants.
+// Material evaluation is the SHARED uber-material path: the fragment
+// shader calls Common.MaterialSurface::EvaluateMaterialSurface exactly
+// like StaticMeshes/AnimatedMeshes — full feature set (POM, detail maps,
+// emissive RGB, clear coat, the single authoritative alpha cutout). The
+// only instanced-specific work is the VAT vertex deformation and the
+// per-instance colour tint applied to the resolved albedo.
 //
-// Bindings:
-//   set=1 binding=0  DrawConstants
-//   set=1 binding=1  g_xBaseColorTex
-//   set=1 binding=2  g_xNormalTex
-//   set=1 binding=3  g_xRoughnessMetallicTex
-//   set=1 binding=4  g_xOcclusionTex
-//   set=1 binding=5  (unused — emissive needs the VAT-aliased params)
-//   set=1 binding=6  TransformBuffer (RWStructuredBuffer, written by culling)
-//   set=1 binding=7  AnimDataBuffer  (RWStructuredBuffer)
-//   set=1 binding=8  VisibleIndexBuffer (RWStructuredBuffer<uint>)
-//   set=1 binding=9  g_xAnimationTex (VAT positions per frame)
+// The instancing resources live ABOVE the 9 material-texture slots so
+// they don't collide with the shared set=1 bindings 1-9. VAT animation
+// texture parameters ride DrawConstants.g_xVATParams (an appended field of the
+// shared MaterialDrawConstants) rather than aliasing the emissive param slot —
+// emissive is now real, and a separate VAT constant buffer is impossible (one
+// scratch/draw-constants buffer per descriptor set).
+//
+// Bindings (set=1):
+//   binding 0   DrawConstants (shared MaterialDrawConstants — real emissive +
+//               g_xVATParams carrying the VAT texW/texH/enable for this group)
+//   binding 1-9 the 9 material textures (base/normal/RM/occlusion/emissive/
+//               height/detailAlbedo/detailNormal/detailMask)
+//   binding 10  TransformBuffer    (StructuredBuffer<float4x4>, written by culling)
+//   binding 11  AnimDataBuffer     (StructuredBuffer<uint4>)
+//   binding 12  VisibleIndexBuffer (StructuredBuffer<uint>)
+//   binding 13  g_xAnimationTex    (VAT positions per frame; POINT sampler)
 // =====================================================================
 
 import Common.Frame;
 import Common.DrawConstants;
 import Common.Material;
+import Common.MaterialSurface;
 import Common.GBuffer;
 
 struct VsIn
@@ -51,23 +60,33 @@ struct VsOut
 	float4 instanceTint  : TEXCOORD6;
 };
 
-// No emissive texture: g_xEmissiveParams is VAT data on this path, so the
-// emissive colour/intensity needed to interpret an emissive map are not
-// available — instanced geometry writes zero emissive (slot 5 left unused).
+// Material textures — the full 9-slot set, identical to the static-mesh path
+// (Flux_StaticMesh_ToGBuffer.slang), so EvaluateMaterialSurface gets everything.
 [[vk::binding(1, 1)]] Sampler2D g_xBaseColorTex;
 [[vk::binding(2, 1)]] Sampler2D g_xNormalTex;
 [[vk::binding(3, 1)]] Sampler2D g_xRoughnessMetallicTex;
 [[vk::binding(4, 1)]] Sampler2D g_xOcclusionTex;
+[[vk::binding(5, 1)]] Sampler2D g_xEmissiveTex;
+[[vk::binding(6, 1)]] Sampler2D g_xHeightTex;
+[[vk::binding(7, 1)]] Sampler2D g_xDetailAlbedoTex;
+[[vk::binding(8, 1)]] Sampler2D g_xDetailNormalTex;
+[[vk::binding(9, 1)]] Sampler2D g_xDetailMaskTex;
 
-// Read-only in the graphics pipeline. Without
-// vertexPipelineStoresAndAtomics, vertex/tess/geom storage buffers must
-// be NonWritable — Slang emits that decoration for StructuredBuffer<T>
-// but not for RWStructuredBuffer<T>. The matching compute culling shader
-// uses RWStructuredBuffer to write into the same physical descriptors.
-[[vk::binding(6, 1)]] StructuredBuffer<float4x4> TransformBuffer;
-[[vk::binding(7, 1)]] StructuredBuffer<uint4>    AnimDataBuffer;
-[[vk::binding(8, 1)]] StructuredBuffer<uint>     VisibleIndexBuffer;
-[[vk::binding(9, 1)]] Sampler2D                    g_xAnimationTex;
+// Instancing resources at bindings >= 10 (above the material-texture slots).
+// Read-only in the graphics pipeline. Without vertexPipelineStoresAndAtomics,
+// vertex/tess/geom storage buffers must be NonWritable — Slang emits that
+// decoration for StructuredBuffer<T> but not for RWStructuredBuffer<T>. The
+// matching compute culling shader uses RWStructuredBuffer to write into the
+// same physical descriptors.
+//
+// VAT animation texture params live in DrawConstants.g_xVATParams (a real field
+// of the shared 208-byte MaterialDrawConstants — NOT a separate constant buffer:
+// the backend allows only ONE scratch/draw-constants buffer per descriptor set,
+// so a second BindDrawConstants on set 1 would clobber DrawConstants).
+[[vk::binding(10, 1)]] StructuredBuffer<float4x4> TransformBuffer;
+[[vk::binding(11, 1)]] StructuredBuffer<uint4>    AnimDataBuffer;
+[[vk::binding(12, 1)]] StructuredBuffer<uint>     VisibleIndexBuffer;
+[[vk::binding(13, 1)]] Sampler2D                  g_xAnimationTex;
 
 float4 UnpackRGBA8(uint uPacked)
 {
@@ -80,7 +99,9 @@ float4 UnpackRGBA8(uint uPacked)
 
 // VAT lookup: positions baked into a 2D texture (X=vertex id,
 // Y=animIndex*frameCount + frame). Two-tap LERP between current frame
-// and next for smooth animation.
+// and next for smooth animation. MUST stay bit-for-bit identical to the
+// shadow shader's SampleVAT so the shadow vertex lands at the same world
+// position as the G-buffer vertex (a mismatch reintroduces tree flicker).
 float3 SampleVAT(uint uVertexID, uint uAnimIndex, float fAnimTime,
 				   uint uFrameCount, uint uTextureWidth, uint uTextureHeight)
 {
@@ -114,23 +135,20 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	uint4    xAnimData    = AnimDataBuffer[uInstanceID];
 	float4   xInstanceTint = UnpackRGBA8(xAnimData.z);
 
-	// VAT enable: high bit of g_xAnimTexParams.z (texture width) doubles
-	// as a global VAT-enabled toggle, plus a per-instance flag at bit 1
-	// of xAnimData.w. Both must be true for VAT sampling.
+	// VAT enable: global toggle (DrawConstants.g_xVATParams.z > 0) AND a per-instance
+	// flag at bit 1 of xAnimData.w. Both must be true for VAT sampling.
 	float3 xLocalPos = input.a_xPosition;
-	bool   bUseVAT  = (DrawConstants.g_xEmissiveParams.z > 0.0) && ((xAnimData.w & 2u) != 0u);
+	bool   bUseVAT  = GetVATEnabled() && ((xAnimData.w & 2u) != 0u);
 	if (bUseVAT)
 	{
 		// Flux_InstanceAnimData packs m_uAnimationIndex in the LOW 16 bits of
-		// word 0 and m_uFrameCount in the HIGH bits (little-endian uint16
-		// pair). Decoding them swapped made uFrameCount read 0, so the
-		// fAnimTime * (uFrameCount - 1u) row computation underflowed and every
-		// instance clamp-sampled one frozen row — VAT animation never played.
+		// word 0 and m_uFrameCount in the HIGH bits (little-endian uint16 pair).
 		uint  uAnimIndex  = xAnimData.x & 0xFFFFu;
 		uint  uFrameCount = (xAnimData.x >> 16u) & 0xFFFFu;
 		float fAnimTime   = asfloat(xAnimData.y);
-		uint  uTexWidth   = (uint)DrawConstants.g_xEmissiveParams.x;
-		uint  uTexHeight  = (uint)DrawConstants.g_xEmissiveParams.y;
+		float2 xVATSize   = GetVATTextureSize();
+		uint  uTexWidth   = (uint)xVATSize.x;
+		uint  uTexHeight  = (uint)xVATSize.y;
 		xLocalPos = SampleVAT(vertexId, uAnimIndex, fAnimTime,
 								uFrameCount, uTexWidth, uTexHeight);
 	}
@@ -150,41 +168,24 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	return o;
 }
 
-// NOTE: the instanced path supports the core material set (base colour,
-// normal, R/M, specular, occlusion, alpha cutoff, UV transform, unlit,
-// two-sided normal flip) but NOT POM/detail maps/emissive colour —
-// g_xEmissiveParams carries VAT data here (see header comment), so emissive
-// stays texture-only at unit intensity for instanced geometry, and the
-// height/detail slots are not bound (bindings 6-9 hold the instancing
-// buffers).
+// Shared uber-material evaluation — identical to Flux_StaticMesh_ToGBuffer's fragment,
+// plus the per-instance colour tint applied to the resolved albedo. The alpha cutout,
+// emissive, POM, detail maps, clear coat and geometric specular-AA all come for free.
 [shader("fragment")]
 GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
-	const uint uFlags = GetMaterialFlags();
+	float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
+	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - input.worldPos);
 
-	float2 xUV = TransformUV(input.uv, GetUVTiling(), GetUVOffset());
+	MaterialSurface xSurface = EvaluateMaterialSurface(
+		g_xBaseColorTex, g_xNormalTex, g_xRoughnessMetallicTex,
+		g_xOcclusionTex, g_xEmissiveTex, g_xHeightTex,
+		g_xDetailAlbedoTex, g_xDetailNormalTex, g_xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace);
 
-	float4 xDiffuse = SampleDiffuseWithBaseColor(g_xBaseColorTex, xUV, DrawConstants.g_xBaseColor);
-	xDiffuse.rgb   *= input.instanceTint.rgb; // per-instance colour tint
-	if (input.vertexColor.a > 0.0) xDiffuse *= input.vertexColor;
-	float fAlphaCutoff = GetAlphaCutoff();
-	if (fAlphaCutoff > 0.0 && xDiffuse.a < fAlphaCutoff) discard;
+	// Per-instance colour tint (RGB only — matches the previous instanced path; the
+	// cutout already happened inside EvaluateMaterialSurface on the untinted alpha).
+	xSurface.albedo.rgb *= input.instanceTint.rgb;
 
-	float3x3 TBN          = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-	float3   xWorldNormal = SampleNormalMap(g_xNormalTex, xUV, TBN);
-	if ((uFlags & MATERIAL_FLAG_TWO_SIDED_NORMAL_FLIP) != 0u && !bFrontFace)
-	{
-		xWorldNormal = -xWorldNormal;
-	}
-
-	float fRoughness, fMetallic;
-	SampleRoughnessMetallic(g_xRoughnessMetallicTex, xUV,
-							 GetRoughnessMultiplier(), GetMetallicMultiplier(),
-							 fRoughness, fMetallic);
-	float fOcclusion = SampleOcclusion(g_xOcclusionTex, xUV, GetOcclusionStrength());
-
-	uint uShadingModel = ((uFlags & MATERIAL_FLAG_UNLIT) != 0u) ? GBUFFER_SHADING_UNLIT : GBUFFER_SHADING_DEFAULT_LIT;
-
-	return MakeGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic,
-						GetSpecular(), float3(0.0, 0.0, 0.0), 0.0, 0.0, uShadingModel);
+	return MakeGBuffer(xSurface);
 }

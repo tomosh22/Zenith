@@ -19,15 +19,17 @@ enum MaterialDrawFlags : u_int
 };
 
 // ============================================================================
-// Material Draw Constants (192 bytes)
+// Material Draw Constants (208 bytes)
 // Used by StaticMeshes, AnimatedMeshes, InstancedMeshes, Translucency and the
 // editor material preview. Bound through the per-frame scratch UBO
 // (Zenith_Vulkan_CommandBuffer::BindDrawConstants) — NOT hardware push
 // constants — so the 128-byte push-constant limit does not apply.
 //
-// LAYOUT RULE: the first five fields must never be reordered or resized —
-// InstancedMeshes' VAT vertex path aliases m_xEmissiveParams by offset (112).
-// New fields append only.
+// LAYOUT RULE: must stay byte-identical to DrawConstantsLayout in
+// Common/DrawConstants.slang. New fields append only. (InstancedMeshes now uses
+// this layout verbatim — m_xEmissiveParams carries real emissive; its VAT params
+// ride the appended m_xVATParams field, since the backend allows only ONE
+// scratch/draw-constants buffer per descriptor set.)
 // ============================================================================
 struct MaterialDrawConstants
 {
@@ -35,13 +37,14 @@ struct MaterialDrawConstants
 	Zenith_Maths::Vector4 m_xBaseColor;         // 16 bytes (offset  64)
 	Zenith_Maths::Vector4 m_xMaterialParams;    // 16 bytes (offset  80) (metallic, roughness, alphaCutoff, occlusionStrength)
 	Zenith_Maths::Vector4 m_xUVParams;          // 16 bytes (offset  96) (tilingX, tilingY, offsetX, offsetY)
-	Zenith_Maths::Vector4 m_xEmissiveParams;    // 16 bytes (offset 112) (R, G, B, intensity) — VAT params for InstancedMeshes
+	Zenith_Maths::Vector4 m_xEmissiveParams;    // 16 bytes (offset 112) (R, G, B, intensity)
 	Zenith_Maths::Vector4 m_xMaterialParams2;   // 16 bytes (offset 128) (specular, normalStrength, clearCoatStrength, clearCoatRoughness)
 	Zenith_Maths::Vector4 m_xParallaxParams;    // 16 bytes (offset 144) (heightScale, pomMinSteps, pomMaxSteps, unused)
 	Zenith_Maths::Vector4 m_xDetailParams;      // 16 bytes (offset 160) (detailTilingX, detailTilingY, detailNormalStrength, detailAlbedoStrength)
 	Zenith_Maths::Vector4 m_xFlagsParams;       // 16 bytes (offset 176) (MaterialDrawFlags as uint bits, unused x3)
+	Zenith_Maths::Vector4 m_xVATParams;         // 16 bytes (offset 192) InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced
 };
-static_assert(sizeof(MaterialDrawConstants) == 192, "MaterialDrawConstants must be 192 bytes (mirrored by Common/DrawConstants.slang)");
+static_assert(sizeof(MaterialDrawConstants) == 208, "MaterialDrawConstants must be 208 bytes (mirrored by Common/DrawConstants.slang)");
 
 // ============================================================================
 // Terrain Material Push Constants (288 bytes)
@@ -157,6 +160,10 @@ inline void BuildMaterialDrawConstants(
 		Zenith_Maths::Vector4 xFlags(0.0f);
 		memcpy(&xFlags.x, &uFlags, sizeof(u_int));
 		xOut.m_xFlagsParams = xFlags;
+
+		// VAT is instanced-only; the instanced path overwrites this after the call.
+		// Non-instanced consumers leave it zero (vat-enabled = 0).
+		xOut.m_xVATParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 	else
 	{
@@ -169,6 +176,7 @@ inline void BuildMaterialDrawConstants(
 		xOut.m_xParallaxParams = Zenith_Maths::Vector4(0.0f, 8.0f, 32.0f, 0.0f);
 		xOut.m_xDetailParams = Zenith_Maths::Vector4(4.0f, 4.0f, 1.0f, 1.0f);
 		xOut.m_xFlagsParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+		xOut.m_xVATParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 }
 

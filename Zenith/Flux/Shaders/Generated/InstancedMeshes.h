@@ -16,10 +16,10 @@ namespace Flux_Generated_InstancedMeshes
 	// ----- InstancedMesh_ToGBuffer (InstancedMeshes/Flux_InstancedMesh_ToGBuffer) -----
 	namespace InstancedMesh_ToGBuffer
 	{
-		inline constexpr const char* kg_xDiffuseTex_Name = "g_xDiffuseTex";
-		inline constexpr unsigned int kg_xDiffuseTex_Set = 1;
-		inline constexpr unsigned int kg_xDiffuseTex_Binding = 1;
-		inline constexpr unsigned int kg_xDiffuseTex_DescriptorCount = 1;
+		inline constexpr const char* kg_xBaseColorTex_Name = "g_xBaseColorTex";
+		inline constexpr unsigned int kg_xBaseColorTex_Set = 1;
+		inline constexpr unsigned int kg_xBaseColorTex_Binding = 1;
+		inline constexpr unsigned int kg_xBaseColorTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr const char* kg_xNormalTex_Name = "g_xNormalTex";
 		inline constexpr unsigned int kg_xNormalTex_Set = 1;
@@ -41,24 +41,44 @@ namespace Flux_Generated_InstancedMeshes
 		inline constexpr unsigned int kg_xEmissiveTex_Binding = 5;
 		inline constexpr unsigned int kg_xEmissiveTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xHeightTex_Name = "g_xHeightTex";
+		inline constexpr unsigned int kg_xHeightTex_Set = 1;
+		inline constexpr unsigned int kg_xHeightTex_Binding = 6;
+		inline constexpr unsigned int kg_xHeightTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xDetailAlbedoTex_Name = "g_xDetailAlbedoTex";
+		inline constexpr unsigned int kg_xDetailAlbedoTex_Set = 1;
+		inline constexpr unsigned int kg_xDetailAlbedoTex_Binding = 7;
+		inline constexpr unsigned int kg_xDetailAlbedoTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xDetailNormalTex_Name = "g_xDetailNormalTex";
+		inline constexpr unsigned int kg_xDetailNormalTex_Set = 1;
+		inline constexpr unsigned int kg_xDetailNormalTex_Binding = 8;
+		inline constexpr unsigned int kg_xDetailNormalTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xDetailMaskTex_Name = "g_xDetailMaskTex";
+		inline constexpr unsigned int kg_xDetailMaskTex_Set = 1;
+		inline constexpr unsigned int kg_xDetailMaskTex_Binding = 9;
+		inline constexpr unsigned int kg_xDetailMaskTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
 		inline constexpr const char* kTransformBuffer_Name = "TransformBuffer";
 		inline constexpr unsigned int kTransformBuffer_Set = 1;
-		inline constexpr unsigned int kTransformBuffer_Binding = 6;
+		inline constexpr unsigned int kTransformBuffer_Binding = 10;
 		inline constexpr unsigned int kTransformBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr const char* kAnimDataBuffer_Name = "AnimDataBuffer";
 		inline constexpr unsigned int kAnimDataBuffer_Set = 1;
-		inline constexpr unsigned int kAnimDataBuffer_Binding = 7;
+		inline constexpr unsigned int kAnimDataBuffer_Binding = 11;
 		inline constexpr unsigned int kAnimDataBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr const char* kVisibleIndexBuffer_Name = "VisibleIndexBuffer";
 		inline constexpr unsigned int kVisibleIndexBuffer_Set = 1;
-		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 8;
+		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 12;
 		inline constexpr unsigned int kVisibleIndexBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr const char* kg_xAnimationTex_Name = "g_xAnimationTex";
 		inline constexpr unsigned int kg_xAnimationTex_Set = 1;
-		inline constexpr unsigned int kg_xAnimationTex_Binding = 9;
+		inline constexpr unsigned int kg_xAnimationTex_Binding = 13;
 		inline constexpr unsigned int kg_xAnimationTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
@@ -98,8 +118,13 @@ namespace Flux_Generated_InstancedMeshes
 			unsigned char m_ag_xMaterialParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xUVParams[16]; // slang=vector offset=96 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xEmissiveParams[16]; // slang=vector offset=112 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xMaterialParams2[16]; // slang=vector offset=128 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xParallaxParams[16]; // slang=vector offset=144 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xDetailParams[16]; // slang=vector offset=160 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xFlagsParams[16]; // slang=vector offset=176 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xVATParams[16]; // slang=vector offset=192 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(DrawConstants_CB) == 128, "DrawConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(DrawConstants_CB) == 208, "DrawConstants_CB size drifted from Slang reflection");
 	}
 
 	// ----- InstancedMesh_ToShadowmap (InstancedMeshes/Flux_InstancedMesh_ToShadowmap) -----
@@ -115,16 +140,31 @@ namespace Flux_Generated_InstancedMeshes
 			unsigned char m_ag_xSunViewProjMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 		};
 		static_assert(sizeof(ShadowMatrix_CB) == 64, "ShadowMatrix_CB size drifted from Slang reflection");
+		inline constexpr const char* kg_xBaseColorTex_Name = "g_xBaseColorTex";
+		inline constexpr unsigned int kg_xBaseColorTex_Set = 1;
+		inline constexpr unsigned int kg_xBaseColorTex_Binding = 2;
+		inline constexpr unsigned int kg_xBaseColorTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
 		inline constexpr const char* kTransformBuffer_Name = "TransformBuffer";
 		inline constexpr unsigned int kTransformBuffer_Set = 1;
-		inline constexpr unsigned int kTransformBuffer_Binding = 6;
+		inline constexpr unsigned int kTransformBuffer_Binding = 10;
 		inline constexpr unsigned int kTransformBuffer_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr const char* kAnimDataBuffer_Name = "AnimDataBuffer";
+		inline constexpr unsigned int kAnimDataBuffer_Set = 1;
+		inline constexpr unsigned int kAnimDataBuffer_Binding = 11;
+		inline constexpr unsigned int kAnimDataBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr const char* kVisibleIndexBuffer_Name = "VisibleIndexBuffer";
 		inline constexpr unsigned int kVisibleIndexBuffer_Set = 1;
-		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 8;
+		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 12;
 		inline constexpr unsigned int kVisibleIndexBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
+		inline constexpr const char* kg_xAnimationTex_Name = "g_xAnimationTex";
+		inline constexpr unsigned int kg_xAnimationTex_Set = 1;
+		inline constexpr unsigned int kg_xAnimationTex_Binding = 13;
+		inline constexpr unsigned int kg_xAnimationTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
 		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
 		inline constexpr unsigned int kDrawConstants_Set = 1;
 		inline constexpr unsigned int kDrawConstants_Binding = 0;
@@ -137,8 +177,13 @@ namespace Flux_Generated_InstancedMeshes
 			unsigned char m_ag_xMaterialParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xUVParams[16]; // slang=vector offset=96 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xEmissiveParams[16]; // slang=vector offset=112 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xMaterialParams2[16]; // slang=vector offset=128 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xParallaxParams[16]; // slang=vector offset=144 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xDetailParams[16]; // slang=vector offset=160 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xFlagsParams[16]; // slang=vector offset=176 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xVATParams[16]; // slang=vector offset=192 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(DrawConstants_CB) == 128, "DrawConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(DrawConstants_CB) == 208, "DrawConstants_CB size drifted from Slang reflection");
 	}
 
 	// ----- InstanceCulling (InstancedMeshes/Flux_InstanceCulling) -----
@@ -186,6 +231,38 @@ namespace Flux_Generated_InstancedMeshes
 		inline constexpr const char* kindirectInstanceCount_Name = "indirectInstanceCount";
 		inline constexpr unsigned int kindirectInstanceCount_Set = 0;
 		inline constexpr unsigned int kindirectInstanceCount_Binding = 5;
+		inline constexpr unsigned int kindirectInstanceCount_DescriptorCount = 1;
+		// kind: RWStructuredBuffer
+	}
+
+	// ----- InstanceReset (InstancedMeshes/Flux_InstanceReset) -----
+	namespace InstanceReset
+	{
+		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
+		inline constexpr unsigned int kDrawConstants_Set = 0;
+		inline constexpr unsigned int kDrawConstants_Binding = 2;
+		inline constexpr unsigned int kDrawConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct DrawConstants_CB
+		{
+			unsigned int m_uindexCount; // slang=uint offset=0
+			unsigned int m_upad0; // slang=uint offset=4
+			unsigned int m_upad1; // slang=uint offset=8
+			unsigned int m_upad2; // slang=uint offset=12
+		};
+		static_assert(sizeof(DrawConstants_CB) == 16, "DrawConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_uindexCount) == 0, "DrawConstants.indexCount offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_upad0) == 4, "DrawConstants.pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_upad1) == 8, "DrawConstants.pad1 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_upad2) == 12, "DrawConstants.pad2 offset drifted from Slang reflection");
+		inline constexpr const char* kvisibleCount_Name = "visibleCount";
+		inline constexpr unsigned int kvisibleCount_Set = 0;
+		inline constexpr unsigned int kvisibleCount_Binding = 0;
+		inline constexpr unsigned int kvisibleCount_DescriptorCount = 1;
+		// kind: RWStructuredBuffer
+		inline constexpr const char* kindirectInstanceCount_Name = "indirectInstanceCount";
+		inline constexpr unsigned int kindirectInstanceCount_Set = 0;
+		inline constexpr unsigned int kindirectInstanceCount_Binding = 1;
 		inline constexpr unsigned int kindirectInstanceCount_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 	}

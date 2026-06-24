@@ -13,16 +13,6 @@
 
 namespace Flux_Generated_Quads
 {
-	// ----- TexturedQuad (Quads/Flux_TexturedQuad) -----
-	namespace TexturedQuad
-	{
-		inline constexpr const char* kg_xTexture_Name = "g_xTexture";
-		inline constexpr unsigned int kg_xTexture_Set = 0;
-		inline constexpr unsigned int kg_xTexture_Binding = 0;
-		inline constexpr unsigned int kg_xTexture_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-	}
-
 	// ----- Quads (Quads/Flux_Quads) -----
 	namespace Quads
 	{
