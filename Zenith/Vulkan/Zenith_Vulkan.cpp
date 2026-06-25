@@ -205,6 +205,7 @@ void Zenith_Vulkan::Initialise()
 #endif
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
+	QueryDescriptorIndexingLimits();
 	CreateBindlessTexturesDescriptorPool();
 
 	for (Zenith_Vulkan_PerFrame& xFrame : m_axPerFrame)
@@ -991,11 +992,40 @@ void Zenith_Vulkan::CreateDefaultDescriptorPool()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan default descriptor pool created");
 }
 
+void Zenith_Vulkan::QueryDescriptorIndexingLimits()
+{
+	// The bindless table is an update-after-bind combined-image-sampler array, so it
+	// is bounded by the device's update-after-bind limits — both the per-set and
+	// per-stage sampled-image AND sampler ceilings (a combined-image-sampler counts
+	// against both), plus the all-pools cap. Clamp the target to the tightest of them.
+	vk::PhysicalDeviceDescriptorIndexingProperties xIndexingProps;
+	vk::PhysicalDeviceProperties2 xProps2;
+	xProps2.pNext = &xIndexingProps;
+	m_xPhysicalDevice.getProperties2(&xProps2);
+
+	uint32_t uDeviceLimit = xIndexingProps.maxDescriptorSetUpdateAfterBindSampledImages;
+	uDeviceLimit = std::min(uDeviceLimit, xIndexingProps.maxPerStageDescriptorUpdateAfterBindSampledImages);
+	uDeviceLimit = std::min(uDeviceLimit, xIndexingProps.maxDescriptorSetUpdateAfterBindSamplers);
+	uDeviceLimit = std::min(uDeviceLimit, xIndexingProps.maxPerStageDescriptorUpdateAfterBindSamplers);
+	uDeviceLimit = std::min(uDeviceLimit, xIndexingProps.maxUpdateAfterBindDescriptorsInAllPools);
+
+	m_uBindlessTableSize = std::min<uint32_t>(FLUX_BINDLESS_TABLE_SIZE_TARGET, uDeviceLimit);
+
+	// Min-spec gate: a device that cannot host the legacy floor is rejected outright
+	// (the renderer has no non-bindless fallback path).
+	Zenith_Assert(m_uBindlessTableSize >= FLUX_BINDLESS_TABLE_SIZE_MIN,
+		"Device bindless update-after-bind limit (%u) is below the min-spec floor (%u) — unsupported GPU",
+		uDeviceLimit, FLUX_BINDLESS_TABLE_SIZE_MIN);
+
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Bindless table size: %u (target %u, device limit %u)",
+		m_uBindlessTableSize, FLUX_BINDLESS_TABLE_SIZE_TARGET, uDeviceLimit);
+}
+
 void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 {
 	vk::DescriptorPoolSize axPoolSizes[] =
 	{
-		{ vk::DescriptorType::eCombinedImageSampler, 1000 },
+		{ vk::DescriptorType::eCombinedImageSampler, m_uBindlessTableSize },
 	};
 
 	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
@@ -1010,7 +1040,7 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 
 	vk::DescriptorSetLayoutBinding xBind = vk::DescriptorSetLayoutBinding()
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setDescriptorCount(1000)
+		.setDescriptorCount(m_uBindlessTableSize)
 		.setBinding(0)
 		.setStageFlags(vk::ShaderStageFlagBits::eAll)
 		.setPImmutableSamplers(nullptr);
@@ -1039,6 +1069,13 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 
 void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler)
 {
+	// Today the bindless slot IS the image-view registry handle, which is dense over
+	// ALL image views (RTs/depth/UAVs/transients/cubemaps), not just bindless textures.
+	// A heavy scene can therefore push the handle past the table — assert rather than
+	// silently writing out of range (Phase 3's allocator decouples slot from handle).
+	Zenith_Assert(uIndex < m_uBindlessTableSize,
+		"Bindless slot %u >= table size %u — bindless table exhausted", uIndex, m_uBindlessTableSize);
+
 	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 		.setImageView(xImageView)

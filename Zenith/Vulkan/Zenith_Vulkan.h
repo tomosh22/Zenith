@@ -181,6 +181,10 @@ public:
 	void CreateDevice();
 	void CreateCommandPools();
 	void CreateDefaultDescriptorPool();
+	// Queries VkPhysicalDeviceDescriptorIndexingProperties, clamps the bindless
+	// table to the device's update-after-bind limits, and asserts the min-spec
+	// floor. Must run after CreateDevice() and before CreateBindlessTexturesDescriptorPool().
+	void QueryDescriptorIndexingLimits();
 	void CreateBindlessTexturesDescriptorPool();
 
 #ifdef ZENITH_FLUX_PROFILING
@@ -300,6 +304,10 @@ public:
 	vk::DescriptorPool            m_xBindlessTexturesDescriptorPool;
 	vk::DescriptorSet             m_xBindlessTexturesDescriptorSet;
 	vk::DescriptorSetLayout       m_xBindlessTexturesDescriptorSetLayout;
+	// Device-clamped capacity of the bindless table (set by QueryDescriptorIndexingLimits;
+	// defaults to the legacy 1000 so any pre-query read is safe). Drives the pool size,
+	// the layout descriptorCount, and the WriteBindlessDescriptor bounds check.
+	uint32_t                      m_uBindlessTableSize = FLUX_BINDLESS_TABLE_SIZE_MIN;
 
 	// VRAM registry + freelist of slots.
 	std::vector<Zenith_Vulkan_VRAM*> m_xVRAMRegistry;

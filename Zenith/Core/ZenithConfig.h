@@ -105,6 +105,14 @@ static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
 // Binding-model spine: set 0 GLOBAL, 1 VIEW, 2 BINDLESS, 3 PASS, 4 DRAW, 5 reserved (future TLAS).
 static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 6;
 
+// Bindless combined-image-sampler table (set 2 = BINDLESS, g_axTextures[]).
+// TARGET is the desired capacity; the runtime size is clamped to the device's
+// update-after-bind descriptor limits at boot (Zenith_Vulkan::QueryDescriptorIndexingLimits)
+// and stored in m_uBindlessTableSize. MIN is the min-spec floor the boot asserts —
+// a device that cannot host at least this many is rejected (no non-bindless fallback).
+static constexpr uint32_t FLUX_BINDLESS_TABLE_SIZE_TARGET = 16384;
+static constexpr uint32_t FLUX_BINDLESS_TABLE_SIZE_MIN    = 1000;
+
 // Static mesh vertex stride. The engine does not use this constant directly;
 // the authoritative layout (pos12 + uv8 + normal12 + tangent12 + bitangent12 +
 // colour4 = 60 bytes) lives in the mesh converter tool's source. Changing the
@@ -172,6 +180,14 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 
 #ifndef FLUX_MAX_BINDING_GROUPS
 #define FLUX_MAX_BINDING_GROUPS ZenithConfig::FLUX_MAX_BINDING_GROUPS
+#endif
+
+#ifndef FLUX_BINDLESS_TABLE_SIZE_TARGET
+#define FLUX_BINDLESS_TABLE_SIZE_TARGET ZenithConfig::FLUX_BINDLESS_TABLE_SIZE_TARGET
+#endif
+
+#ifndef FLUX_BINDLESS_TABLE_SIZE_MIN
+#define FLUX_BINDLESS_TABLE_SIZE_MIN ZenithConfig::FLUX_BINDLESS_TABLE_SIZE_MIN
 #endif
 
 #ifndef FLUX_MAX_MIPS
