@@ -88,6 +88,14 @@ void Flux_RendererImpl::RecordFrame()
 		return;
 	}
 
+	// Upload the GPU material table for this frame BEFORE any pass records. All
+	// material registration (index assignment + record build) happened during the
+	// gather Prepare callbacks (CallPrepareCallbacks ran before this, on the main
+	// thread); this copies the CPU records into the current frame-in-flight buffer.
+	// Frame-indexed + host-coherent → no graph barrier (Flux_FrameIndexedBufferBase
+	// contract). Main-thread + before worker recording, so it is race-free.
+	g_xEngine.FluxGraphics().MaterialTable().Upload();
+
 	// Drive the backend to record every queued pass directly into its worker
 	// command buffers (Vulkan: parallel worker task; D3D12 null backend: serial
 	// callback loop). Runs synchronously inside the render-task safe window and

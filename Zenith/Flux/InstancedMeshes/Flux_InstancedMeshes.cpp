@@ -24,18 +24,17 @@
 #include <vector>
 
 //=============================================================================
-// The instanced path uses the SHARED MaterialDrawConstants
-// (BuildMaterialDrawConstants) for all material data — real emissive, full
-// flags, the single authoritative alpha cutout — exactly like StaticMeshes/
-// AnimatedMeshes. VAT animation-texture params (texW, texH, vat-enabled) ride
-// the appended MaterialDrawConstants::m_xVATParams field rather than a separate
-// constant buffer: the backend allows only ONE scratch/draw-constants buffer per
-// descriptor set (Zenith_Vulkan_CommandBuffer::BindDrawConstants), so a second
-// BindDrawConstants on set 1 would clobber the DrawConstants binding. See
-// BuildInstancedVATParams below.
+// The instanced path uses the SHARED bindless material system — the GPU material
+// record (Flux_MaterialGPU / g_axMaterials, selected by MeshDrawConstants::
+// m_uMaterialIndex) + the bindless g_axTextures table — exactly like StaticMeshes/
+// AnimatedMeshes. VAT animation-texture params (texW, texH, vat-enabled) ride the
+// appended MeshDrawConstants::m_xVATParams field rather than a separate constant
+// buffer: the backend allows only ONE scratch/draw-constants buffer per descriptor
+// set (Zenith_Vulkan_CommandBuffer::BindDrawConstants), so a second BindDrawConstants
+// on the DRAW set would clobber the DrawConstants binding. See BuildInstancedVATParams below.
 //=============================================================================
 
-// Build the per-group VAT params written into MaterialDrawConstants::m_xVATParams:
+// Build the per-group VAT params written into MeshDrawConstants::m_xVATParams:
 // (texture width, texture height, vat-enabled, unused). Zero when the group has no
 // VAT (vat-enabled = 0 -> the shader skips the VAT sample).
 static Zenith_Maths::Vector4 BuildInstancedVATParams(const Flux_AnimationTexture* pxAnimTex)
@@ -414,6 +413,22 @@ void Flux_InstancedMeshesImpl::GatherInstancedPacket(void*)
 		return;
 	}
 
+	// Register every group's material with the GPU material table (MAIN THREAD —
+	// assigns the table index + builds the record + makes its textures bindless). The
+	// worker draw path (BindBatchDescriptors) reads the index off the asset lock-free.
+	{
+		Flux_MaterialTable& xTable = g_xEngine.FluxGraphics().MaterialTable();
+		Zenith_MaterialAsset* pxBlank = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+		for (u_int u = 0; u < xSelf.m_apxInstanceGroups.GetSize(); ++u)
+		{
+			Flux_InstanceGroup* pxRegGroup = xSelf.m_apxInstanceGroups.Get(u);
+			if (!pxRegGroup) continue;
+			Zenith_MaterialAsset* pxMat = pxRegGroup->GetMaterial();
+			if (!pxMat) pxMat = pxBlank;
+			if (pxMat) xTable.GetOrCreateIndex(pxMat);
+		}
+	}
+
 	// Same predicate ExecuteCulling's outer guard / ExecuteInstancedGBuffer's
 	// bUseGPUCulling used. When false we still rebuild the CPU visible list
 	// (UpdateGPUBuffers) so the GBuffer CPU-fallback draw has a current count.
@@ -628,25 +643,17 @@ void Flux_InstancedMeshesImpl::BindBatchDescriptors(Flux_ShaderBinder& xBinder, 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
 	const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
 
-	// SHARED material constants (instance-aware resolved view) — identical to the
-	// static/animated mesh path. The per-instance model matrix comes from the
-	// transform buffer, so the constants' model matrix is unused (identity). VAT
-	// params ride the appended m_xVATParams field (single scratch CB per set).
-	MaterialDrawConstants xMaterialConstants;
-	BuildMaterialDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), pxMaterial);
+	// Per-draw constants. The per-instance model matrix comes from the transform
+	// buffer, so the constants' model matrix is unused (identity); the material-table
+	// index selects the per-material record. VAT params ride the appended m_xVATParams
+	// field (single scratch CB per set). Material textures are bindless (set 2), bound
+	// once per pass; the material was registered on the main thread at gather.
+	u_int uMaterialIndex = pxMaterial->GetMaterialTableIndex();
+	if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
+	MeshDrawConstants xMaterialConstants;
+	BuildMeshDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), uMaterialIndex);
 	xMaterialConstants.m_xVATParams = BuildInstancedVATParams(pxAnimTex);
 	xBinder.BindDrawConstants(GB::hDrawConstants, &xMaterialConstants, sizeof(xMaterialConstants));
-
-	// Full 9-slot material texture set (named-binder loop, identical to
-	// Flux_StaticMeshesImpl::DrawStaticMesh) so EvaluateMaterialSurface gets the
-	// complete feature set: emissive, height/POM, detail maps, clear coat.
-	static constexpr Flux_BindingHandle s_aMatHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_InstancedMeshes::InstancedMesh_ToGBuffer);
-	static_assert(sizeof(s_aMatHandles) / sizeof(s_aMatHandles[0]) == MATERIAL_TEXTURE_SLOT_COUNT, "material handle array size mismatch");
-	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
-	{
-		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
-		xBinder.BindSRV(s_aMatHandles[u], &pxTexture->m_xSRV);
-	}
 
 	// Bind animation texture (VAT) if available, else bind blank texture.
 	// The VAT position texture MUST be sampled with the POINT (nearest/no-aniso)
@@ -748,8 +755,13 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	{
 		const bool bTwoSidedPass = (uCullPass == 1);
 		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
-		// View constants (camera VIEW set), bound once per pass after SetPipeline.
+		// View constants (camera VIEW set) + bindless materials: g_axMaterials (GLOBAL
+		// set) + the g_axTextures table (set 2), bound once per pass after SetPipeline.
 		xBinder.BindCBV(GB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
+		// g_axMaterials is a DRAW-set member: staged once here, re-written into the set each
+		// draw alongside DrawConstants. Plus the g_axTextures table (set 2).
+		xBinder.BindSRV_Buffer(GB::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+		pxCmdList->UseBindlessTextures(2);
 
 		for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
 		{
@@ -841,8 +853,13 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 	namespace SM = Flux_Generated_InstancedMeshes::InstancedMesh_ToShadowmap;
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	// Shadow pass: DrawConstants + ShadowMatrix + transform/visible-index
-	// SSBOs only — Slang reflection won't show FrameConstants.
+	// Shadow pass: per-draw DrawConstants + ShadowMatrix + transform/visible-index
+	// SSBOs; the masked cutout samples the base colour bindlessly. g_axMaterials
+	// (a DRAW-set member: staged once, re-written into the set each draw alongside
+	// DrawConstants) + the g_axTextures table (set 2) are bound once here (after the
+	// shadow pipeline bind above).
+	xBinder.BindSRV_Buffer(SM::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
+	xCmdBuf.UseBindlessTextures(2);
 
 	for (u_int uGroup = 0; uGroup < m_apxInstanceGroups.GetSize(); ++uGroup)
 	{
@@ -884,17 +901,18 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 		// VAT params: the shadow shader applies the SAME vertex animation as the GBuffer
 		// so its depth matches the lit geometry. Without this the shadow map holds the
 		// rest pose while the GBuffer holds the swayed pose -> misaligned self-shadowing
-		// that flickers as the trees animate. VAT params ride MaterialDrawConstants::
+		// that flickers as the trees animate. VAT params ride MeshDrawConstants::
 		// m_xVATParams (single scratch CB per set), matching the GBuffer path.
 		Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
 		const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
 
-		MaterialDrawConstants xMaterialConstants;
-		BuildMaterialDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), pxMaterial);
+		u_int uMaterialIndex = pxMaterial->GetMaterialTableIndex();
+		if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
+		MeshDrawConstants xMaterialConstants;
+		BuildMeshDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), uMaterialIndex);
 		xMaterialConstants.m_xVATParams = BuildInstancedVATParams(pxAnimTex);
 		xBinder.BindDrawConstants(SM::hDrawConstants, &xMaterialConstants, sizeof(xMaterialConstants));
 		xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
-		xBinder.BindSRV(SM::hg_xBaseColorTex, &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 
 		// Bind instance buffers. Transform/AnimData are frame-indexed (not graph-
 		// tracked) -> UAV bind; the enabled-index list via its SRV (read-only

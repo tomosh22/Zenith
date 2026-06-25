@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_BindlessAllocator.h"
+#include "Flux/Flux_MaterialTable.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -171,10 +172,15 @@ public:
 	// in Initialise() from the backend's clamped table size; advanced once per frame.
 	Flux_BindlessAllocator& BindlessAllocator() { return m_xBindlessAllocator; }
 
+	// GPU material record store (g_axMaterials, GLOBAL set). Registered per-frame from
+	// each material subsystem's gather; uploaded once at RecordFrame.
+	Flux_MaterialTable& MaterialTable() { return m_xMaterialTable; }
+
 	// Samplers (initialised in InitialiseSamplers).
 	Flux_Sampler                m_xRepeatSampler;
 	Flux_Sampler                m_xClampSampler;
 	Flux_BindlessAllocator      m_xBindlessAllocator;
+	Flux_MaterialTable          m_xMaterialTable;
 	// NEAREST/no-aniso/clamp — for data textures that must be read per-texel
 	// exactly (VAT position textures). Bound explicitly via BindSRV's sampler arg.
 	Flux_Sampler                m_xPointSampler;

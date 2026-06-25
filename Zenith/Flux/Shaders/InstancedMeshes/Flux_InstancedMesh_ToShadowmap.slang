@@ -16,19 +16,21 @@
 // GetAlphaCutoff() > 0 so opaque casters never sample and keep their
 // depth-only cost.
 //
-// Bindings (set=1):
-//   binding 0   DrawConstants (alpha cutoff + UV transform + base-colour tint +
-//               g_xVATParams: VAT texW/texH/enable)
-//   binding 1   ShadowMatrix
-//   binding 2   g_xBaseColorTex (masked cutout)
-//   binding 10  TransformBuffer
-//   binding 11  AnimDataBuffer
-//   binding 12  VisibleIndexBuffer
-//   binding 13  g_xAnimationTex (VAT positions per frame; POINT sampler)
+// The masked-cutout base-colour texture is bindless now (set 2), resolved in
+// fsMain from the material record.
+//
+// DRAW block (set 3) bindings:
+//   binding 0   ShadowMatrix
+//   binding 1   DrawConstants (material-table index + g_xVATParams: VAT texW/texH/enable)
+//   binding 2   TransformBuffer
+//   binding 3   AnimDataBuffer
+//   binding 4   VisibleIndexBuffer
+//   binding 5   g_xAnimationTex (VAT positions per frame; POINT sampler)
 // =====================================================================
 
 #include "Common/Bindings.slang"
 import Common.DrawConstants;
+import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 
@@ -62,7 +64,7 @@ struct DrawParams
 {
 	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	Sampler2D                  g_xBaseColorTex;
+	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 	StructuredBuffer<float4x4> TransformBuffer;
 	StructuredBuffer<uint4>    AnimDataBuffer;
 	StructuredBuffer<uint>     VisibleIndexBuffer;
@@ -134,12 +136,14 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 void fsMain(VsOut input)
 {
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
 
 	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
 	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
-	if (GetAlphaCutoff(dc) > 0.0)
+	if (GetAlphaCutoff(m) > 0.0)
 	{
-		SampleAlbedoWithCutout(g_xDrawSet.g_xBaseColorTex,
-			TransformUV(input.uv, GetUVTiling(dc), GetUVOffset(dc)), input.vertexColor, dc);
+		Sampler2D xBaseColorTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+		SampleAlbedoWithCutout(xBaseColorTex,
+			TransformUV(input.uv, GetUVTiling(m), GetUVOffset(m)), input.vertexColor, m);
 	}
 }

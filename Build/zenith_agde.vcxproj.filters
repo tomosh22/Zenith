@@ -463,6 +463,9 @@
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_MaterialTable.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
@@ -2505,6 +2508,12 @@
     <ClInclude Include="..\Zenith\Flux\Flux_BackendTypes.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_BindingValidation.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_BindlessAllocator.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -2527,6 +2536,15 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.Tests.inl">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialGPU.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h">
@@ -2724,10 +2742,10 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Atmosphere.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Common\DrawConstants.slang">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Bindings.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Frame.slang">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\DrawConstants.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Fullscreen.slang">
@@ -2743,6 +2761,9 @@
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialSurface.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialTable.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang">
@@ -2814,7 +2835,13 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\InstancedMeshes.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\MaterialPreview.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Particles.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Present.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Primitives.h">
@@ -2845,6 +2872,9 @@
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Text.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Translucency.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Vegetation.h">
@@ -3013,6 +3043,9 @@
       <Filter>Flux\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_CodeGenerator.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_FrequencyTaxonomy.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.h">

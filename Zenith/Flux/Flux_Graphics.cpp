@@ -76,6 +76,10 @@ void Flux_GraphicsImpl::Initialise()
 	// ready before any texture is made bindless below / by assets.
 	m_xBindlessAllocator.Initialise(g_xEngine.FluxBackend().GetBindlessTableSize());
 
+	// GPU material table (g_axMaterials, GLOBAL set). Per-frame-in-flight host-coherent
+	// buffer; must be ready before any material is registered or drawn.
+	m_xMaterialTable.Initialise();
+
 	Flux_SurfaceInfo xTexInfo;
 	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 	xTexInfo.m_uWidth = 1;
@@ -522,6 +526,9 @@ void Flux_GraphicsImpl::Shutdown()
 	// Destroy the GLOBAL/VIEW spine constant buffers.
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_xGlobalConstantsBuffer);
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_xViewConstantsBuffer);
+
+	// Destroy the GPU material table buffer.
+	m_xMaterialTable.Shutdown();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shut down");
 }

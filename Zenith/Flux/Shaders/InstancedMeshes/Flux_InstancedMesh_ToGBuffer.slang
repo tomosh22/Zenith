@@ -14,26 +14,24 @@
 // only instanced-specific work is the VAT vertex deformation and the
 // per-instance colour tint applied to the resolved albedo.
 //
-// The instancing resources live ABOVE the 9 material-texture slots so
-// they don't collide with the shared set=1 bindings 1-9. VAT animation
-// texture parameters ride DrawConstants.g_xVATParams (an appended field of the
-// shared MaterialDrawConstants) rather than aliasing the emissive param slot —
-// emissive is now real, and a separate VAT constant buffer is impossible (one
+// Material textures are bindless (set 2): the fragment loads its MaterialGPU
+// record from g_axMaterials and samples g_xBindlessSet.g_axTextures[...]. The DRAW
+// block (set 3) holds the per-draw constants + the instancing resources. VAT
+// animation texture parameters ride DrawConstants.g_xVATParams (a field of the
+// shared MeshDrawConstants) — a separate VAT constant buffer is impossible (one
 // scratch/draw-constants buffer per descriptor set).
 //
-// Bindings (set=1):
-//   binding 0   DrawConstants (shared MaterialDrawConstants — real emissive +
-//               g_xVATParams carrying the VAT texW/texH/enable for this group)
-//   binding 1-9 the 9 material textures (base/normal/RM/occlusion/emissive/
-//               height/detailAlbedo/detailNormal/detailMask)
-//   binding 10  TransformBuffer    (StructuredBuffer<float4x4>, written by culling)
-//   binding 11  AnimDataBuffer     (StructuredBuffer<uint4>)
-//   binding 12  VisibleIndexBuffer (StructuredBuffer<uint>)
-//   binding 13  g_xAnimationTex    (VAT positions per frame; POINT sampler)
+// DRAW block (set 3) bindings:
+//   binding 0   DrawConstants (model matrix + material-table index + g_xVATParams)
+//   binding 1   TransformBuffer    (StructuredBuffer<float4x4>, written by culling)
+//   binding 2   AnimDataBuffer     (StructuredBuffer<uint4>)
+//   binding 3   VisibleIndexBuffer (StructuredBuffer<uint>)
+//   binding 4   g_xAnimationTex    (VAT positions per frame; POINT sampler)
 // =====================================================================
 
 #include "Common/Bindings.slang"
 import Common.DrawConstants;
+import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 import Common.GBuffer;
@@ -60,9 +58,10 @@ struct VsOut
 	float4 instanceTint  : TEXCOORD6;
 };
 
-// DRAW block (set 3) — per-draw material constants + the full 9-slot material
-// texture set (identical to the static-mesh path so EvaluateMaterialSurface gets
-// everything) + the instancing resources + the VAT animation texture.
+// DRAW block (set 3) — per-draw constants (model is per-instance from
+// TransformBuffer; this CB carries the material-table index + VAT params) + the
+// instancing resources + the VAT animation texture. Material textures are bindless
+// (set 2), resolved in fsMain from the material record.
 //
 // Instancing buffers are read-only in the graphics pipeline. Without
 // vertexPipelineStoresAndAtomics, vertex/tess/geom storage buffers must be
@@ -71,21 +70,13 @@ struct VsOut
 // to write into the same physical descriptors.
 //
 // VAT animation texture params live in DrawConstants.g_xVATParams (a real field
-// of the shared 208-byte MaterialDrawConstants — NOT a separate constant buffer:
-// the backend allows only ONE scratch/draw-constants buffer per descriptor set,
-// so a second BindDrawConstants on this set would clobber DrawConstants).
+// of the shared MeshDrawConstants — NOT a separate constant buffer: the backend
+// allows only ONE scratch/draw-constants buffer per descriptor set, so a second
+// BindDrawConstants on this set would clobber DrawConstants).
 struct DrawParams
 {
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	Sampler2D g_xBaseColorTex;
-	Sampler2D g_xNormalTex;
-	Sampler2D g_xRoughnessMetallicTex;
-	Sampler2D g_xOcclusionTex;
-	Sampler2D g_xEmissiveTex;
-	Sampler2D g_xHeightTex;
-	Sampler2D g_xDetailAlbedoTex;
-	Sampler2D g_xDetailNormalTex;
-	Sampler2D g_xDetailMaskTex;
+	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 	StructuredBuffer<float4x4> TransformBuffer;
 	StructuredBuffer<uint4>    AnimDataBuffer;
 	StructuredBuffer<uint>     VisibleIndexBuffer;
@@ -185,11 +176,24 @@ GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
 
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+
+	// Bindless material textures (draw-uniform index → no NonUniformResourceIndex).
+	Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+	Sampler2D xNormalTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.y];
+	Sampler2D xRoughnessMetallicTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.z];
+	Sampler2D xOcclusionTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.w];
+	Sampler2D xEmissiveTex          = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.x];
+	Sampler2D xHeightTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.y];
+	Sampler2D xDetailAlbedoTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.z];
+	Sampler2D xDetailNormalTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.w];
+	Sampler2D xDetailMaskTex        = g_xBindlessSet.g_axTextures[m.g_xTexIdx2.x];
+
 	MaterialSurface xSurface = EvaluateMaterialSurface(
-		g_xDrawSet.g_xBaseColorTex, g_xDrawSet.g_xNormalTex, g_xDrawSet.g_xRoughnessMetallicTex,
-		g_xDrawSet.g_xOcclusionTex, g_xDrawSet.g_xEmissiveTex, g_xDrawSet.g_xHeightTex,
-		g_xDrawSet.g_xDetailAlbedoTex, g_xDrawSet.g_xDetailNormalTex, g_xDrawSet.g_xDetailMaskTex,
-		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, dc);
+		xBaseColorTex, xNormalTex, xRoughnessMetallicTex,
+		xOcclusionTex, xEmissiveTex, xHeightTex,
+		xDetailAlbedoTex, xDetailNormalTex, xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, m);
 
 	// Per-instance colour tint (RGB only — matches the previous instanced path; the
 	// cutout already happened inside EvaluateMaterialSurface on the untinted alpha).

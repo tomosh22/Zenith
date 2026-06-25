@@ -13,6 +13,9 @@ class Zenith_TextureAsset;
 // Maximum parent-chain depth for material instances (cycle/degenerate guard).
 constexpr u_int uMATERIAL_MAX_PARENT_DEPTH = 8;
 
+// Sentinel for "not yet assigned a GPU material-table slot" (see Flux_MaterialTable).
+constexpr u_int uFLUX_INVALID_MATERIAL_INDEX = 0xFFFFFFFFu;
+
 // ----------------------------------------------------------------------------
 // The fully-resolved view of a material after applying the parent chain.
 // Renderers consume ONLY this (params + per-slot texture handles); they never
@@ -99,6 +102,12 @@ public:
 
 	// Monotonic stamp bumped by every edit (params, textures, parent, name).
 	u_int64 GetEditStamp() const { return m_uEditStamp; }
+
+	// GPU material-table slot (Flux_MaterialGPU index into g_axMaterials). Assigned
+	// lazily + persistently by Flux_MaterialTable::GetOrCreateIndex on the main thread;
+	// worker record paths read it lock-free to fill MeshDrawConstants::m_uMaterialIndex.
+	u_int GetMaterialTableIndex() const { return m_uMaterialTableIndex; }
+	void  SetMaterialTableIndex(u_int uIndex) { m_uMaterialTableIndex = uIndex; }
 
 	//--------------------------------------------------------------------------
 	// Typed parameter setters/getters (local values).
@@ -282,6 +291,9 @@ private:
 	// Instance state
 	MaterialHandle m_xParentMaterial;
 	u_int64 m_uOverrideMask = 0;
+
+	// GPU material-table slot (uFLUX_INVALID_MATERIAL_INDEX until first registered).
+	u_int m_uMaterialTableIndex = uFLUX_INVALID_MATERIAL_INDEX;
 
 	// Edit tracking / resolve cache
 	u_int64 m_uEditStamp = 0;

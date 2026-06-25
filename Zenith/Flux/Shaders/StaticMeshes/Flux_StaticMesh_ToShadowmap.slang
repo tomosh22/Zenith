@@ -17,6 +17,7 @@
 
 #include "Common/Bindings.slang"
 import Common.DrawConstants;
+import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 
@@ -39,13 +40,14 @@ struct VsOut
 
 struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
 
-// DRAW frequency (per-cascade sun view×proj + per-draw constants + the base-
-// colour texture for the cutout). Lands at set 3 (after the persistent spine).
+// DRAW frequency (per-cascade sun view×proj + per-draw constants). Lands at set 3
+// (after the persistent spine). The base-colour texture for the cutout is bindless
+// now (set 2), resolved in fsMain from the material record.
 struct DrawParams
 {
 	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	Sampler2D g_xBaseColorTex;
+	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -64,11 +66,13 @@ VsOut vsMain(VsIn input)
 void fsMain(VsOut input)
 {
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
 	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
 	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
-	if (GetAlphaCutoff(dc) > 0.0)
+	if (GetAlphaCutoff(m) > 0.0)
 	{
-		SampleAlbedoWithCutout(g_xDrawSet.g_xBaseColorTex,
-			TransformUV(input.uv, GetUVTiling(dc), GetUVOffset(dc)), input.vertexColor, dc);
+		Sampler2D xBaseColorTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+		SampleAlbedoWithCutout(xBaseColorTex,
+			TransformUV(input.uv, GetUVTiling(m), GetUVOffset(m)), input.vertexColor, m);
 	}
 }

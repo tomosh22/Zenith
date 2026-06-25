@@ -16,7 +16,8 @@
 // while the surrounding pipeline (G-buffer packing, lighting) stays.
 // =====================================================================
 
-import Common.DrawConstants;
+import Common.DrawConstants;   // MATERIAL_FLAG_* bit constants
+import Common.MaterialTable;   // MaterialGPU + material-param accessors
 import Common.Material;
 import Common.GBuffer;
 
@@ -79,14 +80,14 @@ public float2 ParallaxOcclusionUV(Sampler2D xHeightTex, float2 xUV, float3 xView
 // (legacy convention) vertex colour when its alpha > 0; discards when the resulting alpha
 // is below the cutoff. EvaluateMaterialSurface calls this unconditionally for its own
 // transformed xUV (the G-buffer always needs base colour); the shadow fragment shaders
-// wrap the call in their own GetAlphaCutoff(dc) > 0 guard so opaque casters never sample
-// and keep their depth-only cost. May DISCARD (cutoff > 0 = Masked). The per-draw
-// constants are passed in (the shader loads its DRAW-block ConstantBuffer once).
-public float4 SampleAlbedoWithCutout(Sampler2D xBaseColorTex, float2 xUV, float4 xVertexColor, DrawConstantsLayout dc)
+// wrap the call in their own GetAlphaCutoff(m) > 0 guard so opaque casters never sample
+// and keep their depth-only cost. May DISCARD (cutoff > 0 = Masked). The per-material
+// GPU record (MaterialGPU) is passed in — the entry shader loads it from g_axMaterials.
+public float4 SampleAlbedoWithCutout(Sampler2D xBaseColorTex, float2 xUV, float4 xVertexColor, MaterialGPU m)
 {
-	float4 xAlbedo = SampleDiffuseWithBaseColor(xBaseColorTex, xUV, dc.g_xBaseColor);
+	float4 xAlbedo = SampleDiffuseWithBaseColor(xBaseColorTex, xUV, m.g_xBaseColor);
 	if (xVertexColor.a > 0.0) xAlbedo *= xVertexColor;
-	float fAlphaCutoff = GetAlphaCutoff(dc);
+	float fAlphaCutoff = GetAlphaCutoff(m);
 	if (fAlphaCutoff > 0.0 && xAlbedo.a < fAlphaCutoff) discard;
 	return xAlbedo;
 }
@@ -103,11 +104,11 @@ public MaterialSurface EvaluateMaterialSurface(
 	Sampler2D xOcclusionTex, Sampler2D xEmissiveTex, Sampler2D xHeightTex,
 	Sampler2D xDetailAlbedoTex, Sampler2D xDetailNormalTex, Sampler2D xDetailMaskTex,
 	float2 xUVIn, float3x3 xTBN, float3 xWorldViewDir, float4 xVertexColor, bool bFrontFace,
-	DrawConstantsLayout dc)
+	MaterialGPU m)
 {
-	const uint uFlags = GetMaterialFlags(dc);
+	const uint uFlags = GetMaterialFlags(m);
 
-	float2 xUV = TransformUV(xUVIn, GetUVTiling(dc), GetUVOffset(dc));
+	float2 xUV = TransformUV(xUVIn, GetUVTiling(m), GetUVOffset(m));
 
 	// --- Parallax occlusion mapping (shifts all subsequent samples) ---
 	if ((uFlags & MATERIAL_FLAG_POM) != 0u)
@@ -116,34 +117,34 @@ public MaterialSurface EvaluateMaterialSurface(
 		// transpose (here: mul(v, M)) projects a world vector onto it.
 		float3 xViewTS = mul(xWorldViewDir, xTBN);
 		xUV = ParallaxOcclusionUV(xHeightTex, xUV, xViewTS,
-								   GetHeightScale(dc), GetPOMMinSteps(dc), GetPOMMaxSteps(dc));
+								   GetHeightScale(m), GetPOMMinSteps(m), GetPOMMaxSteps(m));
 	}
 
 	// --- Base colour + vertex tint + alpha test (shared with the shadow path) ---
-	float4 xAlbedo = SampleAlbedoWithCutout(xBaseColorTex, xUV, xVertexColor, dc);
+	float4 xAlbedo = SampleAlbedoWithCutout(xBaseColorTex, xUV, xVertexColor, m);
 
 	// --- Normal (strength-scaled, optionally detail-blended) ---
 	// The primary normal slot is BC5 (R+G only); reconstruct Z = sqrt(1 - x^2 - y^2).
 	// Correct for the RGBA8 default-normal too (its stored B is ignored/rebuilt).
 	float2 xNormalXY = xNormalTex.Sample(xUV).xy * 2.0 - 1.0;
 	float3 xNormalTS = float3(xNormalXY, sqrt(saturate(1.0 - dot(xNormalXY, xNormalXY))));
-	xNormalTS.xy *= GetNormalStrength(dc);
+	xNormalTS.xy *= GetNormalStrength(m);
 
 	if ((uFlags & MATERIAL_FLAG_DETAIL_MAPS) != 0u)
 	{
-		float2 xDetailUV = xUV * GetDetailTiling(dc);
+		float2 xDetailUV = xUV * GetDetailTiling(m);
 		float fDetailMask = xDetailMaskTex.Sample(xUV).r;
 
 		// UDN-blend the detail normal on top of the base normal. Only X/Y are used
 		// (Z stays the base normal's), so sample R/G directly — format-agnostic.
 		float2 xDetailXY = xDetailNormalTex.Sample(xDetailUV).xy * 2.0 - 1.0;
-		xDetailXY *= GetDetailNormalStrength(dc) * fDetailMask;
+		xDetailXY *= GetDetailNormalStrength(m) * fDetailMask;
 		xNormalTS = float3(xNormalTS.xy + xDetailXY, xNormalTS.z);
 
 		// x2 multiply detail albedo around mid-grey (Unity convention).
 		float3 xDetailAlbedo = xDetailAlbedoTex.Sample(xDetailUV).rgb;
 		float3 xOverlaid = xAlbedo.rgb * xDetailAlbedo * 2.0;
-		xAlbedo.rgb = lerp(xAlbedo.rgb, xOverlaid, GetDetailAlbedoStrength(dc) * fDetailMask);
+		xAlbedo.rgb = lerp(xAlbedo.rgb, xOverlaid, GetDetailAlbedoStrength(m) * fDetailMask);
 	}
 
 	float3 xWorldNormal = normalize(mul(xTBN, normalize(xNormalTS)));
@@ -157,7 +158,7 @@ public MaterialSurface EvaluateMaterialSurface(
 	// --- Scalar channels ---
 	float fRoughness, fMetallic;
 	SampleRoughnessMetallic(xRoughnessMetallicTex, xUV,
-							 GetRoughnessMultiplier(dc), GetMetallicMultiplier(dc),
+							 GetRoughnessMultiplier(m), GetMetallicMultiplier(m),
 							 fRoughness, fMetallic);
 
 	// --- Geometric specular anti-aliasing (Kaplanyan/Tokuyoshi) ---
@@ -183,11 +184,11 @@ public MaterialSurface EvaluateMaterialSurface(
 	// cheeks/cloth). Other materials leave RM.R unused, so gate on the skin flag
 	// and pass 1.0 through for them → uniform GetSpecular() unchanged (regression-safe).
 	float fSpecTexel = ((uFlags & MATERIAL_FLAG_SKIN) != 0u) ? xRoughnessMetallicTex.Sample(xUV).r : 1.0;
-	s.specular      = fSpecTexel * GetSpecular(dc);
-	s.ao            = SampleOcclusion(xOcclusionTex, xUV, GetOcclusionStrength(dc));
-	s.emissive      = SampleEmissiveRGB(xEmissiveTex, xUV, GetEmissiveColor(dc), GetEmissiveIntensity(dc));
-	s.ccStrength    = ((uFlags & MATERIAL_FLAG_CLEARCOAT) != 0u) ? GetClearCoatStrength(dc) : 0.0;
-	s.ccRoughness   = GetClearCoatRoughness(dc);
+	s.specular      = fSpecTexel * GetSpecular(m);
+	s.ao            = SampleOcclusion(xOcclusionTex, xUV, GetOcclusionStrength(m));
+	s.emissive      = SampleEmissiveRGB(xEmissiveTex, xUV, GetEmissiveColor(m), GetEmissiveIntensity(m));
+	s.ccStrength    = ((uFlags & MATERIAL_FLAG_CLEARCOAT) != 0u) ? GetClearCoatStrength(m) : 0.0;
+	s.ccRoughness   = GetClearCoatRoughness(m);
 	s.uShadingModel = ((uFlags & MATERIAL_FLAG_UNLIT) != 0u) ? GBUFFER_SHADING_UNLIT
 					: ((uFlags & MATERIAL_FLAG_SKIN) != 0u)  ? GBUFFER_SHADING_SUBSURFACE
 					: GBUFFER_SHADING_DEFAULT_LIT;

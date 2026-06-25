@@ -282,7 +282,17 @@ void Flux_MaterialPreviewImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Pass 1: environment background (clears colour + depth for the mesh draw).
 	const Flux_PassHandle xBackgroundPass = xGraph.AddPass("MaterialPreview Background", ExecutePreviewBackground)
-		.Prepare([](void*){ g_xEngine.MaterialPreview().UploadPreviewFrameConstants(); })
+		.Prepare([](void*){
+			Flux_MaterialPreviewImpl& xPrev = g_xEngine.MaterialPreview();
+			xPrev.UploadPreviewFrameConstants();
+			// Register the previewed material with the GPU table (MAIN THREAD), so the
+			// mesh pass's worker record reads a valid index + the textures are bindless.
+			if (xPrev.IsActive())
+			{
+				Zenith_MaterialAsset* pxPrevMat = xPrev.GetMaterial();
+				if (pxPrevMat) g_xEngine.FluxGraphics().MaterialTable().GetOrCreateIndex(pxPrevMat);
+			}
+		})
 		.Writes(m_xPreviewHDR,   RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(m_xPreviewDepth, RESOURCE_ACCESS_WRITE_DSV)
 		.ClearTargets();
@@ -379,6 +389,9 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 		"MaterialPreview binds a FrameConstants clone to the VIEW set; the view/proj+campos prefix must match ViewConstants");
 	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
 	xBinder.BindCBV(FW::hg_xGlobal, &xZZ.m_xPreviewGlobalConstantsBuffer.GetCBV());
+	// The g_axTextures bindless table (set 2). g_axMaterials is a DRAW-set (4) member
+	// bound per-draw below, right after DrawConstants (same set-4 group).
+	pxCmdList->UseBindlessTextures(2);
 
 	// Shared forward-preview constants: IBL on, shadows + dynamic lights off.
 	MaterialPreviewPassConstants xConstants;
@@ -416,30 +429,17 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	xBinder.BindSRV_Buffer(FW::hClusterLightCounts, g_xEngine.LightClustering().GetClusterLightCountsSRV());
 	xBinder.BindSRV_Buffer(FW::hClusterLightIndices, g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 
-	// Per-draw material constants + the full 9-slot texture set.
-	MaterialDrawConstants xDrawConstants;
-	BuildMaterialDrawConstants(xDrawConstants, xZZ.GetActiveMeshModelMatrix(), pxMaterial);
+	// Per-draw constants (model + material-table index). Material textures are bindless
+	// (set 2), bound once per pass above; the material was registered in the Background
+	// pass Prepare (main thread).
+	u_int uMaterialIndex = pxMaterial->GetMaterialTableIndex();
+	if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
+	MeshDrawConstants xDrawConstants;
+	BuildMeshDrawConstants(xDrawConstants, xZZ.GetActiveMeshModelMatrix(), uMaterialIndex);
 	xBinder.BindDrawConstants(FW::hDrawConstants, &xDrawConstants, sizeof(xDrawConstants));
-
-	// Material texture slots — handle order matches GetMaterialTextureBindingName
-	// (MaterialTextureSlot enum order, set 1 bindings 1..9).
-	static const Flux_BindingHandle s_axMaterialTexHandles[MATERIAL_TEXTURE_SLOT_COUNT] =
-	{
-		FW::hg_xBaseColorTex,
-		FW::hg_xNormalTex,
-		FW::hg_xRoughnessMetallicTex,
-		FW::hg_xOcclusionTex,
-		FW::hg_xEmissiveTex,
-		FW::hg_xHeightTex,
-		FW::hg_xDetailAlbedoTex,
-		FW::hg_xDetailNormalTex,
-		FW::hg_xDetailMaskTex,
-	};
-	for (u_int uSlot = 0; uSlot < MATERIAL_TEXTURE_SLOT_COUNT; uSlot++)
-	{
-		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(uSlot));
-		xBinder.BindSRV(s_axMaterialTexHandles[uSlot], &pxTexture->m_xSRV);
-	}
+	// g_axMaterials is the OTHER DRAW-set (4) member — staged immediately after
+	// DrawConstants so both land in the same set-4 group.
+	xBinder.BindSRV_Buffer(FW::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
 
 	pxCmdList->SetVertexBuffer(pxGeometry->GetVertexBuffer());
 	pxCmdList->SetIndexBuffer(pxGeometry->GetIndexBuffer());

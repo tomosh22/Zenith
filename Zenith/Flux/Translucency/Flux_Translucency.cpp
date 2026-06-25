@@ -221,6 +221,15 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 				return xA.m_fViewDepthSq > xB.m_fViewDepthSq;
 			});
 	}
+
+	// Register every translucent material with the GPU material table (MAIN THREAD —
+	// assigns the table index + builds the record + makes its textures bindless). The
+	// worker draw path reads the index off the asset lock-free.
+	Flux_MaterialTable& xTable = g_xEngine.FluxGraphics().MaterialTable();
+	for (u_int u = 0; u < xPacket.GetSize(); ++u)
+	{
+		if (xPacket.Get(u).m_pxMaterial) xTable.GetOrCreateIndex(xPacket.Get(u).m_pxMaterial);
+	}
 }
 
 static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
@@ -272,6 +281,10 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			// camera, so both spine blocks are bound.
 			xBinder.BindCBV(TF::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
 			xBinder.BindCBV(TF::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+			// The g_axTextures bindless table (set 2). g_axMaterials is a DRAW-set (4) member
+			// bound per-draw below — it must be staged right after DrawConstants so the
+			// set-4 group isn't reset out from under it by the intervening PASS-set binds.
+			pxCmdList->UseBindlessTextures(2);
 			xBinder.BindDrawConstants(TF::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
 			static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { TF::hg_xCSM0, TF::hg_xCSM1, TF::hg_xCSM2, TF::hg_xCSM3 };
@@ -294,17 +307,15 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 		pxCmdList->SetVertexBuffer(xItem.m_pxMeshInstance->GetVertexBuffer());
 		pxCmdList->SetIndexBuffer(xItem.m_pxMeshInstance->GetIndexBuffer());
 
-		MaterialDrawConstants xDrawConstants;
-		BuildMaterialDrawConstants(xDrawConstants, xItem.m_xModelMatrix, xItem.m_pxMaterial);
+		u_int uMaterialIndex = xItem.m_pxMaterial ? xItem.m_pxMaterial->GetMaterialTableIndex() : 0u;
+		if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
+		MeshDrawConstants xDrawConstants;
+		BuildMeshDrawConstants(xDrawConstants, xItem.m_xModelMatrix, uMaterialIndex);
 		xBinder.BindDrawConstants(Flux_Generated_Translucency::Translucent_Forward::hDrawConstants, &xDrawConstants, sizeof(xDrawConstants));
-
-		static constexpr Flux_BindingHandle s_aMatHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_Translucency::Translucent_Forward);
-		static_assert(sizeof(s_aMatHandles) / sizeof(s_aMatHandles[0]) == MATERIAL_TEXTURE_SLOT_COUNT, "material handle array size mismatch");
-		for (u_int uSlot = 0; uSlot < MATERIAL_TEXTURE_SLOT_COUNT; uSlot++)
-		{
-			Zenith_TextureAsset* pxTexture = xItem.m_pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(uSlot));
-			xBinder.BindSRV(s_aMatHandles[uSlot], &pxTexture->m_xSRV);
-		}
+		// g_axMaterials is the OTHER DRAW-set (4) member — staged here, immediately after
+		// DrawConstants, so both land in the same set-4 group (the per-draw DrawConstants
+		// bind resets set 4 since the prior bind was the PASS set, so re-stage materials).
+		xBinder.BindSRV_Buffer(Flux_Generated_Translucency::Translucent_Forward::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
 
 		pxCmdList->DrawIndexed(xItem.m_pxMeshInstance->GetNumIndices());
 	}

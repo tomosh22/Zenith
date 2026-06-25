@@ -43,7 +43,7 @@ Zenith_TextureAsset::~Zenith_TextureAsset()
 	ReleaseGPU();
 }
 
-void Zenith_TextureAsset::MarkAsBindless()
+void Zenith_TextureAsset::MarkAsBindless(bool bRepeatAddressing)
 {
 	m_xSurfaceInfo.m_uMemoryFlags |= (1 << MEMORY_FLAGS__BINDLESS);
 
@@ -55,11 +55,15 @@ void Zenith_TextureAsset::MarkAsBindless()
 		{
 			m_xSRV.m_uBindlessIndex = g_xEngine.FluxGraphics().BindlessAllocator().Allocate();
 		}
+		// Material textures tile (UV transform) → REPEAT addressing; UI textures CLAMP.
 		// Engine-typed wrapper — backend extracts vk::ImageView / vk::Sampler internally.
+		const Flux_Sampler& xSampler = bRepeatAddressing
+			? g_xEngine.FluxGraphics().m_xRepeatSampler
+			: g_xEngine.FluxGraphics().m_xClampSampler;
 		g_xEngine.FluxBackend().WriteBindlessTextureSlot(
 			m_xSRV.m_uBindlessIndex,
 			m_xSRV,
-			g_xEngine.FluxGraphics().m_xClampSampler);
+			xSampler);
 	}
 }
 

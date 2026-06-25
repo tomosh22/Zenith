@@ -2,49 +2,44 @@
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "Flux/Flux_BackendTypes.h"   // full Flux_CommandBuffer for the inline BindSRV helpers below
 
 // ============================================================================
-// Material feature flags — packed into MaterialDrawConstants::m_xFlagsParams.x
-// as uint bits. MUST stay in sync with Common/DrawConstants.slang.
-// ============================================================================
-enum MaterialDrawFlags : u_int
-{
-	MATERIAL_DRAW_FLAG_UNLIT                 = 1u << 0,
-	MATERIAL_DRAW_FLAG_TWO_SIDED_NORMAL_FLIP = 1u << 1,
-	MATERIAL_DRAW_FLAG_POM                   = 1u << 2,
-	MATERIAL_DRAW_FLAG_DETAIL_MAPS           = 1u << 3,
-	MATERIAL_DRAW_FLAG_CLEARCOAT             = 1u << 4,
-	MATERIAL_DRAW_FLAG_SKIN                  = 1u << 5,   // subsurface shading model
-};
-
-// ============================================================================
-// Material Draw Constants (208 bytes)
-// Used by StaticMeshes, AnimatedMeshes, InstancedMeshes, Translucency and the
-// editor material preview. Bound through the per-frame scratch UBO
-// (Zenith_Vulkan_CommandBuffer::BindDrawConstants) — NOT hardware push
-// constants — so the 128-byte push-constant limit does not apply.
+// Mesh Draw Constants (96 bytes)
+// Per-draw constants for the shared mesh material path (StaticMeshes,
+// AnimatedMeshes, InstancedMeshes, Translucency, MaterialPreview). Carries only
+// the model matrix + the GPU material-table index + the InstancedMeshes VAT
+// params. Material SCALARS and the 9 texture slots moved to the per-material GPU
+// record (Flux_MaterialGPU / g_axMaterials) — a draw selects its material by index.
 //
-// LAYOUT RULE: must stay byte-identical to DrawConstantsLayout in
-// Common/DrawConstants.slang. New fields append only. (InstancedMeshes now uses
-// this layout verbatim — m_xEmissiveParams carries real emissive; its VAT params
-// ride the appended m_xVATParams field, since the backend allows only ONE
-// scratch/draw-constants buffer per descriptor set.)
+// Bound through the per-frame scratch UBO (BindDrawConstants), NOT hardware push
+// constants. LAYOUT RULE: byte-identical to DrawConstantsLayout in
+// Common/DrawConstants.slang. VAT rides m_xVATParams since the backend allows only
+// ONE scratch/draw-constants buffer per descriptor set.
 // ============================================================================
-struct MaterialDrawConstants
+struct MeshDrawConstants
 {
-	Zenith_Maths::Matrix4 m_xModelMatrix;       // 64 bytes (offset   0)
-	Zenith_Maths::Vector4 m_xBaseColor;         // 16 bytes (offset  64)
-	Zenith_Maths::Vector4 m_xMaterialParams;    // 16 bytes (offset  80) (metallic, roughness, alphaCutoff, occlusionStrength)
-	Zenith_Maths::Vector4 m_xUVParams;          // 16 bytes (offset  96) (tilingX, tilingY, offsetX, offsetY)
-	Zenith_Maths::Vector4 m_xEmissiveParams;    // 16 bytes (offset 112) (R, G, B, intensity)
-	Zenith_Maths::Vector4 m_xMaterialParams2;   // 16 bytes (offset 128) (specular, normalStrength, clearCoatStrength, clearCoatRoughness)
-	Zenith_Maths::Vector4 m_xParallaxParams;    // 16 bytes (offset 144) (heightScale, pomMinSteps, pomMaxSteps, unused)
-	Zenith_Maths::Vector4 m_xDetailParams;      // 16 bytes (offset 160) (detailTilingX, detailTilingY, detailNormalStrength, detailAlbedoStrength)
-	Zenith_Maths::Vector4 m_xFlagsParams;       // 16 bytes (offset 176) (MaterialDrawFlags as uint bits, unused x3)
-	Zenith_Maths::Vector4 m_xVATParams;         // 16 bytes (offset 192) InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced
+	Zenith_Maths::Matrix4 m_xModelMatrix;       // 64 bytes (offset  0)
+	u_int                 m_uMaterialIndex;     //  4 bytes (offset 64) index into g_axMaterials
+	u_int                 m_uPad0;              //  4 bytes (offset 68)
+	u_int                 m_uPad1;              //  4 bytes (offset 72)
+	u_int                 m_uPad2;              //  4 bytes (offset 76)
+	Zenith_Maths::Vector4 m_xVATParams;         // 16 bytes (offset 80) InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced
 };
-static_assert(sizeof(MaterialDrawConstants) == 208, "MaterialDrawConstants must be 208 bytes (mirrored by Common/DrawConstants.slang)");
+static_assert(sizeof(MeshDrawConstants) == 96, "MeshDrawConstants must be 96 bytes (mirrored by DrawConstantsLayout in Common/DrawConstants.slang)");
+
+// Build the per-draw constants. uMaterialIndex comes from
+// Flux_MaterialTable::GetOrCreateIndex (assigned on the main thread at gather). VAT
+// params default to zero (non-instanced); the instanced path overwrites
+// m_xVATParams after the call.
+inline void BuildMeshDrawConstants(MeshDrawConstants& xOut, const Zenith_Maths::Matrix4& xModelMatrix, u_int uMaterialIndex)
+{
+	xOut.m_xModelMatrix   = xModelMatrix;
+	xOut.m_uMaterialIndex = uMaterialIndex;
+	xOut.m_uPad0 = 0u;
+	xOut.m_uPad1 = 0u;
+	xOut.m_uPad2 = 0u;
+	xOut.m_xVATParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+}
 
 // ============================================================================
 // Terrain Material Push Constants (288 bytes)
@@ -68,117 +63,6 @@ static_assert(sizeof(TerrainMaterialDrawConstants) == 288, "TerrainMaterialDrawC
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-// Derive the per-draw feature flag bits from a resolved parameter block +
-// texture set. POM/detail only light up when the matching textures are bound,
-// so unset slots cost a uniform branch and nothing else.
-inline u_int BuildMaterialDrawFlags(const Zenith_MaterialResolved& xResolved)
-{
-	const Zenith_MaterialParams& xParams = xResolved.m_xParams;
-	u_int uFlags = 0;
-
-	if (xParams.m_eShadingModel == MATERIAL_SHADING_UNLIT)
-	{
-		uFlags |= MATERIAL_DRAW_FLAG_UNLIT;
-	}
-	else if (xParams.m_eShadingModel == MATERIAL_SHADING_SUBSURFACE)
-	{
-		uFlags |= MATERIAL_DRAW_FLAG_SKIN;
-	}
-	if (xParams.m_bTwoSided)
-	{
-		uFlags |= MATERIAL_DRAW_FLAG_TWO_SIDED_NORMAL_FLIP;
-	}
-	if (xParams.m_fHeightScale > 0.0f && static_cast<bool>(*xResolved.m_apxTextures[MATERIAL_TEXTURE_HEIGHT]))
-	{
-		uFlags |= MATERIAL_DRAW_FLAG_POM;
-	}
-	if (static_cast<bool>(*xResolved.m_apxTextures[MATERIAL_TEXTURE_DETAIL_ALBEDO]) ||
-		static_cast<bool>(*xResolved.m_apxTextures[MATERIAL_TEXTURE_DETAIL_NORMAL]))
-	{
-		uFlags |= MATERIAL_DRAW_FLAG_DETAIL_MAPS;
-	}
-	if (xParams.m_fClearCoatStrength > 0.0f)
-	{
-		uFlags |= MATERIAL_DRAW_FLAG_CLEARCOAT;
-	}
-
-	return uFlags;
-}
-
-inline void BuildMaterialDrawConstants(
-	MaterialDrawConstants& xOut,
-	const Zenith_Maths::Matrix4& xModelMatrix,
-	Zenith_MaterialAsset* pxMaterial)
-{
-	xOut.m_xModelMatrix = xModelMatrix;
-
-	if (pxMaterial)
-	{
-		const Zenith_MaterialResolved& xResolved = pxMaterial->GetResolved();
-		const Zenith_MaterialParams& xParams = xResolved.m_xParams;
-
-		// Opaque never alpha-tests: cutoff 0 disables the shader's discard.
-		// Masked uses the authored cutoff. Translucent/Additive keep cutoff 0
-		// (blending handles their alpha; the forward pass reads alpha direct).
-		const float fAlphaCutoff = (xParams.m_eBlendMode == MATERIAL_BLEND_MASKED) ? xParams.m_fAlphaCutoff : 0.0f;
-
-		xOut.m_xBaseColor = xParams.m_xBaseColor;
-		xOut.m_xMaterialParams = Zenith_Maths::Vector4(
-			xParams.m_fMetallic,
-			xParams.m_fRoughness,
-			fAlphaCutoff,
-			xParams.m_fOcclusionStrength
-		);
-		xOut.m_xUVParams = Zenith_Maths::Vector4(
-			xParams.m_xUVTiling.x, xParams.m_xUVTiling.y,
-			xParams.m_xUVOffset.x, xParams.m_xUVOffset.y
-		);
-		xOut.m_xEmissiveParams = Zenith_Maths::Vector4(
-			xParams.m_xEmissiveColor.x, xParams.m_xEmissiveColor.y, xParams.m_xEmissiveColor.z,
-			xParams.m_fEmissiveIntensity
-		);
-		xOut.m_xMaterialParams2 = Zenith_Maths::Vector4(
-			xParams.m_fSpecular,
-			xParams.m_fNormalStrength,
-			xParams.m_fClearCoatStrength,
-			xParams.m_fClearCoatRoughness
-		);
-		xOut.m_xParallaxParams = Zenith_Maths::Vector4(
-			xParams.m_fHeightScale,
-			xParams.m_fPOMMinSteps,
-			xParams.m_fPOMMaxSteps,
-			0.0f
-		);
-		xOut.m_xDetailParams = Zenith_Maths::Vector4(
-			xParams.m_xDetailTiling.x, xParams.m_xDetailTiling.y,
-			xParams.m_fDetailNormalStrength,
-			xParams.m_fDetailAlbedoStrength
-		);
-
-		const u_int uFlags = BuildMaterialDrawFlags(xResolved);
-		Zenith_Maths::Vector4 xFlags(0.0f);
-		memcpy(&xFlags.x, &uFlags, sizeof(u_int));
-		xOut.m_xFlagsParams = xFlags;
-
-		// VAT is instanced-only; the instanced path overwrites this after the call.
-		// Non-instanced consumers leave it zero (vat-enabled = 0).
-		xOut.m_xVATParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-	else
-	{
-		// Default white material (UE-style blank canvas: grey plastic).
-		xOut.m_xBaseColor = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-		xOut.m_xMaterialParams = Zenith_Maths::Vector4(0.0f, 0.5f, 0.0f, 1.0f);
-		xOut.m_xUVParams = Zenith_Maths::Vector4(1.0f, 1.0f, 0.0f, 0.0f);
-		xOut.m_xEmissiveParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-		xOut.m_xMaterialParams2 = Zenith_Maths::Vector4(0.5f, 1.0f, 0.0f, 0.1f);
-		xOut.m_xParallaxParams = Zenith_Maths::Vector4(0.0f, 8.0f, 32.0f, 0.0f);
-		xOut.m_xDetailParams = Zenith_Maths::Vector4(4.0f, 4.0f, 1.0f, 1.0f);
-		xOut.m_xFlagsParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-		xOut.m_xVATParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-}
 
 inline void BuildTerrainMaterialDrawConstants(
 	TerrainMaterialDrawConstants& xOut,
@@ -224,38 +108,3 @@ inline void BuildTerrainMaterialDrawConstants(
 	memcpy(&xParams2.y, &uDebugMode, sizeof(u_int));
 	xOut.m_xTerrainParams2 = xParams2;
 }
-
-// Canonical shader binding name per material texture slot — order matches
-// MaterialTextureSlot in Zenith_MaterialParamTable.h and the [[vk::binding]]
-// declarations in the mesh shaders.
-inline const char* GetMaterialTextureBindingName(u_int uSlot)
-{
-	static const char* const ls_aszNames[MATERIAL_TEXTURE_SLOT_COUNT] =
-	{
-		"g_xBaseColorTex",
-		"g_xNormalTex",
-		"g_xRoughnessMetallicTex",
-		"g_xOcclusionTex",
-		"g_xEmissiveTex",
-		"g_xHeightTex",
-		"g_xDetailAlbedoTex",
-		"g_xDetailNormalTex",
-		"g_xDetailMaskTex",
-	};
-	Zenith_Assert(uSlot < MATERIAL_TEXTURE_SLOT_COUNT, "Invalid material texture slot %u", uSlot);
-	return ls_aszNames[uSlot];
-}
-
-// Compile-time array initialiser of the 9 material-texture binding handles for
-// a given generated mesh-material program namespace, in MaterialTextureSlot
-// order (matches GetMaterialTextureBindingName). The per-mesh draw loops use:
-//   static constexpr Flux_BindingHandle s_aHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_X::Program);
-//   for (slot) xBinder.BindSRV(s_aHandles[slot], &srv);
-// (The old numeric-slot BindMaterialTextures/BindTerrainMaterialTextures
-// helpers were removed: they were unused and depended on the retired public
-// Flux_BindingSlot(u_int). Materials go fully bindless in a later phase, which
-// removes these loops entirely.)
-#define FLUX_MATERIAL_TEXTURE_HANDLES(NS) { \
-	NS::hg_xBaseColorTex, NS::hg_xNormalTex, NS::hg_xRoughnessMetallicTex, \
-	NS::hg_xOcclusionTex, NS::hg_xEmissiveTex, NS::hg_xHeightTex, \
-	NS::hg_xDetailAlbedoTex, NS::hg_xDetailNormalTex, NS::hg_xDetailMaskTex }

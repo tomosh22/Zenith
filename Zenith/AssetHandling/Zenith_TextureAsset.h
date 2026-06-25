@@ -111,9 +111,13 @@ public:
 	/**
 	 * Mark this texture for bindless access
 	 * Registers the SRV in the bindless descriptor set so it can be
-	 * indexed by g_axBindlessTextures[handle] in shaders
+	 * indexed by g_axTextures[index] in shaders.
+	 * @param bRepeatAddressing true to bake the REPEAT sampler into the bindless
+	 *        slot (material textures, which tile via UV transform); false (default)
+	 *        bakes the CLAMP sampler (UI textures). A texture is used in one role,
+	 *        so a single sampler per bindless slot is correct.
 	 */
-	void MarkAsBindless();
+	void MarkAsBindless(bool bRepeatAddressing = false);
 
 	//--------------------------------------------------------------------------
 	// GPU Resources

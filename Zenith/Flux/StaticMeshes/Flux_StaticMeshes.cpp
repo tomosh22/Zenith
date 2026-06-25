@@ -148,6 +148,23 @@ void Flux_StaticMeshesImpl::GatherDrawPacket(void*)
 	// this snapshot. Generation-guarded, so a repeat call from the shadow Prepare is a no-op.
 	EnsureCameraPacket();
 	EnsureShadowPacket();
+
+	// Register every material we may draw with the GPU material table (MAIN THREAD —
+	// assigns the persistent table index + builds the record + makes its textures
+	// bindless). The worker draw paths then read the index off the asset lock-free.
+	// The shadow packet is the uncullled superset, so it covers the camera packet too.
+	Flux_MaterialTable& xTable = g_xEngine.FluxGraphics().MaterialTable();
+	Zenith_MaterialAsset* pxBlank = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+	for (u_int u = 0; u < m_xShadowDrawPacket.GetSize(); u++)
+	{
+		Flux_ModelInstance* pxMI = m_xShadowDrawPacket.Get(u).m_pxModelInstance;
+		for (uint32_t uMesh = 0; uMesh < pxMI->GetNumMeshes(); uMesh++)
+		{
+			Zenith_MaterialAsset* pxMat = pxMI->GetMaterial(uMesh);
+			if (!pxMat) pxMat = pxBlank;
+			if (pxMat) xTable.GetOrCreateIndex(pxMat);
+		}
+	}
 }
 
 void Flux_StaticMeshesImpl::EnsureCameraPacket()
@@ -222,24 +239,21 @@ void Flux_StaticMeshesImpl::BuildShadowPacket(const Flux_RenderSceneSnapshot& xS
 	}
 }
 
-// Per-mesh draw helper. Binds material constants + SRVs, then emits the
-// indexed draw.
+// Per-mesh draw helper (worker thread). Binds the per-draw constants (model +
+// material-table index) and emits the indexed draw. The material record + its 9
+// bindless textures were registered on the main thread at gather; g_axMaterials +
+// the bindless table are bound once per pass in ExecuteGBuffer.
 void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	Zenith_MaterialAsset* pxMaterial,
 	u_int uIndexCount)
 {
-	MaterialDrawConstants xPushConstants;
-	BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-	xBinder.BindDrawConstants(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
+	u_int uMaterialIndex = pxMaterial ? pxMaterial->GetMaterialTableIndex() : 0u;
+	if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;   // registered at gather; defensive
 
-	static constexpr Flux_BindingHandle s_aMatHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer);
-	static_assert(sizeof(s_aMatHandles) / sizeof(s_aMatHandles[0]) == MATERIAL_TEXTURE_SLOT_COUNT, "material handle array size mismatch");
-	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
-	{
-		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
-		xBinder.BindSRV(s_aMatHandles[u], &pxTexture->m_xSRV);
-	}
+	MeshDrawConstants xPushConstants;
+	BuildMeshDrawConstants(xPushConstants, xModelMatrix, uMaterialIndex);
+	xBinder.BindDrawConstants(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
 
 	pxCmdList->DrawIndexed(uIndexCount);
 }
@@ -323,6 +337,11 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		const bool bTwoSidedPass = (uCullPass == 1);
 		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
 		xBinder.BindCBV(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
+		// Bindless materials: g_axMaterials (a member of the DRAW set, bound once here — it
+		// persists in the DRAW-set staging and is re-written into the set each draw alongside
+		// DrawConstants) + the g_axTextures table (set 2).
+		xBinder.BindSRV_Buffer(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+		pxCmdList->UseBindlessTextures(2);
 
 		for (u_int u = 0; u < xPacket.GetSize(); u++)
 		{
@@ -336,11 +355,14 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	namespace SM = Flux_Generated_StaticMeshes::StaticMesh_ToShadowmap;
-	// Shadow pass binds DrawConstants + ShadowMatrix + the base-colour texture (for the
-	// masked alpha cutout — opaque materials write cutoff 0 and the FS skips the sample).
-	// Slang reflection drops bindings the shader doesn't reference (no FrameConstants
-	// field is read), so FrameConstants doesn't appear in the layout — binding it would
-	// fail the name lookup.
+	// Shadow pass binds per-draw DrawConstants + ShadowMatrix; the masked alpha cutout
+	// samples the base-colour texture bindlessly (opaque materials write cutoff 0 and the
+	// FS skips the sample). g_axMaterials (GLOBAL set) + the g_axTextures table (set 2)
+	// are bound once here — the shadow pipeline was set by the caller
+	// (Flux_Shadows::ExecuteShadowCascade) before this call. g_axMaterials is a DRAW-set
+	// member: staged once, re-written into the set each draw alongside DrawConstants.
+	xBinder.BindSRV_Buffer(SM::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	xCmdBuf.UseBindlessTextures(2);
 
 	// Iterate the UNCULLLED shadow packet (EnsureShadowPacket, main thread) — off-screen
 	// casters still cast. Shared across all 4 shadow cascades. No ECS access here — this
@@ -369,13 +391,15 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 			xCmdBuf.SetVertexBuffer(pxMeshInstance->GetVertexBuffer());
 			xCmdBuf.SetIndexBuffer(pxMeshInstance->GetIndexBuffer());
 
-			// Full material constants: the shadow FS reads the alpha cutoff + UV transform +
-			// base-colour tint. Opaque writes cutoff 0 -> the FS uniform-branches out -> depth-only.
-			MaterialDrawConstants xPushConstants;
-			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
+			// Per-draw model matrix + material-table index. The shadow FS reads the cutoff +
+			// UV transform + base colour from the material record; opaque writes cutoff 0 ->
+			// the FS uniform-branches out -> depth-only.
+			u_int uMaterialIndex = pxMaterial->GetMaterialTableIndex();
+			if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
+			MeshDrawConstants xPushConstants;
+			BuildMeshDrawConstants(xPushConstants, xModelMatrix, uMaterialIndex);
 			xBinder.BindDrawConstants(SM::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
 			xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
-			xBinder.BindSRV(SM::hg_xBaseColorTex, &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}

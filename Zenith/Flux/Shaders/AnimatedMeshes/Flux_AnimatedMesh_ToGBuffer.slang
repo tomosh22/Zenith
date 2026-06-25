@@ -12,6 +12,7 @@
 
 #include "Common/Bindings.slang"
 import Common.DrawConstants;
+import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 import Common.GBuffer;
@@ -47,22 +48,15 @@ struct BonesLayout
 	float4x4 g_xBones[100];
 };
 
-// Per-draw block (set 3): skinning bones + per-draw material constants + the
-// full 9-texture material set. Member names preserved so the codegen handle
-// names (hBones, hDrawConstants, hg_x*Tex) — and thus the C++ binds — are stable.
+// Per-draw block (set 3): skinning bones + per-draw constants (model matrix +
+// material-table index). Material textures are bindless now (set 2), resolved in
+// fsMain. Member names preserved so the codegen handles (hBones, hDrawConstants)
+// — and thus the C++ binds — are stable.
 struct DrawParams
 {
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 	ConstantBuffer<BonesLayout>         Bones;
-	Sampler2D g_xBaseColorTex;
-	Sampler2D g_xNormalTex;
-	Sampler2D g_xRoughnessMetallicTex;
-	Sampler2D g_xOcclusionTex;
-	Sampler2D g_xEmissiveTex;
-	Sampler2D g_xHeightTex;
-	Sampler2D g_xDetailAlbedoTex;
-	Sampler2D g_xDetailNormalTex;
-	Sampler2D g_xDetailMaskTex;
+	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -124,12 +118,24 @@ GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
 
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+
+	// Bindless material textures (draw-uniform index → no NonUniformResourceIndex).
+	Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+	Sampler2D xNormalTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.y];
+	Sampler2D xRoughnessMetallicTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.z];
+	Sampler2D xOcclusionTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.w];
+	Sampler2D xEmissiveTex          = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.x];
+	Sampler2D xHeightTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.y];
+	Sampler2D xDetailAlbedoTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.z];
+	Sampler2D xDetailNormalTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.w];
+	Sampler2D xDetailMaskTex        = g_xBindlessSet.g_axTextures[m.g_xTexIdx2.x];
 
 	MaterialSurface xSurface = EvaluateMaterialSurface(
-		g_xDrawSet.g_xBaseColorTex, g_xDrawSet.g_xNormalTex, g_xDrawSet.g_xRoughnessMetallicTex,
-		g_xDrawSet.g_xOcclusionTex, g_xDrawSet.g_xEmissiveTex, g_xDrawSet.g_xHeightTex,
-		g_xDrawSet.g_xDetailAlbedoTex, g_xDrawSet.g_xDetailNormalTex, g_xDrawSet.g_xDetailMaskTex,
-		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, dc);
+		xBaseColorTex, xNormalTex, xRoughnessMetallicTex,
+		xOcclusionTex, xEmissiveTex, xHeightTex,
+		xDetailAlbedoTex, xDetailNormalTex, xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, m);
 
 	return MakeGBuffer(xSurface);
 }

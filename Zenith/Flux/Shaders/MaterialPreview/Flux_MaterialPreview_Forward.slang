@@ -29,6 +29,7 @@
 
 #include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.DrawConstants;
+import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 import Common.GBuffer;
@@ -96,20 +97,12 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;   // -> set 3
 
-// ----- Per-draw material data + textures (set 4, static-mesh layout) -----
+// ----- Per-draw constants + material table (set 4). Material textures are bindless (set 2). -----
 
 struct DrawParams
 {
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	Sampler2D g_xBaseColorTex;
-	Sampler2D g_xNormalTex;
-	Sampler2D g_xRoughnessMetallicTex;
-	Sampler2D g_xOcclusionTex;
-	Sampler2D g_xEmissiveTex;
-	Sampler2D g_xHeightTex;
-	Sampler2D g_xDetailAlbedoTex;
-	Sampler2D g_xDetailNormalTex;
-	Sampler2D g_xDetailMaskTex;
+	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;   // -> set 4 (declared after PassParams)
 
@@ -341,12 +334,24 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
 
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+
+	// Bindless material textures (draw-uniform index → no NonUniformResourceIndex).
+	Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+	Sampler2D xNormalTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.y];
+	Sampler2D xRoughnessMetallicTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.z];
+	Sampler2D xOcclusionTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.w];
+	Sampler2D xEmissiveTex          = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.x];
+	Sampler2D xHeightTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.y];
+	Sampler2D xDetailAlbedoTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.z];
+	Sampler2D xDetailNormalTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.w];
+	Sampler2D xDetailMaskTex        = g_xBindlessSet.g_axTextures[m.g_xTexIdx2.x];
 
 	MaterialSurface xSurface = EvaluateMaterialSurface(
-		g_xDrawSet.g_xBaseColorTex, g_xDrawSet.g_xNormalTex, g_xDrawSet.g_xRoughnessMetallicTex,
-		g_xDrawSet.g_xOcclusionTex, g_xDrawSet.g_xEmissiveTex, g_xDrawSet.g_xHeightTex,
-		g_xDrawSet.g_xDetailAlbedoTex, g_xDrawSet.g_xDetailNormalTex, g_xDrawSet.g_xDetailMaskTex,
-		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, dc);
+		xBaseColorTex, xNormalTex, xRoughnessMetallicTex,
+		xOcclusionTex, xEmissiveTex, xHeightTex,
+		xDetailAlbedoTex, xDetailNormalTex, xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, m);
 
 	float fAlpha = xSurface.albedo.a;
 

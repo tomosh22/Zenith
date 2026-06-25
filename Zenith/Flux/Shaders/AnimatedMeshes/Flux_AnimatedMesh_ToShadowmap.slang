@@ -15,6 +15,7 @@
 
 #include "Common/Bindings.slang"
 import Common.DrawConstants;
+import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 
@@ -49,7 +50,7 @@ struct DrawParams
 	ConstantBuffer<BonesLayout>         Bones;
 	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	Sampler2D g_xBaseColorTex;
+	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -79,9 +80,11 @@ void fsMain(VsOut input)
 	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
 	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-	if (GetAlphaCutoff(dc) > 0.0)
+	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+	if (GetAlphaCutoff(m) > 0.0)
 	{
-		SampleAlbedoWithCutout(g_xDrawSet.g_xBaseColorTex,
-			TransformUV(input.uv, GetUVTiling(dc), GetUVOffset(dc)), input.vertexColor, dc);
+		Sampler2D xBaseColorTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+		SampleAlbedoWithCutout(xBaseColorTex,
+			TransformUV(input.uv, GetUVTiling(m), GetUVOffset(m)), input.vertexColor, m);
 	}
 }

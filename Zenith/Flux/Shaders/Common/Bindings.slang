@@ -41,6 +41,14 @@ struct GlobalParams
 };
 ParameterBlock<GlobalParams> g_xGlobalSet;
 
+// NOTE: g_axMaterials (the GPU material table) is NOT a spine member. A multi-member
+// spine ParameterBlock forces its binding-0 (g_xGlobal here) to be statically used in
+// EVERY shader that #includes this file — even ones that touch neither — which then
+// must bind it (a Vulkan "descriptor never updated" error otherwise). To keep the
+// spine "pay only for what you use", g_axMaterials lives in each material shader's own
+// DRAW ParameterBlock (always bound per draw), declared next to DrawConstants. See
+// Common/MaterialTable.slang + the mesh/forward shaders.
+
 // ---- VIEW (set 1) — per-camera data + view-frequency resources ----
 public struct ViewConstantsLayout
 {
