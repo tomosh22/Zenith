@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"   // Flux_GraphicsImpl full def for BindlessAllocator().AdvanceFrame()
 #include "Flux/Flux_BackendTypes.h"   // Flux_PlatformAPI / Flux_MemoryManager full defs for the neutral per-frame calls
 #include "Core/Zenith_CommandLine.h"  // IsHeadless() — the backend is never initialised in headless
 
@@ -48,6 +49,9 @@ void Flux_RendererImpl::ProcessFrameEnd()
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		g_xEngine.FluxMemory().ProcessDeferredDeletions();
+		// Advance the bindless-slot deferred-free clock alongside the VRAM one, so a
+		// freed bindless index is recycled only after MAX_FRAMES_IN_FLIGHT+1 frames.
+		g_xEngine.FluxGraphics().BindlessAllocator().AdvanceFrame();
 	}
 }
 

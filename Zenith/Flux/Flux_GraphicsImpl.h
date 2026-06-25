@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/Flux_BindlessAllocator.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -166,9 +167,14 @@ public:
 
 	bool BuildCameraMatrices(FrameConstants& xConstants);
 
+	// Dense allocator for bindless-table slots (set 2, g_axTextures[]). Initialised
+	// in Initialise() from the backend's clamped table size; advanced once per frame.
+	Flux_BindlessAllocator& BindlessAllocator() { return m_xBindlessAllocator; }
+
 	// Samplers (initialised in InitialiseSamplers).
 	Flux_Sampler                m_xRepeatSampler;
 	Flux_Sampler                m_xClampSampler;
+	Flux_BindlessAllocator      m_xBindlessAllocator;
 	// NEAREST/no-aniso/clamp — for data textures that must be read per-texel
 	// exactly (VAT position textures). Bound explicitly via BindSRV's sampler arg.
 	Flux_Sampler                m_xPointSampler;

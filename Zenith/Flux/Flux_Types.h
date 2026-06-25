@@ -293,6 +293,9 @@ struct Flux_SurfaceInfo
 	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
 };
 
+// Sentinel for "this SRV has no bindless-table slot" (not sampled bindlessly).
+static constexpr u_int uFLUX_INVALID_BINDLESS_INDEX = 0xFFFFFFFFu;
+
 struct Flux_ShaderResourceView
 {
 	Flux_ImageViewHandle m_xImageViewHandle;
@@ -300,6 +303,10 @@ struct Flux_ShaderResourceView
 	bool m_bIsDepthStencil = false;
 	u_int m_uBaseMip = 0;
 	u_int m_uMipCount = 1;
+	// Dense slot in the bindless table (set 2, g_axTextures[]) assigned by
+	// Flux_BindlessAllocator when this view is made bindless; invalid otherwise.
+	// Consumers index g_axTextures with THIS, never m_xImageViewHandle.AsUInt().
+	u_int m_uBindlessIndex = uFLUX_INVALID_BINDLESS_INDEX;
 };
 
 struct Flux_UnorderedAccessView_Texture

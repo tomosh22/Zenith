@@ -16228,6 +16228,7 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_BindingValidation.h"
 #include "Flux/Slang/Flux_FrequencyTaxonomy.h"
+#include "Flux/Flux_BindlessAllocator.h"
 
 // Pure pre-draw staged-binding validator (Flux_ValidateStagedBindings). Device-
 // free mask comparison: every binding the pipeline declares (active) must have a
@@ -16339,6 +16340,71 @@ ZENITH_TEST(Flux, FrequencyTaxonomy)
 		xRefl.AddBinding(fnBind(3, 1, "g_xCSM0",       FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1));
 		xRefl.AddBinding(fnBind(4, 0, "DrawConstants", FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
 		ZENITH_ASSERT_TRUE(Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "Forward", strErr), "forward-lit spine program must validate");
+	}
+}
+
+// Pure Flux_BindlessAllocator: dense index allocation with slot-0 reserved, a
+// frame-in-flight deferred-free grace before recycle, double-free idempotence, and
+// a generation counter. Device-free (no GPU). Grace = MAX_FRAMES_IN_FLIGHT+1.
+ZENITH_TEST(Flux, BindlessAllocator)
+{
+	const u_int uGrace = MAX_FRAMES_IN_FLIGHT + 1;
+
+	// Slot 0 reserved; allocation starts at 1 and is dense.
+	{
+		Flux_BindlessAllocator xAlloc;
+		xAlloc.Initialise(8);
+		const u_int a = xAlloc.Allocate();
+		const u_int b = xAlloc.Allocate();
+		const u_int c = xAlloc.Allocate();
+		ZENITH_ASSERT_EQ(a, 1u, "first bindless slot is 1 (slot 0 reserved for default-white)");
+		ZENITH_ASSERT_EQ(b, 2u, "dense sequential allocation");
+		ZENITH_ASSERT_EQ(c, 3u, "dense sequential allocation");
+		ZENITH_ASSERT_EQ(xAlloc.GetLiveCount(), 3u, "three live allocations");
+	}
+
+	// Deferred free: an index is NOT recycled until the grace window elapses.
+	{
+		Flux_BindlessAllocator xAlloc;
+		xAlloc.Initialise(8);
+		const u_int a = xAlloc.Allocate();   // 1
+		xAlloc.Allocate();                   // 2
+		const u_int64 uGenBefore = xAlloc.GetGeneration();
+		xAlloc.Free(a);
+		ZENITH_ASSERT_TRUE(xAlloc.GetGeneration() > uGenBefore, "Free bumps the generation counter");
+		ZENITH_ASSERT_EQ(xAlloc.GetLiveCount(), 1u, "freed slot no longer counts as live");
+
+		// Before grace fully elapses, a fresh Allocate must grow the high-water mark
+		// rather than reuse the in-flight freed index.
+		for (u_int i = 0; i < uGrace - 1; ++i) xAlloc.AdvanceFrame();
+		const u_int d = xAlloc.Allocate();
+		ZENITH_ASSERT_TRUE(d != a, "freed index not recycled within the grace window");
+		ZENITH_ASSERT_EQ(d, 3u, "grows high-water instead of reusing an in-grace index");
+
+		// One more AdvanceFrame completes the grace -> index 1 reclaimed and reissued.
+		xAlloc.AdvanceFrame();
+		const u_int e = xAlloc.Allocate();
+		ZENITH_ASSERT_EQ(e, a, "freed index recycled after the grace window");
+	}
+
+	// Double-free / freeing the reserved slot is idempotent (no double-recycle).
+	{
+		Flux_BindlessAllocator xAlloc;
+		xAlloc.Initialise(8);
+		const u_int a = xAlloc.Allocate();   // 1
+		xAlloc.Free(a);
+		const u_int64 uGen = xAlloc.GetGeneration();
+		xAlloc.Free(a);                      // double-free -> ignored
+		ZENITH_ASSERT_EQ(xAlloc.GetGeneration(), uGen, "double-free does not bump the generation");
+		xAlloc.Free(Flux_BindlessAllocator::uRESERVED_DEFAULT_WHITE); // slot 0 -> ignored
+		ZENITH_ASSERT_EQ(xAlloc.GetGeneration(), uGen, "freeing the reserved slot is a no-op");
+
+		// After grace, index 1 is reclaimed exactly ONCE (not twice from the double-free).
+		for (u_int i = 0; i < uGrace; ++i) xAlloc.AdvanceFrame();
+		const u_int b = xAlloc.Allocate();
+		const u_int c = xAlloc.Allocate();
+		ZENITH_ASSERT_EQ(b, a, "reclaimed the freed index once");
+		ZENITH_ASSERT_EQ(c, 2u, "second alloc grows high-water — no phantom double-recycle");
 	}
 }
 

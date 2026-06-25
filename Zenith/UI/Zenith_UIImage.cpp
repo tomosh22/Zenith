@@ -99,7 +99,10 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
             "UIImage '%s': texture has a valid SRV but MarkAsBindless() was never called. "
             "The shader will sample an unregistered descriptor slot (silent transparent output). "
             "Call MarkAsBindless() after CreateFromData().", m_strName.c_str());
-        uTextureID = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
+        // The bindless table index is the allocator-assigned slot, NOT the raw
+        // image-view handle. Fall back to 0 (untextured sentinel) if unassigned.
+        const u_int uIdx = pxTexture->m_xSRV.m_uBindlessIndex;
+        uTextureID = (uIdx != uFLUX_INVALID_BINDLESS_INDEX) ? uIdx : 0u;
     }
 
     Zenith_Maths::Vector4 xColor = m_xColor;

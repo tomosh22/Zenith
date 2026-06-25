@@ -49,9 +49,15 @@ void Zenith_TextureAsset::MarkAsBindless()
 
 	if (m_xSRV.m_xImageViewHandle.IsValid())
 	{
+		// Allocate a dense bindless slot once. The SRV may already own one (created
+		// with the BINDLESS flag set) — reuse it; the descriptor write is idempotent.
+		if (m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
+		{
+			m_xSRV.m_uBindlessIndex = g_xEngine.FluxGraphics().BindlessAllocator().Allocate();
+		}
 		// Engine-typed wrapper — backend extracts vk::ImageView / vk::Sampler internally.
 		g_xEngine.FluxBackend().WriteBindlessTextureSlot(
-			m_xSRV.m_xImageViewHandle.AsUInt(),
+			m_xSRV.m_uBindlessIndex,
 			m_xSRV,
 			g_xEngine.FluxGraphics().m_xClampSampler);
 	}
@@ -394,6 +400,12 @@ void Zenith_TextureAsset::ReleaseGPU()
 {
 	if (m_bGPUResourcesAllocated && m_xVRAMHandle.IsValid())
 	{
+		// Return the bindless slot to the allocator (deferred-recycled after the
+		// frame-in-flight grace, mirroring the VRAM deferred deletion below).
+		if (m_xSRV.m_uBindlessIndex != uFLUX_INVALID_BINDLESS_INDEX)
+		{
+			g_xEngine.FluxGraphics().BindlessAllocator().Free(m_xSRV.m_uBindlessIndex);
+		}
 		g_xEngine.FluxMemory().QueueVRAMDeletion(m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
 		m_xSRV = Flux_ShaderResourceView();
 		m_bGPUResourcesAllocated = false;

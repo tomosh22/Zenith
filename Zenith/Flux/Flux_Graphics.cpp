@@ -71,6 +71,11 @@ void Flux_GraphicsImpl::Initialise()
 	m_aeMRTFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
 	m_aeMRTFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
 
+	// Bindless-slot allocator: capacity = the backend's device-clamped table size
+	// (set during backend init, before this first-feature Initialise runs). Must be
+	// ready before any texture is made bindless below / by assets.
+	m_xBindlessAllocator.Initialise(g_xEngine.FluxBackend().GetBindlessTableSize());
+
 	Flux_SurfaceInfo xTexInfo;
 	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 	xTexInfo.m_uWidth = 1;

@@ -256,6 +256,10 @@ public:
 
 	vk::DescriptorSet& GetBindlessTexturesDescriptorSet();
 	vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout();
+	// Device-clamped bindless table capacity (set by QueryDescriptorIndexingLimits).
+	// Drives Flux_BindlessAllocator's capacity. Backend-neutral surface (mirrored by
+	// the D3D12 null backend).
+	uint32_t GetBindlessTableSize() const { return m_uBindlessTableSize; }
 	void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
 
 	// Engine-typed wrapper around WriteBindlessDescriptor. Engine code (asset

@@ -327,9 +327,18 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 		Zenith_TextureAsset* pxIconTex = !m_xIconTexture.GetPath().empty()
 			? Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xIconTexture.GetPath())
 			: m_xIconTexture.GetDirect();
-		const uint32_t uIconTextureID = (pxIconTex && pxIconTex->IsValid())
-			? pxIconTex->m_xSRV.m_xImageViewHandle.AsUInt()
-			: 0;
+		// Icons sample the bindless table → ensure the texture has a slot (mark once,
+		// idempotent) and read the allocator-assigned index, not the view handle.
+		uint32_t uIconTextureID = 0;
+		if (pxIconTex && pxIconTex->IsValid() && pxIconTex->m_xSRV.m_xImageViewHandle.IsValid())
+		{
+			if (!pxIconTex->IsMarkedBindless())
+			{
+				pxIconTex->MarkAsBindless();
+			}
+			const u_int uIdx = pxIconTex->m_xSRV.m_uBindlessIndex;
+			uIconTextureID = (uIdx != uFLUX_INVALID_BINDLESS_INDEX) ? uIdx : 0u;
+		}
 		const Zenith_Maths::Vector4 xIconBounds = {
 			xLayout.xIconPos.x, xLayout.xIconPos.y,
 			xLayout.xIconPos.x + m_xIconSize.x, xLayout.xIconPos.y + m_xIconSize.y

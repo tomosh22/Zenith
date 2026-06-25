@@ -176,8 +176,10 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 
 	if ((xInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) && xView.m_xImageViewHandle.IsValid())
 	{
+		// Dense bindless slot from the allocator (NOT the image-view handle).
+		xView.m_uBindlessIndex = m_pxFluxGraphics->BindlessAllocator().Allocate();
 		m_pxVulkan->WriteBindlessDescriptor(
-			xView.m_xImageViewHandle.AsUInt(),
+			xView.m_uBindlessIndex,
 			xVkView,
 			m_pxFluxGraphics->m_xClampSampler.GetSampler());
 	}
@@ -220,8 +222,10 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 
 	if ((xInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) && xView.m_xImageViewHandle.IsValid())
 	{
+		// Dense bindless slot from the allocator (NOT the image-view handle).
+		xView.m_uBindlessIndex = m_pxFluxGraphics->BindlessAllocator().Allocate();
 		m_pxVulkan->WriteBindlessDescriptor(
-			xView.m_xImageViewHandle.AsUInt(),
+			xView.m_uBindlessIndex,
 			xVkView,
 			m_pxFluxGraphics->m_xClampSampler.GetSampler());
 	}

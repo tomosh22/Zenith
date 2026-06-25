@@ -106,6 +106,12 @@ public:
 	// Engine-typed bindless write (neutral entry point). No-op.
 	void WriteBindlessTextureSlot(uint32_t /*uIndex*/, const Flux_ShaderResourceView& /*xView*/, const Zenith_D3D12_Sampler& /*xSampler*/) { }
 
+	// Backend-neutral surface mirrored from Zenith_Vulkan: drives the
+	// Flux_BindlessAllocator capacity. The null backend writes no real descriptors,
+	// so it just hands back the (un-clamped) target size — large enough that a full
+	// session's MarkAsBindless allocations never exhaust it.
+	uint32_t GetBindlessTableSize() const { return 16384u; }
+
 	// ===== VRAM Registry =====
 	Flux_VRAMHandle RegisterVRAM(Zenith_D3D12_VRAM* /*pxVRAM*/) { Flux_VRAMHandle x; x.SetValue(ms_uDummyHandle++); return x; }
 	Zenith_D3D12_VRAM* GetVRAM(const Flux_VRAMHandle /*xHandle*/) { return nullptr; }
