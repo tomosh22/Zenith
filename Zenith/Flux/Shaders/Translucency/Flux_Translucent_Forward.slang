@@ -20,7 +20,7 @@
 // 9 material textures b1-9) so the C++ side shares the bind helper.
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"
 import Common.DrawConstants;
 import Common.Material;
 import Common.MaterialSurface;
@@ -49,26 +49,7 @@ struct VsOut
 	float4 vertexColor     : TEXCOORD5;
 };
 
-[shader("vertex")]
-VsOut vsMain(VsIn input)
-{
-	VsOut o;
-
-	float3 xWorldPos = mul(DrawConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
-	float3x3 xNormalMatrix = NormalMatrixFromModel(DrawConstants.g_xModelMatrix);
-
-	o.uv             = input.a_xUV;
-	o.vertexColor    = input.a_xColor;
-	o.worldNormal    = normalize(mul(xNormalMatrix, input.a_xNormal));
-	o.worldTangent   = normalize(mul(xNormalMatrix, input.a_xTangent));
-	float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
-	o.bitangentSign  = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
-	o.worldPos       = xWorldPos;
-	o.position       = mul(FrameConstants.g_xViewProjMat, float4(xWorldPos, 1.0));
-	return o;
-}
-
-// ----- Pass constants (set=0) -----
+// ----- Pass constants + shared lighting resources (set 3) -----
 
 struct TranslucencyConstantsLayout
 {
@@ -81,38 +62,68 @@ struct TranslucencyConstantsLayout
 	float  g_fAmbientFallbackIntensity;
 	float2 g_xCSMTexelSize;	// 1 / CSM resolution (engine rule: dims via CBV)
 };
-[[vk::binding( 1, 0)]] ConstantBuffer<TranslucencyConstantsLayout> TranslucencyConstants;
 
 struct ShadowMatrixLayout { float4x4 m_xMat; };
-[[vk::binding( 2, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
-[[vk::binding( 3, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
-[[vk::binding( 4, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
-[[vk::binding( 5, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
 
-[[vk::binding( 6, 0)]] Sampler2D   g_xCSM0;
-[[vk::binding( 7, 0)]] Sampler2D   g_xCSM1;
-[[vk::binding( 8, 0)]] Sampler2D   g_xCSM2;
-[[vk::binding( 9, 0)]] Sampler2D   g_xCSM3;
+struct PassParams
+{
+	ConstantBuffer<TranslucencyConstantsLayout> TranslucencyConstants;
 
-[[vk::binding(10, 0)]] Sampler2D   g_xBRDFLUT;
-[[vk::binding(11, 0)]] SamplerCube g_xIrradianceMap;
-[[vk::binding(12, 0)]] SamplerCube g_xPrefilteredMap;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
 
-[[vk::binding(13, 0)]] StructuredBuffer<LightInstance> LightBuffer;
-[[vk::binding(14, 0)]] StructuredBuffer<uint>          ClusterLightCounts;
-[[vk::binding(15, 0)]] StructuredBuffer<uint>          ClusterLightIndices;
+	Sampler2D   g_xCSM0;
+	Sampler2D   g_xCSM1;
+	Sampler2D   g_xCSM2;
+	Sampler2D   g_xCSM3;
 
-// ----- Material textures (set=1, static-mesh layout) -----
+	Sampler2D   g_xBRDFLUT;
+	SamplerCube g_xIrradianceMap;
+	SamplerCube g_xPrefilteredMap;
 
-[[vk::binding( 1, 1)]] Sampler2D g_xBaseColorTex;
-[[vk::binding( 2, 1)]] Sampler2D g_xNormalTex;
-[[vk::binding( 3, 1)]] Sampler2D g_xRoughnessMetallicTex;
-[[vk::binding( 4, 1)]] Sampler2D g_xOcclusionTex;
-[[vk::binding( 5, 1)]] Sampler2D g_xEmissiveTex;
-[[vk::binding( 6, 1)]] Sampler2D g_xHeightTex;
-[[vk::binding( 7, 1)]] Sampler2D g_xDetailAlbedoTex;
-[[vk::binding( 8, 1)]] Sampler2D g_xDetailNormalTex;
-[[vk::binding( 9, 1)]] Sampler2D g_xDetailMaskTex;
+	StructuredBuffer<LightInstance> LightBuffer;
+	StructuredBuffer<uint>          ClusterLightCounts;
+	StructuredBuffer<uint>          ClusterLightIndices;
+};
+ParameterBlock<PassParams> g_xPassSet;
+
+// ----- Material textures (set 4, static-mesh layout) -----
+
+struct DrawParams
+{
+	ConstantBuffer<DrawConstantsLayout> DrawConstants;
+	Sampler2D g_xBaseColorTex;
+	Sampler2D g_xNormalTex;
+	Sampler2D g_xRoughnessMetallicTex;
+	Sampler2D g_xOcclusionTex;
+	Sampler2D g_xEmissiveTex;
+	Sampler2D g_xHeightTex;
+	Sampler2D g_xDetailAlbedoTex;
+	Sampler2D g_xDetailNormalTex;
+	Sampler2D g_xDetailMaskTex;
+};
+ParameterBlock<DrawParams> g_xDrawSet;
+
+[shader("vertex")]
+VsOut vsMain(VsIn input)
+{
+	VsOut o;
+
+	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
+	float3x3 xNormalMatrix = NormalMatrixFromModel(g_xDrawSet.DrawConstants.g_xModelMatrix);
+
+	o.uv             = input.a_xUV;
+	o.vertexColor    = input.a_xColor;
+	o.worldNormal    = normalize(mul(xNormalMatrix, input.a_xNormal));
+	o.worldTangent   = normalize(mul(xNormalMatrix, input.a_xTangent));
+	float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
+	o.bitangentSign  = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
+	o.worldPos       = xWorldPos;
+	o.position       = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+	return o;
+}
 
 // ----- Shadow sampling (deferred recipe, texel size from CB) -----
 
@@ -138,10 +149,10 @@ float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, f
 	{
 		float2 xSampleUV = xSamplePos + axOffsets[i];
 		float4 shadowDepths;
-		if      (iCascade == 0) shadowDepths = g_xCSM0.Gather(xSampleUV);
-		else if (iCascade == 1) shadowDepths = g_xCSM1.Gather(xSampleUV);
-		else if (iCascade == 2) shadowDepths = g_xCSM2.Gather(xSampleUV);
-		else                    shadowDepths = g_xCSM3.Gather(xSampleUV);
+		if      (iCascade == 0) shadowDepths = g_xPassSet.g_xCSM0.Gather(xSampleUV);
+		else if (iCascade == 1) shadowDepths = g_xPassSet.g_xCSM1.Gather(xSampleUV);
+		else if (iCascade == 2) shadowDepths = g_xPassSet.g_xCSM2.Gather(xSampleUV);
+		else                    shadowDepths = g_xPassSet.g_xCSM3.Gather(xSampleUV);
 
 		float4 comparison = step(float4(fBiasedDepth, fBiasedDepth, fBiasedDepth, fBiasedDepth), shadowDepths);
 		fShadow += dot(comparison, float4(1.0, 1.0, 1.0, 1.0));
@@ -152,17 +163,17 @@ float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, f
 
 float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 {
-	if (TranslucencyConstants.g_bShadowsEnabled == 0u) return 1.0;
+	if (g_xPassSet.TranslucencyConstants.g_bShadowsEnabled == 0u) return 1.0;
 
 	const uint uNumCSMs = 4;
 	float4x4 axShadowMats[4] = {
-		ShadowMatrix0.m_xMat,
-		ShadowMatrix1.m_xMat,
-		ShadowMatrix2.m_xMat,
-		ShadowMatrix3.m_xMat,
+		g_xPassSet.ShadowMatrix0.m_xMat,
+		g_xPassSet.ShadowMatrix1.m_xMat,
+		g_xPassSet.ShadowMatrix2.m_xMat,
+		g_xPassSet.ShadowMatrix3.m_xMat,
 	};
 
-	float2 texelSize = TranslucencyConstants.g_xCSMTexelSize;
+	float2 texelSize = g_xPassSet.TranslucencyConstants.g_xCSMTexelSize;
 	float fShadowFactor = 1.0;
 
 	for (int iCascade = 0; iCascade < (int)uNumCSMs; iCascade++)
@@ -220,9 +231,9 @@ float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 
 float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 {
-	if (TranslucencyConstants.g_bIBLEnabled == 0u)
+	if (g_xPassSet.TranslucencyConstants.g_bIBLEnabled == 0u)
 	{
-		return float3(TranslucencyConstants.g_fAmbientFallbackIntensity).xxx * s.albedo.rgb * s.ao;
+		return float3(g_xPassSet.TranslucencyConstants.g_fAmbientFallbackIntensity).xxx * s.albedo.rgb * s.ao;
 	}
 
 	float  NdotV = max(dot(s.worldNormal, xViewDir), PBR_EPSILON);
@@ -230,24 +241,24 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, s.roughness);
 
 	float  fRoughnessForLUT = clamp(s.roughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-	float2 xBRDF = g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
+	float2 xBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
 	float3 kS = F;
 	float3 kD = (1.0 - kS) * (1.0 - s.metallic);
 
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
-	if (TranslucencyConstants.g_bIBLDiffuseEnabled != 0u)
+	if (g_xPassSet.TranslucencyConstants.g_bIBLDiffuseEnabled != 0u)
 	{
-		float3 xIrradiance = g_xIrradianceMap.Sample(s.worldNormal).rgb;
+		float3 xIrradiance = g_xPassSet.g_xIrradianceMap.Sample(s.worldNormal).rgb;
 		xDiffuseIBL        = kD * xIrradiance * s.albedo.rgb;
 	}
 
 	float3 xSpecularIBL = float3(0.0, 0.0, 0.0);
-	if (TranslucencyConstants.g_bIBLSpecularEnabled != 0u)
+	if (g_xPassSet.TranslucencyConstants.g_bIBLSpecularEnabled != 0u)
 	{
 		float3 xReflect = reflect(-xViewDir, s.worldNormal);
 		float  fLOD     = s.roughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xPrefiltered = g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
+		float3 xPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
 		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughnessForLUT, xBRDF);
 	}
 
@@ -259,26 +270,26 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	float3 xBase = xDiffuseIBL * s.ao + xSpecularIBL * fSpecularAO;
 
 	// Clear-coat IBL lobe.
-	if (s.ccStrength > 0.0 && TranslucencyConstants.g_bIBLSpecularEnabled != 0u)
+	if (s.ccStrength > 0.0 && g_xPassSet.TranslucencyConstants.g_bIBLSpecularEnabled != 0u)
 	{
 		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
 		float fCoatRoughForLUT = clamp(s.ccRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-		float2 xCoatBRDF = g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float2 xCoatBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
 		float3 xReflect = reflect(-xViewDir, s.worldNormal);
 		float  fCoatLOD = s.ccRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xCoatPrefiltered = g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
 		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * s.ccStrength;
 		xBase = xBase * (1.0 - s.ccStrength * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
 
-	return xBase * TranslucencyConstants.g_fIBLIntensity;
+	return xBase * g_xPassSet.TranslucencyConstants.g_fIBLIntensity;
 }
 
 // ----- Sun direct lighting (deferred recipe over a MaterialSurface) -----
 
 float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 {
-	float3 xLightDir = normalize(-FrameConstants.g_xSunDir_Pad.xyz);
+	float3 xLightDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
 	float NdotL = max(dot(s.worldNormal, xLightDir), 0.0);
@@ -287,7 +298,7 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 	float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
 
 	if (NdotL <= PBR_EPSILON) return float3(0.0, 0.0, 0.0);
-	if (FrameConstants.g_xSunColour.a <= 0.1) return float3(0.0, 0.0, 0.0);
+	if (g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.a <= 0.1) return float3(0.0, 0.0, 0.0);
 
 	float roughness = max(s.roughness, PBR_MIN_ROUGHNESS);
 	float3 F0 = ComputeF0(s.albedo.rgb, s.metallic, s.specular);
@@ -310,7 +321,7 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 		Lo = Lo * fBaseAttenuation + xCoat;
 	}
 
-	float3 xRadiance = FrameConstants.g_xSunColour.rgb * FrameConstants.g_xSunColour.a;
+	float3 xRadiance = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb * g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.a;
 	float fShadow = ComputeSunShadowFactor(xWorldPos, NdotL);
 	return Lo * xRadiance * NdotL * fShadow;
 }
@@ -319,13 +330,15 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 {
 	float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - input.worldPos);
+	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
+
+	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
 
 	MaterialSurface xSurface = EvaluateMaterialSurface(
-		g_xBaseColorTex, g_xNormalTex, g_xRoughnessMetallicTex,
-		g_xOcclusionTex, g_xEmissiveTex, g_xHeightTex,
-		g_xDetailAlbedoTex, g_xDetailNormalTex, g_xDetailMaskTex,
-		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace);
+		g_xDrawSet.g_xBaseColorTex, g_xDrawSet.g_xNormalTex, g_xDrawSet.g_xRoughnessMetallicTex,
+		g_xDrawSet.g_xOcclusionTex, g_xDrawSet.g_xEmissiveTex, g_xDrawSet.g_xHeightTex,
+		g_xDrawSet.g_xDetailAlbedoTex, g_xDrawSet.g_xDetailNormalTex, g_xDrawSet.g_xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, dc);
 
 	float fAlpha = xSurface.albedo.a;
 
@@ -340,22 +353,22 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 
 	// Clustered dynamic lights — same cluster walk as the deferred composite,
 	// view-space Z computed from the world position (forward has no depth tex).
-	if (TranslucencyConstants.g_bDynamicLightsEnabled != 0u)
+	if (g_xPassSet.TranslucencyConstants.g_bDynamicLightsEnabled != 0u)
 	{
-		float fViewZ = mul(FrameConstants.g_xViewMat, float4(input.worldPos, 1.0)).z;
-		float2 xScreenUV = input.position.xy * FrameConstants.g_xRcpScreenDims;
+		float fViewZ = mul(g_xViewSet.g_xView.g_xViewMat, float4(input.worldPos, 1.0)).z;
+		float2 xScreenUV = input.position.xy * g_xViewSet.g_xView.g_xRcpScreenDims;
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(xScreenUV, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
-		uint  uLightCount   = ClusterLightCounts[uClusterIdx];
+		uint  uLightCount   = g_xPassSet.ClusterLightCounts[uClusterIdx];
 
 		float3 xDynLights = float3(0.0, 0.0, 0.0);
 		for (uint i = 0u; i < uLightCount; ++i)
 		{
-			uint uLightIdx = ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
-			LightInstance xL = LightBuffer[uLightIdx];
+			uint uLightIdx = g_xPassSet.ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
+			LightInstance xL = g_xPassSet.LightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, input.worldPos, xSurface.worldNormal, xViewDir,
 			                            xSurface.albedo.rgb, xSurface.metallic, xSurface.roughness,
-			                            xSurface.specular, g_xBRDFLUT);
+			                            xSurface.specular, g_xPassSet.g_xBRDFLUT);
 		}
 		xColour += xDynLights;
 	}

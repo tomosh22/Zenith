@@ -16,11 +16,59 @@ namespace Flux_Generated_Skybox
 	// ----- SkyboxSolidColour (Skybox/Flux_SkyboxSolidColour) -----
 	namespace SkyboxSolidColour
 	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kSkyboxOverrideConstants_Name = "SkyboxOverrideConstants";
-		inline constexpr unsigned int kSkyboxOverrideConstants_Set = 0;
+		inline constexpr unsigned int kSkyboxOverrideConstants_Set = 3;
 		inline constexpr unsigned int kSkyboxOverrideConstants_Binding = 0;
 		inline constexpr unsigned int kSkyboxOverrideConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hSkyboxOverrideConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct SkyboxOverrideConstants_CB
 		{
 			unsigned char m_ag_xOverrideColour[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
@@ -31,17 +79,30 @@ namespace Flux_Generated_Skybox
 	// ----- SkyboxCubemap (Skybox/Flux_Skybox) -----
 	namespace SkyboxCubemap
 	{
-		inline constexpr const char* kg_xCubemap_Name = "g_xCubemap";
-		inline constexpr unsigned int kg_xCubemap_Set = 0;
-		inline constexpr unsigned int kg_xCubemap_Binding = 1;
-		inline constexpr unsigned int kg_xCubemap_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
-		inline constexpr unsigned int kFrameConstants_Set = 0;
-		inline constexpr unsigned int kFrameConstants_Binding = 0;
-		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
-		struct FrameConstants_CB
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
 		{
 			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
@@ -50,27 +111,85 @@ namespace Flux_Generated_Skybox
 			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
-			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
-			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
-			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
-			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		inline constexpr const char* kg_xCubemap_Name = "g_xCubemap";
+		inline constexpr unsigned int kg_xCubemap_Set = 3;
+		inline constexpr unsigned int kg_xCubemap_Binding = 0;
+		inline constexpr unsigned int kg_xCubemap_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCubemap{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 	// ----- SkyboxAtmosphere (Skybox/Flux_Atmosphere) -----
 	namespace SkyboxAtmosphere
 	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kAtmosphereConstants_Name = "AtmosphereConstants";
-		inline constexpr unsigned int kAtmosphereConstants_Set = 0;
-		inline constexpr unsigned int kAtmosphereConstants_Binding = 1;
+		inline constexpr unsigned int kAtmosphereConstants_Set = 3;
+		inline constexpr unsigned int kAtmosphereConstants_Binding = 0;
 		inline constexpr unsigned int kAtmosphereConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hAtmosphereConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct AtmosphereConstants_CB
 		{
 			unsigned char m_ag_xRayleighScatter[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
@@ -98,16 +217,40 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uSkySamples) == 60, "AtmosphereConstants.g_uSkySamples offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uLightSamples) == 64, "AtmosphereConstants.g_uLightSamples offset drifted from Slang reflection");
 		inline constexpr const char* kg_xSkyViewLUT_Name = "g_xSkyViewLUT";
-		inline constexpr unsigned int kg_xSkyViewLUT_Set = 0;
-		inline constexpr unsigned int kg_xSkyViewLUT_Binding = 2;
+		inline constexpr unsigned int kg_xSkyViewLUT_Set = 3;
+		inline constexpr unsigned int kg_xSkyViewLUT_Binding = 1;
 		inline constexpr unsigned int kg_xSkyViewLUT_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
-		inline constexpr unsigned int kFrameConstants_Set = 0;
-		inline constexpr unsigned int kFrameConstants_Binding = 0;
-		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
+		inline constexpr Flux_BindingHandle hg_xSkyViewLUT{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+	}
+
+	// ----- SkyboxTransmittanceLUT (Skybox/Flux_TransmittanceLUT) -----
+	namespace SkyboxTransmittanceLUT
+	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
-		struct FrameConstants_CB
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
 		{
 			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
@@ -116,27 +259,27 @@ namespace Flux_Generated_Skybox
 			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
-			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
-			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
-			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
-			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-	}
-
-	// ----- SkyboxTransmittanceLUT (Skybox/Flux_TransmittanceLUT) -----
-	namespace SkyboxTransmittanceLUT
-	{
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kAtmosphereConstants_Name = "AtmosphereConstants";
-		inline constexpr unsigned int kAtmosphereConstants_Set = 0;
+		inline constexpr unsigned int kAtmosphereConstants_Set = 3;
 		inline constexpr unsigned int kAtmosphereConstants_Binding = 0;
 		inline constexpr unsigned int kAtmosphereConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hAtmosphereConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct AtmosphereConstants_CB
 		{
 			unsigned char m_ag_xRayleighScatter[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
@@ -168,11 +311,59 @@ namespace Flux_Generated_Skybox
 	// ----- SkyboxSkyViewLUT (Skybox/Flux_SkyViewLUT) -----
 	namespace SkyboxSkyViewLUT
 	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kAtmosphereConstants_Name = "AtmosphereConstants";
-		inline constexpr unsigned int kAtmosphereConstants_Set = 0;
-		inline constexpr unsigned int kAtmosphereConstants_Binding = 1;
+		inline constexpr unsigned int kAtmosphereConstants_Set = 3;
+		inline constexpr unsigned int kAtmosphereConstants_Binding = 0;
 		inline constexpr unsigned int kAtmosphereConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hAtmosphereConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct AtmosphereConstants_CB
 		{
 			unsigned char m_ag_xRayleighScatter[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
@@ -200,35 +391,11 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uSkySamples) == 60, "AtmosphereConstants.g_uSkySamples offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uLightSamples) == 64, "AtmosphereConstants.g_uLightSamples offset drifted from Slang reflection");
 		inline constexpr const char* kg_xTransmittanceLUT_Name = "g_xTransmittanceLUT";
-		inline constexpr unsigned int kg_xTransmittanceLUT_Set = 0;
-		inline constexpr unsigned int kg_xTransmittanceLUT_Binding = 2;
+		inline constexpr unsigned int kg_xTransmittanceLUT_Set = 3;
+		inline constexpr unsigned int kg_xTransmittanceLUT_Binding = 1;
 		inline constexpr unsigned int kg_xTransmittanceLUT_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
-		inline constexpr unsigned int kFrameConstants_Set = 0;
-		inline constexpr unsigned int kFrameConstants_Binding = 0;
-		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		struct FrameConstants_CB
-		{
-			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
-			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
-			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
-			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
-			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
-		};
-		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr Flux_BindingHandle hg_xTransmittanceLUT{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 }

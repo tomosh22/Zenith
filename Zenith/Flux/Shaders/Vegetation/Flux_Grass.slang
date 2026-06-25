@@ -16,7 +16,7 @@
 // participating in deferred lighting.
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"
 
 struct GrassConstantsLayout
 {
@@ -24,7 +24,6 @@ struct GrassConstantsLayout
 	float4 g_xGrassParams;    // X = density scale, Y = max distance, Z = debug mode, W = pad
 	float4 g_xLODDistances;   // LOD0, LOD1, LOD2, MAX distances (linear, not squared)
 };
-[[vk::binding(1, 0)]] ConstantBuffer<GrassConstantsLayout> GrassConstants;
 
 struct GrassBladeInstance
 {
@@ -35,9 +34,16 @@ struct GrassBladeInstance
 	float  m_fBend;
 	uint   m_uColorTint;
 };
-// Read-only in vertex stage — Slang's NonWritable decoration is required
-// when vertexPipelineStoresAndAtomics is off.
-[[vk::binding(2, 0)]] StructuredBuffer<GrassBladeInstance> InstanceBuffer;
+
+// Pass-frequency resources (set 3). The structured buffer is read-only in the
+// vertex stage — Slang's NonWritable decoration is required when
+// vertexPipelineStoresAndAtomics is off.
+struct PassParams
+{
+	ConstantBuffer<GrassConstantsLayout> GrassConstants;
+	StructuredBuffer<GrassBladeInstance> InstanceBuffer;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 struct VsIn
 {
@@ -103,7 +109,7 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 {
 	VsOut o;
 
-	GrassBladeInstance xInstance = InstanceBuffer[instanceId];
+	GrassBladeInstance xInstance = g_xPassSet.InstanceBuffer[instanceId];
 
 	// Local-space blade: scale × bend along height² × Y-axis rotation.
 	float3 xLocalPos = input.a_xPosition;
@@ -117,9 +123,9 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	xLocalPos = mul(xRotation, xLocalPos);
 
 	// Wind in world XZ space, weighted by height² so base stays anchored.
-	float2 xWindDir      = normalize(GrassConstants.g_xWindParams.xy);
-	float  fWindStrength = GrassConstants.g_xWindParams.z;
-	float  fTime         = GrassConstants.g_xWindParams.w;
+	float2 xWindDir      = normalize(g_xPassSet.GrassConstants.g_xWindParams.xy);
+	float  fWindStrength = g_xPassSet.GrassConstants.g_xWindParams.z;
+	float  fTime         = g_xPassSet.GrassConstants.g_xWindParams.w;
 	float2 xWindOffset   = CalculateWind(xInstance.m_xPosition.xz, fTime, xWindDir, fWindStrength);
 
 	float3 xWorldPos = xInstance.m_xPosition + xLocalPos;
@@ -139,9 +145,9 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	float3 xNormal   = normalize(cross(xWidthDir, xWorldTangent));
 
 	// Distance-fade alpha for the LOD3→max-distance transition.
-	float fDistToCamera = length(xWorldPos - FrameConstants.g_xCamPos_Pad.xyz);
-	float fFade         = 1.0 - smoothstep(GrassConstants.g_xLODDistances.z,
-											GrassConstants.g_xLODDistances.w,
+	float fDistToCamera = length(xWorldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz);
+	float fFade         = 1.0 - smoothstep(g_xPassSet.GrassConstants.g_xLODDistances.z,
+											g_xPassSet.GrassConstants.g_xLODDistances.w,
 											fDistToCamera);
 
 	float4 xColorTint = UnpackColor(xInstance.m_uColorTint);
@@ -151,7 +157,7 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	o.uv         = input.a_xUV;
 	o.colour     = float4(xColorTint.rgb, fFade);
 	o.instanceId = instanceId;
-	o.position   = mul(FrameConstants.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position   = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
 	return o;
 }
 
@@ -179,7 +185,7 @@ float3 LODColor(uint uLOD)
 [shader("fragment")]
 float4 fsMain(VsOut input) : SV_Target
 {
-	uint uDebugMode = (uint)GrassConstants.g_xGrassParams.z;
+	uint uDebugMode = (uint)g_xPassSet.GrassConstants.g_xGrassParams.z;
 
 	// Distance-fade alpha test.
 	float fAlpha = input.colour.a;
@@ -195,8 +201,8 @@ float4 fsMain(VsOut input) : SV_Target
 	// Wrap lighting (no harsh shadows on grass) plus translucency for
 	// blades back-lit by the sun. Ambient floor of 0.2 keeps shaded
 	// blades visible.
-	float3 xSunDir   = normalize(FrameConstants.g_xSunDir_Pad.xyz);
-	float3 xSunColor = FrameConstants.g_xSunColour.rgb;
+	float3 xSunDir   = normalize(g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
+	float3 xSunColor = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb;
 	float  fNdotL    = dot(input.normal, xSunDir) * 0.5 + 0.5;
 	fNdotL           = fNdotL * 0.8 + 0.2;
 	float  fTrans    = max(0.0, -dot(normalize(input.normal), xSunDir)) * fHeightFactor * 0.5;
@@ -211,11 +217,11 @@ float4 fsMain(VsOut input) : SV_Target
 			case GRASS_DEBUG_LOD_COLORS:
 			{
 				// Match CPU LOD selection: < threshold² → smaller LOD.
-				float3 xToCam = input.worldPos - FrameConstants.g_xCamPos_Pad.xyz;
+				float3 xToCam = input.worldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
 				float  fDistSq = dot(xToCam, xToCam);
-				float  fLOD0Sq = GrassConstants.g_xLODDistances.x * GrassConstants.g_xLODDistances.x;
-				float  fLOD1Sq = GrassConstants.g_xLODDistances.y * GrassConstants.g_xLODDistances.y;
-				float  fLOD2Sq = GrassConstants.g_xLODDistances.z * GrassConstants.g_xLODDistances.z;
+				float  fLOD0Sq = g_xPassSet.GrassConstants.g_xLODDistances.x * g_xPassSet.GrassConstants.g_xLODDistances.x;
+				float  fLOD1Sq = g_xPassSet.GrassConstants.g_xLODDistances.y * g_xPassSet.GrassConstants.g_xLODDistances.y;
+				float  fLOD2Sq = g_xPassSet.GrassConstants.g_xLODDistances.z * g_xPassSet.GrassConstants.g_xLODDistances.z;
 				uint   uLOD    = 3u;
 				if (fDistSq < fLOD2Sq) uLOD = 2u;
 				if (fDistSq < fLOD1Sq) uLOD = 1u;

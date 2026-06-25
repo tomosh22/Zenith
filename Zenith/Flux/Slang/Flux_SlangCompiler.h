@@ -9,8 +9,10 @@ class Zenith_DataStream;
 
 struct Flux_BindingHandle
 {
-	u_int m_uSet = UINT32_MAX;
-	u_int m_uBinding = UINT32_MAX;
+	u_int            m_uSet             = UINT32_MAX;
+	u_int            m_uBinding         = UINT32_MAX;
+	FluxResourceKind m_eKind            = FLUX_RESOURCE_KIND_UNKNOWN;
+	u_int            m_uDescriptorCount = 1;   // 0 = unbounded (bindless table)
 
 	bool IsValid() const { return m_uSet != UINT32_MAX && m_uBinding != UINT32_MAX; }
 };
@@ -28,27 +30,9 @@ enum FluxShaderStageBit : u_int
 	FLUX_SHADER_STAGE_BIT_GEOMETRY               = 1u << 5,
 };
 
-// Finer-grained resource taxonomy for reflection v2. The legacy BindingType
-// (BINDING_TYPE_BUFFER / TEXTURE / STORAGE_BUFFER / STORAGE_IMAGE / ...) is
-// kept for backward compatibility with the existing pipeline-layout code; this
-// new enum carries the distinctions Slang reflection actually exposes so the
-// codegen and future backends can project the right descriptor types.
-enum FluxResourceKind : u_int
-{
-	FLUX_RESOURCE_KIND_UNKNOWN                = 0,
-	FLUX_RESOURCE_KIND_CONSTANT_BUFFER        = 1,  // cbuffer / uniform block
-	FLUX_RESOURCE_KIND_STRUCTURED_BUFFER      = 2,  // StructuredBuffer<T> (read-only SSBO)
-	FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER   = 3,  // RWStructuredBuffer<T>
-	FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER    = 4,
-	FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER = 5,
-	FLUX_RESOURCE_KIND_TEXTURE                = 6,  // Texture2D etc. (separate texture)
-	FLUX_RESOURCE_KIND_RW_TEXTURE             = 7,  // RWTexture2D etc. (storage image)
-	FLUX_RESOURCE_KIND_SAMPLER                = 8,  // SamplerState
-	FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER = 9,  // Sampler2D / sampler2D
-	FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE = 10,
-	FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY = 11,
-	FLUX_RESOURCE_KIND_PARAMETER_BLOCK        = 12,  // ParameterBlock<T>
-};
+// FluxResourceKind — the canonical resource taxonomy — now lives in
+// Flux/Flux_Enums.h (included above) so both the pipeline-layout data model
+// (Flux_Types.h) and this reflection layer can name it from one definition.
 
 // One reflected field within a constant-buffer / parameter-block layout.
 // Captured at codegen time so the generator can emit C++ structs whose
@@ -64,16 +48,14 @@ struct Flux_ReflectedField
 
 struct Flux_ReflectedBinding
 {
-	// Legacy fields (reflection v1) — still authoritative for the existing
-	// FromReflection layout code. New code should prefer m_eResourceKind.
-	BindingType m_eType = BINDING_TYPE_MAX;
 	u_int       m_uSet = 0;
 	u_int       m_uBinding = 0;
 	std::string m_strName;
 	u_int       m_uSize = 0;
 
-	// Reflection v2 additions. Default values mean "v1 source"; a v1 .spv.refl
-	// file deserialised by v2 readers leaves these at their defaults.
+	// Resource kind drives the descriptor type, count, stages, and the typed
+	// binding handle. (The legacy BindingType m_eType field was removed with
+	// the binding-model overhaul — FluxResourceKind is the only type now.)
 	FluxResourceKind            m_eResourceKind     = FLUX_RESOURCE_KIND_UNKNOWN;
 	u_int                       m_uDescriptorCount  = 1;     // 0 = unbounded
 	u_int                       m_uStageMask        = 0;     // FluxShaderStageBit bitmask
@@ -158,9 +140,4 @@ public:
 	// Call before CompileProgram. The compiler keeps a session-scoped list;
 	// adding the same path twice is harmless.
 	static void AddSearchPath(const char* szPath);
-
-	// Map a Slang TypeLayoutReflection (passed as void*) to the engine's
-	// legacy BindingType taxonomy. Public so the v2 reflection helper at
-	// file scope in the .cpp can reuse it.
-	static BindingType SlangTypeToBindingType(void* pxTypeLayout);
 };

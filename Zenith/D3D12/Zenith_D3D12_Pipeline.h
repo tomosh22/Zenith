@@ -141,12 +141,12 @@ class Zenith_D3D12_RootSig
 public:
 	Zenith_D3D12_RootSig()
 	{
-		// Initialise all descriptor types to MAX (invalid/unused).
-		for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
+		// Initialise all descriptor kinds to UNKNOWN (invalid/unused).
+		for (u_int i = 0; i < FLUX_MAX_BINDING_GROUPS; i++)
 		{
 			for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
 			{
-				m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
+				m_aeBindingKinds[i][j] = FLUX_RESOURCE_KIND_UNKNOWN;
 			}
 		}
 	}
@@ -173,7 +173,7 @@ public:
 	// vk::PipelineLayout in m_xLayout that the engine's compute-pipeline setup
 	// passes to ComputePipelineBuilder::WithLayout; the null backend keeps a dummy
 	// handle of a neutral type so those shared call sites compile.
-	BindingType m_axBindingTypes[FLUX_MAX_BINDINGS_PER_GROUP][FLUX_MAX_BINDINGS_PER_GROUP];
+	FluxResourceKind m_aeBindingKinds[FLUX_MAX_BINDING_GROUPS][FLUX_MAX_BINDINGS_PER_GROUP];
 	u_int m_uNumBindingGroups = UINT32_MAX;
 	u_int m_xLayout = 0;
 

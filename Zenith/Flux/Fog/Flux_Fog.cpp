@@ -19,6 +19,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Fog.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -176,9 +177,12 @@ static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetIndexBuffer(xGfx.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(xFog.m_xShader, "FrameConstants", &xGfx.m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(xFog.m_xShader, "g_xDepthTex", xGfx.GetDepthStencilSRV());
-	xBinder.BindDrawConstants(xFog.m_xShader, "FogConstants", &dbg_xConstants, sizeof(Flux_FogConstants));
+	namespace FS = Flux_Generated_Fog::Fog_Simple;
+	// Spine: GLOBAL (sun/time) at set 0, VIEW (camera) at set 1.
+	xBinder.BindCBV(FS::hg_xGlobal, &xGfx.m_xGlobalConstantsBuffer.GetCBV());
+	xBinder.BindCBV(FS::hg_xView, &xGfx.m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindSRV(FS::hg_xDepthTex, xGfx.GetDepthStencilSRV());
+	xBinder.BindDrawConstants(FS::hFogConstants, &dbg_xConstants, sizeof(Flux_FogConstants));
 
 	pxCommandList->DrawIndexed(6);
 }

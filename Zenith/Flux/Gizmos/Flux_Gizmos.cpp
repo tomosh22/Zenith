@@ -19,6 +19,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Gizmos.h" // typed binding handles
 #include "Maths/Zenith_Maths_Intersections.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_BackendTypes.h"
@@ -323,8 +324,10 @@ static void ExecuteGizmos(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetPipeline(&xGizmos.m_xPipeline);
 
 	// Create binder once - bind frame constants once (same for all gizmo components)
+	namespace GZ = Flux_Generated_Gizmos::Gizmos;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(xGizmos.m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	// Spine: camera CB is the VIEW set (set 1) g_xView, from m_xViewConstantsBuffer.
+	xBinder.BindCBV(GZ::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)
@@ -352,7 +355,7 @@ static void ExecuteGizmos(Flux_CommandBuffer* pxCommandList, void* pUserData)
 		else if (xGeom.m_eComponent == xPacket.m_eActiveComponent && xPacket.m_bIsInteracting)
 			xPushConstants.m_fHighlightIntensity = 1.0f;
 
-		xBinder.BindDrawConstants(xGizmos.m_xShader, "GizmoPushConstants", &xPushConstants, sizeof(xPushConstants));
+		xBinder.BindDrawConstants(GZ::hGizmoPushConstants, &xPushConstants, sizeof(xPushConstants));
 
 		// Draw
 		pxCommandList->DrawIndexed(xGeom.m_uIndexCount);

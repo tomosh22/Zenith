@@ -13,6 +13,7 @@
 // layout offsets).
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.DrawConstants;
 import Common.Material;
 import Common.MaterialSurface;
@@ -38,9 +39,19 @@ struct VsOut
 
 struct BonesLayout      { float4x4 g_xBones[100]; };
 struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
-[[vk::binding(1, 1)]] ConstantBuffer<BonesLayout>        Bones;
-[[vk::binding(2, 1)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix;
-[[vk::binding(3, 1)]] Sampler2D g_xBaseColorTex;
+
+// Per-draw block (set 3): skinning bones + shadow view-proj + per-draw material
+// constants + base colour (for the masked cutout). Member names preserved so the
+// codegen handle names (hBones, hShadowMatrix, hDrawConstants, hg_xBaseColorTex)
+// — and thus the C++ binds — are stable.
+struct DrawParams
+{
+	ConstantBuffer<BonesLayout>         Bones;
+	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
+	ConstantBuffer<DrawConstantsLayout> DrawConstants;
+	Sampler2D g_xBaseColorTex;
+};
+ParameterBlock<DrawParams> g_xDrawSet;
 
 [shader("vertex")]
 VsOut vsMain(VsIn input)
@@ -51,12 +62,12 @@ VsOut vsMain(VsIn input)
 	for (uint u = 0; u < 4; u++)
 	{
 		if (input.a_xBoneIDs[u] == 0xFFFFFFFFu) break;
-		float4x4 xBone = Bones.g_xBones[input.a_xBoneIDs[u]];
+		float4x4 xBone = g_xDrawSet.Bones.g_xBones[input.a_xBoneIDs[u]];
 		xFinalPosition += mul(xBone, float4(input.a_xPosition, 1.0)) * input.a_xBoneWeights[u];
 	}
 
-	float3 xWorldPos = mul(DrawConstants.g_xModelMatrix, xFinalPosition).xyz;
-	o.position    = mul(ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, xFinalPosition).xyz;
+	o.position    = mul(g_xDrawSet.ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;
@@ -67,9 +78,10 @@ void fsMain(VsOut input)
 {
 	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
 	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
-	if (GetAlphaCutoff() > 0.0)
+	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+	if (GetAlphaCutoff(dc) > 0.0)
 	{
-		SampleAlbedoWithCutout(g_xBaseColorTex,
-			TransformUV(input.uv, GetUVTiling(), GetUVOffset()), input.vertexColor);
+		SampleAlbedoWithCutout(g_xDrawSet.g_xBaseColorTex,
+			TransformUV(input.uv, GetUVTiling(dc), GetUVOffset(dc)), input.vertexColor, dc);
 	}
 }

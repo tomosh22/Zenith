@@ -15,6 +15,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Shaders/Generated/Fog.h" // typed binding handles
 
 // Compute pipelines
 
@@ -240,11 +241,13 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandBuffer* pxCommandList)
 	pxCommandList->BindComputePipeline(&m_xInjectPipeline);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	namespace FI = Flux_Generated_Fog::Fog_FroxelInject;
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
-	xInjectBinder.BindCBV(m_xInjectShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xInjectBinder.BindSRV(m_xInjectShader, "u_xNoiseTexture3D", &g_xEngine.VolumeFog().GetNoiseTexture3D()->m_xSRV, &xGraphics.m_xRepeatSampler);
-	xInjectBinder.BindUAV_Texture(m_xInjectShader, "u_xDensityGrid", &GetDensityGridInternal().UAV(0));
-	xInjectBinder.BindDrawConstants(m_xInjectShader, "InjectConstants", &m_xInjectConstants, sizeof(InjectConstants));
+	// Spine: VIEW (camera matrices) at set 1. Inject reads no GLOBAL data.
+	xInjectBinder.BindCBV(FI::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xInjectBinder.BindSRV(FI::hu_xNoiseTexture3D, &g_xEngine.VolumeFog().GetNoiseTexture3D()->m_xSRV, &xGraphics.m_xRepeatSampler);
+	xInjectBinder.BindUAV_Texture(FI::hu_xDensityGrid, &GetDensityGridInternal().UAV(0));
+	xInjectBinder.BindDrawConstants(FI::hInjectConstants, &m_xInjectConstants, sizeof(InjectConstants));
 	pxCommandList->Dispatch(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
@@ -278,23 +281,26 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandBuffer* pxCommandList)
 
 	pxCommandList->BindComputePipeline(&m_xLightPipeline);
 
+	namespace FL = Flux_Generated_Fog::Fog_FroxelLight;
 	Flux_ShaderBinder xLightBinder(*pxCommandList);
-	xLightBinder.BindCBV(m_xLightShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xLightBinder.BindSRV(m_xLightShader, "u_xDensityGrid", &GetDensityGridInternal().SRV());
-	xLightBinder.BindUAV_Texture(m_xLightShader, "u_xLightingGrid", &GetLightingGridInternal().UAV(0));
-	xLightBinder.BindUAV_Texture(m_xLightShader, "u_xScatteringGrid", &GetScatteringGridInternal().UAV(0));
+	// Spine: GLOBAL (sun) at set 0, VIEW (camera) at set 1.
+	xLightBinder.BindCBV(FL::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
+	xLightBinder.BindCBV(FL::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xLightBinder.BindSRV(FL::hu_xDensityGrid, &GetDensityGridInternal().SRV());
+	xLightBinder.BindUAV_Texture(FL::hu_xLightingGrid, &GetLightingGridInternal().UAV(0));
+	xLightBinder.BindUAV_Texture(FL::hu_xScatteringGrid, &GetScatteringGridInternal().UAV(0));
 
 	// Bind CSM shadow maps and matrices for volumetric shadows
-	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "u_xCSM0", "u_xCSM1", "u_xCSM2", "u_xCSM3" };
-	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
+	static const Flux_BindingHandle* const s_apxCSMHandles[ZENITH_FLUX_NUM_CSMS] = { &FL::hu_xCSM0, &FL::hu_xCSM1, &FL::hu_xCSM2, &FL::hu_xCSM3 };
+	static const Flux_BindingHandle* const s_apxShadowMatrixHandles[ZENITH_FLUX_NUM_CSMS] = { &FL::hShadowMatrix0, &FL::hShadowMatrix1, &FL::hShadowMatrix2, &FL::hShadowMatrix3 };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xCSMSRV = xShadows.GetCSMSRV(u);
-		xLightBinder.BindSRV(m_xLightShader, s_aszCSMNames[u], &xCSMSRV, &xGraphics.m_xClampSampler);
-		xLightBinder.BindCBV(m_xLightShader, s_aszShadowMatrixNames[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
+		xLightBinder.BindSRV(*s_apxCSMHandles[u], &xCSMSRV, &xGraphics.m_xClampSampler);
+		xLightBinder.BindCBV(*s_apxShadowMatrixHandles[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xLightBinder.BindDrawConstants(m_xLightShader, "LightConstants", &m_xLightConstants, sizeof(LightConstants));
+	xLightBinder.BindDrawConstants(FL::hLightConstants, &m_xLightConstants, sizeof(LightConstants));
 	pxCommandList->Dispatch(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
@@ -317,11 +323,13 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandBuffer* pxCommandList)
 	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
+	namespace FA = Flux_Generated_Fog::Fog_FroxelApply;
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
-	xApplyBinder.BindCBV(m_xApplyShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xApplyBinder.BindSRV(m_xApplyShader, "u_xDepthTexture", xGraphics.GetDepthStencilSRV());
-	xApplyBinder.BindSRV(m_xApplyShader, "u_xLightingGrid", &GetLightingGridInternal().SRV());
-	xApplyBinder.BindSRV(m_xApplyShader, "u_xScatteringGrid", &GetScatteringGridInternal().SRV());
-	xApplyBinder.BindDrawConstants(m_xApplyShader, "ApplyConstants", &m_xApplyConstants, sizeof(ApplyConstants));
+	// Spine: VIEW (camera g_xInvProjMat) at set 1. Apply reads no GLOBAL data.
+	xApplyBinder.BindCBV(FA::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xApplyBinder.BindSRV(FA::hu_xDepthTexture, xGraphics.GetDepthStencilSRV());
+	xApplyBinder.BindSRV(FA::hu_xLightingGrid, &GetLightingGridInternal().SRV());
+	xApplyBinder.BindSRV(FA::hu_xScatteringGrid, &GetScatteringGridInternal().SRV());
+	xApplyBinder.BindDrawConstants(FA::hApplyConstants, &m_xApplyConstants, sizeof(ApplyConstants));
 	pxCommandList->DrawIndexed(6);
 }

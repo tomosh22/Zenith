@@ -7,6 +7,8 @@
 // stage the histogram into groupshared).
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+
 struct AdaptationConstantsLayout
 {
 	float g_fMinLogLum;
@@ -22,9 +24,15 @@ struct AdaptationConstantsLayout
 	uint  g_uPad0;
 	uint  g_uPad1;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<AdaptationConstantsLayout> AdaptationConstants;
-[[vk::binding(1, 0)]] RWStructuredBuffer<uint>  g_auHistogram;
-[[vk::binding(2, 0)]] globallycoherent RWStructuredBuffer<float> g_afExposureData;
+// Pure compute on its own histogram + exposure buffers — no FrameConstants. The
+// spine include still reserves sets 0/1/2 so this PassParams lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<AdaptationConstantsLayout> AdaptationConstants;
+	RWStructuredBuffer<uint>  g_auHistogram;
+	globallycoherent RWStructuredBuffer<float> g_afExposureData;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 groupshared uint  s_auLocalHistogram[256];
 groupshared float s_afPartialSum[256];
@@ -35,7 +43,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
 	uint uLocalIdx = dispatchId.x; // single workgroup, dispatchId == localIdx
 
-	s_auLocalHistogram[uLocalIdx] = g_auHistogram[uLocalIdx];
+	s_auLocalHistogram[uLocalIdx] = g_xPassSet.g_auHistogram[uLocalIdx];
 	GroupMemoryBarrierWithGroupSync();
 	s_afPartialSum[uLocalIdx] = (float)s_auLocalHistogram[uLocalIdx];
 	GroupMemoryBarrierWithGroupSync();
@@ -51,18 +59,18 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 		fTotalCount   += (float)s_auLocalHistogram[i];
 		uMaxBinCount   = max(uMaxBinCount, s_auLocalHistogram[i]);
 	}
-	g_afExposureData[3] = (float)uMaxBinCount;
+	g_xPassSet.g_afExposureData[3] = (float)uMaxBinCount;
 
 	if (fTotalCount < 1.0)
 	{
-		g_afExposureData[0] = 0.18;
-		g_afExposureData[2] = 1.0;
+		g_xPassSet.g_afExposureData[0] = 0.18;
+		g_xPassSet.g_afExposureData[2] = 1.0;
 		return;
 	}
 
 	// Percentile bounds — ignore outliers at both ends.
-	float fLowThreshold  = fTotalCount * AdaptationConstants.g_fLowPercentile;
-	float fHighThreshold = fTotalCount * AdaptationConstants.g_fHighPercentile;
+	float fLowThreshold  = fTotalCount * g_xPassSet.AdaptationConstants.g_fLowPercentile;
+	float fHighThreshold = fTotalCount * g_xPassSet.AdaptationConstants.g_fHighPercentile;
 	float fRunningCount  = 0.0;
 	uint  uLowBin        = 0;
 	uint  uHighBin       = 255;
@@ -85,21 +93,21 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	}
 	if (fValidCount < 1.0) fValidCount = 1.0;
 
-	float fAvgLogLum    = (fWeightedSum / fValidCount) * AdaptationConstants.g_fLogLumRange + AdaptationConstants.g_fMinLogLum;
+	float fAvgLogLum    = (fWeightedSum / fValidCount) * g_xPassSet.AdaptationConstants.g_fLogLumRange + g_xPassSet.AdaptationConstants.g_fMinLogLum;
 	float fAvgLuminance = exp2(fAvgLogLum);
 
 	// Target exposure = key / average. Clamp to user range.
-	float fTargetExposure = AdaptationConstants.g_fTargetLuminance / max(fAvgLuminance, 0.001);
+	float fTargetExposure = g_xPassSet.AdaptationConstants.g_fTargetLuminance / max(fAvgLuminance, 0.001);
 	fTargetExposure       = clamp(fTargetExposure,
-								  AdaptationConstants.g_fMinExposure,
-								  AdaptationConstants.g_fMaxExposure);
-	g_afExposureData[0] = fAvgLuminance;
-	g_afExposureData[2] = fTargetExposure;
+								  g_xPassSet.AdaptationConstants.g_fMinExposure,
+								  g_xPassSet.AdaptationConstants.g_fMaxExposure);
+	g_xPassSet.g_afExposureData[0] = fAvgLuminance;
+	g_xPassSet.g_afExposureData[2] = fTargetExposure;
 
 	// Eye adaptation — smooth exponential approach to the target.
-	float fCurrentExposure = g_afExposureData[1];
-	float fAdaptationRate  = 1.0 - exp(-AdaptationConstants.g_fDeltaTime * AdaptationConstants.g_fAdaptationSpeed);
-	g_afExposureData[1]    = lerp(fCurrentExposure, fTargetExposure, fAdaptationRate);
+	float fCurrentExposure = g_xPassSet.g_afExposureData[1];
+	float fAdaptationRate  = 1.0 - exp(-g_xPassSet.AdaptationConstants.g_fDeltaTime * g_xPassSet.AdaptationConstants.g_fAdaptationSpeed);
+	g_xPassSet.g_afExposureData[1]    = lerp(fCurrentExposure, fTargetExposure, fAdaptationRate);
 
 	// Histogram clearing happens at the start of next frame's Luminance
 	// dispatch; nothing to reset here.

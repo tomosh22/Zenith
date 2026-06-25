@@ -13,6 +13,10 @@
 // only when those change (see Flux_SkyboxImpl::UpdateGraphPassEnables).
 // =====================================================================
 
+// This shader uses no FrameConstants (camera-independent bake), but still #includes
+// the spine so it reserves the persistent sets 0/1/2 and PassParams lands at set 3
+// (keeps the descriptor-set layout identical across all converted shaders).
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
 import Common.Atmosphere;
 
@@ -31,7 +35,10 @@ struct AtmosphereConstantsLayout
 	uint   g_uLightSamples;
 	float2 g_xPad;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<AtmosphereConstantsLayout> AtmosphereConstants;
+
+// PASS frequency. Declared AFTER the spine #include, so it lands at set 3.
+struct PassParams { ConstantBuffer<AtmosphereConstantsLayout> AtmosphereConstants; };
+ParameterBlock<PassParams> g_xPassSet;
 
 // Integration sample count for the LUT bake. Higher than the per-frame
 // light-sample count since this runs rarely (param change only); changing
@@ -44,17 +51,17 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target0
 {
-	float fPlanetRadius     = AtmosphereConstants.g_fPlanetRadius;
-	float fAtmosphereRadius = AtmosphereConstants.g_fAtmosphereRadius;
+	float fPlanetRadius     = g_xPassSet.AtmosphereConstants.g_fPlanetRadius;
+	float fAtmosphereRadius = g_xPassSet.AtmosphereConstants.g_fAtmosphereRadius;
 
 	// Invert TransmittanceLutUv: uv.y -> radius, uv.x -> mu in [-1,1].
 	float fRadius = lerp(fPlanetRadius, fAtmosphereRadius, input.uv.y);
 	float fMu     = input.uv.x * 2.0 - 1.0;
 
-	float3 xRayleighCoeff = AtmosphereConstants.g_xRayleighScatter.rgb * AtmosphereConstants.g_fRayleighScale;
-	float  fMieCoeff      = AtmosphereConstants.g_xMieScatter.r        * AtmosphereConstants.g_fMieScale;
-	float2 xScaleHeights  = float2(AtmosphereConstants.g_xRayleighScatter.w,
-								   AtmosphereConstants.g_xMieScatter.w);
+	float3 xRayleighCoeff = g_xPassSet.AtmosphereConstants.g_xRayleighScatter.rgb * g_xPassSet.AtmosphereConstants.g_fRayleighScale;
+	float  fMieCoeff      = g_xPassSet.AtmosphereConstants.g_xMieScatter.r        * g_xPassSet.AtmosphereConstants.g_fMieScale;
+	float2 xScaleHeights  = float2(g_xPassSet.AtmosphereConstants.g_xRayleighScatter.w,
+								   g_xPassSet.AtmosphereConstants.g_xMieScatter.w);
 
 	float3 xTransmittance = TransmittanceToAtmosphereTop(
 		fRadius, fMu, xRayleighCoeff, fMieCoeff, xScaleHeights,

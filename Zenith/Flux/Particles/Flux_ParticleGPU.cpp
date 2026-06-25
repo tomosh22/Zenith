@@ -7,6 +7,7 @@
 
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Particles.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -328,12 +329,13 @@ void Flux_ParticleGPUImpl::DispatchCompute(Flux_CommandBuffer* pxCmdList)
 		}
 	}
 
+	namespace PU = Flux_Generated_Particles::ParticleUpdate;
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindUAV_Buffer(m_xComputeShader, "InputParticles",  &xInputBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xComputeShader, "OutputParticles", &xOutputBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xComputeShader, "InstanceBuffer",  &m_xInstanceBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xComputeShader, "aliveCount",      &m_xCounterBuffer.GetUAV());
-	xBinder.BindDrawConstants(m_xComputeShader, "PushConstants", &xConstants, sizeof(xConstants));
+	xBinder.BindUAV_Buffer(PU::hInputParticles,  &xInputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(PU::hOutputParticles, &xOutputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(PU::hInstanceBuffer,  &m_xInstanceBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(PU::haliveCount,      &m_xCounterBuffer.GetUAV());
+	xBinder.BindDrawConstants(PU::hPushConstants, &xConstants, sizeof(xConstants));
 
 	uint32_t uWorkgroups = (m_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;
 	pxCmdList->Dispatch(uWorkgroups, 1, 1);

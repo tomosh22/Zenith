@@ -13,6 +13,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/SSR.h" // typed binding handles
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -375,15 +376,17 @@ static void ExecuteSSRRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(xSSR.m_xRayMarchShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindCBV(xSSR.m_xRayMarchShader, "SSRConstants",   &xSSR.m_xSSRConstantsBuffer.GetCBV());
+	namespace RM = Flux_Generated_SSR::SSR_RayMarch;
+	// (set 1) g_xView — camera matrices + near/far, sourced from m_xViewConstantsBuffer.
+	xBinder.BindCBV(RM::hg_xView,        &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindCBV(RM::hSSRConstants,   &xSSR.m_xSSRConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xNormalsTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xMaterialTex", xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
-	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xDiffuseTex", xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(xSSR.m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(RM::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(RM::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(RM::hg_xHiZTex, &g_xEngine.HiZ().GetHiZSRV());
+	xBinder.BindSRV(RM::hg_xDiffuseTex, xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(RM::hg_xBlueNoiseTex, &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -403,16 +406,17 @@ static void ExecuteSSRUpsample(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
+	namespace US = Flux_Generated_SSR::SSR_Upsample;
 	// Half-res dimensions live in the SSR CBV — the upsample shader reads
 	// them from there rather than calling GetDimensions on g_xSSRTex.
-	xBinder.BindCBV(xSSR.m_xUpsampleShader, "SSRConstants", &xSSR.m_xSSRConstantsBuffer.GetCBV());
+	xBinder.BindCBV(US::hSSRConstants, &xSSR.m_xSSRConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xSSRTex",      &xSSR.GetRayMarchAttachment().SRV());
-	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xDepthTex",    xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xSSRAuxTex",   &xSSR.GetRayMarchAuxAttachment().SRV());
+	xBinder.BindSRV(US::hg_xSSRTex,      &xSSR.GetRayMarchAttachment().SRV());
+	xBinder.BindSRV(US::hg_xDepthTex,    xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(US::hg_xSSRAuxTex,   &xSSR.GetRayMarchAuxAttachment().SRV());
 	// Phase 5 — KNN composite-similarity scoring needs full-res normals + material.
-	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xNormalsTex",  xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xSSR.m_xUpsampleShader, "g_xMaterialTex", xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(US::hg_xNormalsTex,  xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(US::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -432,15 +436,17 @@ static void ExecuteSSRDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(xSSR.m_xDenoiseHShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
+	namespace DH = Flux_Generated_SSR::SSR_DenoiseH;
+	// (set 1) g_xView — camera matrices + screen dims, sourced from m_xViewConstantsBuffer.
+	xBinder.BindCBV(DH::hg_xView,        &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(xSSR.m_xDenoiseHShader, "PushConstants", &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
+	xBinder.BindDrawConstants(DH::hPushConstants, &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
 
-	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xSSRUpsampledTex",    &xSSR.GetUpsampledAttachment().SRV());
-	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xDepthTex",           xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xNormalsTex",         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xMaterialTex",        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(xSSR.m_xDenoiseHShader, "g_xSSRUpsampledAuxTex", &xSSR.GetUpsampledAuxAttachment().SRV());
+	xBinder.BindSRV(DH::hg_xSSRUpsampledTex,    &xSSR.GetUpsampledAttachment().SRV());
+	xBinder.BindSRV(DH::hg_xDepthTex,           xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(DH::hg_xNormalsTex,         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(DH::hg_xMaterialTex,        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(DH::hg_xSSRUpsampledAuxTex, &xSSR.GetUpsampledAuxAttachment().SRV());
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -460,17 +466,19 @@ static void ExecuteSSRDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(xSSR.m_xDenoiseVShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
+	namespace DV = Flux_Generated_SSR::SSR_DenoiseV;
+	// (set 1) g_xView — camera matrices + screen dims, sourced from m_xViewConstantsBuffer.
+	xBinder.BindCBV(DV::hg_xView,        &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(xSSR.m_xDenoiseVShader, "PushConstants", &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
+	xBinder.BindDrawConstants(DV::hPushConstants, &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
 
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xSSRDenoiseHColTex",  &xSSR.GetDenoiseHAttachment().SRV());
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xDepthTex",           xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xNormalsTex",         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xMaterialTex",        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xSSRUpsampledAuxTex", &xSSR.GetUpsampledAuxAttachment().SRV());
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xSSRDenoiseHConfTex", &xSSR.GetDenoiseHConfAttachment().SRV());
-	xBinder.BindSRV(xSSR.m_xDenoiseVShader, "g_xSSRUpsampledTex",    &xSSR.GetUpsampledAttachment().SRV());
+	xBinder.BindSRV(DV::hg_xSSRDenoiseHColTex,  &xSSR.GetDenoiseHAttachment().SRV());
+	xBinder.BindSRV(DV::hg_xDepthTex,           xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(DV::hg_xNormalsTex,         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(DV::hg_xMaterialTex,        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(DV::hg_xSSRUpsampledAuxTex, &xSSR.GetUpsampledAuxAttachment().SRV());
+	xBinder.BindSRV(DV::hg_xSSRDenoiseHConfTex, &xSSR.GetDenoiseHConfAttachment().SRV());
+	xBinder.BindSRV(DV::hg_xSSRUpsampledTex,    &xSSR.GetUpsampledAttachment().SRV());
 
 	pxCommandList->DrawIndexed(6);
 }

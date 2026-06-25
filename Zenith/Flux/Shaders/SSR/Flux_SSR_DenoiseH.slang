@@ -22,13 +22,12 @@
 // Roughness gating runs at the TOP of the shader (must repeat in V too —
 // roughness < 0.15 → mirror passthrough, roughness > 0.7 → IBL passthrough).
 //
-// Common.Frame IS imported here (for FrameConstants matrices used by
-// GetViewPosFromDepth) — Slang puts FrameConstants at binding 0 implicitly,
-// so all explicit bindings start at 1.
+// View matrices / screen dims and the GetViewPosFromDepth helper come from the
+// Bindings spine (replaces the former `import Common.Frame`).
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 import Common.PBR;
 import SSR.Flux_SSR_DenoiseCommon;
 
@@ -39,12 +38,16 @@ static const float SSR_DENOISE_MIN_DEPTH_SIGMA     = 0.0001;
 static const float SSR_DENOISE_MIN_ROUGHNESS_SIGMA = 0.001;
 static const float SSR_DENOISE_BRDF_FLOOR          = 1e-4;
 
-[[vk::binding(1, 0)]] Sampler2D g_xSSRUpsampledTex;     // colour input (RT0 from upsample)
-[[vk::binding(2, 0)]] ConstantBuffer<SSRDenoisePushConstantsLayout> PushConstants;
-[[vk::binding(3, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(4, 0)]] Sampler2D g_xNormalsTex;
-[[vk::binding(5, 0)]] Sampler2D g_xMaterialTex;
-[[vk::binding(6, 0)]] Sampler2D g_xSSRUpsampledAuxTex;  // Phase 0 metadata (RT1 from upsample)
+struct PassParams
+{
+	Sampler2D g_xSSRUpsampledTex;     // colour input (RT0 from upsample)
+	ConstantBuffer<SSRDenoisePushConstantsLayout> PushConstants;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalsTex;
+	Sampler2D g_xMaterialTex;
+	Sampler2D g_xSSRUpsampledAuxTex;  // Phase 0 metadata (RT1 from upsample)
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -80,35 +83,35 @@ DenoiseHOut PassthroughOut(float4 xCentre)
 [shader("fragment")]
 DenoiseHOut fsMain(FullscreenVsOut input)
 {
-	float4 xCenter = g_xSSRUpsampledTex.Sample(input.uv);
+	float4 xCenter = g_xPassSet.g_xSSRUpsampledTex.Sample(input.uv);
 
-	if (PushConstants.u_bEnabled == 0u) return PassthroughOut(xCenter);
+	if (g_xPassSet.PushConstants.u_bEnabled == 0u) return PassthroughOut(xCenter);
 
-	float fCenterRoughness = g_xMaterialTex.Sample(input.uv).r;
+	float fCenterRoughness = g_xPassSet.g_xMaterialTex.Sample(input.uv).r;
 	if (fCenterRoughness < SSR_DENOISE_SMOOTH_THRESHOLD) return PassthroughOut(xCenter);
 	if (fCenterRoughness > SSR_DENOISE_ROUGH_THRESHOLD)  return PassthroughOut(xCenter);
 	if (xCenter.a        < SSR_DENOISE_MIN_CONFIDENCE)   return PassthroughOut(xCenter);
 
-	float  fCenterDepth   = g_xDepthTex.Sample(input.uv).r;
-	float3 xCenterWNormal = g_xNormalsTex.Sample(input.uv).rgb;
+	float  fCenterDepth   = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
+	float3 xCenterWNormal = g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb;
 
 	// View-space basis for the BRDF half-vector calculation. Camera is at the
 	// origin in view space, so V (surface→camera) = -normalize(viewPos).
 	float3 xCenterViewPos    = GetViewPosFromDepth(input.uv, fCenterDepth);
-	float3 xCenterViewNormal = normalize(mul((float3x3)FrameConstants.g_xViewMat, xCenterWNormal));
+	float3 xCenterViewNormal = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xCenterWNormal));
 	float3 xCenterV          = -normalize(xCenterViewPos);
 
-	float fDepthSigmaAbs    = max(fCenterDepth * PushConstants.u_fDepthSigma, SSR_DENOISE_MIN_DEPTH_SIGMA);
-	float fRoughnessSigma   = max(PushConstants.u_fRoughnessSigma, SSR_DENOISE_MIN_ROUGHNESS_SIGMA);
-	float2 xRcpScreen       = FrameConstants.g_xRcpScreenDims;
+	float fDepthSigmaAbs    = max(fCenterDepth * g_xPassSet.PushConstants.u_fDepthSigma, SSR_DENOISE_MIN_DEPTH_SIGMA);
+	float fRoughnessSigma   = max(g_xPassSet.PushConstants.u_fRoughnessSigma, SSR_DENOISE_MIN_ROUGHNESS_SIGMA);
+	float2 xRcpScreen       = g_xViewSet.g_xView.g_xRcpScreenDims;
 
 	float3 xColourNum = float3(0.0);
 	float  fWeightDen = 0.0;
 	float  fConfNum   = 0.0;
 
 	// Phase 4 — variance-adaptive kernel.
-	float fVarScale = SSR_ComputeVarianceScale(g_xSSRUpsampledTex, g_xSSRUpsampledAuxTex, input.uv, xRcpScreen);
-	int   iRadius   = (int)max(1.0, round((float)PushConstants.u_uKernelRadius * fVarScale));
+	float fVarScale = SSR_ComputeVarianceScale(g_xPassSet.g_xSSRUpsampledTex, g_xPassSet.g_xSSRUpsampledAuxTex, input.uv, xRcpScreen);
+	int   iRadius   = (int)max(1.0, round((float)g_xPassSet.PushConstants.u_uKernelRadius * fVarScale));
 
 	// Horizontal pass — sample only along X.
 	for (int i = -iRadius; i <= iRadius; i++)
@@ -116,23 +119,23 @@ DenoiseHOut fsMain(FullscreenVsOut input)
 		float2 xOffset   = float2((float)i, 0.0) * xRcpScreen;
 		float2 xSampleUV = clamp(input.uv + xOffset, float2(0.001), float2(0.999));
 
-		float4 xSampleSSR       = g_xSSRUpsampledTex.Sample(xSampleUV);
-		float4 xSampleAux       = g_xSSRUpsampledAuxTex.Sample(xSampleUV);
-		float  fSampleDepth     = g_xDepthTex.Sample(xSampleUV).r;
-		float3 xSampleWNormal   = g_xNormalsTex.Sample(xSampleUV).rgb;
-		float  fSampleRoughness = g_xMaterialTex.Sample(xSampleUV).r;
+		float4 xSampleSSR       = g_xPassSet.g_xSSRUpsampledTex.Sample(xSampleUV);
+		float4 xSampleAux       = g_xPassSet.g_xSSRUpsampledAuxTex.Sample(xSampleUV);
+		float  fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
+		float3 xSampleWNormal   = g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb;
+		float  fSampleRoughness = g_xPassSet.g_xMaterialTex.Sample(xSampleUV).r;
 
 		if (fSampleDepth >= 1.0) continue;       // sky
 		if (xSampleAux.b   <  0.0001) continue;  // neighbour had no hit (Phase 0 RT1.b carries travel distance)
 
 		// --- Bilateral edge gates (centre vs neighbour content) ---
-		float fSpatialWeight = GaussianWeight(abs((float)i), PushConstants.u_fSpatialSigma);
+		float fSpatialWeight = GaussianWeight(abs((float)i), g_xPassSet.PushConstants.u_fSpatialSigma);
 
 		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
 		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
 
 		float fNormalDiff   = 1.0 - max(dot(xCenterWNormal, xSampleWNormal), 0.0);
-		float fNormalWeight = GaussianWeight(fNormalDiff, PushConstants.u_fNormalSigma);
+		float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.PushConstants.u_fNormalSigma);
 
 		float fRoughnessDiff   = abs(fSampleRoughness - fCenterRoughness);
 		float fRoughnessWeight = GaussianWeight(fRoughnessDiff, fRoughnessSigma);
@@ -143,7 +146,7 @@ DenoiseHOut fsMain(FullscreenVsOut input)
 		// pointing from centre toward that hit. Larger D = closer to centre's
 		// mirror lobe = more weight.
 		float2 xN_hitUV     = xSampleAux.rg;
-		float  fHitDepth    = g_xDepthTex.Sample(xN_hitUV).r;
+		float  fHitDepth    = g_xPassSet.g_xDepthTex.Sample(xN_hitUV).r;
 		float  fBRDFWeight  = SSR_DENOISE_BRDF_FLOOR;
 		if (fHitDepth < 1.0)
 		{

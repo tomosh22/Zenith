@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Flux/HiZ/Flux_HiZ_Shaders.h"
+#include "Flux/Shaders/Generated/HiZ.h" // typed binding handles
 
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
@@ -121,19 +122,20 @@ static void ExecuteHiZMip(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	xConstants.m_uPad = 0;
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace HZ = Flux_Generated_HiZ::HiZ_Generate;
 
 	// For mip 0, read from depth buffer; for other mips, read from previous mip
 	if (uMip == 0)
 	{
-		xBinder.BindSRV(xHiZ.m_xComputeShader, "g_xInputTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+		xBinder.BindSRV(HZ::hg_xInputTex, g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	}
 	else
 	{
-		xBinder.BindSRV(xHiZ.m_xComputeShader, "g_xInputTex", &xHiZ.GetMipSRV(uMip - 1));
+		xBinder.BindSRV(HZ::hg_xInputTex, &xHiZ.GetMipSRV(uMip - 1));
 	}
 
-	xBinder.BindUAV_Texture(xHiZ.m_xComputeShader, "g_xOutputTex", &xHiZ.GetMipUAV(uMip));
-	xBinder.BindDrawConstants(xHiZ.m_xComputeShader, "pushConstants", &xConstants, sizeof(HiZPushConstants));
+	xBinder.BindUAV_Texture(HZ::hg_xOutputTex, &xHiZ.GetMipUAV(uMip));
+	xBinder.BindDrawConstants(HZ::hpushConstants, &xConstants, sizeof(HiZPushConstants));
 
 	// Dispatch: ceil(width/8) x ceil(height/16) workgroups
 	// Workgroup size is 8x16 for better NVIDIA occupancy (4 warps vs 2 warps)

@@ -6,18 +6,16 @@
 // fills with tint, vertical-gradient blending, and SDF-based rounded
 // corners with sub-pixel anti-aliasing.
 //
-// Imports Common.Frame for FrameConstants.g_xRcpScreenDims (the
-// pixel-space → NDC conversion).
+// Reads the VIEW set for g_xRcpScreenDims (the pixel-space → NDC
+// conversion) via the shared Bindings spine.
 //
-// Bindless: g_axBindlessTextures lives in set=1 binding=0 with an
-// unbounded array of combined samplers. a_uTexture == 0 means
+// Bindless: the unbounded sampled-texture table lives in the BINDLESS
+// set (set 2) as g_xBindlessSet.g_axTextures. a_uTexture == 0 means
 // "untextured solid colour" — avoids requiring a valid array entry
 // for simple UI rects.
 // =====================================================================
 
-import Common.Frame;
-
-[[vk::binding(0, 1)]] Sampler2D g_axBindlessTextures[];
+#include "Common/Bindings.slang"
 
 struct VsIn
 {
@@ -61,7 +59,7 @@ VsOut vsMain(VsIn input)
 	float2 xQuadPos  = input.a_xPosition.xy * 0.5 + 0.5;
 	float2 xPixelPos = xQuadPos * float2(input.a_xInstancePositionSize.zw) +
 					   float2(input.a_xInstancePositionSize.xy);
-	float2 xNDC      = xPixelPos * FrameConstants.g_xRcpScreenDims * 2.0 - 1.0;
+	float2 xNDC      = xPixelPos * g_xViewSet.g_xView.g_xRcpScreenDims * 2.0 - 1.0;
 	o.position       = float4(xNDC, 0.0, 1.0);
 	return o;
 }
@@ -76,7 +74,7 @@ float4 fsMain(VsOut input) : SV_Target
 	if (input.texture == 0u)
 		xBaseColour = input.colour;
 	else
-		xBaseColour = g_axBindlessTextures[input.texture].Sample(input.uv) * input.colour;
+		xBaseColour = g_xBindlessSet.g_axTextures[input.texture].Sample(input.uv) * input.colour;
 
 	// Vertical gradient when colour2 has a non-negative sentinel.
 	if (input.colour2.x >= 0.0)
@@ -84,7 +82,7 @@ float4 fsMain(VsOut input) : SV_Target
 		float4 xTop    = xBaseColour;
 		float4 xBottom = input.colour2;
 		if (input.texture != 0u)
-			xBottom *= g_axBindlessTextures[input.texture].Sample(input.uv);
+			xBottom *= g_xBindlessSet.g_axTextures[input.texture].Sample(input.uv);
 		xBaseColour = lerp(xTop, xBottom, input.uv.y);
 	}
 

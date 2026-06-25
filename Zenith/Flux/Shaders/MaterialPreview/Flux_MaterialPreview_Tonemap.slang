@@ -7,20 +7,25 @@
 // independent of the scene HDR pipeline (no adaptation, no bloom) so
 // the preview's exposure is stable while the user edits.
 //
-// Bindings:
-//   PreviewTonemapConstants set=0 binding=0
-//   g_xHDRTex               set=0 binding=1
+// ParameterBlock spine: a pure fullscreen composite on its own HDR
+// texture + exposure constant — no camera/sun. The spine include still
+// reserves sets 0/1/2 so this PassParams block lands at set 3.
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Fullscreen;
 
 struct PreviewTonemapConstantsLayout
 {
 	float g_fExposure;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<PreviewTonemapConstantsLayout> PreviewTonemapConstants;
-
-[[vk::binding(1, 0)]] Sampler2D g_xHDRTex;
+// This pass's own resources land at set 3 (after the persistent spine sets).
+struct PassParams
+{
+	ConstantBuffer<PreviewTonemapConstantsLayout> PreviewTonemapConstants;
+	Sampler2D                                     g_xHDRTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -39,7 +44,7 @@ float3 ACESFilm(float3 x)
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut i) : SV_Target
 {
-	float3 xHDR = g_xHDRTex.Sample(i.uv).rgb * PreviewTonemapConstants.g_fExposure;
+	float3 xHDR = g_xPassSet.g_xHDRTex.Sample(i.uv).rgb * g_xPassSet.PreviewTonemapConstants.g_fExposure;
 	float3 xLDR = ACESFilm(xHDR);
 	// Gamma encode for the UNORM preview target (sampled by ImGui as-is).
 	xLDR = pow(xLDR, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));

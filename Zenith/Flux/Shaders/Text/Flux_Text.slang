@@ -10,7 +10,7 @@
 // side (static_asserted to 32 bytes).
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"
 
 struct VsIn
 {
@@ -39,13 +39,11 @@ VsOut vsMain(VsIn input)
 				   + xQuadXY * input.a_xQuadSizePx;
 
 	VsOut o;
-	o.position = float4(xPxPos * FrameConstants.g_xRcpScreenDims * 2.0 - 1.0, 0.0, 1.0);
+	o.position = float4(xPxPos * g_xViewSet.g_xView.g_xRcpScreenDims * 2.0 - 1.0, 0.0, 1.0);
 	o.uv       = input.a_xAtlasUVOrigin + xQuadXY * input.a_xAtlasUVSize;
 	o.colour   = input.a_xColour;
 	return o;
 }
-
-[[vk::binding(1, 0)]] Sampler2D g_xTexture;
 
 struct TextConstantsLayout
 {
@@ -58,7 +56,16 @@ struct TextConstantsLayout
 	float  g_fAtlasPxRange;
 	float  g_fPad;
 };
-[[vk::binding(2, 0)]] ConstantBuffer<TextConstantsLayout> TextConstants;
+
+// PASS frequency. Declared AFTER the spine #include, so it lands at set 3
+// (the first set past the persistent 0/1/2). Member names preserved exactly —
+// the C++ binds key on them (h<member>).
+struct PassParams
+{
+	Sampler2D g_xTexture;
+	ConstantBuffer<TextConstantsLayout> TextConstants;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 float Median3(float a, float b, float c)
 {
@@ -70,7 +77,7 @@ float Median3(float a, float b, float c)
 // Without this, glyph weight changes with render size.
 float ScreenPxRange(float2 uv)
 {
-	float2 unitRange     = float2(TextConstants.g_fAtlasPxRange, TextConstants.g_fAtlasPxRange) / TextConstants.g_xAtlasSizePx;
+	float2 unitRange     = float2(g_xPassSet.TextConstants.g_fAtlasPxRange, g_xPassSet.TextConstants.g_fAtlasPxRange) / g_xPassSet.TextConstants.g_xAtlasSizePx;
 	float2 screenTexSize = 1.0 / fwidth(uv);
 	return max(0.5 * dot(unitRange, screenTexSize), 1.0);
 }
@@ -79,18 +86,18 @@ float ScreenPxRange(float2 uv)
 float4 fsMain(VsOut input, float4 fragCoord : SV_Position) : SV_Target
 {
 	// Inverted clip-rect (discard if INSIDE): matches legacy Flux_Text behaviour.
-	if (TextConstants.g_xClipRect.x >= 0.0)
+	if (g_xPassSet.TextConstants.g_xClipRect.x >= 0.0)
 	{
 		float2 p = fragCoord.xy;
-		if (p.x >= TextConstants.g_xClipRect.x && p.x <= TextConstants.g_xClipRect.z &&
-			p.y >= TextConstants.g_xClipRect.y && p.y <= TextConstants.g_xClipRect.w)
+		if (p.x >= g_xPassSet.TextConstants.g_xClipRect.x && p.x <= g_xPassSet.TextConstants.g_xClipRect.z &&
+			p.y >= g_xPassSet.TextConstants.g_xClipRect.y && p.y <= g_xPassSet.TextConstants.g_xClipRect.w)
 		{
 			discard;
 		}
 	}
 
 	float  fScreenPxRange = ScreenPxRange(input.uv);
-	float3 xMSD           = g_xTexture.Sample(input.uv).rgb;
+	float3 xMSD           = g_xPassSet.g_xTexture.Sample(input.uv).rgb;
 	float  fSD            = Median3(xMSD.r, xMSD.g, xMSD.b);
 	float  fScreenPxDist  = fScreenPxRange * (fSD - 0.5);
 

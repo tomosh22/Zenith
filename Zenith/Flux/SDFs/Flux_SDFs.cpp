@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "Flux/SDFs/Flux_SDFs_Shaders.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/SDFs.h" // typed binding handles
 
 #include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -119,8 +121,11 @@ static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
-	pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-	pxCommandList->BindCBV(&xSDFs.m_xSpheresBuffer.GetCBV(), 1);
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace SDF = Flux_Generated_SDFs::SDFs;
+	xBinder.BindCBV(SDF::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindCBV(SDF::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
+	xBinder.BindCBV(SDF::hSphereData, &xSDFs.m_xSpheresBuffer.GetCBV());
 
 	pxCommandList->DrawIndexed(6);
 }

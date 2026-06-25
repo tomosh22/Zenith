@@ -6,13 +6,20 @@
 // engine's deferred G-buffer (diffuse / normals+ambient / material).
 // =====================================================================
 
+// This shader uses no FrameConstants (pure fullscreen fill), but still #includes
+// the spine so it reserves the persistent sets 0/1/2 and PassParams lands at set 3
+// (keeps the descriptor-set layout identical across all converted shaders).
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
 
 struct SkyboxOverrideConstantsLayout
 {
 	float4 g_xOverrideColour;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<SkyboxOverrideConstantsLayout> SkyboxOverrideConstants;
+
+// PASS frequency. Declared AFTER the spine #include, so it lands at set 3.
+struct PassParams { ConstantBuffer<SkyboxOverrideConstantsLayout> SkyboxOverrideConstants; };
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -29,7 +36,7 @@ struct GBufferOut
 GBufferOut fsMain(FullscreenVsOut i)
 {
 	GBufferOut o;
-	o.diffuse        = SkyboxOverrideConstants.g_xOverrideColour;
+	o.diffuse        = g_xPassSet.SkyboxOverrideConstants.g_xOverrideColour;
 	o.normalsAmbient = float4(0.0, 0.0, 0.0, 0.0);
 	o.material       = float4(0.0, 0.0, 0.0, 0.0);
 	o.emissive       = float4(0.0, 0.0, 0.0, 0.0);

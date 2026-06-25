@@ -10,12 +10,20 @@
 // shader's binding table (they referenced g_xCSM0..3, g_xBRDFLUT etc
 // directly), so a Slang port has no separate-module benefit.
 //
-// Imports Common.Frame, Common.PBR. Common.Volumetric/GBuffer/Atmos
-// are NOT needed here — the deferred shader just reads the G-buffer.
+// Frequency-set spine (#include): GLOBAL (sun/time) at set 0, VIEW (camera)
+// at set 1, BINDLESS at set 2. All of this pass's own resources — the debug
+// constants, the 4 shadow matrices, the G-buffer / depth / CSM / IBL / SSR /
+// SSGI / SSAO SRVs, the cluster buffers and the shadow-sampling CB — group
+// into ONE PassParams ParameterBlock (set 3). Imports Common.Lighting for
+// LightInstance / EvaluateLight / cluster math, Common.PBR for the BRDF
+// helpers, Common.GBuffer for the shading-model tags. (Common.Lighting pulls
+// Common.Frame transitively but does NOT re-export it — no FrameConstants /
+// helper-name collision with the spine; the lone FrameConstants use inside
+// ComputeClusterAABB is dead-stripped, that function being unused here.)
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Fullscreen;
-import Common.Frame;
 import Common.PBR;
 import Common.Lighting;
 import Common.GBuffer;	// UnpackGBufferFlags + shading-model tags
@@ -36,46 +44,11 @@ struct DeferredShadingConstantsLayout
 	float g_fAmbientFallbackIntensity;
 	uint  g_bSSAOEnabled;          // screen-space AO modulates the ambient term only
 };
-[[vk::binding( 1, 0)]] ConstantBuffer<DeferredShadingConstantsLayout> DeferredShadingConstants;
 
 // Shadow matrices — kept as separate CBs to match the legacy binding
 // table. The TODO in the GLSL source notes these should fold into one
 // buffer; preserving the layout for now so the C++ side doesn't shift.
 struct ShadowMatrixLayout { float4x4 m_xMat; };
-[[vk::binding( 2, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
-[[vk::binding( 3, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
-[[vk::binding( 4, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
-[[vk::binding( 5, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
-
-[[vk::binding( 6, 0)]] Sampler2D   g_xDiffuseTex;
-[[vk::binding( 7, 0)]] Sampler2D   g_xNormalsAmbientTex;
-[[vk::binding( 8, 0)]] Sampler2D   g_xMaterialTex;
-[[vk::binding( 9, 0)]] Sampler2D   g_xDepthTex;
-
-[[vk::binding(10, 0)]] Sampler2D   g_xCSM0;
-[[vk::binding(11, 0)]] Sampler2D   g_xCSM1;
-[[vk::binding(12, 0)]] Sampler2D   g_xCSM2;
-[[vk::binding(13, 0)]] Sampler2D   g_xCSM3;
-
-[[vk::binding(14, 0)]] Sampler2D   g_xBRDFLUT;
-[[vk::binding(15, 0)]] SamplerCube g_xIrradianceMap;
-[[vk::binding(16, 0)]] SamplerCube g_xPrefilteredMap;
-[[vk::binding(17, 0)]] Sampler2D   g_xSSRTex;
-[[vk::binding(18, 0)]] Sampler2D   g_xSSGITex;
-
-// Clustered dynamic lights — populated each frame by Flux_LightClustering.
-// LightBuffer is the full list (point + spot + directional, type-tagged).
-// The cluster buffers index into LightBuffer per-pixel.
-[[vk::binding(19, 0)]] StructuredBuffer<LightInstance> LightBuffer;
-[[vk::binding(20, 0)]] StructuredBuffer<uint>          ClusterLightCounts;
-[[vk::binding(21, 0)]] StructuredBuffer<uint>          ClusterLightIndices;
-
-// 4th G-buffer target: HDR emissive RGB + clear-coat roughness in A.
-[[vk::binding(22, 0)]] Sampler2D   g_xGBufferEmissiveTex;
-
-// Screen-space ambient occlusion (half-res R8). Applied to the ambient/IBL
-// term only — direct sun + dynamic lights are physically unoccluded by SSAO.
-[[vk::binding(23, 0)]] Sampler2D   g_xSSAOTex;
 
 // Cascaded-shadow sampling parameters. Mirrors Flux_ShadowCascadeSamplingData +
 // Flux_ShadowSamplingConfig on the C++ side. Laid out as pure float4s so the
@@ -90,7 +63,52 @@ struct ShadowSamplingLayout
 	float4 g_xParams1;               // x=pcfRadiusTexels y=sunAngularRadius z=cascadeBlendFraction w=tapCount
 	float4 g_xParams2;               // x=pcssEnabled (0/1) ; yzw spare
 };
-[[vk::binding(24, 0)]] ConstantBuffer<ShadowSamplingLayout> ShadowSampling;
+
+// This pass's grab-bag of resources, grouped into one PassParams block at
+// set 3. Member names PRESERVED so the generated binding handles + the C++
+// binds are unchanged (only the descriptor set regenerates to 3).
+struct PassParams
+{
+	ConstantBuffer<DeferredShadingConstantsLayout> DeferredShadingConstants;
+
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
+
+	Sampler2D   g_xDiffuseTex;
+	Sampler2D   g_xNormalsAmbientTex;
+	Sampler2D   g_xMaterialTex;
+	Sampler2D   g_xDepthTex;
+
+	Sampler2D   g_xCSM0;
+	Sampler2D   g_xCSM1;
+	Sampler2D   g_xCSM2;
+	Sampler2D   g_xCSM3;
+
+	Sampler2D   g_xBRDFLUT;
+	SamplerCube g_xIrradianceMap;
+	SamplerCube g_xPrefilteredMap;
+	Sampler2D   g_xSSRTex;
+	Sampler2D   g_xSSGITex;
+
+	// Clustered dynamic lights — populated each frame by Flux_LightClustering.
+	// LightBuffer is the full list (point + spot + directional, type-tagged).
+	// The cluster buffers index into LightBuffer per-pixel.
+	StructuredBuffer<LightInstance> LightBuffer;
+	StructuredBuffer<uint>          ClusterLightCounts;
+	StructuredBuffer<uint>          ClusterLightIndices;
+
+	// 4th G-buffer target: HDR emissive RGB + clear-coat roughness in A.
+	Sampler2D   g_xGBufferEmissiveTex;
+
+	// Screen-space ambient occlusion (half-res R8). Applied to the ambient/IBL
+	// term only — direct sun + dynamic lights are physically unoccluded by SSAO.
+	Sampler2D   g_xSSAOTex;
+
+	ConstantBuffer<ShadowSamplingLayout> ShadowSampling;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -124,10 +142,10 @@ float2 VogelDiskSample(uint uIndex, uint uCount, float fRotation)
 
 float4 GatherCascadeDepth(int iCascade, float2 xUV)
 {
-	if      (iCascade == 0) return g_xCSM0.Gather(xUV);
-	else if (iCascade == 1) return g_xCSM1.Gather(xUV);
-	else if (iCascade == 2) return g_xCSM2.Gather(xUV);
-	else                    return g_xCSM3.Gather(xUV);
+	if      (iCascade == 0) return g_xPassSet.g_xCSM0.Gather(xUV);
+	else if (iCascade == 1) return g_xPassSet.g_xCSM1.Gather(xUV);
+	else if (iCascade == 2) return g_xPassSet.g_xCSM2.Gather(xUV);
+	else                    return g_xPassSet.g_xCSM3.Gather(xUV);
 }
 
 // The per-cascade sun view×proj lives in four separate CBs (matching the legacy
@@ -135,10 +153,10 @@ float4 GatherCascadeDepth(int iCascade, float2 xUV)
 // switch explicitly.
 float4x4 ShadowMatrixForCascade(int iCascade)
 {
-	if      (iCascade == 0) return ShadowMatrix0.m_xMat;
-	else if (iCascade == 1) return ShadowMatrix1.m_xMat;
-	else if (iCascade == 2) return ShadowMatrix2.m_xMat;
-	else                    return ShadowMatrix3.m_xMat;
+	if      (iCascade == 0) return g_xPassSet.ShadowMatrix0.m_xMat;
+	else if (iCascade == 1) return g_xPassSet.ShadowMatrix1.m_xMat;
+	else if (iCascade == 2) return g_xPassSet.ShadowMatrix2.m_xMat;
+	else                    return g_xPassSet.ShadowMatrix3.m_xMat;
 }
 
 // Multi-tap PCF. Each Vogel tap issues a 4-texel Gather and compares each texel
@@ -147,7 +165,7 @@ float4x4 ShadowMatrixForCascade(int iCascade)
 // fRadiusTexels controls penumbra width.
 float SampleShadowPCF(int iCascade, float2 xUV, float fCompareDepth, float fRadiusTexels, uint uTaps, float fRotation)
 {
-	float fRcpRes = ShadowSampling.g_xParams0.y;
+	float fRcpRes = g_xPassSet.ShadowSampling.g_xParams0.y;
 	float fSum    = 0.0;
 	for (uint i = 0u; i < uTaps; ++i)
 	{
@@ -164,7 +182,7 @@ float SampleShadowPCF(int iCascade, float2 xUV, float fCompareDepth, float fRadi
 // receiver is unoccluded (→ skip the expensive filter, surface is fully lit).
 float BlockerSearch(int iCascade, float2 xUV, float fReceiverDepth, float fSearchRadiusTexels, float fRotation, out bool bFound)
 {
-	float fRcpRes     = ShadowSampling.g_xParams0.y;
+	float fRcpRes     = g_xPassSet.ShadowSampling.g_xParams0.y;
 	float fBlockerSum = 0.0;
 	float fCount      = 0.0;
 	for (uint i = 0u; i < SHADOW_BLOCKER_TAPS; ++i)
@@ -192,15 +210,15 @@ bool EvaluateCascadeShadow(int iCascade, float3 xWorldPos, float3 xNormal, float
 {
 	fShadow = 1.0;
 
-	float fWorldPerTexel = ShadowSampling.g_xCascadeWorldPerTexel[iCascade];
-	float fDepthRange    = ShadowSampling.g_xCascadeDepthRange[iCascade];
-	float fNormalOffset  = ShadowSampling.g_xParams0.z;
-	float fPCFRadius     = ShadowSampling.g_xParams1.x;
-	float fSunAngle      = ShadowSampling.g_xParams1.y;
+	float fWorldPerTexel = g_xPassSet.ShadowSampling.g_xCascadeWorldPerTexel[iCascade];
+	float fDepthRange    = g_xPassSet.ShadowSampling.g_xCascadeDepthRange[iCascade];
+	float fNormalOffset  = g_xPassSet.ShadowSampling.g_xParams0.z;
+	float fPCFRadius     = g_xPassSet.ShadowSampling.g_xParams1.x;
+	float fSunAngle      = g_xPassSet.ShadowSampling.g_xParams1.y;
 	// Clamp the tap count to a sane, bounded range — guarantees the PCF loop
 	// terminates and never divides by zero even if the CB were ever unpopulated.
-	uint  uTaps          = clamp(uint(ShadowSampling.g_xParams1.w), 1u, 32u);
-	bool  bPCSS          = ShadowSampling.g_xParams2.x > 0.5;
+	uint  uTaps          = clamp(uint(g_xPassSet.ShadowSampling.g_xParams1.w), 1u, 32u);
+	bool  bPCSS          = g_xPassSet.ShadowSampling.g_xParams2.x > 0.5;
 
 	// Normal-offset bias: shift the receiver along its normal by a few texels,
 	// scaled by sin(angle-to-light) so grazing surfaces (worst acne) get the most
@@ -258,24 +276,24 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, fRoughness);
 
 	float  fRoughnessForLUT = clamp(fRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-	float2 xBRDF = g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
+	float2 xBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
 	// SSR specular contribution (Fresnel applied here, not in SSR shader,
 	// so SSR + IBL share consistent Fresnel and energy is conserved).
 	float3 xSSRSpecular   = float3(0.0, 0.0, 0.0);
 	float  fSSRConfidence = 0.0;
-	if (DeferredShadingConstants.g_bSSREnabled != 0)
+	if (g_xPassSet.DeferredShadingConstants.g_bSSREnabled != 0)
 	{
-		float4 xSSR     = g_xSSRTex.Sample(xUV);
+		float4 xSSR     = g_xPassSet.g_xSSRTex.Sample(xUV);
 		fSSRConfidence  = xSSR.a;
 		float3 xSSRFres = FresnelSchlick(NdotV, F0);
 		xSSRSpecular    = xSSR.rgb * xSSRFres;
 	}
 
 	// IBL disabled — fallback to simple ambient + SSR specular.
-	if (DeferredShadingConstants.g_bIBLEnabled == 0)
+	if (g_xPassSet.DeferredShadingConstants.g_bIBLEnabled == 0)
 	{
-		float3 xAmbient   = float3(DeferredShadingConstants.g_fAmbientFallbackIntensity).xxx * xAlbedo * fAmbientOcclusion;
+		float3 xAmbient   = float3(g_xPassSet.DeferredShadingConstants.g_fAmbientFallbackIntensity).xxx * xAlbedo * fAmbientOcclusion;
 		float3 xSSRFinal  = xSSRSpecular * fSSRConfidence * fAmbientOcclusion;
 		return xAmbient + xSSRFinal;
 	}
@@ -289,17 +307,17 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float3 kD = (1.0 - kS) * (1.0 - fMetallic);
 
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
-	if (DeferredShadingConstants.g_bIBLDiffuseEnabled != 0)
+	if (g_xPassSet.DeferredShadingConstants.g_bIBLDiffuseEnabled != 0)
 	{
-		float3 xIrradiance = g_xIrradianceMap.Sample(xNormal).rgb;
+		float3 xIrradiance = g_xPassSet.g_xIrradianceMap.Sample(xNormal).rgb;
 		xDiffuseIBL        = kD * xIrradiance * xAlbedo;
 	}
 
 	// SSGI replaces (not adds to) IBL diffuse where confidence is high.
 	float3 xFinalDiffuse = xDiffuseIBL;
-	if (DeferredShadingConstants.g_bSSGIEnabled != 0)
+	if (g_xPassSet.DeferredShadingConstants.g_bSSGIEnabled != 0)
 	{
-		float4 xSSGI           = g_xSSGITex.Sample(xUV);
+		float4 xSSGI           = g_xPassSet.g_xSSGITex.Sample(xUV);
 		float  fSSGIConfidence = xSSGI.a;
 		if (fSSGIConfidence > 0.001)
 		{
@@ -310,17 +328,17 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 
 	// Specular IBL via prefiltered cubemap + multiscatter BRDF.
 	float3 xSpecularIBL = float3(0.0, 0.0, 0.0);
-	if (DeferredShadingConstants.g_bIBLSpecularEnabled != 0)
+	if (g_xPassSet.DeferredShadingConstants.g_bIBLSpecularEnabled != 0)
 	{
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fLOD     = fRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xPrefiltered = g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
+		float3 xPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
 		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughness, xBRDF);
 	}
 
 	// SSR ↔ IBL specular blend by SSR confidence.
 	float3 xFinalSpecular;
-	if (DeferredShadingConstants.g_bSSREnabled != 0 && fSSRConfidence > SSR_CONFIDENCE_EPSILON)
+	if (g_xPassSet.DeferredShadingConstants.g_bSSREnabled != 0 && fSSRConfidence > SSR_CONFIDENCE_EPSILON)
 		xFinalSpecular = lerp(xSpecularIBL, xSSRSpecular, fSSRConfidence);
 	else
 		xFinalSpecular = xSpecularIBL;
@@ -335,19 +353,19 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 
 	// Clear-coat IBL lobe: second prefiltered sample at the coat's own
 	// roughness, fixed F0 = 0.04, base attenuated for energy conservation.
-	if (fClearCoat > 0.0 && DeferredShadingConstants.g_bIBLSpecularEnabled != 0)
+	if (fClearCoat > 0.0 && g_xPassSet.DeferredShadingConstants.g_bIBLSpecularEnabled != 0)
 	{
 		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
 		float fCoatRoughForLUT = clamp(fClearCoatRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-		float2 xCoatBRDF = g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float2 xCoatBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fCoatLOD = fClearCoatRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xCoatPrefiltered = g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
 		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * fClearCoat;
 		xBase = xBase * (1.0 - fClearCoat * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
 
-	return xBase * DeferredShadingConstants.g_fIBLIntensity;
+	return xBase * g_xPassSet.DeferredShadingConstants.g_fIBLIntensity;
 }
 
 // ----- Direct lighting (was DeferredShading_Lighting.fxh) -----
@@ -368,7 +386,7 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 								uint  uShadingModel)
 {
 	float3 xLightDir = normalize(xLight.m_xDirection.xyz);
-	float3 xViewDir  = normalize(FrameConstants.g_xCamPos_Pad.xyz - xWorldPos);
+	float3 xViewDir  = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - xWorldPos);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
 	float fRawNdotL = dot(xNormal, xLightDir);
@@ -451,13 +469,13 @@ float ScreenSpaceContactShadow(float3 xWorldPos, float3 xLightDir)
 	for (int i = 0; i < iSteps; ++i)
 	{
 		xPosW += xStepW;
-		float3 xViewPos = mul(FrameConstants.g_xViewMat, float4(xPosW, 1.0)).xyz;
+		float3 xViewPos = mul(g_xViewSet.g_xView.g_xViewMat, float4(xPosW, 1.0)).xyz;
 		if (xViewPos.z <= 0.0) break;               // behind camera (+Z forward)
 		float3 xScreen = ViewToScreen(xViewPos);    // .xy = UV
 		float2 xUV = xScreen.xy;
 		if (xUV.x < 0.0 || xUV.x > 1.0 || xUV.y < 0.0 || xUV.y > 1.0) break;
 
-		float fSceneViewZ = DepthToViewZ(xUV, g_xDepthTex.Sample(xUV).r);
+		float fSceneViewZ = DepthToViewZ(xUV, g_xPassSet.g_xDepthTex.Sample(xUV).r);
 		float fDelta = xViewPos.z - fSceneViewZ;    // >0: ray sample is behind scene geometry
 		if (fDelta > fBias && fDelta < fThick)
 			// Soft + distance-faded: nearer contact darker, capped at 55% so it
@@ -477,7 +495,7 @@ static const float LIGHT_INTENSITY_THRESHOLD = 0.1;
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
 	// BRDF LUT debug overlay (top-right corner).
-	if (DeferredShadingConstants.g_bShowBRDFLUT != 0u)
+	if (g_xPassSet.DeferredShadingConstants.g_bShowBRDFLUT != 0u)
 	{
 		float fSize    = BRDF_LUT_DISPLAY_SIZE;
 		float fMargin  = BRDF_LUT_DISPLAY_MARGIN;
@@ -492,25 +510,25 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		{
 			float2 xLutUV = float2((input.uv.x - fMinX) / fSize,
 									(input.uv.y - fMinY) / fSize);
-			float2 xBRDF  = g_xBRDFLUT.Sample(xLutUV).rg;
+			float2 xBRDF  = g_xPassSet.g_xBRDFLUT.Sample(xLutUV).rg;
 			return float4(xBRDF.r, xBRDF.g, 0.0, 1.0);
 		}
 	}
 
 	// Debug-mode 1: solid cyan (proves the pass is running).
-	if (DeferredShadingConstants.g_uDebugMode == 1u) return float4(0.0, 1.0, 1.0, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 1u) return float4(0.0, 1.0, 1.0, 1.0);
 
-	float4 xDiffuse = g_xDiffuseTex.Sample(input.uv);
-	float  fDepth   = g_xDepthTex.Sample(input.uv).r;
+	float4 xDiffuse = g_xPassSet.g_xDiffuseTex.Sample(input.uv);
+	float  fDepth   = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 
-	if (DeferredShadingConstants.g_uDebugMode == 2u)
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 2u)
 	{
 		if (fDepth >= 1.0) return float4(1.0, 0.0, 0.0, 1.0); // sky → red
 		float v = 1.0 - fDepth;
 		return float4(v, v, v, 1.0);
 	}
 
-	if (DeferredShadingConstants.g_uDebugMode == 3u)
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 3u)
 		return float4(xDiffuse.rgb, 1.0);
 
 	// Sky pixels skip lighting and pass through the G-buffer diffuse value
@@ -519,19 +537,19 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// stored diffuse).
 	if (fDepth == 1.0) return xDiffuse;
 
-	float4 xMaterial      = g_xMaterialTex.Sample(input.uv);
-	float4 xNormalAmbient = g_xNormalsAmbientTex.Sample(input.uv);
-	float4 xEmissiveCC    = g_xGBufferEmissiveTex.Sample(input.uv);
+	float4 xMaterial      = g_xPassSet.g_xMaterialTex.Sample(input.uv);
+	float4 xNormalAmbient = g_xPassSet.g_xNormalsAmbientTex.Sample(input.uv);
+	float4 xEmissiveCC    = g_xPassSet.g_xGBufferEmissiveTex.Sample(input.uv);
 	float3 xNormal        = normalize(xNormalAmbient.xyz);
 	float  fAmbient       = xNormalAmbient.w;
 
 	// Fold screen-space AO into the baked ambient term so it darkens ONLY the
 	// ambient/IBL contribution (ComputeIBLAmbient below), never direct light.
 	// Half-res R8; a bilinear tap is plenty given the blur already smoothed it.
-	if (DeferredShadingConstants.g_bSSAOEnabled != 0u)
-		fAmbient *= g_xSSAOTex.Sample(input.uv).r;
+	if (g_xPassSet.DeferredShadingConstants.g_bSSAOEnabled != 0u)
+		fAmbient *= g_xPassSet.g_xSSAOTex.Sample(input.uv).r;
 
-	float3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, input.uv);
+	float3 xWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
 
 	float fRoughness = xMaterial.x;
 	float fMetallic  = xMaterial.y;
@@ -541,21 +559,21 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	UnpackGBufferFlags(xMaterial.w, uShadingModel, fClearCoat);
 	float3 xEmissive          = xEmissiveCC.rgb;
 	float  fClearCoatRoughness = xEmissiveCC.a;
-	if (DeferredShadingConstants.g_bForceRoughness != 0u)
-		fRoughness = DeferredShadingConstants.g_fForcedRoughness;
+	if (g_xPassSet.DeferredShadingConstants.g_bForceRoughness != 0u)
+		fRoughness = g_xPassSet.DeferredShadingConstants.g_fForcedRoughness;
 
 	// G-buffer channel debug views (diagnostics): 4=metallic 5=roughness 6=AO
 	// 7=world normal 8=N·L(sun) 10=shading-model tag.
-	if (DeferredShadingConstants.g_uDebugMode == 4u) return float4(fMetallic.xxx, 1.0);
-	if (DeferredShadingConstants.g_uDebugMode == 5u) return float4(fRoughness.xxx, 1.0);
-	if (DeferredShadingConstants.g_uDebugMode == 6u) return float4(fAmbient.xxx, 1.0);
-	if (DeferredShadingConstants.g_uDebugMode == 7u) return float4(xNormal * 0.5 + 0.5, 1.0);
-	if (DeferredShadingConstants.g_uDebugMode == 8u)
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 4u) return float4(fMetallic.xxx, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 5u) return float4(fRoughness.xxx, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 6u) return float4(fAmbient.xxx, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 7u) return float4(xNormal * 0.5 + 0.5, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 8u)
 	{
-		float fNdotLDbg = max(dot(xNormal, normalize(-FrameConstants.g_xSunDir_Pad.xyz)), 0.0);
+		float fNdotLDbg = max(dot(xNormal, normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz)), 0.0);
 		return float4(fNdotLDbg.xxx, 1.0);
 	}
-	if (DeferredShadingConstants.g_uDebugMode == 10u)
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 10u)
 	{
 		// red=default-lit, green=unlit, blue=subsurface
 		float3 xTag = (uShadingModel == GBUFFER_SHADING_UNLIT) ? float3(0,1,0)
@@ -567,7 +585,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (uShadingModel == GBUFFER_SHADING_UNLIT)
 		return float4(xDiffuse.rgb + xEmissive, 1.0);
 
-	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - xWorldPos);
+	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - xWorldPos);
 
 	// IBL + SSR + SSGI ambient — produces the base colour before direct light.
 	float3 xIBLAmbient = ComputeIBLAmbient(xNormal, xViewDir, xDiffuse.rgb,
@@ -580,8 +598,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// jittery projection bounds), then sampled with normal-offset bias + PCSS/PCF,
 	// and cross-faded into the next cascade across a band to hide the seam.
 	DirectionalLight xLight;
-	xLight.m_xColour    = FrameConstants.g_xSunColour;
-	xLight.m_xDirection = float4(-FrameConstants.g_xSunDir_Pad.xyz, 0.0);
+	xLight.m_xColour    = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad;
+	xLight.m_xDirection = float4(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz, 0.0);
 
 	const int  iNumCSMs    = 4;
 	float3     xLightDir   = normalize(xLight.m_xDirection.xyz);
@@ -595,10 +613,10 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	[unroll]
 	for (int c = 0; c < iNumCSMs; ++c)
 	{
-		if (fViewZ <= ShadowSampling.g_xCascadeSplitViewDepth[c]) { iCascade = c; break; }
+		if (fViewZ <= g_xPassSet.ShadowSampling.g_xCascadeSplitViewDepth[c]) { iCascade = c; break; }
 	}
 
-	if (DeferredShadingConstants.g_bVisualiseCSMs > 0u)
+	if (g_xPassSet.DeferredShadingConstants.g_bVisualiseCSMs > 0u)
 	{
 		float v = (1.0 / float(iNumCSMs)) * float(iCascade);
 		return float4(v, v, v, 1.0);
@@ -608,7 +626,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// surface with NdotL<=0 is self-shadowed (handled by the NdotL term below).
 	if (fNdotL > 0.0)
 	{
-		float fRotation = ShadowKernelRotation(input.uv * float2(FrameConstants.g_xScreenDims));
+		float fRotation = ShadowKernelRotation(input.uv * float2(g_xViewSet.g_xView.g_xScreenDims));
 
 		float fShadow;
 		bool  bInside = EvaluateCascadeShadow(iCascade, xWorldPos, xNormal, fNdotL, fRotation, fShadow);
@@ -623,8 +641,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		// split so the resolution step is invisible.
 		if (bInside && iCascade + 1 < iNumCSMs)
 		{
-			float fSplit = ShadowSampling.g_xCascadeSplitViewDepth[iCascade];
-			float fBand  = fSplit * ShadowSampling.g_xParams1.z;
+			float fSplit = g_xPassSet.ShadowSampling.g_xCascadeSplitViewDepth[iCascade];
+			float fBand  = fSplit * g_xPassSet.ShadowSampling.g_xParams1.z;
 			float fStart = fSplit - fBand;
 			if (fViewZ > fStart && fBand > 1e-4)
 			{
@@ -642,8 +660,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		fShadowFactor = min(fShadowFactor, ScreenSpaceContactShadow(xWorldPos, xLightDir));
 
 	// Debug: 9 = sun shadow factor (white=lit, black=shadowed); 11 = IBL ambient only.
-	if (DeferredShadingConstants.g_uDebugMode == 9u)  return float4(fShadowFactor.xxx, 1.0);
-	if (DeferredShadingConstants.g_uDebugMode == 11u) return float4(xIBLAmbient, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 9u)  return float4(fShadowFactor.xxx, 1.0);
+	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 11u) return float4(xIBLAmbient, 1.0);
 
 	// Direct light contribution + shadow blend. Shadow attenuates ONLY
 	// the direct term — IBL ambient stays unchanged so shadowed pixels
@@ -665,16 +683,16 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		float fViewZ = DepthToViewZ(input.uv, fDepth);
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(input.uv, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
-		uint  uLightCount   = ClusterLightCounts[uClusterIdx];
+		uint  uLightCount   = g_xPassSet.ClusterLightCounts[uClusterIdx];
 
 		float3 xDynLights = float3(0.0, 0.0, 0.0);
 		for (uint i = 0u; i < uLightCount; ++i)
 		{
-			uint uLightIdx = ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
-			LightInstance xL = LightBuffer[uLightIdx];
+			uint uLightIdx = g_xPassSet.ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
+			LightInstance xL = g_xPassSet.LightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
 			                            xDiffuse.rgb, fMetallic, fRoughness, fSpecular,
-			                            g_xBRDFLUT);
+			                            g_xPassSet.g_xBRDFLUT);
 		}
 		xColour.rgb += xDynLights;
 	}

@@ -7,6 +7,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Decals.h" // typed binding handles
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 // GetWidth/GetHeight on the swapchain (reached via g_xEngine) need the full type.
@@ -413,7 +414,8 @@ static void ExecuteNormalsCopy(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(xDecals.m_xNormalsCopyShader, "g_xNormalsTex",
+	namespace NC = Flux_Generated_Decals::Decals_NormalsCopy;
+	xBinder.BindSRV(NC::hg_xNormalsTex,
 		xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->DrawIndexed(6);
@@ -435,12 +437,16 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetIndexBuffer(xDecals.m_xDecalIndexBuffer);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace AP = Flux_Generated_Decals::Decals_Apply;
 
-	xBinder.BindCBV(xDecals.m_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	// Spine: camera CB is the VIEW set (set 1) g_xView, sourced from
+	// m_xViewConstantsBuffer. The Apply shader reads only VIEW fields
+	// (g_xViewProjMat / g_xRcpScreenDims) — no GLOBAL (sun/time) bind needed.
+	xBinder.BindCBV(AP::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xDepthTex",       g_xEngine.FluxGraphics().GetDepthStencilSRV());
-	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xNormalsCopyTex", &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
-	xBinder.BindSRV_Buffer(xDecals.m_xApplyShader, "DecalBuffer", xDecals.m_xDecalBuffer.GetSRV());
+	xBinder.BindSRV(AP::hg_xDepthTex,       g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(AP::hg_xNormalsCopyTex, &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
+	xBinder.BindSRV_Buffer(AP::hDecalBuffer, xDecals.m_xDecalBuffer.GetSRV());
 
 	// Brush-indicator texture (textured-brush mode). The layout requires a
 	// bound SRV even on bullet-hole-only frames — fall back to the white
@@ -448,7 +454,7 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_ShaderResourceView* pxBrushSRV = (xDecals.m_pxEditorDecalTexture != nullptr)
 		? &xDecals.m_pxEditorDecalTexture->m_xSRV
 		: &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
-	xBinder.BindSRV(xDecals.m_xApplyShader, "g_xBrushTex", pxBrushSRV);
+	xBinder.BindSRV(AP::hg_xBrushTex, pxBrushSRV);
 
 	pxCommandList->DrawIndexed(36, xDecals.m_uActiveDecalCount);
 }

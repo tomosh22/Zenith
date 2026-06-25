@@ -8,7 +8,13 @@
 // pipeline interface during link, preserving varyings between stages.
 // Used by Zenith_Vulkan_Swapchain to copy the final frame to the
 // backbuffer.
+//
+// Pure blit: does not read the GLOBAL/VIEW sets. The spine is still
+// #included so it reserves sets 0/1/2 and this shader's own PassParams
+// lands at set 3 (consistent with every other converted shader).
 // =====================================================================
+
+#include "Common/Bindings.slang"
 
 struct VsOut
 {
@@ -30,13 +36,17 @@ VsOut vsMain(uint vertexId : SV_VertexID)
 	return o;
 }
 
-// Combined image+sampler at set=0, binding=0 — matches the original
-// GLSL `sampler2D g_xTexture` so Zenith_Vulkan_Swapchain's existing
-// BindSRV layout still applies during the pilot.
-[[vk::binding(0, 0)]] Sampler2D g_xTexture;
+// PASS frequency. Declared AFTER the spine #include, so it lands at set 3
+// (the first set past the persistent 0/1/2). Member name preserved exactly —
+// the C++ bind keys on it (hg_xTexture).
+struct PassParams
+{
+	Sampler2D g_xTexture;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("fragment")]
 float4 fsMain(VsOut i) : SV_Target
 {
-	return g_xTexture.Sample(i.uv);
+	return g_xPassSet.g_xTexture.Sample(i.uv);
 }

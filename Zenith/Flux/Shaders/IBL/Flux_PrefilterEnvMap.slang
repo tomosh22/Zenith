@@ -10,8 +10,8 @@
 // importance-sampled result toward a direct mirror reflection.
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 import Common.PBR;
 import Common.Atmosphere;
 
@@ -22,8 +22,12 @@ struct PrefilterConstantsLayout
 	float g_fSunIntensity;
 	uint  g_uFaceIndex;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<PrefilterConstantsLayout> PrefilterConstants;
-[[vk::binding(2, 0)]] SamplerCube g_xSkyboxCubemap;
+struct PassParams
+{
+	ConstantBuffer<PrefilterConstantsLayout> PrefilterConstants;
+	SamplerCube g_xSkyboxCubemap;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -51,23 +55,23 @@ float3 CubemapFaceDirection(float2 xUV, uint uFace)
 
 float3 SampleEnvironment(float3 xDir)
 {
-	if (PrefilterConstants.g_uUseAtmosphere > 0u)
+	if (g_xPassSet.PrefilterConstants.g_uUseAtmosphere > 0u)
 	{
-		float3 xSunDir = normalize(-FrameConstants.g_xSunDir_Pad.xyz);
+		float3 xSunDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
 		AtmosphereResult xResult = ComputeAtmosphereScattering(
 			float3(0.0, EARTH_RADIUS + IBL_REFERENCE_HEIGHT_METERS, 0.0),
 			normalize(xDir),
 			xSunDir,
-			PrefilterConstants.g_fSunIntensity);
+			g_xPassSet.PrefilterConstants.g_fSunIntensity);
 		return xResult.xColor;
 	}
-	return g_xSkyboxCubemap.Sample(xDir).rgb;
+	return g_xPassSet.g_xSkyboxCubemap.Sample(xDir).rgb;
 }
 
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float3 xN = CubemapFaceDirection(input.uv, PrefilterConstants.g_uFaceIndex);
+	float3 xN = CubemapFaceDirection(input.uv, g_xPassSet.PrefilterConstants.g_uFaceIndex);
 	float3 xR = xN;
 	float3 xV = xR;
 
@@ -76,7 +80,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// GGX importance sampling needs a non-zero roughness — the distribution
 	// degenerates to a delta as r → 0 and division blows up.
-	float fClampedRoughness = max(PrefilterConstants.g_fRoughness, PBR_GGX_MIN_ROUGHNESS);
+	float fClampedRoughness = max(g_xPassSet.PrefilterConstants.g_fRoughness, PBR_GGX_MIN_ROUGHNESS);
 
 	float3 xPrefilteredColor = float3(0.0, 0.0, 0.0);
 	float  fTotalWeight      = 0.0;
@@ -99,11 +103,11 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Smooth-roughness blend — avoids the visual discontinuity that
 	// importance sampling produces near a delta-function GGX lobe.
-	if (PrefilterConstants.g_fRoughness < IBL_SMOOTH_BLEND_THRESHOLD)
+	if (g_xPassSet.PrefilterConstants.g_fRoughness < IBL_SMOOTH_BLEND_THRESHOLD)
 	{
 		float fBlendFactor = smoothstep(PBR_GGX_MIN_ROUGHNESS,
 										IBL_SMOOTH_BLEND_THRESHOLD,
-										PrefilterConstants.g_fRoughness);
+										g_xPassSet.PrefilterConstants.g_fRoughness);
 		xPrefilteredColor = lerp(xMirrorColor, xPrefilteredColor, fBlendFactor);
 	}
 

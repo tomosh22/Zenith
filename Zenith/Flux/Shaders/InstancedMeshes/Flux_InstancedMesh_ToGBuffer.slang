@@ -32,7 +32,7 @@
 //   binding 13  g_xAnimationTex    (VAT positions per frame; POINT sampler)
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"
 import Common.DrawConstants;
 import Common.Material;
 import Common.MaterialSurface;
@@ -60,33 +60,38 @@ struct VsOut
 	float4 instanceTint  : TEXCOORD6;
 };
 
-// Material textures — the full 9-slot set, identical to the static-mesh path
-// (Flux_StaticMesh_ToGBuffer.slang), so EvaluateMaterialSurface gets everything.
-[[vk::binding(1, 1)]] Sampler2D g_xBaseColorTex;
-[[vk::binding(2, 1)]] Sampler2D g_xNormalTex;
-[[vk::binding(3, 1)]] Sampler2D g_xRoughnessMetallicTex;
-[[vk::binding(4, 1)]] Sampler2D g_xOcclusionTex;
-[[vk::binding(5, 1)]] Sampler2D g_xEmissiveTex;
-[[vk::binding(6, 1)]] Sampler2D g_xHeightTex;
-[[vk::binding(7, 1)]] Sampler2D g_xDetailAlbedoTex;
-[[vk::binding(8, 1)]] Sampler2D g_xDetailNormalTex;
-[[vk::binding(9, 1)]] Sampler2D g_xDetailMaskTex;
-
-// Instancing resources at bindings >= 10 (above the material-texture slots).
-// Read-only in the graphics pipeline. Without vertexPipelineStoresAndAtomics,
-// vertex/tess/geom storage buffers must be NonWritable — Slang emits that
-// decoration for StructuredBuffer<T> but not for RWStructuredBuffer<T>. The
-// matching compute culling shader uses RWStructuredBuffer to write into the
-// same physical descriptors.
+// DRAW block (set 3) — per-draw material constants + the full 9-slot material
+// texture set (identical to the static-mesh path so EvaluateMaterialSurface gets
+// everything) + the instancing resources + the VAT animation texture.
+//
+// Instancing buffers are read-only in the graphics pipeline. Without
+// vertexPipelineStoresAndAtomics, vertex/tess/geom storage buffers must be
+// NonWritable — Slang emits that decoration for StructuredBuffer<T> but not for
+// RWStructuredBuffer<T>. The matching compute culling shader uses RWStructuredBuffer
+// to write into the same physical descriptors.
 //
 // VAT animation texture params live in DrawConstants.g_xVATParams (a real field
 // of the shared 208-byte MaterialDrawConstants — NOT a separate constant buffer:
 // the backend allows only ONE scratch/draw-constants buffer per descriptor set,
-// so a second BindDrawConstants on set 1 would clobber DrawConstants).
-[[vk::binding(10, 1)]] StructuredBuffer<float4x4> TransformBuffer;
-[[vk::binding(11, 1)]] StructuredBuffer<uint4>    AnimDataBuffer;
-[[vk::binding(12, 1)]] StructuredBuffer<uint>     VisibleIndexBuffer;
-[[vk::binding(13, 1)]] Sampler2D                  g_xAnimationTex;
+// so a second BindDrawConstants on this set would clobber DrawConstants).
+struct DrawParams
+{
+	ConstantBuffer<DrawConstantsLayout> DrawConstants;
+	Sampler2D g_xBaseColorTex;
+	Sampler2D g_xNormalTex;
+	Sampler2D g_xRoughnessMetallicTex;
+	Sampler2D g_xOcclusionTex;
+	Sampler2D g_xEmissiveTex;
+	Sampler2D g_xHeightTex;
+	Sampler2D g_xDetailAlbedoTex;
+	Sampler2D g_xDetailNormalTex;
+	Sampler2D g_xDetailMaskTex;
+	StructuredBuffer<float4x4> TransformBuffer;
+	StructuredBuffer<uint4>    AnimDataBuffer;
+	StructuredBuffer<uint>     VisibleIndexBuffer;
+	Sampler2D                  g_xAnimationTex;
+};
+ParameterBlock<DrawParams> g_xDrawSet;
 
 float4 UnpackRGBA8(uint uPacked)
 {
@@ -120,8 +125,8 @@ float3 SampleVAT(uint uVertexID, uint uAnimIndex, float fAnimTime,
 	float2 xUV1 = float2(((float)uVertexID + 0.5) / (float)uTextureWidth,
 						   ((float)uRow1     + 0.5) / (float)uTextureHeight);
 
-	float3 xPos0 = g_xAnimationTex.SampleLevel(xUV0, 0).xyz;
-	float3 xPos1 = g_xAnimationTex.SampleLevel(xUV1, 0).xyz;
+	float3 xPos0 = g_xDrawSet.g_xAnimationTex.SampleLevel(xUV0, 0).xyz;
+	float3 xPos1 = g_xDrawSet.g_xAnimationTex.SampleLevel(xUV1, 0).xyz;
 	return lerp(xPos0, xPos1, fBlend);
 }
 
@@ -130,15 +135,17 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 {
 	VsOut o;
 
-	uint     uInstanceID = VisibleIndexBuffer[instanceId];
-	float4x4 xModelMatrix = TransformBuffer[uInstanceID];
-	uint4    xAnimData    = AnimDataBuffer[uInstanceID];
+	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
+
+	uint     uInstanceID = g_xDrawSet.VisibleIndexBuffer[instanceId];
+	float4x4 xModelMatrix = g_xDrawSet.TransformBuffer[uInstanceID];
+	uint4    xAnimData    = g_xDrawSet.AnimDataBuffer[uInstanceID];
 	float4   xInstanceTint = UnpackRGBA8(xAnimData.z);
 
 	// VAT enable: global toggle (DrawConstants.g_xVATParams.z > 0) AND a per-instance
 	// flag at bit 1 of xAnimData.w. Both must be true for VAT sampling.
 	float3 xLocalPos = input.a_xPosition;
-	bool   bUseVAT  = GetVATEnabled() && ((xAnimData.w & 2u) != 0u);
+	bool   bUseVAT  = GetVATEnabled(dc) && ((xAnimData.w & 2u) != 0u);
 	if (bUseVAT)
 	{
 		// Flux_InstanceAnimData packs m_uAnimationIndex in the LOW 16 bits of
@@ -146,7 +153,7 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 		uint  uAnimIndex  = xAnimData.x & 0xFFFFu;
 		uint  uFrameCount = (xAnimData.x >> 16u) & 0xFFFFu;
 		float fAnimTime   = asfloat(xAnimData.y);
-		float2 xVATSize   = GetVATTextureSize();
+		float2 xVATSize   = GetVATTextureSize(dc);
 		uint  uTexWidth   = (uint)xVATSize.x;
 		uint  uTexHeight  = (uint)xVATSize.y;
 		xLocalPos = SampleVAT(vertexId, uAnimIndex, fAnimTime,
@@ -164,7 +171,7 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	o.bitangentSign = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
 	o.instanceTint = xInstanceTint;
 	o.worldPos     = xWorldPos;
-	o.position     = mul(FrameConstants.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position     = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
 	return o;
 }
 
@@ -175,13 +182,14 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
 	float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - input.worldPos);
+	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
 
+	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
 	MaterialSurface xSurface = EvaluateMaterialSurface(
-		g_xBaseColorTex, g_xNormalTex, g_xRoughnessMetallicTex,
-		g_xOcclusionTex, g_xEmissiveTex, g_xHeightTex,
-		g_xDetailAlbedoTex, g_xDetailNormalTex, g_xDetailMaskTex,
-		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace);
+		g_xDrawSet.g_xBaseColorTex, g_xDrawSet.g_xNormalTex, g_xDrawSet.g_xRoughnessMetallicTex,
+		g_xDrawSet.g_xOcclusionTex, g_xDrawSet.g_xEmissiveTex, g_xDrawSet.g_xHeightTex,
+		g_xDrawSet.g_xDetailAlbedoTex, g_xDrawSet.g_xDetailNormalTex, g_xDrawSet.g_xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, dc);
 
 	// Per-instance colour tint (RGB only — matches the previous instanced path; the
 	// cutout already happened inside EvaluateMaterialSurface on the untinted alpha).

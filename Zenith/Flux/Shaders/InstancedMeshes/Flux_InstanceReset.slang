@@ -25,6 +25,12 @@
 // culling pass.
 // =====================================================================
 
+// Spine include reserves sets 0/1/2 (GLOBAL/VIEW/BINDLESS) so this pass's own
+// resources land in PassParams at set 3. This compute pass uses none of the
+// spine constants — it writes only its own counter/indirect buffers — but still
+// includes the spine so the persistent set layout stays uniform across shaders.
+#include "Common/Bindings.slang"
+
 // Per-group draw constants: the mesh index count for the indirect draw.
 // Bound via Flux_ShaderBinder::BindDrawConstants (per-frame scratch UBO),
 // mirroring the GBuffer/shadow DrawConstants binding. Only indexCount is
@@ -37,21 +43,25 @@ struct ResetDrawConstantsLayout
 	uint pad1;
 	uint pad2;
 };
-[[vk::binding(2, 0)]] ConstantBuffer<ResetDrawConstantsLayout> DrawConstants;
 
-[[vk::binding(0, 0)]] RWStructuredBuffer<uint> visibleCount;
-[[vk::binding(1, 0)]] RWStructuredBuffer<uint> indirectInstanceCount;
+struct PassParams
+{
+	ConstantBuffer<ResetDrawConstantsLayout> DrawConstants;
+	RWStructuredBuffer<uint>                 visibleCount;
+	RWStructuredBuffer<uint>                 indirectInstanceCount;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void csMain(uint3 id : SV_DispatchThreadID)
 {
-	visibleCount[0] = 0u;
+	g_xPassSet.visibleCount[0] = 0u;
 
 	// Full VkDrawIndexedIndirectCommand write (all five words every frame).
-	indirectInstanceCount[0] = DrawConstants.indexCount; // indexCount
-	indirectInstanceCount[1] = 0u;                       // instanceCount (culling increments)
-	indirectInstanceCount[2] = 0u;                       // firstIndex
-	indirectInstanceCount[3] = 0u;                       // vertexOffset
-	indirectInstanceCount[4] = 0u;                       // firstInstance
+	g_xPassSet.indirectInstanceCount[0] = g_xPassSet.DrawConstants.indexCount; // indexCount
+	g_xPassSet.indirectInstanceCount[1] = 0u;                       // instanceCount (culling increments)
+	g_xPassSet.indirectInstanceCount[2] = 0u;                       // firstIndex
+	g_xPassSet.indirectInstanceCount[3] = 0u;                       // vertexOffset
+	g_xPassSet.indirectInstanceCount[4] = 0u;                       // firstInstance
 }

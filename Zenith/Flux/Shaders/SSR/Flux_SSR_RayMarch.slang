@@ -14,12 +14,13 @@
 // variance estimation) — see Flux_SSR.cpp for the transient layout.
 // On miss / debug / sky / roughness-rejected paths both RTs go to zero.
 //
-// Imports Common.Frame (matrices, depth helpers, blue noise constants)
-// and Common.PBR (ImportanceSampleGGX, PBR_DIRECTION_EPSILON).
+// Camera matrices / depth helpers / blue-noise constants come from the
+// Bindings spine (replaces the former `import Common.Frame`); Common.PBR
+// supplies ImportanceSampleGGX / PBR_DIRECTION_EPSILON.
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 import Common.PBR;
 
 // ----- SSR tuning constants -----
@@ -160,13 +161,17 @@ struct SSRConstantsLayout
 	// Replaces inner-loop GetDimensions calls.
 	float4 u_axHiZMipSizes[12];
 };
-[[vk::binding(1, 0)]] ConstantBuffer<SSRConstantsLayout> SSRConstants;
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(3, 0)]] Sampler2D g_xNormalsTex;
-[[vk::binding(4, 0)]] Sampler2D g_xMaterialTex;
-[[vk::binding(5, 0)]] Sampler2D g_xHiZTex;
-[[vk::binding(6, 0)]] Sampler2D g_xDiffuseTex;
-[[vk::binding(7, 0)]] Sampler2D g_xBlueNoiseTex;
+struct PassParams
+{
+	ConstantBuffer<SSRConstantsLayout> SSRConstants;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalsTex;
+	Sampler2D g_xMaterialTex;
+	Sampler2D g_xHiZTex;
+	Sampler2D g_xDiffuseTex;
+	Sampler2D g_xBlueNoiseTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -191,7 +196,7 @@ RayMarchOut MakeRayMarchOut(float4 xColour, float4 xAux)
 float2 GetBlueNoise(int2 xPixelCoord, uint uFrameIndex)
 {
 	float2 xNoiseUV = float2(xPixelCoord % int2(BLUE_NOISE_SIZE, BLUE_NOISE_SIZE)) / (float)BLUE_NOISE_SIZE;
-	float2 xNoise   = g_xBlueNoiseTex.Sample(xNoiseUV).rg;
+	float2 xNoise   = g_xPassSet.g_xBlueNoiseTex.Sample(xNoiseUV).rg;
 	xNoise          = frac(xNoise + (float)uFrameIndex * GOLDEN_RATIO);
 	return xNoise;
 }
@@ -215,10 +220,10 @@ float4 RayMarch(float3 xViewOrigin,
 
 	float3 xScreenStart = ViewToScreen(xViewStart);
 
-	float fRaySampleDist = min(SSRConstants.u_fMaxDistance * 0.5, xViewStart.z * 0.5);
+	float fRaySampleDist = min(g_xPassSet.SSRConstants.u_fMaxDistance * 0.5, xViewStart.z * 0.5);
 	float3 xRaySampleView = xViewStart + xReflectDir * fRaySampleDist;
 
-	float fNearPlane = FrameConstants.g_xCameraNearFar.x;
+	float fNearPlane = g_xViewSet.g_xView.g_xCameraNearFar.x;
 	if (xRaySampleView.z < fNearPlane)
 	{
 		if (abs(xReflectDir.z) > PBR_DIRECTION_EPSILON)
@@ -268,19 +273,19 @@ float4 RayMarch(float3 xViewOrigin,
 	fMaxScreenDist = max(fMaxScreenDist, SSR_MIN_SCREEN_TRACE_DIST);
 
 	// Reciprocal-Z LERP endpoints for perspective-correct depth at every fT.
-	float fSafeStartZ      = max(xViewStart.z, FrameConstants.g_xCameraNearFar.x);
+	float fSafeStartZ      = max(xViewStart.z, g_xViewSet.g_xView.g_xCameraNearFar.x);
 	float fInvZStart       = 1.0 / fSafeStartZ;
-	float fEstimatedRayDist = SSRConstants.u_fMaxDistance * fMaxScreenDist;
-	float fEstimatedEndZ   = max(FrameConstants.g_xCameraNearFar.x,
+	float fEstimatedRayDist = g_xPassSet.SSRConstants.u_fMaxDistance * fMaxScreenDist;
+	float fEstimatedEndZ   = max(g_xViewSet.g_xView.g_xCameraNearFar.x,
 								  fSafeStartZ + xReflectDir.z * fEstimatedRayDist);
 	float fInvZEnd         = 1.0 / fEstimatedEndZ;
 
 	// Mip 0 dimensions from the cached CBV array — never query the
 	// texture itself (project convention: dims flow through the CBV).
-	float2 xScreenSize = SSRConstants.u_axHiZMipSizes[0].xy;
-	float2 xTexelSize  = SSRConstants.u_axHiZMipSizes[0].zw;
+	float2 xScreenSize = g_xPassSet.SSRConstants.u_axHiZMipSizes[0].xy;
+	float2 xTexelSize  = g_xPassSet.SSRConstants.u_axHiZMipSizes[0].zw;
 
-	int   iCurrentMip   = (int)min(SSRConstants.u_uStartMip, SSRConstants.u_uHiZMipCount - 1u);
+	int   iCurrentMip   = (int)min(g_xPassSet.SSRConstants.u_uStartMip, g_xPassSet.SSRConstants.u_uHiZMipCount - 1u);
 	float fT            = 0.0;
 	float fPrevT        = 0.0;
 	float fPrevDepthDiff = 0.0;
@@ -296,10 +301,10 @@ float4 RayMarch(float3 xViewOrigin,
 			xSampleUV.y < 0.0 || xSampleUV.y > 1.0) break;
 
 		// Inner loop hot path — read mip dims from the cached CBV array.
-		float2 xMipSize   = SSRConstants.u_axHiZMipSizes[iCurrentMip].xy;
-		float2 xHalfTexel = SSRConstants.u_axHiZMipSizes[iCurrentMip].zw * 0.5;
+		float2 xMipSize   = g_xPassSet.SSRConstants.u_axHiZMipSizes[iCurrentMip].xy;
+		float2 xHalfTexel = g_xPassSet.SSRConstants.u_axHiZMipSizes[iCurrentMip].zw * 0.5;
 		float2 xClampedUV  = clamp(xSampleUV, xHalfTexel, 1.0 - xHalfTexel);
-		float2 xHiZSample  = g_xHiZTex.SampleLevel(xClampedUV, (float)iCurrentMip).rg;
+		float2 xHiZSample  = g_xPassSet.g_xHiZTex.SampleLevel(xClampedUV, (float)iCurrentMip).rg;
 		float  fMinDepth   = xHiZSample.r;
 		float  fMaxDepth   = xHiZSample.g;
 
@@ -321,7 +326,7 @@ float4 RayMarch(float3 xViewOrigin,
 		float fInvZ      = lerp(fInvZStart, fInvZEnd, fT);
 		float fRayViewZ  = 1.0 / fInvZ;
 		float fMinDiff   = fRayViewZ - fMinViewZ;
-		float fMipThickness = SSRConstants.u_fThickness * exp2((float)iCurrentMip);
+		float fMipThickness = g_xPassSet.SSRConstants.u_fThickness * exp2((float)iCurrentMip);
 
 		bool bBehindMinSurface  = fMinDiff > 0.0;
 		bool bWithinThickness   = fMinDiff < fMipThickness * SSR_STEP_SIZE_MULTIPLIER;
@@ -342,13 +347,13 @@ float4 RayMarch(float3 xViewOrigin,
 					float fTolerance    = max(fInitialRange * SSR_BINARY_SEARCH_RELATIVE_TOLERANCE,
 											  SSR_BINARY_SEARCH_MIN_TOLERANCE);
 
-					for (int j = 0; j < (int)SSRConstants.u_uBinarySearchIterations; j++)
+					for (int j = 0; j < (int)g_xPassSet.SSRConstants.u_uBinarySearchIterations; j++)
 					{
 						if (abs(fSearchEnd - fSearchStart) < fTolerance) break;
 
 						float fMidT          = (fSearchStart + fSearchEnd) * 0.5;
 						float2 xMidUV        = xScreenStart.xy + xScreenDir * fMidT * fMaxScreenDist;
-						float fMidSceneDepth = g_xHiZTex.SampleLevel(xMidUV, fSearchMip).r;
+						float fMidSceneDepth = g_xPassSet.g_xHiZTex.SampleLevel(xMidUV, fSearchMip).r;
 						float fMidSceneZ     = DepthToViewZ(xMidUV, fMidSceneDepth);
 
 						float fMidInvZ = lerp(fInvZStart, fInvZEnd, fMidT);
@@ -361,11 +366,11 @@ float4 RayMarch(float3 xViewOrigin,
 
 					float fFinalT          = (fSearchStart + fSearchEnd) * 0.5;
 					float2 xFinalUV        = xScreenStart.xy + xScreenDir * fFinalT * fMaxScreenDist;
-					float fFinalSceneDepth = g_xHiZTex.SampleLevel(xFinalUV, fSearchMip).r;
+					float fFinalSceneDepth = g_xPassSet.g_xHiZTex.SampleLevel(xFinalUV, fSearchMip).r;
 					float fFinalSceneZ     = DepthToViewZ(xFinalUV, fFinalSceneDepth);
 
-					float3 xHitWorldNormal = g_xNormalsTex.Sample(xFinalUV).rgb;
-					float3 xHitViewNormal  = normalize(mul((float3x3)FrameConstants.g_xViewMat, xHitWorldNormal));
+					float3 xHitWorldNormal = g_xPassSet.g_xNormalsTex.Sample(xFinalUV).rgb;
+					float3 xHitViewNormal  = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xHitWorldNormal));
 					float  fBackfaceDot    = dot(xHitViewNormal, xReflectDir);
 					if (fBackfaceDot > SSR_BACKFACE_THRESHOLD)
 					{
@@ -383,7 +388,7 @@ float4 RayMarch(float3 xViewOrigin,
 					float fFinalInvZ       = lerp(fInvZStart, fInvZEnd, fFinalT);
 					float fFinalRayZ       = 1.0 / fFinalInvZ;
 					float fDepthError      = abs(fFinalRayZ - fFinalSceneZ);
-					float fDepthConfidence = 1.0 - smoothstep(0.0, SSRConstants.u_fThickness * SSR_STEP_SIZE_MULTIPLIER, fDepthError);
+					float fDepthConfidence = 1.0 - smoothstep(0.0, g_xPassSet.SSRConstants.u_fThickness * SSR_STEP_SIZE_MULTIPLIER, fDepthError);
 
 					float fBackfaceConfidence = smoothstep(SSR_BACKFACE_SMOOTHSTEP_MIN, SSR_BACKFACE_SMOOTHSTEP_MAX, fBackfaceDot);
 					// Stretch penalty intentionally retired — fought Fresnel at grazing angles.
@@ -434,21 +439,21 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 	const float4 xZero4 = float4(0.0, 0.0, 0.0, 0.0);
 
 	// Debug 99: solid magenta — proves the pipeline ran at all.
-	if (SSRConstants.u_uDebugMode == 99u) return MakeRayMarchOut(float4(1.0, 0.0, 1.0, 1.0), xZero4);
+	if (g_xPassSet.SSRConstants.u_uDebugMode == 99u) return MakeRayMarchOut(float4(1.0, 0.0, 1.0, 1.0), xZero4);
 
-	float fDepth = g_xDepthTex.Sample(input.uv).r;
+	float fDepth = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 	if (fDepth >= 1.0) return MakeRayMarchOut(xZero4, xZero4); // sky
 
-	float4 xMaterial    = g_xMaterialTex.Sample(input.uv);
+	float4 xMaterial    = g_xPassSet.g_xMaterialTex.Sample(input.uv);
 	float  fRoughness   = xMaterial.r;
-	float3 xWorldNormal = g_xNormalsTex.Sample(input.uv).rgb;
+	float3 xWorldNormal = g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb;
 
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_ROUGHNESS)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_ROUGHNESS)
 	{
-		float fPassesThreshold = (fRoughness <= SSRConstants.u_fMaxRoughness) ? 1.0 : 0.0;
-		return MakeRayMarchOut(float4(fRoughness, fPassesThreshold, fRoughness / SSRConstants.u_fMaxRoughness, 1.0), xZero4);
+		float fPassesThreshold = (fRoughness <= g_xPassSet.SSRConstants.u_fMaxRoughness) ? 1.0 : 0.0;
+		return MakeRayMarchOut(float4(fRoughness, fPassesThreshold, fRoughness / g_xPassSet.SSRConstants.u_fMaxRoughness, 1.0), xZero4);
 	}
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_WORLD_NORMAL_Y)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_WORLD_NORMAL_Y)
 	{
 		float fNormalY = xWorldNormal.y * 0.5 + 0.5;
 		return MakeRayMarchOut(float4(fNormalY,
@@ -457,10 +462,10 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 									  1.0), xZero4);
 	}
 
-	if (fRoughness > SSRConstants.u_fMaxRoughness) return MakeRayMarchOut(xZero4, xZero4);
+	if (fRoughness > g_xPassSet.SSRConstants.u_fMaxRoughness) return MakeRayMarchOut(xZero4, xZero4);
 
 	float3 xViewPos          = GetViewPosFromDepth(input.uv, fDepth);
-	float3 xViewNormal       = normalize(mul((float3x3)FrameConstants.g_xViewMat, xWorldNormal));
+	float3 xViewNormal       = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xWorldNormal));
 	float3 xViewDir          = normalize(xViewPos);
 	float3 xMirrorReflectDir = reflect(xViewDir, xViewNormal);
 	float  fNdotV            = max(dot(xViewNormal, -xViewDir), 0.0);
@@ -471,7 +476,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 	uint uRequestedRays = 1u;
 	if (fRoughness > SSR_MULTIRAY_ROUGHNESS_THRESHOLD)
 	{
-		uRequestedRays = clamp(SSRConstants.u_uRayCount, 1u, SSR_MAX_RAYS_PER_PIXEL);
+		uRequestedRays = clamp(g_xPassSet.SSRConstants.u_uRayCount, 1u, SSR_MAX_RAYS_PER_PIXEL);
 	}
 
 	// Phase 6 — per-pixel step budget. Scale between u_uStepCountMin and
@@ -486,8 +491,8 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 	float fEdgeNearness  = 1.0 - smoothstep(0.0, SSR_ADAPTIVE_EDGE_BAND, fEdgeProximity);
 	float fHighStepFactor = max(fSmoothness, fEdgeNearness);
 
-	uint uStepMin    = max(SSRConstants.u_uStepCountMin, 1u);
-	uint uStepMax    = max(SSRConstants.u_uStepCount, uStepMin);
+	uint uStepMin    = max(g_xPassSet.SSRConstants.u_uStepCountMin, 1u);
+	uint uStepMax    = max(g_xPassSet.SSRConstants.u_uStepCount, uStepMin);
 	uint uStepBudget = uStepMin + (uint)((float)(uStepMax - uStepMin) * fHighStepFactor);
 
 	// Multi-ray accumulators. We average colour / confidence / hit-UV /
@@ -517,7 +522,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 		// gives a low-discrepancy 2D sequence across rays; the blue-noise
 		// offset rotates the sequence per pixel so neighbours don't all see
 		// the same N samples.
-		float2 xBlueNoise  = GetBlueNoise(xPixelCoord, SSRConstants.u_uFrameIndex);
+		float2 xBlueNoise  = GetBlueNoise(xPixelCoord, g_xPassSet.SSRConstants.u_uFrameIndex);
 		float2 xHammersley = Hammersley(k, max(uRequestedRays, 1u));
 		float2 xXi         = frac(xBlueNoise + xHammersley);
 
@@ -544,7 +549,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 
 		if (xKHitResult.w > 0.0)
 		{
-			xAccumColour  += g_xDiffuseTex.Sample(xKHitResult.xy).rgb;
+			xAccumColour  += g_xPassSet.g_xDiffuseTex.Sample(xKHitResult.xy).rgb;
 			fAccumConf    += xKHitResult.w;
 			xAccumHitUV   += xKHitResult.xy;
 			fAccumDist    += fKMarchDist;
@@ -559,23 +564,23 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 
 	// Per-ray-direction debug visualisations — all use the first ray's data
 	// so the visualisation is deterministic regardless of multi-ray count.
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_RAY_DIRECTIONS)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_RAY_DIRECTIONS)
 		return MakeRayMarchOut(float4(xFirstReflectDir * 0.5 + 0.5, 1.0), xZero4);
 
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_EDGE_FADE)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_EDGE_FADE)
 	{
 		float fEdgeFade = ComputeEdgeFade(input.uv, 0.1);
 		return MakeRayMarchOut(float4(fEdgeFade, fEdgeFade, fEdgeFade, 1.0), xZero4);
 	}
 
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_SCREEN_DIRECTIONS)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_SCREEN_DIRECTIONS)
 		return MakeRayMarchOut(float4(xFirstScreenDir * 0.5 + 0.5, 0.0, 1.0), xZero4);
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_REFLECTION_UVS)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_REFLECTION_UVS)
 		return MakeRayMarchOut(float4(xFirstHitResult.xy, 0.0, 1.0), xZero4);
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_CONFIDENCE)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_CONFIDENCE)
 		return MakeRayMarchOut(float4(xFirstHitResult.w, xFirstHitResult.w, xFirstHitResult.w, 1.0), xZero4);
 
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_DEPTH_COMPARISON)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_DEPTH_COMPARISON)
 	{
 		float3 xScreenStart = ViewToScreen(xViewPos);
 		float  fStartViewZ  = xViewPos.z;
@@ -587,7 +592,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 			float2 xSampleUV  = xScreenStart.xy + xFirstScreenDir * fT_dbg * 0.8;
 			if (xSampleUV.x < 0.0 || xSampleUV.x > 1.0 ||
 				xSampleUV.y < 0.0 || xSampleUV.y > 1.0) break;
-			float fSceneDepth = g_xHiZTex.Sample(xSampleUV).r;
+			float fSceneDepth = g_xPassSet.g_xHiZTex.Sample(xSampleUV).r;
 			if (fSceneDepth < 0.9999)
 			{
 				float fSceneViewZ = DepthToViewZ(xSampleUV, fSceneDepth);
@@ -602,16 +607,16 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 		return MakeRayMarchOut(float4(fR, fG, fB, 1.0), xZero4);
 	}
 
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_MARCH_DISTANCE)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_MARCH_DISTANCE)
 	{
 		float3 xScreenStart = ViewToScreen(xViewPos);
 		float2 xEndUV       = xScreenStart.xy + xFirstScreenDir * 0.8;
-		float  fEndDepth    = g_xHiZTex.Sample(saturate(xEndUV)).r;
+		float  fEndDepth    = g_xPassSet.g_xHiZTex.Sample(saturate(xEndUV)).r;
 		bool   bHitSky      = fEndDepth >= 0.9999;
 		return MakeRayMarchOut(float4(xEndUV.x, xEndUV.y, bHitSky ? 1.0 : 0.0, 1.0), xZero4);
 	}
 
-	if (SSRConstants.u_uDebugMode == SSR_DEBUG_RAY_COUNT)
+	if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_RAY_COUNT)
 	{
 		float fNorm = (float)uEffectiveRays / (float)max(SSR_MAX_RAYS_PER_PIXEL, 1u);
 		return MakeRayMarchOut(float4(fNorm, fNorm, fNorm, 1.0), xZero4);
@@ -636,23 +641,23 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 		float2 xAvgHitUV  = xAccumHitUV  * fInvHits;
 		float  fAvgDist   = fAccumDist   * fInvHits;
 
-		if (SSRConstants.u_uDebugMode == SSR_DEBUG_HIT_POSITIONS)
+		if (g_xPassSet.SSRConstants.u_uDebugMode == SSR_DEBUG_HIT_POSITIONS)
 		{
-			float3 xHitWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, xAvgHitUV);
+			float3 xHitWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, xAvgHitUV);
 			return MakeRayMarchOut(float4(xHitWorldPos / 100.0, 1.0), xZero4);
 		}
 
-		xAvgColour *= SSRConstants.u_fIntensity;
+		xAvgColour *= g_xPassSet.SSRConstants.u_fIntensity;
 
 		float fFinalConfidence = fAvgConf;
 
 		// Contact hardening — distance-weighted confidence falloff using
 		// the world-space travel from origin to averaged hit.
-		float3 xOriginWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, input.uv);
-		float3 xHitWorldPos    = GetWorldPosFromDepthTex(g_xDepthTex, xAvgHitUV);
+		float3 xOriginWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
+		float3 xHitWorldPos    = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, xAvgHitUV);
 		float  fWorldTravelDist = length(xHitWorldPos - xOriginWorldPos);
 
-		float fContactHardening = smoothstep(0.0, SSRConstants.u_fContactHardeningDist, fWorldTravelDist);
+		float fContactHardening = smoothstep(0.0, g_xPassSet.SSRConstants.u_fContactHardeningDist, fWorldTravelDist);
 		float fRoughnessContactScale = lerp(1.0, SSR_CONTACT_ROUGHNESS_SCALE_MAX, fRoughness);
 		fContactHardening = saturate(fContactHardening * fRoughnessContactScale);
 		float fContactConfidence = 1.0 - fContactHardening * SSR_CONTACT_CONFIDENCE_SCALE;
@@ -661,7 +666,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 		float fRoughnessConfidence = 1.0 - smoothstep(SSR_ROUGHNESS_CONF_START, SSR_ROUGHNESS_CONF_END, fRoughness);
 		fFinalConfidence *= fRoughnessConfidence;
 
-		float fMetallic      = g_xMaterialTex.Sample(input.uv).g;
+		float fMetallic      = g_xPassSet.g_xMaterialTex.Sample(input.uv).g;
 		float fMetallicBoost = lerp(1.0, SSR_METALLIC_BOOST, fMetallic); // currently 1.0 (energy conservation)
 		fFinalConfidence    *= fMetallicBoost;
 

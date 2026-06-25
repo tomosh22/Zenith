@@ -246,40 +246,16 @@ inline const char* GetMaterialTextureBindingName(u_int uSlot)
 	return ls_aszNames[uSlot];
 }
 
-// Bind all 9 material texture slots (instance-aware: resolves through the
-// parent chain, falling back to the pinned per-slot defaults).
-inline void BindMaterialTextures(
-	Flux_CommandBuffer& xCmdBuf,
-	Zenith_MaterialAsset* pxMaterial,
-	uint32_t uStartBinding = 0)
-{
-	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
-	{
-		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
-		xCmdBuf.BindSRV(&pxTexture->m_xSRV, uStartBinding + u);
-	}
-}
-
-// Bind the 5 core terrain material textures (base colour, normal, RM,
-// occlusion, emissive). Terrain's splat path does not consume the
-// height/detail slots — 4 materials x 9 slots would exhaust the binding
-// space for no visual gain (terrain has its own splat detail).
-inline void BindTerrainMaterialTextures(
-	Flux_CommandBuffer& xCmdBuf,
-	Zenith_MaterialAsset* pxMaterial,
-	uint32_t uStartBinding = 0)
-{
-	static const MaterialTextureSlot aeTerrainSlots[] =
-	{
-		MATERIAL_TEXTURE_BASE_COLOR,
-		MATERIAL_TEXTURE_NORMAL,
-		MATERIAL_TEXTURE_ROUGHNESS_METALLIC,
-		MATERIAL_TEXTURE_OCCLUSION,
-		MATERIAL_TEXTURE_EMISSIVE,
-	};
-	for (u_int u = 0; u < sizeof(aeTerrainSlots) / sizeof(aeTerrainSlots[0]); u++)
-	{
-		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(aeTerrainSlots[u]);
-		xCmdBuf.BindSRV(&pxTexture->m_xSRV, uStartBinding + u);
-	}
-}
+// Compile-time array initialiser of the 9 material-texture binding handles for
+// a given generated mesh-material program namespace, in MaterialTextureSlot
+// order (matches GetMaterialTextureBindingName). The per-mesh draw loops use:
+//   static constexpr Flux_BindingHandle s_aHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_X::Program);
+//   for (slot) xBinder.BindSRV(s_aHandles[slot], &srv);
+// (The old numeric-slot BindMaterialTextures/BindTerrainMaterialTextures
+// helpers were removed: they were unused and depended on the retired public
+// Flux_BindingSlot(u_int). Materials go fully bindless in a later phase, which
+// removes these loops entirely.)
+#define FLUX_MATERIAL_TEXTURE_HANDLES(NS) { \
+	NS::hg_xBaseColorTex, NS::hg_xNormalTex, NS::hg_xRoughnessMetallicTex, \
+	NS::hg_xOcclusionTex, NS::hg_xEmissiveTex, NS::hg_xHeightTex, \
+	NS::hg_xDetailAlbedoTex, NS::hg_xDetailNormalTex, NS::hg_xDetailMaskTex }

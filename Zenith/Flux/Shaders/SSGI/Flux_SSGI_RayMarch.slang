@@ -17,7 +17,7 @@
 // =====================================================================
 
 import Common.Fullscreen;
-import Common.Frame;
+#include "Common/Bindings.slang"
 import Common.PBR;
 
 // ----- SSGI tuning constants -----
@@ -30,7 +30,7 @@ static const float SSGI_MAX_SCREEN_DIST           = 0.6;
 static const float SSGI_SKY_DEPTH_THRESHOLD       = 0.9999;
 static const float SSGI_STEP_SIZE_MULTIPLIER      = 2.0;
 static const float SSGI_BINARY_SEARCH_TOLERANCE   = 0.001;
-// Iterations are tunable via SSGIConstants.u_uBinarySearchIterations (set
+// Iterations are tunable via g_xPassSet.SSGIConstants.u_uBinarySearchIterations (set
 // adaptively by the C++ side from base + resolution bumps).
 // Roughness-driven mip clamping — match SSR's cone-tracing approach.
 // Diffuse GI is broader than specular so we use a smaller scale.
@@ -76,13 +76,20 @@ struct SSGIConstantsLayout
 	uint  u_uBinarySearchIterations;
 	float _pad1;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<SSGIConstantsLayout> SSGIConstants;
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(3, 0)]] Sampler2D g_xNormalsTex;
-[[vk::binding(4, 0)]] Sampler2D g_xMaterialTex;
-[[vk::binding(5, 0)]] Sampler2D g_xHiZTex;
-[[vk::binding(6, 0)]] Sampler2D g_xDiffuseTex;
-[[vk::binding(7, 0)]] Sampler2D g_xBlueNoiseTex;
+// PASS frequency (set 3) — the shader's own CB + SRVs, grouped into one
+// ParameterBlock declared after the spine #include. Member names are preserved
+// exactly (the C++ binds key on them).
+struct PassParams
+{
+	ConstantBuffer<SSGIConstantsLayout> SSGIConstants;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalsTex;
+	Sampler2D g_xMaterialTex;
+	Sampler2D g_xHiZTex;
+	Sampler2D g_xDiffuseTex;
+	Sampler2D g_xBlueNoiseTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -90,7 +97,7 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 float2 GetBlueNoise(int2 xPixelCoord, uint uFrameIndex)
 {
 	float2 xNoiseUV = float2(xPixelCoord % int2(BLUE_NOISE_SIZE, BLUE_NOISE_SIZE)) / (float)BLUE_NOISE_SIZE;
-	float2 xNoise   = g_xBlueNoiseTex.Sample(xNoiseUV).rg;
+	float2 xNoise   = g_xPassSet.g_xBlueNoiseTex.Sample(xNoiseUV).rg;
 	xNoise          = frac(xNoise + (float)(uFrameIndex % 64u) * GOLDEN_RATIO);
 	return xNoise;
 }
@@ -151,12 +158,12 @@ float4 RayMarch(float3 xViewOrigin,
 	float3 xScreenStart = ViewToScreen(xViewStart);
 
 	// Sample a probe point along the ray to derive screen-space direction.
-	float fRaySampleDist = min(SSGIConstants.u_fMaxDistance * 0.5, xViewStart.z * 0.5);
+	float fRaySampleDist = min(g_xPassSet.SSGIConstants.u_fMaxDistance * 0.5, xViewStart.z * 0.5);
 	float3 xRaySampleView = xViewStart + xRayDir * fRaySampleDist;
 
 	// Clamp probe to stay in front of the near plane — unbounded reciprocal-z
 	// interpolation past the near plane breaks the perspective math.
-	float fNearPlane = FrameConstants.g_xCameraNearFar.x;
+	float fNearPlane = g_xViewSet.g_xView.g_xCameraNearFar.x;
 	if (xRaySampleView.z < fNearPlane)
 	{
 		if (abs(xRayDir.z) > PBR_DIRECTION_EPSILON)
@@ -209,20 +216,20 @@ float4 RayMarch(float3 xViewOrigin,
 
 	// Reciprocal-Z interpolation endpoints — gives perspective-correct depth
 	// at every fT along the screen-space line.
-	float fSafeStartZ      = max(xViewStart.z, FrameConstants.g_xCameraNearFar.x);
+	float fSafeStartZ      = max(xViewStart.z, g_xViewSet.g_xView.g_xCameraNearFar.x);
 	float fInvZStart       = 1.0 / fSafeStartZ;
-	float fEstimatedRayDist = SSGIConstants.u_fMaxDistance * fMaxScreenDist;
-	float fEstimatedEndZ   = max(FrameConstants.g_xCameraNearFar.x,
+	float fEstimatedRayDist = g_xPassSet.SSGIConstants.u_fMaxDistance * fMaxScreenDist;
+	float fEstimatedEndZ   = max(g_xViewSet.g_xView.g_xCameraNearFar.x,
 								  fSafeStartZ + xRayDir.z * fEstimatedRayDist);
 	float fInvZEnd         = 1.0 / fEstimatedEndZ;
 
 	// Texel size for HiZ stepping.
 	uint uW0, uH0, uMips0;
-	g_xHiZTex.GetDimensions(0, uW0, uH0, uMips0);
+	g_xPassSet.g_xHiZTex.GetDimensions(0, uW0, uH0, uMips0);
 	float2 xScreenSize = float2((float)uW0, (float)uH0);
 	float2 xTexelSize  = 1.0 / xScreenSize;
 
-	int   iCurrentMip   = (int)min(SSGIConstants.u_uStartMip, SSGIConstants.u_uHiZMipCount - 1u);
+	int   iCurrentMip   = (int)min(g_xPassSet.SSGIConstants.u_uStartMip, g_xPassSet.SSGIConstants.u_uHiZMipCount - 1u);
 	float fT            = 0.0;
 	float fPrevT        = 0.0;
 	float fPrevDepthDiff = 0.0;
@@ -230,7 +237,7 @@ float4 RayMarch(float3 xViewOrigin,
 
 	int iMinMip = clamp((int)floor(fRoughness * SSGI_ROUGHNESS_MIP_SCALE), 0, SSGI_MAX_ROUGHNESS_MIP);
 
-	for (uint uIter = 0u; uIter < SSGIConstants.u_uStepCount; uIter++)
+	for (uint uIter = 0u; uIter < g_xPassSet.SSGIConstants.u_uStepCount; uIter++)
 	{
 		float2 xSampleUV = xScreenStart.xy + xScreenDir * fT * fMaxScreenDist;
 
@@ -238,11 +245,11 @@ float4 RayMarch(float3 xViewOrigin,
 			xSampleUV.y < 0.0 || xSampleUV.y > 1.0) break;
 
 		uint uMW, uMH, uMipsM;
-		g_xHiZTex.GetDimensions(iCurrentMip, uMW, uMH, uMipsM);
+		g_xPassSet.g_xHiZTex.GetDimensions(iCurrentMip, uMW, uMH, uMipsM);
 		float2 xMipSize    = float2((float)uMW, (float)uMH);
 		float2 xHalfTexel  = 0.5 / xMipSize;
 		float2 xClampedUV  = clamp(xSampleUV, xHalfTexel, 1.0 - xHalfTexel);
-		float2 xHiZSample  = g_xHiZTex.SampleLevel(xClampedUV, (float)iCurrentMip).rg;
+		float2 xHiZSample  = g_xPassSet.g_xHiZTex.SampleLevel(xClampedUV, (float)iCurrentMip).rg;
 		float  fMinDepth   = xHiZSample.r;
 
 		// Sky pixels: fast-forward by mip-scaled step.
@@ -263,7 +270,7 @@ float4 RayMarch(float3 xViewOrigin,
 		float fRayViewZ  = 1.0 / fInvZ;
 		float fDepthDiff = fRayViewZ - fMinViewZ;
 
-		float fMipThickness = SSGIConstants.u_fThickness * exp2((float)iCurrentMip);
+		float fMipThickness = g_xPassSet.SSGIConstants.u_fThickness * exp2((float)iCurrentMip);
 
 		bool bBehindSurface  = fDepthDiff > 0.0;
 		bool bWithinThickness = fDepthDiff < fMipThickness * SSGI_STEP_SIZE_MULTIPLIER;
@@ -279,14 +286,14 @@ float4 RayMarch(float3 xViewOrigin,
 					float fSearchStart = fPrevT;
 					float fSearchEnd   = fT;
 
-					int iBinarySearchIterations = (int)SSGIConstants.u_uBinarySearchIterations;
+					int iBinarySearchIterations = (int)g_xPassSet.SSGIConstants.u_uBinarySearchIterations;
 					for (int j = 0; j < iBinarySearchIterations; j++)
 					{
 						if (abs(fSearchEnd - fSearchStart) < SSGI_BINARY_SEARCH_TOLERANCE) break;
 
 						float fMidT          = (fSearchStart + fSearchEnd) * 0.5;
 						float2 xMidUV        = xScreenStart.xy + xScreenDir * fMidT * fMaxScreenDist;
-						float fMidSceneDepth = g_xHiZTex.SampleLevel(xMidUV, (float)iMinMip).r;
+						float fMidSceneDepth = g_xPassSet.g_xHiZTex.SampleLevel(xMidUV, (float)iMinMip).r;
 						float fMidSceneZ     = DepthToViewZ(xMidUV, fMidSceneDepth);
 
 						float fMidInvZ = lerp(fInvZStart, fInvZEnd, fMidT);
@@ -299,12 +306,12 @@ float4 RayMarch(float3 xViewOrigin,
 
 					float fFinalT          = (fSearchStart + fSearchEnd) * 0.5;
 					float2 xFinalUV        = xScreenStart.xy + xScreenDir * fFinalT * fMaxScreenDist;
-					float fFinalSceneDepth = g_xHiZTex.SampleLevel(xFinalUV, (float)iMinMip).r;
+					float fFinalSceneDepth = g_xPassSet.g_xHiZTex.SampleLevel(xFinalUV, (float)iMinMip).r;
 					float fFinalSceneZ     = DepthToViewZ(xFinalUV, fFinalSceneDepth);
 
 					// Backface hits aren't visible from the camera — skip.
-					float3 xHitWorldNormal = g_xNormalsTex.Sample(xFinalUV).rgb;
-					float3 xHitViewNormal  = normalize(mul((float3x3)FrameConstants.g_xViewMat, xHitWorldNormal));
+					float3 xHitWorldNormal = g_xPassSet.g_xNormalsTex.Sample(xFinalUV).rgb;
+					float3 xHitViewNormal  = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xHitWorldNormal));
 					float  fBackfaceDot    = dot(xHitViewNormal, xRayDir);
 					if (fBackfaceDot > SSGI_BACKFACE_THRESHOLD)
 					{
@@ -324,7 +331,7 @@ float4 RayMarch(float3 xViewOrigin,
 					float fFinalInvZ       = lerp(fInvZStart, fInvZEnd, fFinalT);
 					float fFinalRayZ       = 1.0 / fFinalInvZ;
 					float fDepthError      = abs(fFinalRayZ - fFinalSceneZ);
-					float fDepthConfidence = 1.0 - smoothstep(0.0, SSGIConstants.u_fThickness * SSGI_STEP_SIZE_MULTIPLIER, fDepthError);
+					float fDepthConfidence = 1.0 - smoothstep(0.0, g_xPassSet.SSGIConstants.u_fThickness * SSGI_STEP_SIZE_MULTIPLIER, fDepthError);
 
 					float fBackfaceConfidence = smoothstep(SSGI_BACKFACE_SMOOTHSTEP_MIN, SSGI_BACKFACE_SMOOTHSTEP_MAX, fBackfaceDot);
 
@@ -376,27 +383,27 @@ float4 RayMarch(float3 xViewOrigin,
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 {
-	float fDepth = g_xDepthTex.Sample(input.uv).r;
+	float fDepth = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 	if (fDepth >= 1.0) return float4(0.0, 0.0, 0.0, 0.0); // sky → no GI
 
-	float3 xWorldNormal = g_xNormalsTex.Sample(input.uv).rgb;
-	float4 xMaterial    = g_xMaterialTex.Sample(input.uv);
+	float3 xWorldNormal = g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb;
+	float4 xMaterial    = g_xPassSet.g_xMaterialTex.Sample(input.uv);
 	float  fRoughness   = xMaterial.r;
 
 	// Skip very-smooth surfaces — SSR handles them better.
-	if (fRoughness < SSGIConstants.u_fRoughnessThreshold) return float4(0.0, 0.0, 0.0, 0.0);
+	if (fRoughness < g_xPassSet.SSGIConstants.u_fRoughnessThreshold) return float4(0.0, 0.0, 0.0, 0.0);
 	// Skip very-rough surfaces — IBL diffuse dominates so SSGI noise isn't
 	// worth its cost at this end of the range.
 	if (fRoughness > SSGI_ROUGH_GATE) return float4(0.0, 0.0, 0.0, 0.0);
 
 	float3 xViewPos    = GetViewPosFromDepth(input.uv, fDepth);
-	float3 xViewNormal = normalize(mul((float3x3)FrameConstants.g_xViewMat, xWorldNormal));
+	float3 xViewNormal = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xWorldNormal));
 
 	int2 xPixelCoord = (int2)fragCoord.xy;
 
-	if (SSGIConstants.u_uDebugMode == SSGI_DEBUG_RAY_DIRECTIONS)
+	if (g_xPassSet.SSGIConstants.u_uDebugMode == SSGI_DEBUG_RAY_DIRECTIONS)
 	{
-		float2 xNoise     = GetBlueNoise(xPixelCoord, SSGIConstants.u_uFrameIndex);
+		float2 xNoise     = GetBlueNoise(xPixelCoord, g_xPassSet.SSGIConstants.u_uFrameIndex);
 		float3 xSampleDir = SampleHemisphereCosine(xNoise, xViewNormal);
 		return float4(xSampleDir * 0.5 + 0.5, 1.0);
 	}
@@ -406,11 +413,11 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 	float3 xAccumulatedColour    = float3(0.0, 0.0, 0.0);
 	float  fAccumulatedConfidence = 0.0;
 	uint   uValidHits             = 0u;
-	uint   uRayCount              = max(SSGIConstants.u_uRaysPerPixel, 1u);
+	uint   uRayCount              = max(g_xPassSet.SSGIConstants.u_uRaysPerPixel, 1u);
 
 	for (uint uRay = 0u; uRay < uRayCount; uRay++)
 	{
-		float2 xNoise     = GetBlueNoise(xPixelCoord, SSGIConstants.u_uFrameIndex);
+		float2 xNoise     = GetBlueNoise(xPixelCoord, g_xPassSet.SSGIConstants.u_uFrameIndex);
 		xNoise            = frac(xNoise + (float)uRay * GOLDEN_RATIO);
 		float3 xSampleDir = SampleHemisphereCosine(xNoise, xViewNormal);
 
@@ -420,7 +427,7 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 
 		if (xHitResult.w > 0.0)
 		{
-			float3 xIndirectColour = g_xDiffuseTex.Sample(xHitResult.xy).rgb;
+			float3 xIndirectColour = g_xPassSet.g_xDiffuseTex.Sample(xHitResult.xy).rgb;
 			xAccumulatedColour     += xIndirectColour * xHitResult.w;
 			fAccumulatedConfidence += xHitResult.w;
 			uValidHits++;
@@ -432,29 +439,29 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 		}
 	}
 
-	if (SSGIConstants.u_uDebugMode == SSGI_DEBUG_CONFIDENCE)
+	if (g_xPassSet.SSGIConstants.u_uDebugMode == SSGI_DEBUG_CONFIDENCE)
 	{
 		float fAvgConfidence = (uValidHits > 0u) ? (fAccumulatedConfidence / (float)uValidHits) : 0.0;
 		return float4(fAvgConfidence, fAvgConfidence, fAvgConfidence, 1.0);
 	}
 
-	if (SSGIConstants.u_uDebugMode == SSGI_DEBUG_HIT_POSITIONS && uValidHits > 0u)
+	if (g_xPassSet.SSGIConstants.u_uDebugMode == SSGI_DEBUG_HIT_POSITIONS && uValidHits > 0u)
 	{
-		float2 xNoise     = GetBlueNoise(xPixelCoord, SSGIConstants.u_uFrameIndex);
+		float2 xNoise     = GetBlueNoise(xPixelCoord, g_xPassSet.SSGIConstants.u_uFrameIndex);
 		float3 xSampleDir = SampleHemisphereCosine(xNoise, xViewNormal);
 		float fMarchDistance = 0.0;
 		float2 xScreenDir    = float2(0.0, 0.0);
 		float4 xHitResult    = RayMarch(xViewPos, xSampleDir, xViewNormal, fRoughness, fMarchDistance, xScreenDir);
 		if (xHitResult.w > 0.0)
 		{
-			float3 xHitWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, xHitResult.xy);
+			float3 xHitWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, xHitResult.xy);
 			return float4(xHitWorldPos / 100.0, 1.0);
 		}
 	}
 
 	if (uValidHits > 0u)
 	{
-		float3 xFinalColour     = (xAccumulatedColour / fAccumulatedConfidence) * SSGIConstants.u_fIntensity;
+		float3 xFinalColour     = (xAccumulatedColour / fAccumulatedConfidence) * g_xPassSet.SSGIConstants.u_fIntensity;
 		// Confidence is the avg of valid hits — not diluted by ray count —
 		// so blending downstream is consistent across u_uRaysPerPixel.
 		float fFinalConfidence = fAccumulatedConfidence / (float)uValidHits;

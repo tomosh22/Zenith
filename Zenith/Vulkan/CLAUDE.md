@@ -180,8 +180,15 @@ xSpec.m_eDepthStencilFormat = TEXTURE_FORMAT_D32_SFLOAT;
 xSpec.m_eDepthStencilLoadAction = LOAD_ACTION_CLEAR;
 xSpec.m_eDepthStencilStoreAction = STORE_ACTION_STORE;
 xSpec.m_xPipelineLayout.m_uNumBindingGroups = 1;
-xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_BUFFER;
-xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[1].m_eType = BINDING_TYPE_TEXTURE;
+// Kind-aware binding entries (m_bPresent marks a declared slot; m_eKind drives
+// the descriptor type). Most layouts are reflection-derived via FromReflection;
+// manual specs set the kind + present flag directly.
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[0].m_eKind = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[0].m_uDescriptorCount = 1;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[0].m_bPresent = true;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[1].m_eKind = FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[1].m_uDescriptorCount = 1;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[1].m_bPresent = true;
 
 Flux_PipelineBuilder::FromSpecification(s_xPipeline, xSpec);
 ```

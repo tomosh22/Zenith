@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "Flux/Particles/Flux_Particles_Shaders.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Particles.h" // typed binding handles
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 
@@ -223,8 +225,10 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAlpha, 1);
 
-			pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-			pxCommandList->BindSRV(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
+			Flux_ShaderBinder xBinder(*pxCommandList);
+			namespace PT = Flux_Generated_Particles::Particles;
+			xBinder.BindCBV(PT::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+			xBinder.BindSRV(PT::hg_xTexture, &xParticles.m_xParticleTexture.GetDirect()->m_xSRV);
 
 			pxCommandList->DrawIndexed(6, xParticles.m_uAlphaInstanceCount);
 		}
@@ -238,8 +242,10 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAdditive, 1);
 
-			pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-			pxCommandList->BindSRV(&xParticles.m_xParticleTexture.GetDirect()->m_xSRV, 1);
+			Flux_ShaderBinder xBinder(*pxCommandList);
+			namespace PT = Flux_Generated_Particles::Particles;
+			xBinder.BindCBV(PT::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+			xBinder.BindSRV(PT::hg_xTexture, &xParticles.m_xParticleTexture.GetDirect()->m_xSRV);
 
 			pxCommandList->DrawIndexed(6, xParticles.m_uAdditiveInstanceCount);
 		}

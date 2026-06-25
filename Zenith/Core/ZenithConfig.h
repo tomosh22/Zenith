@@ -102,7 +102,8 @@ static constexpr uint32_t FLUX_MAX_MIPS = 12;     // Maximum mip levels (support
 // next to MakeBarrierKey enforces that pin at compile time.
 static constexpr uint32_t FLUX_MAX_LAYERS = 256;
 static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
-static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 5;
+// Binding-model spine: set 0 GLOBAL, 1 VIEW, 2 BINDLESS, 3 PASS, 4 DRAW, 5 reserved (future TLAS).
+static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 6;
 
 // Static mesh vertex stride. The engine does not use this constant directly;
 // the authoritative layout (pos12 + uv8 + normal12 + tangent12 + bitangent12 +

@@ -80,6 +80,27 @@ namespace
 		}
 	}
 
+	// The FLUX_RESOURCE_KIND_* enum identifier (for emitting constexpr handles).
+	const char* ResourceKindEnumToken(FluxResourceKind eKind)
+	{
+		switch (eKind)
+		{
+		case FLUX_RESOURCE_KIND_CONSTANT_BUFFER:          return "FLUX_RESOURCE_KIND_CONSTANT_BUFFER";
+		case FLUX_RESOURCE_KIND_STRUCTURED_BUFFER:        return "FLUX_RESOURCE_KIND_STRUCTURED_BUFFER";
+		case FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER:     return "FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER";
+		case FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER:      return "FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER";
+		case FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER:   return "FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER";
+		case FLUX_RESOURCE_KIND_TEXTURE:                  return "FLUX_RESOURCE_KIND_TEXTURE";
+		case FLUX_RESOURCE_KIND_RW_TEXTURE:               return "FLUX_RESOURCE_KIND_RW_TEXTURE";
+		case FLUX_RESOURCE_KIND_SAMPLER:                  return "FLUX_RESOURCE_KIND_SAMPLER";
+		case FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER: return "FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER";
+		case FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE:   return "FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE";
+		case FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY:  return "FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY";
+		case FLUX_RESOURCE_KIND_PARAMETER_BLOCK:          return "FLUX_RESOURCE_KIND_PARAMETER_BLOCK";
+		default: return "FLUX_RESOURCE_KIND_UNKNOWN";
+		}
+	}
+
 	// Engine Hungarian prefix for a generated member, given its Slang type.
 	// Scalar prefixes (`f`, `u`, `i`, `b`) follow the C++ conventions; vec /
 	// mat / struct types use `x`. Caller still prepends `m_` (member) and
@@ -296,18 +317,21 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 			const Flux_ReflectedBinding& xBinding = axBindings.Get(b);
 			if (xBinding.m_strName.empty()) continue;
 			std::string strBindIdent = SanitizeIdentifier(xBinding.m_strName);
-			char szLine[512];
+			char szLine[768];
 			snprintf(szLine, sizeof(szLine),
 					 "\t\tinline constexpr const char* k%s_Name = \"%s\";\n"
 					 "\t\tinline constexpr unsigned int k%s_Set = %u;\n"
 					 "\t\tinline constexpr unsigned int k%s_Binding = %u;\n"
 					 "\t\tinline constexpr unsigned int k%s_DescriptorCount = %u;\n"
-					 "\t\t// kind: %s\n",
+					 "\t\t// kind: %s\n"
+					 "\t\tinline constexpr Flux_BindingHandle h%s{ %uu, %uu, %s, %uu };\n",
 					 strBindIdent.c_str(), xBinding.m_strName.c_str(),
 					 strBindIdent.c_str(), xBinding.m_uSet,
 					 strBindIdent.c_str(), xBinding.m_uBinding,
 					 strBindIdent.c_str(), xBinding.m_uDescriptorCount,
-					 ResourceKindName(xBinding.m_eResourceKind));
+					 ResourceKindName(xBinding.m_eResourceKind),
+					 strBindIdent.c_str(), xBinding.m_uSet, xBinding.m_uBinding,
+					 ResourceKindEnumToken(xBinding.m_eResourceKind), xBinding.m_uDescriptorCount);
 			strContent += szLine;
 
 			// CB / PB struct emission. Each reflected scalar/vector/matrix

@@ -13,8 +13,10 @@
 // the SCATTER_DIRECTION debug overlay), and Common.Atmosphere.
 // =====================================================================
 
+// Spine via preprocessor #include (declares GLOBAL/VIEW/BINDLESS at sets 0/1/2);
+// replaces `import Common.Frame;`. The other imports are pure-function modules.
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 import Common.Volumetric;
 import Common.Atmosphere;
 
@@ -33,11 +35,16 @@ struct AtmosphereConstantsLayout
 	uint   g_uLightSamples;
 	float2 g_xPad;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<AtmosphereConstantsLayout> AtmosphereConstants;
 
-// Precomputed low-res sky-view LUT (Common.Atmosphere). The full raymarch ran
-// once this frame into it; the fullscreen sky pass just samples it per pixel.
-[[vk::binding(2, 0)]] Sampler2D g_xSkyViewLUT;
+// PASS frequency. Declared AFTER the spine #include, so it lands at set 3.
+// g_xSkyViewLUT = precomputed low-res sky-view LUT (Common.Atmosphere); the full
+// raymarch ran once this frame into it, the fullscreen sky pass just samples it.
+struct PassParams
+{
+	ConstantBuffer<AtmosphereConstantsLayout> AtmosphereConstants;
+	Sampler2D g_xSkyViewLUT;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -73,44 +80,44 @@ struct GBufferOut
 GBufferOut fsMain(FullscreenVsOut input)
 {
 	float3 xRayDir = RayDir(input.uv);
-	float3 xSunDir = normalize(-FrameConstants.g_xSunDir_Pad.xyz);
+	float3 xSunDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
 
 	// Camera lifted to a few metres above ground so the atmosphere solver
 	// always sees a non-degenerate height. 100 m is consistent with the
 	// IBL reference height (Common.PBR.IBL_REFERENCE_HEIGHT_METERS) but
 	// kept literal here to match the legacy GLSL shader exactly.
-	float3 xCamPos = float3(0.0, AtmosphereConstants.g_fPlanetRadius + 100.0, 0.0);
+	float3 xCamPos = float3(0.0, g_xPassSet.AtmosphereConstants.g_fPlanetRadius + 100.0, 0.0);
 
-	float3 xRayleighCoeff = AtmosphereConstants.g_xRayleighScatter.rgb * AtmosphereConstants.g_fRayleighScale;
-	float  fMieCoeff      = AtmosphereConstants.g_xMieScatter.r        * AtmosphereConstants.g_fMieScale;
-	float2 xScaleHeights  = float2(AtmosphereConstants.g_xRayleighScatter.w,
-									AtmosphereConstants.g_xMieScatter.w);
+	float3 xRayleighCoeff = g_xPassSet.AtmosphereConstants.g_xRayleighScatter.rgb * g_xPassSet.AtmosphereConstants.g_fRayleighScale;
+	float  fMieCoeff      = g_xPassSet.AtmosphereConstants.g_xMieScatter.r        * g_xPassSet.AtmosphereConstants.g_fMieScale;
+	float2 xScaleHeights  = float2(g_xPassSet.AtmosphereConstants.g_xRayleighScatter.w,
+									g_xPassSet.AtmosphereConstants.g_xMieScatter.w);
 
 	// Fast path: sample the low-res sky-view LUT (the full raymarch ran once this
 	// frame into g_xSkyViewLUT, itself sampling the transmittance LUT). Per-pixel
 	// cost is now a single texture fetch. Debug modes below still run the full
 	// solver for their visualisations. xCamPos/coeffs above feed those paths.
-	float4 xScatterResult = g_xSkyViewLUT.Sample(SkyViewDirToUv(xRayDir));
+	float4 xScatterResult = g_xPassSet.g_xSkyViewLUT.Sample(SkyViewDirToUv(xRayDir));
 
 	float3 xSkyColor = xScatterResult.rgb;
 	// Sun disk attenuated by view transmittance — disappears behind the
 	// atmosphere on the horizon as expected.
-	float3 xSunDisk = RenderSunDisk(xRayDir, xSunDir, AtmosphereConstants.g_fSunIntensity * 5.0);
+	float3 xSunDisk = RenderSunDisk(xRayDir, xSunDir, g_xPassSet.AtmosphereConstants.g_fSunIntensity * 5.0);
 	xSkyColor += xSunDisk * xScatterResult.a;
 
-	if (AtmosphereConstants.g_uDebugMode != SKYBOX_DEBUG_NONE)
+	if (g_xPassSet.AtmosphereConstants.g_uDebugMode != SKYBOX_DEBUG_NONE)
 	{
-		switch (AtmosphereConstants.g_uDebugMode)
+		switch (g_xPassSet.AtmosphereConstants.g_uDebugMode)
 		{
 			case SKYBOX_DEBUG_RAYLEIGH_ONLY:
 			{
 				float4 r = ComputeAtmosphereScattering(
 					xCamPos, xRayDir, xSunDir, 1e10,
 					xRayleighCoeff, 0.0,
-					xScaleHeights, AtmosphereConstants.g_fMieG,
-					AtmosphereConstants.g_fPlanetRadius, AtmosphereConstants.g_fAtmosphereRadius,
-					AtmosphereConstants.g_fSunIntensity,
-					AtmosphereConstants.g_uSkySamples, AtmosphereConstants.g_uLightSamples);
+					xScaleHeights, g_xPassSet.AtmosphereConstants.g_fMieG,
+					g_xPassSet.AtmosphereConstants.g_fPlanetRadius, g_xPassSet.AtmosphereConstants.g_fAtmosphereRadius,
+					g_xPassSet.AtmosphereConstants.g_fSunIntensity,
+					g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.AtmosphereConstants.g_uLightSamples);
 				xSkyColor = r.rgb;
 				break;
 			}
@@ -119,10 +126,10 @@ GBufferOut fsMain(FullscreenVsOut input)
 				float4 m = ComputeAtmosphereScattering(
 					xCamPos, xRayDir, xSunDir, 1e10,
 					float3(0.0, 0.0, 0.0), fMieCoeff,
-					xScaleHeights, AtmosphereConstants.g_fMieG,
-					AtmosphereConstants.g_fPlanetRadius, AtmosphereConstants.g_fAtmosphereRadius,
-					AtmosphereConstants.g_fSunIntensity,
-					AtmosphereConstants.g_uSkySamples, AtmosphereConstants.g_uLightSamples);
+					xScaleHeights, g_xPassSet.AtmosphereConstants.g_fMieG,
+					g_xPassSet.AtmosphereConstants.g_fPlanetRadius, g_xPassSet.AtmosphereConstants.g_fAtmosphereRadius,
+					g_xPassSet.AtmosphereConstants.g_fSunIntensity,
+					g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.AtmosphereConstants.g_uLightSamples);
 				xSkyColor = m.rgb;
 				break;
 			}
@@ -150,7 +157,7 @@ GBufferOut fsMain(FullscreenVsOut input)
 			}
 			case SKYBOX_DEBUG_RAY_STEPS:
 			{
-				float fNormSteps = (float)AtmosphereConstants.g_uSkySamples / 64.0;
+				float fNormSteps = (float)g_xPassSet.AtmosphereConstants.g_uSkySamples / 64.0;
 				xSkyColor = DebugHeatmap(fNormSteps);
 				break;
 			}
@@ -158,7 +165,7 @@ GBufferOut fsMain(FullscreenVsOut input)
 			{
 				float fCosTheta      = dot(xRayDir, xSunDir);
 				float fRayleighPhase = RayleighPhase(fCosTheta);                       // Common.Volumetric
-				float fMiePhase      = MiePhase(fCosTheta, AtmosphereConstants.g_fMieG); // Common.Atmosphere
+				float fMiePhase      = MiePhase(fCosTheta, g_xPassSet.AtmosphereConstants.g_fMieG); // Common.Atmosphere
 				xSkyColor = float3(fRayleighPhase * 2.0, fMiePhase * 0.5, 0.0);
 				break;
 			}

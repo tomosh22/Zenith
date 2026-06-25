@@ -6,14 +6,16 @@
 // materials (foliage, fences, grates) cast cut-out shadows. Vertex shader
 // transforms by the per-cascade sun view×proj; fragment runs the SHARED
 // masked cutout (SampleAlbedoWithCutout, identical to the G-buffer path),
-// guarded on GetAlphaCutoff() > 0 so opaque casters stay depth-only.
+// guarded on GetAlphaCutoff(dc) > 0 so opaque casters stay depth-only.
 //
-// Imports Common.DrawConstants for the model matrix + cutoff/UV params,
-// and Common.Material/Common.MaterialSurface for the cutout helper. The
-// cascade's view×proj is a separate CB at set=1 binding=1; the base-colour
-// texture is at set=1 binding=2.
+// #includes the spine (Common/Bindings.slang) purely to reserve the
+// persistent sets 0/1/2 so this shader's own DRAW ParameterBlock lands at
+// set 3 like every other mesh shader (it does not read any spine resource —
+// the cascade view×proj is its own ShadowMatrix CB). Common.DrawConstants /
+// Common.Material / Common.MaterialSurface are pure helper modules.
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.DrawConstants;
 import Common.Material;
 import Common.MaterialSurface;
@@ -36,15 +38,23 @@ struct VsOut
 };
 
 struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
-[[vk::binding(1, 1)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix;
-[[vk::binding(2, 1)]] Sampler2D g_xBaseColorTex;
+
+// DRAW frequency (per-cascade sun view×proj + per-draw constants + the base-
+// colour texture for the cutout). Lands at set 3 (after the persistent spine).
+struct DrawParams
+{
+	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
+	ConstantBuffer<DrawConstantsLayout> DrawConstants;
+	Sampler2D g_xBaseColorTex;
+};
+ParameterBlock<DrawParams> g_xDrawSet;
 
 [shader("vertex")]
 VsOut vsMain(VsIn input)
 {
 	VsOut o;
-	float3 xWorldPos = mul(DrawConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
-	o.position    = mul(ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
+	o.position    = mul(g_xDrawSet.ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;
@@ -53,11 +63,12 @@ VsOut vsMain(VsIn input)
 [shader("fragment")]
 void fsMain(VsOut input)
 {
+	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
 	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
 	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
-	if (GetAlphaCutoff() > 0.0)
+	if (GetAlphaCutoff(dc) > 0.0)
 	{
-		SampleAlbedoWithCutout(g_xBaseColorTex,
-			TransformUV(input.uv, GetUVTiling(), GetUVOffset()), input.vertexColor);
+		SampleAlbedoWithCutout(g_xDrawSet.g_xBaseColorTex,
+			TransformUV(input.uv, GetUVTiling(dc), GetUVOffset(dc)), input.vertexColor, dc);
 	}
 }

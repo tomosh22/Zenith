@@ -13,7 +13,7 @@
 // FOG_DENSITY_SKIP_THRESHOLD).
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Volumetric;
 
 struct LightConstantsLayout
@@ -33,22 +33,29 @@ struct LightConstantsLayout
 	float  u_fAmbientIrradianceRatio;
 	float  _pad0;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<LightConstantsLayout> LightConstants;
-[[vk::binding(2, 0)]] Sampler3D u_xDensityGrid;
-[[vk::binding(3, 0)]] RWTexture3D<float4> u_xLightingGrid;
-[[vk::binding(4, 0)]] RWTexture3D<float4> u_xScatteringGrid;
-
-// Cascaded shadow maps (matches deferred shading binding pattern).
-[[vk::binding(5, 0)]] Sampler2D u_xCSM0;
-[[vk::binding(6, 0)]] Sampler2D u_xCSM1;
-[[vk::binding(7, 0)]] Sampler2D u_xCSM2;
-[[vk::binding(8, 0)]] Sampler2D u_xCSM3;
 
 struct ShadowMatrixLayout { float4x4 u_xShadowMat; };
-[[vk::binding( 9, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
-[[vk::binding(10, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
-[[vk::binding(11, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
-[[vk::binding(12, 0)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
+
+// PASS frequency — declared AFTER the spine #include so it lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<LightConstantsLayout> LightConstants;
+	Sampler3D u_xDensityGrid;
+	RWTexture3D<float4> u_xLightingGrid;
+	RWTexture3D<float4> u_xScatteringGrid;
+
+	// Cascaded shadow maps (matches deferred shading binding pattern).
+	Sampler2D u_xCSM0;
+	Sampler2D u_xCSM1;
+	Sampler2D u_xCSM2;
+	Sampler2D u_xCSM3;
+
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 static const uint DEBUG_FROXEL_SCATTERING     = 6;
 static const uint DEBUG_FROXEL_EXTINCTION     = 7;
@@ -64,10 +71,10 @@ static const int VOL_SHADOW_SAMPLES = 4;
 float SampleVolumetricShadow(float3 worldPos)
 {
 	float4x4 axShadowMats[4] = {
-		ShadowMatrix0.u_xShadowMat,
-		ShadowMatrix1.u_xShadowMat,
-		ShadowMatrix2.u_xShadowMat,
-		ShadowMatrix3.u_xShadowMat,
+		g_xPassSet.ShadowMatrix0.u_xShadowMat,
+		g_xPassSet.ShadowMatrix1.u_xShadowMat,
+		g_xPassSet.ShadowMatrix2.u_xShadowMat,
+		g_xPassSet.ShadowMatrix3.u_xShadowMat,
 	};
 
 	// Fixed 4-tap rotated cone offsets — deterministic, no temporal noise.
@@ -88,21 +95,21 @@ float SampleVolumetricShadow(float3 worldPos)
 			xSamplePos.y < 0.0 || xSamplePos.y > 1.0 ||
 			fCurrentDepth < 0.0 || fCurrentDepth > 1.0) continue;
 
-		float fBiasedDepth = fCurrentDepth - LightConstants.u_fVolShadowBias;
+		float fBiasedDepth = fCurrentDepth - g_xPassSet.LightConstants.u_fVolShadowBias;
 		float fShadow      = 0.0;
 
 		for (int i = 0; i < VOL_SHADOW_SAMPLES; i++)
 		{
-			float2 xSampleUV = xSamplePos + axOffsets[i] * LightConstants.u_fVolShadowConeRadius;
+			float2 xSampleUV = xSamplePos + axOffsets[i] * g_xPassSet.LightConstants.u_fVolShadowConeRadius;
 			float  fShadowDepth;
 			// Compute shaders have no implicit derivatives — using Sample()
 			// would force Slang to declare ComputeDerivativeGroupQuadsKHR.
 			// Explicit LOD 0 is what we want here anyway (CSMs are
 			// non-mipped depth textures).
-			if      (iCascade == 0) fShadowDepth = u_xCSM0.SampleLevel(xSampleUV, 0).r;
-			else if (iCascade == 1) fShadowDepth = u_xCSM1.SampleLevel(xSampleUV, 0).r;
-			else if (iCascade == 2) fShadowDepth = u_xCSM2.SampleLevel(xSampleUV, 0).r;
-			else                    fShadowDepth = u_xCSM3.SampleLevel(xSampleUV, 0).r;
+			if      (iCascade == 0) fShadowDepth = g_xPassSet.u_xCSM0.SampleLevel(xSampleUV, 0).r;
+			else if (iCascade == 1) fShadowDepth = g_xPassSet.u_xCSM1.SampleLevel(xSampleUV, 0).r;
+			else if (iCascade == 2) fShadowDepth = g_xPassSet.u_xCSM2.SampleLevel(xSampleUV, 0).r;
+			else                    fShadowDepth = g_xPassSet.u_xCSM3.SampleLevel(xSampleUV, 0).r;
 			fShadow += (fBiasedDepth <= fShadowDepth) ? 1.0 : 0.0;
 		}
 		return fShadow / (float)VOL_SHADOW_SAMPLES;
@@ -115,44 +122,44 @@ float SampleVolumetricShadow(float3 worldPos)
 void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
 	int3 froxelCoord = (int3)dispatchId;
-	if (froxelCoord.x >= (int)LightConstants.u_xGridDimensions.x ||
-		froxelCoord.y >= (int)LightConstants.u_xGridDimensions.y ||
-		froxelCoord.z >= (int)LightConstants.u_xGridDimensions.z) return;
+	if (froxelCoord.x >= (int)g_xPassSet.LightConstants.u_xGridDimensions.x ||
+		froxelCoord.y >= (int)g_xPassSet.LightConstants.u_xGridDimensions.y ||
+		froxelCoord.z >= (int)g_xPassSet.LightConstants.u_xGridDimensions.z) return;
 
-	float4 densityData     = u_xDensityGrid.Load(int4(froxelCoord, 0));
+	float4 densityData     = g_xPassSet.u_xDensityGrid.Load(int4(froxelCoord, 0));
 	float  density         = densityData.r;
 	float  scatteringCoeff = densityData.g;
 	float  absorptionCoeff = densityData.b;
 
 	if (density < FOG_DENSITY_SKIP_THRESHOLD)
 	{
-		u_xLightingGrid[froxelCoord]   = float4(0.0, 0.0, 0.0, 0.0);
-		u_xScatteringGrid[froxelCoord] = float4(0.0, 0.0, 0.0, 0.0);
+		g_xPassSet.u_xLightingGrid[froxelCoord]   = float4(0.0, 0.0, 0.0, 0.0);
+		g_xPassSet.u_xScatteringGrid[froxelCoord] = float4(0.0, 0.0, 0.0, 0.0);
 		return;
 	}
 
-	int3 gridSize = (int3)LightConstants.u_xGridDimensions.xyz;
-	float3 worldPos = FroxelToWorld(froxelCoord, gridSize, FrameConstants.g_xInvViewProjMat,
-									 FrameConstants.g_xCameraNearFar.x,
-									 FrameConstants.g_xCameraNearFar.y);
+	int3 gridSize = (int3)g_xPassSet.LightConstants.u_xGridDimensions.xyz;
+	float3 worldPos = FroxelToWorld(froxelCoord, gridSize, g_xViewSet.g_xView.g_xInvViewProjMat,
+									 g_xViewSet.g_xView.g_xCameraNearFar.x,
+									 g_xViewSet.g_xView.g_xCameraNearFar.y);
 	// FroxelToWorld returns a camera-relative position; lift it to world.
-	worldPos += FrameConstants.g_xCamPos_Pad.xyz;
+	worldPos += g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
 
 	// View direction towards camera (for the phase function dot).
-	float2 uv     = (float2(froxelCoord.xy) + 0.5) / LightConstants.u_xGridDimensions.xy;
+	float2 uv     = (float2(froxelCoord.xy) + 0.5) / g_xPassSet.LightConstants.u_xGridDimensions.xy;
 	float2 ndc    = uv * 2.0 - 1.0;
 	float4 clipPos = float4(ndc, 0.5, 1.0);
 	// Inverse projection from clip → view, then negate to get camera-facing.
-	float4x4 invProj = FrameConstants.g_xInvProjMat;
+	float4x4 invProj = g_xViewSet.g_xView.g_xInvProjMat;
 	float4 viewPos = mul(invProj, clipPos);
 	float3 viewDir = -normalize(viewPos.xyz);
 
-	float3 lightDir = normalize(-FrameConstants.g_xSunDir_Pad.xyz);
+	float3 lightDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
 
 	float cosTheta = dot(viewDir, lightDir);
-	float phase    = HenyeyGreenstein(cosTheta, LightConstants.u_fPhaseG);
+	float phase    = HenyeyGreenstein(cosTheta, g_xPassSet.LightConstants.u_fPhaseG);
 
-	float3 lightColour = FrameConstants.g_xSunColour.rgb * LightConstants.u_xLightColour.a;
+	float3 lightColour = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb * g_xPassSet.LightConstants.u_xLightColour.a;
 	float  shadowTerm  = SampleVolumetricShadow(worldPos);
 
 	// Single-scattering albedo normalisation — scattered light cannot
@@ -161,33 +168,33 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float albedo = (sigmaT > 0.0001) ? (scatteringCoeff / sigmaT) : 0.0;
 
 	float3 inScatter = lightColour * albedo * scatteringCoeff * phase * shadowTerm;
-	float3 ambient   = LightConstants.u_xFogColour.rgb * albedo * scatteringCoeff *
-					   LightConstants.u_fAmbientIrradianceRatio;
+	float3 ambient   = g_xPassSet.LightConstants.u_xFogColour.rgb * albedo * scatteringCoeff *
+					   g_xPassSet.LightConstants.u_fAmbientIrradianceRatio;
 	float3 totalScatter = inScatter + ambient;
 	float  extinction   = scatteringCoeff + absorptionCoeff;
 
-	if (LightConstants.u_uDebugMode == DEBUG_FROXEL_SCATTERING)
+	if (g_xPassSet.LightConstants.u_uDebugMode == DEBUG_FROXEL_SCATTERING)
 	{
 		float  scatterMag = length(totalScatter);
 		float3 heatColour = lerp(float3(0.0, 0.0, 1.0), float3(1.0, 0.0, 0.0), saturate(scatterMag * 2.0));
-		u_xLightingGrid[froxelCoord]   = float4(heatColour, 1.0);
-		u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
+		g_xPassSet.u_xLightingGrid[froxelCoord]   = float4(heatColour, 1.0);
+		g_xPassSet.u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
 		return;
 	}
-	if (LightConstants.u_uDebugMode == DEBUG_FROXEL_EXTINCTION)
+	if (g_xPassSet.LightConstants.u_uDebugMode == DEBUG_FROXEL_EXTINCTION)
 	{
 		float transmittance = exp(-extinction);
-		u_xLightingGrid[froxelCoord]   = float4(transmittance, transmittance, transmittance, 1.0);
-		u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
+		g_xPassSet.u_xLightingGrid[froxelCoord]   = float4(transmittance, transmittance, transmittance, 1.0);
+		g_xPassSet.u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
 		return;
 	}
-	if (LightConstants.u_uDebugMode == DEBUG_FROXEL_SHADOW_SAMPLES)
+	if (g_xPassSet.LightConstants.u_uDebugMode == DEBUG_FROXEL_SHADOW_SAMPLES)
 	{
-		u_xLightingGrid[froxelCoord]   = float4(shadowTerm, shadowTerm, shadowTerm, 1.0);
-		u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
+		g_xPassSet.u_xLightingGrid[froxelCoord]   = float4(shadowTerm, shadowTerm, shadowTerm, 1.0);
+		g_xPassSet.u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
 		return;
 	}
 
-	u_xLightingGrid[froxelCoord]   = float4(totalScatter, 1.0);
-	u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
+	g_xPassSet.u_xLightingGrid[froxelCoord]   = float4(totalScatter, 1.0);
+	g_xPassSet.u_xScatteringGrid[froxelCoord] = float4(totalScatter, extinction);
 }

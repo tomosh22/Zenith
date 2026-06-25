@@ -21,6 +21,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/AnimatedMeshes.h" // typed binding handles
 
 // Phase 7b: state on Flux_AnimatedMeshesImpl held by Zenith_Engine.
 //
@@ -209,6 +210,8 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
+	namespace GB = Flux_Generated_AnimatedMeshes::AnimatedMesh_ToGBuffer;
+
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). No ECS
 	// access here — this runs on a worker thread; only heap-stable Flux objects
 	// (model instance, skeleton instance) are dereferenced. Two walks: one per
@@ -224,7 +227,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// Bind FrameConstants once per pipeline (set 0 - per-frame data). The
 	// lone FluxGraphics reach-in routes through the recovered instance's
 	// injected member.
-	xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(GB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
 	for (u_int uItem = 0; uItem < xPacket.GetSize(); uItem++)
 	{
@@ -288,14 +291,16 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 			// Build and push material constants (192 bytes) - uses scratch buffer in set 1
 			MaterialDrawConstants xPushConstants;
 			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-			xBinder.BindDrawConstants(xZZ.m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+			xBinder.BindDrawConstants(GB::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
 
 			// Bind set 1: bone buffer and the full material texture set.
-			xBinder.BindCBV(xZZ.m_xGBufferShader, "Bones", &xBoneBuffer.GetCBV());
+			xBinder.BindCBV(GB::hBones, &xBoneBuffer.GetCBV());
+				static constexpr Flux_BindingHandle s_aMatHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_AnimatedMeshes::AnimatedMesh_ToGBuffer);
+				static_assert(sizeof(s_aMatHandles) / sizeof(s_aMatHandles[0]) == MATERIAL_TEXTURE_SLOT_COUNT, "material handle array size mismatch");
 			for (u_int uSlot = 0; uSlot < MATERIAL_TEXTURE_SLOT_COUNT; uSlot++)
 			{
 				Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(uSlot));
-				xBinder.BindSRV(xZZ.m_xGBufferShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
+				xBinder.BindSRV(s_aMatHandles[uSlot], &pxTexture->m_xSRV);
 			}
 
 			pxCmdList->DrawIndexed(pxMeshInstance->GetNumIndices());
@@ -308,6 +313,8 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, con
 {
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
+
+	namespace SM = Flux_Generated_AnimatedMeshes::AnimatedMesh_ToShadowmap;
 
 	// Shadow pass uses Bones + DrawConstants + ShadowMatrix; the Slang
 	// version reflects only what's actually read, so binding FrameConstants
@@ -352,12 +359,12 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, con
 			// Opaque writes cutoff 0 -> the FS uniform-branches out -> depth-only cost.
 			MaterialDrawConstants xPushConstants;
 			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+			xBinder.BindDrawConstants(SM::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
 
 			// Bind set 1: bone buffer, shadow matrix, base colour (named bindings)
-			xBinder.BindCBV(m_xShadowShader, "Bones", &xBoneBuffer.GetCBV());
-			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
-			xBinder.BindSRV(m_xShadowShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
+			xBinder.BindCBV(SM::hBones, &xBoneBuffer.GetCBV());
+			xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindSRV(SM::hg_xBaseColorTex, &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}

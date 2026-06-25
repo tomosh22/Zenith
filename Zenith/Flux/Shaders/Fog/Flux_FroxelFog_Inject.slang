@@ -13,7 +13,7 @@
 // HeightFogDensity, and UIToPhysicalDensity.
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Volumetric;
 
 struct InjectConstantsLayout
@@ -27,9 +27,14 @@ struct InjectConstantsLayout
 	uint   u_uFrameIndex;
 	float  u_fPad0;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<InjectConstantsLayout> InjectConstants;
-[[vk::binding(2, 0)]] Sampler3D u_xNoiseTexture3D;
-[[vk::binding(3, 0)]] RWTexture3D<float4> u_xDensityGrid;
+// PASS frequency — declared AFTER the spine #include so it lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<InjectConstantsLayout> InjectConstants;
+	Sampler3D u_xNoiseTexture3D;
+	RWTexture3D<float4> u_xDensityGrid;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 // Reconstruct world-space position for the centre of a froxel cell.
 // The view ray is rebuilt from the inverse projection at the froxel's
@@ -37,16 +42,16 @@ struct InjectConstantsLayout
 // transformed to world by the inverse view matrix.
 float3 FroxelToWorldPosition(int3 froxelCoord)
 {
-	float2 uv = (float2(froxelCoord.xy) + 0.5) / InjectConstants.u_xGridDimensions.xy;
+	float2 uv = (float2(froxelCoord.xy) + 0.5) / g_xPassSet.InjectConstants.u_xGridDimensions.xy;
 
-	float nearZ       = max(InjectConstants.u_fNearZ, SAFE_NEAR_Z);
-	float farZ        = max(InjectConstants.u_fFarZ, nearZ * SAFE_DEPTH_RATIO);
-	float sliceNorm   = ((float)froxelCoord.z + 0.5) / InjectConstants.u_xGridDimensions.z;
+	float nearZ       = max(g_xPassSet.InjectConstants.u_fNearZ, SAFE_NEAR_Z);
+	float farZ        = max(g_xPassSet.InjectConstants.u_fFarZ, nearZ * SAFE_DEPTH_RATIO);
+	float sliceNorm   = ((float)froxelCoord.z + 0.5) / g_xPassSet.InjectConstants.u_xGridDimensions.z;
 	float linearDepth = nearZ * pow(farZ / nearZ, sliceNorm);
 
 	float2 ndc     = uv * 2.0 - 1.0;
 	float4 clipPos = float4(ndc, 0.0, 1.0);
-	float4 viewPos = mul(FrameConstants.g_xInvProjMat, clipPos);
+	float4 viewPos = mul(g_xViewSet.g_xView.g_xInvProjMat, clipPos);
 	viewPos /= viewPos.w;
 
 	// Scale view position so its z reaches linearDepth exactly. Engine uses
@@ -54,7 +59,7 @@ float3 FroxelToWorldPosition(int3 froxelCoord)
 	float  viewZ          = max(abs(viewPos.z), SAFE_NEAR_Z);
 	float3 scaledViewPos  = viewPos.xyz * (linearDepth / viewZ);
 
-	float4 worldPos = mul(FrameConstants.g_xInvViewMat, float4(scaledViewPos, 1.0));
+	float4 worldPos = mul(g_xViewSet.g_xView.g_xInvViewMat, float4(scaledViewPos, 1.0));
 	return worldPos.xyz;
 }
 
@@ -64,32 +69,32 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
 	int3 froxelCoord = (int3)dispatchId;
 
-	if (froxelCoord.x >= (int)InjectConstants.u_xGridDimensions.x ||
-		froxelCoord.y >= (int)InjectConstants.u_xGridDimensions.y ||
-		froxelCoord.z >= (int)InjectConstants.u_xGridDimensions.z) return;
+	if (froxelCoord.x >= (int)g_xPassSet.InjectConstants.u_xGridDimensions.x ||
+		froxelCoord.y >= (int)g_xPassSet.InjectConstants.u_xGridDimensions.y ||
+		froxelCoord.z >= (int)g_xPassSet.InjectConstants.u_xGridDimensions.z) return;
 
 	float3 worldPos = FroxelToWorldPosition(froxelCoord);
 
-	float baseDensity   = InjectConstants.u_xFogParams.x;
-	float heightDensity = HeightFogDensity(worldPos.y, InjectConstants.u_xHeightParams.x, InjectConstants.u_xHeightParams.y);
-	if (worldPos.y < InjectConstants.u_xHeightParams.z ||
-		worldPos.y > InjectConstants.u_xHeightParams.w) heightDensity = 0.0;
+	float baseDensity   = g_xPassSet.InjectConstants.u_xFogParams.x;
+	float heightDensity = HeightFogDensity(worldPos.y, g_xPassSet.InjectConstants.u_xHeightParams.x, g_xPassSet.InjectConstants.u_xHeightParams.y);
+	if (worldPos.y < g_xPassSet.InjectConstants.u_xHeightParams.z ||
+		worldPos.y > g_xPassSet.InjectConstants.u_xHeightParams.w) heightDensity = 0.0;
 
 	// Sample 3D noise. Y is animated over time so the fog billows
 	// vertically; world-space coordinate scale gives consistent feature
 	// size regardless of camera position.
-	float3 noiseCoord = worldPos * InjectConstants.u_xNoiseParams.x;
-	noiseCoord.y    += InjectConstants.u_xFogParams.w * InjectConstants.u_xNoiseParams.y;
-	float  noise      = u_xNoiseTexture3D.SampleLevel(noiseCoord, 0).r;
+	float3 noiseCoord = worldPos * g_xPassSet.InjectConstants.u_xNoiseParams.x;
+	noiseCoord.y    += g_xPassSet.InjectConstants.u_xFogParams.w * g_xPassSet.InjectConstants.u_xNoiseParams.y;
+	float  noise      = g_xPassSet.u_xNoiseTexture3D.SampleLevel(noiseCoord, 0).r;
 
 	float scaledBaseDensity = UIToPhysicalDensity(baseDensity);
 	float finalDensity      = scaledBaseDensity * heightDensity * noise;
 
 	float4 densityOutput = float4(
 		finalDensity,
-		InjectConstants.u_xFogParams.y * finalDensity, // scattering
-		InjectConstants.u_xFogParams.z * finalDensity, // absorption
+		g_xPassSet.InjectConstants.u_xFogParams.y * finalDensity, // scattering
+		g_xPassSet.InjectConstants.u_xFogParams.z * finalDensity, // absorption
 		1.0);
 
-	u_xDensityGrid[froxelCoord] = densityOutput;
+	g_xPassSet.u_xDensityGrid[froxelCoord] = densityOutput;
 }

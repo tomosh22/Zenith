@@ -3,6 +3,7 @@
 #include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Slang/Flux_ShaderCatalog.h"
+#include "Flux/Slang/Flux_FrequencyTaxonomy.h"  // ValidateReflection — spine gate
 #include "DataStream/Zenith_DataStream.h"
 
 #include "Flux/Slang/Flux_CodeGenerator.h"
@@ -203,6 +204,17 @@ int main()
 		if (!Flux_SlangCompiler::CompileProgram(xDesc, xResult))
 		{
 			printf("  -> FAILED: %s\n", xResult.m_strError.c_str());
+			uRegistryFailure++;
+			continue;
+		}
+
+		// Frequency-taxonomy gate: every compiled program must obey the spine
+		// (canonical persistent sets 0/1/2; no unbounded/array descriptor outside
+		// BINDLESS; no bare-global shift). A violation is a hard build error.
+		std::string strTaxonomyErr;
+		if (!Flux_FrequencyTaxonomy::ValidateReflection(xResult.m_xReflection, xEntry.m_szName, strTaxonomyErr))
+		{
+			printf("  -> FAILED (taxonomy): %s\n", strTaxonomyErr.c_str());
 			uRegistryFailure++;
 			continue;
 		}

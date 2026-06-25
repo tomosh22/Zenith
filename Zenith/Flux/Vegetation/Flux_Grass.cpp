@@ -9,6 +9,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Vegetation.h" // typed binding handles
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -233,10 +234,12 @@ static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void*)
 	pxCmdList->SetIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
 
 	{
+		namespace GR = Flux_Generated_Vegetation::Grass;
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(xGrass.m_xGrassShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(xGrass.m_xGrassShader, "GrassConstants", &xGrass.m_xGrassConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(xGrass.m_xGrassShader, "InstanceBuffer", &xGrass.m_xInstanceBuffer.GetUAV());
+		xBinder.BindCBV(GR::hg_xGlobal, &g_xEngine.FluxGraphics().m_xGlobalConstantsBuffer.GetCBV());
+		xBinder.BindCBV(GR::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
+		xBinder.BindCBV(GR::hGrassConstants, &xGrass.m_xGrassConstantsBuffer.GetCBV());
+		xBinder.BindUAV_Buffer(GR::hInstanceBuffer, &xGrass.m_xInstanceBuffer.GetUAV());
 	}
 
 	// Draw instanced grass (6 indices per blade, xGrass.m_uVisibleBladeCount instances)

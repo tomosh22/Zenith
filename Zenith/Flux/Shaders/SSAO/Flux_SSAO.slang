@@ -7,12 +7,12 @@
 // occlusion from samples whose direction vector has a positive
 // component along the surface normal (hemisphere test).
 //
-// Imports Common.Frame for FrameConstants (view + projection matrices)
+// Includes Common/Bindings for the VIEW set (view + projection matrices)
 // and the GetViewPosFromDepth helper.
 // =====================================================================
 
 import Common.Fullscreen;
-import Common.Frame;
+#include "Common/Bindings.slang"
 
 struct SSAOConstantsLayout
 {
@@ -21,9 +21,13 @@ struct SSAOConstantsLayout
 	float INTENSITY;
 	float KERNEL_SIZE;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<SSAOConstantsLayout> SSAOConstants;
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(3, 0)]] Sampler2D g_xNormalTex;
+struct PassParams
+{
+	ConstantBuffer<SSAOConstantsLayout> SSAOConstants;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -39,27 +43,27 @@ float Hash(float2 xP)
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 {
-	float fDepth = g_xDepthTex.Sample(input.uv).x;
+	float fDepth = g_xPassSet.g_xDepthTex.Sample(input.uv).x;
 
 	if (fDepth >= 1.0) return float4(1.0, 1.0, 1.0, 1.0); // sky → unoccluded
 
 	float3 xFragPos     = GetViewPosFromDepth(input.uv, fDepth);
-	float3 xWorldNormal = normalize(g_xNormalTex.Sample(input.uv).rgb);
-	float3 xNormal      = normalize(mul((float3x3)FrameConstants.g_xViewMat, xWorldNormal));
+	float3 xWorldNormal = normalize(g_xPassSet.g_xNormalTex.Sample(input.uv).rgb);
+	float3 xNormal      = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xWorldNormal));
 
 	// World-space SSAO radius projected into UV space scales by 1/depth and
 	// by the projection's per-axis scale — so the screen footprint of the
 	// sphere stays correct under perspective.
 	float fInvZ        = 0.5 / abs(xFragPos.z);
 	float2 xScreenScale = float2(
-		SSAOConstants.RADIUS * abs(FrameConstants.g_xProjMat[0][0]) * fInvZ,
-		SSAOConstants.RADIUS * abs(FrameConstants.g_xProjMat[1][1]) * fInvZ);
+		g_xPassSet.SSAOConstants.RADIUS * abs(g_xViewSet.g_xView.g_xProjMat[0][0]) * fInvZ,
+		g_xPassSet.SSAOConstants.RADIUS * abs(g_xViewSet.g_xView.g_xProjMat[1][1]) * fInvZ);
 
 	// Per-pixel random rotation breaks the banding pattern an unrotated
 	// 8-direction sample would otherwise produce.
 	float fRotation = Hash(fragCoord.xy) * TWO_PI;
 
-	int iSteps = max(1, (int)SSAOConstants.KERNEL_SIZE / NUM_DIRECTIONS);
+	int iSteps = max(1, (int)g_xPassSet.SSAOConstants.KERNEL_SIZE / NUM_DIRECTIONS);
 
 	float fOcclusion    = 0.0;
 	int   iValidSamples = 0;
@@ -75,7 +79,7 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 			if (xSampleUV.x < 0.0 || xSampleUV.x > 1.0 ||
 				xSampleUV.y < 0.0 || xSampleUV.y > 1.0) continue;
 
-			float fSampleDepth = g_xDepthTex.Sample(xSampleUV).x;
+			float fSampleDepth = g_xPassSet.g_xDepthTex.Sample(xSampleUV).x;
 			if (fSampleDepth >= 1.0) continue; // skip sky
 
 			float3 xSamplePos = GetViewPosFromDepth(xSampleUV, fSampleDepth);
@@ -87,9 +91,9 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 			// means the sample is "above" the tangent plane and blocks
 			// incoming ambient light.
 			float fNDot = dot(xDiff / fDist, xNormal);
-			if (fNDot > SSAOConstants.BIAS)
+			if (fNDot > g_xPassSet.SSAOConstants.BIAS)
 			{
-				float fFalloff = max(0.0, 1.0 - fDist / SSAOConstants.RADIUS);
+				float fFalloff = max(0.0, 1.0 - fDist / g_xPassSet.SSAOConstants.RADIUS);
 				fFalloff *= fFalloff;
 				fOcclusion += fNDot * fFalloff;
 			}
@@ -102,6 +106,6 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 		? saturate(1.0 - fOcclusion / (float)iValidSamples)
 		: 1.0;
 
-	fResult = pow(fResult, SSAOConstants.INTENSITY);
+	fResult = pow(fResult, g_xPassSet.SSAOConstants.INTENSITY);
 	return float4(fResult, fResult, fResult, fResult);
 }

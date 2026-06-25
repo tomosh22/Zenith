@@ -9,7 +9,7 @@
 // Imports Common.Frame for the view×proj transform.
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 
 struct VsIn
 {
@@ -31,15 +31,18 @@ struct GizmoPushConstantsLayout
 	float    g_fPad1;
 	float    g_fPad2;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<GizmoPushConstantsLayout> GizmoPushConstants;
+// DRAW frequency (per-gizmo model matrix + highlight). After the spine #include
+// it lands at set 3.
+struct DrawParams { ConstantBuffer<GizmoPushConstantsLayout> GizmoPushConstants; };
+ParameterBlock<DrawParams> g_xDrawSet;
 
 [shader("vertex")]
 VsOut vsMain(VsIn input)
 {
 	VsOut o;
-	float4 worldPos = mul(GizmoPushConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0));
-	o.position      = mul(FrameConstants.g_xViewProjMat, worldPos);
-	o.colour        = input.a_xColor * (1.0 + GizmoPushConstants.g_fHighlightIntensity * 0.5);
+	float4 worldPos = mul(g_xDrawSet.GizmoPushConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0));
+	o.position      = mul(g_xViewSet.g_xView.g_xViewProjMat, worldPos);
+	o.colour        = input.a_xColor * (1.0 + g_xDrawSet.GizmoPushConstants.g_fHighlightIntensity * 0.5);
 	return o;
 }
 

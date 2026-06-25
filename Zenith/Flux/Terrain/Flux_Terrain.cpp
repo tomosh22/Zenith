@@ -34,35 +34,35 @@ namespace
 	namespace TerrainShader = Flux_Generated_Terrain::Terrain_ToGBuffer;
 	struct TerrainTexBinding
 	{
-		const char* m_szName;
+		Flux_BindingHandle m_xHandle;
 		u_int       m_uMaterialSlot;
 		Zenith_TextureAsset* (Zenith_MaterialAsset::*m_pfnGet)();
 	};
 	static const TerrainTexBinding s_axTerrainTexBindings[] = {
 		// Slot 0
-		{ TerrainShader::kg_xDiffuseTex0_Name,           0, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::kg_xNormalTex0_Name,            0, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::kg_xRoughnessMetallicTex0_Name, 0, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::kg_xOcclusionTex0_Name,         0, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::kg_xEmissiveTex0_Name,          0, &Zenith_MaterialAsset::GetEmissiveTexture          },
+		{ TerrainShader::hg_xDiffuseTex0,           0, &Zenith_MaterialAsset::GetDiffuseTexture           },
+		{ TerrainShader::hg_xNormalTex0,            0, &Zenith_MaterialAsset::GetNormalTexture            },
+		{ TerrainShader::hg_xRoughnessMetallicTex0, 0, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
+		{ TerrainShader::hg_xOcclusionTex0,         0, &Zenith_MaterialAsset::GetOcclusionTexture         },
+		{ TerrainShader::hg_xEmissiveTex0,          0, &Zenith_MaterialAsset::GetEmissiveTexture          },
 		// Slot 1
-		{ TerrainShader::kg_xDiffuseTex1_Name,           1, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::kg_xNormalTex1_Name,            1, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::kg_xRoughnessMetallicTex1_Name, 1, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::kg_xOcclusionTex1_Name,         1, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::kg_xEmissiveTex1_Name,          1, &Zenith_MaterialAsset::GetEmissiveTexture          },
+		{ TerrainShader::hg_xDiffuseTex1,           1, &Zenith_MaterialAsset::GetDiffuseTexture           },
+		{ TerrainShader::hg_xNormalTex1,            1, &Zenith_MaterialAsset::GetNormalTexture            },
+		{ TerrainShader::hg_xRoughnessMetallicTex1, 1, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
+		{ TerrainShader::hg_xOcclusionTex1,         1, &Zenith_MaterialAsset::GetOcclusionTexture         },
+		{ TerrainShader::hg_xEmissiveTex1,          1, &Zenith_MaterialAsset::GetEmissiveTexture          },
 		// Slot 2
-		{ TerrainShader::kg_xDiffuseTex2_Name,           2, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::kg_xNormalTex2_Name,            2, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::kg_xRoughnessMetallicTex2_Name, 2, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::kg_xOcclusionTex2_Name,         2, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::kg_xEmissiveTex2_Name,          2, &Zenith_MaterialAsset::GetEmissiveTexture          },
+		{ TerrainShader::hg_xDiffuseTex2,           2, &Zenith_MaterialAsset::GetDiffuseTexture           },
+		{ TerrainShader::hg_xNormalTex2,            2, &Zenith_MaterialAsset::GetNormalTexture            },
+		{ TerrainShader::hg_xRoughnessMetallicTex2, 2, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
+		{ TerrainShader::hg_xOcclusionTex2,         2, &Zenith_MaterialAsset::GetOcclusionTexture         },
+		{ TerrainShader::hg_xEmissiveTex2,          2, &Zenith_MaterialAsset::GetEmissiveTexture          },
 		// Slot 3
-		{ TerrainShader::kg_xDiffuseTex3_Name,           3, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::kg_xNormalTex3_Name,            3, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::kg_xRoughnessMetallicTex3_Name, 3, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::kg_xOcclusionTex3_Name,         3, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::kg_xEmissiveTex3_Name,          3, &Zenith_MaterialAsset::GetEmissiveTexture          },
+		{ TerrainShader::hg_xDiffuseTex3,           3, &Zenith_MaterialAsset::GetDiffuseTexture           },
+		{ TerrainShader::hg_xNormalTex3,            3, &Zenith_MaterialAsset::GetNormalTexture            },
+		{ TerrainShader::hg_xRoughnessMetallicTex3, 3, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
+		{ TerrainShader::hg_xOcclusionTex3,         3, &Zenith_MaterialAsset::GetOcclusionTexture         },
+		{ TerrainShader::hg_xEmissiveTex3,          3, &Zenith_MaterialAsset::GetEmissiveTexture          },
 	};
 }
 
@@ -423,7 +423,8 @@ static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void*)
 		// writes 0u. The graph emits a UAV→UAV barrier between this pass and
 		// the culling pass, so the culling dispatch's atomic increments see
 		// the cleared value.
-		pxCmdList->BindUAV_Buffer(&pxState->m_xVisibleCountBuffer.GetUAV(), Flux_BindingSlot{ 0, 0, true });
+		Flux_ShaderBinder xBinder(*pxCmdList);
+		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hvisibleCount, &pxState->m_xVisibleCountBuffer.GetUAV());
 		pxCmdList->Dispatch(1, 1, 1);
 	}
 }
@@ -473,9 +474,16 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	// Bind set 0 (per-frame data) once per command list
-	xBinder.BindCBV(xTerrain.m_xTerrainGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindCBV(xTerrain.m_xTerrainGBufferShader, "TerrainConstants", &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
+	// Typed binding handles for the Terrain_ToGBuffer program (m_xTerrainGBufferShader
+	// was Initialised from Flux_TerrainShaders::xTerrain_ToGBuffer).
+	namespace TGB = Flux_Generated_Terrain::Terrain_ToGBuffer;
+
+	// Spine: the camera matrix comes from the VIEW set (set 1) g_xView, sourced
+	// from m_xViewConstantsBuffer (was the old per-frame FrameConstants bind).
+	// The GBuffer shader reads only the camera (no sun/time), so only g_xView is
+	// bound here. TerrainConstants (per-frame UV scale) is now a PassParams member.
+	xBinder.BindCBV(TGB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindCBV(TGB::hTerrainConstants, &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
 
 	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
 	{
@@ -489,14 +497,14 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		TerrainMaterialDrawConstants xTerrainMatConst;
 		BuildTerrainMaterialDrawConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
 			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
-		xBinder.BindDrawConstants(xTerrain.m_xTerrainGBufferShader, "TerrainMaterialConstants", &xTerrainMatConst, sizeof(xTerrainMatConst));
+		xBinder.BindDrawConstants(TGB::hTerrainMaterialConstants, &xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		// Bind LOD level buffer (per-terrain, set 1). The shader declares this
 		// as StructuredBuffer<uint> (read-only — see Generated/Terrain.h
 		// kLODLevelBuffer kind: StructuredBuffer); route through BindSRV_Buffer
 		// so the render-graph declaration RESOURCE_ACCESS_READ_BUFFER_SRV
 		// matches the bind direction.
-		xBinder.BindSRV_Buffer(xTerrain.m_xTerrainGBufferShader, "LODLevelBuffer", pxState->m_xLODLevelBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(TGB::hLODLevelBuffer, pxState->m_xLODLevelBuffer.GetSRV());
 
 		pxCmdList->SetVertexBuffer(pxState->m_xUnifiedVertexBuffer);
 		pxCmdList->SetIndexBuffer(pxState->m_xUnifiedIndexBuffer);
@@ -505,7 +513,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		// SRV slot the shader is declared to read). Falls back to the 1x1
 		// "material 0 only" texture when the component has no splatmap.
 		Zenith_TextureAsset* pxSplatmap = xRec.m_pxSplatmap;
-		xBinder.BindSRV(xTerrain.m_xTerrainGBufferShader, "g_xSplatmap",
+		xBinder.BindSRV(TGB::hg_xSplatmap,
 			pxSplatmap ? &pxSplatmap->m_xSRV : &xTerrain.GetFallbackSplatmapSRV());
 
 		// Bind material textures (set 1, named bindings) — 4 slots × 5 channels.
@@ -528,8 +536,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		for (const TerrainTexBinding& xB : s_axTerrainTexBindings)
 		{
 			xBinder.BindSRV(
-				xTerrain.m_xTerrainGBufferShader,
-				xB.m_szName,
+				xB.m_xHandle,
 				ResolveSRV(apxMaterials[xB.m_uMaterialSlot], xB.m_pfnGet));
 		}
 

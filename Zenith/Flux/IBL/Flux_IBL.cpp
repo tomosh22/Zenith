@@ -9,6 +9,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/IBL.h" // typed binding handles
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -305,13 +306,15 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandBuffer* pxCmd, void* pU
 	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
+		namespace IC = Flux_Generated_IBL::IBL_IrradianceConvolution;
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(xIBL.m_xIrradianceConvolveShader, "FrameConstants", &xFG.m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindDrawConstants(xIBL.m_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
+		xBinder.BindCBV(IC::hg_xView, &xFG.m_xViewConstantsBuffer.GetCBV());
+		xBinder.BindCBV(IC::hg_xGlobal, &xFG.m_xGlobalConstantsBuffer.GetCBV());
+		xBinder.BindDrawConstants(IC::hIrradianceConstants, &xConsts, sizeof(xConsts));
 		if (Zenith_TextureAsset* pxCubemap = xFG.m_xCubemapTexture.GetDirect())
-			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
+			xBinder.BindSRV(IC::hg_xSkyboxCubemap, &pxCubemap->GetSRV());
 		else if (Zenith_TextureAsset* pxBlack = xFG.m_xBlackTexture.GetDirect())
-			xBinder.BindSRV(xIBL.m_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
+			xBinder.BindSRV(IC::hg_xSkyboxCubemap, &pxBlack->GetSRV());
 	}
 	pxCmd->DrawIndexed(6);
 }
@@ -336,13 +339,15 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandBuffer* pxCmd, void* 
 	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
+		namespace PF = Flux_Generated_IBL::IBL_PrefilterEnvMap;
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(xIBL.m_xPrefilterShader, "FrameConstants", &xFG.m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindDrawConstants(xIBL.m_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
+		xBinder.BindCBV(PF::hg_xView, &xFG.m_xViewConstantsBuffer.GetCBV());
+		xBinder.BindCBV(PF::hg_xGlobal, &xFG.m_xGlobalConstantsBuffer.GetCBV());
+		xBinder.BindDrawConstants(PF::hPrefilterConstants, &xConsts, sizeof(xConsts));
 		if (Zenith_TextureAsset* pxCubemap = xFG.m_xCubemapTexture.GetDirect())
-			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
+			xBinder.BindSRV(PF::hg_xSkyboxCubemap, &pxCubemap->GetSRV());
 		else if (Zenith_TextureAsset* pxBlack = xFG.m_xBlackTexture.GetDirect())
-			xBinder.BindSRV(xIBL.m_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
+			xBinder.BindSRV(PF::hg_xSkyboxCubemap, &pxBlack->GetSRV());
 	}
 	pxCmd->DrawIndexed(6);
 }

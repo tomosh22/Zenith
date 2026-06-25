@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "Flux/Text/Flux_Text_Shaders.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Text.h" // typed binding handles
 #include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -303,9 +305,11 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->SetVertexBuffer(xText.m_xInstanceBuffer, 1);
 
-	pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace TX = Flux_Generated_Text::Text;
+	xBinder.BindCBV(TX::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	// Explicit clamp sampler at the bind site — MSDF AA assumes no wrap.
-	pxCommandList->BindSRV(&pxAtlas->m_xSRV, 1);
+	xBinder.BindSRV(TX::hg_xTexture, &pxAtlas->m_xSRV);
 
 	// Build the 32-byte push-constant block. Atlas size + pxRange feed the
 	// shader's fwidth-based ScreenPxRange() helper for derivative-based AA.
@@ -318,14 +322,14 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	{
 		// Background text draw: clip rect active.
 		xConstants.m_xClipRect = xText.m_xOverlayClipRect;
-		pxCommandList->BindDrawConstants(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
+		xBinder.BindDrawConstants(TX::hTextConstants, &xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)));
 		pxCommandList->DrawIndexed(6, xText.m_uBgCharCount, 0, 0, 0);
 
 		if (xText.m_uFgCharCount > 0)
 		{
 			// Foreground/overlay text draw: clip off.
 			xConstants.m_xClipRect = { -1.f, -1.f, -1.f, -1.f };
-			pxCommandList->BindDrawConstants(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
+			xBinder.BindDrawConstants(TX::hTextConstants, &xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)));
 			pxCommandList->DrawIndexed(6, xText.m_uFgCharCount, 0, 0, xText.m_uBgCharCount);
 		}
 	}
@@ -333,7 +337,7 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	{
 		// No overlay clipping: single draw, clip off.
 		xConstants.m_xClipRect = { -1.f, -1.f, -1.f, -1.f };
-		pxCommandList->BindDrawConstants(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
+		xBinder.BindDrawConstants(TX::hTextConstants, &xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)));
 		pxCommandList->DrawIndexed(6, uNumChars);
 	}
 

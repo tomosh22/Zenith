@@ -10,7 +10,7 @@
 // every material texture binding up by 1 vs the static layout.
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"
 import Common.DrawConstants;
 import Common.Material;
 import Common.MaterialSurface;
@@ -46,7 +46,25 @@ struct BonesLayout
 {
 	float4x4 g_xBones[100];
 };
-[[vk::binding(1, 1)]] ConstantBuffer<BonesLayout> Bones;
+
+// Per-draw block (set 3): skinning bones + per-draw material constants + the
+// full 9-texture material set. Member names preserved so the codegen handle
+// names (hBones, hDrawConstants, hg_x*Tex) — and thus the C++ binds — are stable.
+struct DrawParams
+{
+	ConstantBuffer<DrawConstantsLayout> DrawConstants;
+	ConstantBuffer<BonesLayout>         Bones;
+	Sampler2D g_xBaseColorTex;
+	Sampler2D g_xNormalTex;
+	Sampler2D g_xRoughnessMetallicTex;
+	Sampler2D g_xOcclusionTex;
+	Sampler2D g_xEmissiveTex;
+	Sampler2D g_xHeightTex;
+	Sampler2D g_xDetailAlbedoTex;
+	Sampler2D g_xDetailNormalTex;
+	Sampler2D g_xDetailMaskTex;
+};
+ParameterBlock<DrawParams> g_xDrawSet;
 
 [shader("vertex")]
 VsOut vsMain(VsIn input)
@@ -64,7 +82,7 @@ VsOut vsMain(VsIn input)
 	{
 		if (input.a_xBoneIDs[u] == 0xFFFFFFFFu) break;
 
-		float4x4 xBoneTransform = Bones.g_xBones[input.a_xBoneIDs[u]];
+		float4x4 xBoneTransform = g_xDrawSet.Bones.g_xBones[input.a_xBoneIDs[u]];
 		float    fWeight        = input.a_xBoneWeights[u];
 
 		xFinalPosition  += mul(xBoneTransform, float4(input.a_xPosition, 1.0)) * fWeight;
@@ -73,8 +91,8 @@ VsOut vsMain(VsIn input)
 		xFinalBitangent += mul((float3x3)xBoneTransform, input.a_xBitangent) * fWeight;
 	}
 
-	float3 xWorldPos       = mul(DrawConstants.g_xModelMatrix, xFinalPosition).xyz;
-	float3x3 xNormalMatrix = NormalMatrixFromModel(DrawConstants.g_xModelMatrix);
+	float3 xWorldPos       = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, xFinalPosition).xyz;
+	float3x3 xNormalMatrix = NormalMatrixFromModel(g_xDrawSet.DrawConstants.g_xModelMatrix);
 
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
@@ -88,21 +106,9 @@ VsOut vsMain(VsIn input)
 	o.tbn1 = float3(xT.y, xB.y, o.worldNormal.y);
 	o.tbn2 = float3(xT.z, xB.z, o.worldNormal.z);
 	o.worldPos = xWorldPos;
-	o.position = mul(FrameConstants.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
 	return o;
 }
-
-// Material textures offset by 1 vs static (Bones occupies slot 1).
-// Slot order matches MaterialTextureSlot in Zenith_MaterialParamTable.h.
-[[vk::binding( 2, 1)]] Sampler2D g_xBaseColorTex;
-[[vk::binding( 3, 1)]] Sampler2D g_xNormalTex;
-[[vk::binding( 4, 1)]] Sampler2D g_xRoughnessMetallicTex;
-[[vk::binding( 5, 1)]] Sampler2D g_xOcclusionTex;
-[[vk::binding( 6, 1)]] Sampler2D g_xEmissiveTex;
-[[vk::binding( 7, 1)]] Sampler2D g_xHeightTex;
-[[vk::binding( 8, 1)]] Sampler2D g_xDetailAlbedoTex;
-[[vk::binding( 9, 1)]] Sampler2D g_xDetailNormalTex;
-[[vk::binding(10, 1)]] Sampler2D g_xDetailMaskTex;
 
 [shader("fragment")]
 GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
@@ -115,13 +121,15 @@ GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 		input.tbn1.x, input.tbn1.y, input.tbn1.z,
 		input.tbn2.x, input.tbn2.y, input.tbn2.z);
 
-	float3 xViewDir = normalize(FrameConstants.g_xCamPos_Pad.xyz - input.worldPos);
+	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
+
+	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
 
 	MaterialSurface xSurface = EvaluateMaterialSurface(
-		g_xBaseColorTex, g_xNormalTex, g_xRoughnessMetallicTex,
-		g_xOcclusionTex, g_xEmissiveTex, g_xHeightTex,
-		g_xDetailAlbedoTex, g_xDetailNormalTex, g_xDetailMaskTex,
-		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace);
+		g_xDrawSet.g_xBaseColorTex, g_xDrawSet.g_xNormalTex, g_xDrawSet.g_xRoughnessMetallicTex,
+		g_xDrawSet.g_xOcclusionTex, g_xDrawSet.g_xEmissiveTex, g_xDrawSet.g_xHeightTex,
+		g_xDrawSet.g_xDetailAlbedoTex, g_xDrawSet.g_xDetailNormalTex, g_xDrawSet.g_xDetailMaskTex,
+		input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, dc);
 
 	return MakeGBuffer(xSurface);
 }

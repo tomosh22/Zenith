@@ -10,8 +10,8 @@
 // Imports Common.Frame for FrameConstants.g_xSunColour.
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Fullscreen;
-import Common.Frame;
 
 struct GodRaysConstantsLayout
 {
@@ -22,8 +22,13 @@ struct GodRaysConstantsLayout
 	float  g_fPad0;
 	float  g_fPad1;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<GodRaysConstantsLayout> GodRaysConstants;
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
+// PASS frequency — declared AFTER the spine #include so it lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<GodRaysConstantsLayout> GodRaysConstants;
+	Sampler2D g_xDepthTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 // Debug-mode constants (must match Skybox_DebugMode in Flux_GodRaysFog.h).
 static const uint VOLFOG_DEBUG_GODRAYS_LIGHT_MASK     = 21;
@@ -36,40 +41,40 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float2 lightScreenPos = GodRaysConstants.g_xLightScreenPos_Pad.xy;
-	float  decay          = GodRaysConstants.g_xParams.x;
-	float  exposure       = GodRaysConstants.g_xParams.y;
-	float  density        = GodRaysConstants.g_xParams.z;
-	float  weight         = GodRaysConstants.g_xParams.w;
+	float2 lightScreenPos = g_xPassSet.GodRaysConstants.g_xLightScreenPos_Pad.xy;
+	float  decay          = g_xPassSet.GodRaysConstants.g_xParams.x;
+	float  exposure       = g_xPassSet.GodRaysConstants.g_xParams.y;
+	float  density        = g_xPassSet.GodRaysConstants.g_xParams.z;
+	float  weight         = g_xPassSet.GodRaysConstants.g_xParams.w;
 
 	float2 deltaTexCoord = input.uv - lightScreenPos;
 	float  distToLight   = length(deltaTexCoord);
-	deltaTexCoord       *= 1.0 / (float)GodRaysConstants.g_uNumSamples * density;
+	deltaTexCoord       *= 1.0 / (float)g_xPassSet.GodRaysConstants.g_uNumSamples * density;
 
-	if (GodRaysConstants.g_uDebugMode == VOLFOG_DEBUG_GODRAYS_LIGHT_MASK)
+	if (g_xPassSet.GodRaysConstants.g_uDebugMode == VOLFOG_DEBUG_GODRAYS_LIGHT_MASK)
 	{
 		float dist = length(input.uv - lightScreenPos);
 		float v    = 1.0 - saturate(dist);
 		return float4(v, v, v, 1.0);
 	}
 
-	if (GodRaysConstants.g_uDebugMode == VOLFOG_DEBUG_GODRAYS_OCCLUSION)
+	if (g_xPassSet.GodRaysConstants.g_uDebugMode == VOLFOG_DEBUG_GODRAYS_OCCLUSION)
 	{
 		float  totalOcclusion = 0.0;
 		float2 sampleCoord    = input.uv;
-		for (uint i = 0; i < GodRaysConstants.g_uNumSamples; i++)
+		for (uint i = 0; i < g_xPassSet.GodRaysConstants.g_uNumSamples; i++)
 		{
-			float sampleDepth = g_xDepthTex.Sample(sampleCoord).r;
+			float sampleDepth = g_xPassSet.g_xDepthTex.Sample(sampleCoord).r;
 			totalOcclusion   += sampleDepth < 0.9999 ? 0.0 : 1.0;
 			sampleCoord      -= deltaTexCoord;
 		}
-		totalOcclusion /= (float)GodRaysConstants.g_uNumSamples;
+		totalOcclusion /= (float)g_xPassSet.GodRaysConstants.g_uNumSamples;
 		return float4(totalOcclusion, totalOcclusion, totalOcclusion, 1.0);
 	}
 
-	if (GodRaysConstants.g_uDebugMode == VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS)
+	if (g_xPassSet.GodRaysConstants.g_uDebugMode == VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS)
 	{
-		float decayVis = pow(decay, distToLight * (float)GodRaysConstants.g_uNumSamples);
+		float decayVis = pow(decay, distToLight * (float)g_xPassSet.GodRaysConstants.g_uNumSamples);
 		return float4(decayVis, decayVis * 0.5, 0.0, 1.0);
 	}
 
@@ -77,17 +82,17 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	float  illuminationDecay   = 1.0;
 	float2 texCoord            = input.uv;
 
-	for (uint i = 0; i < GodRaysConstants.g_uNumSamples; i++)
+	for (uint i = 0; i < g_xPassSet.GodRaysConstants.g_uNumSamples; i++)
 	{
 		texCoord -= deltaTexCoord;
 		float2 sampleCoord = clamp(texCoord, float2(0.001), float2(0.999));
 
-		float sampleDepth = g_xDepthTex.Sample(sampleCoord).r;
+		float sampleDepth = g_xPassSet.g_xDepthTex.Sample(sampleCoord).r;
 		// Only accumulate when the sample sees the sky (far plane). This
 		// is the sky-mask trick that produces the classic crepuscular look.
 		float occlusion = sampleDepth > 0.9999 ? 1.0 : 0.0;
 
-		float3 lightColour = FrameConstants.g_xSunColour.rgb * occlusion;
+		float3 lightColour = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb * occlusion;
 		colour            += lightColour * illuminationDecay * weight;
 		illuminationDecay *= decay;
 	}

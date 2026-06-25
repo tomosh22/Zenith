@@ -9,6 +9,9 @@
 // =====================================================================
 
 import Common.Fullscreen;
+// Spine #include even though this shader uses no FrameConstants — it reserves
+// sets 0/1/2 so PassParams lands at set 3.
+#include "Common/Bindings.slang"
 
 // Bilateral upsample tuning — see Flux_SSAO_Upsample for the same
 // rationale. SSGI's RGB output uses depth-only weighting (no normal
@@ -17,8 +20,13 @@ static const float UPSAMPLE_DEPTH_SIGMA_FRACTION = 0.02;
 static const float UPSAMPLE_MIN_DEPTH_SIGMA      = 0.001;
 static const float UPSAMPLE_MIN_WEIGHT           = 0.0001;
 
-[[vk::binding(0, 0)]] Sampler2D g_xSSGITex;   // half-res temporally accumulated
-[[vk::binding(1, 0)]] Sampler2D g_xDepthTex;  // full-res depth
+// PASS frequency (set 3) — the shader's own SRVs. Member names preserved exactly.
+struct PassParams
+{
+	Sampler2D g_xSSGITex;   // half-res temporally accumulated
+	Sampler2D g_xDepthTex;  // full-res depth
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -26,11 +34,11 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float fFullDepth = g_xDepthTex.Sample(input.uv).r;
+	float fFullDepth = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 	if (fFullDepth >= 1.0) return float4(0.0, 0.0, 0.0, 0.0); // sky → no GI
 
 	uint uW, uH;
-	g_xSSGITex.GetDimensions(uW, uH);
+	g_xPassSet.g_xSSGITex.GetDimensions(uW, uH);
 	float2 xHalfResSize   = float2((float)uW, (float)uH);
 	float2 xHalfTexelSize = 1.0 / xHalfResSize;
 
@@ -52,8 +60,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		for (int x = 0; x <= 1; x++)
 		{
 			float2 xSampleUV = saturate((xHalfResFloor + float2(x, y) + 0.5) * xHalfTexelSize);
-			float4 xSample      = g_xSSGITex.Sample(xSampleUV);
-			float  fSampleDepth = g_xDepthTex.Sample(xSampleUV).r;
+			float4 xSample      = g_xPassSet.g_xSSGITex.Sample(xSampleUV);
+			float  fSampleDepth = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
 
 			if (fSampleDepth >= 1.0) continue;
 
@@ -68,5 +76,5 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	}
 
 	if (fTotalWeight > UPSAMPLE_MIN_WEIGHT) return xResult / fTotalWeight;
-	return g_xSSGITex.Sample(input.uv); // bilateral fail-safe
+	return g_xPassSet.g_xSSGITex.Sample(input.uv); // bilateral fail-safe
 }

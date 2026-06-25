@@ -11,8 +11,8 @@
 // 64 samples without an extra π / multiplier.
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 import Common.PBR;
 import Common.Atmosphere;
 
@@ -23,8 +23,12 @@ struct IrradianceConstantsLayout
 	uint  g_uFaceIndex;     // 0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z
 	float g_fPad;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<IrradianceConstantsLayout> IrradianceConstants;
-[[vk::binding(2, 0)]] SamplerCube g_xSkyboxCubemap;
+struct PassParams
+{
+	ConstantBuffer<IrradianceConstantsLayout> IrradianceConstants;
+	SamplerCube g_xSkyboxCubemap;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -53,27 +57,27 @@ float3 CubemapFaceDirection(float2 xUV, uint uFace)
 
 float3 SampleEnvironment(float3 xDir)
 {
-	if (IrradianceConstants.g_uUseAtmosphere > 0u)
+	if (g_xPassSet.IrradianceConstants.g_uUseAtmosphere > 0u)
 	{
 		// IBL samples the atmosphere from a fixed reference height — the
 		// IBL textures are pre-computed environment lighting, not camera-
 		// relative. g_xSunDir_Pad is the direction light TRAVELS, so we
 		// negate to get the direction TO the sun.
-		float3 xSunDir = normalize(-FrameConstants.g_xSunDir_Pad.xyz);
+		float3 xSunDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
 		AtmosphereResult xResult = ComputeAtmosphereScattering(
 			float3(0.0, EARTH_RADIUS + IBL_REFERENCE_HEIGHT_METERS, 0.0),
 			normalize(xDir),
 			xSunDir,
-			IrradianceConstants.g_fSunIntensity);
+			g_xPassSet.IrradianceConstants.g_fSunIntensity);
 		return xResult.xColor;
 	}
-	return g_xSkyboxCubemap.Sample(xDir).rgb;
+	return g_xPassSet.g_xSkyboxCubemap.Sample(xDir).rgb;
 }
 
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float3 xNormal = CubemapFaceDirection(input.uv, IrradianceConstants.g_uFaceIndex);
+	float3 xNormal = CubemapFaceDirection(input.uv, g_xPassSet.IrradianceConstants.g_uFaceIndex);
 
 	// Tangent basis from the surface normal. Special-case near-pole to
 	// avoid degenerate cross-product.

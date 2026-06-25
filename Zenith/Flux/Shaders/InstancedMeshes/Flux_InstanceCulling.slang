@@ -12,6 +12,12 @@
 // [4]=firstInstance — only [1] is updated here.
 // =====================================================================
 
+// Spine include reserves sets 0/1/2 (GLOBAL/VIEW/BINDLESS) so this pass's own
+// resources land in PassParams at set 3. This compute pass uses none of the
+// spine constants — it carries its own frustum/camera data in CullingConstants
+// — but still includes the spine so the persistent set layout stays uniform.
+#include "Common/Bindings.slang"
+
 struct FrustumPlane
 {
 	float4 normalAndDistance; // xyz = normal, w = distance; planes point INWARD
@@ -26,13 +32,17 @@ struct CullingConstantsLayout
 	float        boundingSphereRadius;
 	float        padding;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<CullingConstantsLayout> CullingConstants;
 
-[[vk::binding(1, 0)]] RWStructuredBuffer<float4x4> TransformBuffer;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint4>    AnimDataBuffer;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint>     VisibleIndexBuffer;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint>     visibleCount;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint>     indirectInstanceCount;
+struct PassParams
+{
+	ConstantBuffer<CullingConstantsLayout> CullingConstants;
+	RWStructuredBuffer<float4x4>           TransformBuffer;
+	RWStructuredBuffer<uint4>              AnimDataBuffer;
+	RWStructuredBuffer<uint>               VisibleIndexBuffer;
+	RWStructuredBuffer<uint>               visibleCount;
+	RWStructuredBuffer<uint>               indirectInstanceCount;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 // True if the bounding sphere is at least partially inside the frustum.
 // Tests near plane first — most rays-of-cuts come from the near plane.
@@ -42,7 +52,7 @@ bool TestSphereFrustum(float3 center, float radius)
 	const int kPlaneOrder[6] = { 4, 5, 0, 1, 2, 3 };
 	for (int i = 0; i < 6; i++)
 	{
-		FrustumPlane p = CullingConstants.frustumPlanes[kPlaneOrder[i]];
+		FrustumPlane p = g_xPassSet.CullingConstants.frustumPlanes[kPlaneOrder[i]];
 		if (dot(p.normalAndDistance.xyz, center) + p.normalAndDistance.w < -radius) return false;
 	}
 	return true;
@@ -64,16 +74,16 @@ float GetMaxScale(float4x4 m)
 void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
 	uint idx = dispatchId.x;
-	if (idx >= CullingConstants.totalInstanceCount) return;
+	if (idx >= g_xPassSet.CullingConstants.totalInstanceCount) return;
 
 	// Per-instance enable bit (bit 0 of animData.w) lets the CPU
 	// disable instances without resizing the array.
-	uint flags = AnimDataBuffer[idx].w;
+	uint flags = g_xPassSet.AnimDataBuffer[idx].w;
 	if ((flags & 1u) == 0u) return;
 
-	float4x4 transform   = TransformBuffer[idx];
+	float4x4 transform   = g_xPassSet.TransformBuffer[idx];
 	float3   worldCenter = float3(transform._m03, transform._m13, transform._m23);
-	float    worldRadius = CullingConstants.boundingSphereRadius * GetMaxScale(transform);
+	float    worldRadius = g_xPassSet.CullingConstants.boundingSphereRadius * GetMaxScale(transform);
 
 	if (!TestSphereFrustum(worldCenter, worldRadius)) return;
 
@@ -81,9 +91,9 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// total; indirectInstanceCount[1] is the VkDrawIndexedIndirectCommand
 	// instanceCount field (subsequent indirect draw reads it directly).
 	uint outIndex;
-	InterlockedAdd(visibleCount[0], 1u, outIndex);
-	VisibleIndexBuffer[outIndex] = idx;
+	InterlockedAdd(g_xPassSet.visibleCount[0], 1u, outIndex);
+	g_xPassSet.VisibleIndexBuffer[outIndex] = idx;
 
 	uint dummy;
-	InterlockedAdd(indirectInstanceCount[1], 1u, dummy);
+	InterlockedAdd(g_xPassSet.indirectInstanceCount[1], 1u, dummy);
 }

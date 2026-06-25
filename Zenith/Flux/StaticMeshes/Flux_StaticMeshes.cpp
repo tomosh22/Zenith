@@ -21,6 +21,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/StaticMeshes.h" // typed binding handles
 
 // Phase 7b: state on Flux_StaticMeshesImpl held by Zenith_Engine.
 
@@ -230,12 +231,14 @@ void Flux_StaticMeshesImpl::DrawStaticMesh(Flux_CommandBuffer* pxCmdList, Flux_S
 {
 	MaterialDrawConstants xPushConstants;
 	BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-	xBinder.BindDrawConstants(m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+	xBinder.BindDrawConstants(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
 
+	static constexpr Flux_BindingHandle s_aMatHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer);
+	static_assert(sizeof(s_aMatHandles) / sizeof(s_aMatHandles[0]) == MATERIAL_TEXTURE_SLOT_COUNT, "material handle array size mismatch");
 	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
 	{
 		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(u));
-		xBinder.BindSRV(m_xGBufferShader, GetMaterialTextureBindingName(u), &pxTexture->m_xSRV);
+		xBinder.BindSRV(s_aMatHandles[u], &pxTexture->m_xSRV);
 	}
 
 	pxCmdList->DrawIndexed(uIndexCount);
@@ -319,7 +322,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	{
 		const bool bTwoSidedPass = (uCullPass == 1);
 		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
-		xBinder.BindCBV(xZZ.m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
 		for (u_int u = 0; u < xPacket.GetSize(); u++)
 		{
@@ -332,6 +335,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
+	namespace SM = Flux_Generated_StaticMeshes::StaticMesh_ToShadowmap;
 	// Shadow pass binds DrawConstants + ShadowMatrix + the base-colour texture (for the
 	// masked alpha cutout — opaque materials write cutoff 0 and the FS skips the sample).
 	// Slang reflection drops bindings the shader doesn't reference (no FrameConstants
@@ -369,9 +373,9 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 			// base-colour tint. Opaque writes cutoff 0 -> the FS uniform-branches out -> depth-only.
 			MaterialDrawConstants xPushConstants;
 			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-			xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
-			xBinder.BindCBV(m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
-			xBinder.BindSRV(m_xShadowShader, "g_xBaseColorTex", &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
+			xBinder.BindDrawConstants(SM::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
+			xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindSRV(SM::hg_xBaseColorTex, &pxMaterial->GetResolvedTexture(MATERIAL_TEXTURE_BASE_COLOR)->m_xSRV);
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}

@@ -21,12 +21,8 @@
 // Engine convention is +Z forward in view space (see Flux/CLAUDE.md).
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Lighting;
-
-[[vk::binding(1, 0)]] StructuredBuffer<LightInstance>   LightBuffer;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint>           ClusterLightCounts;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint>           ClusterLightIndices;
 
 struct PushConstantsLayout
 {
@@ -35,7 +31,15 @@ struct PushConstantsLayout
 	uint m_uPad1;
 	uint m_uPad2;
 };
-[[vk::binding(4, 0)]] ConstantBuffer<PushConstantsLayout> PushConstants;
+// PASS frequency (this compute pass's own buffers + constants) -> set 3.
+struct PassParams
+{
+	StructuredBuffer<LightInstance>   LightBuffer;
+	RWStructuredBuffer<uint>          ClusterLightCounts;
+	RWStructuredBuffer<uint>          ClusterLightIndices;
+	ConstantBuffer<PushConstantsLayout> PushConstants;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("compute")]
 [numthreads(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1)]
@@ -58,16 +62,16 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// the cluster's UV corners and the slice's near/far Z planes.
 	float3 xClusterMin;
 	float3 xClusterMax;
-	ComputeClusterAABB(xClusterCoord, xClusterMin, xClusterMax);
+	ComputeClusterAABB(xClusterCoord, g_xViewSet.g_xView.g_xInvProjMat, xClusterMin, xClusterMax);
 
 	uint uLocalCount = 0u;
-	uint uLightCount = PushConstants.m_uLightCount;
+	uint uLightCount = g_xPassSet.PushConstants.m_uLightCount;
 
 	for (uint i = 0u; i < uLightCount; ++i)
 	{
 		if (uLocalCount >= MAX_LIGHTS_PER_CLUSTER) break;
 
-		LightInstance xLight = LightBuffer[i];
+		LightInstance xLight = g_xPassSet.LightBuffer[i];
 		uint uType = uint(xLight.m_xTypeOuter.y);
 
 		bool bInclude = false;
@@ -88,7 +92,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 			float  fRange    = xLight.m_xPositionRange.w;
 
 			// Transform light position into view space.
-			float4 xViewPos4 = mul(FrameConstants.g_xViewMat, float4(xWorldPos, 1.0));
+			float4 xViewPos4 = mul(g_xViewSet.g_xView.g_xViewMat, float4(xWorldPos, 1.0));
 			float3 xViewPos = xViewPos4.xyz;
 
 			bInclude = SphereIntersectsAABB(xViewPos, fRange, xClusterMin, xClusterMax);
@@ -96,10 +100,10 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 
 		if (bInclude)
 		{
-			ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + uLocalCount] = i;
+			g_xPassSet.ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + uLocalCount] = i;
 			uLocalCount += 1u;
 		}
 	}
 
-	ClusterLightCounts[uClusterIdx] = uLocalCount;
+	g_xPassSet.ClusterLightCounts[uClusterIdx] = uLocalCount;
 }

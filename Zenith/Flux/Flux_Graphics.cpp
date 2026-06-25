@@ -153,6 +153,8 @@ void Flux_GraphicsImpl::Initialise()
 	xVulkanMemory.InitialiseVertexBuffer(m_xQuadMesh.GetVertexData(), m_xQuadMesh.GetVertexDataSize(), m_xQuadMesh.GetVertexBuffer());
 	xVulkanMemory.InitialiseIndexBuffer(m_xQuadMesh.GetIndexData(), m_xQuadMesh.GetIndexDataSize(), m_xQuadMesh.GetIndexBuffer());
 	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), m_xFrameConstantsBuffer);
+	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(GlobalConstants), m_xGlobalConstantsBuffer);
+	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(ViewConstants), m_xViewConstantsBuffer);
 
 	// Render targets are graph-owned transients, created in SetupTransients.
 	// No resize callback needed — the graph re-creates them on every
@@ -169,7 +171,12 @@ void Flux_GraphicsImpl::Initialise()
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
 #endif
 
-	m_xFrameConstantsLayout.m_axBindings[0].m_eType = BINDING_TYPE_BUFFER;
+	{
+		Flux_BindingGroupEntry& xEntry = m_xFrameConstantsLayout.m_axBindings[0];
+		xEntry.m_eKind            = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+		xEntry.m_uDescriptorCount = 1;
+		xEntry.m_bPresent         = true;
+	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics Initialised");
 }
@@ -242,6 +249,31 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 #endif
 	m_xFrameConstants.m_xCameraNearFar = { GetNearPlane(), GetFarPlane() };
 	g_xEngine.FluxMemory().UploadBufferData(m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xFrameConstants, sizeof(FrameConstants));
+
+	// Phase-2 spine: mirror the relevant fields into the GLOBAL (view-invariant)
+	// + VIEW (per-camera) buffers from the same source data, so shaders converted
+	// to the ParameterBlock spine read identical values.
+	m_xGlobalConstantsData.m_xSunDir_Pad    = m_xFrameConstants.m_xSunDir_Pad;
+	m_xGlobalConstantsData.m_xSunColour_Pad = m_xFrameConstants.m_xSunColour_Pad;
+	m_xGlobalConstantsData.m_uFrameIndex    = g_xEngine.Frame().GetFrameIndex();
+	m_xGlobalConstantsData.m_fTimeSeconds   = static_cast<float>(g_xEngine.Frame().GetTimePassed());
+
+	m_xViewConstantsData.m_xViewMat        = m_xFrameConstants.m_xViewMat;
+	m_xViewConstantsData.m_xProjMat        = m_xFrameConstants.m_xProjMat;
+	m_xViewConstantsData.m_xViewProjMat    = m_xFrameConstants.m_xViewProjMat;
+	m_xViewConstantsData.m_xInvViewProjMat = m_xFrameConstants.m_xInvViewProjMat;
+	m_xViewConstantsData.m_xInvViewMat     = m_xFrameConstants.m_xInvViewMat;
+	m_xViewConstantsData.m_xInvProjMat     = m_xFrameConstants.m_xInvProjMat;
+	m_xViewConstantsData.m_xCamPos_Pad     = m_xFrameConstants.m_xCamPos_Pad;
+	m_xViewConstantsData.m_xScreenDims     = m_xFrameConstants.m_xScreenDims;
+	m_xViewConstantsData.m_xRcpScreenDims  = m_xFrameConstants.m_xRcpScreenDims;
+	m_xViewConstantsData.m_xCameraNearFar  = m_xFrameConstants.m_xCameraNearFar;
+#ifdef ZENITH_TOOLS
+	m_xViewConstantsData.m_uQuadUtilisationAnalysis = m_xFrameConstants.m_uQuadUtilisationAnalysis;
+	m_xViewConstantsData.m_uTargetPixelsPerTri      = m_xFrameConstants.m_uTargetPixelsPerTri;
+#endif
+	g_xEngine.FluxMemory().UploadBufferData(m_xGlobalConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xGlobalConstantsData, sizeof(GlobalConstants));
+	g_xEngine.FluxMemory().UploadBufferData(m_xViewConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xViewConstantsData, sizeof(ViewConstants));
 }
 
 TextureFormat Flux_GraphicsImpl::GetMRTFormat(MRTIndex eIndex)
@@ -484,6 +516,8 @@ void Flux_GraphicsImpl::Shutdown()
 
 	// Destroy frame constants buffer
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_xFrameConstantsBuffer);
+	xVulkanMemory.DestroyDynamicConstantBuffer(m_xGlobalConstantsBuffer);
+	xVulkanMemory.DestroyDynamicConstantBuffer(m_xViewConstantsBuffer);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shut down");
 }

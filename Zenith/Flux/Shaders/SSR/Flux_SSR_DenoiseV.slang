@@ -14,12 +14,12 @@
 // consumed. Roughness gating repeats here independently (mirror-smooth
 // and very-rough pixels passthrough whichever H output shape they have).
 //
-// Common.Frame IS imported (FrameConstants matrices for half-vector calc),
-// pushing all explicit bindings to start at 1.
+// View matrices / screen dims and the GetViewPosFromDepth helper come from the
+// Bindings spine (replaces the former `import Common.Frame`).
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 import Common.PBR;
 import SSR.Flux_SSR_DenoiseCommon;
 
@@ -31,14 +31,18 @@ static const float SSR_DENOISE_MIN_ROUGHNESS_SIGMA = 0.001;
 static const float SSR_DENOISE_MIN_WEIGHT          = 1e-6;
 static const float SSR_DENOISE_BRDF_FLOOR          = 1e-4;
 
-[[vk::binding(1, 0)]] Sampler2D g_xSSRDenoiseHColTex; // H pass RT0: rgb=Σ(w·color), a=Σ(w)
-[[vk::binding(2, 0)]] ConstantBuffer<SSRDenoisePushConstantsLayout> PushConstants;
-[[vk::binding(3, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(4, 0)]] Sampler2D g_xNormalsTex;
-[[vk::binding(5, 0)]] Sampler2D g_xMaterialTex;
-[[vk::binding(6, 0)]] Sampler2D g_xSSRUpsampledAuxTex; // Phase 0 metadata for BRDF reuse
-[[vk::binding(7, 0)]] Sampler2D g_xSSRDenoiseHConfTex; // H pass RT1: r=Σ(w·conf)
-[[vk::binding(8, 0)]] Sampler2D g_xSSRUpsampledTex;    // upsampled colour, for passthrough fallback
+struct PassParams
+{
+	Sampler2D g_xSSRDenoiseHColTex; // H pass RT0: rgb=Σ(w·color), a=Σ(w)
+	ConstantBuffer<SSRDenoisePushConstantsLayout> PushConstants;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalsTex;
+	Sampler2D g_xMaterialTex;
+	Sampler2D g_xSSRUpsampledAuxTex; // Phase 0 metadata for BRDF reuse
+	Sampler2D g_xSSRDenoiseHConfTex; // H pass RT1: r=Σ(w·conf)
+	Sampler2D g_xSSRUpsampledTex;    // upsampled colour, for passthrough fallback
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -52,25 +56,25 @@ float GaussianWeight(float fDist, float fSigma)
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float4 xCenterUpsampled = g_xSSRUpsampledTex.Sample(input.uv);
+	float4 xCenterUpsampled = g_xPassSet.g_xSSRUpsampledTex.Sample(input.uv);
 
-	if (PushConstants.u_bEnabled == 0u) return xCenterUpsampled;
+	if (g_xPassSet.PushConstants.u_bEnabled == 0u) return xCenterUpsampled;
 
-	float fCenterRoughness = g_xMaterialTex.Sample(input.uv).r;
+	float fCenterRoughness = g_xPassSet.g_xMaterialTex.Sample(input.uv).r;
 	if (fCenterRoughness < SSR_DENOISE_SMOOTH_THRESHOLD) return xCenterUpsampled;
 	if (fCenterRoughness > SSR_DENOISE_ROUGH_THRESHOLD)  return xCenterUpsampled;
 	if (xCenterUpsampled.a < SSR_DENOISE_MIN_CONFIDENCE) return xCenterUpsampled;
 
-	float  fCenterDepth   = g_xDepthTex.Sample(input.uv).r;
-	float3 xCenterWNormal = g_xNormalsTex.Sample(input.uv).rgb;
+	float  fCenterDepth   = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
+	float3 xCenterWNormal = g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb;
 
 	float3 xCenterViewPos    = GetViewPosFromDepth(input.uv, fCenterDepth);
-	float3 xCenterViewNormal = normalize(mul((float3x3)FrameConstants.g_xViewMat, xCenterWNormal));
+	float3 xCenterViewNormal = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xCenterWNormal));
 	float3 xCenterV          = -normalize(xCenterViewPos);
 
-	float fDepthSigmaAbs    = max(fCenterDepth * PushConstants.u_fDepthSigma, SSR_DENOISE_MIN_DEPTH_SIGMA);
-	float fRoughnessSigma   = max(PushConstants.u_fRoughnessSigma, SSR_DENOISE_MIN_ROUGHNESS_SIGMA);
-	float2 xRcpScreen       = FrameConstants.g_xRcpScreenDims;
+	float fDepthSigmaAbs    = max(fCenterDepth * g_xPassSet.PushConstants.u_fDepthSigma, SSR_DENOISE_MIN_DEPTH_SIGMA);
+	float fRoughnessSigma   = max(g_xPassSet.PushConstants.u_fRoughnessSigma, SSR_DENOISE_MIN_ROUGHNESS_SIGMA);
+	float2 xRcpScreen       = g_xViewSet.g_xView.g_xRcpScreenDims;
 
 	float3 xTotalColourNum = float3(0.0);
 	float  fTotalWeightDen = 0.0;
@@ -78,8 +82,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Phase 4 — variance-adaptive kernel. Uses the upsampled (pre-denoise)
 	// colour + distance — same input H sees, so the two passes' radii agree.
-	float fVarScale = SSR_ComputeVarianceScale(g_xSSRUpsampledTex, g_xSSRUpsampledAuxTex, input.uv, xRcpScreen);
-	int   iRadius   = (int)max(1.0, round((float)PushConstants.u_uKernelRadius * fVarScale));
+	float fVarScale = SSR_ComputeVarianceScale(g_xPassSet.g_xSSRUpsampledTex, g_xPassSet.g_xSSRUpsampledAuxTex, input.uv, xRcpScreen);
+	int   iRadius   = (int)max(1.0, round((float)g_xPassSet.PushConstants.u_uKernelRadius * fVarScale));
 
 	// Vertical pass — sample only along Y.
 	for (int j = -iRadius; j <= iRadius; j++)
@@ -87,36 +91,36 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		float2 xOffset   = float2(0.0, (float)j) * xRcpScreen;
 		float2 xSampleUV = clamp(input.uv + xOffset, float2(0.001), float2(0.999));
 
-		float4 xH_RT0 = g_xSSRDenoiseHColTex.Sample(xSampleUV);   // (Σ_H w·C, Σ_H w)
-		float4 xH_RT1 = g_xSSRDenoiseHConfTex.Sample(xSampleUV);  // (Σ_H w·conf, _, _, _)
+		float4 xH_RT0 = g_xPassSet.g_xSSRDenoiseHColTex.Sample(xSampleUV);   // (Σ_H w·C, Σ_H w)
+		float4 xH_RT1 = g_xPassSet.g_xSSRDenoiseHConfTex.Sample(xSampleUV);  // (Σ_H w·conf, _, _, _)
 
 		// If H produced no weight at this pixel (its accumulator was empty),
 		// skip — there's nothing meaningful to combine.
 		if (xH_RT0.a < SSR_DENOISE_MIN_WEIGHT) continue;
 
-		float4 xSampleAux       = g_xSSRUpsampledAuxTex.Sample(xSampleUV);
-		float  fSampleDepth     = g_xDepthTex.Sample(xSampleUV).r;
-		float3 xSampleWNormal   = g_xNormalsTex.Sample(xSampleUV).rgb;
-		float  fSampleRoughness = g_xMaterialTex.Sample(xSampleUV).r;
+		float4 xSampleAux       = g_xPassSet.g_xSSRUpsampledAuxTex.Sample(xSampleUV);
+		float  fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
+		float3 xSampleWNormal   = g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb;
+		float  fSampleRoughness = g_xPassSet.g_xMaterialTex.Sample(xSampleUV).r;
 
 		if (fSampleDepth >= 1.0) continue;
 		if (xSampleAux.b   <  0.0001) continue;
 
 		// Same V-direction bilateral gates as H.
-		float fSpatialWeight = GaussianWeight(abs((float)j), PushConstants.u_fSpatialSigma);
+		float fSpatialWeight = GaussianWeight(abs((float)j), g_xPassSet.PushConstants.u_fSpatialSigma);
 
 		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
 		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
 
 		float fNormalDiff   = 1.0 - max(dot(xCenterWNormal, xSampleWNormal), 0.0);
-		float fNormalWeight = GaussianWeight(fNormalDiff, PushConstants.u_fNormalSigma);
+		float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.PushConstants.u_fNormalSigma);
 
 		float fRoughnessDiff   = abs(fSampleRoughness - fCenterRoughness);
 		float fRoughnessWeight = GaussianWeight(fRoughnessDiff, fRoughnessSigma);
 
 		// BRDF reuse — same logic as H, computed against THIS V-neighbour's hit.
 		float2 xN_hitUV    = xSampleAux.rg;
-		float  fHitDepth   = g_xDepthTex.Sample(xN_hitUV).r;
+		float  fHitDepth   = g_xPassSet.g_xDepthTex.Sample(xN_hitUV).r;
 		float  fBRDFWeight = SSR_DENOISE_BRDF_FLOOR;
 		if (fHitDepth < 1.0)
 		{

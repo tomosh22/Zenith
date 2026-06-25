@@ -10,6 +10,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Fog.h" // typed binding handles
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 
@@ -121,11 +122,14 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
+	namespace GR = Flux_Generated_Fog::Fog_GodRays;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(m_xShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(m_xShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
+	// Spine: GLOBAL (sun colour) at set 0, VIEW (camera) at set 1.
+	xBinder.BindCBV(GR::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
+	xBinder.BindCBV(GR::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindSRV(GR::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
 
-	xBinder.BindDrawConstants(m_xShader, "GodRaysConstants", &m_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.BindDrawConstants(GR::hGodRaysConstants, &m_xConstants, sizeof(Flux_GodRaysConstants));
 
 	pxCommandList->DrawIndexed(6);
 }

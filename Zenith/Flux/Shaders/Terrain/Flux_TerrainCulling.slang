@@ -8,7 +8,14 @@
 // LOD policy: HIGH (0) when distance² < 1e6 (~1 km), LOW (1) otherwise.
 // Sorting is intentionally omitted — modern GPU early-Z handles a few
 // percent of depth overdraw far cheaper than the O(n²) sort would.
+//
+// Spine include reserves sets 0/1/2 (GLOBAL/VIEW/BINDLESS) so this pass's own
+// resources land in PassParams at set 3. This compute pass carries its own
+// frustum/camera data in CameraBuffer (not the main VIEW set) but still includes
+// the spine so the persistent set layout stays uniform across shaders.
 // =====================================================================
+
+#include "Common/Bindings.slang"
 
 static const uint  TERRAIN_LOD_COUNT      = 2;
 static const float LOD_HIGH_MAX_DIST_SQ   = 1000000.0;
@@ -40,18 +47,21 @@ struct DrawIndexedIndirectCommand
 
 struct FrustumPlane { float4 normalAndDistance; };
 
-[[vk::binding(0, 0)]] StructuredBuffer<TerrainChunkData>          ChunkBuffer;
-
 struct CameraBufferLayout
 {
 	FrustumPlane frustumPlanes[6]; // Left, Right, Bottom, Top, Near, Far
 	float4       cameraPosition;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<CameraBufferLayout>          CameraBuffer;
 
-[[vk::binding(2, 0)]] RWStructuredBuffer<DrawIndexedIndirectCommand> IndirectCommandBuffer;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint>                       visibleCount;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint>                       LODLevelBuffer;
+struct PassParams
+{
+	StructuredBuffer<TerrainChunkData>            ChunkBuffer;
+	ConstantBuffer<CameraBufferLayout>            CameraBuffer;
+	RWStructuredBuffer<DrawIndexedIndirectCommand> IndirectCommandBuffer;
+	RWStructuredBuffer<uint>                       visibleCount;
+	RWStructuredBuffer<uint>                       LODLevelBuffer;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 // Conservative AABB-vs-frustum test (Akenine-Möller style). Tests
 // near/far first since distant terrain is the most-likely cull case.
@@ -63,7 +73,7 @@ bool TestAABBFrustum(float3 aabbMin, float3 aabbMax)
 	const int kPlaneOrder[6] = { 4, 5, 0, 1, 2, 3 };
 	for (int i = 0; i < 6; i++)
 	{
-		FrustumPlane p     = CameraBuffer.frustumPlanes[kPlaneOrder[i]];
+		FrustumPlane p     = g_xPassSet.CameraBuffer.frustumPlanes[kPlaneOrder[i]];
 		float3 planeNormal = p.normalAndDistance.xyz;
 		float  planeDist   = p.normalAndDistance.w;
 		float  radius      = dot(extents, abs(planeNormal));
@@ -85,15 +95,15 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	uint chunkIndex = dispatchId.x;
 
 	uint chunkCount, stride;
-	ChunkBuffer.GetDimensions(chunkCount, stride);
+	g_xPassSet.ChunkBuffer.GetDimensions(chunkCount, stride);
 	if (chunkIndex >= chunkCount) return;
 
-	float4 aabbMin = ChunkBuffer[chunkIndex].aabbMin;
-	float4 aabbMax = ChunkBuffer[chunkIndex].aabbMax;
+	float4 aabbMin = g_xPassSet.ChunkBuffer[chunkIndex].aabbMin;
+	float4 aabbMax = g_xPassSet.ChunkBuffer[chunkIndex].aabbMax;
 	if (!TestAABBFrustum(aabbMin.xyz, aabbMax.xyz)) return;
 
 	float3 chunkCenter = (aabbMin.xyz + aabbMax.xyz) * 0.5;
-	float3 toCamera    = CameraBuffer.cameraPosition.xyz - chunkCenter;
+	float3 toCamera    = g_xPassSet.CameraBuffer.cameraPosition.xyz - chunkCenter;
 	float  distSq      = dot(toCamera, toCamera);
 
 	// GPU-side LOD-selection hysteresis. SelectLOD's bare comparison
@@ -108,7 +118,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// narrower band is safe — the chunk is guaranteed to have valid HIGH
 	// geometry if priorLOD says it did. First-frame value is zero (HIGH)
 	// from the nullptr-initialised buffer; converges within one frame.
-	uint priorLOD     = LODLevelBuffer[chunkIndex];
+	uint priorLOD     = g_xPassSet.LODLevelBuffer[chunkIndex];
 	uint requestedLOD = SelectLOD(distSq);
 	const float fHysteresisLow  = LOD_HIGH_MAX_DIST_SQ * 0.99;
 	const float fHysteresisHigh = LOD_HIGH_MAX_DIST_SQ * 1.01;
@@ -122,19 +132,19 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// LOD that drew. That keeps the LODLevelBuffer debug visualisation
 	// truthful: red/green colour matches the geometry vertex density.
 	uint actualLOD    = requestedLOD;
-	LODData selectedLOD = ChunkBuffer[chunkIndex].lods[actualLOD];
+	LODData selectedLOD = g_xPassSet.ChunkBuffer[chunkIndex].lods[actualLOD];
 
 	if (selectedLOD.indexCount == 0u && requestedLOD == 0u)
 	{
 		// HIGH unavailable — fall back to LOW (always-resident).
 		actualLOD = 1u;
-		selectedLOD = ChunkBuffer[chunkIndex].lods[actualLOD];
+		selectedLOD = g_xPassSet.ChunkBuffer[chunkIndex].lods[actualLOD];
 	}
 
 	if (selectedLOD.indexCount == 0u) return; // both LODs empty → skip
 
 	uint outIndex;
-	InterlockedAdd(visibleCount[0], 1u, outIndex);
+	InterlockedAdd(g_xPassSet.visibleCount[0], 1u, outIndex);
 
 	// Write the indirect draw + LOD level. firstInstance is the stable
 	// chunk id, so the vertex shader indexes LODLevelBuffer by chunk rather
@@ -146,7 +156,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	cmd.firstIndex    = selectedLOD.firstIndex;
 	cmd.vertexOffset  = (int)selectedLOD.vertexOffset;
 	cmd.firstInstance = chunkIndex;
-	IndirectCommandBuffer[outIndex] = cmd;
+	g_xPassSet.IndirectCommandBuffer[outIndex] = cmd;
 
-	LODLevelBuffer[chunkIndex] = actualLOD;
+	g_xPassSet.LODLevelBuffer[chunkIndex] = actualLOD;
 }

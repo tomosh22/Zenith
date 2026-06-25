@@ -15,8 +15,8 @@
 // state One/InvSrcAlpha (set on the C++ pipeline spec).
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Fullscreen;
-import Common.Frame;
 
 // Hole table cap. Sized to fit every authored light (26) plus every
 // villager (17, all of which register fog holes regardless of possession)
@@ -35,8 +35,13 @@ struct DPFogConstantsLayout
 	uint   _pad1;
 	uint   _pad2;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<DPFogConstantsLayout> DPFogConstants;
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
+// PASS frequency — declared AFTER the spine #include so it lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<DPFogConstantsLayout> DPFogConstants;
+	Sampler2D g_xDepthTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -44,23 +49,23 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float3 xWorldPos      = GetWorldPosFromDepthTex(g_xDepthTex, input.uv);
-	float3 xCameraToPixel = xWorldPos - FrameConstants.g_xCamPos_Pad.xyz;
+	float3 xWorldPos      = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
+	float3 xCameraToPixel = xWorldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
 	float  fDist          = length(xCameraToPixel);
 
 	// Beer-Lambert exponential fog amount (scalar form).
-	float fFogAlpha = 1.0 - exp(-fDist * DPFogConstants.g_xFogColor_Density.w);
+	float fFogAlpha = 1.0 - exp(-fDist * g_xPassSet.DPFogConstants.g_xFogColor_Density.w);
 
 	// Fog holes — for each registered hole compute a smooth attenuation
 	// based on the distance from the world-space sample to the hole
 	// center vs the hole radius. We take the *minimum* attenuation across
 	// all holes (i.e. the hole that clears the most fog wins). A linear
 	// falloff at the boundary keeps the bubble edge soft.
-	uint uHoleCount = min(DPFogConstants.g_uHoleCount, DP_FOG_MAX_HOLES);
+	uint uHoleCount = min(g_xPassSet.DPFogConstants.g_uHoleCount, DP_FOG_MAX_HOLES);
 	float fAttenuation = 1.0;
 	for (uint u = 0u; u < uHoleCount; ++u)
 	{
-		float4 xHole = DPFogConstants.g_axHoles[u];
+		float4 xHole = g_xPassSet.DPFogConstants.g_axHoles[u];
 		float fRadius = xHole.w;
 		if (fRadius <= 0.0) continue;
 
@@ -75,6 +80,6 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	fFogAlpha *= fAttenuation;
 
 	// Premultiplied output for blend One/InvSrcAlpha.
-	float3 xFogColor = DPFogConstants.g_xFogColor_Density.xyz;
+	float3 xFogColor = g_xPassSet.DPFogConstants.g_xFogColor_Density.xyz;
 	return float4(xFogColor * fFogAlpha, fFogAlpha);
 }

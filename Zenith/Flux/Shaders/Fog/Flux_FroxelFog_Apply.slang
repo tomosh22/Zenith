@@ -12,8 +12,8 @@
 // transmittance.
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Fullscreen;
-import Common.Frame;
 import Common.Volumetric;
 
 struct ApplyConstantsLayout
@@ -24,10 +24,15 @@ struct ApplyConstantsLayout
 	uint   u_uDebugMode;
 	uint   u_uDebugSliceIndex;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<ApplyConstantsLayout> ApplyConstants;
-[[vk::binding(2, 0)]] Sampler2D u_xDepthTexture;
-[[vk::binding(3, 0)]] Sampler3D u_xLightingGrid;
-[[vk::binding(4, 0)]] Sampler3D u_xScatteringGrid;
+// PASS frequency — declared AFTER the spine #include so it lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<ApplyConstantsLayout> ApplyConstants;
+	Sampler2D u_xDepthTexture;
+	Sampler3D u_xLightingGrid;
+	Sampler3D u_xScatteringGrid;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 static const uint DEBUG_FROXEL_DENSITY_SLICE  = 3;
 static const uint DEBUG_FROXEL_DENSITY_MAX    = 4;
@@ -47,46 +52,46 @@ float DepthToFroxelZ(float linearDepth, float nearZ, float farZ)
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	if (ApplyConstants.u_uDebugMode == DEBUG_FROXEL_DENSITY_SLICE)
+	if (g_xPassSet.ApplyConstants.u_uDebugMode == DEBUG_FROXEL_DENSITY_SLICE)
 	{
-		float sliceZ = ((float)ApplyConstants.u_uDebugSliceIndex + 0.5) / ApplyConstants.u_xGridDimensions.z;
-		float4 scatterData = u_xScatteringGrid.Sample(float3(input.uv, sliceZ));
+		float sliceZ = ((float)g_xPassSet.ApplyConstants.u_uDebugSliceIndex + 0.5) / g_xPassSet.ApplyConstants.u_xGridDimensions.z;
+		float4 scatterData = g_xPassSet.u_xScatteringGrid.Sample(float3(input.uv, sliceZ));
 		float v = saturate(scatterData.a);
 		return float4(v, v, v, 1.0);
 	}
 
-	if (ApplyConstants.u_uDebugMode == DEBUG_FROXEL_DENSITY_MAX)
+	if (g_xPassSet.ApplyConstants.u_uDebugMode == DEBUG_FROXEL_DENSITY_MAX)
 	{
 		float maxExtinction = 0.0;
-		int   sliceCount    = (int)ApplyConstants.u_xGridDimensions.z;
+		int   sliceCount    = (int)g_xPassSet.ApplyConstants.u_xGridDimensions.z;
 		for (int z = 0; z < sliceCount; z++)
 		{
-			float sliceZ = ((float)z + 0.5) / ApplyConstants.u_xGridDimensions.z;
-			float4 scatterData = u_xScatteringGrid.Sample(float3(input.uv, sliceZ));
+			float sliceZ = ((float)z + 0.5) / g_xPassSet.ApplyConstants.u_xGridDimensions.z;
+			float4 scatterData = g_xPassSet.u_xScatteringGrid.Sample(float3(input.uv, sliceZ));
 			maxExtinction = max(maxExtinction, scatterData.a);
 		}
 		float v = saturate(maxExtinction);
 		return float4(v, v, v, 1.0);
 	}
 
-	if (ApplyConstants.u_uDebugMode == DEBUG_FROXEL_LIGHTING_SLICE)
+	if (g_xPassSet.ApplyConstants.u_uDebugMode == DEBUG_FROXEL_LIGHTING_SLICE)
 	{
-		float sliceZ = ((float)ApplyConstants.u_uDebugSliceIndex + 0.5) / ApplyConstants.u_xGridDimensions.z;
-		float3 lighting = u_xLightingGrid.Sample(float3(input.uv, sliceZ)).rgb;
+		float sliceZ = ((float)g_xPassSet.ApplyConstants.u_uDebugSliceIndex + 0.5) / g_xPassSet.ApplyConstants.u_xGridDimensions.z;
+		float3 lighting = g_xPassSet.u_xLightingGrid.Sample(float3(input.uv, sliceZ)).rgb;
 		return float4(lighting, 1.0);
 	}
 
-	float depth = u_xDepthTexture.Sample(input.uv).r;
+	float depth = g_xPassSet.u_xDepthTexture.Sample(input.uv).r;
 
 	// Reconstruct linear depth in view space. Engine uses +Z forward, so
 	// viewPos.z is positive — no negation needed.
 	float4 clipPos = float4(input.uv * 2.0 - 1.0, depth, 1.0);
-	float4 viewPos = mul(FrameConstants.g_xInvProjMat, clipPos);
+	float4 viewPos = mul(g_xViewSet.g_xView.g_xInvProjMat, clipPos);
 	viewPos /= viewPos.w;
 	float linearDepth = viewPos.z;
 
-	float nearZ = max(ApplyConstants.u_fNearZ, SAFE_NEAR_Z);
-	float farZ  = max(ApplyConstants.u_fFarZ, nearZ * SAFE_DEPTH_RATIO);
+	float nearZ = max(g_xPassSet.ApplyConstants.u_fNearZ, SAFE_NEAR_Z);
+	float farZ  = max(g_xPassSet.ApplyConstants.u_fFarZ, nearZ * SAFE_DEPTH_RATIO);
 	linearDepth = clamp(linearDepth, nearZ, farZ);
 
 	// 32 samples = ~2× oversampling of the 64-slice froxel grid with
@@ -104,8 +109,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 		float froxelZ = DepthToFroxelZ(sampleDepth, nearZ, farZ);
 
-		float3 inScatter   = u_xLightingGrid.Sample(float3(input.uv, froxelZ)).rgb;
-		float4 scatterData = u_xScatteringGrid.Sample(float3(input.uv, froxelZ));
+		float3 inScatter   = g_xPassSet.u_xLightingGrid.Sample(float3(input.uv, froxelZ)).rgb;
+		float4 scatterData = g_xPassSet.u_xScatteringGrid.Sample(float3(input.uv, froxelZ));
 		float  extinction  = scatterData.a;
 
 		float prevDepth = (i == 0)

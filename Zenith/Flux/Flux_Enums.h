@@ -127,16 +127,60 @@ enum ShaderDataType
 	SHADER_DATA_TYPE_NONE
 };
 
-enum BindingType
+// Canonical resource taxonomy carried through reflection -> pipeline layout.
+// Captures the distinctions Slang reflection exposes (separate vs combined
+// texture/sampler, structured-buffer variants, RW textures, unbounded arrays,
+// parameter blocks) so layout code and every backend can project the right
+// descriptor type. (Lives here, alongside the legacy BindingType it replaces,
+// so both Flux_Types.h and the Slang reflection layer can name it.)
+enum FluxResourceKind : u_int
 {
-	BINDING_TYPE_BUFFER,
-	BINDING_TYPE_STORAGE_BUFFER,
-	BINDING_TYPE_TEXTURE,
-	BINDING_TYPE_STORAGE_IMAGE,
-	BINDING_TYPE_ACCELERATION_STRUCTURE,
-	BINDING_TYPE_UNBOUNDED_TEXTURES,
-	BINDING_TYPE_MAX
+	FLUX_RESOURCE_KIND_UNKNOWN                  = 0,
+	FLUX_RESOURCE_KIND_CONSTANT_BUFFER          = 1,  // cbuffer / uniform block
+	FLUX_RESOURCE_KIND_STRUCTURED_BUFFER        = 2,  // StructuredBuffer<T> (read-only SSBO)
+	FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER     = 3,  // RWStructuredBuffer<T>
+	FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER      = 4,
+	FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER   = 5,
+	FLUX_RESOURCE_KIND_TEXTURE                  = 6,  // Texture2D etc. (separate texture)
+	FLUX_RESOURCE_KIND_RW_TEXTURE               = 7,  // RWTexture2D etc. (storage image)
+	FLUX_RESOURCE_KIND_SAMPLER                  = 8,  // SamplerState
+	FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER = 9,  // Sampler2D / sampler2D
+	FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE   = 10,
+	FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY  = 11,
+	FLUX_RESOURCE_KIND_PARAMETER_BLOCK          = 12, // ParameterBlock<T>
 };
+
+// Backend-neutral descriptor-category predicates over FluxResourceKind. These
+// mirror the descriptor-type buckets the layout/descriptor-write paths key on
+// (uniform buffer / storage buffer / sampled texture / storage image), matching
+// the buckets the legacy BindingType used (all texture-ish kinds share the
+// combined-image-sampler descriptor; both structured-buffer variants share the
+// storage-buffer descriptor — read/write is disambiguated by the bound view).
+inline bool FluxKindIsUniformBuffer(FluxResourceKind e)
+{
+	return e == FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+}
+inline bool FluxKindIsStorageBuffer(FluxResourceKind e)
+{
+	return e == FLUX_RESOURCE_KIND_STRUCTURED_BUFFER
+		|| e == FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER
+		|| e == FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER
+		|| e == FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER;
+}
+inline bool FluxKindIsSampledTexture(FluxResourceKind e)
+{
+	return e == FLUX_RESOURCE_KIND_TEXTURE
+		|| e == FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER
+		|| e == FLUX_RESOURCE_KIND_SAMPLER;
+}
+inline bool FluxKindIsStorageImage(FluxResourceKind e)
+{
+	return e == FLUX_RESOURCE_KIND_RW_TEXTURE;
+}
+inline bool FluxKindIsUnboundedArray(FluxResourceKind e)
+{
+	return e == FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY;
+}
 
 enum LoadAction
 {

@@ -16,11 +16,59 @@ namespace Flux_Generated_SSR
 	// ----- SSR_RayMarch (SSR/Flux_SSR_RayMarch) -----
 	namespace SSR_RayMarch
 	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kSSRConstants_Name = "SSRConstants";
-		inline constexpr unsigned int kSSRConstants_Set = 0;
-		inline constexpr unsigned int kSSRConstants_Binding = 1;
+		inline constexpr unsigned int kSSRConstants_Set = 3;
+		inline constexpr unsigned int kSSRConstants_Binding = 0;
 		inline constexpr unsigned int kSSRConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hSSRConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct SSRConstants_CB
 		{
 			float m_fu_fIntensity; // slang=float offset=0
@@ -67,75 +115,105 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad1) == 72, "SSRConstants.u_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad2) == 76, "SSRConstants.u_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 0;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
+		inline constexpr unsigned int kg_xDepthTex_Set = 3;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 1;
 		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
-		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
-		inline constexpr unsigned int kg_xNormalsTex_Binding = 3;
+		inline constexpr unsigned int kg_xNormalsTex_Set = 3;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 2;
 		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xNormalsTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
-		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
-		inline constexpr unsigned int kg_xMaterialTex_Binding = 4;
+		inline constexpr unsigned int kg_xMaterialTex_Set = 3;
+		inline constexpr unsigned int kg_xMaterialTex_Binding = 3;
 		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMaterialTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xHiZTex_Name = "g_xHiZTex";
-		inline constexpr unsigned int kg_xHiZTex_Set = 0;
-		inline constexpr unsigned int kg_xHiZTex_Binding = 5;
+		inline constexpr unsigned int kg_xHiZTex_Set = 3;
+		inline constexpr unsigned int kg_xHiZTex_Binding = 4;
 		inline constexpr unsigned int kg_xHiZTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xHiZTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xDiffuseTex_Name = "g_xDiffuseTex";
-		inline constexpr unsigned int kg_xDiffuseTex_Set = 0;
-		inline constexpr unsigned int kg_xDiffuseTex_Binding = 6;
+		inline constexpr unsigned int kg_xDiffuseTex_Set = 3;
+		inline constexpr unsigned int kg_xDiffuseTex_Binding = 5;
 		inline constexpr unsigned int kg_xDiffuseTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDiffuseTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xBlueNoiseTex_Name = "g_xBlueNoiseTex";
-		inline constexpr unsigned int kg_xBlueNoiseTex_Set = 0;
-		inline constexpr unsigned int kg_xBlueNoiseTex_Binding = 7;
+		inline constexpr unsigned int kg_xBlueNoiseTex_Set = 3;
+		inline constexpr unsigned int kg_xBlueNoiseTex_Binding = 6;
 		inline constexpr unsigned int kg_xBlueNoiseTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
-		inline constexpr unsigned int kFrameConstants_Set = 0;
-		inline constexpr unsigned int kFrameConstants_Binding = 0;
-		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		struct FrameConstants_CB
-		{
-			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
-			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
-			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
-			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
-			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
-		};
-		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr Flux_BindingHandle hg_xBlueNoiseTex{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 	// ----- SSR_DenoiseH (SSR/Flux_SSR_DenoiseH) -----
 	namespace SSR_DenoiseH
 	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kg_xSSRUpsampledTex_Name = "g_xSSRUpsampledTex";
-		inline constexpr unsigned int kg_xSSRUpsampledTex_Set = 0;
-		inline constexpr unsigned int kg_xSSRUpsampledTex_Binding = 1;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Set = 3;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Binding = 0;
 		inline constexpr unsigned int kg_xSSRUpsampledTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSSRUpsampledTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kPushConstants_Name = "PushConstants";
-		inline constexpr unsigned int kPushConstants_Set = 0;
-		inline constexpr unsigned int kPushConstants_Binding = 2;
+		inline constexpr unsigned int kPushConstants_Set = 3;
+		inline constexpr unsigned int kPushConstants_Binding = 1;
 		inline constexpr unsigned int kPushConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hPushConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct PushConstants_CB
 		{
 			float m_fu_fSpatialSigma; // slang=float offset=0
@@ -157,65 +235,93 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(PushConstants_CB, m_f_pad0) == 24, "PushConstants._pad0 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_f_pad1) == 28, "PushConstants._pad1 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 0;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 3;
+		inline constexpr unsigned int kg_xDepthTex_Set = 3;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
 		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
-		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
-		inline constexpr unsigned int kg_xNormalsTex_Binding = 4;
+		inline constexpr unsigned int kg_xNormalsTex_Set = 3;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 3;
 		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xNormalsTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
-		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
-		inline constexpr unsigned int kg_xMaterialTex_Binding = 5;
+		inline constexpr unsigned int kg_xMaterialTex_Set = 3;
+		inline constexpr unsigned int kg_xMaterialTex_Binding = 4;
 		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMaterialTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xSSRUpsampledAuxTex_Name = "g_xSSRUpsampledAuxTex";
-		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Set = 0;
-		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Binding = 6;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Set = 3;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Binding = 5;
 		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
-		inline constexpr unsigned int kFrameConstants_Set = 0;
-		inline constexpr unsigned int kFrameConstants_Binding = 0;
-		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		struct FrameConstants_CB
-		{
-			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
-			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
-			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
-			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
-			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
-			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
-		};
-		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr Flux_BindingHandle hg_xSSRUpsampledAuxTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 	// ----- SSR_DenoiseV (SSR/Flux_SSR_DenoiseV) -----
 	namespace SSR_DenoiseV
 	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kg_xSSRDenoiseHColTex_Name = "g_xSSRDenoiseHColTex";
-		inline constexpr unsigned int kg_xSSRDenoiseHColTex_Set = 0;
-		inline constexpr unsigned int kg_xSSRDenoiseHColTex_Binding = 1;
+		inline constexpr unsigned int kg_xSSRDenoiseHColTex_Set = 3;
+		inline constexpr unsigned int kg_xSSRDenoiseHColTex_Binding = 0;
 		inline constexpr unsigned int kg_xSSRDenoiseHColTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSSRDenoiseHColTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kPushConstants_Name = "PushConstants";
-		inline constexpr unsigned int kPushConstants_Set = 0;
-		inline constexpr unsigned int kPushConstants_Binding = 2;
+		inline constexpr unsigned int kPushConstants_Set = 3;
+		inline constexpr unsigned int kPushConstants_Binding = 1;
 		inline constexpr unsigned int kPushConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hPushConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct PushConstants_CB
 		{
 			float m_fu_fSpatialSigma; // slang=float offset=0
@@ -237,41 +343,70 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(PushConstants_CB, m_f_pad0) == 24, "PushConstants._pad0 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_f_pad1) == 28, "PushConstants._pad1 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 0;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 3;
+		inline constexpr unsigned int kg_xDepthTex_Set = 3;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
 		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
-		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
-		inline constexpr unsigned int kg_xNormalsTex_Binding = 4;
+		inline constexpr unsigned int kg_xNormalsTex_Set = 3;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 3;
 		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xNormalsTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
-		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
-		inline constexpr unsigned int kg_xMaterialTex_Binding = 5;
+		inline constexpr unsigned int kg_xMaterialTex_Set = 3;
+		inline constexpr unsigned int kg_xMaterialTex_Binding = 4;
 		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMaterialTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xSSRUpsampledAuxTex_Name = "g_xSSRUpsampledAuxTex";
-		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Set = 0;
-		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Binding = 6;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Set = 3;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Binding = 5;
 		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSSRUpsampledAuxTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xSSRDenoiseHConfTex_Name = "g_xSSRDenoiseHConfTex";
-		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_Set = 0;
-		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_Binding = 7;
+		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_Set = 3;
+		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_Binding = 6;
 		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSSRDenoiseHConfTex{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xSSRUpsampledTex_Name = "g_xSSRUpsampledTex";
-		inline constexpr unsigned int kg_xSSRUpsampledTex_Set = 0;
-		inline constexpr unsigned int kg_xSSRUpsampledTex_Binding = 8;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Set = 3;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Binding = 7;
 		inline constexpr unsigned int kg_xSSRUpsampledTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
-		inline constexpr unsigned int kFrameConstants_Set = 0;
-		inline constexpr unsigned int kFrameConstants_Binding = 0;
-		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
+		inline constexpr Flux_BindingHandle hg_xSSRUpsampledTex{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+	}
+
+	// ----- SSR_Upsample (SSR/Flux_SSR_Upsample) -----
+	namespace SSR_Upsample
+	{
+		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
+		inline constexpr unsigned int kg_xGlobal_Set = 0;
+		inline constexpr unsigned int kg_xGlobal_Binding = 0;
+		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
-		struct FrameConstants_CB
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xGlobal_CB
+		{
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=32
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		inline constexpr const char* kg_xView_Name = "g_xView";
+		inline constexpr unsigned int kg_xView_Set = 1;
+		inline constexpr unsigned int kg_xView_Binding = 0;
+		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct g_xView_CB
 		{
 			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
@@ -280,27 +415,27 @@ namespace Flux_Generated_SSR
 			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
 			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
-			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
-			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
-			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
-			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=400 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=408 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
-		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-	}
-
-	// ----- SSR_Upsample (SSR/Flux_SSR_Upsample) -----
-	namespace SSR_Upsample
-	{
+		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
+		inline constexpr unsigned int kg_axTextures_Set = 2;
+		inline constexpr unsigned int kg_axTextures_Binding = 0;
+		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		inline constexpr const char* kSSRConstants_Name = "SSRConstants";
-		inline constexpr unsigned int kSSRConstants_Set = 0;
+		inline constexpr unsigned int kSSRConstants_Set = 3;
 		inline constexpr unsigned int kSSRConstants_Binding = 0;
 		inline constexpr unsigned int kSSRConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hSSRConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct SSRConstants_CB
 		{
 			float m_fu_fIntensity; // slang=float offset=0
@@ -347,30 +482,35 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad1) == 72, "SSRConstants.u_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad2) == 76, "SSRConstants.u_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xSSRTex_Name = "g_xSSRTex";
-		inline constexpr unsigned int kg_xSSRTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRTex_Set = 3;
 		inline constexpr unsigned int kg_xSSRTex_Binding = 1;
 		inline constexpr unsigned int kg_xSSRTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSSRTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 0;
+		inline constexpr unsigned int kg_xDepthTex_Set = 3;
 		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
 		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xSSRAuxTex_Name = "g_xSSRAuxTex";
-		inline constexpr unsigned int kg_xSSRAuxTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRAuxTex_Set = 3;
 		inline constexpr unsigned int kg_xSSRAuxTex_Binding = 3;
 		inline constexpr unsigned int kg_xSSRAuxTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSSRAuxTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
-		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
+		inline constexpr unsigned int kg_xNormalsTex_Set = 3;
 		inline constexpr unsigned int kg_xNormalsTex_Binding = 4;
 		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xNormalsTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
-		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
+		inline constexpr unsigned int kg_xMaterialTex_Set = 3;
 		inline constexpr unsigned int kg_xMaterialTex_Binding = 5;
 		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMaterialTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 }

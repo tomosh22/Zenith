@@ -8,6 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/HDR.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Flux/Text/Flux_TextQueue.h"
 // VulkanMemory owns the auto-exposure VRAM buffers + uploads, the swapchain
@@ -308,10 +309,11 @@ static void ExecuteLuminanceHistogram(Flux_CommandBuffer* pxCommandList, void* p
 	xConsts.m_fMinLogLum = xHDR.m_fMinLogLuminance;
 	xConsts.m_fLogLumRange = xHDR.m_fLogLuminanceRange;
 
+	namespace LUM = Flux_Generated_HDR::HDR_Luminance;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindDrawConstants(xHDR.m_xLuminanceHistogramShader, "LuminanceConstants", &xConsts, sizeof(xConsts));
-	xBinder.BindSRV(xHDR.m_xLuminanceHistogramShader, "g_xHDRTex", &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
-	xBinder.BindUAV_Buffer(xHDR.m_xLuminanceHistogramShader, "g_auHistogram", &xHDR.m_xHistogramBuffer.GetUAV());
+	xBinder.BindDrawConstants(LUM::hLuminanceConstants, &xConsts, sizeof(xConsts));
+	xBinder.BindSRV(LUM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
+	xBinder.BindUAV_Buffer(LUM::hg_auHistogram, &xHDR.m_xHistogramBuffer.GetUAV());
 
 	u_int uGroupsX = (g_xEngine.FluxSwapchain().GetWidth() + 15) / 16;
 	u_int uGroupsY = (g_xEngine.FluxSwapchain().GetHeight() + 15) / 16;
@@ -348,10 +350,11 @@ static void ExecuteAdaptation(Flux_CommandBuffer* pxCommandList, void* pUserData
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
+	namespace ADP = Flux_Generated_HDR::HDR_Adaptation;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindDrawConstants(xHDR.m_xAdaptationShader, "AdaptationConstants", &xConsts, sizeof(xConsts));
-	xBinder.BindUAV_Buffer(xHDR.m_xAdaptationShader, "g_auHistogram", &xHDR.m_xHistogramBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(xHDR.m_xAdaptationShader, "g_afExposureData", &xHDR.m_xExposureBuffer.GetUAV());
+	xBinder.BindDrawConstants(ADP::hAdaptationConstants, &xConsts, sizeof(xConsts));
+	xBinder.BindUAV_Buffer(ADP::hg_auHistogram, &xHDR.m_xHistogramBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(ADP::hg_afExposureData, &xHDR.m_xExposureBuffer.GetUAV());
 
 	pxCommandList->Dispatch(1, 1, 1);
 }
@@ -447,9 +450,10 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
+	namespace BT = Flux_Generated_HDR::BloomThreshold;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(xHDR.m_xBloomThresholdShader, "g_xHDRTex", &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
-	xBinder.BindDrawConstants(xHDR.m_xBloomThresholdShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
+	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
+	xBinder.BindDrawConstants(BT::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -475,9 +479,10 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
+	namespace BD = Flux_Generated_HDR::BloomDownsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(xHDR.m_xBloomDownsampleShader, "g_xSourceTex", &xHDR.GetBloomChainAttachment(uMipIndex - 1).SRV());
-	xBinder.BindDrawConstants(xHDR.m_xBloomDownsampleShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
+	xBinder.BindSRV(BD::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uMipIndex - 1).SRV());
+	xBinder.BindDrawConstants(BD::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -502,9 +507,10 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
+	namespace BU = Flux_Generated_HDR::BloomUpsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(xHDR.m_xBloomUpsampleShader, "g_xSourceTex", &xHDR.GetBloomChainAttachment(uSourceMip).SRV());
-	xBinder.BindDrawConstants(xHDR.m_xBloomUpsampleShader, "BloomConstants", &xBloomConsts, sizeof(BloomConstants));
+	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip).SRV());
+	xBinder.BindDrawConstants(BU::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -532,14 +538,15 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
+		namespace TM = Flux_Generated_HDR::HDR_ToneMapping;
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindSRV(xHDR.m_xToneMappingShader, "g_xHDRTex", &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
-		xBinder.BindSRV(xHDR.m_xToneMappingShader, "g_xBloomTex", &xHDR.GetBloomChainAttachment(0).SRV());
+		xBinder.BindSRV(TM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
+		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0).SRV());
 		// Slang reflection keys on the variable name (not the GLSL block
 		// name) — match the names declared in Flux_ToneMapping.slang.
-		xBinder.BindUAV_Buffer(xHDR.m_xToneMappingShader, "g_auHistogram",   &xHDR.m_xHistogramBuffer.GetUAV());
-		xBinder.BindUAV_Buffer(xHDR.m_xToneMappingShader, "g_afExposureData", &xHDR.m_xExposureBuffer.GetUAV());
-		xBinder.BindDrawConstants(xHDR.m_xToneMappingShader, "ToneMappingConstants", &xConsts, sizeof(ToneMappingConstants));
+		xBinder.BindUAV_Buffer(TM::hg_auHistogram,   &xHDR.m_xHistogramBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(TM::hg_afExposureData, &xHDR.m_xExposureBuffer.GetUAV());
+		xBinder.BindDrawConstants(TM::hToneMappingConstants, &xConsts, sizeof(ToneMappingConstants));
 	}
 
 	pxCommandList->DrawIndexed(6);

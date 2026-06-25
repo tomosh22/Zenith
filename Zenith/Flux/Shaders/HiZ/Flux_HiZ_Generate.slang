@@ -8,9 +8,7 @@
 // (4 NVIDIA warps / 8 AMD wavefronts) for occupancy on both vendors.
 // =====================================================================
 
-[[vk::binding(0, 0)]] Sampler2D g_xInputTex;
-
-[[vk::binding(1, 0)]] RWTexture2D<float4> g_xOutputTex;
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 
 struct PushConstantsLayout
 {
@@ -19,7 +17,16 @@ struct PushConstantsLayout
 	uint u_uInputMip;
 	uint u_uPad;
 };
-[[vk::binding(2, 0)]] ConstantBuffer<PushConstantsLayout> pushConstants;
+
+// Pure compute on its own depth/HiZ textures — no FrameConstants. The spine
+// include still reserves sets 0/1/2 so this PassParams block lands at set 3.
+struct PassParams
+{
+	Sampler2D g_xInputTex;
+	RWTexture2D<float4> g_xOutputTex;
+	ConstantBuffer<PushConstantsLayout> pushConstants;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("compute")]
 [numthreads(8, 16, 1)]
@@ -27,8 +34,8 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
 	uint2 xPixelCoords = dispatchId.xy;
 
-	if (xPixelCoords.x >= pushConstants.u_uOutputWidth ||
-		xPixelCoords.y >= pushConstants.u_uOutputHeight)
+	if (xPixelCoords.x >= g_xPassSet.pushConstants.u_uOutputWidth ||
+		xPixelCoords.y >= g_xPassSet.pushConstants.u_uOutputHeight)
 	{
 		return;
 	}
@@ -36,14 +43,14 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float fMinDepth;
 	float fMaxDepth;
 
-	if (pushConstants.u_uInputMip == 0)
+	if (g_xPassSet.pushConstants.u_uInputMip == 0)
 	{
 		// Mip 0: depth buffer is the same resolution as HiZ mip 0; one HiZ
 		// texel ↔ one depth texel, so min == max. Min/max divergence only
 		// happens at mip 1+ where we downsample 2×2 regions.
 		float2 xUV = (float2(xPixelCoords) + 0.5) /
-					 float2(pushConstants.u_uOutputWidth, pushConstants.u_uOutputHeight);
-		float fDepth = g_xInputTex.SampleLevel(xUV, 0).r;
+					 float2(g_xPassSet.pushConstants.u_uOutputWidth, g_xPassSet.pushConstants.u_uOutputHeight);
+		float fDepth = g_xPassSet.g_xInputTex.SampleLevel(xUV, 0).r;
 		fMinDepth = fDepth;
 		fMaxDepth = fDepth;
 	}
@@ -52,18 +59,18 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 		// Subsequent mips: read 4 texels (2x2) from previous mip; min of
 		// mins, max of maxes.
 		float2 xTexelSize = 1.0 /
-							 float2(pushConstants.u_uOutputWidth * 2,
-									pushConstants.u_uOutputHeight * 2);
+							 float2(g_xPassSet.pushConstants.u_uOutputWidth * 2,
+									g_xPassSet.pushConstants.u_uOutputHeight * 2);
 		float2 xBaseUV = (float2(xPixelCoords) * 2.0 + 0.5) * xTexelSize;
 
-		float2 d00 = g_xInputTex.SampleLevel(xBaseUV, 0).rg;
-		float2 d10 = g_xInputTex.SampleLevel(xBaseUV + float2(xTexelSize.x, 0.0), 0).rg;
-		float2 d01 = g_xInputTex.SampleLevel(xBaseUV + float2(0.0, xTexelSize.y), 0).rg;
-		float2 d11 = g_xInputTex.SampleLevel(xBaseUV + xTexelSize, 0).rg;
+		float2 d00 = g_xPassSet.g_xInputTex.SampleLevel(xBaseUV, 0).rg;
+		float2 d10 = g_xPassSet.g_xInputTex.SampleLevel(xBaseUV + float2(xTexelSize.x, 0.0), 0).rg;
+		float2 d01 = g_xPassSet.g_xInputTex.SampleLevel(xBaseUV + float2(0.0, xTexelSize.y), 0).rg;
+		float2 d11 = g_xPassSet.g_xInputTex.SampleLevel(xBaseUV + xTexelSize, 0).rg;
 
 		fMinDepth = min(min(d00.r, d10.r), min(d01.r, d11.r));
 		fMaxDepth = max(max(d00.g, d10.g), max(d01.g, d11.g));
 	}
 
-	g_xOutputTex[xPixelCoords] = float4(fMinDepth, fMaxDepth, 0.0, 0.0);
+	g_xPassSet.g_xOutputTex[xPixelCoords] = float4(fMinDepth, fMaxDepth, 0.0, 0.0);
 }

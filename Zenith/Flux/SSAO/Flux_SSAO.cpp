@@ -8,6 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/SSAO.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 // GetWidth/GetHeight on the swapchain (reached via g_xEngine at point of use)
@@ -138,11 +139,12 @@ static void ExecuteSSAOGenerate(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
+	namespace NS = Flux_Generated_SSAO::SSAO_Main;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(xSSAO.m_xGenerateShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(xSSAO.m_xGenerateShader, "SSAOConstants", &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
-	xBinder.BindSRV(xSSAO.m_xGenerateShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xSSAO.m_xGenerateShader, "g_xNormalTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindCBV(NS::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindDrawConstants(NS::hSSAOConstants, &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
+	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -160,11 +162,12 @@ static void ExecuteSSAOBlur(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
+	namespace NS = Flux_Generated_SSAO::SSAO_Blur;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindDrawConstants(xSSAO.m_xBlurShader, "SSAOBlurConstants", &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
-	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xOcclusionTex", &xSSAO.GetRawOcclusion().SRV());
-	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xSSAO.m_xBlurShader, "g_xNormalTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindDrawConstants(NS::hSSAOBlurConstants, &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
+	xBinder.BindSRV(NS::hg_xOcclusionTex, &xSSAO.GetRawOcclusion().SRV());
+	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->DrawIndexed(6);
 }

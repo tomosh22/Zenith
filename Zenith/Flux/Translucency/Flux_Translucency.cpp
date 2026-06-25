@@ -16,6 +16,7 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Translucency.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
 
 #include <algorithm>
@@ -264,25 +265,30 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			pxCmdList->SetPipeline(pxPipeline);
 			pxBoundPipeline = pxPipeline;
 
-			// (Re)bind the per-pass set-0 resources for the new pipeline.
-			xBinder.BindCBV(xZZ.m_xShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-			xBinder.BindDrawConstants(xZZ.m_xShader, "TranslucencyConstants", &xConstants, sizeof(xConstants));
+			// (Re)bind the per-pass resources for the new pipeline.
+			namespace TF = Flux_Generated_Translucency::Translucent_Forward;
+			// Frequency-set spine: GLOBAL (sun/time) at set 0, VIEW (camera) at set 1.
+			// The shader reads the sun direction/colour (sun direct + CSM) and the
+			// camera, so both spine blocks are bound.
+			xBinder.BindCBV(TF::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
+			xBinder.BindCBV(TF::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+			xBinder.BindDrawConstants(TF::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
-			static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
-			static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
+			static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { TF::hg_xCSM0, TF::hg_xCSM1, TF::hg_xCSM2, TF::hg_xCSM3 };
+			static const Flux_BindingHandle s_axShadowMatrixHandles[ZENITH_FLUX_NUM_CSMS] = { TF::hShadowMatrix0, TF::hShadowMatrix1, TF::hShadowMatrix2, TF::hShadowMatrix3 };
 			for (uint32_t uCSM = 0; uCSM < ZENITH_FLUX_NUM_CSMS; uCSM++)
 			{
-				xBinder.BindSRV(xZZ.m_xShader, s_aszCSMNames[uCSM], &xShadows.GetCSMSRV(uCSM), &xGraphics.m_xClampSampler);
-				xBinder.BindCBV(xZZ.m_xShader, s_aszShadowMatrixNames[uCSM], &xShadows.GetShadowMatrixBuffer(uCSM).GetCBV());
+				xBinder.BindSRV(s_axCSMHandles[uCSM], &xShadows.GetCSMSRV(uCSM), &xGraphics.m_xClampSampler);
+				xBinder.BindCBV(s_axShadowMatrixHandles[uCSM], &xShadows.GetShadowMatrixBuffer(uCSM).GetCBV());
 			}
 
-			xBinder.BindSRV(xZZ.m_xShader, "g_xBRDFLUT", &xIBL.GetBRDFLUTSRV());
-			xBinder.BindSRV(xZZ.m_xShader, "g_xIrradianceMap", &xIBL.GetIrradianceMapSRV());
-			xBinder.BindSRV(xZZ.m_xShader, "g_xPrefilteredMap", &xIBL.GetPrefilteredMapSRV());
+			xBinder.BindSRV(TF::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
+			xBinder.BindSRV(TF::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
+			xBinder.BindSRV(TF::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
 
-			xBinder.BindSRV_Buffer(xZZ.m_xShader, "LightBuffer", g_xEngine.DynamicLights().GetLightBufferSRV());
-			xBinder.BindSRV_Buffer(xZZ.m_xShader, "ClusterLightCounts", g_xEngine.LightClustering().GetClusterLightCountsSRV());
-			xBinder.BindSRV_Buffer(xZZ.m_xShader, "ClusterLightIndices", g_xEngine.LightClustering().GetClusterLightIndicesSRV());
+			xBinder.BindSRV_Buffer(TF::hLightBuffer, g_xEngine.DynamicLights().GetLightBufferSRV());
+			xBinder.BindSRV_Buffer(TF::hClusterLightCounts, g_xEngine.LightClustering().GetClusterLightCountsSRV());
+			xBinder.BindSRV_Buffer(TF::hClusterLightIndices, g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 		}
 
 		pxCmdList->SetVertexBuffer(xItem.m_pxMeshInstance->GetVertexBuffer());
@@ -290,12 +296,14 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 
 		MaterialDrawConstants xDrawConstants;
 		BuildMaterialDrawConstants(xDrawConstants, xItem.m_xModelMatrix, xItem.m_pxMaterial);
-		xBinder.BindDrawConstants(xZZ.m_xShader, "DrawConstants", &xDrawConstants, sizeof(xDrawConstants));
+		xBinder.BindDrawConstants(Flux_Generated_Translucency::Translucent_Forward::hDrawConstants, &xDrawConstants, sizeof(xDrawConstants));
 
+		static constexpr Flux_BindingHandle s_aMatHandles[] = FLUX_MATERIAL_TEXTURE_HANDLES(Flux_Generated_Translucency::Translucent_Forward);
+		static_assert(sizeof(s_aMatHandles) / sizeof(s_aMatHandles[0]) == MATERIAL_TEXTURE_SLOT_COUNT, "material handle array size mismatch");
 		for (u_int uSlot = 0; uSlot < MATERIAL_TEXTURE_SLOT_COUNT; uSlot++)
 		{
 			Zenith_TextureAsset* pxTexture = xItem.m_pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(uSlot));
-			xBinder.BindSRV(xZZ.m_xShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
+			xBinder.BindSRV(s_aMatHandles[uSlot], &pxTexture->m_xSRV);
 		}
 
 		pxCmdList->DrawIndexed(xItem.m_pxMeshInstance->GetNumIndices());

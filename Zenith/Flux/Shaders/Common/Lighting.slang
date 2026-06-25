@@ -25,7 +25,8 @@
 // Common.PBR for the BRDF helpers.
 // =====================================================================
 
-import Common.Frame;
+// (Common.Frame no longer needed — ComputeClusterAABB takes the inverse-proj as
+// a parameter, so this shared module has no global per-frame dependency.)
 import Common.PBR;
 
 // ---------- Light type tags (kept in m_xTypeOuter.y as a float) ----------
@@ -110,7 +111,9 @@ public float2 ClusterZRange(uint uSlice)
 // Cluster's view-space AABB. Built by reconstructing the four screen-
 // space corners at the slice's near and far planes through the inverse
 // projection. Conservative — we just min/max the eight resulting points.
-public void ComputeClusterAABB(uint3 xCoord, out float3 xMin, out float3 xMax)
+// xInvProj is passed in (the VIEW set's inverse-projection) so this shared
+// helper has no global-constant dependency — it works under the binding spine.
+public void ComputeClusterAABB(uint3 xCoord, float4x4 xInvProj, out float3 xMin, out float3 xMax)
 {
     float2 xUVMin = float2(xCoord.xy) / float2(CLUSTER_DIM_X, CLUSTER_DIM_Y);
     float2 xUVMax = float2(xCoord.xy + uint2(1u, 1u)) / float2(CLUSTER_DIM_X, CLUSTER_DIM_Y);
@@ -134,7 +137,7 @@ public void ComputeClusterAABB(uint3 xCoord, out float3 xMin, out float3 xMax)
                 float fU = (iX == 0) ? xUVMin.x : xUVMax.x;
                 float2 xNDC = float2(fU, fV) * 2.0 - 1.0;
                 float4 xClip = float4(xNDC, 0.0, 1.0);
-                float4 xView = mul(FrameConstants.g_xInvProjMat, xClip);
+                float4 xView = mul(xInvProj, xClip);
                 xView /= xView.w;
                 // Engine uses +Z forward; scale the unit-depth ray to fZ.
                 float fViewZ = max(abs(xView.z), 1e-4);

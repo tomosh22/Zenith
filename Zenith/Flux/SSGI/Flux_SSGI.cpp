@@ -13,6 +13,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/SSGI.h" // typed binding handles
 #include "Flux/Flux_BackendTypes.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -241,6 +242,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace RM = Flux_Generated_SSGI::SSGI_RayMarch;
 
 	// Bind a frame-local snapshot so the resolution-bumped iteration count
 	// goes to the GPU without mutating dbg_xSSGIConstants (which the debug-var
@@ -249,15 +251,19 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	SSGIConstants xFrameConstants = dbg_xSSGIConstants;
 	xFrameConstants.m_uBinarySearchIterations = xZZ.ComputeEffectiveBinarySearchIterations();
 
-	xBinder.BindCBV(xZZ.m_xRayMarchShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(xZZ.m_xRayMarchShader, "SSGIConstants", &xFrameConstants, sizeof(SSGIConstants));
+	// Converted to the ParameterBlock spine: the camera CB is now the VIEW set
+	// (set 1) g_xView, sourced from m_xViewConstantsBuffer. SSGI reads only the
+	// view/camera fields (g_xViewMat, g_xCameraNearFar) — no sun/global — so no
+	// GLOBAL-set bind is needed.
+	xBinder.BindCBV(RM::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindDrawConstants(RM::hSSGIConstants, &xFrameConstants, sizeof(SSGIConstants));
 
-	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xNormalsTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xMaterialTex", xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
-	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xDiffuseTex", xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(xZZ.m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(RM::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(RM::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(RM::hg_xHiZTex, &g_xEngine.HiZ().GetHiZSRV());
+	xBinder.BindSRV(RM::hg_xDiffuseTex, xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(RM::hg_xBlueNoiseTex, &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -278,9 +284,10 @@ static void ExecuteSSGIUpsample(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace US = Flux_Generated_SSGI::SSGI_Upsample;
 
-	xBinder.BindSRV(xZZ.m_xUpsampleShader, "g_xSSGITex", &xZZ.GetRawResultAttachment().SRV());
-	xBinder.BindSRV(xZZ.m_xUpsampleShader, "g_xDepthTex", xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(US::hg_xSSGITex, &xZZ.GetRawResultAttachment().SRV());
+	xBinder.BindSRV(US::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -304,14 +311,15 @@ static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace DH = Flux_Generated_SSGI::SSGI_DenoiseH;
 
 	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(xZZ.m_xDenoiseHShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+	xBinder.BindDrawConstants(DH::hPushConstants, &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(xZZ.m_xDenoiseHShader, "g_xSSGITex",    &xZZ.GetResolvedAttachment().SRV());
-	xBinder.BindSRV(xZZ.m_xDenoiseHShader, "g_xDepthTex",   xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xZZ.m_xDenoiseHShader, "g_xNormalsTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xZZ.m_xDenoiseHShader, "g_xAlbedoTex",  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(DH::hg_xSSGITex,    &xZZ.GetResolvedAttachment().SRV());
+	xBinder.BindSRV(DH::hg_xDepthTex,   xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(DH::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(DH::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -334,14 +342,15 @@ static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
+	namespace DV = Flux_Generated_SSGI::SSGI_DenoiseV;
 
 	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(xZZ.m_xDenoiseVShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+	xBinder.BindDrawConstants(DV::hPushConstants, &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(xZZ.m_xDenoiseVShader, "g_xSSGITex",    &xZZ.m_pxGraph->GetTransientAttachment(xZZ.m_xDenoiseHHandle).SRV());
-	xBinder.BindSRV(xZZ.m_xDenoiseVShader, "g_xDepthTex",   xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(xZZ.m_xDenoiseVShader, "g_xNormalsTex", xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xZZ.m_xDenoiseVShader, "g_xAlbedoTex",  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(DV::hg_xSSGITex,    &xZZ.m_pxGraph->GetTransientAttachment(xZZ.m_xDenoiseHHandle).SRV());
+	xBinder.BindSRV(DV::hg_xDepthTex,   xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(DV::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(DV::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
 	pxCommandList->DrawIndexed(6);
 }

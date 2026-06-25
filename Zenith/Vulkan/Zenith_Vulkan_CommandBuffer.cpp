@@ -8,6 +8,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RecordValidation.h"  // shared constructor-era validation (pipeline/view/draw-constant), also called by the D3D12 recorder
+#include "Flux/Flux_BindingValidation.h" // pure pre-draw staged-binding validator
 
 //#TO purely for the static assert in SetIndexBuffer
 
@@ -171,13 +172,13 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 {
 	for (u_int u = 0; u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
 	{
-		const BindingType eType = m_pxCurrentPipeline->m_xRootSig.m_axBindingTypes[uDescSet][u];
-		if (eType == BINDING_TYPE_MAX) continue;
+		const FluxResourceKind eKind = m_pxCurrentPipeline->m_xRootSig.m_aeBindingKinds[uDescSet][u];
+		if (eKind == FLUX_RESOURCE_KIND_UNKNOWN) continue;
 
 		// SRV → combined image sampler. Depth textures must use the
 		// DepthStencilReadOnlyOptimal layout, not ShaderReadOnlyOptimal.
 		const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
-		if (eType == BINDING_TYPE_TEXTURE && pxSRV)
+		if (FluxKindIsSampledTexture(eKind) && pxSRV)
 		{
 			Zenith_Assert(pxSRV->m_xImageViewHandle.IsValid(), "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
 
@@ -201,7 +202,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 
 		// UAV image → storage image (general layout).
 		const Flux_UnorderedAccessView_Texture* const pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[u];
-		if (eType == BINDING_TYPE_STORAGE_IMAGE && pxUAV_Texture)
+		if (FluxKindIsStorageImage(eKind) && pxUAV_Texture)
 		{
 			axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 				.setImageView(m_pxVulkanMemory->GetImageView(pxUAV_Texture->m_xImageViewHandle))
@@ -218,7 +219,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 
 		// UAV buffer → storage buffer.
 		const Flux_UnorderedAccessView_Buffer* const pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[u];
-		if (eType == BINDING_TYPE_STORAGE_BUFFER && pxUAV_Buffer)
+		if (FluxKindIsStorageBuffer(eKind) && pxUAV_Buffer)
 		{
 			axBufferInfos[uNumBufferWrites] = m_pxVulkanMemory->GetBufferDescriptor(pxUAV_Buffer->m_xBufferDescHandle);
 			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -239,7 +240,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 		// zero and a Flux_VRAMHandle of value 0 reports IsValid()==true
 		// (its sentinel is UINT32_MAX). The bool array memsets cleanly to
 		// false and only flips true when BindSRV_Buffer is called.
-		if (eType == BINDING_TYPE_STORAGE_BUFFER && !pxUAV_Buffer && m_xBindings[uDescSet].m_abSRV_BuffersActive[u])
+		if (FluxKindIsStorageBuffer(eKind) && !pxUAV_Buffer && m_xBindings[uDescSet].m_abSRV_BuffersActive[u])
 		{
 			const Flux_ShaderResourceView_Buffer& rxSRV_Buffer = m_xBindings[uDescSet].m_xSRV_Buffers[u];
 			axBufferInfos[uNumBufferWrites] = m_pxVulkanMemory->GetBufferDescriptor(rxSRV_Buffer.m_xBufferDescHandle);
@@ -258,11 +259,11 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 		// case it is lowest priority (UAV buffer, then SRV buffer, then CBV) so a
 		// real buffer binding wins over a stale CBV at the same slot.
 		const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
-		if (pxCBV && (eType == BINDING_TYPE_BUFFER ||
-			(eType == BINDING_TYPE_STORAGE_BUFFER && !pxUAV_Buffer && !m_xBindings[uDescSet].m_abSRV_BuffersActive[u])))
+		if (pxCBV && (FluxKindIsUniformBuffer(eKind) ||
+			(FluxKindIsStorageBuffer(eKind) && !pxUAV_Buffer && !m_xBindings[uDescSet].m_abSRV_BuffersActive[u])))
 		{
 			axBufferInfos[uNumBufferWrites] = m_pxVulkanMemory->GetBufferDescriptor(pxCBV->m_xBufferDescHandle);
-			vk::DescriptorType eBufferType = (eType == BINDING_TYPE_STORAGE_BUFFER)
+			vk::DescriptorType eBufferType = FluxKindIsStorageBuffer(eKind)
 				? vk::DescriptorType::eStorageBuffer
 				: vk::DescriptorType::eUniformBuffer;
 			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -284,7 +285,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 	// a stale scratch record persisting onto a slot a later pipeline uses for a
 	// different descriptor type (SetPipeline's clear normally prevents this).
 	if (xScratch.m_bValid &&
-		m_pxCurrentPipeline->m_xRootSig.m_axBindingTypes[uDescSet][xScratch.m_uBinding] == BINDING_TYPE_BUFFER)
+		FluxKindIsUniformBuffer(m_pxCurrentPipeline->m_xRootSig.m_aeBindingKinds[uDescSet][xScratch.m_uBinding]))
 	{
 		Zenith_Vulkan_PerFrame* pxFrame = m_pxVulkan->m_pxCurrentFrame;
 		axBufferInfos[uNumBufferWrites] = vk::DescriptorBufferInfo()
@@ -314,6 +315,46 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumBindingGroups;
 	Zenith_Assert(uNumDescSets <= FLUX_MAX_BINDING_GROUPS,
 		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_BINDING_GROUPS);
+
+#ifdef ZENITH_DEBUG
+	// Pre-draw staged-binding validation: every binding the bound pipeline
+	// declares (the reflected active mask) must have a resource staged for this
+	// draw, otherwise the shader samples an undefined descriptor. Pure mask
+	// comparison; the active mask comes from the RootSig, the staged mask is
+	// built from the per-set binding table here.
+	{
+		u_int auStaged[FLUX_MAX_BINDING_GROUPS] = {};
+		for (u_int s = 0; s < uNumDescSets; s++)
+		{
+			const auto& xB = m_xBindings[s];
+			u_int uMask = 0u;
+			for (u_int b = 0; b < FLUX_MAX_BINDINGS_PER_GROUP; b++)
+			{
+				const bool bStaged =
+					xB.m_xSRVs[b] != nullptr ||
+					xB.m_xCBVs[b] != nullptr ||
+					xB.m_xUAV_Textures[b] != nullptr ||
+					xB.m_xUAV_Buffers[b] != nullptr ||
+					xB.m_abSRV_BuffersActive[b];
+				if (bStaged) uMask |= (1u << b);
+			}
+			if (xB.m_xScratchBuffer.m_bValid) uMask |= (1u << xB.m_xScratchBuffer.m_uBinding);
+			auStaged[s] = uMask;
+		}
+		// Skip the persistent spine sets 0/1/2 (GLOBAL/VIEW/BINDLESS): a shader
+		// may #include the spine yet legitimately leave declared-but-unused spine
+		// sets unbound (e.g. a G-buffer pass that uses VIEW but not GLOBAL). Those
+		// sets' correctness is validated at bind time / by the persistent-set path,
+		// not per-draw. The validator therefore covers only the varying PASS/DRAW
+		// sets (3+). (Phase-2 P7 refinement.)
+		const u_int uPersistentSetMask = (1u << 0) | (1u << 1) | (1u << 2);
+		const Flux_StagedBindingCheck xChk = Flux_ValidateStagedBindings(
+			m_pxCurrentPipeline->m_xRootSig.m_auActiveBindingMask, auStaged, uNumDescSets, uPersistentSetMask);
+		Zenith_Assert(xChk.m_bAllStaged,
+			"Pre-draw binding validation: pipeline declares set %u binding %u but no resource was staged for this draw (missing a Bind*?).",
+			xChk.m_uMissingSet, xChk.m_uMissingBinding);
+	}
+#endif
 
 	// Touch each binding slot to ensure memory is valid (catches corrupted `this`).
 	for (u_int i = 0; i < uNumDescSets; i++)

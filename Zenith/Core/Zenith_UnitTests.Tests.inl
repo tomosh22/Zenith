@@ -16215,241 +16215,131 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 }
 
 // ============================================================================
-// Flux_ShaderBinder name-cache tests
+// Flux_ShaderBinder resolver tests
 // ============================================================================
-// Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.
-// The binder's resolver takes a reflection pointer (not the Flux_Shader wrapper)
-// so these tests don't need a live Vulkan device. Friended in via Zenith_UnitTests.
-//
-// The cache contract: entries are matched by pointer compare on
-// (reflection-ptr, name-ptr). String literals have stable, deduplicated
-// addresses within a translation unit, so the typical caller pattern produces
-// a 100% cache hit after the first call. No hashing → no possibility of a
-// clashing false hit.
+// The 64-entry pointer-identity name cache (m_axNameCache / m_uNextCacheSlot /
+// NameCacheEntry / NAME_CACHE_SIZE) was removed with the binding-model overhaul,
+// so the cache-specific tests that lived here are gone. ResolveNamedBinding now
+// does a direct reflection lookup and returns { Flux_BindingHandle m_xHandle;
+// FluxResourceKind m_eKind; }. The on-disk reflection format and codegen are
+// exercised by the Slang/Codegen tests below, which need the full
+// Flux_ShaderReflection / Flux_ReflectedBinding definitions.
 
-#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_BindingValidation.h"
+#include "Flux/Slang/Flux_FrequencyTaxonomy.h"
 
-namespace
+// Pure pre-draw staged-binding validator (Flux_ValidateStagedBindings). Device-
+// free mask comparison: every binding the pipeline declares (active) must have a
+// resource staged. Covers all-staged, a missing binding (reports first set+slot),
+// the persistent-set skip mask, and the unused-slots-never-flagged invariant.
+ZENITH_TEST(Flux, ValidateStagedBindings)
 {
-	// Build a synthetic reflection with a fixed set of (name, type, set, binding)
-	// entries. Names are passed in as const char* — the caller controls their
-	// lifetime so the same literal addresses can be reused across multiple
-	// resolver calls (the whole point of the pointer-identity cache).
-	struct BindingSpec
 	{
-		const char* m_szName;
-		BindingType m_eType;
-		u_int       m_uSet;
-		u_int       m_uBinding;
-	};
-
-	void PopulateReflection(Flux_ShaderReflection& xReflection, const BindingSpec* axSpecs, u_int uCount)
+		const u_int auActive[2] = { 0b1011u, 0b1u };
+		const u_int auStaged[2] = { 0b1111u, 0b1u };
+		const Flux_StagedBindingCheck xChk = Flux_ValidateStagedBindings(auActive, auStaged, 2);
+		ZENITH_ASSERT_TRUE(xChk.m_bAllStaged, "every active binding staged -> ok");
+	}
 	{
-		for (u_int u = 0; u < uCount; u++)
-		{
-			Flux_ReflectedBinding xB;
-			xB.m_strName  = axSpecs[u].m_szName;
-			xB.m_eType    = axSpecs[u].m_eType;
-			xB.m_uSet     = axSpecs[u].m_uSet;
-			xB.m_uBinding = axSpecs[u].m_uBinding;
-			xB.m_uSize    = 0;
-			xReflection.AddBinding(xB);
-		}
-		xReflection.BuildLookupMap();
+		const u_int auActive[2] = { 0b0u, 0b1010u }; // set 1 declares bindings 1 and 3
+		const u_int auStaged[2] = { 0b0u, 0b0010u }; // only binding 1 staged -> binding 3 missing
+		const Flux_StagedBindingCheck xChk = Flux_ValidateStagedBindings(auActive, auStaged, 2);
+		ZENITH_ASSERT_TRUE(!xChk.m_bAllStaged, "missing active binding detected");
+		ZENITH_ASSERT_EQ(xChk.m_uMissingSet, 1u, "missing set == 1");
+		ZENITH_ASSERT_EQ(xChk.m_uMissingBinding, 3u, "first missing binding == 3");
+	}
+	{
+		const u_int auActive[2] = { 0b1u, 0b0u };    // set 0 active-but-unstaged
+		const u_int auStaged[2] = { 0b0u, 0b0u };
+		const Flux_StagedBindingCheck xChk = Flux_ValidateStagedBindings(auActive, auStaged, 2, /*skip set 0*/ 0b1u);
+		ZENITH_ASSERT_TRUE(xChk.m_bAllStaged, "skip mask exempts a (persistent) set");
+	}
+	{
+		const u_int auActive[1] = { 0b0u };
+		const u_int auStaged[1] = { 0b0u };
+		const Flux_StagedBindingCheck xChk = Flux_ValidateStagedBindings(auActive, auStaged, 1);
+		ZENITH_ASSERT_TRUE(xChk.m_bAllStaged, "unused canonical slots (no active bindings) never flag");
 	}
 }
 
-ZENITH_TEST(Core, BinderNameCacheFirstLookupMisses) { Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses(); }
-
-void Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses(){
-	Flux_ShaderReflection xReflection;
-	const BindingSpec axSpecs[] = {
-		{ "FrameConstants", BINDING_TYPE_BUFFER, 0, 0 },
-	};
-	PopulateReflection(xReflection, axSpecs, 1);
-
-	Flux_CommandBuffer xCmdBuf;
-	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	// Cache starts empty — every slot's reflection-ptr is null.
-	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE; u++)
+// Pure frequency-taxonomy validator (Flux_FrequencyTaxonomy::ValidateReflection).
+// Device-free: builds synthetic reflections and asserts the spine invariants —
+// canonical persistent sets 0/1/2, unbounded/array descriptors only in BINDLESS,
+// and the bare-global tripwire (a bare global shifts g_xGlobal off set 0).
+ZENITH_TEST(Flux, FrequencyTaxonomy)
+{
+	auto fnBind = [](u_int uSet, u_int uBinding, const char* szName,
+	                 FluxResourceKind eKind, u_int uCount) -> Flux_ReflectedBinding
 	{
-		ZENITH_ASSERT_NULL(xBinder.m_axNameCache[u].m_pxReflection, "Fresh binder cache slot %u must be empty", u);
+		Flux_ReflectedBinding xB;
+		xB.m_uSet = uSet; xB.m_uBinding = uBinding; xB.m_strName = szName;
+		xB.m_eResourceKind = eKind; xB.m_uDescriptorCount = uCount;
+		return xB;
+	};
+	std::string strErr;
+
+	// A canonical mesh program: spine 0/1/2 + a DRAW block at set 3 -> valid.
+	{
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(0, 0, "g_xGlobal",       FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		xRefl.AddBinding(fnBind(1, 0, "g_xView",         FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		xRefl.AddBinding(fnBind(2, 0, "g_axTextures",    FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY,  0));
+		xRefl.AddBinding(fnBind(3, 0, "DrawConstants",   FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		xRefl.AddBinding(fnBind(3, 1, "g_xBaseColorTex", FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1));
+		ZENITH_ASSERT_TRUE(Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "Canonical", strErr), "canonical mesh spine program must validate");
 	}
 
-	const char* szName = "FrameConstants";
-	const Flux_ShaderBinder::ResolvedBinding xR = xBinder.ResolveNamedBinding(&xReflection, szName);
-
-	ZENITH_ASSERT_EQ(xR.m_eType, BINDING_TYPE_BUFFER, "First lookup returns the right type");
-	ZENITH_ASSERT_TRUE(xR.m_xHandle.m_uSet == 0 && xR.m_xHandle.m_uBinding == 0, "First lookup returns the right handle");
-
-	// Slot 0 should now hold the entry; slots 1..7 still empty.
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_pxReflection, &xReflection, "First entry stored at slot 0");
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_szName, szName, "First entry stores the literal pointer");
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Round-robin slot advances after a miss");
-	ZENITH_ASSERT_NULL(xBinder.m_axNameCache[1].m_pxReflection, "Slot 1 still empty after one miss");
-
-}
-
-ZENITH_TEST(Core, BinderNameCacheRepeatLookupHits) { Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits(); }
-
-void Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits(){
-	Flux_ShaderReflection xReflection;
-	const BindingSpec axSpecs[] = {
-		{ "g_xDepthTex", BINDING_TYPE_TEXTURE, 0, 1 },
-	};
-	PopulateReflection(xReflection, axSpecs, 1);
-
-	Flux_CommandBuffer xCmdBuf;
-	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	const char* szName = "g_xDepthTex";
-
-	// First call — cache miss.
-	xBinder.ResolveNamedBinding(&xReflection, szName);
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Slot advanced after first miss");
-
-	// Second call with the same string-literal pointer — cache hit. The
-	// next-cache-slot should NOT advance (no new entry written).
-	xBinder.ResolveNamedBinding(&xReflection, szName);
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Cache hit does not advance the next-cache-slot counter");
-	ZENITH_ASSERT_NULL(xBinder.m_axNameCache[1].m_pxReflection, "Cache hit does not populate slot 1");
-
-	// Hammer the resolver — all hits, no new slot writes.
-	for (u_int u = 0; u < 100; u++)
+	// Bare-global tripwire: a bare global pushed g_xGlobal to set 1 -> reject.
 	{
-		xBinder.ResolveNamedBinding(&xReflection, szName);
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(1, 0, "g_xGlobal", FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1));
+		ZENITH_ASSERT_TRUE(!Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "Shifted", strErr),
+			"g_xGlobal off set 0 must be rejected (bare-global shift)");
 	}
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Many cache hits in a row never advance the slot counter");
 
-}
-
-ZENITH_TEST(Core, BinderNameCacheDifferentReflectionMisses) { Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses(); }
-
-void Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses(){
-	// Two reflections with the same binding name. Same name-literal pointer
-	// across both calls. Expectation: distinct reflection pointers force two
-	// cache entries (the cache key is (reflection*, name*), not just name*).
-	Flux_ShaderReflection xReflectionA;
-	Flux_ShaderReflection xReflectionB;
-	const BindingSpec axSpecs[] = {
-		{ "Shared", BINDING_TYPE_BUFFER, 0, 0 },
-	};
-	PopulateReflection(xReflectionA, axSpecs, 1);
-	PopulateReflection(xReflectionB, axSpecs, 1);
-
-	Flux_CommandBuffer xCmdBuf;
-	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	const char* szName = "Shared";
-
-	xBinder.ResolveNamedBinding(&xReflectionA, szName);
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "First call (reflection A) populates slot 0");
-
-	xBinder.ResolveNamedBinding(&xReflectionB, szName);
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 2, "Different reflection forces a cache miss → slot 1 populated");
-
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_pxReflection, &xReflectionA, "Slot 0 stores reflection A");
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[1].m_pxReflection, &xReflectionB, "Slot 1 stores reflection B");
-
-}
-
-ZENITH_TEST(Core, BinderNameCacheDifferentNameMisses) { Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses(); }
-
-void Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses(){
-	// Single reflection with two bindings. Two different name-literal pointers
-	// → two distinct cache entries even within the same reflection.
-	Flux_ShaderReflection xReflection;
-	const BindingSpec axSpecs[] = {
-		{ "First",  BINDING_TYPE_BUFFER,  0, 0 },
-		{ "Second", BINDING_TYPE_TEXTURE, 0, 1 },
-	};
-	PopulateReflection(xReflection, axSpecs, 2);
-
-	Flux_CommandBuffer xCmdBuf;
-	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	xBinder.ResolveNamedBinding(&xReflection, "First");
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "First name occupies slot 0");
-
-	xBinder.ResolveNamedBinding(&xReflection, "Second");
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 2, "Second name occupies slot 1");
-
-}
-
-ZENITH_TEST(Core, BinderNameCacheRoundRobinReplacement) { Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement(); }
-
-void Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement(){
-	// Fill the cache to NAME_CACHE_SIZE-1 misses (one under the overflow
-	// threshold), verify the slot counter advances correctly, and verify the
-	// contents land in the expected slots. The Nth miss (N==NAME_CACHE_SIZE)
-	// would assert in ResolveNamedBinding now — the overflow assert fired
-	// because round-robin eviction at that point produces 0% hit rate; tests
-	// stop short of the assert line.
-	Flux_ShaderReflection xReflection;
-	BindingSpec axSpecs[Flux_ShaderBinder::NAME_CACHE_SIZE];
-	char aszNames[Flux_ShaderBinder::NAME_CACHE_SIZE][8];
-	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE; u++)
+	// Unbounded array outside BINDLESS -> reject.
 	{
-		snprintf(aszNames[u], sizeof(aszNames[u]), "B%u", u);
-		axSpecs[u] = { aszNames[u], BINDING_TYPE_BUFFER, 0, u };
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(3, 0, "BadTable", FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0));
+		ZENITH_ASSERT_TRUE(!Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "UnboundedAt3", strErr),
+			"unbounded array outside BINDLESS must be rejected");
 	}
-	PopulateReflection(xReflection, axSpecs, Flux_ShaderBinder::NAME_CACHE_SIZE);
 
-	Flux_CommandBuffer xCmdBuf;
-	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	// Fill all but the last slot. Each miss increments m_uNextCacheSlot.
-	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE - 1; u++)
+	// Fixed descriptor array (count>1) outside BINDLESS -> reject.
 	{
-		xBinder.ResolveNamedBinding(&xReflection, axSpecs[u].m_szName);
-		ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, u + 1, "Slot counter advances after each miss");
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(4, 2, "ArrayTex", FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 4));
+		ZENITH_ASSERT_TRUE(!Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "ArrayAt4", strErr),
+			"descriptor array (count>1) outside BINDLESS must be rejected");
 	}
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_szName, axSpecs[0].m_szName, "Slot 0 holds the first name");
 
-	// The last miss that keeps us inside the overflow budget — exactly
-	// NAME_CACHE_SIZE unique resolves filled the cache, slot counter wraps
-	// to 0 (though no eviction has happened yet).
-	xBinder.ResolveNamedBinding(&xReflection, axSpecs[Flux_ShaderBinder::NAME_CACHE_SIZE - 1].m_szName);
-	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 0, "After NAME_CACHE_SIZE unique misses, slot counter wraps to 0");
-	ZENITH_ASSERT_EQ(xBinder.m_uUniqueResolves, Flux_ShaderBinder::NAME_CACHE_SIZE, "Unique resolve counter matches cache capacity after full fill");
+	// Set index out of range -> reject.
+	{
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(FLUX_MAX_BINDING_GROUPS, 0, "WayOut", FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1));
+		ZENITH_ASSERT_TRUE(!Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "SetOOB", strErr),
+			"set >= FLUX_MAX_BINDING_GROUPS must be rejected");
+	}
 
-}
+	// Non-table resource colonising the BINDLESS set (2) -> reject.
+	{
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(2, 1, "Intruder", FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1));
+		ZENITH_ASSERT_TRUE(!Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "BindlessColonised", strErr),
+			"non-table resource in the BINDLESS set must be rejected");
+	}
 
-ZENITH_TEST(Core, BinderNameCacheTypeStoredCorrectly) { Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(); }
-
-void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
-	// Verify the cached entry stores the reflected BindingType so the per-call
-	// type assertion in BindCBV/BindSRV/etc. has the data it needs without
-	// going back to the reflection on a hit.
-	Flux_ShaderReflection xReflection;
-	const BindingSpec axSpecs[] = {
-		{ "Buf",      BINDING_TYPE_BUFFER,         0, 0 },
-		{ "Tex",      BINDING_TYPE_TEXTURE,        0, 1 },
-		{ "StorTex",  BINDING_TYPE_STORAGE_IMAGE,  0, 2 },
-		{ "StorBuf",  BINDING_TYPE_STORAGE_BUFFER, 0, 3 },
-	};
-	PopulateReflection(xReflection, axSpecs, 4);
-
-	Flux_CommandBuffer xCmdBuf;
-	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	const Flux_ShaderBinder::ResolvedBinding xR0 = xBinder.ResolveNamedBinding(&xReflection, "Buf");
-	const Flux_ShaderBinder::ResolvedBinding xR1 = xBinder.ResolveNamedBinding(&xReflection, "Tex");
-	const Flux_ShaderBinder::ResolvedBinding xR2 = xBinder.ResolveNamedBinding(&xReflection, "StorTex");
-	const Flux_ShaderBinder::ResolvedBinding xR3 = xBinder.ResolveNamedBinding(&xReflection, "StorBuf");
-
-	ZENITH_ASSERT_EQ(xR0.m_eType, BINDING_TYPE_BUFFER, "Buf resolves to BINDING_TYPE_BUFFER");
-	ZENITH_ASSERT_EQ(xR1.m_eType, BINDING_TYPE_TEXTURE, "Tex resolves to BINDING_TYPE_TEXTURE");
-	ZENITH_ASSERT_EQ(xR2.m_eType, BINDING_TYPE_STORAGE_IMAGE, "StorTex resolves to BINDING_TYPE_STORAGE_IMAGE");
-	ZENITH_ASSERT_EQ(xR3.m_eType, BINDING_TYPE_STORAGE_BUFFER, "StorBuf resolves to BINDING_TYPE_STORAGE_BUFFER");
-
-	// And the cached slots should mirror that.
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_eType, BINDING_TYPE_BUFFER, "Slot 0 cached type == BUFFER");
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[1].m_eType, BINDING_TYPE_TEXTURE, "Slot 1 cached type == TEXTURE");
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[2].m_eType, BINDING_TYPE_STORAGE_IMAGE, "Slot 2 cached type == STORAGE_IMAGE");
-	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[3].m_eType, BINDING_TYPE_STORAGE_BUFFER, "Slot 3 cached type == STORAGE_BUFFER");
-
+	// A forward-lit program: spine + PassParams(set 3) + DrawParams(set 4) -> valid.
+	{
+		Flux_ShaderReflection xRefl;
+		xRefl.AddBinding(fnBind(0, 0, "g_xGlobal",     FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		xRefl.AddBinding(fnBind(1, 0, "g_xView",       FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		xRefl.AddBinding(fnBind(3, 0, "PassCB",        FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		xRefl.AddBinding(fnBind(3, 1, "g_xCSM0",       FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1));
+		xRefl.AddBinding(fnBind(4, 0, "DrawConstants", FLUX_RESOURCE_KIND_CONSTANT_BUFFER,          1));
+		ZENITH_ASSERT_TRUE(Flux_FrequencyTaxonomy::ValidateReflection(xRefl, "Forward", strErr), "forward-lit spine program must validate");
+	}
 }
 
 // ============================================================================
@@ -16622,7 +16512,6 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	Flux_ShaderReflection xWrite;
 
 	Flux_ReflectedBinding xCB;
-	xCB.m_eType                 = BINDING_TYPE_BUFFER;
 	xCB.m_uSet                  = 0;
 	xCB.m_uBinding              = 0;
 	xCB.m_strName               = "FrameConstants";
@@ -16652,7 +16541,6 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	xWrite.AddBinding(xCB);
 
 	Flux_ReflectedBinding xTex;
-	xTex.m_eType            = BINDING_TYPE_TEXTURE;
 	xTex.m_uSet             = 1;
 	xTex.m_uBinding         = 3;
 	xTex.m_strName          = "g_xAlbedoTex";
@@ -16663,7 +16551,6 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	xWrite.AddBinding(xTex);
 
 	Flux_ReflectedBinding xUav;
-	xUav.m_eType            = BINDING_TYPE_STORAGE_BUFFER;
 	xUav.m_uSet             = 0;
 	xUav.m_uBinding         = 5;
 	xUav.m_strName          = "g_axHistogram";
@@ -16744,7 +16631,6 @@ void Zenith_UnitTests::TestReflectionV2UnboundedDescriptorCount(){
 	Flux_ShaderReflection xWrite;
 
 	Flux_ReflectedBinding xUnbounded;
-	xUnbounded.m_eType            = BINDING_TYPE_UNBOUNDED_TEXTURES;
 	xUnbounded.m_uSet             = 2;
 	xUnbounded.m_uBinding         = 0;
 	xUnbounded.m_strName          = "g_axBindlessTextures";
@@ -16754,7 +16640,6 @@ void Zenith_UnitTests::TestReflectionV2UnboundedDescriptorCount(){
 	xWrite.AddBinding(xUnbounded);
 
 	Flux_ReflectedBinding xBounded;
-	xBounded.m_eType            = BINDING_TYPE_TEXTURE;
 	xBounded.m_uSet             = 0;
 	xBounded.m_uBinding         = 1;
 	xBounded.m_strName          = "g_xBoundedTex";
@@ -16785,7 +16670,6 @@ void Zenith_UnitTests::TestReflectionV2NamedLookupAfterDeserialise(){
 	Flux_ShaderReflection xWrite;
 
 	Flux_ReflectedBinding xA;
-	xA.m_eType         = BINDING_TYPE_BUFFER;
 	xA.m_uSet          = 0;
 	xA.m_uBinding      = 0;
 	xA.m_strName       = "FrameConstants";
@@ -16793,7 +16677,6 @@ void Zenith_UnitTests::TestReflectionV2NamedLookupAfterDeserialise(){
 	xWrite.AddBinding(xA);
 
 	Flux_ReflectedBinding xB;
-	xB.m_eType         = BINDING_TYPE_TEXTURE;
 	xB.m_uSet          = 1;
 	xB.m_uBinding      = 7;
 	xB.m_strName       = "g_xAlbedoTex";
@@ -16847,7 +16730,6 @@ void Zenith_UnitTests::TestCodegenDeterministicDoubleRun(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xCB;
-	xCB.m_eType            = BINDING_TYPE_BUFFER;
 	xCB.m_uSet             = 0;
 	xCB.m_uBinding         = 0;
 	xCB.m_strName          = "FrameConstants";
@@ -16875,7 +16757,6 @@ void Zenith_UnitTests::TestCodegenDeterministicDoubleRun(){
 	xRefl.AddBinding(xCB);
 
 	Flux_ReflectedBinding xTex;
-	xTex.m_eType            = BINDING_TYPE_TEXTURE;
 	xTex.m_uSet             = 1;
 	xTex.m_uBinding         = 3;
 	xTex.m_strName          = "g_xAlbedoTex";
@@ -16907,7 +16788,6 @@ void Zenith_UnitTests::TestCodegenContainsBindingMetadata(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xTex;
-	xTex.m_eType            = BINDING_TYPE_TEXTURE;
 	xTex.m_uSet             = 1;
 	xTex.m_uBinding         = 7;
 	xTex.m_strName          = "g_xAlbedoTex";
@@ -16941,7 +16821,6 @@ void Zenith_UnitTests::TestCodegenEmitsCBStructWithStaticAsserts(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xCB;
-	xCB.m_eType            = BINDING_TYPE_BUFFER;
 	xCB.m_uSet             = 0;
 	xCB.m_uBinding         = 0;
 	xCB.m_strName          = "MyConstants";
@@ -16997,7 +16876,6 @@ void Zenith_UnitTests::TestCodegenScalarHungarianPrefixes(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xCB;
-	xCB.m_eType            = BINDING_TYPE_BUFFER;
 	xCB.m_uSet             = 0;
 	xCB.m_uBinding         = 0;
 	xCB.m_strName          = "ScalarConstants";
@@ -17060,7 +16938,6 @@ void Zenith_UnitTests::TestCodegenInsertsTrailingPadding(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xCB;
-	xCB.m_eType            = BINDING_TYPE_BUFFER;
 	xCB.m_uSet             = 0;
 	xCB.m_uBinding         = 0;
 	xCB.m_strName          = "PaddedCB";
@@ -17102,7 +16979,6 @@ void Zenith_UnitTests::TestCodegenInsertsInteriorPadding(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xCB;
-	xCB.m_eType            = BINDING_TYPE_BUFFER;
 	xCB.m_uSet             = 0;
 	xCB.m_uBinding         = 0;
 	xCB.m_strName          = "InteriorPadCB";
@@ -17156,7 +17032,6 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xWeird;
-	xWeird.m_eType            = BINDING_TYPE_TEXTURE;
 	xWeird.m_uSet             = 0;
 	xWeird.m_uBinding         = 0;
 	xWeird.m_strName          = "frame.lights"; // contains a dot

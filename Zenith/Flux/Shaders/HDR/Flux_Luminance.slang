@@ -9,15 +9,23 @@
 // without reworking those phases.
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+
 struct LuminanceConstantsLayout
 {
 	uint2 g_xImageSize;
 	float g_fMinLogLum;
 	float g_fLogLumRange;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<LuminanceConstantsLayout> LuminanceConstants;
-[[vk::binding(1, 0)]] Sampler2D g_xHDRTex;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint> g_auHistogram;
+// Pure compute on its own HDR texture + histogram buffer — no FrameConstants.
+// The spine include still reserves sets 0/1/2 so this PassParams lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<LuminanceConstantsLayout> LuminanceConstants;
+	Sampler2D g_xHDRTex;
+	RWStructuredBuffer<uint> g_auHistogram;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 groupshared uint s_auLocalHistogram[256];
 
@@ -38,17 +46,17 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID, uint groupIndex : SV_GroupIn
 	GroupMemoryBarrierWithGroupSync();
 
 	// Phase 2: accumulate into local histogram.
-	if (xPixelCoord.x < LuminanceConstants.g_xImageSize.x &&
-		xPixelCoord.y < LuminanceConstants.g_xImageSize.y)
+	if (xPixelCoord.x < g_xPassSet.LuminanceConstants.g_xImageSize.x &&
+		xPixelCoord.y < g_xPassSet.LuminanceConstants.g_xImageSize.y)
 	{
-		float2 xUV = (float2(xPixelCoord) + 0.5) / float2(LuminanceConstants.g_xImageSize);
-		float3 xColour = g_xHDRTex.SampleLevel(xUV, 0).rgb;
+		float2 xUV = (float2(xPixelCoord) + 0.5) / float2(g_xPassSet.LuminanceConstants.g_xImageSize);
+		float3 xColour = g_xPassSet.g_xHDRTex.SampleLevel(xUV, 0).rgb;
 
 		float fLuminance = RGBToLuminance(xColour);
 		if (fLuminance >= 0.001)
 		{
-			float fLogLum = clamp((log2(fLuminance) - LuminanceConstants.g_fMinLogLum) /
-								   LuminanceConstants.g_fLogLumRange, 0.0, 1.0);
+			float fLogLum = clamp((log2(fLuminance) - g_xPassSet.LuminanceConstants.g_fMinLogLum) /
+								   g_xPassSet.LuminanceConstants.g_fLogLumRange, 0.0, 1.0);
 			uint  uBin    = min((uint)(fLogLum * 255.0), 255u);
 			uint  uOldVal;
 			InterlockedAdd(s_auLocalHistogram[uBin], 1u, uOldVal);
@@ -62,6 +70,6 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID, uint groupIndex : SV_GroupIn
 	if (uLocalCount > 0u)
 	{
 		uint uOldVal;
-		InterlockedAdd(g_auHistogram[uLocalIndex], uLocalCount, uOldVal);
+		InterlockedAdd(g_xPassSet.g_auHistogram[uLocalIndex], uLocalCount, uOldVal);
 	}
 }

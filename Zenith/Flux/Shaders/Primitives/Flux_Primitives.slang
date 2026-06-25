@@ -10,7 +10,9 @@
 // the MakeGBuffer helper.
 // =====================================================================
 
-import Common.Frame;
+// Spine via preprocessor #include (declares GLOBAL/VIEW/BINDLESS at sets 0/1/2);
+// Common.GBuffer is pure helpers, so `import` is fine for it.
+#include "Common/Bindings.slang"
 import Common.GBuffer;
 
 struct VsIn
@@ -34,23 +36,26 @@ struct PrimitivePushConstantLayout
 	float3   m_xColor;
 	float    m_fPadding;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<PrimitivePushConstantLayout> PrimitivePushConstant;
+// DRAW frequency (per-draw model matrix + colour). Declared AFTER the spine
+// #include, so it lands at set 3 (the first set past the persistent 0/1/2).
+struct DrawParams { ConstantBuffer<PrimitivePushConstantLayout> PrimitivePushConstant; };
+ParameterBlock<DrawParams> g_xDrawSet;
 
 [shader("vertex")]
 VsOut vsMain(VsIn input)
 {
 	VsOut o;
 
-	float4 xWorldPos = mul(PrimitivePushConstant.m_xModelMatrix, float4(input.a_xPosition, 1.0));
+	float4 xWorldPos = mul(g_xDrawSet.PrimitivePushConstant.m_xModelMatrix, float4(input.a_xPosition, 1.0));
 	o.worldPos       = xWorldPos.xyz;
 
 	// Upper 3x3 of the model matrix — assumes uniform scaling, like the
 	// GLSL original. Non-uniform scale would need inverse-transpose.
-	float3x3 xNormalMatrix = (float3x3)PrimitivePushConstant.m_xModelMatrix;
+	float3x3 xNormalMatrix = (float3x3)g_xDrawSet.PrimitivePushConstant.m_xModelMatrix;
 	o.worldNormal = normalize(mul(xNormalMatrix, input.a_xNormal));
 
-	o.colour     = PrimitivePushConstant.m_xColor;
-	o.position   = mul(FrameConstants.g_xViewProjMat, xWorldPos);
+	o.colour     = g_xDrawSet.PrimitivePushConstant.m_xColor;
+	o.position   = mul(g_xViewSet.g_xView.g_xViewProjMat, xWorldPos);
 	return o;
 }
 

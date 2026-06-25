@@ -6,6 +6,8 @@
 
 #include "Flux/Flux_GraphicsImpl.h"          // GetFinalRenderTarget / GetGBufferSRV / m_xQuadMesh
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Present.h"  // typed binding handles
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // MRT debug visualisation: when set, the present blit samples the chosen
@@ -50,9 +52,12 @@ void Flux_PresentImpl::BuildPipelines()
 	xSpec.m_pxShader = &m_xPresentShader;
 	xSpec.m_xVertexInputDesc = xVertexDesc;
 
-	Flux_PipelineLayout& xLayout = xSpec.m_xPipelineLayout;
-	xLayout.m_uNumBindingGroups = 1;
-	xLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_TEXTURE;
+	// Reflection-driven layout: after the ParameterBlock conversion the present
+	// shader's g_xTexture lives in its own PassParams at set 3 (the spine
+	// reserves sets 0/1/2). PopulateLayout reproduces that exact set/binding
+	// map — the former hand-built single-group-at-set-0 layout would no longer
+	// match the shader.
+	m_xPresentShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(m_xPresentPipeline, xSpec);
 }
@@ -92,6 +97,9 @@ void Flux_PresentImpl::RecordBlit(Flux_CommandBuffer& xCmd)
 	xCmd.SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	xCmd.SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
+	Flux_ShaderBinder xBinder(xCmd);
+	namespace PQ = Flux_Generated_Present::TexturedQuad;
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	if (dbg_bOutputMRT)
 	{
@@ -99,7 +107,7 @@ void Flux_PresentImpl::RecordBlit(Flux_CommandBuffer& xCmd)
 		Flux_ShaderResourceView* pxMRTSRV = xGraphics.GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
 		if (pxMRTSRV)
 		{
-			xCmd.BindSRV(pxMRTSRV, Flux_BindingSlot{ 0, 0, true });
+			xBinder.BindSRV(PQ::hg_xTexture, pxMRTSRV);
 		}
 	}
 	else
@@ -108,7 +116,7 @@ void Flux_PresentImpl::RecordBlit(Flux_CommandBuffer& xCmd)
 		Flux_ShaderResourceView& xSRV = xGraphics.GetFinalRenderTarget().SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
-			xCmd.BindSRV(&xSRV, Flux_BindingSlot{ 0, 0, true });
+			xBinder.BindSRV(PQ::hg_xTexture, &xSRV);
 		}
 		else
 		{

@@ -921,6 +921,12 @@ void Zenith_Vulkan::CreateDevice()
 		.setDescriptorBindingSampledImageUpdateAfterBind(true)
 		.setDescriptorBindingPartiallyBound(true)
 		.setRuntimeDescriptorArray(true)
+		// Required so per-pixel/per-instance bindless indices (terrain splatmap,
+		// Quads/UI) are legal: the index into g_axTextures[] is non-uniform
+		// across a wave. Combined with runtimeDescriptorArray this is the
+		// full bindless-table negotiation. (Hard min-spec; the Android
+		// capability gate + table clamp land in the hardening phase.)
+		.setShaderSampledImageArrayNonUniformIndexing(true)
 		.setPNext(&xShaderDrawFeatures);
 
 #ifndef ZENITH_ANDROID

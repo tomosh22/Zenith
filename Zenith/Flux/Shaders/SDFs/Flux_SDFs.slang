@@ -6,11 +6,13 @@
 // blended sphere colour (weighted by per-sphere distance contribution)
 // shaded by a single Lambertian dot against the sun direction.
 //
-// Imports Common.Frame for FrameConstants + RayDir.
+// Uses the Bindings spine for the VIEW/GLOBAL data + RayDir.
 // =====================================================================
 
+// Spine via preprocessor #include (declares GLOBAL/VIEW/BINDLESS at sets 0/1/2);
+// Common.Fullscreen is pure helpers, so `import` is fine for it.
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
-import Common.Frame;
 
 static const uint  kMaxSteps     = 100u;
 static const float kHitDistance  = 0.1;
@@ -28,7 +30,10 @@ struct SphereDataLayout
 	uint4  g_uMorePadding;
 	Sphere g_axSpheres[1000];
 };
-[[vk::binding(1, 0)]] ConstantBuffer<SphereDataLayout> SphereData;
+// PASS frequency (this shader's own sphere list). Declared AFTER the spine
+// #include, so it lands at set 3 (the first set past the persistent 0/1/2).
+struct PassParams { ConstantBuffer<SphereDataLayout> SphereData; };
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -53,9 +58,9 @@ float SDF(float3 xOrigin, out float4 xColour)
 	const float kDistance = 50.0;
 	const float kColor    = 50.0;
 
-	for (uint u = 0; u < SphereData.g_uNumSpheres_Pad.x; u++)
+	for (uint u = 0; u < g_xPassSet.SphereData.g_uNumSpheres_Pad.x; u++)
 	{
-		Sphere xSphere = SphereData.g_axSpheres[u];
+		Sphere xSphere = g_xPassSet.SphereData.g_axSpheres[u];
 
 		float fNewDistance = length(xOrigin - xSphere.m_xPosition_Radius.xyz)
 							 - xSphere.m_xPosition_Radius.w;
@@ -97,15 +102,15 @@ float4 RayMarch(float3 xRayDir)
 	float fDistanceFromOrigin = 0.0;
 	for (uint u = 0; u < kMaxSteps; u++)
 	{
-		float3 xSamplePoint = FrameConstants.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir;
+		float3 xSamplePoint = g_xViewSet.g_xView.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir;
 		float4 xColour;
 		float  fNearestDistance = SDF(xSamplePoint, xColour);
 		fDistanceFromOrigin += fNearestDistance;
 
 		if (fNearestDistance < kHitDistance)
 		{
-			float3 xNormal = GetNormal(FrameConstants.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir);
-			return xColour + dot(-FrameConstants.g_xSunDir_Pad.xyz, xNormal) / 2.0;
+			float3 xNormal = GetNormal(g_xViewSet.g_xView.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir);
+			return xColour + dot(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz, xNormal) / 2.0;
 		}
 		if (fDistanceFromOrigin > kMissDistance) return float4(0.0, 0.0, 0.0, 0.0);
 	}

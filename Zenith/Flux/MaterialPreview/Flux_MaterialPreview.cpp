@@ -11,6 +11,7 @@
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/MaterialPreview.h" // typed binding handles
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
@@ -136,10 +137,15 @@ void Flux_MaterialPreviewImpl::Initialise()
 	m_axMeshes[MATERIAL_PREVIEW_MESH_PLANE].Set(Zenith_MeshGeometryAsset::CreateUnitCube());	// flattened via the model matrix
 	m_axMeshes[MATERIAL_PREVIEW_MESH_CYLINDER].Set(Zenith_MeshGeometryAsset::CreateUnitCylinder(32));
 
-	// Preview-camera FrameConstants clone.
+	// Preview-camera FrameConstants clone (bound to the VIEW set).
 	m_xPreviewFrameConstants = Flux_GraphicsImpl::FrameConstants();
 	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&m_xPreviewFrameConstants,
 		sizeof(Flux_GraphicsImpl::FrameConstants), m_xPreviewFrameConstantsBuffer);
+
+	// Preview GLOBAL constants (bound to the GLOBAL set — carries the preview sun).
+	m_xPreviewGlobalConstants = Flux_GraphicsImpl::GlobalConstants();
+	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&m_xPreviewGlobalConstants,
+		sizeof(Flux_GraphicsImpl::GlobalConstants), m_xPreviewGlobalConstantsBuffer);
 
 	BuildPipelines();
 
@@ -158,6 +164,7 @@ void Flux_MaterialPreviewImpl::Shutdown()
 	m_xTonemapShader.Reset();
 
 	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xPreviewFrameConstantsBuffer);
+	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xPreviewGlobalConstantsBuffer);
 
 	Flux_RenderAttachmentBuilder::Destroy(m_xPreviewHDR);
 	Flux_RenderAttachmentBuilder::Destroy(m_xPreviewLDR);
@@ -260,6 +267,13 @@ void Flux_MaterialPreviewImpl::UploadPreviewFrameConstants()
 
 	g_xEngine.FluxMemory().UploadBufferData(m_xPreviewFrameConstantsBuffer.GetBuffer().m_xVRAMHandle,
 		&xFC, sizeof(Flux_GraphicsImpl::FrameConstants));
+
+	// Mirror the preview sun into the GLOBAL-set buffer — the spine forward shader
+	// reads the sun from g_xGlobalSet.g_xGlobal (set 0), not from the camera/VIEW set.
+	m_xPreviewGlobalConstants.m_xSunDir_Pad    = xFC.m_xSunDir_Pad;
+	m_xPreviewGlobalConstants.m_xSunColour_Pad = xFC.m_xSunColour_Pad;
+	g_xEngine.FluxMemory().UploadBufferData(m_xPreviewGlobalConstantsBuffer.GetBuffer().m_xVRAMHandle,
+		&m_xPreviewGlobalConstants, sizeof(Flux_GraphicsImpl::GlobalConstants));
 }
 
 void Flux_MaterialPreviewImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -312,10 +326,14 @@ static void ExecutePreviewBackground(Flux_CommandBuffer* pxCmdList, void*)
 	pxCmdList->SetPipeline(&xZZ.m_xBackgroundPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(xZZ.m_xBackgroundShader, "FrameConstants", &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
+	namespace BG = Flux_Generated_MaterialPreview::MaterialPreview_Background;
+	// ParameterBlock spine: the preview camera is now the VIEW set (set 1)
+	// g_xView, still sourced from the PREVIEW camera buffer (a FrameConstants
+	// clone) so RayDir reconstructs through the orbit camera.
+	xBinder.BindCBV(BG::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
 	// The IBL prefiltered environment doubles as the visible background, so
 	// what you see is exactly what lights the mesh.
-	xBinder.BindSRV(xZZ.m_xBackgroundShader, "g_xCubemap", &g_xEngine.IBL().GetPrefilteredMapSRV());
+	xBinder.BindSRV(BG::hg_xCubemap, &g_xEngine.IBL().GetPrefilteredMapSRV());
 
 	pxCmdList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCmdList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
@@ -344,9 +362,15 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	pxCmdList->SetPipeline(pxPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(xZZ.m_xMeshShader, "FrameConstants", &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
+	namespace FW = Flux_Generated_MaterialPreview::MaterialPreview_Forward;
+	// ParameterBlock spine: the preview camera is now the VIEW set (set 1)
+	// g_xView, still sourced from the PREVIEW orbit camera buffer (its matrices +
+	// camera position are an identical prefix of ViewConstantsLayout). The preview
+	// sun moved to the GLOBAL set (set 0) g_xGlobal — its own preview buffer.
+	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(FW::hg_xGlobal, &xZZ.m_xPreviewGlobalConstantsBuffer.GetCBV());
 
-	// Shared Translucent_Forward constants: IBL on, shadows + dynamic lights off.
+	// Shared forward-preview constants: IBL on, shadows + dynamic lights off.
 	MaterialPreviewPassConstants xConstants;
 	xConstants.m_bIBLEnabled = (xIBL.IsEnabled() && xIBL.IsReady()) ? 1 : 0;
 	xConstants.m_bIBLDiffuseEnabled = 1;
@@ -357,40 +381,54 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	xConstants.m_fAmbientFallbackIntensity = 0.15f;
 	xConstants.m_fCSMTexelSizeX = 1.0f / 2048.0f;
 	xConstants.m_fCSMTexelSizeY = 1.0f / 2048.0f;
-	xBinder.BindDrawConstants(xZZ.m_xMeshShader, "TranslucencyConstants", &xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(FW::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
 	// CSMs/ShadowMatrices are statically referenced by the shared shader —
 	// bind benign placeholders (shadows are disabled via the constants).
-	static const char* const s_aszCSMNames[4] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
-	static const char* const s_aszShadowMatrixNames[4] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
+	static const Flux_BindingHandle s_axCSMHandles[4] = { FW::hg_xCSM0, FW::hg_xCSM1, FW::hg_xCSM2, FW::hg_xCSM3 };
+	static const Flux_BindingHandle s_axShadowMatrixHandles[4] = { FW::hShadowMatrix0, FW::hShadowMatrix1, FW::hShadowMatrix2, FW::hShadowMatrix3 };
 	for (u_int u = 0; u < 4; u++)
 	{
-		xBinder.BindSRV(xZZ.m_xMeshShader, s_aszCSMNames[u], &xIBL.GetBRDFLUTSRV(), &xGraphics.m_xClampSampler);
-		xBinder.BindCBV(xZZ.m_xMeshShader, s_aszShadowMatrixNames[u], &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
+		xBinder.BindSRV(s_axCSMHandles[u], &xIBL.GetBRDFLUTSRV(), &xGraphics.m_xClampSampler);
+		xBinder.BindCBV(s_axShadowMatrixHandles[u], &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
 	}
 
-	xBinder.BindSRV(xZZ.m_xMeshShader, "g_xBRDFLUT", &xIBL.GetBRDFLUTSRV());
-	xBinder.BindSRV(xZZ.m_xMeshShader, "g_xIrradianceMap", &xIBL.GetIrradianceMapSRV());
-	xBinder.BindSRV(xZZ.m_xMeshShader, "g_xPrefilteredMap", &xIBL.GetPrefilteredMapSRV());
+	xBinder.BindSRV(FW::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
+	xBinder.BindSRV(FW::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
+	xBinder.BindSRV(FW::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
 
 	// Clustered-light buffers — bind the live scene buffers; the preview's
 	// cluster lookup never accumulates because counts only cover the scene
 	// camera's clusters and the preview constants disable nothing here, but
 	// any contribution is negligible at preview scale. (Counts buffer could
 	// be zeroed in future if it ever shows.)
-	xBinder.BindSRV_Buffer(xZZ.m_xMeshShader, "LightBuffer", g_xEngine.DynamicLights().GetLightBufferSRV());
-	xBinder.BindSRV_Buffer(xZZ.m_xMeshShader, "ClusterLightCounts", g_xEngine.LightClustering().GetClusterLightCountsSRV());
-	xBinder.BindSRV_Buffer(xZZ.m_xMeshShader, "ClusterLightIndices", g_xEngine.LightClustering().GetClusterLightIndicesSRV());
+	xBinder.BindSRV_Buffer(FW::hLightBuffer, g_xEngine.DynamicLights().GetLightBufferSRV());
+	xBinder.BindSRV_Buffer(FW::hClusterLightCounts, g_xEngine.LightClustering().GetClusterLightCountsSRV());
+	xBinder.BindSRV_Buffer(FW::hClusterLightIndices, g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 
 	// Per-draw material constants + the full 9-slot texture set.
 	MaterialDrawConstants xDrawConstants;
 	BuildMaterialDrawConstants(xDrawConstants, xZZ.GetActiveMeshModelMatrix(), pxMaterial);
-	xBinder.BindDrawConstants(xZZ.m_xMeshShader, "DrawConstants", &xDrawConstants, sizeof(xDrawConstants));
+	xBinder.BindDrawConstants(FW::hDrawConstants, &xDrawConstants, sizeof(xDrawConstants));
 
+	// Material texture slots — handle order matches GetMaterialTextureBindingName
+	// (MaterialTextureSlot enum order, set 1 bindings 1..9).
+	static const Flux_BindingHandle s_axMaterialTexHandles[MATERIAL_TEXTURE_SLOT_COUNT] =
+	{
+		FW::hg_xBaseColorTex,
+		FW::hg_xNormalTex,
+		FW::hg_xRoughnessMetallicTex,
+		FW::hg_xOcclusionTex,
+		FW::hg_xEmissiveTex,
+		FW::hg_xHeightTex,
+		FW::hg_xDetailAlbedoTex,
+		FW::hg_xDetailNormalTex,
+		FW::hg_xDetailMaskTex,
+	};
 	for (u_int uSlot = 0; uSlot < MATERIAL_TEXTURE_SLOT_COUNT; uSlot++)
 	{
 		Zenith_TextureAsset* pxTexture = pxMaterial->GetResolvedTexture(static_cast<MaterialTextureSlot>(uSlot));
-		xBinder.BindSRV(xZZ.m_xMeshShader, GetMaterialTextureBindingName(uSlot), &pxTexture->m_xSRV);
+		xBinder.BindSRV(s_axMaterialTexHandles[uSlot], &pxTexture->m_xSRV);
 	}
 
 	pxCmdList->SetVertexBuffer(pxGeometry->GetVertexBuffer());
@@ -408,10 +446,11 @@ static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCmdList, void*)
 	pxCmdList->SetPipeline(&xZZ.m_xTonemapPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
+	namespace TM = Flux_Generated_MaterialPreview::MaterialPreview_Tonemap;
 	MaterialPreviewTonemapConstants xConstants;
 	xConstants.m_fExposure = 1.0f;
-	xBinder.BindDrawConstants(xZZ.m_xTonemapShader, "PreviewTonemapConstants", &xConstants, sizeof(xConstants));
-	xBinder.BindSRV(xZZ.m_xTonemapShader, "g_xHDRTex", &xZZ.m_xPreviewHDR.SRV());
+	xBinder.BindDrawConstants(TM::hPreviewTonemapConstants, &xConstants, sizeof(xConstants));
+	xBinder.BindSRV(TM::hg_xHDRTex, &xZZ.m_xPreviewHDR.SRV());
 
 	pxCmdList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCmdList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());

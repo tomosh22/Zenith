@@ -234,7 +234,7 @@ void Zenith_Vulkan_Pipeline::Reset()
 		m_xRootSig.m_xLayout = VK_NULL_HANDLE;
 	}
 
-	for (u_int u = 0; u < m_xRootSig.m_uNumBindingGroups && u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
+	for (u_int u = 0; u < m_xRootSig.m_uNumBindingGroups && u < FLUX_MAX_BINDING_GROUPS; u++)
 	{
 		if (m_xRootSig.m_axDescSetLayouts[u] && m_xRootSig.m_abOwnsDescSetLayout[u])
 		{
@@ -247,13 +247,14 @@ void Zenith_Vulkan_Pipeline::Reset()
 		m_xRootSig.m_abOwnsDescSetLayout[u] = false;
 	}
 
-	// Reset binding-type matrix and group count to default-constructed state
-	for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
+	// Reset binding-kind matrix and group count to default-constructed state
+	for (u_int i = 0; i < FLUX_MAX_BINDING_GROUPS; i++)
 	{
 		for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
 		{
-			m_xRootSig.m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
+			m_xRootSig.m_aeBindingKinds[i][j] = FLUX_RESOURCE_KIND_UNKNOWN;
 		}
+		m_xRootSig.m_auActiveBindingMask[i] = 0;
 	}
 	m_xRootSig.m_uNumBindingGroups = UINT32_MAX;
 	m_xRootSig.m_xReflection = Flux_ShaderReflection();
@@ -726,21 +727,37 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	// boilerplate it replaced is gone.
 }
 
+// Map the canonical resource kind to the Vulkan descriptor type. The texture
+// kinds collapse onto eCombinedImageSampler and both structured-buffer variants
+// onto eStorageBuffer, matching the legacy BindingType buckets (so the produced
+// layout is behaviourally identical to the pre-kind path).
+static vk::DescriptorType FluxKindToVkDescriptorType(FluxResourceKind eKind)
+{
+	if (FluxKindIsUniformBuffer(eKind))  return vk::DescriptorType::eUniformBuffer;
+	if (FluxKindIsStorageBuffer(eKind))  return vk::DescriptorType::eStorageBuffer;
+	if (FluxKindIsSampledTexture(eKind)) return vk::DescriptorType::eCombinedImageSampler;
+	if (FluxKindIsStorageImage(eKind))   return vk::DescriptorType::eStorageImage;
+	// UNKNOWN / parameter-block / acceleration-structure should never reach a
+	// real descriptor slot (filtered by m_bPresent + the AS reject below).
+	return vk::DescriptorType::eUniformBuffer;
+}
+
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
 {
 	Zenith_Vulkan& xVulkan = g_xEngine.FluxBackend();
 
 	// Clear stale binding metadata — hot-reload reuses static Flux_RootSig
-	// objects, so the previous build's m_axBindingTypes survives unless we
-	// wipe it here before re-populating from the new spec. (Reset on the
-	// owning Flux_Pipeline is best-effort; some compute paths build a root
-	// sig as a separate object.)
-	for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
+	// objects, so the previous build's kinds survive unless we wipe them here
+	// before re-populating from the new spec. (Reset on the owning
+	// Flux_Pipeline is best-effort; some compute paths build a root sig as a
+	// separate object.)
+	for (u_int i = 0; i < FLUX_MAX_BINDING_GROUPS; i++)
 	{
 		for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
 		{
-			xRootSigOut.m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
+			xRootSigOut.m_aeBindingKinds[i][j] = FLUX_RESOURCE_KIND_UNKNOWN;
 		}
+		xRootSigOut.m_auActiveBindingMask[i] = 0;
 	}
 
 	xRootSigOut.m_uNumBindingGroups = xSpec.m_uNumBindingGroups;
@@ -748,7 +765,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 	{
 		const Flux_BindingGroupLayout& xLayout = xSpec.m_axBindingGroups[uDescSet];
 
-		if (xLayout.m_axBindings[0].m_eType == BINDING_TYPE_UNBOUNDED_TEXTURES)
+		if (FluxKindIsUnboundedArray(xLayout.m_axBindings[0].m_eKind))
 		{
 			// Borrowed handle — Pipeline::Reset must skip its destruction.
 			xRootSigOut.m_axDescSetLayouts[uDescSet]    = xVulkan.GetBindlessTexturesDescriptorSetLayout();
@@ -759,45 +776,38 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo();
 		vk::DescriptorSetLayoutBinding axBindings[FLUX_MAX_BINDINGS_PER_GROUP];
 		u_int uNumDescriptors = 0;
+		u_int uActiveMask     = 0;
+		// Iterate every slot and emit a descriptor for each PRESENT binding (no
+		// stop-at-first-gap) so sparse layouts are handled correctly. The vk
+		// binding array is packed (indexed by uNumDescriptors) while setBinding
+		// carries the real slot index.
 		for (u_int uDesc = 0; uDesc < FLUX_MAX_BINDINGS_PER_GROUP; uDesc++)
 		{
-			if (xLayout.m_axBindings[uDesc].m_eType == BINDING_TYPE_MAX)
+			const Flux_BindingGroupEntry& xEntry = xLayout.m_axBindings[uDesc];
+			if (!xEntry.m_bPresent)
 			{
-				break;
+				continue;
 			}
+			Zenith_Assert(xEntry.m_eKind != FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE,
+				"Acceleration-structure bindings are not supported (reserved for the future TLAS set)");
 
-			// Store descriptor type for later use in command buffer
-			xRootSigOut.m_axBindingTypes[uDescSet][uDesc] = xLayout.m_axBindings[uDesc].m_eType;
+			// Mirror the kind for the descriptor-write path + record the active bit.
+			xRootSigOut.m_aeBindingKinds[uDescSet][uDesc] = xEntry.m_eKind;
+			uActiveMask |= (1u << uDesc);
 
-			vk::DescriptorSetLayoutBinding& xBinding = axBindings[uDesc]
+			// Non-bindless slots are count 1 (or a fixed array size); an
+			// unbounded (count 0) slot here would be a mis-declared bindless
+			// table — clamp to 1 defensively.
+			const u_int uCount = (xEntry.m_uDescriptorCount == 0) ? 1u : xEntry.m_uDescriptorCount;
+
+			axBindings[uNumDescriptors] = vk::DescriptorSetLayoutBinding()
 				.setBinding(uDesc)
-				.setDescriptorCount(1)
-				.setStageFlags(vk::ShaderStageFlagBits::eAll);
-
-			switch (xLayout.m_axBindings[uDesc].m_eType)
-			{
-			case(BINDING_TYPE_BUFFER):
-				xBinding.setDescriptorType(vk::DescriptorType::eUniformBuffer);
-				break;
-			case(BINDING_TYPE_STORAGE_BUFFER):
-				xBinding.setDescriptorType(vk::DescriptorType::eStorageBuffer);
-				break;
-			case(BINDING_TYPE_TEXTURE):
-				xBinding.setDescriptorType(vk::DescriptorType::eCombinedImageSampler);
-				break;
-			case(BINDING_TYPE_STORAGE_IMAGE):
-				xBinding.setDescriptorType(vk::DescriptorType::eStorageImage);
-				break;
-			case(BINDING_TYPE_UNBOUNDED_TEXTURES):
-				Zenith_Assert(false, "Unbounded textures must be in their own table");
-				break;
-			case(BINDING_TYPE_ACCELERATION_STRUCTURE):
-			case(BINDING_TYPE_MAX):
-				break;
-			}
-
+				.setDescriptorCount(uCount)
+				.setStageFlags(vk::ShaderStageFlagBits::eAll)
+				.setDescriptorType(FluxKindToVkDescriptorType(xEntry.m_eKind));
 			uNumDescriptors++;
 		}
+		xRootSigOut.m_auActiveBindingMask[uDescSet] = uActiveMask;
 		xInfo.setBindingCount(uNumDescriptors);
 		xInfo.setPBindings(axBindings);
 		xInfo.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);

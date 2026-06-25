@@ -11,9 +11,20 @@
 // pass-through, no alpha blend.
 // =====================================================================
 
+// Spine via preprocessor #include (declares GLOBAL/VIEW/BINDLESS at sets 0/1/2);
+// Common.Fullscreen is pure helpers, so `import` is fine for it. This shader
+// uses no FrameConstants, but still includes the spine so its own resources
+// land at set 3.
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
 
-[[vk::binding(0, 0)]] Sampler2D g_xNormalsTex;
+// PASS frequency — the live normalsAmbient MRT clone source. Declared AFTER the
+// spine #include, so it lands at set 3 (the first set past the persistent 0/1/2).
+struct PassParams
+{
+	Sampler2D g_xNormalsTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -21,5 +32,5 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	return g_xNormalsTex.Sample(input.uv);
+	return g_xPassSet.g_xNormalsTex.Sample(input.uv);
 }

@@ -104,9 +104,17 @@ public:
 	Flux_RenderAttachment m_xPreviewDepth;	// D32
 	Flux_RenderAttachment m_xPreviewLDR;	// RGBA8 (ImGui samples this)
 
-	// Preview-camera FrameConstants clone (set=0 b0 for all preview passes).
+	// Preview-camera FrameConstants clone — bound to the spine VIEW set (set 1)
+	// g_xView; its matrices + camera position are an identical prefix of
+	// ViewConstantsLayout so the converted forward shader reads them correctly.
 	Flux_GraphicsImpl::FrameConstants m_xPreviewFrameConstants;
 	Flux_DynamicConstantBuffer        m_xPreviewFrameConstantsBuffer;
+
+	// Preview GLOBAL constants — bound to the spine GLOBAL set (set 0) g_xGlobal.
+	// The spine split moved the sun out of the camera clone, so the rotatable
+	// preview light lives here (filled from m_fLightYaw/Pitch each frame).
+	Flux_GraphicsImpl::GlobalConstants m_xPreviewGlobalConstants;
+	Flux_DynamicConstantBuffer         m_xPreviewGlobalConstantsBuffer;
 
 	// Shaders + pipelines. The mesh pass reuses the Translucent_Forward
 	// program against the preview targets; blend mode picks the pipeline.

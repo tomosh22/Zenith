@@ -4,6 +4,8 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Terrain.h" // typed binding handles
 #include "DebugVariables/Zenith_DebugVariables.h"
 // Wave 3: needed by the relocated per-frame culling/LOD drive (UpdateCullingAndLod records
 // compute commands; UploadFrustumPlanesForFrame extracts the camera frustum).
@@ -1245,11 +1247,13 @@ void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreaming
 	}
 
 	// Pipeline already bound by Flux_Terrain; frustum/visible-count prepared upstream.
-	xCmdList.BindSRV_Buffer(xState.m_xChunkDataBuffer.GetSRV(), Flux_BindingSlot{ 0, 0, true });
-	xCmdList.BindCBV(&xState.m_xFrustumPlanesBuffer.GetCBV(), 1);
-	xCmdList.BindUAV_Buffer(&xState.m_xIndirectDrawBuffer.GetUAV(), 2);
-	xCmdList.BindUAV_Buffer(&xState.m_xVisibleCountBuffer.GetUAV(), 3);
-	xCmdList.BindUAV_Buffer(&xState.m_xLODLevelBuffer.GetUAV(), 4);
+	Flux_ShaderBinder xBinder(xCmdList);
+	namespace TC = Flux_Generated_Terrain::TerrainCulling;
+	xBinder.BindSRV_Buffer(TC::hChunkBuffer, xState.m_xChunkDataBuffer.GetSRV());
+	xBinder.BindCBV(TC::hCameraBuffer, &xState.m_xFrustumPlanesBuffer.GetCBV());
+	xBinder.BindUAV_Buffer(TC::hIndirectCommandBuffer, &xState.m_xIndirectDrawBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(TC::hvisibleCount, &xState.m_xVisibleCountBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(TC::hLODLevelBuffer, &xState.m_xLODLevelBuffer.GetUAV());
 
 	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
 	xCmdList.Dispatch(uNumWorkgroups, 1, 1);

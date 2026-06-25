@@ -17,20 +17,21 @@
 // other engines do exactly this.
 //
 // Slot layout matches the previous 2D denoise:
-//   binding 0: g_xSSGITex (input)
-//   binding 1: PushConstants (shared layout — see DenoisePushConstantsLayout)
-//   binding 2: g_xDepthTex
-//   binding 3: g_xNormalsTex
-//   binding 4: g_xAlbedoTex
+//   binding 0: g_xPassSet.g_xSSGITex (input)
+//   binding 1: g_xPassSet.PushConstants (shared layout — see DenoisePushConstantsLayout)
+//   binding 2: g_xPassSet.g_xDepthTex
+//   binding 3: g_xPassSet.g_xNormalsTex
+//   binding 4: g_xPassSet.g_xAlbedoTex
 // =====================================================================
 
 import Common.Fullscreen;
+// Spine #include even though this shader uses no FrameConstants — it reserves
+// sets 0/1/2 so PassParams lands at set 3.
+#include "Common/Bindings.slang"
 
 static const float DENOISE_MIN_WEIGHT      = 0.0001;
 static const float DENOISE_SKY_THRESHOLD   = 0.9999;
 static const float DENOISE_MIN_DEPTH_SIGMA = 0.0001;
-
-[[vk::binding(0, 0)]] Sampler2D g_xSSGITex;     // upsampled SSGI input
 
 struct DenoisePushConstantsLayout
 {
@@ -43,11 +44,17 @@ struct DenoisePushConstantsLayout
 	float _pad0;
 	float _pad1;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<DenoisePushConstantsLayout> PushConstants;
 
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(3, 0)]] Sampler2D g_xNormalsTex;
-[[vk::binding(4, 0)]] Sampler2D g_xAlbedoTex;
+// PASS frequency (set 3) — the shader's own CB + SRVs. Member names preserved exactly.
+struct PassParams
+{
+	Sampler2D g_xSSGITex;     // upsampled SSGI input
+	ConstantBuffer<DenoisePushConstantsLayout> PushConstants;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalsTex;
+	Sampler2D g_xAlbedoTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -63,25 +70,25 @@ float3 DecodeNormal(float3 xRaw) { return normalize(xRaw); }
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	if (PushConstants.u_bEnabled == 0u) return g_xSSGITex.Sample(input.uv);
+	if (g_xPassSet.PushConstants.u_bEnabled == 0u) return g_xPassSet.g_xSSGITex.Sample(input.uv);
 
 	uint uW, uH;
-	g_xSSGITex.GetDimensions(uW, uH);
+	g_xPassSet.g_xSSGITex.GetDimensions(uW, uH);
 	float2 xTexelSize = 1.0 / float2((float)uW, (float)uH);
 
-	float4 xCenterSSGI    = g_xSSGITex.Sample(input.uv);
-	float  fCenterDepth   = g_xDepthTex.Sample(input.uv).r;
-	float3 xCenterNormal  = DecodeNormal(g_xNormalsTex.Sample(input.uv).rgb);
-	float3 xCenterAlbedo  = g_xAlbedoTex.Sample(input.uv).rgb;
+	float4 xCenterSSGI    = g_xPassSet.g_xSSGITex.Sample(input.uv);
+	float  fCenterDepth   = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
+	float3 xCenterNormal  = DecodeNormal(g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb);
+	float3 xCenterAlbedo  = g_xPassSet.g_xAlbedoTex.Sample(input.uv).rgb;
 
 	if (fCenterDepth >= DENOISE_SKY_THRESHOLD) return xCenterSSGI;
 
-	float fDepthSigmaAbs = max(fCenterDepth * PushConstants.u_fDepthSigma, DENOISE_MIN_DEPTH_SIGMA);
+	float fDepthSigmaAbs = max(fCenterDepth * g_xPassSet.PushConstants.u_fDepthSigma, DENOISE_MIN_DEPTH_SIGMA);
 
 	float3 xAccumColour      = float3(0.0);
 	float  fAccumConfidence  = 0.0;
 	float  fAccumWeight      = 0.0;
-	int    iRadius           = (int)PushConstants.u_uKernelRadius;
+	int    iRadius           = (int)g_xPassSet.PushConstants.u_uKernelRadius;
 
 	// Horizontal pass — sample only along X.
 	for (int i = -iRadius; i <= iRadius; i++)
@@ -89,25 +96,25 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		float2 xOffset   = float2((float)i, 0.0);
 		float2 xSampleUV = clamp(input.uv + xOffset * xTexelSize, float2(0.001), float2(0.999));
 
-		float4 xSampleSSGI    = g_xSSGITex.Sample(xSampleUV);
-		float  fSampleDepth   = g_xDepthTex.Sample(xSampleUV).r;
-		float3 xSampleNormal  = DecodeNormal(g_xNormalsTex.Sample(xSampleUV).rgb);
-		float3 xSampleAlbedo  = g_xAlbedoTex.Sample(xSampleUV).rgb;
+		float4 xSampleSSGI    = g_xPassSet.g_xSSGITex.Sample(xSampleUV);
+		float  fSampleDepth   = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
+		float3 xSampleNormal  = DecodeNormal(g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb);
+		float3 xSampleAlbedo  = g_xPassSet.g_xAlbedoTex.Sample(xSampleUV).rgb;
 
 		if (fSampleDepth >= DENOISE_SKY_THRESHOLD) continue;
 
 		float fSpatialDist   = abs((float)i);
-		float fSpatialWeight = GaussianWeight(fSpatialDist, PushConstants.u_fSpatialSigma);
+		float fSpatialWeight = GaussianWeight(fSpatialDist, g_xPassSet.PushConstants.u_fSpatialSigma);
 
 		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
 		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
 
 		float fNormalDot   = max(dot(xCenterNormal, xSampleNormal), 0.0);
 		float fNormalDiff  = 1.0 - fNormalDot;
-		float fNormalWeight = GaussianWeight(fNormalDiff, PushConstants.u_fNormalSigma);
+		float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.PushConstants.u_fNormalSigma);
 
 		float fAlbedoDiff   = length(xSampleAlbedo - xCenterAlbedo);
-		float fAlbedoWeight = GaussianWeight(fAlbedoDiff, PushConstants.u_fAlbedoSigma);
+		float fAlbedoWeight = GaussianWeight(fAlbedoDiff, g_xPassSet.PushConstants.u_fAlbedoSigma);
 
 		// Multiplicative combination — any single mismatch suppresses the
 		// sample's contribution.

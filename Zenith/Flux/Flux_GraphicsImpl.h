@@ -53,6 +53,43 @@ public:
 		Zenith_Maths::Vector2 m_xCameraNearFar;
 	};
 
+	// Phase-2 spine split of FrameConstants into the GLOBAL (view-invariant) and
+	// VIEW (per-camera) frequencies. Both coexist with FrameConstants during the
+	// shader migration: shaders still on Common.Frame read FrameConstants;
+	// shaders converted to the ParameterBlock spine read GlobalConstants (set 0)
+	// + ViewConstants (set 1). All three are filled from the same camera/global
+	// data each frame (UploadFrameConstants). Layouts mirror the matching Slang
+	// GlobalConstantsLayout / ViewConstantsLayout in Common/Bindings.slang.
+	struct GlobalConstants
+	{
+		Zenith_Maths::Vector4  m_xSunDir_Pad;
+		Zenith_Maths::Vector4  m_xSunColour_Pad;
+		float                  m_fTimeSeconds = 0.0f;
+		u_int                  m_uFrameIndex  = 0;
+		Zenith_Maths::Vector2  m_xPad;
+	};
+
+	struct ViewConstants
+	{
+		Zenith_Maths::Matrix4 m_xViewMat        = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xProjMat        = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xViewProjMat    = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xInvViewProjMat = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xInvViewMat     = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Matrix4 m_xInvProjMat     = Zenith_Maths::Matrix4(1.0f);
+		Zenith_Maths::Vector4 m_xCamPos_Pad;
+		Zenith_Maths::UVector2 m_xScreenDims;
+		Zenith_Maths::Vector2 m_xRcpScreenDims;
+#ifdef ZENITH_TOOLS
+		u_int m_uQuadUtilisationAnalysis;
+		u_int m_uTargetPixelsPerTri;
+#else
+		u_int m_uPad0;
+		u_int m_uPad1;
+#endif
+		Zenith_Maths::Vector2 m_xCameraNearFar;
+	};
+
 	void InitialiseSamplers();
 	void Initialise();
 	void ReleaseAssetReferences();
@@ -139,6 +176,12 @@ public:
 	// Shared geometry / per-frame UBO.
 	Flux_MeshGeometry           m_xQuadMesh;
 	Flux_DynamicConstantBuffer  m_xFrameConstantsBuffer;
+	// Phase-2 spine GLOBAL (set 0) + VIEW (set 1) constant buffers. Filled from
+	// the same camera/global data as m_xFrameConstantsBuffer each frame (see
+	// UploadFrameConstants); bound by shaders converted to the ParameterBlock
+	// spine. Coexist with FrameConstants during the shader migration.
+	Flux_DynamicConstantBuffer  m_xGlobalConstantsBuffer;
+	Flux_DynamicConstantBuffer  m_xViewConstantsBuffer;
 
 	// Fallback assets.
 	TextureHandle               m_xWhiteTexture;
@@ -156,6 +199,10 @@ public:
 
 	// Per-frame CPU-side constants struct + binding-group layout.
 	FrameConstants              m_xFrameConstants;
+	// CPU-side spine constants (subsets of m_xFrameConstants), uploaded to the
+	// GLOBAL/VIEW buffers each frame.
+	GlobalConstants             m_xGlobalConstantsData;
+	ViewConstants               m_xViewConstantsData;
 	// Set each UploadFrameConstants to whether a valid main camera was resolved this frame.
 	bool                        m_bCameraValid = false;
 	// Per-scene sun override (see SetSunOverride). Default OFF.

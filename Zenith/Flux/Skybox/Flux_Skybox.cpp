@@ -11,6 +11,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Skybox.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -281,7 +282,8 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		pxCommandList->SetPipeline(&xSkybox.m_xSolidColourPipeline);
 		pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-		pxCommandList->BindCBV(&xSkybox.m_xSolidColourConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+		Flux_ShaderBinder xBinder(*pxCommandList);
+		xBinder.BindCBV(Flux_Generated_Skybox::SkyboxSolidColour::hSkyboxOverrideConstants, &xSkybox.m_xSolidColourConstantsBuffer.GetCBV());
 		pxCommandList->DrawIndexed(6);
 		return;
 	}
@@ -298,9 +300,13 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 
 		{
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-			xBinder.BindCBV(xSkybox.m_xAtmosphereShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
-			xBinder.BindSRV(xSkybox.m_xAtmosphereShader, "g_xSkyViewLUT", &xSkybox.m_xSkyViewLUT.SRV());
+			namespace SkyAtmos = Flux_Generated_Skybox::SkyboxAtmosphere;
+			// Atmosphere shader reads the sun direction (GLOBAL set) and reconstructs
+			// the view ray via RayDir() (VIEW set), so bind both spine constants.
+			xBinder.BindCBV(SkyAtmos::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
+			xBinder.BindCBV(SkyAtmos::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+			xBinder.BindCBV(SkyAtmos::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+			xBinder.BindSRV(SkyAtmos::hg_xSkyViewLUT, &xSkybox.m_xSkyViewLUT.SRV());
 		}
 
 		pxCommandList->DrawIndexed(6);
@@ -317,8 +323,11 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		pxCommandList->SetPipeline(&xSkybox.m_xCubemapPipeline);
 		pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
-		pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
-		pxCommandList->BindSRV(&pxCubemap->m_xSRV, 1);
+		Flux_ShaderBinder xBinder(*pxCommandList);
+		namespace SkyCube = Flux_Generated_Skybox::SkyboxCubemap;
+		// Cubemap shader only reconstructs the view ray via RayDir() (VIEW set).
+		xBinder.BindCBV(SkyCube::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
+		xBinder.BindSRV(SkyCube::hg_xCubemap, &pxCubemap->m_xSRV);
 		pxCommandList->DrawIndexed(6);
 	}
 }
@@ -337,7 +346,7 @@ static void ExecuteTransmittanceLUT(Flux_CommandBuffer* pxCommandList, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(xSkybox.m_xTransmittanceLUTShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+		xBinder.BindCBV(Flux_Generated_Skybox::SkyboxTransmittanceLUT::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
 	}
 
 	pxCommandList->DrawIndexed(6);
@@ -362,9 +371,11 @@ static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(xSkybox.m_xSkyViewLUTShader, "FrameConstants", &xGraphics.m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(xSkybox.m_xSkyViewLUTShader, "AtmosphereConstants", &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
-		xBinder.BindSRV(xSkybox.m_xSkyViewLUTShader, "g_xTransmittanceLUT", &xSkybox.m_xTransmittanceLUT.SRV());
+		namespace SkyView = Flux_Generated_Skybox::SkyboxSkyViewLUT;
+		// Sky-view LUT bake reads only the sun direction (GLOBAL set); no view ray.
+		xBinder.BindCBV(SkyView::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
+		xBinder.BindCBV(SkyView::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
+		xBinder.BindSRV(SkyView::hg_xTransmittanceLUT, &xSkybox.m_xTransmittanceLUT.SRV());
 	}
 
 	pxCommandList->DrawIndexed(6);

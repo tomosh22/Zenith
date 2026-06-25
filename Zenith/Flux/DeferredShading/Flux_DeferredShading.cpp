@@ -20,6 +20,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/DeferredShading.h" // typed binding handles
 
 // Phase 7b: state on Flux_DeferredShadingImpl held by Zenith_Engine.
 
@@ -92,62 +93,68 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	// Use named bindings via shader binder (auto-manages descriptor set switches)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	// Bind frame constants
-	xBinder.BindCBV(xDS.m_xShader, "FrameConstants", &xFluxGraphics.m_xFrameConstantsBuffer.GetCBV());
+	namespace DS = Flux_Generated_DeferredShading::DeferredShading;
+
+	// Frequency-set spine: GLOBAL (sun/time) at set 0, VIEW (camera) at set 1.
+	// The shader reads the sun direction/colour (CSM + NdotL debug), so both
+	// blocks are bound. All other binds below land in this pass's PassParams
+	// (set 3) and keep their generated handle names unchanged.
+	xBinder.BindCBV(DS::hg_xGlobal, &xFluxGraphics.m_xGlobalConstantsBuffer.GetCBV());
+	xBinder.BindCBV(DS::hg_xView, &xFluxGraphics.m_xViewConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (named bindings)
-	xBinder.BindSRV(xDS.m_xShader, "g_xDiffuseTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(xDS.m_xShader, "g_xNormalsAmbientTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(xDS.m_xShader, "g_xMaterialTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(xDS.m_xShader, "g_xGBufferEmissiveTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
-	xBinder.BindSRV(xDS.m_xShader, "g_xDepthTex", xFluxGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(DS::hg_xDiffuseTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(DS::hg_xNormalsAmbientTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(DS::hg_xMaterialTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
+	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV());
 
-	// Bind shadow maps (named bindings)
-	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
+	// Bind shadow maps (typed handles)
+	static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { DS::hg_xCSM0, DS::hg_xCSM1, DS::hg_xCSM2, DS::hg_xCSM3 };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xSRV = xShadows.GetCSMSRV(u);
-		xBinder.BindSRV(xDS.m_xShader, s_aszCSMNames[u], &xSRV, &xFluxGraphics.m_xClampSampler);
+		xBinder.BindSRV(s_axCSMHandles[u], &xSRV, &xFluxGraphics.m_xClampSampler);
 	}
 
-	// Bind shadow matrix buffers (named bindings)
-	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
+	// Bind shadow matrix buffers (typed handles)
+	static const Flux_BindingHandle s_axShadowMatrixHandles[ZENITH_FLUX_NUM_CSMS] = { DS::hShadowMatrix0, DS::hShadowMatrix1, DS::hShadowMatrix2, DS::hShadowMatrix3 };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBinder.BindCBV(xDS.m_xShader, s_aszShadowMatrixNames[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindCBV(s_axShadowMatrixHandles[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	// Shadow sampling parameters (per-cascade splits / texel sizes / depth ranges
 	// + global filtering config). Packed + uploaded by Flux_Shadows; bound here as
 	// a regular CBV (mirrors ShadowSamplingLayout in Flux_DeferredShading.slang).
-	xBinder.BindCBV(xDS.m_xShader, "ShadowSampling", &xShadows.GetShadowSamplingBuffer().GetCBV());
+	xBinder.BindCBV(DS::hShadowSampling, &xShadows.GetShadowSamplingBuffer().GetCBV());
 
 	// Bind IBL textures
-	xBinder.BindSRV(xDS.m_xShader, "g_xBRDFLUT", &xIBL.GetBRDFLUTSRV());
-	xBinder.BindSRV(xDS.m_xShader, "g_xIrradianceMap", &xIBL.GetIrradianceMapSRV());
-	xBinder.BindSRV(xDS.m_xShader, "g_xPrefilteredMap", &xIBL.GetPrefilteredMapSRV());
+	xBinder.BindSRV(DS::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
+	xBinder.BindSRV(DS::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
+	xBinder.BindSRV(DS::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
 	// This avoids Vulkan validation errors for unbound descriptors
 	if (xSSR.IsInitialised())
 	{
-		xBinder.BindSRV(xDS.m_xShader, "g_xSSRTex", &xSSR.GetReflectionSRV());
+		xBinder.BindSRV(DS::hg_xSSRTex, &xSSR.GetReflectionSRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(xDS.m_xShader, "g_xSSRTex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(DS::hg_xSSRTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
 	if (xSSGI.IsInitialised())
 	{
-		xBinder.BindSRV(xDS.m_xShader, "g_xSSGITex", &xSSGI.GetSSGISRV());
+		xBinder.BindSRV(DS::hg_xSSGITex, &xSSGI.GetSSGISRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(xDS.m_xShader, "g_xSSGITex", xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(DS::hg_xSSGITex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// SSAO modulates the ambient term inside the shader (g_bSSAOEnabled gates the
@@ -157,7 +164,7 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	{
 		const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
 		const bool bUseBlurred = !xOpts.m_bSSAOEnabled || xOpts.m_bSSAOBlurEnabled;
-		xBinder.BindSRV(xDS.m_xShader, "g_xSSAOTex",
+		xBinder.BindSRV(DS::hg_xSSAOTex,
 			bUseBlurred ? &xSSAO.GetBlurred().SRV() : &xSSAO.GetRawOcclusion().SRV());
 	}
 
@@ -165,11 +172,11 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	// All three are statically referenced by the shader, so all must be
 	// bound regardless of whether dynamic lights exist this frame (the
 	// fragment shader's cluster loop runs zero iterations when count = 0).
-	xBinder.BindSRV_Buffer(xDS.m_xShader, "LightBuffer",
+	xBinder.BindSRV_Buffer(DS::hLightBuffer,
 		xDynamicLights.GetLightBufferSRV());
-	xBinder.BindSRV_Buffer(xDS.m_xShader, "ClusterLightCounts",
+	xBinder.BindSRV_Buffer(DS::hClusterLightCounts,
 		xLightClustering.GetClusterLightCountsSRV());
-	xBinder.BindSRV_Buffer(xDS.m_xShader, "ClusterLightIndices",
+	xBinder.BindSRV_Buffer(DS::hClusterLightIndices,
 		xLightClustering.GetClusterLightIndicesSRV());
 
 	// Pass constants to shader
@@ -222,7 +229,7 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 	xConstants.m_bSSAOEnabled = Zenith_GraphicsOptions::Get().m_bSSAOEnabled ? 1 : 0;
 
-	xBinder.BindDrawConstants(xDS.m_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(DS::hDeferredShadingConstants, &xConstants, sizeof(xConstants));
 
 	pxCommandList->DrawIndexed(6);
 }

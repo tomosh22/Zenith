@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "Flux/Quads/Flux_Quads_Shaders.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Quads.h" // typed binding handles
 
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Core/Zenith_Engine.h"
@@ -109,9 +111,12 @@ static void ExecuteQuads(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->SetVertexBuffer(xQuads.m_xInstanceBuffer, 1);
 
-	pxCommandList->BindCBV(&xGraphics.m_xFrameConstantsBuffer.GetCBV(), Flux_BindingSlot{ 0, 0, true });
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	xBinder.BindCBV(Flux_Generated_Quads::Quads::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 
-	pxCommandList->UseBindlessTextures(1);
+	// Bindless table now lives at the spine's BINDLESS set (set 2), not the
+	// former set 1.
+	pxCommandList->UseBindlessTextures(2);
 
 	pxCommandList->DrawIndexed(6, xQuads.m_uQuadRenderIndex);
 

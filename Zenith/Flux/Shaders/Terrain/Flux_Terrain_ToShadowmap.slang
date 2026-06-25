@@ -3,8 +3,12 @@
 //
 // Subsystem: Terrain. Depth-only pass for cascaded shadow maps. Terrain
 // vertices are already in world space; only the cascade's view×proj
-// matrix is needed.
+// matrix is needed — that per-draw cascade matrix lives in PassParams (set 3),
+// not the camera VIEW set. The spine include reserves sets 0/1/2 (unused here)
+// so PassParams lands at set 3, matching the persistent layout.
 // =====================================================================
+
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 
 struct VsIn
 {
@@ -15,12 +19,16 @@ struct VsIn
 };
 
 struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
-[[vk::binding(0, 1)]] ConstantBuffer<ShadowMatrixLayout> ShadowMatrix;
+struct PassParams
+{
+	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 float4 vsMain(VsIn input) : SV_Position
 {
-	return mul(ShadowMatrix.g_xSunViewProjMat, float4(input.a_xPosition, 1.0));
+	return mul(g_xPassSet.ShadowMatrix.g_xSunViewProjMat, float4(input.a_xPosition, 1.0));
 }
 
 [shader("fragment")]

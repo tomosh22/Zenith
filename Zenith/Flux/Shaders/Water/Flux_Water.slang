@@ -6,10 +6,12 @@
 // World position passes through unchanged (terrain water mesh is in
 // world space already).
 //
-// Imports Common.Frame for view×proj + sun direction/colour.
+// Includes Common/Bindings.slang for the frequency-set spine: view×proj
+// (VIEW set 1) + sun direction/colour (GLOBAL set 0). The normal texture
+// is this pass's own resource (PassParams, set 3).
 // =====================================================================
 
-import Common.Frame;
+#include "Common/Bindings.slang"
 
 struct VsIn
 {
@@ -24,17 +26,21 @@ struct VsOut
 	float3 worldPos : TEXCOORD1;
 };
 
+struct PassParams
+{
+	Sampler2D g_xNormalTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
+
 [shader("vertex")]
 VsOut vsMain(VsIn input)
 {
 	VsOut o;
 	o.uv       = input.a_xUV;
 	o.worldPos = input.a_xPosition;
-	o.position = mul(FrameConstants.g_xViewProjMat, float4(o.worldPos, 1.0));
+	o.position = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(o.worldPos, 1.0));
 	return o;
 }
-
-[[vk::binding(0, 1)]] Sampler2D g_xNormalTex;
 
 [shader("fragment")]
 float4 fsMain(VsOut input) : SV_Target
@@ -48,11 +54,11 @@ float4 fsMain(VsOut input) : SV_Target
 		xTangent.y,   xBitangent.y, xNormal.y,
 		xTangent.z,   xBitangent.z, xNormal.z);
 
-	float3 xWorldNormal = mul(xTBN, g_xNormalTex.Sample(input.uv).xyz);
+	float3 xWorldNormal = mul(xTBN, g_xPassSet.g_xNormalTex.Sample(input.uv).xyz);
 
 	// Sun lambert against the water surface; alpha 0.5 for translucent
 	// blend over the terrain underneath.
-	float3 xLightDir = -FrameConstants.g_xSunDir_Pad.xyz;
+	float3 xLightDir = -g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz;
 	float3 xDiffuse  = float3(0.2, 0.3, 0.5) * dot(xWorldNormal, xLightDir);
 	return float4(xDiffuse, 0.5);
 }

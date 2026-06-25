@@ -15,6 +15,7 @@
 //   g_afExposureData     (StructuredBuffer<float>) set=0 binding=4
 // =====================================================================
 
+#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Fullscreen;
 
 struct ToneMappingConstantsLayout
@@ -28,11 +29,18 @@ struct ToneMappingConstantsLayout
 	uint  g_uPad0;
 	uint  g_uPad1;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<ToneMappingConstantsLayout> ToneMappingConstants;
-[[vk::binding(1, 0)]] Sampler2D                 g_xHDRTex;
-[[vk::binding(2, 0)]] Sampler2D                 g_xBloomTex;
-[[vk::binding(3, 0)]] StructuredBuffer<uint>    g_auHistogram;
-[[vk::binding(4, 0)]] StructuredBuffer<float>   g_afExposureData;
+// Pure fullscreen composite on its own HDR/bloom textures + exposure/histogram
+// buffers — no FrameConstants. The spine include still reserves sets 0/1/2 so
+// this PassParams block lands at set 3.
+struct PassParams
+{
+	ConstantBuffer<ToneMappingConstantsLayout> ToneMappingConstants;
+	Sampler2D                 g_xHDRTex;
+	Sampler2D                 g_xBloomTex;
+	StructuredBuffer<uint>    g_auHistogram;
+	StructuredBuffer<float>   g_afExposureData;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -232,8 +240,8 @@ float Luminance(float3 colour)
 // the (non-uniform) FXAA edge branch.
 float3 ToneAt(float2 xUV, float fExposure, uint uOperator)
 {
-	float3 xHDR = g_xHDRTex.SampleLevel(xUV, 0).rgb * fExposure;
-	xHDR += g_xBloomTex.SampleLevel(xUV, 0).rgb * ToneMappingConstants.g_fBloomIntensity;
+	float3 xHDR = g_xPassSet.g_xHDRTex.SampleLevel(xUV, 0).rgb * fExposure;
+	xHDR += g_xPassSet.g_xBloomTex.SampleLevel(xUV, 0).rgb * g_xPassSet.ToneMappingConstants.g_fBloomIntensity;
 	return ApplyToneMapping(xHDR, uOperator);
 }
 
@@ -263,8 +271,8 @@ bool RenderHistogramOverlay(float2 xUV, out float3 xOverlayColour)
 	float fHistY = (fYBottom - xUV.y) / fHistHeight;
 
 	uint uBin       = min((uint)(fHistX * 256.0), 255u);
-	uint uCount     = g_auHistogram[uBin];
-	uint uMaxCount  = max(1u, (uint)g_afExposureData[3]);
+	uint uCount     = g_xPassSet.g_auHistogram[uBin];
+	uint uMaxCount  = max(1u, (uint)g_xPassSet.g_afExposureData[3]);
 
 	float fNormHeight = log((float)uCount + 1.0) / log((float)uMaxCount + 1.0);
 
@@ -298,9 +306,9 @@ bool RenderExposureMeter(float2 xUV, out float3 xOverlayColour)
 	float fMeterY = (xUV.y - fYTop) / fMeterHeight;
 
 	xOverlayColour = float3(0.1);
-	float fAvgLum     = g_afExposureData[0];
-	float fCurrentExp = g_afExposureData[1];
-	float fTargetExp  = g_afExposureData[2];
+	float fAvgLum     = g_xPassSet.g_afExposureData[0];
+	float fCurrentExp = g_xPassSet.g_afExposureData[1];
+	float fTargetExp  = g_xPassSet.g_afExposureData[2];
 
 	const float fBarHeight = 0.25;
 	const float fBarGap    = 0.08;
@@ -336,26 +344,26 @@ bool RenderExposureMeter(float2 xUV, out float3 xOverlayColour)
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
 	// Debug 9: solid magenta confirms the tonemap pass executed.
-	if (ToneMappingConstants.g_uDebugMode == 9u)
+	if (g_xPassSet.ToneMappingConstants.g_uDebugMode == 9u)
 		return float4(1.0, 0.0, 1.0, 1.0);
 
-	float3 xHDRColour = g_xHDRTex.Sample(input.uv).rgb;
-	float3 xBloom     = g_xBloomTex.Sample(input.uv).rgb;
+	float3 xHDRColour = g_xPassSet.g_xHDRTex.Sample(input.uv).rgb;
+	float3 xBloom     = g_xPassSet.g_xBloomTex.Sample(input.uv).rgb;
 
 	// Debug 10: raw HDR clamped — diagnoses when the HDR target is unexpectedly black.
-	if (ToneMappingConstants.g_uDebugMode == 10u)
+	if (g_xPassSet.ToneMappingConstants.g_uDebugMode == 10u)
 		return float4(saturate(xHDRColour), 1.0);
 
 	// Auto-exposure path picks the GPU-computed value; manual path uses the CB scalar.
-	float fExposure = (ToneMappingConstants.g_bAutoExposure != 0u)
-		? g_afExposureData[1]
-		: ToneMappingConstants.g_fExposure;
+	float fExposure = (g_xPassSet.ToneMappingConstants.g_bAutoExposure != 0u)
+		? g_xPassSet.g_afExposureData[1]
+		: g_xPassSet.ToneMappingConstants.g_fExposure;
 	float3 xExposed = xHDRColour * fExposure;
-	xExposed += xBloom * ToneMappingConstants.g_fBloomIntensity;
+	xExposed += xBloom * g_xPassSet.ToneMappingConstants.g_fBloomIntensity;
 
-	if (ToneMappingConstants.g_uDebugMode > 0u)
+	if (g_xPassSet.ToneMappingConstants.g_uDebugMode > 0u)
 	{
-		switch (ToneMappingConstants.g_uDebugMode)
+		switch (g_xPassSet.ToneMappingConstants.g_uDebugMode)
 		{
 			case 1u:
 			{
@@ -376,7 +384,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 				break;
 			}
 			case 4u:
-				return float4(xBloom * ToneMappingConstants.g_fBloomIntensity, 1.0);
+				return float4(xBloom * g_xPassSet.ToneMappingConstants.g_fBloomIntensity, 1.0);
 			case 5u:
 				return float4(xBloom * float3(1.0, 0.8, 0.6), 1.0);
 			case 6u:
@@ -400,9 +408,9 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		}
 	}
 
-	float3 xToneMapped = ApplyToneMapping(xExposed, ToneMappingConstants.g_uToneMappingOperator);
+	float3 xToneMapped = ApplyToneMapping(xExposed, g_xPassSet.ToneMappingConstants.g_uToneMappingOperator);
 
-	if (ToneMappingConstants.g_bShowHistogram != 0u)
+	if (g_xPassSet.ToneMappingConstants.g_bShowHistogram != 0u)
 	{
 		float3 xOverlay;
 		if (RenderHistogramOverlay(input.uv, xOverlay)) return float4(xOverlay, 1.0);
@@ -415,7 +423,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// along the gradient. Neighbours are re-tonemapped via ToneAt (a few extra
 	// samples on edge pixels). texel size comes from screen-space derivatives.
 	{
-		uint  uOp   = ToneMappingConstants.g_uToneMappingOperator;
+		uint  uOp   = g_xPassSet.ToneMappingConstants.g_uToneMappingOperator;
 		float2 xTexel = float2(abs(ddx(input.uv.x)), abs(ddy(input.uv.y)));
 
 		float fLumaC  = Luminance(xToneMapped);

@@ -708,17 +708,6 @@ public:
 	static void TestRenderGraphLifetimeRecomputeIdempotent();
 	static void TestRenderGraphAliasingBarrierUsesTopologicalLastUse();
 
-	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
-	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
-	// Vulkan device required — the resolver path takes a reflection pointer
-	// directly so tests bypass the Flux_Shader wrapper). Friended in.
-	static void TestBinderNameCacheFirstLookupMisses();
-	static void TestBinderNameCacheRepeatLookupHits();
-	static void TestBinderNameCacheDifferentReflectionMisses();
-	static void TestBinderNameCacheDifferentNameMisses();
-	static void TestBinderNameCacheRoundRobinReplacement();
-	static void TestBinderNameCacheTypeStoredCorrectly();
-
 	// FrameContext frame-index tests. Exercise the engine frame index and
 	// ring-index modulo via g_xEngine.Frame().AdvanceFrameIndex(). Tests
 	// save/restore the live frame index so they don't disturb the running

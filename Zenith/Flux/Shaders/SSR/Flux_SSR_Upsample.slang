@@ -19,10 +19,11 @@
 // Same selection mask drives both RTs so colour + metadata stay
 // spatially aligned.
 //
-// Texture dimensions come from SSRConstants — never via GetDimensions
+// Texture dimensions come from g_xPassSet.SSRConstants — never via GetDimensions
 // inside the shader (project convention).
 // =====================================================================
 
+#include "Common/Bindings.slang"
 import Common.Fullscreen;
 
 // Composite-similarity scoring weights. Scores are in [0, 1]: 1 means
@@ -75,12 +76,16 @@ struct SSRConstantsLayout
 	uint  u_uPad2;
 	float4 u_axHiZMipSizes[12];
 };
-[[vk::binding(0, 0)]] ConstantBuffer<SSRConstantsLayout> SSRConstants;
-[[vk::binding(1, 0)]] Sampler2D g_xSSRTex;        // half-res ray-march RT0 (colour)
-[[vk::binding(2, 0)]] Sampler2D g_xDepthTex;      // full-res depth
-[[vk::binding(3, 0)]] Sampler2D g_xSSRAuxTex;     // half-res ray-march RT1 (metadata)
-[[vk::binding(4, 0)]] Sampler2D g_xNormalsTex;    // full-res G-buffer normals (for similarity)
-[[vk::binding(5, 0)]] Sampler2D g_xMaterialTex;   // full-res G-buffer material .r = roughness
+struct PassParams
+{
+	ConstantBuffer<SSRConstantsLayout> SSRConstants;
+	Sampler2D g_xSSRTex;        // half-res ray-march RT0 (colour)
+	Sampler2D g_xDepthTex;      // full-res depth
+	Sampler2D g_xSSRAuxTex;     // half-res ray-march RT1 (metadata)
+	Sampler2D g_xNormalsTex;    // full-res G-buffer normals (for similarity)
+	Sampler2D g_xMaterialTex;   // full-res G-buffer material .r = roughness
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -104,14 +109,14 @@ UpsampleOut fsMain(FullscreenVsOut input)
 {
 	const float4 xZero4 = float4(0.0, 0.0, 0.0, 0.0);
 
-	float fFullDepth = g_xDepthTex.Sample(input.uv).r;
+	float fFullDepth = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 	if (fFullDepth >= UPSAMPLE_SKY_THRESHOLD) return MakeUpsampleOut(xZero4, xZero4);
 
-	float3 xCenterNormal    = g_xNormalsTex.Sample(input.uv).rgb;
-	float  fCenterRoughness = g_xMaterialTex.Sample(input.uv).r;
+	float3 xCenterNormal    = g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb;
+	float  fCenterRoughness = g_xPassSet.g_xMaterialTex.Sample(input.uv).r;
 
-	float2 xHalfResSize   = float2(SSRConstants.u_fHalfResWidth,    SSRConstants.u_fHalfResHeight);
-	float2 xHalfTexelSize = float2(SSRConstants.u_fRcpHalfResWidth, SSRConstants.u_fRcpHalfResHeight);
+	float2 xHalfResSize   = float2(g_xPassSet.SSRConstants.u_fHalfResWidth,    g_xPassSet.SSRConstants.u_fHalfResHeight);
+	float2 xHalfTexelSize = float2(g_xPassSet.SSRConstants.u_fRcpHalfResWidth, g_xPassSet.SSRConstants.u_fRcpHalfResHeight);
 
 	float2 xHalfResPos   = input.uv * xHalfResSize - 0.5;
 	float2 xHalfResFloor = floor(xHalfResPos);
@@ -131,13 +136,13 @@ UpsampleOut fsMain(FullscreenVsOut input)
 		for (int xo = -1; xo <= 2; xo++)
 		{
 			float2 xSampleUV = saturate((xHalfResFloor + float2((float)xo, (float)yo) + 0.5) * xHalfTexelSize);
-			float  fSampleDepth = g_xDepthTex.Sample(xSampleUV).r;
+			float  fSampleDepth = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
 
 			float fScore = 0.0;
 			if (fSampleDepth < UPSAMPLE_SKY_THRESHOLD)
 			{
-				float3 xSampleNormal    = g_xNormalsTex.Sample(xSampleUV).rgb;
-				float  fSampleRoughness = g_xMaterialTex.Sample(xSampleUV).r;
+				float3 xSampleNormal    = g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb;
+				float  fSampleRoughness = g_xPassSet.g_xMaterialTex.Sample(xSampleUV).r;
 
 				float fDepthDiff   = abs(fFullDepth - fSampleDepth);
 				float fDepthScore  = exp(-fDepthDiff * fDepthDiff / (2.0 * fDepthSigma * fDepthSigma));
@@ -201,8 +206,8 @@ UpsampleOut fsMain(FullscreenVsOut input)
 		int iSy = (iSel / UPSAMPLE_GATHER_DIM) - 1;
 
 		float2 xSampleUV    = saturate((xHalfResFloor + float2((float)iSx, (float)iSy) + 0.5) * xHalfTexelSize);
-		float4 xColourSample = g_xSSRTex.Sample(xSampleUV);
-		float4 xAuxSample    = g_xSSRAuxTex.Sample(xSampleUV);
+		float4 xColourSample = g_xPassSet.g_xSSRTex.Sample(xSampleUV);
+		float4 xAuxSample    = g_xPassSet.g_xSSRAuxTex.Sample(xSampleUV);
 
 		// Distance to the bilinear sample point; nearer = higher weight.
 		float fDx = (float)iSx + 0.5 - xFrac.x;
@@ -213,9 +218,9 @@ UpsampleOut fsMain(FullscreenVsOut input)
 		// Re-fetch the original score for this slot. Pass 2 set aafScores[iSel]
 		// to -1 when consumed, so recompute from the depth/normal/roughness
 		// we already gathered — actually simpler: derive a fresh score here.
-		float fSampleDepth     = g_xDepthTex.Sample(xSampleUV).r;
-		float3 xSampleNormal   = g_xNormalsTex.Sample(xSampleUV).rgb;
-		float  fSampleRoughness = g_xMaterialTex.Sample(xSampleUV).r;
+		float fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
+		float3 xSampleNormal   = g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb;
+		float  fSampleRoughness = g_xPassSet.g_xMaterialTex.Sample(xSampleUV).r;
 
 		float fDepthDiff   = abs(fFullDepth - fSampleDepth);
 		float fDepthScore  = exp(-fDepthDiff * fDepthDiff / (2.0 * fDepthSigma * fDepthSigma));
@@ -237,5 +242,5 @@ UpsampleOut fsMain(FullscreenVsOut input)
 		return MakeUpsampleOut(xColourResult / fTotalWeight, xAuxResult / fTotalWeight);
 	}
 	// Fallback: passthrough centre half-res sample.
-	return MakeUpsampleOut(g_xSSRTex.Sample(input.uv), g_xSSRAuxTex.Sample(input.uv));
+	return MakeUpsampleOut(g_xPassSet.g_xSSRTex.Sample(input.uv), g_xPassSet.g_xSSRAuxTex.Sample(input.uv));
 }

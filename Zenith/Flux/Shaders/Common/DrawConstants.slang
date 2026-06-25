@@ -26,10 +26,12 @@ public struct DrawConstantsLayout
 	public float4   g_xVATParams;         // 16 bytes — offset 192 — InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced
 };
 
-// Bound at set=1 binding=0 by every mesh-path shader. Placed here so a
-// single import gets both the type and the binding — every consumer
-// references the same physical slot in the descriptor set.
-[[vk::binding(0, 1)]] public ConstantBuffer<DrawConstantsLayout> DrawConstants;
+// NO file-scope binding. A bare global resource would claim descriptor space 0
+// and break the ParameterBlock spine (Common/Bindings.slang — sets 0/1/2 are the
+// fixed GLOBAL/VIEW/BINDLESS persistent sets). Each mesh-path shader instead
+// declares its own ConstantBuffer<DrawConstantsLayout> as a member of its DRAW
+// ParameterBlock and passes the loaded value (DrawConstantsLayout) to the
+// accessors / evaluator below.
 
 // Material feature flag bits — MUST match MaterialDrawFlags in
 // Flux_MaterialBinding.h.
@@ -40,27 +42,28 @@ public static const uint MATERIAL_FLAG_DETAIL_MAPS           = 1u << 3;
 public static const uint MATERIAL_FLAG_CLEARCOAT             = 1u << 4;
 public static const uint MATERIAL_FLAG_SKIN                  = 1u << 5;
 
-// Material parameter accessors — shorter call sites, matching the
-// GLSL macros from MaterialCommon.fxh.
-public float  GetMetallicMultiplier()    { return DrawConstants.g_xMaterialParams.x; }
-public float  GetRoughnessMultiplier()   { return DrawConstants.g_xMaterialParams.y; }
-public float  GetAlphaCutoff()           { return DrawConstants.g_xMaterialParams.z; }
-public float  GetOcclusionStrength()     { return DrawConstants.g_xMaterialParams.w; }
-public float2 GetUVTiling()              { return DrawConstants.g_xUVParams.xy; }
-public float2 GetUVOffset()              { return DrawConstants.g_xUVParams.zw; }
-public float3 GetEmissiveColor()         { return DrawConstants.g_xEmissiveParams.rgb; }
-public float  GetEmissiveIntensity()     { return DrawConstants.g_xEmissiveParams.w; }
-public float  GetSpecular()              { return DrawConstants.g_xMaterialParams2.x; }
-public float  GetNormalStrength()        { return DrawConstants.g_xMaterialParams2.y; }
-public float  GetClearCoatStrength()     { return DrawConstants.g_xMaterialParams2.z; }
-public float  GetClearCoatRoughness()    { return DrawConstants.g_xMaterialParams2.w; }
-public float  GetHeightScale()           { return DrawConstants.g_xParallaxParams.x; }
-public float  GetPOMMinSteps()           { return DrawConstants.g_xParallaxParams.y; }
-public float  GetPOMMaxSteps()           { return DrawConstants.g_xParallaxParams.z; }
-public float2 GetDetailTiling()          { return DrawConstants.g_xDetailParams.xy; }
-public float  GetDetailNormalStrength()  { return DrawConstants.g_xDetailParams.z; }
-public float  GetDetailAlbedoStrength()  { return DrawConstants.g_xDetailParams.w; }
-public uint   GetMaterialFlags()         { return asuint(DrawConstants.g_xFlagsParams.x); }
+// Material parameter accessors — shorter call sites, matching the GLSL macros
+// from MaterialCommon.fxh. Each takes the per-draw constants by value (the
+// caller loads its DRAW-block ConstantBuffer once).
+public float  GetMetallicMultiplier(DrawConstantsLayout dc)    { return dc.g_xMaterialParams.x; }
+public float  GetRoughnessMultiplier(DrawConstantsLayout dc)   { return dc.g_xMaterialParams.y; }
+public float  GetAlphaCutoff(DrawConstantsLayout dc)           { return dc.g_xMaterialParams.z; }
+public float  GetOcclusionStrength(DrawConstantsLayout dc)     { return dc.g_xMaterialParams.w; }
+public float2 GetUVTiling(DrawConstantsLayout dc)              { return dc.g_xUVParams.xy; }
+public float2 GetUVOffset(DrawConstantsLayout dc)              { return dc.g_xUVParams.zw; }
+public float3 GetEmissiveColor(DrawConstantsLayout dc)         { return dc.g_xEmissiveParams.rgb; }
+public float  GetEmissiveIntensity(DrawConstantsLayout dc)     { return dc.g_xEmissiveParams.w; }
+public float  GetSpecular(DrawConstantsLayout dc)              { return dc.g_xMaterialParams2.x; }
+public float  GetNormalStrength(DrawConstantsLayout dc)        { return dc.g_xMaterialParams2.y; }
+public float  GetClearCoatStrength(DrawConstantsLayout dc)     { return dc.g_xMaterialParams2.z; }
+public float  GetClearCoatRoughness(DrawConstantsLayout dc)    { return dc.g_xMaterialParams2.w; }
+public float  GetHeightScale(DrawConstantsLayout dc)           { return dc.g_xParallaxParams.x; }
+public float  GetPOMMinSteps(DrawConstantsLayout dc)           { return dc.g_xParallaxParams.y; }
+public float  GetPOMMaxSteps(DrawConstantsLayout dc)           { return dc.g_xParallaxParams.z; }
+public float2 GetDetailTiling(DrawConstantsLayout dc)          { return dc.g_xDetailParams.xy; }
+public float  GetDetailNormalStrength(DrawConstantsLayout dc)  { return dc.g_xDetailParams.z; }
+public float  GetDetailAlbedoStrength(DrawConstantsLayout dc)  { return dc.g_xDetailParams.w; }
+public uint   GetMaterialFlags(DrawConstantsLayout dc)         { return asuint(dc.g_xFlagsParams.x); }
 // InstancedMeshes VAT params (0 for non-instanced draws → VAT disabled).
-public float2 GetVATTextureSize()        { return DrawConstants.g_xVATParams.xy; }
-public bool   GetVATEnabled()            { return DrawConstants.g_xVATParams.z > 0.0; }
+public float2 GetVATTextureSize(DrawConstantsLayout dc)        { return dc.g_xVATParams.xy; }
+public bool   GetVATEnabled(DrawConstantsLayout dc)            { return dc.g_xVATParams.z > 0.0; }

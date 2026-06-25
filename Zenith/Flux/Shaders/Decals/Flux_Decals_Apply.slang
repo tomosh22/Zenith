@@ -24,7 +24,10 @@
 // All three MRTs use the same fAlpha output for the SrcAlpha factor.
 // =====================================================================
 
-import Common.Frame;
+// Spine via preprocessor #include (declares GLOBAL/VIEW/BINDLESS at sets 0/1/2),
+// replacing `import Common.Frame;` and providing the view-reconstruction helpers
+// (GetWorldPosFromDepthTex etc.) sourced from the VIEW set.
+#include "Common/Bindings.slang"
 
 struct DecalInstance
 {
@@ -35,10 +38,17 @@ struct DecalInstance
 	float4   m_xColour;        // brush-indicator tint (rgb) + master alpha (w); unused by mode 0
 };
 
-[[vk::binding(1, 0)]] Sampler2D                          g_xDepthTex;
-[[vk::binding(2, 0)]] Sampler2D                          g_xNormalsCopyTex;  // pre-decal normalsAmbient clone
-[[vk::binding(3, 0)]] StructuredBuffer<DecalInstance>    DecalBuffer;
-[[vk::binding(4, 0)]] Sampler2D                          g_xBrushTex;        // textured-brush mode mask (alpha) + pattern (rgb)
+// PASS frequency — this pass's own resources. Declared AFTER the spine #include,
+// so it lands at set 3 (the first set past the persistent 0/1/2). Member NAMES
+// are preserved exactly so the C++ binds (h<member>) still resolve.
+struct PassParams
+{
+	Sampler2D                          g_xDepthTex;
+	Sampler2D                          g_xNormalsCopyTex;  // pre-decal normalsAmbient clone
+	StructuredBuffer<DecalInstance>    DecalBuffer;
+	Sampler2D                          g_xBrushTex;        // textured-brush mode mask (alpha) + pattern (rgb)
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 // 36-element cube-corner index table — 12 triangles, 3 verts each.
 // Front-face winding is CCW; combined with CULL_MODE_FRONT in the
@@ -75,12 +85,12 @@ struct VsOut
 VsOut vsMain(uint uVertexID : SV_VertexID, uint uInstanceID : SV_InstanceID)
 {
 	float3 xLocalCorner = CUBE_CORNERS[uVertexID % 36];
-	DecalInstance d = DecalBuffer[uInstanceID];
+	DecalInstance d = g_xPassSet.DecalBuffer[uInstanceID];
 
 	float4 xWorldPos = mul(d.m_xWorld, float4(xLocalCorner, 1.0));
 
 	VsOut o;
-	o.m_xSvPos      = mul(FrameConstants.g_xViewProjMat, xWorldPos);
+	o.m_xSvPos      = mul(g_xViewSet.g_xView.g_xViewProjMat, xWorldPos);
 	o.m_uInstanceID = uInstanceID;
 	return o;
 }
@@ -95,16 +105,16 @@ struct ApplyOut
 [shader("fragment")]
 ApplyOut fsMain(VsOut input)
 {
-	float2 uv = input.m_xSvPos.xy * FrameConstants.g_xRcpScreenDims;
+	float2 uv = input.m_xSvPos.xy * g_xViewSet.g_xView.g_xRcpScreenDims;
 
 	// Sky / background — no scene geometry to project onto.
-	float fDepth = g_xDepthTex.Sample(uv).r;
+	float fDepth = g_xPassSet.g_xDepthTex.Sample(uv).r;
 	if (fDepth >= 1.0)
 		discard;
 
-	float3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, uv);
+	float3 xWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, uv);
 
-	DecalInstance d = DecalBuffer[input.m_uInstanceID];
+	DecalInstance d = g_xPassSet.DecalBuffer[input.m_uInstanceID];
 
 	// Box test in decal-local cube space.
 	float3 xLocal = mul(d.m_xWorldInverse, float4(xWorldPos, 1.0)).xyz;
@@ -114,7 +124,7 @@ ApplyOut fsMain(VsOut input)
 	// Normal-alignment test against the cloned (pre-decal) normalsAmbient
 	// MRT. Bilinear filtering on neighbouring texels can drift the magnitude;
 	// normalize defensively before the dot.
-	float3 sceneN        = normalize(g_xNormalsCopyTex.Sample(uv).rgb);
+	float3 sceneN        = normalize(g_xPassSet.g_xNormalsCopyTex.Sample(uv).rgb);
 	float3 decalAxisWorld = d.m_xAxisOpacity.xyz;
 	if (dot(sceneN, decalAxisWorld) < d.m_xParams.x)
 		discard;
@@ -130,7 +140,7 @@ ApplyOut fsMain(VsOut input)
 	if (d.m_xParams.y > 0.5)
 	{
 		float2 xBrushUV = xLocal.xy + 0.5;
-		float4 xBrush = g_xBrushTex.Sample(xBrushUV);
+		float4 xBrush = g_xPassSet.g_xBrushTex.Sample(xBrushUV);
 		float fBrushAlpha = xBrush.a * d.m_xColour.a * fEdge * d.m_xAxisOpacity.w;
 		if (fBrushAlpha <= 0.0)
 			discard;

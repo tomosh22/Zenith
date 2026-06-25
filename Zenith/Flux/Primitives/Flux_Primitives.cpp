@@ -6,6 +6,7 @@
 
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Primitives.h" // typed binding handles
 #include "Flux/Flux_BackendTypes.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -669,7 +670,7 @@ void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_
 	xPushConstant.m_fPadding = 0.0f;
 
 	// Slang reflection keys on the variable name, not the GLSL block instance.
-	xBinder.BindDrawConstants(m_xPrimitivesShader, "PrimitivePushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
+	xBinder.BindDrawConstants(Flux_Generated_Primitives::Primitives::hPrimitivePushConstant, &xPushConstant, sizeof(PrimitivePushConstant));
 	pxCmdList->DrawIndexed(uIndexCount);
 }
 
@@ -883,7 +884,9 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(xPrimitives.m_xPrimitivesShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	// Converted to the ParameterBlock spine: the camera CB is now the VIEW set
+	// (set 1) g_xView, sourced from m_xViewConstantsBuffer.
+	xBinder.BindCBV(Flux_Generated_Primitives::Primitives::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
 	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
 	xPrimitives.RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);

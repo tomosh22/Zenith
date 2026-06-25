@@ -10,6 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Flux/Flux_BackendTypes.h"
+#include "Flux/Shaders/Generated/DynamicLights.h" // typed binding handles
 
 // =====================================================================
 // Flux_LightClustering — implementation.
@@ -121,16 +122,18 @@ static void ExecuteLightClustering(Flux_CommandBuffer* pxCommandList, void* /*pU
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	// Inputs.
-	xBinder.BindCBV(xLightClustering.m_xComputeShader, "FrameConstants",
-		&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV_Buffer(xLightClustering.m_xComputeShader, "LightBuffer",
+	namespace LC = Flux_Generated_DynamicLights::LightClustering;
+
+	// Inputs. Spine: camera CB is the VIEW set (g_xView), from m_xViewConstantsBuffer.
+	xBinder.BindCBV(LC::hg_xView,
+		&g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
+	xBinder.BindSRV_Buffer(LC::hLightBuffer,
 		xDynamicLights.GetLightBufferSRV());
 
 	// Outputs (UAVs).
-	xBinder.BindUAV_Buffer(xLightClustering.m_xComputeShader, "ClusterLightCounts",
+	xBinder.BindUAV_Buffer(LC::hClusterLightCounts,
 		&xLightClustering.m_xClusterLightCounts.GetUAV());
-	xBinder.BindUAV_Buffer(xLightClustering.m_xComputeShader, "ClusterLightIndices",
+	xBinder.BindUAV_Buffer(LC::hClusterLightIndices,
 		&xLightClustering.m_xClusterLightIndices.GetUAV());
 
 	LightClusteringPushConstants xConstants;
@@ -138,7 +141,7 @@ static void ExecuteLightClustering(Flux_CommandBuffer* pxCommandList, void* /*pU
 	xConstants.m_uPad0 = 0;
 	xConstants.m_uPad1 = 0;
 	xConstants.m_uPad2 = 0;
-	xBinder.BindDrawConstants(xLightClustering.m_xComputeShader, "PushConstants",
+	xBinder.BindDrawConstants(LC::hPushConstants,
 		&xConstants, sizeof(LightClusteringPushConstants));
 
 	// Total threads = 16 × 9 × 24 = 3456, one per cluster. The compute

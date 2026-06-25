@@ -6,12 +6,13 @@
 // while smoothing the noisy raw occlusion. Operates at half-res; the
 // upsample pass fans the result out to full-res afterwards.
 //
-// Standalone — bindings start at slot 1 (slot 0 left unused, matching
-// the legacy GLSL layout). PopulateLayout fills the gap with a buffer
-// placeholder so the descriptor set layout still matches.
+// Does not read VIEW/GLOBAL data — operates purely on its own occlusion,
+// depth and normal samplers. It still #includes Common/Bindings so the
+// spine reserves sets 0/1/2 and this shader's own PassParams lands at set 3.
 // =====================================================================
 
 import Common.Fullscreen;
+#include "Common/Bindings.slang"
 
 static const float BLUR_MIN_WEIGHT       = 0.0001;
 static const float BLUR_SKY_THRESHOLD    = 0.9999;
@@ -24,10 +25,14 @@ struct SSAOBlurConstantsLayout
 	float u_fNormalSigma;
 	uint  u_uKernelRadius;
 };
-[[vk::binding(1, 0)]] ConstantBuffer<SSAOBlurConstantsLayout> SSAOBlurConstants;
-[[vk::binding(2, 0)]] Sampler2D g_xOcclusionTex;
-[[vk::binding(3, 0)]] Sampler2D g_xDepthTex;
-[[vk::binding(4, 0)]] Sampler2D g_xNormalTex;
+struct PassParams
+{
+	ConstantBuffer<SSAOBlurConstantsLayout> SSAOBlurConstants;
+	Sampler2D g_xOcclusionTex;
+	Sampler2D g_xDepthTex;
+	Sampler2D g_xNormalTex;
+};
+ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -41,22 +46,22 @@ float GaussianWeight(float fDist, float fSigma)
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float fCenterOcclusion = g_xOcclusionTex.Sample(input.uv).r;
-	float fCenterDepth     = g_xDepthTex.Sample(input.uv).r;
+	float fCenterOcclusion = g_xPassSet.g_xOcclusionTex.Sample(input.uv).r;
+	float fCenterDepth     = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 
 	if (fCenterDepth >= BLUR_SKY_THRESHOLD) return float4(1.0, 1.0, 1.0, 1.0);
 
-	float3 xCenterNormal = normalize(g_xNormalTex.Sample(input.uv).rgb);
+	float3 xCenterNormal = normalize(g_xPassSet.g_xNormalTex.Sample(input.uv).rgb);
 
-	float fDepthSigmaAbs = max(fCenterDepth * SSAOBlurConstants.u_fDepthSigma, BLUR_MIN_DEPTH_SIGMA);
+	float fDepthSigmaAbs = max(fCenterDepth * g_xPassSet.SSAOBlurConstants.u_fDepthSigma, BLUR_MIN_DEPTH_SIGMA);
 
 	uint uW, uH;
-	g_xOcclusionTex.GetDimensions(uW, uH);
+	g_xPassSet.g_xOcclusionTex.GetDimensions(uW, uH);
 	float2 xTexelSize = 1.0 / float2((float)uW, (float)uH);
 
 	float fAccum     = 0.0;
 	float fWeightSum = 0.0;
-	int   iRadius    = (int)SSAOBlurConstants.u_uKernelRadius;
+	int   iRadius    = (int)g_xPassSet.SSAOBlurConstants.u_uKernelRadius;
 
 	for (int iY = -iRadius; iY <= iRadius; iY++)
 	{
@@ -65,12 +70,12 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			float2 xOffset   = float2((float)iX, (float)iY);
 			float2 xSampleUV = clamp(input.uv + xOffset * xTexelSize, float2(0.001), float2(0.999));
 
-			float fSampleOcclusion = g_xOcclusionTex.Sample(xSampleUV).r;
-			float fSampleDepth     = g_xDepthTex.Sample(xSampleUV).r;
-			float3 xSampleNormal   = normalize(g_xNormalTex.Sample(xSampleUV).rgb);
+			float fSampleOcclusion = g_xPassSet.g_xOcclusionTex.Sample(xSampleUV).r;
+			float fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
+			float3 xSampleNormal   = normalize(g_xPassSet.g_xNormalTex.Sample(xSampleUV).rgb);
 
 			float fSpatialDist   = length(xOffset);
-			float fSpatialWeight = GaussianWeight(fSpatialDist, SSAOBlurConstants.u_fSpatialSigma);
+			float fSpatialWeight = GaussianWeight(fSpatialDist, g_xPassSet.SSAOBlurConstants.u_fSpatialSigma);
 
 			float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
 			float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
@@ -79,7 +84,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			// fully weighted while sharp normal changes (geometry edges)
 			// fall off via the gaussian.
 			float fNormalDiff   = 1.0 - max(dot(xCenterNormal, xSampleNormal), 0.0);
-			float fNormalWeight = GaussianWeight(fNormalDiff, SSAOBlurConstants.u_fNormalSigma);
+			float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.SSAOBlurConstants.u_fNormalSigma);
 
 			float fWeight = fSpatialWeight * fDepthWeight * fNormalWeight;
 			fAccum     += fSampleOcclusion * fWeight;

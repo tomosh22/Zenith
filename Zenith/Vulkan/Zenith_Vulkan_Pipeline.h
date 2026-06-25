@@ -111,13 +111,14 @@ class Zenith_Vulkan_RootSig
 public:
 	Zenith_Vulkan_RootSig()
 	{
-		// Initialize all descriptor types to MAX (invalid/unused)
-		for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
+		// Initialise all descriptor kinds to UNKNOWN (invalid/unused).
+		for (u_int i = 0; i < FLUX_MAX_BINDING_GROUPS; i++)
 		{
 			for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
 			{
-				m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
+				m_aeBindingKinds[i][j] = FLUX_RESOURCE_KIND_UNKNOWN;
 			}
+			m_auActiveBindingMask[i] = 0;
 		}
 	}
 
@@ -139,13 +140,19 @@ public:
 	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
 
 	vk::PipelineLayout m_xLayout;
-	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_BINDINGS_PER_GROUP];
-	// Per-slot ownership flag — false means the layout is borrowed (e.g. the
+	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_BINDING_GROUPS];
+	// Per-set ownership flag — false means the layout is borrowed (e.g. the
 	// shared bindless texture layout from Zenith_Vulkan), so Pipeline::Reset
 	// must NOT destroy it. True means we created it via vkCreateDescriptor-
 	// SetLayout and own its lifetime.
-	bool m_abOwnsDescSetLayout[FLUX_MAX_BINDINGS_PER_GROUP] = {};
-	BindingType m_axBindingTypes[FLUX_MAX_BINDINGS_PER_GROUP][FLUX_MAX_BINDINGS_PER_GROUP];
+	bool m_abOwnsDescSetLayout[FLUX_MAX_BINDING_GROUPS] = {};
+	// Per-(set, binding) resource kind, mirrored from the pipeline layout so the
+	// descriptor-write path can pick the right descriptor type without the
+	// reflection. UNKNOWN = absent. Indexed [set][binding].
+	FluxResourceKind m_aeBindingKinds[FLUX_MAX_BINDING_GROUPS][FLUX_MAX_BINDINGS_PER_GROUP];
+	// Per-set bitmask of present bindings (bit b set ⇒ binding b is declared).
+	// Drives the pre-draw staged-binding validator.
+	u_int m_auActiveBindingMask[FLUX_MAX_BINDING_GROUPS] = {};
 	u_int m_uNumBindingGroups = UINT32_MAX;
 
 	// Reflection data for name-based binding lookups
