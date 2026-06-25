@@ -74,7 +74,7 @@ float4 fsMain(VsOut input) : SV_Target
 	if (input.texture == 0u)
 		xBaseColour = input.colour;
 	else
-		xBaseColour = g_xBindlessSet.g_axTextures[input.texture].Sample(input.uv) * input.colour;
+		xBaseColour = g_xBindlessSet.g_axTextures[NonUniformResourceIndex(input.texture)].Sample(input.uv) * input.colour;
 
 	// Vertical gradient when colour2 has a non-negative sentinel.
 	if (input.colour2.x >= 0.0)
@@ -82,7 +82,7 @@ float4 fsMain(VsOut input) : SV_Target
 		float4 xTop    = xBaseColour;
 		float4 xBottom = input.colour2;
 		if (input.texture != 0u)
-			xBottom *= g_xBindlessSet.g_axTextures[input.texture].Sample(input.uv);
+			xBottom *= g_xBindlessSet.g_axTextures[NonUniformResourceIndex(input.texture)].Sample(input.uv);
 		xBaseColour = lerp(xTop, xBottom, input.uv.y);
 	}
 
