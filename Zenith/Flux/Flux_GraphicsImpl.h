@@ -53,13 +53,13 @@ public:
 		Zenith_Maths::Vector2 m_xCameraNearFar;
 	};
 
-	// Phase-2 spine split of FrameConstants into the GLOBAL (view-invariant) and
-	// VIEW (per-camera) frequencies. Both coexist with FrameConstants during the
-	// shader migration: shaders still on Common.Frame read FrameConstants;
-	// shaders converted to the ParameterBlock spine read GlobalConstants (set 0)
-	// + ViewConstants (set 1). All three are filled from the same camera/global
-	// data each frame (UploadFrameConstants). Layouts mirror the matching Slang
+	// The GLOBAL (view-invariant) and VIEW (per-camera) spine frequencies — what
+	// every shader on the ParameterBlock spine reads (GlobalConstants @ set 0 +
+	// ViewConstants @ set 1). Both are filled each frame from the CPU-side
+	// m_xFrameConstants (UploadFrameConstants). Layouts mirror the matching Slang
 	// GlobalConstantsLayout / ViewConstantsLayout in Common/Bindings.slang.
+	// (FrameConstants is no longer GPU-uploaded — Common/Frame.slang was deleted —
+	// it survives only as the CPU camera-matrix struct + the mirror source here.)
 	struct GlobalConstants
 	{
 		Zenith_Maths::Vector4  m_xSunDir_Pad;
@@ -175,11 +175,12 @@ public:
 
 	// Shared geometry / per-frame UBO.
 	Flux_MeshGeometry           m_xQuadMesh;
-	Flux_DynamicConstantBuffer  m_xFrameConstantsBuffer;
-	// Phase-2 spine GLOBAL (set 0) + VIEW (set 1) constant buffers. Filled from
-	// the same camera/global data as m_xFrameConstantsBuffer each frame (see
-	// UploadFrameConstants); bound by shaders converted to the ParameterBlock
-	// spine. Coexist with FrameConstants during the shader migration.
+	// GLOBAL (set 0) + VIEW (set 1) spine constant buffers — the only frame-constant
+	// buffers the GPU sees. Filled each frame from the CPU m_xFrameConstants (see
+	// UploadFrameConstants); bound by every spine shader. (The former
+	// m_xFrameConstantsBuffer GPU upload was deleted with Common/Frame.slang — no
+	// shader bound it. The CPU m_xFrameConstants struct stays as the camera-matrix
+	// source for CPU systems + the mirror source for these two.)
 	Flux_DynamicConstantBuffer  m_xGlobalConstantsBuffer;
 	Flux_DynamicConstantBuffer  m_xViewConstantsBuffer;
 

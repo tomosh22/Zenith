@@ -152,7 +152,6 @@ void Flux_GraphicsImpl::Initialise()
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.InitialiseVertexBuffer(m_xQuadMesh.GetVertexData(), m_xQuadMesh.GetVertexDataSize(), m_xQuadMesh.GetVertexBuffer());
 	xVulkanMemory.InitialiseIndexBuffer(m_xQuadMesh.GetIndexData(), m_xQuadMesh.GetIndexDataSize(), m_xQuadMesh.GetIndexBuffer());
-	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), m_xFrameConstantsBuffer);
 	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(GlobalConstants), m_xGlobalConstantsBuffer);
 	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(ViewConstants), m_xViewConstantsBuffer);
 
@@ -248,11 +247,12 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	m_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
 #endif
 	m_xFrameConstants.m_xCameraNearFar = { GetNearPlane(), GetFarPlane() };
-	g_xEngine.FluxMemory().UploadBufferData(m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xFrameConstants, sizeof(FrameConstants));
 
-	// Phase-2 spine: mirror the relevant fields into the GLOBAL (view-invariant)
-	// + VIEW (per-camera) buffers from the same source data, so shaders converted
-	// to the ParameterBlock spine read identical values.
+	// Spine: mirror the relevant fields from the CPU-side m_xFrameConstants into the
+	// GLOBAL (view-invariant) + VIEW (per-camera) buffers — the only frame-constant
+	// buffers the GPU sees (m_xFrameConstants itself is no longer uploaded; its GPU
+	// buffer was removed with Common/Frame.slang, but it stays as the CPU camera-
+	// matrix source for GetViewProjMatrix()/etc. and the mirror source here).
 	m_xGlobalConstantsData.m_xSunDir_Pad    = m_xFrameConstants.m_xSunDir_Pad;
 	m_xGlobalConstantsData.m_xSunColour_Pad = m_xFrameConstants.m_xSunColour_Pad;
 	m_xGlobalConstantsData.m_uFrameIndex    = g_xEngine.Frame().GetFrameIndex();
@@ -514,8 +514,7 @@ void Flux_GraphicsImpl::Shutdown()
 	xVulkanMemory.DestroyVertexBuffer(m_xQuadMesh.GetVertexBuffer());
 	xVulkanMemory.DestroyIndexBuffer(m_xQuadMesh.GetIndexBuffer());
 
-	// Destroy frame constants buffer
-	xVulkanMemory.DestroyDynamicConstantBuffer(m_xFrameConstantsBuffer);
+	// Destroy the GLOBAL/VIEW spine constant buffers.
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_xGlobalConstantsBuffer);
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_xViewConstantsBuffer);
 

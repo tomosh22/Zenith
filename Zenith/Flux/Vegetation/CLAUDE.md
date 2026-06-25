@@ -144,7 +144,7 @@ This placement gives:
 
 **Uses:**
 - `Flux_Graphics::GetHDRSceneTarget()` / scene depth for the forward pass
-- `Flux_Graphics::m_xFrameConstantsBuffer` for camera/sun
+- `Flux_Graphics::m_xViewConstantsBuffer` (camera, VIEW set) + `m_xGlobalConstantsBuffer` (sun, GLOBAL set)
 - Terrain mesh geometry for procedural blade placement
 
 **Terrain Integration:**

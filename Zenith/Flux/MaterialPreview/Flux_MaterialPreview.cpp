@@ -367,6 +367,16 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	// g_xView, still sourced from the PREVIEW orbit camera buffer (its matrices +
 	// camera position are an identical prefix of ViewConstantsLayout). The preview
 	// sun moved to the GLOBAL set (set 0) g_xGlobal — its own preview buffer.
+	// Guard that prefix assumption: hg_xView is read by the shader as a
+	// ViewConstantsLayout, but we bind a FrameConstants clone. Only the view/proj +
+	// inv* matrices + camera position (up to m_xCamPos_Pad) are a byte-identical
+	// prefix of both structs — they DIVERGE right after (FrameConstants has sun
+	// fields where ViewConstants has screen dims), and the forward preview shader
+	// reads nothing past it. A future field reorder must fail the build, not
+	// silently render the preview through a garbage camera.
+	static_assert(offsetof(Flux_GraphicsImpl::FrameConstants, m_xCamPos_Pad)
+	           == offsetof(Flux_GraphicsImpl::ViewConstants,  m_xCamPos_Pad),
+		"MaterialPreview binds a FrameConstants clone to the VIEW set; the view/proj+campos prefix must match ViewConstants");
 	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
 	xBinder.BindCBV(FW::hg_xGlobal, &xZZ.m_xPreviewGlobalConstantsBuffer.GetCBV());
 
