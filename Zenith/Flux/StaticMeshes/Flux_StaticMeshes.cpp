@@ -351,17 +351,18 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	namespace SM = Flux_Generated_StaticMeshes::StaticMesh_ToShadowmap;
-	// Shadow pass binds per-draw DrawConstants + ShadowMatrix; the masked alpha cutout
-	// samples the base-colour texture bindlessly (opaque materials write cutoff 0 and the
-	// FS skips the sample). g_axMaterials (GLOBAL set) + the g_axTextures table (set 2)
-	// are bound once here — the shadow pipeline was set by the caller
-	// (Flux_Shadows::ExecuteShadowCascade) before this call. g_axMaterials is a DRAW-set
-	// member: staged once, re-written into the set each draw alongside DrawConstants.
+	// Shadow pass binds per-draw DrawConstants; the masked alpha cutout samples the
+	// base-colour texture bindlessly (opaque materials write cutoff 0 and the FS skips
+	// the sample). g_axMaterials + ShadowMatrices (all 4 cascade matrices, Phase 4a) +
+	// the g_axTextures table (set 2) are bound once here — the shadow pipeline was set
+	// by the caller (Flux_Shadows::ExecuteShadowCascade) before this call. The DRAW-set
+	// SSBOs are staged once and re-written into the set each draw alongside DrawConstants.
 	xBinder.BindSRV_Buffer(SM::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
 	xCmdBuf.UseBindlessTextures(2);
 
 	// Iterate the UNCULLLED shadow packet (EnsureShadowPacket, main thread) — off-screen
@@ -398,8 +399,8 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 			if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
 			MeshDrawConstants xPushConstants;
 			BuildMeshDrawConstants(xPushConstants, xModelMatrix, uMaterialIndex);
+			xPushConstants.m_uShadowCascade = uCascade;   // selects ShadowMatrices[uCascade] in the VS
 			xBinder.BindDrawConstants(SM::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
-			xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}
 	}

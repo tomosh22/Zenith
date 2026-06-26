@@ -465,50 +465,12 @@ namespace Flux_Generated_Fog
 		inline constexpr unsigned int ku_xCSM3_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hu_xCSM3{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kShadowMatrix0_Name = "ShadowMatrix0";
-		inline constexpr unsigned int kShadowMatrix0_Set = 3;
-		inline constexpr unsigned int kShadowMatrix0_Binding = 8;
-		inline constexpr unsigned int kShadowMatrix0_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix0{ 3u, 8u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix0_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix0_CB) == 64, "ShadowMatrix0_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix1_Name = "ShadowMatrix1";
-		inline constexpr unsigned int kShadowMatrix1_Set = 3;
-		inline constexpr unsigned int kShadowMatrix1_Binding = 9;
-		inline constexpr unsigned int kShadowMatrix1_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix1{ 3u, 9u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix1_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix1_CB) == 64, "ShadowMatrix1_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix2_Name = "ShadowMatrix2";
-		inline constexpr unsigned int kShadowMatrix2_Set = 3;
-		inline constexpr unsigned int kShadowMatrix2_Binding = 10;
-		inline constexpr unsigned int kShadowMatrix2_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix2{ 3u, 10u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix2_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix2_CB) == 64, "ShadowMatrix2_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix3_Name = "ShadowMatrix3";
-		inline constexpr unsigned int kShadowMatrix3_Set = 3;
-		inline constexpr unsigned int kShadowMatrix3_Binding = 11;
-		inline constexpr unsigned int kShadowMatrix3_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix3{ 3u, 11u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix3_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix3_CB) == 64, "ShadowMatrix3_CB size drifted from Slang reflection");
+		inline constexpr const char* kShadowMatrices_Name = "ShadowMatrices";
+		inline constexpr unsigned int kShadowMatrices_Set = 3;
+		inline constexpr unsigned int kShadowMatrices_Binding = 8;
+		inline constexpr unsigned int kShadowMatrices_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 8u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}
 
 	// ----- Fog_Raymarch (Fog/Flux_RaymarchFog) -----
@@ -633,50 +595,12 @@ namespace Flux_Generated_Fog
 		inline constexpr unsigned int ku_xCSM3_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hu_xCSM3{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kShadowMatrix0_Name = "ShadowMatrix0";
-		inline constexpr unsigned int kShadowMatrix0_Set = 3;
-		inline constexpr unsigned int kShadowMatrix0_Binding = 8;
-		inline constexpr unsigned int kShadowMatrix0_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix0{ 3u, 8u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix0_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix0_CB) == 64, "ShadowMatrix0_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix1_Name = "ShadowMatrix1";
-		inline constexpr unsigned int kShadowMatrix1_Set = 3;
-		inline constexpr unsigned int kShadowMatrix1_Binding = 9;
-		inline constexpr unsigned int kShadowMatrix1_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix1{ 3u, 9u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix1_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix1_CB) == 64, "ShadowMatrix1_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix2_Name = "ShadowMatrix2";
-		inline constexpr unsigned int kShadowMatrix2_Set = 3;
-		inline constexpr unsigned int kShadowMatrix2_Binding = 10;
-		inline constexpr unsigned int kShadowMatrix2_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix2{ 3u, 10u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix2_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix2_CB) == 64, "ShadowMatrix2_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix3_Name = "ShadowMatrix3";
-		inline constexpr unsigned int kShadowMatrix3_Set = 3;
-		inline constexpr unsigned int kShadowMatrix3_Binding = 11;
-		inline constexpr unsigned int kShadowMatrix3_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix3{ 3u, 11u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix3_CB
-		{
-			unsigned char m_au_xShadowMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix3_CB) == 64, "ShadowMatrix3_CB size drifted from Slang reflection");
+		inline constexpr const char* kShadowMatrices_Name = "ShadowMatrices";
+		inline constexpr unsigned int kShadowMatrices_Set = 3;
+		inline constexpr unsigned int kShadowMatrices_Binding = 8;
+		inline constexpr unsigned int kShadowMatrices_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 8u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}
 
 	// ----- DevilsPlayground_DPFog (Fog/DP_Fog) -----

@@ -64,16 +64,12 @@ struct TranslucencyConstantsLayout
 	float2 g_xCSMTexelSize;	// 1 / CSM resolution (engine rule: dims via CBV)
 };
 
-struct ShadowMatrixLayout { float4x4 m_xMat; };
-
 struct PassParams
 {
 	ConstantBuffer<TranslucencyConstantsLayout> TranslucencyConstants;
 
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
+	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
+	StructuredBuffer<float4x4> ShadowMatrices;
 
 	Sampler2D   g_xCSM0;
 	Sampler2D   g_xCSM1;
@@ -160,10 +156,10 @@ float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 
 	const uint uNumCSMs = 4;
 	float4x4 axShadowMats[4] = {
-		g_xPassSet.ShadowMatrix0.m_xMat,
-		g_xPassSet.ShadowMatrix1.m_xMat,
-		g_xPassSet.ShadowMatrix2.m_xMat,
-		g_xPassSet.ShadowMatrix3.m_xMat,
+		g_xPassSet.ShadowMatrices[0],
+		g_xPassSet.ShadowMatrices[1],
+		g_xPassSet.ShadowMatrices[2],
+		g_xPassSet.ShadowMatrices[3],
 	};
 
 	float2 texelSize = g_xPassSet.TranslucencyConstants.g_xCSMTexelSize;

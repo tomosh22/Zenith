@@ -149,15 +149,15 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 	xBinder.BindSRV(RM::hu_xNoiseTexture3D, &xVolumeFog.GetNoiseTexture3D()->m_xSRV);
 	xBinder.BindSRV(RM::hu_xBlueNoiseTexture, &xVolumeFog.GetBlueNoiseTexture()->m_xSRV);
 
-	// Bind CSM shadow maps and matrices for volumetric shadows
+	// Bind CSM shadow maps for volumetric shadows; the 4 cascade matrices come from
+	// the single ShadowMatrices SSBO (Phase 4a collapse).
 	static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { RM::hu_xCSM0, RM::hu_xCSM1, RM::hu_xCSM2, RM::hu_xCSM3 };
-	static const Flux_BindingHandle s_axShadowMatrixHandles[ZENITH_FLUX_NUM_CSMS] = { RM::hShadowMatrix0, RM::hShadowMatrix1, RM::hShadowMatrix2, RM::hShadowMatrix3 };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xCSMSRV = xShadows.GetCSMSRV(u);
 		xBinder.BindSRV(s_axCSMHandles[u], &xCSMSRV, &xGraphics.m_xClampSampler);
-		xBinder.BindCBV(s_axShadowMatrixHandles[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
 	}
+	xBinder.BindSRV_Buffer(RM::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
 	xBinder.BindDrawConstants(RM::hRaymarchConstants, &m_xConstants, sizeof(Flux_RaymarchConstants));
 

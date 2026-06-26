@@ -323,19 +323,20 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade)
 {
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	namespace SM = Flux_Generated_AnimatedMeshes::AnimatedMesh_ToShadowmap;
 
-	// Shadow pass uses per-draw Bones + DrawConstants + ShadowMatrix; the masked cutout
-	// samples the base colour bindlessly. g_axMaterials (GLOBAL set) + the g_axTextures
-	// table (set 2) are bound once here — the shadow pipeline was set by the caller
-	// (Flux_Shadows::ExecuteShadowCascade) before this call. g_axMaterials is a DRAW-set
-	// member: staged once, re-written into the set each draw alongside DrawConstants.
+	// Shadow pass uses per-draw Bones + DrawConstants; the masked cutout samples the
+	// base colour bindlessly. g_axMaterials + ShadowMatrices (all 4 cascade matrices,
+	// Phase 4a) + the g_axTextures table (set 2) are bound once here — the shadow
+	// pipeline was set by the caller (Flux_Shadows::ExecuteShadowCascade). The DRAW-set
+	// SSBOs are staged once and re-written into the set each draw alongside DrawConstants.
 	xBinder.BindSRV_Buffer(SM::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
 	xCmdBuf.UseBindlessTextures(2);
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). This is
@@ -380,11 +381,12 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, con
 			if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
 			MeshDrawConstants xPushConstants;
 			BuildMeshDrawConstants(xPushConstants, xModelMatrix, uMaterialIndex);
+			xPushConstants.m_uShadowCascade = uCascade;   // selects ShadowMatrices[uCascade] in the VS
 			xBinder.BindDrawConstants(SM::hDrawConstants, &xPushConstants, sizeof(xPushConstants));
 
-			// Bind the skinning bone buffer + shadow matrix (DRAW set).
+			// Bind the skinning bone buffer (DRAW set). Shadow matrices are the shared
+			// ShadowMatrices SSBO bound once above.
 			xBinder.BindCBV(SM::hBones, &xBoneBuffer.GetCBV());
-			xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
 
 			xCmdBuf.DrawIndexed(pxMeshInstance->GetNumIndices());
 		}

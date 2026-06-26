@@ -20,7 +20,7 @@
 // fsMain from the material record.
 //
 // DRAW block (set 3) bindings:
-//   binding 0   ShadowMatrix
+//   binding 0   ShadowMatrices (all-cascade sun view×proj SSBO; index = DrawConstants.g_uShadowCascade)
 //   binding 1   DrawConstants (material-table index + g_xVATParams: VAT texW/texH/enable)
 //   binding 2   TransformBuffer
 //   binding 3   AnimDataBuffer
@@ -51,18 +51,18 @@ struct VsOut
 	float4 vertexColor : TEXCOORD1;
 };
 
-struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
-
-// DRAW block (set 3) — shadow matrix + per-draw constants + the masked-cutout
-// base-colour texture + the SAME instancing buffers and VAT animation texture as
-// the G-buffer pass (the shadow geometry MUST match the lit pose; see header).
+// DRAW block (set 3) — all-cascade shadow matrices + per-draw constants + the
+// masked-cutout base-colour texture + the SAME instancing buffers and VAT animation
+// texture as the G-buffer pass (the shadow geometry MUST match the lit pose; see header).
+// ShadowMatrices holds all 4 cascade sun view×proj matrices (Phase 4a); this caster
+// selects element DrawConstants.g_uShadowCascade (set per cascade pass).
 //
 // Masked cutout texture (g_xBaseColorTex) matches the G-buffer's base-colour slot
 // by name. VAT params live in DrawConstants.g_xVATParams (see Flux_InstancedMesh_ToGBuffer:
 // one scratch/draw-constants buffer per descriptor set, so VAT can't be a 2nd CB).
 struct DrawParams
 {
-	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
+	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 	StructuredBuffer<float4x4> TransformBuffer;
@@ -126,7 +126,7 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	}
 
 	float3 xWorldPos = mul(xModelMatrix, float4(xLocalPos, 1.0)).xyz;
-	o.position    = mul(g_xDrawSet.ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	o.position    = mul(g_xDrawSet.ShadowMatrices[dc.g_uShadowCascade], float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;

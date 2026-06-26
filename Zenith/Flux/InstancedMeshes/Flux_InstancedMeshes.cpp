@@ -814,7 +814,7 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade)
 {
 	// WIRED into Flux_Shadows::ExecuteShadowCascade (per cascade). Instanced meshes
 	// (incl. the terrain trees) cast shadows over ALL ENABLED casters — there is NO
@@ -853,12 +853,13 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 	namespace SM = Flux_Generated_InstancedMeshes::InstancedMesh_ToShadowmap;
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	// Shadow pass: per-draw DrawConstants + ShadowMatrix + transform/visible-index
-	// SSBOs; the masked cutout samples the base colour bindlessly. g_axMaterials
-	// (a DRAW-set member: staged once, re-written into the set each draw alongside
-	// DrawConstants) + the g_axTextures table (set 2) are bound once here (after the
-	// shadow pipeline bind above).
+	// Shadow pass: per-draw DrawConstants + transform/visible-index SSBOs; the masked
+	// cutout samples the base colour bindlessly. g_axMaterials + ShadowMatrices (all 4
+	// cascade matrices, Phase 4a) — both DRAW-set SSBOs staged once, re-written into the
+	// set each draw alongside DrawConstants — + the g_axTextures table (set 2) are bound
+	// once here (after the shadow pipeline bind above).
 	xBinder.BindSRV_Buffer(SM::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
+	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
 	xCmdBuf.UseBindlessTextures(2);
 
 	for (u_int uGroup = 0; uGroup < m_apxInstanceGroups.GetSize(); ++uGroup)
@@ -911,8 +912,8 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 		MeshDrawConstants xMaterialConstants;
 		BuildMeshDrawConstants(xMaterialConstants, glm::identity<glm::mat4>(), uMaterialIndex);
 		xMaterialConstants.m_xVATParams = BuildInstancedVATParams(pxAnimTex);
+		xMaterialConstants.m_uShadowCascade = uCascade;   // selects ShadowMatrices[uCascade] in the VS
 		xBinder.BindDrawConstants(SM::hDrawConstants, &xMaterialConstants, sizeof(xMaterialConstants));
-		xBinder.BindCBV(SM::hShadowMatrix, &xShadowMatrixBuffer.GetCBV());
 
 		// Bind instance buffers. Transform/AnimData are frame-indexed (not graph-
 		// tracked) -> UAV bind; the enabled-index list via its SRV (read-only

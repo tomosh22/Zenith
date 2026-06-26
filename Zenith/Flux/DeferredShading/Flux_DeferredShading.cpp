@@ -117,12 +117,8 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 		xBinder.BindSRV(s_axCSMHandles[u], &xSRV, &xFluxGraphics.m_xClampSampler);
 	}
 
-	// Bind shadow matrix buffers (typed handles)
-	static const Flux_BindingHandle s_axShadowMatrixHandles[ZENITH_FLUX_NUM_CSMS] = { DS::hShadowMatrix0, DS::hShadowMatrix1, DS::hShadowMatrix2, DS::hShadowMatrix3 };
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		xBinder.BindCBV(s_axShadowMatrixHandles[u], &xShadows.GetShadowMatrixBuffer(u).GetCBV());
-	}
+	// Bind the single ShadowMatrices SSBO holding all 4 cascade matrices (Phase 4a).
+	xBinder.BindSRV_Buffer(DS::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
 	// Shadow sampling parameters (per-cascade splits / texel sizes / depth ranges
 	// + global filtering config). Packed + uploaded by Flux_Shadows; bound here as

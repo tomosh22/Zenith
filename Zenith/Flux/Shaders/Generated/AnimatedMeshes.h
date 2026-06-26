@@ -73,14 +73,14 @@ namespace Flux_Generated_AnimatedMeshes
 		{
 			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=64
-			unsigned int m_ug_uPad0; // slang=uint offset=68
+			unsigned int m_ug_uShadowCascade; // slang=uint offset=68
 			unsigned int m_ug_uPad1; // slang=uint offset=72
 			unsigned int m_ug_uPad2; // slang=uint offset=76
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 96, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 64, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 68, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kBones_Name = "Bones";
@@ -163,17 +163,12 @@ namespace Flux_Generated_AnimatedMeshes
 			unsigned char m_ag_xBones[6400]; // slang=Array offset=0 arrayCount=100 (no C++ mapping)
 		};
 		static_assert(sizeof(Bones_CB) == 6400, "Bones_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix_Name = "ShadowMatrix";
-		inline constexpr unsigned int kShadowMatrix_Set = 3;
-		inline constexpr unsigned int kShadowMatrix_Binding = 1;
-		inline constexpr unsigned int kShadowMatrix_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix_CB
-		{
-			unsigned char m_ag_xSunViewProjMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix_CB) == 64, "ShadowMatrix_CB size drifted from Slang reflection");
+		inline constexpr const char* kShadowMatrices_Name = "ShadowMatrices";
+		inline constexpr unsigned int kShadowMatrices_Set = 3;
+		inline constexpr unsigned int kShadowMatrices_Binding = 1;
+		inline constexpr unsigned int kShadowMatrices_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
 		inline constexpr unsigned int kDrawConstants_Set = 3;
 		inline constexpr unsigned int kDrawConstants_Binding = 2;
@@ -184,14 +179,14 @@ namespace Flux_Generated_AnimatedMeshes
 		{
 			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=64
-			unsigned int m_ug_uPad0; // slang=uint offset=68
+			unsigned int m_ug_uShadowCascade; // slang=uint offset=68
 			unsigned int m_ug_uPad1; // slang=uint offset=72
 			unsigned int m_ug_uPad2; // slang=uint offset=76
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 96, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 64, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 68, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kg_axMaterials_Name = "g_axMaterials";

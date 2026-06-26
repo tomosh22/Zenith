@@ -9,6 +9,7 @@
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"   // GetShadowMatricesSRV() for the placeholder shadow bind
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/MaterialPreview.h" // typed binding handles
@@ -409,12 +410,13 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	// CSMs/ShadowMatrices are statically referenced by the shared shader —
 	// bind benign placeholders (shadows are disabled via the constants).
 	static const Flux_BindingHandle s_axCSMHandles[4] = { FW::hg_xCSM0, FW::hg_xCSM1, FW::hg_xCSM2, FW::hg_xCSM3 };
-	static const Flux_BindingHandle s_axShadowMatrixHandles[4] = { FW::hShadowMatrix0, FW::hShadowMatrix1, FW::hShadowMatrix2, FW::hShadowMatrix3 };
 	for (u_int u = 0; u < 4; u++)
 	{
 		xBinder.BindSRV(s_axCSMHandles[u], &xIBL.GetBRDFLUTSRV(), &xGraphics.m_xClampSampler);
-		xBinder.BindCBV(s_axShadowMatrixHandles[u], &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
 	}
+	// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
+	// Real buffer (harmless — preview disables shadow sampling via the constants).
+	xBinder.BindSRV_Buffer(FW::hShadowMatrices, g_xEngine.Shadows().GetShadowMatricesSRV());
 
 	xBinder.BindSRV(FW::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
 	xBinder.BindSRV(FW::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());

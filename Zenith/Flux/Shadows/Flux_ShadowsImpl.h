@@ -90,7 +90,10 @@ public:
 	Flux_RenderAttachment* GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 	Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex) { return m_axSunViewProjMats[uIndex]; }
 	Flux_ShaderResourceView& GetCSMSRV(const uint32_t u);
-	Flux_DynamicConstantBuffer& GetShadowMatrixBuffer(const uint32_t u) { return m_xShadowMatrixBuffers[u]; }
+	// All 4 cascade sun view×proj matrices live in one StructuredBuffer<float4x4>
+	// (Phase 4a collapse). Casters read ShadowMatrices[cascade] (cascade index via
+	// MeshDrawConstants); lit/fog passes read all four.
+	Flux_ShaderResourceView_Buffer& GetShadowMatricesSRV() { return m_xShadowMatricesBuffer.GetSRV(); }
 
 	void UpdateShadowMatrices();
 
@@ -116,7 +119,8 @@ public:
 
 	Flux_TransientHandle       m_axCSMHandles[ZENITH_FLUX_NUM_CSMS];
 	Flux_RenderGraph*          m_pxGraph = nullptr;
-	Flux_DynamicConstantBuffer m_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
+	// One StructuredBuffer<float4x4> holding all 4 cascade matrices (Phase 4a).
+	Flux_DynamicReadWriteBuffer m_xShadowMatricesBuffer;
 	Flux_DynamicConstantBuffer m_xShadowSamplingBuffer;
 	Zenith_Maths::Matrix4      m_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 

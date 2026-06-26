@@ -20,7 +20,7 @@ struct MeshDrawConstants
 {
 	Zenith_Maths::Matrix4 m_xModelMatrix;       // 64 bytes (offset  0)
 	u_int                 m_uMaterialIndex;     //  4 bytes (offset 64) index into g_axMaterials
-	u_int                 m_uPad0;              //  4 bytes (offset 68)
+	u_int                 m_uShadowCascade;     //  4 bytes (offset 68) CSM cascade index (shadow caster passes; 0 otherwise)
 	u_int                 m_uPad1;              //  4 bytes (offset 72)
 	u_int                 m_uPad2;              //  4 bytes (offset 76)
 	Zenith_Maths::Vector4 m_xVATParams;         // 16 bytes (offset 80) InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced
@@ -35,7 +35,7 @@ inline void BuildMeshDrawConstants(MeshDrawConstants& xOut, const Zenith_Maths::
 {
 	xOut.m_xModelMatrix   = xModelMatrix;
 	xOut.m_uMaterialIndex = uMaterialIndex;
-	xOut.m_uPad0 = 0u;
+	xOut.m_uShadowCascade = 0u;
 	xOut.m_uPad1 = 0u;
 	xOut.m_uPad2 = 0u;
 	xOut.m_xVATParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);

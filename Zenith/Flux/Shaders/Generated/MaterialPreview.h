@@ -219,110 +219,72 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bShadowsEnabled) == 16, "TranslucencyConstants.g_bShadowsEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bDynamicLightsEnabled) == 20, "TranslucencyConstants.g_bDynamicLightsEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fAmbientFallbackIntensity) == 24, "TranslucencyConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix0_Name = "ShadowMatrix0";
-		inline constexpr unsigned int kShadowMatrix0_Set = 3;
-		inline constexpr unsigned int kShadowMatrix0_Binding = 1;
-		inline constexpr unsigned int kShadowMatrix0_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix0{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix0_CB
-		{
-			unsigned char m_am_xMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix0_CB) == 64, "ShadowMatrix0_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix1_Name = "ShadowMatrix1";
-		inline constexpr unsigned int kShadowMatrix1_Set = 3;
-		inline constexpr unsigned int kShadowMatrix1_Binding = 2;
-		inline constexpr unsigned int kShadowMatrix1_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix1{ 3u, 2u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix1_CB
-		{
-			unsigned char m_am_xMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix1_CB) == 64, "ShadowMatrix1_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix2_Name = "ShadowMatrix2";
-		inline constexpr unsigned int kShadowMatrix2_Set = 3;
-		inline constexpr unsigned int kShadowMatrix2_Binding = 3;
-		inline constexpr unsigned int kShadowMatrix2_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix2{ 3u, 3u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix2_CB
-		{
-			unsigned char m_am_xMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix2_CB) == 64, "ShadowMatrix2_CB size drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrix3_Name = "ShadowMatrix3";
-		inline constexpr unsigned int kShadowMatrix3_Set = 3;
-		inline constexpr unsigned int kShadowMatrix3_Binding = 4;
-		inline constexpr unsigned int kShadowMatrix3_DescriptorCount = 1;
-		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix3{ 3u, 4u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix3_CB
-		{
-			unsigned char m_am_xMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-		};
-		static_assert(sizeof(ShadowMatrix3_CB) == 64, "ShadowMatrix3_CB size drifted from Slang reflection");
+		inline constexpr const char* kShadowMatrices_Name = "ShadowMatrices";
+		inline constexpr unsigned int kShadowMatrices_Set = 3;
+		inline constexpr unsigned int kShadowMatrices_Binding = 1;
+		inline constexpr unsigned int kShadowMatrices_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		inline constexpr const char* kg_xCSM0_Name = "g_xCSM0";
 		inline constexpr unsigned int kg_xCSM0_Set = 3;
-		inline constexpr unsigned int kg_xCSM0_Binding = 5;
+		inline constexpr unsigned int kg_xCSM0_Binding = 2;
 		inline constexpr unsigned int kg_xCSM0_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM0{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xCSM0{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xCSM1_Name = "g_xCSM1";
 		inline constexpr unsigned int kg_xCSM1_Set = 3;
-		inline constexpr unsigned int kg_xCSM1_Binding = 6;
+		inline constexpr unsigned int kg_xCSM1_Binding = 3;
 		inline constexpr unsigned int kg_xCSM1_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM1{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xCSM1{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xCSM2_Name = "g_xCSM2";
 		inline constexpr unsigned int kg_xCSM2_Set = 3;
-		inline constexpr unsigned int kg_xCSM2_Binding = 7;
+		inline constexpr unsigned int kg_xCSM2_Binding = 4;
 		inline constexpr unsigned int kg_xCSM2_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM2{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xCSM2{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xCSM3_Name = "g_xCSM3";
 		inline constexpr unsigned int kg_xCSM3_Set = 3;
-		inline constexpr unsigned int kg_xCSM3_Binding = 8;
+		inline constexpr unsigned int kg_xCSM3_Binding = 5;
 		inline constexpr unsigned int kg_xCSM3_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM3{ 3u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xCSM3{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xBRDFLUT_Name = "g_xBRDFLUT";
 		inline constexpr unsigned int kg_xBRDFLUT_Set = 3;
-		inline constexpr unsigned int kg_xBRDFLUT_Binding = 9;
+		inline constexpr unsigned int kg_xBRDFLUT_Binding = 6;
 		inline constexpr unsigned int kg_xBRDFLUT_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 9u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xIrradianceMap_Name = "g_xIrradianceMap";
 		inline constexpr unsigned int kg_xIrradianceMap_Set = 3;
-		inline constexpr unsigned int kg_xIrradianceMap_Binding = 10;
+		inline constexpr unsigned int kg_xIrradianceMap_Binding = 7;
 		inline constexpr unsigned int kg_xIrradianceMap_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 10u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kg_xPrefilteredMap_Name = "g_xPrefilteredMap";
 		inline constexpr unsigned int kg_xPrefilteredMap_Set = 3;
-		inline constexpr unsigned int kg_xPrefilteredMap_Binding = 11;
+		inline constexpr unsigned int kg_xPrefilteredMap_Binding = 8;
 		inline constexpr unsigned int kg_xPrefilteredMap_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 11u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kLightBuffer_Name = "LightBuffer";
 		inline constexpr unsigned int kLightBuffer_Set = 3;
-		inline constexpr unsigned int kLightBuffer_Binding = 12;
+		inline constexpr unsigned int kLightBuffer_Binding = 9;
 		inline constexpr unsigned int kLightBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 12u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 9u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		inline constexpr const char* kClusterLightCounts_Name = "ClusterLightCounts";
 		inline constexpr unsigned int kClusterLightCounts_Set = 3;
-		inline constexpr unsigned int kClusterLightCounts_Binding = 13;
+		inline constexpr unsigned int kClusterLightCounts_Binding = 10;
 		inline constexpr unsigned int kClusterLightCounts_DescriptorCount = 1;
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 13u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 10u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		inline constexpr const char* kClusterLightIndices_Name = "ClusterLightIndices";
 		inline constexpr unsigned int kClusterLightIndices_Set = 3;
-		inline constexpr unsigned int kClusterLightIndices_Binding = 14;
+		inline constexpr unsigned int kClusterLightIndices_Binding = 11;
 		inline constexpr unsigned int kClusterLightIndices_DescriptorCount = 1;
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 14u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 11u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
 		inline constexpr unsigned int kDrawConstants_Set = 4;
 		inline constexpr unsigned int kDrawConstants_Binding = 0;
@@ -333,14 +295,14 @@ namespace Flux_Generated_MaterialPreview
 		{
 			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=64
-			unsigned int m_ug_uPad0; // slang=uint offset=68
+			unsigned int m_ug_uShadowCascade; // slang=uint offset=68
 			unsigned int m_ug_uPad1; // slang=uint offset=72
 			unsigned int m_ug_uPad2; // slang=uint offset=76
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 96, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 64, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 68, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kg_axMaterials_Name = "g_axMaterials";

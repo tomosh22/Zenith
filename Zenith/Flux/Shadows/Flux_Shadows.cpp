@@ -103,10 +103,9 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 
 void Flux_ShadowsImpl::Initialise()
 {
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), m_xShadowMatrixBuffers[u]);
-	}
+	// One StructuredBuffer<float4x4> holding all 4 cascade sun view×proj matrices
+	// (Phase 4a collapse — replaces the 4 separate per-cascade constant buffers).
+	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(nullptr, ZENITH_FLUX_NUM_CSMS * sizeof(Zenith_Maths::Matrix4), m_xShadowMatricesBuffer);
 	// Seed with sane defaults (not nullptr): a shadows-disabled boot never runs
 	// UpdateShadowMatrices, and the deferred shader still reads the tap count from
 	// this CB to bound its PCF loop. Garbage VRAM there = unbounded loop / 0-divide.
@@ -130,10 +129,7 @@ void Flux_ShadowsImpl::Initialise()
 
 void Flux_ShadowsImpl::Shutdown()
 {
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowMatrixBuffers[u]);
-	}
+	g_xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(m_xShadowMatricesBuffer);
 	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowSamplingBuffer);
 
 	m_pxGraph = nullptr;
@@ -189,17 +185,21 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// by the rasterizer here — never in the sampling shader.
 	pxCommandList->SetDepthBias(dbg_fShadowDepthBiasConstant, dbg_fShadowDepthBiasSlope, 0.f);
 
+	// All casters read the cascade matrix from the shared ShadowMatrices SSBO,
+	// selecting element `u` via the per-draw MeshDrawConstants cascade index.
+	Flux_ShaderResourceView_Buffer& xShadowMatricesSRV = xZZ.GetShadowMatricesSRV();
+
 	auto& xStaticMeshes = g_xEngine.StaticMeshes();
 	pxCommandList->SetPipeline(&xStaticMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	xStaticMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+	xStaticMeshes.RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
 
 	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
 	pxCommandList->SetPipeline(&xAnimatedMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
 
 	// Instanced meshes (incl. terrain trees) cast shadows over ALL enabled casters
 	// (no camera culling — off-screen casters must still cast). The buffers it
@@ -207,10 +207,10 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// ReadBuffer declaration is needed; the cascade pass already declares the depth
 	// target write. RenderToShadowMap binds its own pipeline (only when casters
 	// exist) and early-returns when instanced meshes are disabled / no groups.
-	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
 
 	// #TODO: Enable terrain shadow casting
-	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, xZZ.m_xShadowMatrixBuffers[u]);
+	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
 }
 
 void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -370,9 +370,11 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 		m_xCascadeSamplingData.m_xCascadeSplitViewDepth[u] = fSliceFar;
 		m_xCascadeSamplingData.m_xCascadeWorldPerTexel[u]  = fWorldPerTexel;
 		m_xCascadeSamplingData.m_xCascadeDepthRange[u]     = fDepthRange;
-
-		g_xEngine.FluxMemory().UploadBufferData(m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &m_axSunViewProjMats[u], sizeof(m_axSunViewProjMats[u]));
 	}
+
+	// Upload all 4 cascade matrices in one write to the single StructuredBuffer
+	// (Phase 4a). m_axSunViewProjMats is a contiguous Matrix4[ZENITH_FLUX_NUM_CSMS].
+	g_xEngine.FluxMemory().UploadBufferData(m_xShadowMatricesBuffer.GetBuffer().m_xVRAMHandle, m_axSunViewProjMats, sizeof(m_axSunViewProjMats));
 
 	// Mirror runtime-tunable sampling config for the shader (cheap; lets the
 	// debug variables take effect live).

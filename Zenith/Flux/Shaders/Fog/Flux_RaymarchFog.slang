@@ -33,8 +33,6 @@ struct RaymarchConstantsLayout
 	float  u_fNoiseWorldScale;
 };
 
-struct ShadowMatrixLayout { float4x4 u_xShadowMat; };
-
 // PASS frequency — declared AFTER the spine #include so it lands at set 3.
 struct PassParams
 {
@@ -47,10 +45,8 @@ struct PassParams
 	Sampler2D u_xCSM2;
 	Sampler2D u_xCSM3;
 
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
+	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
+	StructuredBuffer<float4x4> ShadowMatrices;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -68,10 +64,10 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 float SampleVolumetricShadow(float3 worldPos)
 {
 	float4x4 axShadowMats[4] = {
-		g_xPassSet.ShadowMatrix0.u_xShadowMat,
-		g_xPassSet.ShadowMatrix1.u_xShadowMat,
-		g_xPassSet.ShadowMatrix2.u_xShadowMat,
-		g_xPassSet.ShadowMatrix3.u_xShadowMat,
+		g_xPassSet.ShadowMatrices[0],
+		g_xPassSet.ShadowMatrices[1],
+		g_xPassSet.ShadowMatrices[2],
+		g_xPassSet.ShadowMatrices[3],
 	};
 
 	const float2 axOffsets[4] = {

@@ -288,12 +288,12 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			xBinder.BindDrawConstants(TF::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
 			static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { TF::hg_xCSM0, TF::hg_xCSM1, TF::hg_xCSM2, TF::hg_xCSM3 };
-			static const Flux_BindingHandle s_axShadowMatrixHandles[ZENITH_FLUX_NUM_CSMS] = { TF::hShadowMatrix0, TF::hShadowMatrix1, TF::hShadowMatrix2, TF::hShadowMatrix3 };
 			for (uint32_t uCSM = 0; uCSM < ZENITH_FLUX_NUM_CSMS; uCSM++)
 			{
 				xBinder.BindSRV(s_axCSMHandles[uCSM], &xShadows.GetCSMSRV(uCSM), &xGraphics.m_xClampSampler);
-				xBinder.BindCBV(s_axShadowMatrixHandles[uCSM], &xShadows.GetShadowMatrixBuffer(uCSM).GetCBV());
 			}
+			// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
+			xBinder.BindSRV_Buffer(TF::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
 			xBinder.BindSRV(TF::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
 			xBinder.BindSRV(TF::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());

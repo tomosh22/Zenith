@@ -38,14 +38,14 @@ struct VsOut
 	float4 vertexColor : TEXCOORD1;
 };
 
-struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
-
-// DRAW frequency (per-cascade sun view×proj + per-draw constants). Lands at set 3
-// (after the persistent spine). The base-colour texture for the cutout is bindless
-// now (set 2), resolved in fsMain from the material record.
+// DRAW frequency (per-draw constants + all-cascade shadow matrices). Lands at set 3
+// (after the persistent spine). ShadowMatrices holds all 4 cascade sun view×proj
+// matrices (Phase 4a collapse); this caster selects element DrawConstants.g_uShadowCascade
+// (set per cascade pass). The base-colour texture for the cutout is bindless (set 2),
+// resolved in fsMain from the material record.
 struct DrawParams
 {
-	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
+	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
@@ -56,7 +56,7 @@ VsOut vsMain(VsIn input)
 {
 	VsOut o;
 	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
-	o.position    = mul(g_xDrawSet.ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	o.position    = mul(g_xDrawSet.ShadowMatrices[g_xDrawSet.DrawConstants.g_uShadowCascade], float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;

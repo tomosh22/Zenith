@@ -39,16 +39,17 @@ struct VsOut
 };
 
 struct BonesLayout      { float4x4 g_xBones[100]; };
-struct ShadowMatrixLayout { float4x4 g_xSunViewProjMat; };
 
-// Per-draw block (set 3): skinning bones + shadow view-proj + per-draw material
-// constants + base colour (for the masked cutout). Member names preserved so the
-// codegen handle names (hBones, hShadowMatrix, hDrawConstants, hg_xBaseColorTex)
-// — and thus the C++ binds — are stable.
+// Per-draw block (set 3): skinning bones + all-cascade shadow matrices + per-draw
+// material constants + base colour (for the masked cutout). ShadowMatrices holds all
+// 4 cascade sun view×proj matrices (Phase 4a); this caster selects element
+// DrawConstants.g_uShadowCascade (set per cascade pass). Member names preserved so the
+// codegen handle names (hBones, hShadowMatrices, hDrawConstants) — and the C++ binds —
+// stay stable.
 struct DrawParams
 {
 	ConstantBuffer<BonesLayout>         Bones;
-	ConstantBuffer<ShadowMatrixLayout>  ShadowMatrix;
+	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
@@ -68,7 +69,7 @@ VsOut vsMain(VsIn input)
 	}
 
 	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, xFinalPosition).xyz;
-	o.position    = mul(g_xDrawSet.ShadowMatrix.g_xSunViewProjMat, float4(xWorldPos, 1.0));
+	o.position    = mul(g_xDrawSet.ShadowMatrices[g_xDrawSet.DrawConstants.g_uShadowCascade], float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;

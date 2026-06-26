@@ -45,11 +45,6 @@ struct DeferredShadingConstantsLayout
 	uint  g_bSSAOEnabled;          // screen-space AO modulates the ambient term only
 };
 
-// Shadow matrices — kept as separate CBs to match the legacy binding
-// table. The TODO in the GLSL source notes these should fold into one
-// buffer; preserving the layout for now so the C++ side doesn't shift.
-struct ShadowMatrixLayout { float4x4 m_xMat; };
-
 // Cascaded-shadow sampling parameters. Mirrors Flux_ShadowCascadeSamplingData +
 // Flux_ShadowSamplingConfig on the C++ side. Laid out as pure float4s so the
 // HLSL constant-buffer packing is unambiguous and matches the C++ POD byte-for-
@@ -71,10 +66,8 @@ struct PassParams
 {
 	ConstantBuffer<DeferredShadingConstantsLayout> DeferredShadingConstants;
 
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix0;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix1;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix2;
-	ConstantBuffer<ShadowMatrixLayout> ShadowMatrix3;
+	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
+	StructuredBuffer<float4x4> ShadowMatrices;
 
 	Sampler2D   g_xDiffuseTex;
 	Sampler2D   g_xNormalsAmbientTex;
@@ -148,15 +141,11 @@ float4 GatherCascadeDepth(int iCascade, float2 xUV)
 	else                    return g_xPassSet.g_xCSM3.Gather(xUV);
 }
 
-// The per-cascade sun view×proj lives in four separate CBs (matching the legacy
-// binding table); Slang can't index a ConstantBuffer by a runtime value, so
-// switch explicitly.
+// All 4 cascade sun view×proj matrices live in one StructuredBuffer (Phase 4a) —
+// directly indexable by the runtime cascade index (no per-CB switch needed).
 float4x4 ShadowMatrixForCascade(int iCascade)
 {
-	if      (iCascade == 0) return g_xPassSet.ShadowMatrix0.m_xMat;
-	else if (iCascade == 1) return g_xPassSet.ShadowMatrix1.m_xMat;
-	else if (iCascade == 2) return g_xPassSet.ShadowMatrix2.m_xMat;
-	else                    return g_xPassSet.ShadowMatrix3.m_xMat;
+	return g_xPassSet.ShadowMatrices[iCascade];
 }
 
 // Multi-tap PCF. Each Vogel tap issues a 4-texel Gather and compares each texel
