@@ -28,6 +28,15 @@
 // Maximum particles across all emitters
 static constexpr uint32_t s_uMaxParticles = 4096;
 
+// Per-pass draw constants — must match ParticleConstantsLayout in Flux_Particles.slang.
+// Carries the billboard texture's bindless slot (g_axTextures[] index).
+struct Flux_ParticleDrawConstants
+{
+	u_int m_uTexIdx;
+	u_int m_auPad[3];
+};
+static_assert(sizeof(Flux_ParticleDrawConstants) == 16, "Flux_ParticleDrawConstants must match ParticleConstantsLayout (16 bytes)");
+
 // CPU-side instance buffers for staging (partitioned by blend mode)
 
 
@@ -216,6 +225,18 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	// Render CPU particles (alpha-blended first, then additive)
 	if (xParticles.m_uAlphaInstanceCount > 0 || xParticles.m_uAdditiveInstanceCount > 0)
 	{
+		// Billboard texture goes through the bindless table (set 2 g_axTextures).
+		// Mark it bindless once (idempotent guard); radial sprite → CLAMP.
+		Zenith_TextureAsset* pxParticleTex = xParticles.m_xParticleTexture.GetDirect();
+		if (pxParticleTex->m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
+		{
+			pxParticleTex->MarkAsBindless(/*bRepeatAddressing*/ false);
+		}
+		Flux_ParticleDrawConstants xConstants{};
+		xConstants.m_uTexIdx = pxParticleTex->m_xSRV.m_uBindlessIndex;
+
+		namespace PT = Flux_Generated_Particles::Particles;
+
 		// Alpha-blended particles
 		if (xParticles.m_uAlphaInstanceCount > 0)
 		{
@@ -226,9 +247,9 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAlpha, 1);
 
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			namespace PT = Flux_Generated_Particles::Particles;
 			xBinder.BindCBV(PT::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
-			xBinder.BindSRV(PT::hg_xTexture, &xParticles.m_xParticleTexture.GetDirect()->m_xSRV);
+			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
+			pxCommandList->UseBindlessTextures(2);
 
 			pxCommandList->DrawIndexed(6, xParticles.m_uAlphaInstanceCount);
 		}
@@ -243,9 +264,9 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAdditive, 1);
 
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			namespace PT = Flux_Generated_Particles::Particles;
 			xBinder.BindCBV(PT::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
-			xBinder.BindSRV(PT::hg_xTexture, &xParticles.m_xParticleTexture.GetDirect()->m_xSRV);
+			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
+			pxCommandList->UseBindlessTextures(2);
 
 			pxCommandList->DrawIndexed(6, xParticles.m_uAdditiveInstanceCount);
 		}

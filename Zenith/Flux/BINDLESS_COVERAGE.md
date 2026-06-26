@@ -33,6 +33,16 @@ unnecessary.
 samples `g_axTextures[]` but **lacks** `NonUniformResourceIndex`, a latent correctness bug to fix in Phase 3 B4.
 Every other candidate is draw- or pass-uniform.
 
+## STATUS — Phase 3 maximal-bindless COMPLETE (2026-06-26)
+All sampled-2D consumers now route through `g_xBindlessSet.g_axTextures[]`:
+- **Materials** (Static/Animated/Instanced mesh G-buffer+shadow, Translucency, MaterialPreview) — B2/B3, `46f39273`.
+- **Quads/UI** — `NonUniformResourceIndex` added, `f6947796`.
+- **Text** (MSDF atlas) — index in `TextConstants.g_uAtlasIdx` (pass-uniform).
+- **Particles** (billboard) — index in a new `ParticleConstantsLayout.g_uTexIdx` PASS CB (pass-uniform).
+- **Decals** (brush) — index per-decal in `m_xParams.z` (asuint), sampled with `NonUniformResourceIndex` (per-instance).
+
+Skybox/IBL stay OUT (cubemaps, not the 2D table). A future per-material env map would need a separate `g_xCubemaps[]`.
+
 ## Out of the 2D material table (do NOT migrate)
 
 - **Runtime cubemaps** — Skybox (`Flux_Skybox.slang:19` `SamplerCube`), IBL irradiance/prefiltered + the

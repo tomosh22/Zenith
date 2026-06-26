@@ -63,28 +63,22 @@ namespace Flux_Generated_Text
 		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kg_xTexture_Name = "g_xTexture";
-		inline constexpr unsigned int kg_xTexture_Set = 3;
-		inline constexpr unsigned int kg_xTexture_Binding = 0;
-		inline constexpr unsigned int kg_xTexture_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xTexture{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		inline constexpr const char* kTextConstants_Name = "TextConstants";
 		inline constexpr unsigned int kTextConstants_Set = 3;
-		inline constexpr unsigned int kTextConstants_Binding = 1;
+		inline constexpr unsigned int kTextConstants_Binding = 0;
 		inline constexpr unsigned int kTextConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hTextConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hTextConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct TextConstants_CB
 		{
 			unsigned char m_ag_xClipRect[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xAtlasSizePx[8]; // slang=vector offset=16 arrayCount=2 (no C++ mapping)
 			float m_fg_fAtlasPxRange; // slang=float offset=24
-			float m_fg_fPad; // slang=float offset=28
+			unsigned int m_ug_uAtlasIdx; // slang=uint offset=28
 		};
 		static_assert(sizeof(TextConstants_CB) == 32, "TextConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TextConstants_CB, m_fg_fAtlasPxRange) == 24, "TextConstants.g_fAtlasPxRange offset drifted from Slang reflection");
-		static_assert(offsetof(TextConstants_CB, m_fg_fPad) == 28, "TextConstants.g_fPad offset drifted from Slang reflection");
+		static_assert(offsetof(TextConstants_CB, m_ug_uAtlasIdx) == 28, "TextConstants.g_uAtlasIdx offset drifted from Slang reflection");
 	}
 
 }

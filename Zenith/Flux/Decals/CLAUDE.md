@@ -141,8 +141,11 @@ default and v2's texture-array support. Today the parameter is ignored.
 persistent slot outside the 64-slot gameplay ring (instance capacity is
 `uMAX_DECAL_INSTANCES = 65`). It projects straight down with a permissive
 normal-alignment threshold (0.05) and renders in a second shader mode
-(`m_xParams.y = 1`): samples the bound `g_xBrushTex` across the box's XY,
-tints it with the per-call `m_xColour`, and writes **diffuse only** (alpha 0
+(`m_xParams.y = 1`): samples the brush mask via the bindless table
+(`g_axTextures[NonUniformResourceIndex(asuint(m_xParams.z))]` — the brush's
+bindless slot, stored per-decal in `m_xParams.z`; `SetEditorDecal` marks the
+texture bindless on arm), tints it with the per-call `m_xColour`, and writes
+**diffuse only** (alpha 0
 on the normals/material MRTs — an indicator must not stamp a dent or
 roughness change). One-frame lifetime: the arm flag is consumed by the next
 Prepare/pack, so the caller re-arms every frame while its cursor is valid and

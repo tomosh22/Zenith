@@ -386,7 +386,23 @@ void Flux_DecalsImpl::SetEditorDecal(const Zenith_Maths::Vector3& xCentre,
 	// Permissive alignment threshold (0.05 ≈ 87°): the indicator must read
 	// on steep sculpted slopes; only near-vertical surfaces (prop sides,
 	// cliff walls) are rejected to avoid smearing.
-	xInst.m_xParams       = Zenith_Maths::Vector4(0.05f, 1.0f /* textured-brush mode */, 0.0f, 0.0f);
+	// Brush mask goes through the bindless table (set 2 g_axTextures). Mark it
+	// bindless once (idempotent guard); brush UVs are [0,1] → CLAMP. The slot
+	// is stored per-decal in m_xParams.z (asuint bit-pattern) so the Apply
+	// shader can pick a per-instance brush — see Decals/CLAUDE.md future notes.
+	u_int uBrushIdx = 0u;
+	if (pxTexture != nullptr)
+	{
+		if (pxTexture->m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
+		{
+			pxTexture->MarkAsBindless(/*bRepeatAddressing*/ false);
+		}
+		uBrushIdx = pxTexture->m_xSRV.m_uBindlessIndex;
+	}
+	float fBrushIdxBits;
+	std::memcpy(&fBrushIdxBits, &uBrushIdx, sizeof(float));
+
+	xInst.m_xParams       = Zenith_Maths::Vector4(0.05f, 1.0f /* textured-brush mode */, fBrushIdxBits, 0.0f);
 	xInst.m_xColour       = xColour;
 
 	m_pxEditorDecalTexture = pxTexture;
@@ -448,13 +464,10 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	xBinder.BindSRV(AP::hg_xNormalsCopyTex, &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
 	xBinder.BindSRV_Buffer(AP::hDecalBuffer, xDecals.m_xDecalBuffer.GetSRV());
 
-	// Brush-indicator texture (textured-brush mode). The layout requires a
-	// bound SRV even on bullet-hole-only frames — fall back to the white
-	// texture, which mode 0 never samples.
-	Flux_ShaderResourceView* pxBrushSRV = (xDecals.m_pxEditorDecalTexture != nullptr)
-		? &xDecals.m_pxEditorDecalTexture->m_xSRV
-		: &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
-	xBinder.BindSRV(AP::hg_xBrushTex, pxBrushSRV);
+	// Brush mask is sampled per-decal via g_axTextures[asuint(m_xParams.z)] —
+	// bind the bindless set (set 2). Mode 0 (bullet holes) never samples it,
+	// so bullet-hole-only frames need no valid brush slot.
+	pxCommandList->UseBindlessTextures(2);
 
 	pxCommandList->DrawIndexed(36, xDecals.m_uActiveDecalCount);
 }

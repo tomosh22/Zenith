@@ -54,15 +54,17 @@ struct TextConstantsLayout
 	// Atlas size and msdfgen "range" — feed the fwidth-based AA helper below.
 	float2 g_xAtlasSizePx;
 	float  g_fAtlasPxRange;
-	float  g_fPad;
+	// Bindless slot of the MSDF atlas in the BINDLESS set's g_axTextures[].
+	// Pass-uniform (one atlas per frame) → no NonUniformResourceIndex.
+	uint   g_uAtlasIdx;
 };
 
 // PASS frequency. Declared AFTER the spine #include, so it lands at set 3
 // (the first set past the persistent 0/1/2). Member names preserved exactly —
-// the C++ binds key on them (h<member>).
+// the C++ binds key on them (h<member>). The atlas itself now lives in the
+// bindless table (set 2 g_xBindlessSet.g_axTextures), indexed by g_uAtlasIdx.
 struct PassParams
 {
-	Sampler2D g_xTexture;
 	ConstantBuffer<TextConstantsLayout> TextConstants;
 };
 ParameterBlock<PassParams> g_xPassSet;
@@ -97,7 +99,7 @@ float4 fsMain(VsOut input, float4 fragCoord : SV_Position) : SV_Target
 	}
 
 	float  fScreenPxRange = ScreenPxRange(input.uv);
-	float3 xMSD           = g_xPassSet.g_xTexture.Sample(input.uv).rgb;
+	float3 xMSD           = g_xBindlessSet.g_axTextures[g_xPassSet.TextConstants.g_uAtlasIdx].Sample(input.uv).rgb;
 	float  fSD            = Median3(xMSD.r, xMSD.g, xMSD.b);
 	float  fScreenPxDist  = fScreenPxRange * (fSD - 0.5);
 

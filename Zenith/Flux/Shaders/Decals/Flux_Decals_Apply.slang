@@ -34,19 +34,20 @@ struct DecalInstance
 	float4x4 m_xWorld;
 	float4x4 m_xWorldInverse;
 	float4   m_xAxisOpacity;   // xyz = unit-length world-space projection axis, w = fade opacity
-	float4   m_xParams;        // x = normal-alignment threshold, y = mode (0 = bullet hole, 1 = textured brush), zw reserved
+	float4   m_xParams;        // x = normal-alignment threshold, y = mode (0 = bullet hole, 1 = textured brush), z = brush bindless index (mode 1; asuint), w reserved
 	float4   m_xColour;        // brush-indicator tint (rgb) + master alpha (w); unused by mode 0
 };
 
 // PASS frequency — this pass's own resources. Declared AFTER the spine #include,
 // so it lands at set 3 (the first set past the persistent 0/1/2). Member NAMES
-// are preserved exactly so the C++ binds (h<member>) still resolve.
+// are preserved exactly so the C++ binds (h<member>) still resolve. The brush
+// mask now lives in the bindless table (set 2 g_xBindlessSet.g_axTextures),
+// indexed per-decal by asuint(m_xParams.z).
 struct PassParams
 {
 	Sampler2D                          g_xDepthTex;
 	Sampler2D                          g_xNormalsCopyTex;  // pre-decal normalsAmbient clone
 	StructuredBuffer<DecalInstance>    DecalBuffer;
-	Sampler2D                          g_xBrushTex;        // textured-brush mode mask (alpha) + pattern (rgb)
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -140,7 +141,8 @@ ApplyOut fsMain(VsOut input)
 	if (d.m_xParams.y > 0.5)
 	{
 		float2 xBrushUV = xLocal.xy + 0.5;
-		float4 xBrush = g_xPassSet.g_xBrushTex.Sample(xBrushUV);
+		// Per-decal brush index → non-uniform across the instanced draw.
+		float4 xBrush = g_xBindlessSet.g_axTextures[NonUniformResourceIndex(asuint(d.m_xParams.z))].Sample(xBrushUV);
 		float fBrushAlpha = xBrush.a * d.m_xColour.a * fEdge * d.m_xAxisOpacity.w;
 		if (fBrushAlpha <= 0.0)
 			discard;

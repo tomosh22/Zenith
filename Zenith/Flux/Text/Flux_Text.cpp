@@ -290,12 +290,19 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 		return;
 	}
 
-	const Zenith_TextureAsset* pxAtlas = pxFont->GetAtlasTexture().Resolve();
+	Zenith_TextureAsset* pxAtlas = pxFont->GetAtlasTexture().Resolve();
 	if (!pxAtlas)
 	{
 		Zenith_Warning(LOG_CATEGORY_TEXT, "Flux_Text: font asset has no atlas texture");
 		xText.m_bOverlayClipActive = false;
 		return;
+	}
+
+	// Atlas goes through the bindless table (set 2 g_axTextures). Mark it bindless
+	// once (idempotent guard) — MSDF AA assumes CLAMP addressing, so bRepeat=false.
+	if (pxAtlas->m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
+	{
+		pxAtlas->MarkAsBindless(/*bRepeatAddressing*/ false);
 	}
 
 	pxCommandList->SetPipeline(&xText.m_xPipeline);
@@ -308,15 +315,16 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace TX = Flux_Generated_Text::Text;
 	xBinder.BindCBV(TX::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
-	// Explicit clamp sampler at the bind site — MSDF AA assumes no wrap.
-	xBinder.BindSRV(TX::hg_xTexture, &pxAtlas->m_xSRV);
+	// The atlas is sampled via g_axTextures[g_uAtlasIdx] — bind the bindless set (set 2).
+	pxCommandList->UseBindlessTextures(2);
 
 	// Build the 32-byte push-constant block. Atlas size + pxRange feed the
-	// shader's fwidth-based ScreenPxRange() helper for derivative-based AA.
+	// shader's fwidth-based ScreenPxRange() helper for derivative-based AA;
+	// m_uAtlasIdx is the atlas's slot in the bindless table.
 	Flux_TextDrawConstants xConstants{};
 	xConstants.m_xAtlasSizePx   = pxFont->GetAtlasSize();
 	xConstants.m_fAtlasPxRange  = pxFont->GetAtlasPxRange();
-	xConstants.m_fPad           = 0.f;
+	xConstants.m_uAtlasIdx      = pxAtlas->m_xSRV.m_uBindlessIndex;
 
 	if (xText.m_bOverlayClipActive && xText.m_uBgCharCount > 0)
 	{

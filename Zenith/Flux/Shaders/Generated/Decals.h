@@ -139,12 +139,6 @@ namespace Flux_Generated_Decals
 		inline constexpr unsigned int kDecalBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hDecalBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kg_xBrushTex_Name = "g_xBrushTex";
-		inline constexpr unsigned int kg_xBrushTex_Set = 3;
-		inline constexpr unsigned int kg_xBrushTex_Binding = 3;
-		inline constexpr unsigned int kg_xBrushTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xBrushTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 }

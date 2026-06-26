@@ -10,12 +10,21 @@
 
 #include "Common/Bindings.slang"
 
+struct ParticleConstantsLayout
+{
+	// Bindless slot of the billboard texture in the BINDLESS set's g_axTextures[].
+	// One texture for the whole pass → pass-uniform, no NonUniformResourceIndex.
+	uint  g_uTexIdx;
+	uint3 g_xPad;
+};
+
 // PASS frequency. Declared AFTER the spine #include, so it lands at set 3
 // (the first set past the persistent 0/1/2). Member names preserved exactly —
-// the C++ binds key on them (h<member>).
+// the C++ binds key on them (h<member>). The billboard texture now lives in the
+// bindless table (set 2 g_xBindlessSet.g_axTextures), indexed by g_uTexIdx.
 struct PassParams
 {
-	Sampler2D g_xTexture;
+	ConstantBuffer<ParticleConstantsLayout> ParticleConstants;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -67,7 +76,7 @@ VsOut vsMain(VsIn input)
 [shader("fragment")]
 float4 fsMain(VsOut input) : SV_Target
 {
-	float4 c = g_xPassSet.g_xTexture.Sample(input.uv) * input.colour;
+	float4 c = g_xBindlessSet.g_axTextures[g_xPassSet.ParticleConstants.g_uTexIdx].Sample(input.uv) * input.colour;
 	if (c.a < 0.01) discard;
 	return c;
 }

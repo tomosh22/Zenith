@@ -63,12 +63,21 @@ namespace Flux_Generated_Particles
 		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kg_xTexture_Name = "g_xTexture";
-		inline constexpr unsigned int kg_xTexture_Set = 3;
-		inline constexpr unsigned int kg_xTexture_Binding = 0;
-		inline constexpr unsigned int kg_xTexture_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xTexture{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr const char* kParticleConstants_Name = "ParticleConstants";
+		inline constexpr unsigned int kParticleConstants_Set = 3;
+		inline constexpr unsigned int kParticleConstants_Binding = 0;
+		inline constexpr unsigned int kParticleConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hParticleConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct ParticleConstants_CB
+		{
+			unsigned int m_ug_uTexIdx; // slang=uint offset=0
+			unsigned char m_aPad_4[12];
+			unsigned char m_ag_xPad[12]; // slang=vector offset=16 arrayCount=3 (no C++ mapping)
+			unsigned char m_aPad_28[4];
+		};
+		static_assert(sizeof(ParticleConstants_CB) == 32, "ParticleConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(ParticleConstants_CB, m_ug_uTexIdx) == 0, "ParticleConstants.g_uTexIdx offset drifted from Slang reflection");
 	}
 
 	// ----- ParticleUpdate (Particles/Flux_ParticleUpdate) -----

@@ -37,7 +37,7 @@ struct Flux_TextDrawConstants
 	Zenith_Maths::Vector4 m_xClipRect;        // (-1,-1,-1,-1) = clip off
 	Zenith_Maths::Vector2 m_xAtlasSizePx;     // e.g. (256, 256)
 	float                 m_fAtlasPxRange;    // msdfgen "range" in atlas pixels
-	float                 m_fPad;             // pad to 16-byte alignment
+	u_int                 m_uAtlasIdx;        // bindless slot of the MSDF atlas in g_axTextures[]
 };
 static_assert(sizeof(Flux_TextDrawConstants) == 32, "Flux_TextDrawConstants must be 32 bytes to match shader push-constant range");
 
