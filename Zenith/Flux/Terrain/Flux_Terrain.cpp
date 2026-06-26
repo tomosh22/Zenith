@@ -533,7 +533,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, const Flux_DynamicConstantBuffer&)
+void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, const Flux_ShaderResourceView_Buffer&, u_int)
 {
 	STUBBED
 }

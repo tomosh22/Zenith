@@ -21,6 +21,13 @@ import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
 
+// Mirrors the shared mesh vertex layout so the caster binds the same vertex
+// buffer as the G-buffer pass. The depth/cutout path reads only position/UV/colour,
+// so normal/tangent/bitangent are declared-but-unconsumed → the validation layer
+// emits a benign "vertex attribute at location N not consumed" warning. ACCEPTED:
+// silencing it cleanly would need a shadow-specific vertex-input layout per caster
+// pipeline; the unread attributes cost nothing (same stride, GPU skips them). Same
+// note applies to the Animated/Instanced *_ToShadowmap casters.
 struct VsIn
 {
 	float3 a_xPosition  : POSITION;

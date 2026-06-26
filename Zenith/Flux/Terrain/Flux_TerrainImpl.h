@@ -27,7 +27,11 @@ public:
 	void Shutdown();
 	void Reset();
 
-	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
+	// Mirrors the other casters' contract (all-cascade ShadowMatrices SSBO + cascade
+	// index, Phase 4a). STUBBED — terrain does not currently cast (the call in
+	// Flux_Shadows.cpp ExecuteShadowCascade is commented out); kept signature-aligned
+	// so enabling it is a pure C++ change.
+	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade);
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

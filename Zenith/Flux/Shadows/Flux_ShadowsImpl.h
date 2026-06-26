@@ -67,6 +67,11 @@ struct Flux_ShadowSamplingGPU
 	Zenith_Maths::Vector4 m_xParams1               = Zenith_Maths::Vector4(2.f, 0.013f, 0.12f, 16.f); // pcfRadiusTexels, sunAngularRadius, cascadeBlendFraction, tapCount
 	Zenith_Maths::Vector4 m_xParams2               = Zenith_Maths::Vector4(1.f, 0.f, 0.f, 0.f);        // pcssEnabled, spare...
 };
+// Must stay 6× float4 (96B) to match ShadowSamplingLayout in
+// Shaders/DeferredShading/Flux_DeferredShading.slang byte-for-byte (std140, no
+// scalar straddling). A silent drift here corrupts every shadow sample — guard it
+// like the other GPU-mirror structs (MeshDrawConstants / TerrainMaterialDrawConstants).
+static_assert(sizeof(Flux_ShadowSamplingGPU) == 96, "Flux_ShadowSamplingGPU must be 6x float4 (96B) to match ShadowSamplingLayout");
 
 // Phase 9: state + behaviour for shadows subsystem.
 class Flux_ShadowsImpl

@@ -392,9 +392,18 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	// fields where ViewConstants has screen dims), and the forward preview shader
 	// reads nothing past it. A future field reorder must fail the build, not
 	// silently render the preview through a garbage camera.
-	static_assert(offsetof(Flux_GraphicsImpl::FrameConstants, m_xCamPos_Pad)
-	           == offsetof(Flux_GraphicsImpl::ViewConstants,  m_xCamPos_Pad),
-		"MaterialPreview binds a FrameConstants clone to the VIEW set; the view/proj+campos prefix must match ViewConstants");
+	// Assert the ENTIRE bound prefix (everything the forward preview shader reads
+	// from VIEW), not just the campos offset — a reorder anywhere inside the matrix
+	// block would otherwise slip past a single-offset check.
+	static_assert(offsetof(Flux_GraphicsImpl::FrameConstants, m_xViewMat)        == offsetof(Flux_GraphicsImpl::ViewConstants, m_xViewMat)        &&
+	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xProjMat)        == offsetof(Flux_GraphicsImpl::ViewConstants, m_xProjMat)        &&
+	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xViewProjMat)    == offsetof(Flux_GraphicsImpl::ViewConstants, m_xViewProjMat)    &&
+	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xInvViewProjMat) == offsetof(Flux_GraphicsImpl::ViewConstants, m_xInvViewProjMat) &&
+	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xInvViewMat)     == offsetof(Flux_GraphicsImpl::ViewConstants, m_xInvViewMat)     &&
+	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xInvProjMat)     == offsetof(Flux_GraphicsImpl::ViewConstants, m_xInvProjMat)     &&
+	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xCamPos_Pad)     == offsetof(Flux_GraphicsImpl::ViewConstants, m_xCamPos_Pad),
+		"MaterialPreview binds a FrameConstants clone to the VIEW set; the entire view/proj+inv*+campos prefix "
+		"must be byte-identical to ViewConstants (they legitimately diverge only AFTER m_xCamPos_Pad: sun vs screen dims)");
 	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
 	xBinder.BindCBV(FW::hg_xGlobal, &xZZ.m_xPreviewGlobalConstantsBuffer.GetCBV());
 	// The g_axTextures bindless table (set 2). g_axMaterials is a DRAW-set (4) member

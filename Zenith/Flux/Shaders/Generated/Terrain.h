@@ -119,13 +119,19 @@ namespace Flux_Generated_Terrain
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 0u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrix{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct ShadowMatrix_CB
+		inline constexpr Flux_BindingHandle hTerrainShadowConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct TerrainShadowConstants_CB
 		{
-			unsigned char m_ag_xSunViewProjMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned int m_ug_uShadowCascade; // slang=uint offset=0
+			unsigned char m_aPad_4[12];
+			unsigned char m_ag_xPad[12]; // slang=vector offset=16 arrayCount=3 (no C++ mapping)
+			unsigned char m_aPad_28[4];
 		};
-		static_assert(sizeof(ShadowMatrix_CB) == 64, "ShadowMatrix_CB size drifted from Slang reflection");
+		static_assert(sizeof(TerrainShadowConstants_CB) == 32, "TerrainShadowConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(TerrainShadowConstants_CB, m_ug_uShadowCascade) == 0, "TerrainShadowConstants.g_uShadowCascade offset drifted from Slang reflection");
 	}
 
 	// ----- TerrainCulling (Terrain/Flux_TerrainCulling) -----
