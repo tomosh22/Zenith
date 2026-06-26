@@ -365,6 +365,13 @@ struct Flux_RenderAttachment
 	Flux_UnorderedAccessView_Texture m_axUAVs[FLUX_MAX_MIPS];
 	Flux_RenderTargetView m_axRTVs[FLUX_MAX_MIPS];
 	Flux_DepthStencilView m_xDSV;
+	// Per-layer single-slice DSVs for an array depth attachment (m_uNumLayers > 1,
+	// e.g. the 4-cascade CSM). Each is a layerCount=1, viewType=2D view of one
+	// slice so a render pass can write exactly one cascade. Only populated by
+	// BuildDepthStencil when m_uNumLayers > 1; m_xDSV stays the whole-array view
+	// (unused for rendering arrays). Single-layer attachments leave these empty
+	// and use m_xDSV. See Flux/Shadows (Phase 4b CSM collapse).
+	Flux_DepthStencilView m_axLayerDSVs[FLUX_MAX_ATTACHMENT_LAYERS];
 
 	Flux_ShaderResourceView& SRV();
 	const Flux_ShaderResourceView& SRV() const;
@@ -374,6 +381,11 @@ struct Flux_RenderAttachment
 	Flux_RenderTargetView& RTV(u_int uMip = 0);
 	Flux_DepthStencilView& DSV() { return m_xDSV; }
 	const Flux_DepthStencilView& DSV() const { return m_xDSV; }
+	// Per-layer DSV accessor — for array depth attachments. No default argument:
+	// callers picking a layer must say so explicitly (the whole-array DSV() is the
+	// single-layer/default path).
+	Flux_DepthStencilView& DSV(u_int uLayer);
+	const Flux_DepthStencilView& DSV(u_int uLayer) const;
 };
 
 struct Flux_ConstantBufferView

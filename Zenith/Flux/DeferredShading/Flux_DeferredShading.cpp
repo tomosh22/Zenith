@@ -109,13 +109,8 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
 	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV());
 
-	// Bind shadow maps (typed handles)
-	static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { DS::hg_xCSM0, DS::hg_xCSM1, DS::hg_xCSM2, DS::hg_xCSM3 };
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		Flux_ShaderResourceView& xSRV = xShadows.GetCSMSRV(u);
-		xBinder.BindSRV(s_axCSMHandles[u], &xSRV, &xFluxGraphics.m_xClampSampler);
-	}
+	// Bind the single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
+	xBinder.BindSRV(DS::hg_xCSM, &xShadows.GetCSMArraySRV(), &xFluxGraphics.m_xClampSampler);
 
 	// Bind the single ShadowMatrices SSBO holding all 4 cascade matrices (Phase 4a).
 	xBinder.BindSRV_Buffer(DS::hShadowMatrices, xShadows.GetShadowMatricesSRV());
@@ -256,14 +251,10 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.ReadTransient(xPass, xSSAO.m_xRawOcclusionHandle, RESOURCE_ACCESS_READ_SRV);
 	xGraph.ReadTransient(xPass, xSSAO.m_xBlurredHandle, RESOURCE_ACCESS_READ_SRV);
 
-	// Shadow maps (CSM depth targets)
-	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		uint32_t uNumColour;
-		Flux_RenderAttachment* pxDepthStencil;
-		g_xEngine.Shadows().GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
-		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
-	}
+	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
+	// graph transitions every cascade WRITE_DSV → SHADER_READ before this pass
+	// (and, transitively, before the fog passes that also sample it).
+	xGraph.ReadTransient(xPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
 
 	// Clustered-deferred cluster-output buffers — declaring the reads here causes
 	// the graph to order this pass after Flux_LightClustering's compute writes,

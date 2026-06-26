@@ -78,10 +78,7 @@ struct PassParams
 	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
 	StructuredBuffer<float4x4> ShadowMatrices;
 
-	Sampler2D   g_xCSM0;
-	Sampler2D   g_xCSM1;
-	Sampler2D   g_xCSM2;
-	Sampler2D   g_xCSM3;
+	Sampler2DArray g_xCSM;   // 4-cascade depth array (Phase 4b collapse)
 
 	Sampler2D   g_xBRDFLUT;
 	SamplerCube g_xIrradianceMap;
@@ -145,11 +142,7 @@ float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, f
 	for (int i = 0; i < 4; i++)
 	{
 		float2 xSampleUV = xSamplePos + axOffsets[i];
-		float4 shadowDepths;
-		if      (iCascade == 0) shadowDepths = g_xPassSet.g_xCSM0.Gather(xSampleUV);
-		else if (iCascade == 1) shadowDepths = g_xPassSet.g_xCSM1.Gather(xSampleUV);
-		else if (iCascade == 2) shadowDepths = g_xPassSet.g_xCSM2.Gather(xSampleUV);
-		else                    shadowDepths = g_xPassSet.g_xCSM3.Gather(xSampleUV);
+		float4 shadowDepths = g_xPassSet.g_xCSM.Gather(float3(xSampleUV, float(iCascade)));
 
 		float4 comparison = step(float4(fBiasedDepth, fBiasedDepth, fBiasedDepth, fBiasedDepth), shadowDepths);
 		fShadow += dot(comparison, float4(1.0, 1.0, 1.0, 1.0));

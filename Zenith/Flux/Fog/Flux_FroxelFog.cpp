@@ -290,14 +290,9 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandBuffer* pxCommandList)
 	xLightBinder.BindUAV_Texture(FL::hu_xLightingGrid, &GetLightingGridInternal().UAV(0));
 	xLightBinder.BindUAV_Texture(FL::hu_xScatteringGrid, &GetScatteringGridInternal().UAV(0));
 
-	// Bind CSM shadow maps for volumetric shadows; the 4 cascade matrices come from
-	// the single ShadowMatrices SSBO (Phase 4a collapse).
-	static const Flux_BindingHandle* const s_apxCSMHandles[ZENITH_FLUX_NUM_CSMS] = { &FL::hu_xCSM0, &FL::hu_xCSM1, &FL::hu_xCSM2, &FL::hu_xCSM3 };
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		Flux_ShaderResourceView& xCSMSRV = xShadows.GetCSMSRV(u);
-		xLightBinder.BindSRV(*s_apxCSMHandles[u], &xCSMSRV, &xGraphics.m_xClampSampler);
-	}
+	// Bind the single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
+	// The 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
+	xLightBinder.BindSRV(FL::hu_xCSM, &xShadows.GetCSMArraySRV(), &xGraphics.m_xClampSampler);
 	xLightBinder.BindSRV_Buffer(FL::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
 	xLightBinder.BindDrawConstants(FL::hLightConstants, &m_xLightConstants, sizeof(LightConstants));

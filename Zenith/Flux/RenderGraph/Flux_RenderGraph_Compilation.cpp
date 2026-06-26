@@ -502,6 +502,7 @@ void Flux_RenderGraph::AllocateTransients()
         xBuilder.m_uMemoryFlags = pxT->m_xDesc.m_uMemoryFlags;
         xBuilder.m_eTextureType = pxT->m_xDesc.m_eTextureType;
         xBuilder.m_uDepth = pxT->m_xDesc.m_uDepth;
+        xBuilder.m_uNumLayers = pxT->m_xDesc.m_uNumLayers;
 
         const bool bAliased = (pxT->m_uAliasPoolIndex != UINT32_MAX);
 
@@ -516,7 +517,7 @@ void Flux_RenderGraph::AllocateTransients()
             xInfo.m_eFormat      = pxT->m_xDesc.m_eFormat;
             xInfo.m_eTextureType = pxT->m_xDesc.m_eTextureType;
             xInfo.m_uNumMips     = pxT->m_xDesc.m_uNumMips;
-            xInfo.m_uNumLayers   = 1;
+            xInfo.m_uNumLayers   = (pxT->m_xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : pxT->m_xDesc.m_uNumLayers;
             xInfo.m_uMemoryFlags = pxT->m_xDesc.m_uMemoryFlags;
 
             Flux_VRAMHandle xAliasedVRAM = g_xEngine.FluxMemory().CreateAliasedImageVRAM(
@@ -682,7 +683,7 @@ static Flux_SurfaceInfo TransientDescToSurfaceInfo(const Flux_TransientTextureDe
     xInfo.m_eFormat      = xDesc.m_eFormat;
     xInfo.m_eTextureType = xDesc.m_eTextureType;
     xInfo.m_uNumMips     = xDesc.m_uNumMips;
-    xInfo.m_uNumLayers   = (xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : 1u;
+    xInfo.m_uNumLayers   = (xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : (xDesc.m_uNumLayers > 0 ? xDesc.m_uNumLayers : 1u);
     xInfo.m_uMemoryFlags = xDesc.m_uMemoryFlags;
     return xInfo;
 }
@@ -697,7 +698,7 @@ static u_int64 FallbackTransientImageSize(const Flux_TransientTextureDesc& xDesc
         ? 4u
         : ColourFormatBytesPerPixel(xDesc.m_eFormat);
 
-    const u_int64 ulLayers = (xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : 1u;
+    const u_int64 ulLayers = (xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : (xDesc.m_uNumLayers > 0 ? xDesc.m_uNumLayers : 1u);
     const u_int64 ulDepth  = (xDesc.m_eTextureType == TEXTURE_TYPE_3D) ? xDesc.m_uDepth : 1u;
     const u_int64 ulBase   = static_cast<u_int64>(xDesc.m_uWidth) * xDesc.m_uHeight * ulDepth * ulLayers * uBpp;
     const u_int64 ulWithMips = (xDesc.m_uNumMips > 1) ? ((ulBase * 4 + 2) / 3) : ulBase;
@@ -851,16 +852,21 @@ u_int64 Flux_RenderGraph::MakeTransientMemorySignature(const Flux_TransientTextu
     //    [8]      : depth-stencil flag
     //    [9..40]  : memory flags (u_int, 32 bits)
     //    [41..56] : format (enum, fits in 16 bits)
+    //    [57..63] : array layer count (7 bits; an array depth must NOT share a
+    //               pool slot with a single-layer transient even if everything
+    //               else matches — its image + views differ)
     // Everything else (dimensions, mip count) is NOT in the signature — the
     // packer handles those by computing pool size from per-occupant allocations.
     const u_int64 ulTextureType = static_cast<u_int64>(xDesc.m_eTextureType) & 0xFFull;
     const u_int64 ulDepthFlag   = xDesc.m_bIsDepthStencil ? 1ull : 0ull;
     const u_int64 ulMemFlags    = static_cast<u_int64>(xDesc.m_uMemoryFlags) & 0xFFFFFFFFull;
     const u_int64 ulFormat      = static_cast<u_int64>(xDesc.m_eFormat) & 0xFFFFull;
+    const u_int64 ulLayers      = static_cast<u_int64>(xDesc.m_uNumLayers > 0 ? xDesc.m_uNumLayers : 1u) & 0x7Full;
     return  ulTextureType
          | (ulDepthFlag  << 8)
          | (ulMemFlags   << 9)
-         | (ulFormat     << 41);
+         | (ulFormat     << 41)
+         | (ulLayers     << 57);
 }
 
 void Flux_RenderGraph::ComputeTransientLifetimes()

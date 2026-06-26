@@ -533,8 +533,14 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_Rend
 	{
 		Zenith_Assert(xDepthStencil.m_xResource.GetKind() == Flux_GraphResourceKind::Image, "TargetSetupToFramebuffer: depth attachment must be 2D image kind");
 		Flux_RenderAttachment* pxDepthStencil = xDepthStencil.m_xResource.AsImage();
-		axAttachments[uNumAttachments - 1] = xVulkanMemory.GetImageView(pxDepthStencil->DSV().m_xImageViewHandle);
-		Zenith_Assert(axAttachments[uNumAttachments - 1], "TargetSetupToFramebuffer: null depth image view (format %u)", static_cast<uint32_t>(pxDepthStencil->m_xSurfaceInfo.m_eFormat));
+		// Array depth (e.g. a CSM cascade) binds the per-layer single-slice DSV
+		// selected by the attachment ref's layer; single-layer depth uses the
+		// whole-image DSV (layer is asserted 0 for those at declaration time).
+		const Flux_ImageViewHandle xDSVHandle = (pxDepthStencil->m_xSurfaceInfo.m_uNumLayers > 1)
+			? pxDepthStencil->DSV(xDepthStencil.m_uLayer).m_xImageViewHandle
+			: pxDepthStencil->DSV().m_xImageViewHandle;
+		axAttachments[uNumAttachments - 1] = xVulkanMemory.GetImageView(xDSVHandle);
+		Zenith_Assert(axAttachments[uNumAttachments - 1], "TargetSetupToFramebuffer: null depth image view (format %u, layer %u)", static_cast<uint32_t>(pxDepthStencil->m_xSurfaceInfo.m_eFormat), static_cast<uint32_t>(xDepthStencil.m_uLayer));
 	}
 
 	vk::FramebufferCreateInfo framebufferInfo = vk::FramebufferCreateInfo()

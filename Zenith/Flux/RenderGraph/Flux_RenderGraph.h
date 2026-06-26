@@ -130,6 +130,10 @@ public:
     Flux_PassBuilder&& WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV) &&;
     Flux_PassBuilder&& ReadsTransient (Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&;
     Flux_PassBuilder&& WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&;
+    // Layer-aware subresource variants — for array transients (e.g. a CSM cascade
+    // writing one layer of the depth array). uLayer/uLayerCount slice the array.
+    Flux_PassBuilder&& ReadsTransient (Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount) &&;
+    Flux_PassBuilder&& WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount) &&;
 
     // Pass config
     Flux_PassBuilder&& DependsOn (Flux_PassHandle xDependency) &&;
@@ -358,6 +362,8 @@ public:
     void WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV);
     void ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount);
     void WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount);
+    void ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount);
+    void WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount);
     void DependsOn(Flux_PassHandle xDependentPass, Flux_PassHandle xDependencyPass);
     void SetPrepare(Flux_PassHandle xPass, Flux_RenderGraph_OnPrepareFunc pfnOnPrepare);
     void SetClear(Flux_PassHandle xPass, bool bClearTargets);

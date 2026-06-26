@@ -322,15 +322,9 @@ namespace Flux_Generated_Fog
 		// kind: RWTexture
 		inline constexpr Flux_BindingHandle hu_xScatteringGrid{ 3u, 3u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM0{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM1{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM2{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM3{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hu_xCSM{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 8u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}
 
 	// ----- Fog_Raymarch (Fog/Flux_RaymarchFog) -----
@@ -404,15 +398,9 @@ namespace Flux_Generated_Fog
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hu_xBlueNoiseTexture{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM0{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM1{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM2{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hu_xCSM3{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hu_xCSM{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 8u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}
 
 	// ----- DevilsPlayground_DPFog (Fog/DP_Fog) -----

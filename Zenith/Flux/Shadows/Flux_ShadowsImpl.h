@@ -87,9 +87,16 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	Flux_RenderAttachment* GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 	Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex) { return m_axSunViewProjMats[uIndex]; }
-	Flux_ShaderResourceView& GetCSMSRV(const uint32_t u);
+	// The CSM depth-array transient handle — for consumers (DeferredShading /
+	// Translucency) to declare a graph Read() spanning all cascade layers so the
+	// WRITE_DSV → SHADER_READ barrier covers every layer. Valid after SetupRenderGraph.
+	Flux_TransientHandle GetCSMArrayHandle() const { return m_xCSMArrayHandle; }
+	// Whole-array SRV of the 4-cascade CSM depth array (Sampler2DArray in shaders).
+	// Phase 4b collapse — replaces the per-cascade GetCSMSRV(u). Always valid (the
+	// transient is graph-allocated even when shadows are disabled; the cascade
+	// passes then just clear it to far depth → no shadow).
+	Flux_ShaderResourceView& GetCSMArraySRV();
 	// All 4 cascade sun view×proj matrices live in one StructuredBuffer<float4x4>
 	// (Phase 4a collapse). Casters read ShadowMatrices[cascade] (cascade index via
 	// MeshDrawConstants); lit/fog passes read all four.
@@ -117,7 +124,10 @@ public:
 	// deferred lighting pass as the ShadowSampling constant buffer).
 	Flux_DynamicConstantBuffer&           GetShadowSamplingBuffer() { return m_xShadowSamplingBuffer; }
 
-	Flux_TransientHandle       m_axCSMHandles[ZENITH_FLUX_NUM_CSMS];
+	// One 4-layer depth-array transient holding all cascades (Phase 4b collapse);
+	// each cascade pass writes layer u, the lit/fog passes sample it as a
+	// Sampler2DArray. Replaces the old m_axCSMHandles[ZENITH_FLUX_NUM_CSMS].
+	Flux_TransientHandle       m_xCSMArrayHandle;
 	Flux_RenderGraph*          m_pxGraph = nullptr;
 	// One StructuredBuffer<float4x4> holding all 4 cascade matrices (Phase 4a).
 	Flux_DynamicReadWriteBuffer m_xShadowMatricesBuffer;
@@ -129,7 +139,7 @@ public:
 	Flux_AnimatedMeshesImpl* m_pxAnimatedMeshes = nullptr;
 
 private:
-	Flux_RenderAttachment& GetCSM(u_int uIndex);
+	Flux_RenderAttachment& GetCSMArray();
 
 	Flux_ShadowCascadeSamplingData m_xCascadeSamplingData;
 	Flux_ShadowSamplingConfig      m_xSamplingConfig;

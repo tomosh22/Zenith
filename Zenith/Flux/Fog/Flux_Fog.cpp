@@ -271,6 +271,10 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// UAV binding points in Flux_FroxelFog.cpp).
 	m_xFroxelLightPass = xGraph.AddPass("Fog_FroxelLight", ExecuteFroxelLight)
 		.ReadsTransient (xFroxelFog.GetDensityGridHandle(),    RESOURCE_ACCESS_READ_SRV)
+		// Samples the CSM array for volumetric shadows — declare a full-array read so
+		// the graph orders this (compute) pass after the cascade writers with the
+		// WRITE_DSV → SHADER_READ barrier (Phase 4b: was implicit before).
+		.ReadsTransient (g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS)
 		.WritesTransient(xFroxelFog.GetLightingGridHandle(),   RESOURCE_ACCESS_WRITE_UAV)
 		.WritesTransient(xFroxelFog.GetScatteringGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
 
@@ -285,7 +289,9 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
 		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
+		// Samples the CSM array for volumetric shadows (Phase 4b full-array read).
+		.ReadsTransient(g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
 
 	m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
 		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)

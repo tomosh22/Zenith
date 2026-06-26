@@ -42,11 +42,8 @@ struct PassParams
 	RWTexture3D<float4> u_xLightingGrid;
 	RWTexture3D<float4> u_xScatteringGrid;
 
-	// Cascaded shadow maps (matches deferred shading binding pattern).
-	Sampler2D u_xCSM0;
-	Sampler2D u_xCSM1;
-	Sampler2D u_xCSM2;
-	Sampler2D u_xCSM3;
+	// Cascaded shadow maps — one 4-cascade depth array (Phase 4b collapse).
+	Sampler2DArray u_xCSM;
 
 	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
 	StructuredBuffer<float4x4> ShadowMatrices;
@@ -97,15 +94,11 @@ float SampleVolumetricShadow(float3 worldPos)
 		for (int i = 0; i < VOL_SHADOW_SAMPLES; i++)
 		{
 			float2 xSampleUV = xSamplePos + axOffsets[i] * g_xPassSet.LightConstants.u_fVolShadowConeRadius;
-			float  fShadowDepth;
 			// Compute shaders have no implicit derivatives — using Sample()
 			// would force Slang to declare ComputeDerivativeGroupQuadsKHR.
 			// Explicit LOD 0 is what we want here anyway (CSMs are
-			// non-mipped depth textures).
-			if      (iCascade == 0) fShadowDepth = g_xPassSet.u_xCSM0.SampleLevel(xSampleUV, 0).r;
-			else if (iCascade == 1) fShadowDepth = g_xPassSet.u_xCSM1.SampleLevel(xSampleUV, 0).r;
-			else if (iCascade == 2) fShadowDepth = g_xPassSet.u_xCSM2.SampleLevel(xSampleUV, 0).r;
-			else                    fShadowDepth = g_xPassSet.u_xCSM3.SampleLevel(xSampleUV, 0).r;
+			// non-mipped depth textures). Cascade selects the array layer.
+			float fShadowDepth = g_xPassSet.u_xCSM.SampleLevel(float3(xSampleUV, float(iCascade)), 0).r;
 			fShadow += (fBiasedDepth <= fShadowDepth) ? 1.0 : 0.0;
 		}
 		return fShadow / (float)VOL_SHADOW_SAMPLES;

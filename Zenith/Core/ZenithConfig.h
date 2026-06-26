@@ -101,6 +101,11 @@ static constexpr uint32_t FLUX_MAX_MIPS = 12;     // Maximum mip levels (support
 // index into 16 bits, so this constant must stay <= 0xFFFF; the static_assert
 // next to MakeBarrierKey enforces that pin at compile time.
 static constexpr uint32_t FLUX_MAX_LAYERS = 256;
+// Max array layers a single Flux_RenderAttachment stores per-layer DSVs for.
+// Only array depth attachments (CSM = 4 cascades) use these; kept small because
+// every Flux_RenderAttachment carries the per-layer DSV array inline. Bump if a
+// future array attachment needs more layers (the builder asserts the bound).
+static constexpr uint32_t FLUX_MAX_ATTACHMENT_LAYERS = 8;
 static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
 // Binding-model spine: set 0 GLOBAL, 1 VIEW, 2 BINDLESS, 3 PASS, 4 DRAW, 5 reserved (future TLAS).
 static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 6;
@@ -196,4 +201,8 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 
 #ifndef FLUX_MAX_LAYERS
 #define FLUX_MAX_LAYERS ZenithConfig::FLUX_MAX_LAYERS
+#endif
+
+#ifndef FLUX_MAX_ATTACHMENT_LAYERS
+#define FLUX_MAX_ATTACHMENT_LAYERS ZenithConfig::FLUX_MAX_ATTACHMENT_LAYERS
 #endif

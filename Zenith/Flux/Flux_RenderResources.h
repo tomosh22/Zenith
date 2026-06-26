@@ -85,6 +85,10 @@ public:
 	uint32_t m_uHeight = 1;
 	uint32_t m_uDepth = 1;  // For 3D textures
 	uint32_t m_uNumMips = 1;  // Number of mip levels (for cubemaps with roughness mips)
+	// Array layers for a 2D array attachment (e.g. the 4-cascade CSM depth array).
+	// Honored by BuildDepthStencil today (per-layer DSVs + a whole-array SRV);
+	// the colour/cubemap paths set their own layer count. 1 = ordinary 2D.
+	uint32_t m_uNumLayers = 1;
 
 	void BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName);
 	void BuildColourCubemap(Flux_RenderAttachmentCube& xAttachment, const std::string& strName);

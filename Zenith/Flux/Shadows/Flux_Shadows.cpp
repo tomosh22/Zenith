@@ -64,10 +64,10 @@ DEBUGVAR float dbg_fSunAngularRadius   = 0.013f;
 // cascade, hiding the seam.
 DEBUGVAR float dbg_fCascadeBlendFraction = 0.12f;
 
-Flux_RenderAttachment& Flux_ShadowsImpl::GetCSM(u_int uIndex)
+Flux_RenderAttachment& Flux_ShadowsImpl::GetCSMArray()
 {
-	Zenith_Assert(m_pxGraph, "Flux_ShadowsImpl::GetCSM: graph pointer is null");
-	return m_pxGraph->GetTransientAttachment(m_axCSMHandles[uIndex]);
+	Zenith_Assert(m_pxGraph, "Flux_ShadowsImpl::GetCSMArray: graph pointer is null");
+	return m_pxGraph->GetTransientAttachment(m_xCSMArrayHandle);
 }
 
 struct FrustumCorners
@@ -217,57 +217,40 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
 
+	// One 4-layer depth-array transient holds all cascades (Phase 4b collapse).
+	// Each cascade pass writes its own layer; the lit/fog passes sample the whole
+	// array as a Sampler2DArray. The 4 cascade passes have no GPU dependency on
+	// each other (disjoint layers) so they still record in parallel.
+	Flux_TransientTextureDesc xCSMDesc;
+	xCSMDesc.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
+	xCSMDesc.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
+	xCSMDesc.m_eFormat = CSM_FORMAT;
+	xCSMDesc.m_uNumLayers = ZENITH_FLUX_NUM_CSMS;
+	xCSMDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+	xCSMDesc.m_bIsDepthStencil = true;
+	m_xCSMArrayHandle = xGraph.CreateTransient(xCSMDesc);
+
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_TransientTextureDesc xCSMDesc;
-		xCSMDesc.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
-		xCSMDesc.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
-		xCSMDesc.m_eFormat = CSM_FORMAT;
-		xCSMDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-		xCSMDesc.m_bIsDepthStencil = true;
-
-		m_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
-	}
-
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		// CSM targets are depth textures — declared as DSV writes, not RTV.
-		// Cascade 0 owns the CPU-side matrix update via its pre-execute callback;
-		// other cascades have no GPU dependency on each other so they record in parallel.
+		// CSM targets are depth textures — declared as per-layer DSV writes (mip 0,
+		// layer u). Cascade 0 owns the CPU-side matrix update via its pre-execute
+		// callback; the disjoint-layer writes record in parallel.
 		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
 			.UserData(u)
 			.ClearTargets()
-			.WritesTransient(m_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
+			.WritesTransient(m_xCSMArrayHandle, RESOURCE_ACCESS_WRITE_DSV, 0, 1, u, 1);
 		if (u == 0)
 			xGraph.SetPrepare(xPass, PreExecuteShadowMatrices);
 	}
 }
 
-// Contract:
-//   - Returns the colour attachment pointer (currently always nullptr — CSMs are
-//     depth-only today; the return type is reserved for future variance/moment
-//     shadow map variants that would carry a colour cascade).
-//   - uNumColour is set to the number of colour attachments (0 today).
-//   - pxDepthStencil is ALWAYS populated with a non-null Flux_RenderAttachment*
-//     for a valid uIndex < ZENITH_FLUX_NUM_CSMS. Callers may dereference it
-//     unconditionally.
-//
-// Callers (Flux_AnimatedMeshes / StaticMeshes / InstancedMeshes / Terrain /
-// DeferredShading) rely on the non-null pxDepthStencil guarantee; if this ever
-// changes, every caller must be audited for null guards.
-Flux_RenderAttachment* Flux_ShadowsImpl::GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
+Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMArraySRV()
 {
-	Zenith_Assert(uIndex < ZENITH_FLUX_NUM_CSMS, "GetCSMTargetSetup: cascade index %u out of bounds (max %u)", uIndex, ZENITH_FLUX_NUM_CSMS);
-	uNumColour = 0;
-	pxDepthStencil = &GetCSM(uIndex);
-	Zenith_Assert(pxDepthStencil != nullptr, "GetCSMTargetSetup: depth-stencil out-param must be non-null per contract");
-	return nullptr;
-}
-
-
-Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
-{
-	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
+	// Always the array SRV (Sampler2DArray) — valid even when shadows are disabled:
+	// the cascade passes still clear the array to far depth, so sampling yields
+	// "not in shadow". A 2D white-texture fallback would be the wrong descriptor
+	// type for a Sampler2DArray, so there is no disabled-path substitute here.
+	return GetCSMArray().SRV();
 }
 
 

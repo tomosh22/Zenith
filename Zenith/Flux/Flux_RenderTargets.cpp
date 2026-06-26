@@ -42,6 +42,13 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 		xVulkanMemory.QueueImageViewDeletion(xAttachment.m_axUAVs[uMip].m_xImageViewHandle);
 	}
 
+	// Per-layer DSVs for an array depth attachment (CSM cascades). Invalid handles
+	// are a no-op, so this is safe for single-layer attachments (which use m_xDSV).
+	for (u_int uLayer = 0; uLayer < xAttachment.m_xSurfaceInfo.m_uNumLayers && uLayer < FLUX_MAX_ATTACHMENT_LAYERS; uLayer++)
+	{
+		xVulkanMemory.QueueImageViewDeletion(xAttachment.m_axLayerDSVs[uLayer].m_xImageViewHandle);
+	}
+
 	// VRAM + the "primary" views (first of each type) go in one bundle.
 	// QueueVRAMDeletion auto-invalidates xAttachment.m_xVRAMHandle.
 	xVulkanMemory.QueueVRAMDeletion(xAttachment.m_xVRAMHandle,
@@ -133,6 +140,20 @@ Flux_RenderTargetView& Flux_RenderAttachment::RTV(u_int uMip)
 {
 	Zenith_Assert(uMip < m_xSurfaceInfo.m_uNumMips, "Flux_RenderAttachment::RTV: mip index %u out of bounds (num mips = %u)", uMip, m_xSurfaceInfo.m_uNumMips);
 	return m_axRTVs[uMip];
+}
+
+Flux_DepthStencilView& Flux_RenderAttachment::DSV(u_int uLayer)
+{
+	Zenith_Assert(uLayer < m_xSurfaceInfo.m_uNumLayers, "Flux_RenderAttachment::DSV: layer %u out of bounds (num layers = %u)", uLayer, m_xSurfaceInfo.m_uNumLayers);
+	Zenith_Assert(uLayer < FLUX_MAX_ATTACHMENT_LAYERS, "Flux_RenderAttachment::DSV: layer %u exceeds FLUX_MAX_ATTACHMENT_LAYERS (%u)", uLayer, FLUX_MAX_ATTACHMENT_LAYERS);
+	return m_axLayerDSVs[uLayer];
+}
+
+const Flux_DepthStencilView& Flux_RenderAttachment::DSV(u_int uLayer) const
+{
+	Zenith_Assert(uLayer < m_xSurfaceInfo.m_uNumLayers, "Flux_RenderAttachment::DSV: layer %u out of bounds (num layers = %u)", uLayer, m_xSurfaceInfo.m_uNumLayers);
+	Zenith_Assert(uLayer < FLUX_MAX_ATTACHMENT_LAYERS, "Flux_RenderAttachment::DSV: layer %u exceeds FLUX_MAX_ATTACHMENT_LAYERS (%u)", uLayer, FLUX_MAX_ATTACHMENT_LAYERS);
+	return m_axLayerDSVs[uLayer];
 }
 
 Flux_ShaderResourceView& Flux_RenderAttachmentCube::SRV()
@@ -381,12 +402,16 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	// only own a single DSV + a single SRV, so release is simple.
 	Destroy(xAttachment);
 
+	const u_int uNumLayers = (m_uNumLayers == 0) ? 1u : m_uNumLayers;
+	Zenith_Assert(uNumLayers <= FLUX_MAX_ATTACHMENT_LAYERS,
+		"Flux_RenderAttachmentBuilder::BuildDepthStencil: m_uNumLayers (%u) exceeds FLUX_MAX_ATTACHMENT_LAYERS (%u)", uNumLayers, FLUX_MAX_ATTACHMENT_LAYERS);
+
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth = m_uWidth;
 	xInfo.m_uHeight = m_uHeight;
 	xInfo.m_eFormat = m_eFormat;
 	xInfo.m_uNumMips = 1;
-	xInfo.m_uNumLayers = 1;
+	xInfo.m_uNumLayers = uNumLayers;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
@@ -399,14 +424,28 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	(void)strName;
 #endif
 
-	xAttachment.m_xDSV = xVulkanMemory.CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	if (uNumLayers > 1)
+	{
+		// Array depth (e.g. CSM cascades): one single-slice DSV per layer so a
+		// render pass can write exactly one cascade; the whole-array SRV (e2DArray)
+		// is what shaders sample as Sampler2DArray. m_xDSV stays invalid — array
+		// attachments render through the per-layer DSVs, never the whole-array view.
+		for (u_int u = 0; u < uNumLayers; u++)
+		{
+			xAttachment.m_axLayerDSVs[u] = xVulkanMemory.CreateDepthStencilViewForLayer(xAttachment.m_xVRAMHandle, xInfo, u, 0);
+		}
+	}
+	else
+	{
+		xAttachment.m_xDSV = xVulkanMemory.CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	}
 	xAttachment.m_xSRV = xVulkanMemory.CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VRAM=%u %ux%u",
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VRAM=%u %ux%u layers=%u",
 			strName.c_str(),
 			xAttachment.m_xVRAMHandle.AsUInt(),
-			xInfo.m_uWidth, xInfo.m_uHeight);
+			xInfo.m_uWidth, xInfo.m_uHeight, uNumLayers);
 	}
 }
 
@@ -419,12 +458,16 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM(Flux_RenderA
 		"Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM: invalid aliased VRAM handle for '%s'", strName.c_str());
 	Destroy(xAttachment);
 
+	const u_int uNumLayers = (m_uNumLayers == 0) ? 1u : m_uNumLayers;
+	Zenith_Assert(uNumLayers <= FLUX_MAX_ATTACHMENT_LAYERS,
+		"Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM: m_uNumLayers (%u) exceeds FLUX_MAX_ATTACHMENT_LAYERS (%u)", uNumLayers, FLUX_MAX_ATTACHMENT_LAYERS);
+
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth       = m_uWidth;
 	xInfo.m_uHeight      = m_uHeight;
 	xInfo.m_eFormat      = m_eFormat;
 	xInfo.m_uNumMips     = 1;
-	xInfo.m_uNumLayers   = 1;
+	xInfo.m_uNumLayers   = uNumLayers;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
 	xAttachment.m_xVRAMHandle = xAliasedVRAM;
@@ -437,7 +480,17 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencilFromAliasedVRAM(Flux_RenderA
 
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
-	xAttachment.m_xDSV = xVulkanMemory.CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	if (uNumLayers > 1)
+	{
+		for (u_int u = 0; u < uNumLayers; u++)
+		{
+			xAttachment.m_axLayerDSVs[u] = xVulkanMemory.CreateDepthStencilViewForLayer(xAttachment.m_xVRAMHandle, xInfo, u, 0);
+		}
+	}
+	else
+	{
+		xAttachment.m_xDSV = xVulkanMemory.CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	}
 	xAttachment.m_xSRV = xVulkanMemory.CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{

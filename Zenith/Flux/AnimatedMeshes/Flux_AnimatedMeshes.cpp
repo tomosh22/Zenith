@@ -86,9 +86,8 @@ void Flux_AnimatedMeshesImpl::BuildPipelines()
 	}
 
 	{
-		// CSMs are depth-only (GetCSMTargetSetup returns null colour, uNumColour=0).
-		// Format is the shared CSM_FORMAT constant so we don't need the transient
-		// attachment to exist yet.
+		// CSMs are depth-only (no colour attachment). Format is the shared
+		// CSM_FORMAT constant so we don't need the transient attachment to exist yet.
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;

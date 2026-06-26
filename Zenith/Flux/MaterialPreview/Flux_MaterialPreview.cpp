@@ -317,6 +317,13 @@ void Flux_MaterialPreviewImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		xGraph.ReadBuffer(xMeshPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(), RESOURCE_ACCESS_READ_SRV);
 	}
 
+	// The shared forward shader statically references the CSM array (Sampler2DArray);
+	// declare a full-array read for graph completeness so the pass is ordered after
+	// the cascade writers with a correct WRITE_DSV -> SHADER_READ barrier. Shadows
+	// are gated off via the preview constants, but the descriptor + image layout
+	// must still be valid (Phase 4b — mirrors the DeferredShading/fog declarations).
+	xGraph.ReadTransient(xMeshPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
+
 	// Pass 3: fixed-exposure tonemap to the ImGui-visible LDR target.
 	const Flux_PassHandle xTonemapPass = xGraph.AddPass("MaterialPreview Tonemap", ExecutePreviewTonemap)
 		.Writes(m_xPreviewLDR, RESOURCE_ACCESS_WRITE_RTV);
@@ -407,13 +414,10 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	xConstants.m_fCSMTexelSizeY = 1.0f / 2048.0f;
 	xBinder.BindDrawConstants(FW::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
-	// CSMs/ShadowMatrices are statically referenced by the shared shader —
-	// bind benign placeholders (shadows are disabled via the constants).
-	static const Flux_BindingHandle s_axCSMHandles[4] = { FW::hg_xCSM0, FW::hg_xCSM1, FW::hg_xCSM2, FW::hg_xCSM3 };
-	for (u_int u = 0; u < 4; u++)
-	{
-		xBinder.BindSRV(s_axCSMHandles[u], &xIBL.GetBRDFLUTSRV(), &xGraphics.m_xClampSampler);
-	}
+	// The CSM array (Sampler2DArray) is statically referenced by the shared shader.
+	// Bind the real array SRV (correct descriptor type; shadows are disabled via the
+	// constants so the sampled values don't affect the preview). Phase 4b collapse.
+	xBinder.BindSRV(FW::hg_xCSM, &g_xEngine.Shadows().GetCSMArraySRV(), &xGraphics.m_xClampSampler);
 	// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
 	// Real buffer (harmless — preview disables shadow sampling via the constants).
 	xBinder.BindSRV_Buffer(FW::hShadowMatrices, g_xEngine.Shadows().GetShadowMatricesSRV());

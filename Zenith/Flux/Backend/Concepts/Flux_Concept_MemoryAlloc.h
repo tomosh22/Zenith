@@ -66,6 +66,7 @@ concept FluxBackendMemoryAlloc = requires(
 	{ t.CreateRenderTargetView(xVRAMHandle, xInfo, uMip)                      } -> std::same_as<Flux_RenderTargetView>;
 	{ t.CreateRenderTargetViewForLayer(xVRAMHandle, xInfo, uLayer, uMip)      } -> std::same_as<Flux_RenderTargetView>;
 	{ t.CreateDepthStencilView(xVRAMHandle, xInfo, uMip)                      } -> std::same_as<Flux_DepthStencilView>;
+	{ t.CreateDepthStencilViewForLayer(xVRAMHandle, xInfo, uLayer, uMip)      } -> std::same_as<Flux_DepthStencilView>;
 
 	// Wrapped buffer initialisers — store data + create the underlying VRAM,
 	// returning by reference into the buffer object.

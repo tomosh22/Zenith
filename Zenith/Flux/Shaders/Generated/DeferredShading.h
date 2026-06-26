@@ -95,35 +95,29 @@ namespace Flux_Generated_DeferredShading
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM0{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xCSM{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM1{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM2{ 3u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM3{ 3u, 9u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 9u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 10u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xSSRTex{ 3u, 10u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 11u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 12u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xSSRTex{ 3u, 13u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xSSGITex{ 3u, 14u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xSSGITex{ 3u, 11u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 15u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 12u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 16u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 13u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 17u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 14u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xGBufferEmissiveTex{ 3u, 18u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xGBufferEmissiveTex{ 3u, 15u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xSSAOTex{ 3u, 19u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xSSAOTex{ 3u, 16u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hShadowSampling{ 3u, 20u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hShadowSampling{ 3u, 17u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct ShadowSampling_CB
 		{
 			unsigned char m_ag_xCascadeSplitViewDepth[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)

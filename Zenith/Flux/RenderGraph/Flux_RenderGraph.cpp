@@ -174,8 +174,9 @@ static void ValidateImageSubresource(const Flux_GraphResource& xResource, Resour
             "Flux_RenderGraph::%s: mip range [%u,%u) exceeds attachment mip count %u, pass %u",
             szCaller, uMip, uMip + uMipCount, rxInfo.m_uNumMips, uPassIndex);
     }
-    // For cubemaps, layer must fit in 6 faces; for 2D, layer must be 0 with count 1.
-    const u_int uMaxLayers = (xResource.GetKind() == Flux_GraphResourceKind::ImageCube) ? rxInfo.m_uNumLayers : 1u;
+    // Layer bound = the resource's actual layer count: 6 for cubes, N for a 2D
+    // array attachment (e.g. CSM cascades), 1 for an ordinary 2D image.
+    const u_int uMaxLayers = (rxInfo.m_uNumLayers > 0) ? rxInfo.m_uNumLayers : 1u;
     if (uLayerCount != FLUX_RG_ALL_LAYERS)
     {
         Zenith_Assert(uLayer < uMaxLayers,
@@ -460,6 +461,20 @@ Flux_PassBuilder&& Flux_PassBuilder::WritesTransient(Flux_TransientHandle xHandl
 {
     AssertAlive("WritesTransient(subres)");
     m_pxGraph->WriteTransient(m_xPass, xHandle, eAccess, uMip, uMipCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::ReadsTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount) &&
+{
+    AssertAlive("ReadsTransient(layer)");
+    m_pxGraph->ReadTransient(m_xPass, xHandle, eAccess, uMip, uMipCount, uLayer, uLayerCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount) &&
+{
+    AssertAlive("WritesTransient(layer)");
+    m_pxGraph->WriteTransient(m_xPass, xHandle, eAccess, uMip, uMipCount, uLayer, uLayerCount);
     return std::move(*this);
 }
 
@@ -771,6 +786,17 @@ Flux_TransientHandle Flux_RenderGraph::CreateTransient(const Flux_TransientTextu
     Zenith_Assert(xDesc.m_uDepth >= 1, "Flux_RenderGraph::CreateTransient: depth must be >= 1 (got %u)", xDesc.m_uDepth);
     Zenith_Assert(xDesc.m_uNumMips >= 1, "Flux_RenderGraph::CreateTransient: mip count must be >= 1 (got %u)", xDesc.m_uNumMips);
     Zenith_Assert(xDesc.m_uNumMips <= FLUX_MAX_MIPS, "Flux_RenderGraph::CreateTransient: mip count %u exceeds FLUX_MAX_MIPS (%u)", xDesc.m_uNumMips, FLUX_MAX_MIPS);
+    Zenith_Assert(xDesc.m_uNumLayers >= 1, "Flux_RenderGraph::CreateTransient: layer count must be >= 1 (got %u)", xDesc.m_uNumLayers);
+    Zenith_Assert(xDesc.m_uNumLayers <= FLUX_MAX_ATTACHMENT_LAYERS, "Flux_RenderGraph::CreateTransient: layer count %u exceeds FLUX_MAX_ATTACHMENT_LAYERS (%u)", xDesc.m_uNumLayers, FLUX_MAX_ATTACHMENT_LAYERS);
+    // Array transients (m_uNumLayers > 1) are only wired for the 2D depth-stencil
+    // path today (the CSM cascade array). Colour/cube/3D array transients would
+    // need per-layer RTV/UAV plumbing in BuildColour — add it when a use case lands.
+    if (xDesc.m_uNumLayers > 1)
+    {
+        Zenith_Assert(xDesc.m_bIsDepthStencil && xDesc.m_eTextureType == TEXTURE_TYPE_2D,
+            "Flux_RenderGraph::CreateTransient: m_uNumLayers > 1 is only supported for 2D depth-stencil transients (got type %d, depth=%d)",
+            (int)xDesc.m_eTextureType, xDesc.m_bIsDepthStencil ? 1 : 0);
+    }
     Zenith_Assert(xDesc.m_eFormat != TEXTURE_FORMAT_NONE, "Flux_RenderGraph::CreateTransient: TEXTURE_FORMAT_NONE not allowed");
     // Depth/stencil flag must agree with the format. Prevents silent mismatches
     // where BuildDepthStencil runs on a colour format or vice versa.
@@ -882,6 +908,53 @@ void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandl
             AccessToString(eAccess), xPass.m_uIndex);
     }
     Write(xPass, pxT->m_xAttachment, eAccess, uMip, uMipCount);
+}
+
+// Layer-aware transient subresource declarations. Route through AddResourceUsage
+// directly (NOT Read/Write(Flux_RenderAttachment), which force layer 0) so an
+// array transient can declare a single-layer access (e.g. one CSM cascade).
+void Flux_RenderGraph::ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount)
+{
+    AssertPassHandleValid(xPass, "ReadTransient (layer)");
+    AssertTransientHandleValid(xHandle, "ReadTransient (layer)");
+    TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
+    Zenith_Assert(uMipCount == FLUX_RG_ALL_MIPS || uMip + uMipCount <= pxT->m_xDesc.m_uNumMips,
+        "Flux_RenderGraph::ReadTransient: mip range [%u,%u) exceeds transient desc mip count %u",
+        uMip, uMip + uMipCount, pxT->m_xDesc.m_uNumMips);
+    Zenith_Assert(uLayerCount == FLUX_RG_ALL_LAYERS || uLayer + uLayerCount <= pxT->m_xDesc.m_uNumLayers,
+        "Flux_RenderGraph::ReadTransient: layer range [%u,%u) exceeds transient desc layer count %u",
+        uLayer, uLayer + uLayerCount, pxT->m_xDesc.m_uNumLayers);
+    if (eAccess == RESOURCE_ACCESS_READ_SRV)
+    {
+        Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__SHADER_READ),
+            "Flux_RenderGraph::ReadTransient: READ_SRV requires MEMORY_FLAGS__SHADER_READ in transient desc (pass %u)", xPass.m_uIndex);
+    }
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(pxT->m_xAttachment), eAccess, uMip, uMipCount, uLayer, uLayerCount, false);
+}
+
+void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount)
+{
+    AssertPassHandleValid(xPass, "WriteTransient (layer)");
+    AssertTransientHandleValid(xHandle, "WriteTransient (layer)");
+    TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
+    Zenith_Assert(uMipCount == FLUX_RG_ALL_MIPS || uMip + uMipCount <= pxT->m_xDesc.m_uNumMips,
+        "Flux_RenderGraph::WriteTransient: mip range [%u,%u) exceeds transient desc mip count %u",
+        uMip, uMip + uMipCount, pxT->m_xDesc.m_uNumMips);
+    Zenith_Assert(uLayerCount == FLUX_RG_ALL_LAYERS || uLayer + uLayerCount <= pxT->m_xDesc.m_uNumLayers,
+        "Flux_RenderGraph::WriteTransient: layer range [%u,%u) exceeds transient desc layer count %u",
+        uLayer, uLayer + uLayerCount, pxT->m_xDesc.m_uNumLayers);
+    if (eAccess == RESOURCE_ACCESS_WRITE_DSV)
+    {
+        Zenith_Assert(pxT->m_xDesc.m_bIsDepthStencil,
+            "Flux_RenderGraph::WriteTransient: WRITE_DSV on a non-depth-stencil transient (pass %u)", xPass.m_uIndex);
+    }
+    if (eAccess == RESOURCE_ACCESS_WRITE_UAV || eAccess == RESOURCE_ACCESS_READWRITE_UAV)
+    {
+        Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
+            "Flux_RenderGraph::WriteTransient: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)",
+            AccessToString(eAccess), xPass.m_uIndex);
+    }
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(pxT->m_xAttachment), eAccess, uMip, uMipCount, uLayer, uLayerCount, true);
 }
 
 Flux_RenderAttachment& Flux_RenderGraph::GetTransientAttachment(Flux_TransientHandle xHandle)

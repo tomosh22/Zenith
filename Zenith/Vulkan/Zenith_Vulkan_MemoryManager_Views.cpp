@@ -28,6 +28,10 @@ vk::ImageViewType Zenith_Vulkan_MemoryManager::DetermineImageViewType(const Flux
 		return vk::ImageViewType::e3D;
 	if (bIsCube)
 		return vk::ImageViewType::eCube;
+	// A non-cube multi-layer 2D image (e.g. the 4-cascade CSM depth array) samples
+	// as a 2D array — a plain e2D view with layerCount > 1 is invalid Vulkan.
+	if (xInfo.m_uNumLayers > 1)
+		return vk::ImageViewType::e2DArray;
 
 	return vk::ImageViewType::e2D;
 }
@@ -127,6 +131,40 @@ Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_V
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(pxVRAM->GetImage())
 		.setViewType(bIsCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D)
+		.setFormat(xFormat)
+		.setSubresourceRange(xSubresourceRange);
+
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
+	xView.m_xImageViewHandle = RegisterImageView(xVkView);
+	return xView;
+}
+
+Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uMipLevel)
+{
+	// Single-layer depth/stencil view of one slice of an array depth image (e.g.
+	// one cascade of the CSM array). Mirrors CreateRenderTargetViewForLayer but
+	// with the depth aspect and depth format. viewType e2D + layerCount 1 so the
+	// framebuffer binds exactly one cascade as the depth attachment.
+	Flux_DepthStencilView xView;
+	xView.m_xVRAMHandle = xVRAMHandle;
+
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateDepthStencilViewForLayer");
+	if (!pxVRAM) return xView;
+
+	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+
+	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
+		.setAspectMask(vk::ImageAspectFlagBits::eDepth)
+		.setBaseMipLevel(uMipLevel)
+		.setLevelCount(1)
+		.setBaseArrayLayer(uLayer)
+		.setLayerCount(1);
+
+	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
+		.setImage(pxVRAM->GetImage())
+		.setViewType(vk::ImageViewType::e2D)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 

@@ -74,10 +74,7 @@ struct PassParams
 	Sampler2D   g_xMaterialTex;
 	Sampler2D   g_xDepthTex;
 
-	Sampler2D   g_xCSM0;
-	Sampler2D   g_xCSM1;
-	Sampler2D   g_xCSM2;
-	Sampler2D   g_xCSM3;
+	Sampler2DArray g_xCSM;   // 4-cascade depth array (Phase 4b collapse)
 
 	Sampler2D   g_xBRDFLUT;
 	SamplerCube g_xIrradianceMap;
@@ -135,10 +132,8 @@ float2 VogelDiskSample(uint uIndex, uint uCount, float fRotation)
 
 float4 GatherCascadeDepth(int iCascade, float2 xUV)
 {
-	if      (iCascade == 0) return g_xPassSet.g_xCSM0.Gather(xUV);
-	else if (iCascade == 1) return g_xPassSet.g_xCSM1.Gather(xUV);
-	else if (iCascade == 2) return g_xPassSet.g_xCSM2.Gather(xUV);
-	else                    return g_xPassSet.g_xCSM3.Gather(xUV);
+	// Cascade selects the array layer (Phase 4b: one Sampler2DArray, no if-ladder).
+	return g_xPassSet.g_xCSM.Gather(float3(xUV, float(iCascade)));
 }
 
 // All 4 cascade sun view×proj matrices live in one StructuredBuffer (Phase 4a) —

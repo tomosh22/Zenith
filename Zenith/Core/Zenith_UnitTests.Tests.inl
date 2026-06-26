@@ -15749,6 +15749,71 @@ void Zenith_UnitTests::TestAliasSignatureIgnoresDimensions(){
 	ZENITH_ASSERT_EQ(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Dimensions and mip count must NOT affect signature");
 }
 
+// Phase 4b: an array depth (m_uNumLayers > 1, e.g. the 4-cascade CSM) must NOT
+// share an aliasing pool slot with an otherwise-identical single-layer transient —
+// the image + views differ. Layer count is part of the signature.
+ZENITH_TEST(Core, AliasSignatureDifferentLayers)
+{
+	Flux_TransientTextureDesc xA = DefaultDesc();
+	xA.m_bIsDepthStencil = true;
+	xA.m_eFormat         = TEXTURE_FORMAT_D32_SFLOAT;
+	Flux_TransientTextureDesc xB = xA;
+	xB.m_uNumLayers = 4; // 4-cascade depth array
+	ZENITH_ASSERT_NE(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB),
+		"Array layer count must flip the signature (4-layer array must not alias a 1-layer image)");
+	Flux_TransientTextureDesc xC = xB;
+	ZENITH_ASSERT_EQ(Flux_RenderGraph::MakeTransientMemorySignature(xB), Flux_RenderGraph::MakeTransientMemorySignature(xC),
+		"Identical layer counts must produce identical signatures");
+}
+
+// Phase 4b: the layer-aware transient Read/Write API records the correct
+// per-layer subresource ranges. Mirrors the CSM cascade pattern — 4 single-layer
+// WRITE_DSV passes + 1 all-layer READ_SRV. Device-free (inspects the declared
+// usage ranges; actual per-(mip,layer) barrier emission is covered by the
+// windowed sync-validation run, which needs allocated VRAM).
+ZENITH_TEST(Core, RenderGraphLayerAwareTransientRecording)
+{
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc;
+	xDesc.m_uWidth          = 2048;
+	xDesc.m_uHeight         = 2048;
+	xDesc.m_uDepth          = 1;
+	xDesc.m_uNumMips        = 1;
+	xDesc.m_uNumLayers      = 4;
+	xDesc.m_eFormat         = TEXTURE_FORMAT_D32_SFLOAT;
+	xDesc.m_eTextureType    = TEXTURE_TYPE_2D;
+	xDesc.m_uMemoryFlags    = (1u << MEMORY_FLAGS__SHADER_READ);
+	xDesc.m_bIsDepthStencil = true;
+	Flux_TransientHandle xT = xGraph.CreateTransient(xDesc);
+
+	static const char* const s_aszWriters[4] = { "CSM_W0", "CSM_W1", "CSM_W2", "CSM_W3" };
+	Flux_PassHandle axWriters[4];
+	for (u_int u = 0; u < 4; u++)
+	{
+		axWriters[u] = xGraph.AddPass(s_aszWriters[u], EmptyRecordCallback);
+		xGraph.WriteTransient(axWriters[u], xT, RESOURCE_ACCESS_WRITE_DSV, 0, 1, u, 1);
+	}
+	Flux_PassHandle xReader = xGraph.AddPass("CSM_Read", EmptyRecordCallback);
+	xGraph.ReadTransient(xReader, xT, RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
+
+	const Zenith_Vector<Flux_RenderGraph_Pass*>& xPasses = xGraph.GetPasses();
+	for (u_int u = 0; u < 4; u++)
+	{
+		const Flux_RenderGraph_Pass* pxP = xPasses.Get(axWriters[u].m_uIndex);
+		ZENITH_ASSERT_EQ(pxP->m_xWrites.GetSize(), 1u, "cascade %u writer must declare exactly one write", u);
+		const Flux_RenderGraph_ResourceUsage& xW = pxP->m_xWrites.Get(0);
+		ZENITH_ASSERT_EQ(xW.m_uLayer, u, "cascade %u write must target layer %u (got %u)", u, u, xW.m_uLayer);
+		ZENITH_ASSERT_EQ(xW.m_uLayerCount, 1u, "cascade %u write must be single-layer", u);
+		ZENITH_ASSERT_TRUE(xW.m_eAccess == RESOURCE_ACCESS_WRITE_DSV, "cascade %u write must be WRITE_DSV", u);
+	}
+	const Flux_RenderGraph_Pass* pxReader = xPasses.Get(xReader.m_uIndex);
+	ZENITH_ASSERT_EQ(pxReader->m_xReads.GetSize(), 1u, "reader must declare exactly one read");
+	const Flux_RenderGraph_ResourceUsage& xR = pxReader->m_xReads.Get(0);
+	ZENITH_ASSERT_EQ(xR.m_uLayer, 0u, "reader must start at layer 0 (got %u)", xR.m_uLayer);
+	ZENITH_ASSERT_EQ(xR.m_uLayerCount, FLUX_RG_ALL_LAYERS, "reader must span all layers (FLUX_RG_ALL_LAYERS)");
+}
+
 // ============================================================================
 // Flux render-graph lifetime + aliasing-packer tests
 // ============================================================================

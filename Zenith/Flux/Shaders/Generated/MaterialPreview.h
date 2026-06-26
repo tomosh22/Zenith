@@ -170,25 +170,19 @@ namespace Flux_Generated_MaterialPreview
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM0{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xCSM{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM1{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM2{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xCSM3{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 9u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 6u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 10u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 7u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 11u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 8u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB

@@ -40,10 +40,8 @@ struct PassParams
 	Sampler2D u_xDepthTexture;
 	Sampler3D u_xNoiseTexture3D;
 	Sampler2D u_xBlueNoiseTexture;
-	Sampler2D u_xCSM0;
-	Sampler2D u_xCSM1;
-	Sampler2D u_xCSM2;
-	Sampler2D u_xCSM3;
+	// Cascaded shadow maps — one 4-cascade depth array (Phase 4b collapse).
+	Sampler2DArray u_xCSM;
 
 	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
 	StructuredBuffer<float4x4> ShadowMatrices;
@@ -92,11 +90,8 @@ float SampleVolumetricShadow(float3 worldPos)
 		for (int i = 0; i < VOL_SHADOW_SAMPLES; i++)
 		{
 			float2 xSampleUV = xSamplePos + axOffsets[i] * g_xPassSet.RaymarchConstants.u_fVolShadowConeRadius;
-			float  fShadowDepth;
-			if      (iCascade == 0) fShadowDepth = g_xPassSet.u_xCSM0.Sample(xSampleUV).r;
-			else if (iCascade == 1) fShadowDepth = g_xPassSet.u_xCSM1.Sample(xSampleUV).r;
-			else if (iCascade == 2) fShadowDepth = g_xPassSet.u_xCSM2.Sample(xSampleUV).r;
-			else                    fShadowDepth = g_xPassSet.u_xCSM3.Sample(xSampleUV).r;
+			// Cascade selects the array layer (Phase 4b collapse).
+			float fShadowDepth = g_xPassSet.u_xCSM.Sample(float3(xSampleUV, float(iCascade))).r;
 			fShadow += (fBiasedDepth <= fShadowDepth) ? 1.0 : 0.0;
 		}
 		return fShadow / (float)VOL_SHADOW_SAMPLES;

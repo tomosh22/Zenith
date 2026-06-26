@@ -116,15 +116,9 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(),      RESOURCE_ACCESS_READ_DEPTH);
 
-	// Shadow maps (CSM depth targets) — same declarations as DeferredShading
-	// so the graph orders this pass after the cascade writers.
-	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		uint32_t uNumColour;
-		Flux_RenderAttachment* pxDepthStencil;
-		g_xEngine.Shadows().GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
-		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
-	}
+	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
+	// graph orders this pass after the cascade writers with a full-array barrier.
+	xGraph.ReadTransient(xPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
 
 	// Clustered light buffers (LightBuffer itself is not graph-tracked — see
 	// the DeferredShading declaration comment).
@@ -287,11 +281,8 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			pxCmdList->UseBindlessTextures(2);
 			xBinder.BindDrawConstants(TF::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
-			static const Flux_BindingHandle s_axCSMHandles[ZENITH_FLUX_NUM_CSMS] = { TF::hg_xCSM0, TF::hg_xCSM1, TF::hg_xCSM2, TF::hg_xCSM3 };
-			for (uint32_t uCSM = 0; uCSM < ZENITH_FLUX_NUM_CSMS; uCSM++)
-			{
-				xBinder.BindSRV(s_axCSMHandles[uCSM], &xShadows.GetCSMSRV(uCSM), &xGraphics.m_xClampSampler);
-			}
+			// Single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
+			xBinder.BindSRV(TF::hg_xCSM, &xShadows.GetCSMArraySRV(), &xGraphics.m_xClampSampler);
 			// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
 			xBinder.BindSRV_Buffer(TF::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 

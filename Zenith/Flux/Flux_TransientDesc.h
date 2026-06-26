@@ -27,6 +27,10 @@ struct Flux_TransientTextureDesc
 	TextureFormat m_eFormat = TEXTURE_FORMAT_RGBA8_SRGB;
 	TextureType m_eTextureType = TEXTURE_TYPE_2D;
 	u_int m_uNumMips = 1;
+	// Array layers. >1 makes an array texture (e.g. the 4-cascade CSM depth array,
+	// sampled as Sampler2DArray). Only the 2D depth-stencil path honors this today;
+	// cubes set their own 6 layers via m_eTextureType == TEXTURE_TYPE_CUBE.
+	u_int m_uNumLayers = 1;
 	u_int m_uMemoryFlags = 0; // MemoryFlags bitmask (e.g., 1u << MEMORY_FLAGS__SHADER_READ)
 	bool m_bIsDepthStencil = false; // true → uses BuildDepthStencil instead of BuildColour
 };
