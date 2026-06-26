@@ -317,18 +317,14 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 			const Flux_ReflectedBinding& xBinding = axBindings.Get(b);
 			if (xBinding.m_strName.empty()) continue;
 			std::string strBindIdent = SanitizeIdentifier(xBinding.m_strName);
+			// One typed handle per binding (h<Name>{ set, binding, kind, count }) — the
+			// sole binding-path surface. The loose k<Name>_Set/_Binding/_DescriptorCount/
+			// _Name consts the codegen used to also emit were superseded by the typed
+			// handle and unreferenced everywhere, so they are no longer generated.
 			char szLine[768];
 			snprintf(szLine, sizeof(szLine),
-					 "\t\tinline constexpr const char* k%s_Name = \"%s\";\n"
-					 "\t\tinline constexpr unsigned int k%s_Set = %u;\n"
-					 "\t\tinline constexpr unsigned int k%s_Binding = %u;\n"
-					 "\t\tinline constexpr unsigned int k%s_DescriptorCount = %u;\n"
 					 "\t\t// kind: %s\n"
 					 "\t\tinline constexpr Flux_BindingHandle h%s{ %uu, %uu, %s, %uu };\n",
-					 strBindIdent.c_str(), xBinding.m_strName.c_str(),
-					 strBindIdent.c_str(), xBinding.m_uSet,
-					 strBindIdent.c_str(), xBinding.m_uBinding,
-					 strBindIdent.c_str(), xBinding.m_uDescriptorCount,
 					 ResourceKindName(xBinding.m_eResourceKind),
 					 strBindIdent.c_str(), xBinding.m_uSet, xBinding.m_uBinding,
 					 ResourceKindEnumToken(xBinding.m_eResourceKind), xBinding.m_uDescriptorCount);

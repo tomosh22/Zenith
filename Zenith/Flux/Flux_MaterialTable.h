@@ -14,6 +14,58 @@ class Zenith_MaterialAsset;
 // practice.)
 inline constexpr u_int uFLUX_MATERIAL_TABLE_CAPACITY = 4096u;
 
+// Result of the pure slot-assignment decision (Flux_DecideMaterialSlot).
+struct Flux_MaterialSlotDecision
+{
+	u_int m_uIndex      = 0;     // resolved table index (>= 1; 0 is the reserved slot)
+	bool  m_bNeedsBuild = false; // the GPU record at m_uIndex must be (re)built
+};
+
+// ----------------------------------------------------------------------------
+// Pure slot-assignment decision — NO GPU / engine access, so unit-testable
+// without booting the renderer (mirrors the Flux_BindlessAllocator philosophy).
+//
+// Given a material's currently-stored table index (uInvalidSentinel if never
+// registered), its edit stamp, and the live bindless generation, returns the
+// resolved index and whether its GPU record must be (re)built:
+//   - never registered     -> allocate a fresh index, needs build
+//   - edit stamp changed    -> rebuild (material was edited)
+//   - bindless gen changed  -> rebuild (a texture slot was freed/reallocated)
+//   - otherwise             -> reuse, no build
+// On a (re)build it refreshes the per-index stamp/gen mirrors and advances the
+// upload high-water (uMaxIndexInOut). The caller owns the engine-side effects
+// (reading/writing the material's stored index, building the GPU record).
+// ----------------------------------------------------------------------------
+inline Flux_MaterialSlotDecision Flux_DecideMaterialSlot(
+	Flux_BindlessAllocator& xAlloc,
+	std::vector<u_int64>& xStamp,
+	std::vector<u_int64>& xBindlessGen,
+	u_int& uMaxIndexInOut,
+	u_int uStoredIndex,
+	u_int uInvalidSentinel,
+	u_int64 uEditStamp,
+	u_int64 uLiveBindlessGen)
+{
+	if (uStoredIndex == uInvalidSentinel)
+	{
+		const u_int uIndex = xAlloc.Allocate();   // >= 1 (slot 0 reserved)
+		if (uIndex > uMaxIndexInOut)
+		{
+			uMaxIndexInOut = uIndex;
+		}
+		xStamp[uIndex]       = uEditStamp;
+		xBindlessGen[uIndex] = uLiveBindlessGen;
+		return { uIndex, true };
+	}
+	if (xStamp[uStoredIndex] != uEditStamp || xBindlessGen[uStoredIndex] != uLiveBindlessGen)
+	{
+		xStamp[uStoredIndex]       = uEditStamp;
+		xBindlessGen[uStoredIndex] = uLiveBindlessGen;
+		return { uStoredIndex, true };
+	}
+	return { uStoredIndex, false };
+}
+
 // ============================================================================
 // Flux_MaterialTable — the GPU material record store.
 //

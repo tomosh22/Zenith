@@ -16,10 +16,6 @@ namespace Flux_Generated_Decals
 	// ----- Decals_NormalsCopy (Decals/Flux_Decals_NormalsCopy) -----
 	namespace Decals_NormalsCopy
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -33,10 +29,6 @@ namespace Flux_Generated_Decals
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -57,16 +49,8 @@ namespace Flux_Generated_Decals
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
-		inline constexpr unsigned int kg_xNormalsTex_Set = 3;
-		inline constexpr unsigned int kg_xNormalsTex_Binding = 0;
-		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xNormalsTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
@@ -74,10 +58,6 @@ namespace Flux_Generated_Decals
 	// ----- Decals_Apply (Decals/Flux_Decals_Apply) -----
 	namespace Decals_Apply
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -91,10 +71,6 @@ namespace Flux_Generated_Decals
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -115,28 +91,12 @@ namespace Flux_Generated_Decals
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 3;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 0;
-		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xNormalsCopyTex_Name = "g_xNormalsCopyTex";
-		inline constexpr unsigned int kg_xNormalsCopyTex_Set = 3;
-		inline constexpr unsigned int kg_xNormalsCopyTex_Binding = 1;
-		inline constexpr unsigned int kg_xNormalsCopyTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xNormalsCopyTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kDecalBuffer_Name = "DecalBuffer";
-		inline constexpr unsigned int kDecalBuffer_Set = 3;
-		inline constexpr unsigned int kDecalBuffer_Binding = 2;
-		inline constexpr unsigned int kDecalBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hDecalBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}

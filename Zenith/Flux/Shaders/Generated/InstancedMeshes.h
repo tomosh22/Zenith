@@ -16,10 +16,6 @@ namespace Flux_Generated_InstancedMeshes
 	// ----- InstancedMesh_ToGBuffer (InstancedMeshes/Flux_InstancedMesh_ToGBuffer) -----
 	namespace InstancedMesh_ToGBuffer
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -33,10 +29,6 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -57,16 +49,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
-		inline constexpr unsigned int kDrawConstants_Set = 3;
-		inline constexpr unsigned int kDrawConstants_Binding = 0;
-		inline constexpr unsigned int kDrawConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
@@ -83,34 +67,14 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
-		inline constexpr const char* kg_axMaterials_Name = "g_axMaterials";
-		inline constexpr unsigned int kg_axMaterials_Set = 3;
-		inline constexpr unsigned int kg_axMaterials_Binding = 1;
-		inline constexpr unsigned int kg_axMaterials_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hg_axMaterials{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kTransformBuffer_Name = "TransformBuffer";
-		inline constexpr unsigned int kTransformBuffer_Set = 3;
-		inline constexpr unsigned int kTransformBuffer_Binding = 2;
-		inline constexpr unsigned int kTransformBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kAnimDataBuffer_Name = "AnimDataBuffer";
-		inline constexpr unsigned int kAnimDataBuffer_Set = 3;
-		inline constexpr unsigned int kAnimDataBuffer_Binding = 3;
-		inline constexpr unsigned int kAnimDataBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kVisibleIndexBuffer_Name = "VisibleIndexBuffer";
-		inline constexpr unsigned int kVisibleIndexBuffer_Set = 3;
-		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 4;
-		inline constexpr unsigned int kVisibleIndexBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kg_xAnimationTex_Name = "g_xAnimationTex";
-		inline constexpr unsigned int kg_xAnimationTex_Set = 3;
-		inline constexpr unsigned int kg_xAnimationTex_Binding = 5;
-		inline constexpr unsigned int kg_xAnimationTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
@@ -118,10 +82,6 @@ namespace Flux_Generated_InstancedMeshes
 	// ----- InstancedMesh_ToShadowmap (InstancedMeshes/Flux_InstancedMesh_ToShadowmap) -----
 	namespace InstancedMesh_ToShadowmap
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -135,10 +95,6 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -159,22 +115,10 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kShadowMatrices_Name = "ShadowMatrices";
-		inline constexpr unsigned int kShadowMatrices_Set = 3;
-		inline constexpr unsigned int kShadowMatrices_Binding = 0;
-		inline constexpr unsigned int kShadowMatrices_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 0u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
-		inline constexpr unsigned int kDrawConstants_Set = 3;
-		inline constexpr unsigned int kDrawConstants_Binding = 1;
-		inline constexpr unsigned int kDrawConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
@@ -191,34 +135,14 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
-		inline constexpr const char* kg_axMaterials_Name = "g_axMaterials";
-		inline constexpr unsigned int kg_axMaterials_Set = 3;
-		inline constexpr unsigned int kg_axMaterials_Binding = 2;
-		inline constexpr unsigned int kg_axMaterials_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hg_axMaterials{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kTransformBuffer_Name = "TransformBuffer";
-		inline constexpr unsigned int kTransformBuffer_Set = 3;
-		inline constexpr unsigned int kTransformBuffer_Binding = 3;
-		inline constexpr unsigned int kTransformBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kAnimDataBuffer_Name = "AnimDataBuffer";
-		inline constexpr unsigned int kAnimDataBuffer_Set = 3;
-		inline constexpr unsigned int kAnimDataBuffer_Binding = 4;
-		inline constexpr unsigned int kAnimDataBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kVisibleIndexBuffer_Name = "VisibleIndexBuffer";
-		inline constexpr unsigned int kVisibleIndexBuffer_Set = 3;
-		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 5;
-		inline constexpr unsigned int kVisibleIndexBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kg_xAnimationTex_Name = "g_xAnimationTex";
-		inline constexpr unsigned int kg_xAnimationTex_Set = 3;
-		inline constexpr unsigned int kg_xAnimationTex_Binding = 6;
-		inline constexpr unsigned int kg_xAnimationTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
@@ -226,10 +150,6 @@ namespace Flux_Generated_InstancedMeshes
 	// ----- InstanceCulling (InstancedMeshes/Flux_InstanceCulling) -----
 	namespace InstanceCulling
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -243,10 +163,6 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -267,16 +183,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kCullingConstants_Name = "CullingConstants";
-		inline constexpr unsigned int kCullingConstants_Set = 3;
-		inline constexpr unsigned int kCullingConstants_Binding = 0;
-		inline constexpr unsigned int kCullingConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hCullingConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct CullingConstants_CB
@@ -293,34 +201,14 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(CullingConstants_CB, m_umeshIndexCount) == 116, "CullingConstants.meshIndexCount offset drifted from Slang reflection");
 		static_assert(offsetof(CullingConstants_CB, m_fboundingSphereRadius) == 120, "CullingConstants.boundingSphereRadius offset drifted from Slang reflection");
 		static_assert(offsetof(CullingConstants_CB, m_fpadding) == 124, "CullingConstants.padding offset drifted from Slang reflection");
-		inline constexpr const char* kTransformBuffer_Name = "TransformBuffer";
-		inline constexpr unsigned int kTransformBuffer_Set = 3;
-		inline constexpr unsigned int kTransformBuffer_Binding = 1;
-		inline constexpr unsigned int kTransformBuffer_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kAnimDataBuffer_Name = "AnimDataBuffer";
-		inline constexpr unsigned int kAnimDataBuffer_Set = 3;
-		inline constexpr unsigned int kAnimDataBuffer_Binding = 2;
-		inline constexpr unsigned int kAnimDataBuffer_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kVisibleIndexBuffer_Name = "VisibleIndexBuffer";
-		inline constexpr unsigned int kVisibleIndexBuffer_Set = 3;
-		inline constexpr unsigned int kVisibleIndexBuffer_Binding = 3;
-		inline constexpr unsigned int kVisibleIndexBuffer_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kvisibleCount_Name = "visibleCount";
-		inline constexpr unsigned int kvisibleCount_Set = 3;
-		inline constexpr unsigned int kvisibleCount_Binding = 4;
-		inline constexpr unsigned int kvisibleCount_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kindirectInstanceCount_Name = "indirectInstanceCount";
-		inline constexpr unsigned int kindirectInstanceCount_Set = 3;
-		inline constexpr unsigned int kindirectInstanceCount_Binding = 5;
-		inline constexpr unsigned int kindirectInstanceCount_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hindirectInstanceCount{ 3u, 5u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 	}
@@ -328,10 +216,6 @@ namespace Flux_Generated_InstancedMeshes
 	// ----- InstanceReset (InstancedMeshes/Flux_InstanceReset) -----
 	namespace InstanceReset
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -345,10 +229,6 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -369,16 +249,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
-		inline constexpr unsigned int kDrawConstants_Set = 3;
-		inline constexpr unsigned int kDrawConstants_Binding = 0;
-		inline constexpr unsigned int kDrawConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
@@ -393,16 +265,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(DrawConstants_CB, m_upad0) == 4, "DrawConstants.pad0 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_upad1) == 8, "DrawConstants.pad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_upad2) == 12, "DrawConstants.pad2 offset drifted from Slang reflection");
-		inline constexpr const char* kvisibleCount_Name = "visibleCount";
-		inline constexpr unsigned int kvisibleCount_Set = 3;
-		inline constexpr unsigned int kvisibleCount_Binding = 1;
-		inline constexpr unsigned int kvisibleCount_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kindirectInstanceCount_Name = "indirectInstanceCount";
-		inline constexpr unsigned int kindirectInstanceCount_Set = 3;
-		inline constexpr unsigned int kindirectInstanceCount_Binding = 2;
-		inline constexpr unsigned int kindirectInstanceCount_DescriptorCount = 1;
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hindirectInstanceCount{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 	}

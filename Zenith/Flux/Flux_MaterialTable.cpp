@@ -2,6 +2,7 @@
 #include "Flux/Flux_MaterialTable.h"
 
 #include "Core/Zenith_Engine.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"  // IsMainThread() for the gather-thread contract
 #include "Flux/Flux_GraphicsImpl.h"     // BindlessAllocator() + FluxMemory/FluxGraphics reach-in
 #include "Flux/Flux_BackendTypes.h"     // Flux_MemoryManager full def for the neutral buffer calls
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -39,37 +40,37 @@ void Flux_MaterialTable::Shutdown()
 
 u_int Flux_MaterialTable::GetOrCreateIndex(Zenith_MaterialAsset* pxMaterial)
 {
+	// Contract: called only from the per-subsystem GATHER (Prepare) on the main
+	// thread — it mutates the index allocator + the record mirrors and resolves
+	// bindless texture slots. Workers later read the assigned index lock-free.
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+		"Flux_MaterialTable::GetOrCreateIndex: main-thread only (mutates the index allocator + writes bindless descriptors)");
+
 	if (!pxMaterial)
 	{
 		return Flux_BindlessAllocator::uRESERVED_DEFAULT_WHITE;   // 0 — never drawn
 	}
 
-	u_int         uIndex       = pxMaterial->GetMaterialTableIndex();
+	const u_int   uStored      = pxMaterial->GetMaterialTableIndex();
 	const u_int64 uStamp       = pxMaterial->GetEditStamp();
 	const u_int64 uBindlessGen = g_xEngine.FluxGraphics().BindlessAllocator().GetGeneration();
 
-	if (uIndex == uFLUX_INVALID_MATERIAL_INDEX)
+	// Pure decision (allocate / rebuild / reuse + mirror/high-water bookkeeping).
+	const Flux_MaterialSlotDecision xDecision = Flux_DecideMaterialSlot(
+		m_xIndexAllocator, m_xRecordStamp, m_xRecordBindlessGen, m_uMaxIndex,
+		uStored, uFLUX_INVALID_MATERIAL_INDEX, uStamp, uBindlessGen);
+
+	if (uStored != xDecision.m_uIndex)
 	{
-		uIndex = m_xIndexAllocator.Allocate();   // >= 1 (slot 0 reserved)
-		pxMaterial->SetMaterialTableIndex(uIndex);
-		if (uIndex > m_uMaxIndex)
-		{
-			m_uMaxIndex = uIndex;
-		}
-		BuildRecord(uIndex, pxMaterial);
-		m_xRecordStamp[uIndex]       = uStamp;
-		m_xRecordBindlessGen[uIndex] = uBindlessGen;
+		pxMaterial->SetMaterialTableIndex(xDecision.m_uIndex);
 	}
-	else if (m_xRecordStamp[uIndex] != uStamp || m_xRecordBindlessGen[uIndex] != uBindlessGen)
+	if (xDecision.m_bNeedsBuild)
 	{
-		// Material edited, or a bindless texture slot was freed/reallocated since the
-		// record was built → rebuild (re-resolves the texture indices).
-		BuildRecord(uIndex, pxMaterial);
-		m_xRecordStamp[uIndex]       = uStamp;
-		m_xRecordBindlessGen[uIndex] = uBindlessGen;
+		// (Re)build re-resolves the 9 texture slots into bindless indices.
+		BuildRecord(xDecision.m_uIndex, pxMaterial);
 	}
 
-	return uIndex;
+	return xDecision.m_uIndex;
 }
 
 void Flux_MaterialTable::BuildRecord(u_int uIndex, Zenith_MaterialAsset* pxMaterial)
@@ -107,3 +108,5 @@ void Flux_MaterialTable::Upload()
 	const size_t uActiveBytes = static_cast<size_t>(m_uMaxIndex + 1) * sizeof(Flux_MaterialGPU);
 	g_xEngine.FluxMemory().UploadBufferData(m_xBuffer.GetBuffer().m_xVRAMHandle, m_xRecords.data(), uActiveBytes);
 }
+
+#include "Flux/Flux_MaterialTable.Tests.inl"

@@ -16,10 +16,6 @@ namespace Flux_Generated_HiZ
 	// ----- HiZ_Generate (HiZ/Flux_HiZ_Generate) -----
 	namespace HiZ_Generate
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -33,10 +29,6 @@ namespace Flux_Generated_HiZ
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -57,28 +49,12 @@ namespace Flux_Generated_HiZ
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kg_xInputTex_Name = "g_xInputTex";
-		inline constexpr unsigned int kg_xInputTex_Set = 3;
-		inline constexpr unsigned int kg_xInputTex_Binding = 0;
-		inline constexpr unsigned int kg_xInputTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xInputTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xOutputTex_Name = "g_xOutputTex";
-		inline constexpr unsigned int kg_xOutputTex_Set = 3;
-		inline constexpr unsigned int kg_xOutputTex_Binding = 1;
-		inline constexpr unsigned int kg_xOutputTex_DescriptorCount = 1;
 		// kind: RWTexture
 		inline constexpr Flux_BindingHandle hg_xOutputTex{ 3u, 1u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
-		inline constexpr const char* kpushConstants_Name = "pushConstants";
-		inline constexpr unsigned int kpushConstants_Set = 3;
-		inline constexpr unsigned int kpushConstants_Binding = 2;
-		inline constexpr unsigned int kpushConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hpushConstants{ 3u, 2u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct pushConstants_CB

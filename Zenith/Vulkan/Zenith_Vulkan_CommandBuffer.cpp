@@ -365,6 +365,15 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 
 	for (u_int uDescSet = 0; uDescSet < uNumDescSets; uDescSet++)
 	{
+		// Externally-owned (borrowed) descriptor-set layouts are NOT allocated from
+		// the per-worker pool — today the BINDLESS table (set 2), bound via
+		// UseBindlessTextures from its dedicated 16384-entry pool (and, in Phase 5,
+		// the persistent GLOBAL/VIEW sets bound via BindPersistentSet). Allocating
+		// the unbounded bindless set here both clobbers that binding and trips a
+		// "16384 descriptors from a 10000-entry pool" validation warning. The
+		// dedicated bind path owns these sets; skip them.
+		if (!m_pxCurrentPipeline->m_xRootSig.m_abOwnsDescSetLayout[uDescSet]) continue;
+
 		if (m_pxVulkan->ShouldOnlyUpdateDirtyDescriptors() && !(m_uDescriptorDirty & (1 << uDescSet))) continue;
 
 		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];

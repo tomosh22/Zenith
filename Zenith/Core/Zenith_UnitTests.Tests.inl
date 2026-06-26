@@ -16846,11 +16846,11 @@ ZENITH_TEST(Codegen, CodegenContainsBindingMetadata) { Zenith_UnitTests::TestCod
 
 void Zenith_UnitTests::TestCodegenContainsBindingMetadata(){
 
-	// Pin the binding-metadata emission shape — a name, set, binding, and
-	// descriptor-count line per reflected resource. The runtime root-sig
-	// builder doesn't read these constants today (it goes through reflection
-	// directly), but downstream code that imports the generated header to
-	// avoid string-keyed lookups depends on them being stable.
+	// Pin the binding-metadata emission shape — one typed Flux_BindingHandle per
+	// reflected resource carrying { set, binding, kind, count } — plus the
+	// human-readable kind comment. The runtime binder consumes these h<Name>
+	// handles directly; the older loose k<Name>_Set/_Binding/_DescriptorCount/_Name
+	// consts were superseded by the handle and pruned.
 	Flux_ShaderReflection xRefl;
 
 	Flux_ReflectedBinding xTex;
@@ -16868,10 +16868,8 @@ void Zenith_UnitTests::TestCodegenContainsBindingMetadata(){
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestMetadata", &xPR, 1);
 
-	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_Name = \"g_xAlbedoTex\"") != std::string::npos, "kName constant should reflect the original binding name");
-	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_Set = 1") != std::string::npos, "kSet constant should reflect the binding's descriptor set");
-	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_Binding = 7") != std::string::npos, "kBinding constant should reflect the binding slot");
-	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_DescriptorCount = 1") != std::string::npos, "kDescriptorCount should reflect the descriptor count");
+	ZENITH_ASSERT_TRUE(str.find("Flux_BindingHandle hg_xAlbedoTex{ 1u, 7u,") != std::string::npos,
+		"A typed binding handle carrying the reflected set + binding should be emitted");
 	ZENITH_ASSERT_TRUE(str.find("// kind: Texture") != std::string::npos, "Resource kind comment should be present");
 
 }
@@ -17112,11 +17110,11 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 
 	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestIdentifier", &xPR, 1);
 
-	// The constant identifier should have the dot replaced with underscore;
-	// the kName string literal should keep the original shader-side name so
-	// runtime lookups still work.
-	ZENITH_ASSERT_TRUE(str.find("kframe_lights_Name = \"frame.lights\"") != std::string::npos, "Sanitised identifier should replace '.' with '_' but kName literal should preserve original");
-	ZENITH_ASSERT_TRUE(str.find("frame.lights_Set") == std::string::npos, "Generated identifier should never contain raw '.'");
+	// A binding name with a dot is not a valid C++ identifier, so the generator
+	// sanitises it (dot -> underscore) for the emitted handle name; the raw dotted
+	// name no longer appears anywhere in the header.
+	ZENITH_ASSERT_TRUE(str.find("hframe_lights{") != std::string::npos, "Sanitised identifier should replace '.' with '_' in the emitted handle name");
+	ZENITH_ASSERT_TRUE(str.find("frame.lights") == std::string::npos, "Generated header should never contain the raw dotted binding name");
 
 }
 

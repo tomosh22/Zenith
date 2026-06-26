@@ -16,10 +16,6 @@ namespace Flux_Generated_MaterialPreview
 	// ----- MaterialPreview_Background (MaterialPreview/Flux_MaterialPreview_Background) -----
 	namespace MaterialPreview_Background
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -33,10 +29,6 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -57,16 +49,8 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kg_xCubemap_Name = "g_xCubemap";
-		inline constexpr unsigned int kg_xCubemap_Set = 3;
-		inline constexpr unsigned int kg_xCubemap_Binding = 0;
-		inline constexpr unsigned int kg_xCubemap_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCubemap{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
@@ -74,10 +58,6 @@ namespace Flux_Generated_MaterialPreview
 	// ----- MaterialPreview_Tonemap (MaterialPreview/Flux_MaterialPreview_Tonemap) -----
 	namespace MaterialPreview_Tonemap
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -91,10 +71,6 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -115,16 +91,8 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kPreviewTonemapConstants_Name = "PreviewTonemapConstants";
-		inline constexpr unsigned int kPreviewTonemapConstants_Set = 3;
-		inline constexpr unsigned int kPreviewTonemapConstants_Binding = 0;
-		inline constexpr unsigned int kPreviewTonemapConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hPreviewTonemapConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct PreviewTonemapConstants_CB
@@ -134,10 +102,6 @@ namespace Flux_Generated_MaterialPreview
 		};
 		static_assert(sizeof(PreviewTonemapConstants_CB) == 16, "PreviewTonemapConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(PreviewTonemapConstants_CB, m_fg_fExposure) == 0, "PreviewTonemapConstants.g_fExposure offset drifted from Slang reflection");
-		inline constexpr const char* kg_xHDRTex_Name = "g_xHDRTex";
-		inline constexpr unsigned int kg_xHDRTex_Set = 3;
-		inline constexpr unsigned int kg_xHDRTex_Binding = 1;
-		inline constexpr unsigned int kg_xHDRTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xHDRTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
@@ -145,10 +109,6 @@ namespace Flux_Generated_MaterialPreview
 	// ----- MaterialPreview_Forward (MaterialPreview/Flux_MaterialPreview_Forward) -----
 	namespace MaterialPreview_Forward
 	{
-		inline constexpr const char* kg_xGlobal_Name = "g_xGlobal";
-		inline constexpr unsigned int kg_xGlobal_Set = 0;
-		inline constexpr unsigned int kg_xGlobal_Binding = 0;
-		inline constexpr unsigned int kg_xGlobal_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xGlobal_CB
@@ -162,10 +122,6 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
 		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
-		inline constexpr const char* kg_xView_Name = "g_xView";
-		inline constexpr unsigned int kg_xView_Set = 1;
-		inline constexpr unsigned int kg_xView_Binding = 0;
-		inline constexpr unsigned int kg_xView_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xView_CB
@@ -186,16 +142,8 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
-		inline constexpr const char* kg_axTextures_Name = "g_axTextures";
-		inline constexpr unsigned int kg_axTextures_Set = 2;
-		inline constexpr unsigned int kg_axTextures_Binding = 0;
-		inline constexpr unsigned int kg_axTextures_DescriptorCount = 0;
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		inline constexpr const char* kTranslucencyConstants_Name = "TranslucencyConstants";
-		inline constexpr unsigned int kTranslucencyConstants_Set = 3;
-		inline constexpr unsigned int kTranslucencyConstants_Binding = 0;
-		inline constexpr unsigned int kTranslucencyConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hTranslucencyConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct TranslucencyConstants_CB
@@ -219,76 +167,28 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bShadowsEnabled) == 16, "TranslucencyConstants.g_bShadowsEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bDynamicLightsEnabled) == 20, "TranslucencyConstants.g_bDynamicLightsEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fAmbientFallbackIntensity) == 24, "TranslucencyConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
-		inline constexpr const char* kShadowMatrices_Name = "ShadowMatrices";
-		inline constexpr unsigned int kShadowMatrices_Set = 3;
-		inline constexpr unsigned int kShadowMatrices_Binding = 1;
-		inline constexpr unsigned int kShadowMatrices_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kg_xCSM0_Name = "g_xCSM0";
-		inline constexpr unsigned int kg_xCSM0_Set = 3;
-		inline constexpr unsigned int kg_xCSM0_Binding = 2;
-		inline constexpr unsigned int kg_xCSM0_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM0{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xCSM1_Name = "g_xCSM1";
-		inline constexpr unsigned int kg_xCSM1_Set = 3;
-		inline constexpr unsigned int kg_xCSM1_Binding = 3;
-		inline constexpr unsigned int kg_xCSM1_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM1{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xCSM2_Name = "g_xCSM2";
-		inline constexpr unsigned int kg_xCSM2_Set = 3;
-		inline constexpr unsigned int kg_xCSM2_Binding = 4;
-		inline constexpr unsigned int kg_xCSM2_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM2{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xCSM3_Name = "g_xCSM3";
-		inline constexpr unsigned int kg_xCSM3_Set = 3;
-		inline constexpr unsigned int kg_xCSM3_Binding = 5;
-		inline constexpr unsigned int kg_xCSM3_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM3{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xBRDFLUT_Name = "g_xBRDFLUT";
-		inline constexpr unsigned int kg_xBRDFLUT_Set = 3;
-		inline constexpr unsigned int kg_xBRDFLUT_Binding = 6;
-		inline constexpr unsigned int kg_xBRDFLUT_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xIrradianceMap_Name = "g_xIrradianceMap";
-		inline constexpr unsigned int kg_xIrradianceMap_Set = 3;
-		inline constexpr unsigned int kg_xIrradianceMap_Binding = 7;
-		inline constexpr unsigned int kg_xIrradianceMap_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kg_xPrefilteredMap_Name = "g_xPrefilteredMap";
-		inline constexpr unsigned int kg_xPrefilteredMap_Set = 3;
-		inline constexpr unsigned int kg_xPrefilteredMap_Binding = 8;
-		inline constexpr unsigned int kg_xPrefilteredMap_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		inline constexpr const char* kLightBuffer_Name = "LightBuffer";
-		inline constexpr unsigned int kLightBuffer_Set = 3;
-		inline constexpr unsigned int kLightBuffer_Binding = 9;
-		inline constexpr unsigned int kLightBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 9u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kClusterLightCounts_Name = "ClusterLightCounts";
-		inline constexpr unsigned int kClusterLightCounts_Set = 3;
-		inline constexpr unsigned int kClusterLightCounts_Binding = 10;
-		inline constexpr unsigned int kClusterLightCounts_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 10u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kClusterLightIndices_Name = "ClusterLightIndices";
-		inline constexpr unsigned int kClusterLightIndices_Set = 3;
-		inline constexpr unsigned int kClusterLightIndices_Binding = 11;
-		inline constexpr unsigned int kClusterLightIndices_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 11u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		inline constexpr const char* kDrawConstants_Name = "DrawConstants";
-		inline constexpr unsigned int kDrawConstants_Set = 4;
-		inline constexpr unsigned int kDrawConstants_Binding = 0;
-		inline constexpr unsigned int kDrawConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
@@ -305,10 +205,6 @@ namespace Flux_Generated_MaterialPreview
 		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
-		inline constexpr const char* kg_axMaterials_Name = "g_axMaterials";
-		inline constexpr unsigned int kg_axMaterials_Set = 4;
-		inline constexpr unsigned int kg_axMaterials_Binding = 1;
-		inline constexpr unsigned int kg_axMaterials_DescriptorCount = 1;
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hg_axMaterials{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}
