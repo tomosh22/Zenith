@@ -206,6 +206,11 @@ struct Flux_TerrainRenderRecord
 	Flux_TerrainStreamingState* m_pxState        = nullptr;
 	Zenith_MaterialAsset*       m_apxMaterials[4] = { nullptr, nullptr, nullptr, nullptr };
 	Zenith_TextureAsset*        m_pxSplatmap      = nullptr;
+	// Phase 4c: GPU material-table index per splat slot, resolved on the main
+	// thread in Flux_TerrainImpl::PreRenderUpdate (null slots resolve to the
+	// engine blank material). The worker ExecuteGBuffer copies these into the
+	// terrain draw constants; the shader samples g_axMaterials[idx] -> g_axTextures.
+	u_int                       m_auMaterialTableIndices[4] = { 0u, 0u, 0u, 0u };
 };
 
 // The EC side sets this to its gatherer (defined in Zenith_TerrainComponent.cpp, which

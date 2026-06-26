@@ -19,52 +19,17 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_MaterialBinding.h"
+#include "Flux/Flux_MaterialTable.h"   // Phase 4c: terrain registers its 4 layer materials into the GPU table
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Terrain.h"
 
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
-// Material-texture binding table used by ExecuteGBuffer's slot/channel loop.
-// Names are codegen-emitted const-char* literals from Flux_Generated_Terrain
-// so each entry has a stable pointer identity — required by Flux_ShaderBinder's
-// pointer-identity name cache. Composing names at runtime into a reused
-// stack buffer would alias every binding to the first cache hit.
-namespace
-{
-	namespace TerrainShader = Flux_Generated_Terrain::Terrain_ToGBuffer;
-	struct TerrainTexBinding
-	{
-		Flux_BindingHandle m_xHandle;
-		u_int       m_uMaterialSlot;
-		Zenith_TextureAsset* (Zenith_MaterialAsset::*m_pfnGet)();
-	};
-	static const TerrainTexBinding s_axTerrainTexBindings[] = {
-		// Slot 0
-		{ TerrainShader::hg_xDiffuseTex0,           0, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::hg_xNormalTex0,            0, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::hg_xRoughnessMetallicTex0, 0, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::hg_xOcclusionTex0,         0, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::hg_xEmissiveTex0,          0, &Zenith_MaterialAsset::GetEmissiveTexture          },
-		// Slot 1
-		{ TerrainShader::hg_xDiffuseTex1,           1, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::hg_xNormalTex1,            1, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::hg_xRoughnessMetallicTex1, 1, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::hg_xOcclusionTex1,         1, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::hg_xEmissiveTex1,          1, &Zenith_MaterialAsset::GetEmissiveTexture          },
-		// Slot 2
-		{ TerrainShader::hg_xDiffuseTex2,           2, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::hg_xNormalTex2,            2, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::hg_xRoughnessMetallicTex2, 2, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::hg_xOcclusionTex2,         2, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::hg_xEmissiveTex2,          2, &Zenith_MaterialAsset::GetEmissiveTexture          },
-		// Slot 3
-		{ TerrainShader::hg_xDiffuseTex3,           3, &Zenith_MaterialAsset::GetDiffuseTexture           },
-		{ TerrainShader::hg_xNormalTex3,            3, &Zenith_MaterialAsset::GetNormalTexture            },
-		{ TerrainShader::hg_xRoughnessMetallicTex3, 3, &Zenith_MaterialAsset::GetRoughnessMetallicTexture },
-		{ TerrainShader::hg_xOcclusionTex3,         3, &Zenith_MaterialAsset::GetOcclusionTexture         },
-		{ TerrainShader::hg_xEmissiveTex3,          3, &Zenith_MaterialAsset::GetEmissiveTexture          },
-	};
-}
+// Phase 4c: the per-slot material-texture binding table (s_axTerrainTexBindings,
+// 4 slots x 5 channels) was deleted — terrain layer textures are now bindless,
+// sampled in the shader via g_axTextures[g_axMaterials[slotIdx].<map>Idx]. The 4
+// slots' material-table indices are resolved on the main thread and ride the
+// terrain material constants.
 
 // Fallback splatmap used when a Zenith_TerrainComponent has no splatmap
 // texture set. 1x1 RGBA8 with R=255 (full weight on material slot 0), other
@@ -377,6 +342,26 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// Wave 3: gather neutral render records EC-side (no Flux<-EntityComponent edge).
 	if (g_pfnZenithTerrainGather) g_pfnZenithTerrainGather(m_xTerrainRenderRecords);
 
+	// Phase 4c: register each terrain layer material into the GPU material table
+	// (MAIN THREAD — GetOrCreateIndex mutates the index allocator + writes bindless
+	// descriptors). A null slot resolves to the engine blank material so its
+	// per-channel defaults (white albedo / flat normal / ...) get real bindless
+	// indices, matching the pre-4c blank-material fallback. The resolved indices
+	// are stored on the record for the worker ExecuteGBuffer to read lock-free.
+	{
+		Flux_MaterialTable& xMatTable = g_xEngine.FluxGraphics().MaterialTable();
+		Zenith_MaterialAsset* pxBlank = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+		for (u_int u = 0; u < m_xTerrainRenderRecords.GetSize(); u++)
+		{
+			Flux_TerrainRenderRecord& xRec = m_xTerrainRenderRecords.Get(u);
+			for (u_int s = 0; s < 4; s++)
+			{
+				Zenith_MaterialAsset* pxMat = xRec.m_apxMaterials[s] ? xRec.m_apxMaterials[s] : pxBlank;
+				xRec.m_auMaterialTableIndices[s] = xMatTable.GetOrCreateIndex(pxMat);
+			}
+		}
+	}
+
 	g_xEngine.FluxMemory().UploadBufferData(m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
 	// ========== Per-Terrain Streaming + Chunk Data Upload ==========
@@ -485,6 +470,14 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	xBinder.BindCBV(TGB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindCBV(TGB::hTerrainConstants, &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
 
+	// Phase 4c: bindless materials. g_axMaterials (a PassParams member, set 3) is
+	// bound once here — it persists in the set-3 staging and survives the per-draw
+	// BindDrawConstants (same set, no reset); the per-slot material indices ride the
+	// terrain material constants. UseBindlessTextures(2) binds the g_axTextures
+	// table. Mirrors the StaticMeshes G-buffer pattern.
+	xBinder.BindSRV_Buffer(TGB::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	pxCmdList->UseBindlessTextures(2);
+
 	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)
 	{
 		const Flux_TerrainRenderRecord& xRec = xTerrain.m_xTerrainRenderRecords.Get(u);
@@ -493,10 +486,14 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 
 		Zenith_MaterialAsset* apxMaterials[4] = { xRec.m_apxMaterials[0], xRec.m_apxMaterials[1], xRec.m_apxMaterials[2], xRec.m_apxMaterials[3] };
 
-		// Build and push terrain material constants (288 bytes) - uses scratch buffer in set 1
+		// Build and push terrain material constants - uses scratch buffer in set 3.
 		TerrainMaterialDrawConstants xTerrainMatConst;
 		BuildTerrainMaterialDrawConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
 			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
+		// Phase 4c: the per-slot GPU material-table indices (resolved on the main
+		// thread in PreRenderUpdate). The shader loads g_axMaterials[idx] per slot
+		// and samples its bindless texture indices from g_axTextures.
+		for (u_int s = 0; s < 4; s++) xTerrainMatConst.m_auMaterialTableIndices[s] = xRec.m_auMaterialTableIndices[s];
 		xBinder.BindDrawConstants(TGB::hTerrainMaterialConstants, &xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		// Bind LOD level buffer (per-terrain, set 1). The shader declares this
@@ -516,29 +513,11 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		xBinder.BindSRV(TGB::hg_xSplatmap,
 			pxSplatmap ? &pxSplatmap->m_xSRV : &xTerrain.GetFallbackSplatmapSRV());
 
-		// Bind material textures (set 1, named bindings) — 4 slots × 5 channels.
-		// Per-channel defaulting (white / normal-up) is already handled by
-		// Zenith_MaterialAsset::GetXxxTexture(); the fallback here is at the
-		// slot level: a null material falls back to FluxGraphics().m_xBlankMaterial,
-		// whose channel getters return the engine-wide defaults. The binding
-		// table at file scope (s_axTerrainTexBindings) holds stable codegen
-		// name pointers — see comment there for why.
-		auto ResolveSRV = [](Zenith_MaterialAsset* pxMat,
-			Zenith_TextureAsset* (Zenith_MaterialAsset::*pfn)()) -> const Flux_ShaderResourceView*
-		{
-			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
-			Zenith_Assert(pxResolved != nullptr, "FluxGraphics().m_xBlankMaterial not initialised — FluxGraphics().Initialise must run before terrain renders");
-			Zenith_TextureAsset* pxTex = (pxResolved->*pfn)();
-			Zenith_Assert(pxTex != nullptr, "Material channel getter returned null — Zenith_MaterialAsset defaults should guarantee non-null");
-			return &pxTex->m_xSRV;
-		};
-
-		for (const TerrainTexBinding& xB : s_axTerrainTexBindings)
-		{
-			xBinder.BindSRV(
-				xB.m_xHandle,
-				ResolveSRV(apxMaterials[xB.m_uMaterialSlot], xB.m_pfnGet));
-		}
+		// Phase 4c: the 4 slots' material textures are now bindless — sampled in
+		// the shader via g_axTextures[g_axMaterials[idx].<map>Idx]. No per-channel
+		// bind loop; the indices were resolved on the main thread (null slots ->
+		// the engine blank material, whose record carries the default-channel
+		// bindless indices).
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer

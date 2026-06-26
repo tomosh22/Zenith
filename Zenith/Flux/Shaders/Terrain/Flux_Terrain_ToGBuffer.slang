@@ -19,6 +19,7 @@
 
 #include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
 import Common.Material;
+import Common.MaterialTable;        // Phase 4c: MaterialGPU record (bindless terrain layer textures)
 import Common.GBuffer;
 
 struct VsIn
@@ -60,42 +61,23 @@ struct TerrainMaterialConstantsLayout
 	float4 g_axEmissiveParams[4];  // (R, G, B, intensity)
 	float4 g_xTerrainParams;       // (originX, originZ, sizeX, sizeZ)
 	float4 g_xTerrainParams2;      // (materialCount-bits, debugMode-bits, 0, 0)
+	uint4  g_xMaterialTableIndices; // Phase 4c: GPU material-table index per splat slot (draw-uniform)
 };
 
 // All terrain pass-frequency resources land in one ParameterBlock at set 3.
-// The 20 material samplers (g_xDiffuseTex0..g_xEmissiveTex3) + splatmap are the
-// per-pass texture table; LODLevelBuffer is read-only in the vertex stage so
-// Slang emits the NonWritable decoration (vertexPipelineStoresAndAtomics is off).
+// Phase 4c: the 20 per-material samplers are gone — the 4 layers' textures are
+// bindless, looked up via g_axTextures[g_axMaterials[slotIdx].<map>Idx]. g_axMaterials
+// (the GPU material table) is a member here (bound once per pass; binding-0
+// TerrainConstants is always bound so the multi-member block is safe). The splatmap
+// stays a named sampler. LODLevelBuffer is read-only in the vertex stage so Slang
+// emits the NonWritable decoration (vertexPipelineStoresAndAtomics is off).
 struct PassParams
 {
 	ConstantBuffer<TerrainConstantsLayout>         TerrainConstants;
 	ConstantBuffer<TerrainMaterialConstantsLayout> TerrainMaterialConstants;
 	StructuredBuffer<uint>                         LODLevelBuffer;
 	Sampler2D g_xSplatmap;
-
-	Sampler2D g_xDiffuseTex0;
-	Sampler2D g_xNormalTex0;
-	Sampler2D g_xRoughnessMetallicTex0;
-	Sampler2D g_xOcclusionTex0;
-	Sampler2D g_xEmissiveTex0;
-
-	Sampler2D g_xDiffuseTex1;
-	Sampler2D g_xNormalTex1;
-	Sampler2D g_xRoughnessMetallicTex1;
-	Sampler2D g_xOcclusionTex1;
-	Sampler2D g_xEmissiveTex1;
-
-	Sampler2D g_xDiffuseTex2;
-	Sampler2D g_xNormalTex2;
-	Sampler2D g_xRoughnessMetallicTex2;
-	Sampler2D g_xOcclusionTex2;
-	Sampler2D g_xEmissiveTex2;
-
-	Sampler2D g_xDiffuseTex3;
-	Sampler2D g_xNormalTex3;
-	Sampler2D g_xRoughnessMetallicTex3;
-	Sampler2D g_xOcclusionTex3;
-	Sampler2D g_xEmissiveTex3;
+	StructuredBuffer<MaterialGPU>                  g_axMaterials;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -219,32 +201,42 @@ GBufferOut fsMain(VsOut input)
 	float2 xUV2 = TransformUV(input.uv, g_xPassSet.TerrainMaterialConstants.g_axUVParams[2].xy, g_xPassSet.TerrainMaterialConstants.g_axUVParams[2].zw);
 	float2 xUV3 = TransformUV(input.uv, g_xPassSet.TerrainMaterialConstants.g_axUVParams[3].xy, g_xPassSet.TerrainMaterialConstants.g_axUVParams[3].zw);
 
+	// Resolve each splat slot's GPU material record + its 5 bindless textures.
+	// The material-table index is draw-uniform (from the per-draw constants), so
+	// the g_axTextures[] lookups are uniform → no NonUniformResourceIndex. Slot
+	// texture layout mirrors Flux_MaterialGPU: g_xTexIdx0 = (baseColor, normal,
+	// roughnessMetallic, occlusion); g_xTexIdx1.x = emissive.
+	MaterialGPU xMat0 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[0]];
+	MaterialGPU xMat1 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[1]];
+	MaterialGPU xMat2 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[2]];
+	MaterialGPU xMat3 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[3]];
+
 	// Per-material samples. Roughness/metallic come back unmultiplied
 	// here because we need to blend the per-material multipliers in
 	// after the splatmap weighting.
-	float4 xDiffuse0 = SampleDiffuseWithBaseColor(g_xPassSet.g_xDiffuseTex0, xUV0, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[0]);
-	float3 xNormalMap0 = g_xPassSet.g_xNormalTex0.Sample(xUV0).xyz * 2.0 - 1.0;
-	float2 xRM0       = g_xPassSet.g_xRoughnessMetallicTex0.Sample(xUV0).gb;
-	float  fOcc0      = SampleOcclusion(g_xPassSet.g_xOcclusionTex0, xUV0, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[0].z);
-	float3 xEm0       = SampleEmissiveRGB(g_xPassSet.g_xEmissiveTex0, xUV0, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].w);
+	float4 xDiffuse0 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.x], xUV0, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[0]);
+	float3 xNormalMap0 = g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.y].Sample(xUV0).xyz * 2.0 - 1.0;
+	float2 xRM0       = g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.z].Sample(xUV0).gb;
+	float  fOcc0      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.w], xUV0, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[0].z);
+	float3 xEm0       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx1.x], xUV0, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].w);
 
-	float4 xDiffuse1 = SampleDiffuseWithBaseColor(g_xPassSet.g_xDiffuseTex1, xUV1, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[1]);
-	float3 xNormalMap1 = g_xPassSet.g_xNormalTex1.Sample(xUV1).xyz * 2.0 - 1.0;
-	float2 xRM1       = g_xPassSet.g_xRoughnessMetallicTex1.Sample(xUV1).gb;
-	float  fOcc1      = SampleOcclusion(g_xPassSet.g_xOcclusionTex1, xUV1, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[1].z);
-	float3 xEm1       = SampleEmissiveRGB(g_xPassSet.g_xEmissiveTex1, xUV1, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].w);
+	float4 xDiffuse1 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.x], xUV1, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[1]);
+	float3 xNormalMap1 = g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.y].Sample(xUV1).xyz * 2.0 - 1.0;
+	float2 xRM1       = g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.z].Sample(xUV1).gb;
+	float  fOcc1      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.w], xUV1, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[1].z);
+	float3 xEm1       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx1.x], xUV1, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].w);
 
-	float4 xDiffuse2 = SampleDiffuseWithBaseColor(g_xPassSet.g_xDiffuseTex2, xUV2, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[2]);
-	float3 xNormalMap2 = g_xPassSet.g_xNormalTex2.Sample(xUV2).xyz * 2.0 - 1.0;
-	float2 xRM2       = g_xPassSet.g_xRoughnessMetallicTex2.Sample(xUV2).gb;
-	float  fOcc2      = SampleOcclusion(g_xPassSet.g_xOcclusionTex2, xUV2, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[2].z);
-	float3 xEm2       = SampleEmissiveRGB(g_xPassSet.g_xEmissiveTex2, xUV2, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].w);
+	float4 xDiffuse2 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.x], xUV2, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[2]);
+	float3 xNormalMap2 = g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.y].Sample(xUV2).xyz * 2.0 - 1.0;
+	float2 xRM2       = g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.z].Sample(xUV2).gb;
+	float  fOcc2      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.w], xUV2, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[2].z);
+	float3 xEm2       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx1.x], xUV2, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].w);
 
-	float4 xDiffuse3 = SampleDiffuseWithBaseColor(g_xPassSet.g_xDiffuseTex3, xUV3, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[3]);
-	float3 xNormalMap3 = g_xPassSet.g_xNormalTex3.Sample(xUV3).xyz * 2.0 - 1.0;
-	float2 xRM3       = g_xPassSet.g_xRoughnessMetallicTex3.Sample(xUV3).gb;
-	float  fOcc3      = SampleOcclusion(g_xPassSet.g_xOcclusionTex3, xUV3, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[3].z);
-	float3 xEm3       = SampleEmissiveRGB(g_xPassSet.g_xEmissiveTex3, xUV3, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].w);
+	float4 xDiffuse3 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.x], xUV3, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[3]);
+	float3 xNormalMap3 = g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.y].Sample(xUV3).xyz * 2.0 - 1.0;
+	float2 xRM3       = g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.z].Sample(xUV3).gb;
+	float  fOcc3      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.w], xUV3, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[3].z);
+	float3 xEm3       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx1.x], xUV3, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].w);
 
 	// Splatmap-weighted blend.
 	float4 xDiffuse = xDiffuse0 * xWeights.r + xDiffuse1 * xWeights.g

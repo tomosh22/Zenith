@@ -57,8 +57,14 @@ struct TerrainMaterialDrawConstants
 	// Terrain params (32 bytes)
 	Zenith_Maths::Vector4 m_xTerrainParams;        // 16 bytes (originX, originZ, sizeX, sizeZ)
 	Zenith_Maths::Vector4 m_xTerrainParams2;       // 16 bytes (materialCount as uint bits, debugMode as uint bits, 0, 0)
+
+	// Phase 4c: GPU material-table index per splat slot. The shader loads
+	// g_axMaterials[idx] for each of the 4 slots and samples its bindless texture
+	// indices from g_axTextures[]. Draw-uniform (one set per terrain draw) →
+	// no NonUniformResourceIndex. Mirrors uint4 g_xMaterialTableIndices in the shader.
+	u_int                 m_auMaterialTableIndices[4]; // 16 bytes
 };
-static_assert(sizeof(TerrainMaterialDrawConstants) == 288, "TerrainMaterialDrawConstants must be 288 bytes");
+static_assert(sizeof(TerrainMaterialDrawConstants) == 304, "TerrainMaterialDrawConstants must be 304 bytes (288 + uint4 material-table indices)");
 
 // ============================================================================
 // Helper Functions
@@ -107,4 +113,8 @@ inline void BuildTerrainMaterialDrawConstants(
 	memcpy(&xParams2.x, &uMatCount, sizeof(u_int));
 	memcpy(&xParams2.y, &uDebugMode, sizeof(u_int));
 	xOut.m_xTerrainParams2 = xParams2;
+
+	// Default to the reserved table slot 0; the caller fills the real per-slot
+	// material-table indices (resolved on the main thread in PreRenderUpdate).
+	for (u_int u = 0; u < 4; u++) xOut.m_auMaterialTableIndices[u] = 0u;
 }
