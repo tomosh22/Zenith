@@ -343,6 +343,15 @@ public:
     //           false for SRV / read-only binds.
     static void AssertBoundResourceDeclared(Flux_VRAMHandle xVRAMHandle, bool bIsWrite, const char* szBindCall);
 
+    // Phase 5.5: does the given pass declare a graph Read() of this VRAM handle
+    // (with an access compatible with an SRV read)? Pure query over the pass's
+    // declared reads — no TLS, no graph state. Used by the VIEW/GLOBAL graph-Read
+    // validator (Flux_ViewSetBinding) to confirm a pass that samples a persistent
+    // VIEW-set graph resource still declared the Read() that drives barriers
+    // (once 5.4 moves those resources off the per-pass bind path that
+    // AssertBoundResourceDeclared currently guards). Returns false for a null pass.
+    static bool IsHandleDeclaredRead(const Flux_RenderGraph_Pass* pxPass, Flux_VRAMHandle xVRAMHandle);
+
     // Per-pass resource declarations. Prefer the fluent Flux_PassBuilder API
     // returned from AddPass for inline chains; these handle-taking overloads
     // exist for conditional / loop-driven declarations that can't fit a chain.

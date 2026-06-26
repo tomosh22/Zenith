@@ -481,6 +481,9 @@
     <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_ViewSetBinding.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp">
       <Filter>Flux\Fog</Filter>
     </ClCompile>
@@ -2547,10 +2550,16 @@
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.Tests.inl">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_PersistentSetLayouts.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h">
@@ -2578,6 +2587,12 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.Tests.inl">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_WorkDistribution.h">

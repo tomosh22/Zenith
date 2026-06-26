@@ -78,8 +78,6 @@ struct PassParams
 	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
 	StructuredBuffer<float4x4> ShadowMatrices;
 
-	Sampler2DArray g_xCSM;   // 4-cascade depth array (Phase 4b collapse)
-
 	Sampler2D   g_xBRDFLUT;
 	SamplerCube g_xIrradianceMap;
 	SamplerCube g_xPrefilteredMap;
@@ -95,7 +93,6 @@ ParameterBlock<PassParams> g_xPassSet;   // -> set 3
 struct DrawParams
 {
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;   // -> set 4 (declared after PassParams)
 
@@ -142,7 +139,7 @@ float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, f
 	for (int i = 0; i < 4; i++)
 	{
 		float2 xSampleUV = xSamplePos + axOffsets[i];
-		float4 shadowDepths = g_xPassSet.g_xCSM.Gather(float3(xSampleUV, float(iCascade)));
+		float4 shadowDepths = g_xViewSet.g_xCSM.Gather(float3(xSampleUV, float(iCascade)));
 
 		float4 comparison = step(float4(fBiasedDepth, fBiasedDepth, fBiasedDepth, fBiasedDepth), shadowDepths);
 		fShadow += dot(comparison, float4(1.0, 1.0, 1.0, 1.0));
@@ -323,7 +320,7 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
 
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+	MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
 
 	// Bindless material textures (draw-uniform index → no NonUniformResourceIndex).
 	Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];

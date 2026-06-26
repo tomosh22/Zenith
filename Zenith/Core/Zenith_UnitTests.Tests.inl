@@ -15814,6 +15814,39 @@ ZENITH_TEST(Core, RenderGraphLayerAwareTransientRecording)
 	ZENITH_ASSERT_EQ(xR.m_uLayerCount, FLUX_RG_ALL_LAYERS, "reader must span all layers (FLUX_RG_ALL_LAYERS)");
 }
 
+// Phase 5.5: Flux_RenderGraph::IsHandleDeclaredRead — the graph-side resolver the
+// VIEW/GLOBAL graph-Read() validator uses to compute "did this pass declare a Read of
+// the sampled resource". A handle counts as read-declared if it is in the pass's reads
+// OR appears as a READWRITE_UAV on its writes (mirroring AssertBoundResourceDeclared's
+// SRV-bind acceptance — a read-modify-write resource may be declared on either list).
+// Device-free: attachments carry hand-set VRAM handles, no Compile/allocation needed.
+ZENITH_TEST(Core, RenderGraphIsHandleDeclaredRead)
+{
+	Flux_RenderGraph xGraph;
+
+	Flux_RenderAttachment xReadImg;  xReadImg.m_xVRAMHandle.SetValue(1001u);
+	Flux_RenderAttachment xRwImg;    xRwImg.m_xVRAMHandle.SetValue(2002u);
+
+	Flux_PassHandle xPass = xGraph.AddPass("IHDR_Test", EmptyRecordCallback);
+	xGraph.Read (xPass, xReadImg, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Write(xPass, xRwImg,   RESOURCE_ACCESS_READWRITE_UAV);
+
+	const Flux_RenderGraph_Pass* pxPass = xGraph.GetPasses().Get(xPass.m_uIndex);
+
+	Flux_VRAMHandle xReadH;  xReadH.SetValue(1001u);   // declared via Read()
+	Flux_VRAMHandle xRwH;    xRwH.SetValue(2002u);     // declared as READWRITE_UAV on Write()
+	Flux_VRAMHandle xOtherH; xOtherH.SetValue(3003u);  // never declared
+
+	ZENITH_ASSERT_TRUE(Flux_RenderGraph::IsHandleDeclaredRead(pxPass, xReadH),
+		"a handle declared via Read() must count as read-declared");
+	ZENITH_ASSERT_TRUE(Flux_RenderGraph::IsHandleDeclaredRead(pxPass, xRwH),
+		"a READWRITE_UAV handle on the writes list must also count as read-declared (the subtle branch)");
+	ZENITH_ASSERT_TRUE(!Flux_RenderGraph::IsHandleDeclaredRead(pxPass, xOtherH),
+		"an undeclared handle must NOT count as read-declared");
+	ZENITH_ASSERT_TRUE(!Flux_RenderGraph::IsHandleDeclaredRead(nullptr, xReadH),
+		"a null pass must return false");
+}
+
 // ============================================================================
 // Flux render-graph lifetime + aliasing-packer tests
 // ============================================================================
@@ -16355,27 +16388,78 @@ ZENITH_TEST(Flux, PersistentSetLayouts)
 		return x;
 	};
 
-	std::string strErr;
-	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, fnSingleCBV(), strErr), "single-CBV GLOBAL is canonical");
-	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnSingleCBV(), strErr), "single-CBV VIEW is canonical");
-	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GENERIC, Flux_BindingGroupLayout(), strErr), "GENERIC class never asserted");
-
+	// GLOBAL canonical (Phase 5.3): binding 0 CBV (g_xGlobal) + binding 1 g_axMaterials SSBO.
+	auto fnGlobalCanonical = [&]() -> Flux_BindingGroupLayout
 	{
 		Flux_BindingGroupLayout x = fnSingleCBV();
+		x.m_axBindings[1].m_bPresent         = true;
+		x.m_axBindings[1].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+		x.m_axBindings[1].m_uDescriptorCount = 1;
+		return x;
+	};
+
+	// VIEW canonical (Phase 5.4): binding 0 CBV (g_xView) + binding 1 g_xCSM sampler.
+	auto fnViewCanonical = [&]() -> Flux_BindingGroupLayout
+	{
+		Flux_BindingGroupLayout x = fnSingleCBV();
+		x.m_axBindings[1].m_bPresent         = true;
+		x.m_axBindings[1].m_eKind            = FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER;
+		x.m_axBindings[1].m_uDescriptorCount = 1;
+		return x;
+	};
+
+	std::string strErr;
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, fnGlobalCanonical(), strErr), "GLOBAL = CBV@0 + materials SSBO@1 is canonical");
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnViewCanonical(), strErr), "VIEW = CBV@0 + g_xCSM sampler@1 is canonical");
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GENERIC, Flux_BindingGroupLayout(), strErr), "GENERIC class never asserted");
+
+	// GLOBAL without its binding-1 materials SSBO is now rejected (spine/manifest drift).
+	ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, fnSingleCBV(), strErr), "GLOBAL missing the materials SSBO rejected");
+	// VIEW without its binding-1 CSM sampler is now rejected (Phase 5.4 spine/manifest drift).
+	ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, fnSingleCBV(), strErr), "VIEW missing the g_xCSM sampler rejected");
+	{
+		Flux_BindingGroupLayout x = fnGlobalCanonical();
+		x.m_axBindings[1].m_eKind = FLUX_RESOURCE_KIND_CONSTANT_BUFFER; // wrong kind at binding 1
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, x, strErr), "GLOBAL binding 1 wrong kind rejected");
+	}
+	{
+		Flux_BindingGroupLayout x = fnViewCanonical();
+		x.m_axBindings[1].m_eKind = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER; // wrong kind at binding 1 (must be a sampler)
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW binding 1 wrong kind rejected");
+	}
+	{
+		Flux_BindingGroupLayout x = fnViewCanonical();
 		x.m_axBindings[0].m_eKind = FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER;
-		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, x, strErr), "non-CBV binding 0 rejected");
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "non-CBV binding 0 rejected");
 	}
 	{
 		Flux_BindingGroupLayout x; // all absent
 		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "absent binding 0 rejected");
 	}
 	{
-		Flux_BindingGroupLayout x = fnSingleCBV();
-		x.m_axBindings[1].m_bPresent         = true;
-		x.m_axBindings[1].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
-		x.m_axBindings[1].m_uDescriptorCount = 1;
-		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, x, strErr), "extra member at slot 1 rejected (pre-5.3 single-member)");
+		Flux_BindingGroupLayout x = fnViewCanonical();
+		x.m_axBindings[2].m_bPresent         = true; // VIEW must stop at binding 1 (until more SRVs promoted)
+		x.m_axBindings[2].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+		x.m_axBindings[2].m_uDescriptorCount = 1;
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW extra member at slot 2 rejected");
 	}
+	{
+		Flux_BindingGroupLayout x = fnGlobalCanonical();
+		x.m_axBindings[2].m_bPresent         = true; // GLOBAL must stop at binding 1
+		x.m_axBindings[2].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+		x.m_axBindings[2].m_uDescriptorCount = 1;
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, x, strErr), "GLOBAL extra member at slot 2 rejected");
+	}
+
+	// ShouldRebindPersistentSet: only GLOBAL/VIEW are bound via the handle-tracked
+	// persistent path, and only when the tracked handle differs from the desired
+	// one (a pipeline switch with the handle unchanged must NOT force a rebind).
+	ZENITH_ASSERT_TRUE(ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_GLOBAL, /*matches*/false), "GLOBAL with a changed handle rebinds");
+	ZENITH_ASSERT_TRUE(ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_VIEW,   /*matches*/false), "VIEW with a changed handle rebinds");
+	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_GLOBAL, /*matches*/true),  "GLOBAL unchanged does not rebind");
+	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_VIEW,   /*matches*/true),  "VIEW unchanged does not rebind");
+	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_BINDLESS, /*matches*/false), "BINDLESS is not bound via the persistent path");
+	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_GENERIC,  /*matches*/false), "GENERIC owned sets are not persistent-bound");
 }
 
 // Pure frequency-taxonomy validator (Flux_FrequencyTaxonomy::ValidateReflection).
@@ -16740,6 +16824,13 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	xUav.m_uStageMask       = FLUX_SHADER_STAGE_BIT_COMPUTE;
 	xWrite.AddBinding(xUav);
 
+	// Phase 5.5: exercise SetBindingStaticUse (happy path + out-of-range no-op) and
+	// make the v4 m_bStaticallyUsed bit NON-default so it is actually load-bearing
+	// through the serialization round-trip (xCB/xUav keep the default true; the
+	// texture, binding index 1, is flipped to false).
+	xWrite.SetBindingStaticUse(1, false);   // the texture (2nd AddBinding)
+	xWrite.SetBindingStaticUse(99, true);   // out-of-range → must be a harmless no-op (no crash)
+
 	Zenith_DataStream xStream(2048);
 	xWrite.WriteToDataStream(xStream);
 
@@ -16777,6 +16868,13 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	const Flux_ReflectedBinding& xUavOut = axBindings.Get(2);
 	ZENITH_ASSERT_EQ((int)xUavOut.m_eResourceKind, (int)FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, "RW structured buffer resource kind should round-trip");
 	ZENITH_ASSERT_EQ(xUavOut.m_uStageMask, (u_int)FLUX_SHADER_STAGE_BIT_COMPUTE, "Compute stage mask should round-trip");
+
+	// Phase 5.5: the v4 static-use bit round-trips. The texture was flipped to false
+	// via SetBindingStaticUse (proving the >> path loads a NON-default value); the CB
+	// and UAV keep the over-approximating default true.
+	ZENITH_ASSERT_TRUE(xCBOut.m_bStaticallyUsed, "CB static-use bit should round-trip (default true)");
+	ZENITH_ASSERT_TRUE(!xTexOut.m_bStaticallyUsed, "Texture static-use bit (set false via SetBindingStaticUse) should round-trip to false");
+	ZENITH_ASSERT_TRUE(xUavOut.m_bStaticallyUsed, "UAV static-use bit should round-trip (default true)");
 
 }
 

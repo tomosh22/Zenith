@@ -206,6 +206,11 @@ private:
 	Zenith_Profiling*            m_pxProfiling    = nullptr;
 
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_BINDING_GROUPS] = { VK_NULL_HANDLE };
+	// Phase 5.1: per-bind-point tracking of the currently-bound persistent spine sets
+	// ([0=graphics/1=compute][FluxFrequencyClass]), so GLOBAL/VIEW are bound once per
+	// command buffer and a pipeline switch never forces a redundant rebind (sets 0/1/2
+	// are layout-identical across pipelines = prefix-compatible). Reset in BeginRecording.
+	vk::DescriptorSet m_axCurrentPersistentSet[2][4] = {};
 	u_int m_uDescriptorDirty = true;
 
 	vk::Viewport m_xViewport;

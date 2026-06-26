@@ -26,6 +26,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
+#include "Flux/Flux_PersistentSetLayouts.h"   // VIEW-set binding indices (Phase 5.4)
 #include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
@@ -95,6 +96,25 @@ void Flux_RendererImpl::RecordFrame()
 	// Frame-indexed + host-coherent → no graph barrier (Flux_FrameIndexedBufferBase
 	// contract). Main-thread + before worker recording, so it is race-free.
 	g_xEngine.FluxGraphics().MaterialTable().Upload();
+
+	// Phase 5.1: write the current frame's persistent GLOBAL/VIEW descriptor sets from
+	// the spine constant buffers, also BEFORE any worker records (write-before-bind).
+	// Main-thread + frame-indexed sets → race-free, no graph barrier. The workers then
+	// bind these persistent sets per pipeline instead of allocating sets 0/1 per draw.
+	g_xEngine.FluxBackend().PreparePersistentSets(
+		g_xEngine.FluxGraphics().GetGlobalConstantsBufferHandle(),
+		g_xEngine.FluxGraphics().MaterialTable().GetSRV().m_xBufferDescHandle,
+		g_xEngine.FluxGraphics().GetViewConstantsBufferHandle());
+
+	// Phase 5.4: write the view-frequency SRVs promoted into the persistent VIEW set.
+	// The CSM array is always allocated (cleared-to-far when shadows are disabled), so
+	// VIEW binding 1 is always valid; consumers sample g_xViewSet.g_xCSM and declare the
+	// graph Read() (enforced by the Flux_ViewSetBinding validator). Same write-before-bind
+	// window as PreparePersistentSets.
+	g_xEngine.FluxBackend().WritePersistentViewImage(
+		Flux_PersistentSetLayouts::kuViewBinding_CSM,
+		g_xEngine.Shadows().GetCSMArraySRV(),
+		g_xEngine.FluxGraphics().m_xClampSampler);
 
 	// Drive the backend to record every queued pass directly into its worker
 	// command buffers (Vulkan: parallel worker task; D3D12 null backend: serial

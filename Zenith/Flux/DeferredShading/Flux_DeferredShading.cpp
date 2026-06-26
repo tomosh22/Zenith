@@ -109,9 +109,8 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
 	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV());
 
-	// Bind the single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
-	xBinder.BindSRV(DS::hg_xCSM, &xShadows.GetCSMArraySRV(), &xFluxGraphics.m_xClampSampler);
-
+	// CSM (g_xCSM) is now in the persistent VIEW set (Phase 5.4) — written once/frame
+	// in WritePersistentViewImage; no per-pass bind. The graph Read() below stays.
 	// Bind the single ShadowMatrices SSBO holding all 4 cascade matrices (Phase 4a).
 	xBinder.BindSRV_Buffer(DS::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 

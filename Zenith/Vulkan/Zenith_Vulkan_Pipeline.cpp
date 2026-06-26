@@ -765,6 +765,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 			xRootSigOut.m_aeBindingKinds[i][j] = FLUX_RESOURCE_KIND_UNKNOWN;
 		}
 		xRootSigOut.m_auActiveBindingMask[i] = 0;
+		xRootSigOut.m_aePersistentClass[i]   = FLUX_FREQUENCY_CLASS_GENERIC;
 	}
 
 	xRootSigOut.m_uNumBindingGroups = xSpec.m_uNumBindingGroups;
@@ -783,6 +784,17 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 			std::string strErr;
 			Zenith_Assert(Flux_PersistentSetLayouts::ValidateCanonicalGroup(xLayout.m_eFrequencyClass, xLayout, strErr),
 				"Phase-5 persistent-set layout precondition violated: %s", strErr.c_str());
+
+			// Phase 5.1: borrow the shared persistent GLOBAL/VIEW layout from the
+			// backend singletons (Pipeline::Reset must NOT destroy it). These sets are
+			// bound from the persistent path (the per-frame m_xGlobalSet/m_xViewSet,
+			// written once/frame in PreparePersistentSets), never allocated per-worker
+			// — so they are layout-identical across every pipeline (prefix-compatible).
+			xRootSigOut.m_axDescSetLayouts[uDescSet]    = (xLayout.m_eFrequencyClass == FLUX_FREQUENCY_CLASS_GLOBAL)
+				? xVulkan.GetGlobalSetLayout() : xVulkan.GetViewSetLayout();
+			xRootSigOut.m_abOwnsDescSetLayout[uDescSet] = false;
+			xRootSigOut.m_aePersistentClass[uDescSet]   = xLayout.m_eFrequencyClass;
+			continue;
 		}
 
 		if (FluxKindIsUnboundedArray(xLayout.m_axBindings[0].m_eKind))
@@ -790,6 +802,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 			// Borrowed handle — Pipeline::Reset must skip its destruction.
 			xRootSigOut.m_axDescSetLayouts[uDescSet]    = xVulkan.GetBindlessTexturesDescriptorSetLayout();
 			xRootSigOut.m_abOwnsDescSetLayout[uDescSet] = false;
+			xRootSigOut.m_aePersistentClass[uDescSet]   = FLUX_FREQUENCY_CLASS_BINDLESS;
 			continue;
 		}
 

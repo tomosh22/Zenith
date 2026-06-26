@@ -281,8 +281,7 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			pxCmdList->UseBindlessTextures(2);
 			xBinder.BindDrawConstants(TF::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
-			// Single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
-			xBinder.BindSRV(TF::hg_xCSM, &xShadows.GetCSMArraySRV(), &xGraphics.m_xClampSampler);
+			// CSM is now in the persistent VIEW set (Phase 5.4) — no per-pass bind.
 			// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
 			xBinder.BindSRV_Buffer(TF::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
@@ -303,10 +302,8 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 		MeshDrawConstants xDrawConstants;
 		BuildMeshDrawConstants(xDrawConstants, xItem.m_xModelMatrix, uMaterialIndex);
 		xBinder.BindDrawConstants(Flux_Generated_Translucency::Translucent_Forward::hDrawConstants, &xDrawConstants, sizeof(xDrawConstants));
-		// g_axMaterials is the OTHER DRAW-set (4) member — staged here, immediately after
-		// DrawConstants, so both land in the same set-4 group (the per-draw DrawConstants
-		// bind resets set 4 since the prior bind was the PASS set, so re-stage materials).
-		xBinder.BindSRV_Buffer(Flux_Generated_Translucency::Translucent_Forward::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
+		// (g_axMaterials lives in the persistent GLOBAL set now — Phase 5.3 dissolved the
+		// fragile per-draw re-stage this forward pass used to need.)
 
 		pxCmdList->DrawIndexed(xItem.m_pxMeshInstance->GetNumIndices());
 	}

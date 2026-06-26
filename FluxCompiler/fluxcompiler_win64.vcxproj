@@ -191,7 +191,7 @@
       <MapFileName>output\win64\vulkan_vs2022_debug_win64_false\fluxcompiler.map</MapFileName>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;xcopy /Y /D "c:\dev\zenith\Tools\Middleware\assimp\debug\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Debug_Win64_True|x64'">
@@ -278,7 +278,7 @@
       <MapFileName>output\win64\vulkan_vs2022_debug_win64_true\fluxcompiler.map</MapFileName>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;xcopy /Y /D "c:\dev\zenith\Tools\Middleware\assimp\debug\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_False|x64'">
@@ -365,7 +365,7 @@
       <MapFileName>output\win64\vulkan_vs2022_release_win64_false\fluxcompiler.map</MapFileName>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;xcopy /Y /D "c:\dev\zenith\Tools\Middleware\assimp\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">
@@ -452,7 +452,7 @@
       <MapFileName>output\win64\vulkan_vs2022_release_win64_true\fluxcompiler.map</MapFileName>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
+      <Command>xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;xcopy /Y /D "c:\dev\zenith\Tools\Middleware\assimp\bin\*.dll" "$(OutDir)"&#x0D;&#x0A;</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

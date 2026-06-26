@@ -98,6 +98,12 @@ public:
 	void Shutdown();
 	void UploadFrameConstants();
 
+	// Phase 5.1: the spine GLOBAL/VIEW constant-buffer descriptor handles for THIS frame,
+	// written into the persistent descriptor sets each frame (Zenith_Vulkan::Prepare-
+	// PersistentSets). GetCBV() resolves the current frame-in-flight buffer.
+	Flux_BufferDescriptorHandle GetGlobalConstantsBufferHandle() const { return m_xGlobalConstantsBuffer.GetCBV().m_xBufferDescHandle; }
+	Flux_BufferDescriptorHandle GetViewConstantsBufferHandle()   const { return m_xViewConstantsBuffer.GetCBV().m_xBufferDescHandle; }
+
 	void SetupTransients(Flux_RenderGraph& xGraph);
 
 	// FluxGraphics creates all the shared cross-feature render-graph transients

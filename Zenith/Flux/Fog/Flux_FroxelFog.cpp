@@ -290,9 +290,8 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandBuffer* pxCommandList)
 	xLightBinder.BindUAV_Texture(FL::hu_xLightingGrid, &GetLightingGridInternal().UAV(0));
 	xLightBinder.BindUAV_Texture(FL::hu_xScatteringGrid, &GetScatteringGridInternal().UAV(0));
 
-	// Bind the single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
-	// The 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
-	xLightBinder.BindSRV(FL::hu_xCSM, &xShadows.GetCSMArraySRV(), &xGraphics.m_xClampSampler);
+	// CSM is now in the persistent VIEW set (Phase 5.4) — no per-pass bind. The 4 cascade
+	// matrices still come from the single ShadowMatrices SSBO (Phase 4a).
 	xLightBinder.BindSRV_Buffer(FL::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
 	xLightBinder.BindDrawConstants(FL::hLightConstants, &m_xLightConstants, sizeof(LightConstants));

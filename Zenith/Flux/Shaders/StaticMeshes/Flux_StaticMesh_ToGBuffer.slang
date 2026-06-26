@@ -52,7 +52,6 @@ struct VsOut
 struct DrawParams
 {
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -88,7 +87,7 @@ GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
 
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+	MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
 
 	// Bindless material textures. The material index is draw-uniform (one material
 	// per draw), so the array index is uniform → no NonUniformResourceIndex needed.

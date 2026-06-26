@@ -758,9 +758,7 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		// View constants (camera VIEW set) + bindless materials: g_axMaterials (GLOBAL
 		// set) + the g_axTextures table (set 2), bound once per pass after SetPipeline.
 		xBinder.BindCBV(GB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
-		// g_axMaterials is a DRAW-set member: staged once here, re-written into the set each
-		// draw alongside DrawConstants. Plus the g_axTextures table (set 2).
-		xBinder.BindSRV_Buffer(GB::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+		// (g_axMaterials lives in the persistent GLOBAL set now — no per-pass bind. Phase 5.3.)
 		pxCmdList->UseBindlessTextures(2);
 
 		for (u_int uGroup = 0; uGroup < xZZ.m_apxInstanceGroups.GetSize(); ++uGroup)
@@ -854,11 +852,9 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
 	// Shadow pass: per-draw DrawConstants + transform/visible-index SSBOs; the masked
-	// cutout samples the base colour bindlessly. g_axMaterials + ShadowMatrices (all 4
-	// cascade matrices, Phase 4a) — both DRAW-set SSBOs staged once, re-written into the
-	// set each draw alongside DrawConstants — + the g_axTextures table (set 2) are bound
-	// once here (after the shadow pipeline bind above).
-	xBinder.BindSRV_Buffer(SM::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
+	// cutout samples the base colour bindlessly (g_axMaterials is in the persistent GLOBAL
+	// set, Phase 5.3). ShadowMatrices (all 4 cascade matrices, Phase 4a) + the g_axTextures
+	// table (set 2) are bound once here (after the shadow pipeline bind above).
 	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
 	xCmdBuf.UseBindlessTextures(2);
 

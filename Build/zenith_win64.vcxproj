@@ -1269,8 +1269,10 @@
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialGPU.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_PersistentSetLayouts.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RecordValidation.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h" />
@@ -1280,6 +1282,8 @@
     <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_TransientDesc.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_WorkDistribution.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog_Shaders.h" />
@@ -2186,6 +2190,7 @@
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Screenshot.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_ViewSetBinding.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_FroxelFog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.cpp" />

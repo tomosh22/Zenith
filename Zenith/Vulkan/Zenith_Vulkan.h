@@ -79,6 +79,14 @@ public:
 	vk::CommandPool m_axCommandPools[NUM_WORKER_THREADS];
 	Zenith_Vulkan_CommandBuffer m_axWorkerCommandBuffers[NUM_WORKER_THREADS];
 
+	// Phase 5.1: persistent spine descriptor sets for THIS frame-in-flight — set 0
+	// (GLOBAL) + set 1 (VIEW). Allocated once at init from the backend persistent pool
+	// (NOT the per-worker pools reset each frame), rewritten once per frame in
+	// Zenith_Vulkan::PreparePersistentSets before any worker records. One set per frame
+	// slot means frame N's descriptors are never overwritten while N-1 is in flight.
+	vk::DescriptorSet m_xGlobalSet;
+	vk::DescriptorSet m_xViewSet;
+
 	// Deferred destruction of per-frame Vulkan objects
 	void DeferDestroyFramebuffer(vk::Framebuffer xFramebuffer);
 	void DeferDestroyRenderPass(vk::RenderPass xRenderPass);
@@ -186,6 +194,9 @@ public:
 	// floor. Must run after CreateDevice() and before CreateBindlessTexturesDescriptorPool().
 	void QueryDescriptorIndexingLimits();
 	void CreateBindlessTexturesDescriptorPool();
+	// Phase 5.1: create the persistent GLOBAL/VIEW set layouts + pool and allocate the
+	// per-frame-in-flight sets (called once at init, after the bindless pool).
+	void CreatePersistentDescriptorSets();
 
 #ifdef ZENITH_FLUX_PROFILING
 	// GPU per-pass timestamp profiling accessors. Caps are read at device
@@ -224,6 +235,19 @@ public:
 	// the FluxBackendDevice contract, before the frame memory submit.
 	void RecordFrame(const Flux_WorkDistribution& xWorkDistribution);
 
+	// Phase 5.1: rewrite the current frame's persistent GLOBAL/VIEW descriptor sets
+	// from the spine constant buffers — called once per frame on the main thread
+	// (Flux_RendererImpl::RecordFrame), before any worker binds (write-before-bind).
+	void PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV, Flux_BufferDescriptorHandle xMaterialsSSBO, Flux_BufferDescriptorHandle xViewCBV);
+
+	// Phase 5.4: rewrite one VIEW-set image SRV (combined image sampler) into the
+	// current frame's persistent VIEW set — called once per frame per promoted
+	// view-frequency resource (CSM, etc.), right after PreparePersistentSets. The
+	// descriptor is a stable pointer to the resource's view; the render graph's
+	// per-pass Read() declarations (enforced by Flux_ViewSetBinding) drive the
+	// layout/contents barriers, so writing it once at frame start is safe.
+	void WritePersistentViewImage(u_int uBinding, const Flux_ShaderResourceView& xSRV, const Zenith_Vulkan_Sampler& xSampler);
+
 	void EndFrame(bool bSubmitRenderWork);
 
 	// Wait for GPU to finish all work (blocks until idle)
@@ -256,6 +280,13 @@ public:
 
 	vk::DescriptorSet& GetBindlessTexturesDescriptorSet();
 	vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout();
+	// Phase 5.1: shared persistent GLOBAL/VIEW set layouts (borrowed by every pipeline's
+	// RootSig so sets 0/1 are layout-identical = prefix-compatible) + the current
+	// frame-in-flight's persistent sets (bound by the command recorder).
+	vk::DescriptorSetLayout GetGlobalSetLayout() const { return m_xGlobalSetLayout; }
+	vk::DescriptorSetLayout GetViewSetLayout()   const { return m_xViewSetLayout; }
+	vk::DescriptorSet GetCurrentGlobalSet() const { return m_pxCurrentFrame->m_xGlobalSet; }
+	vk::DescriptorSet GetCurrentViewSet()   const { return m_pxCurrentFrame->m_xViewSet; }
 	// Device-clamped bindless table capacity (set by QueryDescriptorIndexingLimits).
 	// Drives Flux_BindlessAllocator's capacity. Backend-neutral surface (mirrored by
 	// the D3D12 null backend).
@@ -312,6 +343,13 @@ public:
 	// defaults to the legacy 1000 so any pre-query read is safe). Drives the pool size,
 	// the layout descriptorCount, and the WriteBindlessDescriptor bounds check.
 	uint32_t                      m_uBindlessTableSize = FLUX_BINDLESS_TABLE_SIZE_MIN;
+
+	// Phase 5.1: persistent descriptor pool + GLOBAL/VIEW set layouts. The per-frame
+	// sets (Zenith_Vulkan_PerFrame::m_xGlobalSet/m_xViewSet) are allocated from this pool
+	// once at init and excluded from the per-frame reset.
+	vk::DescriptorPool            m_xPersistentDescriptorPool;
+	vk::DescriptorSetLayout       m_xGlobalSetLayout;
+	vk::DescriptorSetLayout       m_xViewSetLayout;
 
 	// VRAM registry + freelist of slots.
 	std::vector<Zenith_Vulkan_VRAM*> m_xVRAMRegistry;

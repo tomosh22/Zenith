@@ -153,6 +153,11 @@ public:
 	// Per-set bitmask of present bindings (bit b set ⇒ binding b is declared).
 	// Drives the pre-draw staged-binding validator.
 	u_int m_auActiveBindingMask[FLUX_MAX_BINDING_GROUPS] = {};
+	// Phase 5.1: per-set persistence class. GLOBAL/VIEW/BINDLESS sets borrow shared
+	// backend-owned layouts (m_abOwnsDescSetLayout=false) and are bound from the
+	// persistent path (UpdateDescriptorSets for GLOBAL/VIEW, UseBindlessTextures for
+	// BINDLESS), NOT allocated per-worker. GENERIC = a normal owned PASS/DRAW set.
+	FluxFrequencyClass m_aePersistentClass[FLUX_MAX_BINDING_GROUPS] = {};
 	u_int m_uNumBindingGroups = UINT32_MAX;
 
 	// Reflection data for name-based binding lookups

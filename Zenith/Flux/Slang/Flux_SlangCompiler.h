@@ -61,6 +61,15 @@ struct Flux_ReflectedBinding
 	u_int                       m_uStageMask        = 0;     // FluxShaderStageBit bitmask
 	std::string                 m_strParameterBlockPath;     // e.g. "frame.lights" — empty for top-level
 	Zenith_Vector<Flux_ReflectedField> m_axFields;            // populated for CB/PB only
+
+	// Phase 5.5: does ANY entry point STATICALLY sample this binding (OR'd across
+	// stages)? Distinguishes a member a shader actually uses from one it merely
+	// declares via the #include'd spine (Common/Bindings.slang lists g_xGlobal/
+	// g_xView/g_axTextures in EVERY program's reflection). Baked at compile time
+	// from Slang's IMetadata::isParameterLocationUsed; drives the VIEW/GLOBAL
+	// graph-Read() validator (Flux_ViewSetBinding). Defaults true so any path that
+	// does not populate it over-approximates (never under-demands a Read()).
+	bool                        m_bStaticallyUsed   = true;
 };
 
 class Flux_ShaderReflection
@@ -87,6 +96,12 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	const Zenith_Vector<Flux_ReflectedBinding>& GetBindings() const { return m_axBindings; }
+
+	// Phase 5.5: stamp the compile-time static-use bit onto binding [uIndex].
+	// Called from CompileProgram after the Slang is-used query (the only place
+	// with access to the linked program's IMetadata); read back from the
+	// .spv.refl sidecar at runtime. No-op if uIndex is out of range.
+	void SetBindingStaticUse(u_int uIndex, bool bUsed);
 
 private:
 	Zenith_Vector<Flux_ReflectedBinding> m_axBindings;

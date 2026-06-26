@@ -470,12 +470,9 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	xBinder.BindCBV(TGB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindCBV(TGB::hTerrainConstants, &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
 
-	// Phase 4c: bindless materials. g_axMaterials (a PassParams member, set 3) is
-	// bound once here — it persists in the set-3 staging and survives the per-draw
-	// BindDrawConstants (same set, no reset); the per-slot material indices ride the
-	// terrain material constants. UseBindlessTextures(2) binds the g_axTextures
-	// table. Mirrors the StaticMeshes G-buffer pattern.
-	xBinder.BindSRV_Buffer(TGB::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	// Phase 4c: bindless terrain layer textures via the material table. g_axMaterials is in
+	// the persistent GLOBAL set (set 0, Phase 5.3); the per-slot material indices ride the
+	// terrain material constants. UseBindlessTextures(2) binds the g_axTextures table.
 	pxCmdList->UseBindlessTextures(2);
 
 	for (u_int u = 0; u < xTerrain.m_xTerrainRenderRecords.GetSize(); u++)

@@ -54,7 +54,6 @@ struct DrawParams
 {
 	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
-	StructuredBuffer<MaterialGPU>       g_axMaterials;   // GPU material table (per-frame, bound per pass)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -73,7 +72,7 @@ VsOut vsMain(VsIn input)
 void fsMain(VsOut input)
 {
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-	MaterialGPU m = g_xDrawSet.g_axMaterials[dc.g_uMaterialIndex];
+	MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
 	// Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
 	// cost preserved. Masked casters run the SAME cutout as the G-buffer path.
 	if (GetAlphaCutoff(m) > 0.0)

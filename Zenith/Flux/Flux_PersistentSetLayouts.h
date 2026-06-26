@@ -38,6 +38,15 @@ namespace Flux_PersistentSetLayouts
 	inline constexpr u_int kuSetView     = 1;
 	inline constexpr u_int kuSetBindless = 2;
 
+	// VIEW-set binding indices (must match the ViewParams member declaration order in
+	// Common/Bindings.slang — reflection assigns bindings by order). The backend
+	// builds the VIEW descriptor-set layout + writes its descriptors against these,
+	// and ValidateCanonicalGroup asserts the reflected layout matches. Phase 5.4
+	// grows this list as view-frequency SRVs are promoted into the persistent set.
+	inline constexpr u_int kuViewBinding_View = 0;   // g_xView  (ConstantBuffer)
+	inline constexpr u_int kuViewBinding_CSM  = 1;   // g_xCSM   (Sampler2DArray — cascaded shadows)
+	inline constexpr u_int kuViewBindingCount = 2;   // number of VIEW bindings currently in the spine
+
 	// Canonical binding-0 member name of each persistent set (mirrors the spine
 	// ParameterBlocks in Common/Bindings.slang). Reflection tags a group's class by
 	// matching the binding-0 member name to one of these.
@@ -63,9 +72,11 @@ namespace Flux_PersistentSetLayouts
 	// and returns false. GENERIC and BINDLESS classes return true (BINDLESS is the
 	// kind-detected unbounded table — validated by the taxonomy + its own borrow path).
 	//
-	// Canonical as of Phase 5.0 (single-member): GLOBAL = { binding 0: uniform buffer,
-	// count 1 } and likewise VIEW. Phase 5.3/5.4 relax the "single-member" rule here in
-	// lockstep with the spine growth (g_axMaterials into GLOBAL, view SRVs into VIEW).
+	// Canonical layout (kept in lockstep with the spine blocks in Common/Bindings.slang):
+	//   GLOBAL = { binding 0: uniform buffer (g_xGlobal), binding 1: structured buffer
+	//             (g_axMaterials, Phase 5.3) }
+	//   VIEW   = { binding 0: uniform buffer (g_xView), binding 1: combined image
+	//             sampler (g_xCSM cascaded-shadow array, Phase 5.4) }
 	inline bool ValidateCanonicalGroup(FluxFrequencyClass eClass,
 	                                   const Flux_BindingGroupLayout& xGroup,
 	                                   std::string& strErrOut)
@@ -77,7 +88,7 @@ namespace Flux_PersistentSetLayouts
 
 		const char* szSet = (eClass == FLUX_FREQUENCY_CLASS_GLOBAL) ? "GLOBAL(0)" : "VIEW(1)";
 
-		// Binding 0 must be a single uniform buffer (g_xGlobal / g_xView CB).
+		// Binding 0 must be a single uniform buffer (g_xGlobal / g_xView CB) — both classes.
 		const Flux_BindingGroupEntry& x0 = xGroup.m_axBindings[0];
 		if (!x0.m_bPresent || !FluxKindIsUniformBuffer(x0.m_eKind) || x0.m_uDescriptorCount != 1)
 		{
@@ -86,19 +97,59 @@ namespace Flux_PersistentSetLayouts
 			return false;
 		}
 
-		// Single-member until Phase 5.3/5.4 grow the spine — any extra present binding
-		// means the spine block and this manifest have drifted out of lockstep.
-		for (u_int u = 1; u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
+		// GLOBAL carries the material-table SSBO at binding 1 (Phase 5.3). VIEW carries
+		// the cascaded-shadow array g_xCSM at binding 1 (Phase 5.4). Bindings past the
+		// canonical members must be absent — a stray one means the spine block and this
+		// manifest have drifted apart.
+		u_int uFirstUnexpected = 1u;
+		if (eClass == FLUX_FREQUENCY_CLASS_GLOBAL)
+		{
+			const Flux_BindingGroupEntry& x1 = xGroup.m_axBindings[1];
+			if (!x1.m_bPresent || !FluxKindIsStorageBuffer(x1.m_eKind) || x1.m_uDescriptorCount != 1)
+			{
+				strErrOut = "persistent GLOBAL(0) set: binding 1 must be the single g_axMaterials structured buffer";
+				return false;
+			}
+			uFirstUnexpected = 2u;
+		}
+		else // VIEW
+		{
+			const Flux_BindingGroupEntry& x1 = xGroup.m_axBindings[kuViewBinding_CSM];
+			if (!x1.m_bPresent || !FluxKindIsSampledTexture(x1.m_eKind) || x1.m_uDescriptorCount != 1)
+			{
+				strErrOut = "persistent VIEW(1) set: binding 1 must be the single g_xCSM cascaded-shadow sampler (Phase 5.4)";
+				return false;
+			}
+			uFirstUnexpected = kuViewBindingCount;
+		}
+
+		for (u_int u = uFirstUnexpected; u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
 		{
 			if (xGroup.m_axBindings[u].m_bPresent)
 			{
 				strErrOut = std::string("persistent ") + szSet
 				          + " set: unexpected binding at slot " + std::to_string(u)
-				          + " — the spine GLOBAL/VIEW sets are single-member until Phase 5.3/5.4 grow them"
-				            " in lockstep with Flux_PersistentSetLayouts";
+				          + " — the spine block and Flux_PersistentSetLayouts have drifted out of lockstep";
 				return false;
 			}
 		}
 		return true;
+	}
+
+	// Phase 5.1: pure gate for the command-buffer persistent-set bind loop. Only
+	// GLOBAL/VIEW are bound through the handle-tracked persistent path (BINDLESS
+	// goes through UseBindlessTextures; GENERIC sets are owned and allocated per
+	// worker). A persistent set is (re)bound iff its class is GLOBAL/VIEW AND the
+	// currently-tracked descriptor handle differs from the desired one — a
+	// pipeline switch alone never forces a rebind, only a handle change does. The
+	// caller does the (opaque) handle comparison and passes the result, so this
+	// decision is device-free and unit-tested without a live descriptor set.
+	inline bool ShouldRebindPersistentSet(FluxFrequencyClass eClass, bool bTrackedMatchesDesired)
+	{
+		if (eClass != FLUX_FREQUENCY_CLASS_GLOBAL && eClass != FLUX_FREQUENCY_CLASS_VIEW)
+		{
+			return false;
+		}
+		return !bTrackedMatchesDesired;
 	}
 }

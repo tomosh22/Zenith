@@ -368,7 +368,6 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	if (!pxGeometry) return;
 
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
 	const MaterialBlendMode eBlend = pxMaterial->GetResolved().m_xParams.m_eBlendMode;
 	Flux_Pipeline* pxPipeline = &xZZ.m_xMeshPipelineOpaque;
@@ -402,10 +401,9 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	xConstants.m_fCSMTexelSizeY = 1.0f / 2048.0f;
 	xBinder.BindDrawConstants(FW::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
-	// The CSM array (Sampler2DArray) is statically referenced by the shared shader.
-	// Bind the real array SRV (correct descriptor type; shadows are disabled via the
-	// constants so the sampled values don't affect the preview). Phase 4b collapse.
-	xBinder.BindSRV(FW::hg_xCSM, &g_xEngine.Shadows().GetCSMArraySRV(), &xGraphics.m_xClampSampler);
+	// CSM (g_xCSM) is now in the persistent VIEW set (Phase 5.4) — written once/frame in
+	// WritePersistentViewImage, no per-pass bind. The forward shader still samples it
+	// (shadows disabled via the constants) and the pass declares the graph Read().
 	// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
 	// Real buffer (harmless — preview disables shadow sampling via the constants).
 	xBinder.BindSRV_Buffer(FW::hShadowMatrices, g_xEngine.Shadows().GetShadowMatricesSRV());
@@ -431,9 +429,7 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	MeshDrawConstants xDrawConstants;
 	BuildMeshDrawConstants(xDrawConstants, xZZ.GetActiveMeshModelMatrix(), uMaterialIndex);
 	xBinder.BindDrawConstants(FW::hDrawConstants, &xDrawConstants, sizeof(xDrawConstants));
-	// g_axMaterials is the OTHER DRAW-set (4) member — staged immediately after
-	// DrawConstants so both land in the same set-4 group.
-	xBinder.BindSRV_Buffer(FW::hg_axMaterials, xGraphics.MaterialTable().GetSRV());
+	// (g_axMaterials lives in the persistent GLOBAL set now — no per-draw re-stage. Phase 5.3.)
 
 	pxCmdList->SetVertexBuffer(pxGeometry->GetVertexBuffer());
 	pxCmdList->SetIndexBuffer(pxGeometry->GetIndexBuffer());

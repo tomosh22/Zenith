@@ -19,6 +19,8 @@
 // them (required for the persistent sets).
 // =====================================================================
 
+import Common.MaterialTable;   // MaterialGPU (no bindings — does not shift the spine spaces)
+
 // Directional light data struct (moved from Common.Frame so spine shaders keep it).
 public struct DirectionalLight
 {
@@ -37,17 +39,19 @@ public struct GlobalConstantsLayout
 };
 struct GlobalParams
 {
-	ConstantBuffer<GlobalConstantsLayout> g_xGlobal;
+	ConstantBuffer<GlobalConstantsLayout> g_xGlobal;       // binding 0
+	StructuredBuffer<MaterialGPU>         g_axMaterials;   // binding 1 — GPU material table
 };
 ParameterBlock<GlobalParams> g_xGlobalSet;
 
-// NOTE: g_axMaterials (the GPU material table) is NOT a spine member. A multi-member
-// spine ParameterBlock forces its binding-0 (g_xGlobal here) to be statically used in
-// EVERY shader that #includes this file — even ones that touch neither — which then
-// must bind it (a Vulkan "descriptor never updated" error otherwise). To keep the
-// spine "pay only for what you use", g_axMaterials lives in each material shader's own
-// DRAW ParameterBlock (always bound per draw), declared next to DrawConstants. See
-// Common/MaterialTable.slang + the mesh/forward shaders.
+// g_axMaterials (the GPU material table) lives in the GLOBAL set (Phase 5.3). A
+// multi-member spine ParameterBlock forces its binding-0 (g_xGlobal) to be statically
+// used by EVERY shader that #includes this file, so the GLOBAL set MUST be bound in
+// every shader — which it now is, PERSISTENTLY (Phase 5.1: g_xGlobalSet is written once
+// per frame in PreparePersistentSets and bound for every pipeline). Material shaders read
+// their record via g_xGlobalSet.g_axMaterials[DrawConstants.g_uMaterialIndex]; non-material
+// shaders never reference g_axMaterials (reflected-but-unused → no per-draw cost). This
+// killed the fragile per-draw hg_axMaterials re-stage the old DRAW-block placement needed.
 
 // ---- VIEW (set 1) — per-camera data + view-frequency resources ----
 public struct ViewConstantsLayout
@@ -67,9 +71,12 @@ public struct ViewConstantsLayout
 };
 struct ViewParams
 {
-	ConstantBuffer<ViewConstantsLayout> g_xView;
-	// (view-frequency SRVs — G-buffer / depth / CSM / IBL / clusters — are added
-	//  here as the consuming shaders are converted.)
+	ConstantBuffer<ViewConstantsLayout> g_xView;   // binding 0
+	Sampler2DArray                      g_xCSM;    // binding 1 — cascaded shadow-map array (Phase 5.4)
+	// (more view-frequency SRVs — G-buffer / depth / IBL / clusters — are added
+	//  here as the consuming shaders are converted, in lockstep with the VIEW
+	//  layout in Zenith_Vulkan::CreatePersistentDescriptorSets + the canonical
+	//  layout check in Flux_PersistentSetLayouts::ValidateCanonicalGroup.)
 };
 ParameterBlock<ViewParams> g_xViewSet;
 

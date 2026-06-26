@@ -149,9 +149,8 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 	xBinder.BindSRV(RM::hu_xNoiseTexture3D, &xVolumeFog.GetNoiseTexture3D()->m_xSRV);
 	xBinder.BindSRV(RM::hu_xBlueNoiseTexture, &xVolumeFog.GetBlueNoiseTexture()->m_xSRV);
 
-	// Bind the single 4-cascade CSM depth array (Sampler2DArray; Phase 4b collapse).
-	// The 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
-	xBinder.BindSRV(RM::hu_xCSM, &xShadows.GetCSMArraySRV(), &xGraphics.m_xClampSampler);
+	// CSM is now in the persistent VIEW set (Phase 5.4) — no per-pass bind. The 4 cascade
+	// matrices still come from the single ShadowMatrices SSBO (Phase 4a).
 	xBinder.BindSRV_Buffer(RM::hShadowMatrices, xShadows.GetShadowMatricesSRV());
 
 	xBinder.BindDrawConstants(RM::hRaymarchConstants, &m_xConstants, sizeof(Flux_RaymarchConstants));

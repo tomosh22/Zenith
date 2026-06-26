@@ -61,6 +61,19 @@ public class FluxCompilerProject : ZenithBaseProject
 		string slangBinPath = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..", "Middleware", "slang", "bin"));
 		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\*.dll\" \"$(OutDir)\"");
 
+		// Phase 5.4: the Flux_ViewSetBinding registry references engine subsystems
+		// (g_xEngine.Shadows() for the CSM VIEW-set resource), so this tool now links
+		// the engine->assimp chain. Its assimp runtime DLLs (config-specific names —
+		// assimp-vc143-mt[d].dll + poly2tri/minizip/zlib/pugixml) must sit beside the
+		// exe or STATUS_DLL_NOT_FOUND fires at launch, same as slang above.
+		// On-disk assimp DLL layout is asymmetric: debug DLLs live in assimp/debug/bin
+		// (assimp-vc143-mtd.dll + deps), release DLLs in the BARE assimp/bin
+		// (assimp-vc143-mt.dll + deps) — there is no assimp/release/ directory.
+		string assimpBinPath = (target.Optimization == Optimization.Debug)
+			? Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..", "Tools", "Middleware", "assimp", "debug", "bin"))
+			: Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..", "Tools", "Middleware", "assimp", "bin"));
+		conf.EventPostBuild.Add($"xcopy /Y /D \"{assimpBinPath}\\*.dll\" \"$(OutDir)\"");
+
 		// Output executable
 		conf.Output = Configuration.OutputType.Exe;
 

@@ -9,6 +9,9 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RecordValidation.h"  // shared constructor-era validation (pipeline/view/draw-constant), also called by the D3D12 recorder
 #include "Flux/Flux_BindingValidation.h" // pure pre-draw staged-binding validator
+#include "Flux/Flux_ViewSetBinding.h"    // Phase 5.5: VIEW/GLOBAL graph-Read() validator
+#include "Flux/Flux_PersistentSetLayouts.h" // ShouldRebindPersistentSet (persistent-bind gate)
+#include "Flux/RenderGraph/Flux_RenderGraph.h" // GetCurrentRecordingPass / IsHandleDeclaredRead
 
 //#TO purely for the static assert in SetIndexBuffer
 
@@ -71,6 +74,9 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	m_uDescriptorDirty = ~0u;
 	m_pxCurrentPipeline = nullptr;  // Reset pipeline to catch any stale access
 	memset(m_xBindings, 0, sizeof(m_xBindings));
+	// Phase 5.1: forget which persistent GLOBAL/VIEW sets are bound — a fresh command
+	// buffer has no descriptor-set bindings, so they must be (re)bound on first use.
+	memset(m_axCurrentPersistentSet, 0, sizeof(m_axCurrentPersistentSet));
 	
 	// Clear descriptor set cache for this frame (descriptor pool gets reset per frame anyway)
 	// CRITICAL: Must also clear the bindings to avoid false cache hits with stale pointers
@@ -354,6 +360,60 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 			"Pre-draw binding validation: pipeline declares set %u binding %u but no resource was staged for this draw (missing a Bind*?).",
 			xChk.m_uMissingSet, xChk.m_uMissingBinding);
 	}
+
+	// Phase 5.5: VIEW/GLOBAL graph-Read() validation. Once a graph-tracked
+	// resource lives in the persistent VIEW/GLOBAL set it is no longer bound per
+	// pass, so the per-bind AssertBoundResourceDeclared net can't see it. Re-derive
+	// the same guarantee here: for each set-0/1 member the bound shader STATICALLY
+	// samples (reflection m_bStaticallyUsed), if the registry classifies it as a
+	// graph resource, the recording pass must declare a Read() of its current
+	// handle. The decision is pure (Flux_ValidateViewSetReads); this resolves its
+	// inputs. LIVE for g_xCSM (the first VIEW-set graph resource, Phase 5.4) and
+	// expands automatically as more view-frequency SRVs are promoted into VIEW.
+	{
+		const Flux_RenderGraph_Pass* pxPass = Flux_RenderGraph::GetCurrentRecordingPass();
+		if (pxPass != nullptr)
+		{
+			const Flux_ShaderReflection& xRefl = m_pxCurrentPipeline->m_xRootSig.m_xReflection;
+			const Zenith_Vector<Flux_ReflectedBinding>& xBindings = xRefl.GetBindings();
+			Flux_ViewSetSampledMember axSampled[FLUX_MAX_BINDINGS_PER_GROUP * 2];
+			u_int uSampledCount = 0;
+			for (u_int i = 0; i < xBindings.GetSize() && uSampledCount < (FLUX_MAX_BINDINGS_PER_GROUP * 2); i++)
+			{
+				const Flux_ReflectedBinding& xB = xBindings.Get(i);
+				if (xB.m_uSet > 1u) continue;          // GLOBAL (0) / VIEW (1) only
+				if (!xB.m_bStaticallyUsed) continue;   // shader does not sample it
+				const Flux_ViewSetBinding* pxRow = Flux_FindViewSetBinding(xB.m_strName.c_str());
+				if (pxRow == nullptr) continue;        // unregistered set-0/1 member → exempt
+				Flux_ViewSetSampledMember& xM = axSampled[uSampledCount++];
+				xM.m_szMemberName = pxRow->m_szMemberName;
+				xM.m_eSource      = pxRow->m_eSource;
+				xM.m_bEnabled     = pxRow->m_pfnIsEnabled ? pxRow->m_pfnIsEnabled() : true;
+				if (pxRow->m_eSource == FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE)
+				{
+					// A graph-resource row MUST carry a handle accessor. A null one
+					// would leave m_bGraphHandleValid false → the validator exempts
+					// the member → enforcement silently off (the worst failure for a
+					// safety net). Fail loud on the misconfiguration instead.
+					Zenith_Assert(pxRow->m_pfnGetVRAMHandle != nullptr,
+						"Flux_ViewSetBinding: GRAPH_RESOURCE row '%s' has no m_pfnGetVRAMHandle accessor — "
+						"wire it (or it silently disables the graph-Read() validator for this member).",
+						pxRow->m_szMemberName ? pxRow->m_szMemberName : "?");
+					if (pxRow->m_pfnGetVRAMHandle != nullptr)
+					{
+						const Flux_VRAMHandle xHandle = pxRow->m_pfnGetVRAMHandle();
+						xM.m_bGraphHandleValid = xHandle.IsValid();
+						xM.m_bReadDeclared     = Flux_RenderGraph::IsHandleDeclaredRead(pxPass, xHandle);
+					}
+				}
+			}
+			const Flux_ViewSetReadCheck xVSChk = Flux_ValidateViewSetReads(axSampled, uSampledCount);
+			Zenith_Assert(xVSChk.m_bAllDeclared,
+				"Pass '%s' statically samples persistent VIEW/GLOBAL graph resource '%s' but declared no Read() — "
+				"add the missing Read() in SetupRenderGraph or the graph cannot emit its barrier.",
+				pxPass->DebugName(), xVSChk.m_szMissingMember ? xVSChk.m_szMissingMember : "?");
+		}
+	}
 #endif
 
 	// Touch each binding slot to ensure memory is valid (catches corrupted `this`).
@@ -361,6 +421,30 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	{
 		volatile const void* pxCheck = &m_xBindings[i];
 		(void)pxCheck;
+	}
+
+	// Phase 5.1: bind the persistent spine sets (GLOBAL set 0 / VIEW set 1) this pipeline
+	// uses, from the current frame slot (written once/frame in PreparePersistentSets).
+	// Handle-tracked → bound once per command buffer; a pipeline switch keeps them bound
+	// because sets 0/1/2 are layout-identical across pipelines (prefix-compatible). BINDLESS
+	// (set 2) stays on the explicit UseBindlessTextures path; non-spine pipelines (class
+	// GENERIC) bind nothing. The leftover per-pass BindCBV(hg_xView/hg_xGlobal) stages into
+	// these borrowed sets but is skipped by the owned-set loop below — harmless.
+	{
+		const u_int uBP = (m_eCurrentBindPoint == vk::PipelineBindPoint::eCompute) ? 1u : 0u;
+		const Zenith_Vulkan_RootSig& xRootSig = m_pxCurrentPipeline->m_xRootSig;
+		for (u_int uSet = 0; uSet < uNumDescSets; uSet++)
+		{
+			const FluxFrequencyClass eClass = xRootSig.m_aePersistentClass[uSet];
+			vk::DescriptorSet xDesired;
+			if (eClass == FLUX_FREQUENCY_CLASS_GLOBAL)    xDesired = m_pxVulkan->GetCurrentGlobalSet();
+			else if (eClass == FLUX_FREQUENCY_CLASS_VIEW) xDesired = m_pxVulkan->GetCurrentViewSet();
+			else continue;
+			if (!Flux_PersistentSetLayouts::ShouldRebindPersistentSet(
+					eClass, m_axCurrentPersistentSet[uBP][eClass] == xDesired)) continue;
+			m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, xRootSig.m_xLayout, uSet, 1, &xDesired, 0, nullptr);
+			m_axCurrentPersistentSet[uBP][eClass] = xDesired;
+		}
 	}
 
 	for (u_int uDescSet = 0; uDescSet < uNumDescSets; uDescSet++)
@@ -571,6 +655,12 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
 	m_pxCurrentPipeline = pxPipeline;
 	m_uDescriptorDirty = ~0u;
+	// Phase 5.1: binding a pipeline whose set-0/1/2 layout differs (a non-spine pipeline
+	// like the BRDF-LUT bake) DISTURBS the bound persistent sets per Vulkan's pipeline-
+	// layout compatibility rule. Forget the tracked persistent sets so they re-bind on
+	// this pipeline's first draw (once per pipeline; spine→spine rebinds are redundant
+	// but harmless — the sets are prefix-compatible).
+	memset(m_axCurrentPersistentSet, 0, sizeof(m_axCurrentPersistentSet));
 }
 
 // Each Bind* carries its full Flux_BindingSlot (group + binding) -- there is no
@@ -680,7 +770,10 @@ void Zenith_Vulkan_CommandBuffer::SetShoudClear(const bool bClear)
 
 void Zenith_Vulkan_CommandBuffer::UseBindlessTextures(const uint32_t uSet)
 {
-	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uSet, 1, &m_pxVulkan->GetBindlessTexturesDescriptorSet(), 0, nullptr);
+	// Phase 5.1 (G4 fix): bind at the CURRENT bind point, not hardcoded graphics — a
+	// compute pass that uses the bindless table would otherwise bind it to the graphics
+	// point and the dispatch would read an unbound set.
+	m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uSet, 1, &m_pxVulkan->GetBindlessTexturesDescriptorSet(), 0, nullptr);
 	m_uDescriptorDirty &= ~(1 << uSet);
 }
 
@@ -1009,6 +1102,9 @@ void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* px
 	m_pxCurrentPipeline = pxPipeline;
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pxPipeline->m_xPipeline);
 	m_uDescriptorDirty = ~0u;
+	// Phase 5.1: re-bind persistent sets on the next dispatch (see SetPipeline — a layout-
+	// incompatible pipeline disturbs them).
+	memset(m_axCurrentPersistentSet, 0, sizeof(m_axCurrentPersistentSet));
 }
 
 

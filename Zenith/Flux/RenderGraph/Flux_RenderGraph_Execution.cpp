@@ -345,6 +345,19 @@ static bool ScanUsagesForMatch(const Zenith_Vector<Flux_RenderGraph_ResourceUsag
 	return false;
 }
 
+bool Flux_RenderGraph::IsHandleDeclaredRead(const Flux_RenderGraph_Pass* pxPass, Flux_VRAMHandle xVRAMHandle)
+{
+	if (pxPass == nullptr) return false;
+	// Mirror AssertBoundResourceDeclared's SRV-bind acceptance EXACTLY: a sampled
+	// resource counts as declared if it is in the reads list, OR appears as a
+	// READWRITE_UAV on the writes list — the graph permits a read-modify-write
+	// resource to be declared exactly once on EITHER list (see
+	// CheckSubresourceConflicts), and SynthesizeBarriers handles either form. Only
+	// scanning reads would false-positive on a legitimate Writes(.., READWRITE_UAV).
+	return ScanUsagesForMatch(pxPass->m_xReads,  xVRAMHandle, /*bIsWrite*/false, /*bExpectReads*/true)
+	    || ScanUsagesForMatch(pxPass->m_xWrites, xVRAMHandle, /*bIsWrite*/false, /*bExpectReads*/false);
+}
+
 void Flux_RenderGraph::AssertBoundResourceDeclared(Flux_VRAMHandle xVRAMHandle, bool bIsWrite, const char* szBindCall)
 {
 	const Flux_RenderGraph_Pass* pxPass = tls_pxCurrentRecordingPass;

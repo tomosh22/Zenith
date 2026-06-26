@@ -44,7 +44,8 @@ concept FluxBackendDevice = requires(
 	uint32_t u,
 	const Flux_WorkDistribution& xWork,
 	const Flux_ShaderResourceView& xView,
-	const Flux_Sampler& xSampler)
+	const Flux_Sampler& xSampler,
+	Flux_BufferDescriptorHandle h)
 {
 	{ t.Initialise()                                                 } -> std::same_as<void>;
 	{ t.InitialisePerFrameResources()                                } -> std::same_as<void>;
@@ -53,6 +54,10 @@ concept FluxBackendDevice = requires(
 	{ t.RecordFrame(xWork)                                           } -> std::same_as<void>;
 	{ t.EndFrame(b)                                                  } -> std::same_as<void>;
 	{ t.WriteBindlessTextureSlot(u, xView, xSampler)                 } -> std::same_as<void>;
+	// Persistent descriptor sets (Phase 5.1 GLOBAL/VIEW + 5.4 VIEW image SRVs). In
+	// the concept so D3D12 signature drift fails the build, not the first frame.
+	{ t.PreparePersistentSets(h, h, h)                               } -> std::same_as<void>;
+	{ t.WritePersistentViewImage(u, xView, xSampler)                 } -> std::same_as<void>;
 };
 
 // Tools-only device methods (ImGui integration).

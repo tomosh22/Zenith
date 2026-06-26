@@ -77,7 +77,6 @@ struct PassParams
 	ConstantBuffer<TerrainMaterialConstantsLayout> TerrainMaterialConstants;
 	StructuredBuffer<uint>                         LODLevelBuffer;
 	Sampler2D g_xSplatmap;
-	StructuredBuffer<MaterialGPU>                  g_axMaterials;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -206,10 +205,10 @@ GBufferOut fsMain(VsOut input)
 	// the g_axTextures[] lookups are uniform → no NonUniformResourceIndex. Slot
 	// texture layout mirrors Flux_MaterialGPU: g_xTexIdx0 = (baseColor, normal,
 	// roughnessMetallic, occlusion); g_xTexIdx1.x = emissive.
-	MaterialGPU xMat0 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[0]];
-	MaterialGPU xMat1 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[1]];
-	MaterialGPU xMat2 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[2]];
-	MaterialGPU xMat3 = g_xPassSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[3]];
+	MaterialGPU xMat0 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[0]];
+	MaterialGPU xMat1 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[1]];
+	MaterialGPU xMat2 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[2]];
+	MaterialGPU xMat3 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[3]];
 
 	// Per-material samples. Roughness/metallic come back unmultiplied
 	// here because we need to blend the per-material multipliers in

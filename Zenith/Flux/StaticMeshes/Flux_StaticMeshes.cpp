@@ -337,10 +337,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		const bool bTwoSidedPass = (uCullPass == 1);
 		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
 		xBinder.BindCBV(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
-		// Bindless materials: g_axMaterials (a member of the DRAW set, bound once here — it
-		// persists in the DRAW-set staging and is re-written into the set each draw alongside
-		// DrawConstants) + the g_axTextures table (set 2).
-		xBinder.BindSRV_Buffer(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+		// (g_axMaterials lives in the persistent GLOBAL set now — no per-pass bind. Phase 5.3.)
 		pxCmdList->UseBindlessTextures(2);
 
 		for (u_int u = 0; u < xPacket.GetSize(); u++)
@@ -356,12 +353,9 @@ void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	namespace SM = Flux_Generated_StaticMeshes::StaticMesh_ToShadowmap;
 	// Shadow pass binds per-draw DrawConstants; the masked alpha cutout samples the
-	// base-colour texture bindlessly (opaque materials write cutoff 0 and the FS skips
-	// the sample). g_axMaterials + ShadowMatrices (all 4 cascade matrices, Phase 4a) +
-	// the g_axTextures table (set 2) are bound once here — the shadow pipeline was set
-	// by the caller (Flux_Shadows::ExecuteShadowCascade) before this call. The DRAW-set
-	// SSBOs are staged once and re-written into the set each draw alongside DrawConstants.
-	xBinder.BindSRV_Buffer(SM::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	// base-colour texture bindlessly (g_axMaterials is in the persistent GLOBAL set, Phase
+	// 5.3; opaque materials write cutoff 0 and the FS skips the sample). ShadowMatrices (all
+	// 4 cascade matrices, Phase 4a) + the g_axTextures table (set 2) are bound once here.
 	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
 	xCmdBuf.UseBindlessTextures(2);
 

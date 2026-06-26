@@ -242,9 +242,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// g_axTextures table (set 2). The lone FluxGraphics reach-in routes through the
 	// recovered instance's injected member.
 	xBinder.BindCBV(GB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
-	// g_axMaterials is a DRAW-set member: staged once here, re-written into the set each
-	// draw alongside DrawConstants. Plus the g_axTextures table (set 2).
-	xBinder.BindSRV_Buffer(GB::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	// (g_axMaterials lives in the persistent GLOBAL set now — no per-pass bind. Phase 5.3.)
 	pxCmdList->UseBindlessTextures(2);
 
 	for (u_int uItem = 0; uItem < xPacket.GetSize(); uItem++)
@@ -329,12 +327,10 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, con
 
 	namespace SM = Flux_Generated_AnimatedMeshes::AnimatedMesh_ToShadowmap;
 
-	// Shadow pass uses per-draw Bones + DrawConstants; the masked cutout samples the
-	// base colour bindlessly. g_axMaterials + ShadowMatrices (all 4 cascade matrices,
-	// Phase 4a) + the g_axTextures table (set 2) are bound once here — the shadow
-	// pipeline was set by the caller (Flux_Shadows::ExecuteShadowCascade). The DRAW-set
-	// SSBOs are staged once and re-written into the set each draw alongside DrawConstants.
-	xBinder.BindSRV_Buffer(SM::hg_axMaterials, g_xEngine.FluxGraphics().MaterialTable().GetSRV());
+	// Shadow pass uses per-draw Bones + DrawConstants; the masked cutout samples the base
+	// colour bindlessly (g_axMaterials is in the persistent GLOBAL set, Phase 5.3).
+	// ShadowMatrices (all 4 cascade matrices, Phase 4a) + the g_axTextures table (set 2)
+	// are bound once here — the shadow pipeline was set by the caller (ExecuteShadowCascade).
 	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
 	xCmdBuf.UseBindlessTextures(2);
 
