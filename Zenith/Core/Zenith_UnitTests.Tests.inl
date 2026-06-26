@@ -16294,6 +16294,7 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 #include "Flux/Flux_BindingValidation.h"
 #include "Flux/Slang/Flux_FrequencyTaxonomy.h"
 #include "Flux/Flux_BindlessAllocator.h"
+#include "Flux/Flux_PersistentSetLayouts.h"
 
 // Pure pre-draw staged-binding validator (Flux_ValidateStagedBindings). Device-
 // free mask comparison: every binding the pipeline declares (active) must have a
@@ -16326,6 +16327,54 @@ ZENITH_TEST(Flux, ValidateStagedBindings)
 		const u_int auStaged[1] = { 0b0u };
 		const Flux_StagedBindingCheck xChk = Flux_ValidateStagedBindings(auActive, auStaged, 1);
 		ZENITH_ASSERT_TRUE(xChk.m_bAllStaged, "unused canonical slots (no active bindings) never flag");
+	}
+}
+
+// Pure persistent-set classification + layout compatibility (Flux_PersistentSetLayouts).
+// Device-free foundation for Phase-5 persistent descriptor sets: ClassifyMember tags
+// ONLY the canonical spine members (so a non-spine program is never mis-tagged), and
+// ValidateCanonicalGroup accepts the single-CBV GLOBAL/VIEW layout while rejecting drift
+// (wrong kind at binding 0, a missing binding 0, or an unexpected extra member).
+ZENITH_TEST(Flux, PersistentSetLayouts)
+{
+	using namespace Flux_PersistentSetLayouts;
+
+	// ClassifyMember: only the canonical (set, name) pairs tag a persistent class.
+	ZENITH_ASSERT_EQ((u_int)ClassifyMember(0, "g_xGlobal"),    (u_int)FLUX_FREQUENCY_CLASS_GLOBAL,   "g_xGlobal@0 -> GLOBAL");
+	ZENITH_ASSERT_EQ((u_int)ClassifyMember(1, "g_xView"),      (u_int)FLUX_FREQUENCY_CLASS_VIEW,     "g_xView@1 -> VIEW");
+	ZENITH_ASSERT_EQ((u_int)ClassifyMember(2, "g_axTextures"), (u_int)FLUX_FREQUENCY_CLASS_BINDLESS, "g_axTextures@2 -> BINDLESS");
+	ZENITH_ASSERT_EQ((u_int)ClassifyMember(1, "g_xGlobal"),    (u_int)FLUX_FREQUENCY_CLASS_GENERIC,  "g_xGlobal at the wrong set -> GENERIC");
+	ZENITH_ASSERT_EQ((u_int)ClassifyMember(0, "g_xFoo"),       (u_int)FLUX_FREQUENCY_CLASS_GENERIC,  "non-spine member -> GENERIC");
+
+	auto fnSingleCBV = []() -> Flux_BindingGroupLayout
+	{
+		Flux_BindingGroupLayout x;
+		x.m_axBindings[0].m_bPresent         = true;
+		x.m_axBindings[0].m_eKind            = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+		x.m_axBindings[0].m_uDescriptorCount = 1;
+		return x;
+	};
+
+	std::string strErr;
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, fnSingleCBV(), strErr), "single-CBV GLOBAL is canonical");
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnSingleCBV(), strErr), "single-CBV VIEW is canonical");
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GENERIC, Flux_BindingGroupLayout(), strErr), "GENERIC class never asserted");
+
+	{
+		Flux_BindingGroupLayout x = fnSingleCBV();
+		x.m_axBindings[0].m_eKind = FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER;
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, x, strErr), "non-CBV binding 0 rejected");
+	}
+	{
+		Flux_BindingGroupLayout x; // all absent
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "absent binding 0 rejected");
+	}
+	{
+		Flux_BindingGroupLayout x = fnSingleCBV();
+		x.m_axBindings[1].m_bPresent         = true;
+		x.m_axBindings[1].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+		x.m_axBindings[1].m_uDescriptorCount = 1;
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, x, strErr), "extra member at slot 1 rejected (pre-5.3 single-member)");
 	}
 }
 

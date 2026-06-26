@@ -264,6 +264,10 @@ struct Flux_BindingGroupEntry
 struct Flux_BindingGroupLayout
 {
 	Flux_BindingGroupEntry m_axBindings[FLUX_MAX_BINDINGS_PER_GROUP];
+	// Persistence class (Phase 5). GENERIC for per-program PASS/DRAW + non-spine
+	// sets; GLOBAL/VIEW/BINDLESS for the canonical spine sets, tagged by reflection
+	// from the binding-0 member name. Drives the persistent-set layout borrow.
+	FluxFrequencyClass m_eFrequencyClass = FLUX_FREQUENCY_CLASS_GENERIC;
 };
 
 struct Flux_PipelineLayout

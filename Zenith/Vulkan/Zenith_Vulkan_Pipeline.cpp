@@ -12,6 +12,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 
 #include "Zenith_Vulkan.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_PersistentSetLayouts.h"   // Phase 5: persistent-set layout precondition
 #include "Flux/Flux_RenderTargets.h"
 
 // Hot-reload state was removed when the Slang migration retired the
@@ -770,6 +771,19 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 	for (u_int uDescSet = 0; uDescSet < xSpec.m_uNumBindingGroups; uDescSet++)
 	{
 		const Flux_BindingGroupLayout& xLayout = xSpec.m_axBindingGroups[uDescSet];
+
+		// Phase 5.0: persistent-set precondition. Any group reflection tagged GLOBAL
+		// or VIEW must match the canonical single-CBV layout, so the shared persistent
+		// set layouts (Phase 5.1) are byte-identical across every pipeline (Vulkan
+		// prefix-compatibility). Fails loudly at the first offending pipeline if the
+		// spine block and Flux_PersistentSetLayouts ever drift out of lockstep.
+		if (xLayout.m_eFrequencyClass == FLUX_FREQUENCY_CLASS_GLOBAL ||
+			xLayout.m_eFrequencyClass == FLUX_FREQUENCY_CLASS_VIEW)
+		{
+			std::string strErr;
+			Zenith_Assert(Flux_PersistentSetLayouts::ValidateCanonicalGroup(xLayout.m_eFrequencyClass, xLayout, strErr),
+				"Phase-5 persistent-set layout precondition violated: %s", strErr.c_str());
+		}
 
 		if (FluxKindIsUnboundedArray(xLayout.m_axBindings[0].m_eKind))
 		{

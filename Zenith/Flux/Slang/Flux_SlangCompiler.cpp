@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_Types.h"
+#include "Flux/Flux_PersistentSetLayouts.h"   // Phase 5: persistent-set classification
 
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 #include <slang.h>
@@ -70,12 +71,23 @@ void Flux_ShaderReflection::PopulateLayout(Flux_PipelineLayout& xLayoutOut) cons
 			xLayoutOut.m_uNumBindingGroups = xBinding.m_uSet + 1;
 		}
 
-		Flux_BindingGroupEntry& xEntry =
-			xLayoutOut.m_axBindingGroups[xBinding.m_uSet].m_axBindings[xBinding.m_uBinding];
+		Flux_BindingGroupLayout& xGroup = xLayoutOut.m_axBindingGroups[xBinding.m_uSet];
+		Flux_BindingGroupEntry& xEntry = xGroup.m_axBindings[xBinding.m_uBinding];
 		xEntry.m_eKind            = xBinding.m_eResourceKind;
 		xEntry.m_uDescriptorCount = xBinding.m_uDescriptorCount;
 		xEntry.m_uStageMask       = xBinding.m_uStageMask;
 		xEntry.m_bPresent         = true;
+
+		// Phase 5: tag the persistent spine sets (GLOBAL/VIEW/BINDLESS) by their
+		// canonical binding-0 member name, so the Vulkan RootSig can assert layout
+		// compatibility (5.0) and borrow the shared persistent layouts (5.1). Only the
+		// canonical member sets the class — non-spine sets stay GENERIC.
+		const FluxFrequencyClass eClass =
+			Flux_PersistentSetLayouts::ClassifyMember(xBinding.m_uSet, xBinding.m_strName);
+		if (eClass != FLUX_FREQUENCY_CLASS_GENERIC)
+		{
+			xGroup.m_eFrequencyClass = eClass;
+		}
 	}
 	// No gap-fill: RootSigBuilder iterates m_bPresent (not stop-at-first-hole),
 	// so sparse binding layouts are handled directly — the old placeholder

@@ -182,6 +182,19 @@ inline bool FluxKindIsUnboundedArray(FluxResourceKind e)
 	return e == FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY;
 }
 
+// Persistence class of a descriptor-set binding group (Phase 5). Tagged by
+// reflection (Flux_ShaderReflection::PopulateLayout) from the canonical spine
+// member at binding 0; consumed by the Vulkan RootSig build — a boot-time
+// compatibility assert in Phase 5.0, and the persistent-set layout borrow in
+// Phase 5.1. GENERIC covers per-program PASS/DRAW sets and any non-spine set.
+enum FluxFrequencyClass : u_int
+{
+	FLUX_FREQUENCY_CLASS_GENERIC  = 0,
+	FLUX_FREQUENCY_CLASS_GLOBAL   = 1, // spine set 0 (g_xGlobal ...)
+	FLUX_FREQUENCY_CLASS_VIEW     = 2, // spine set 1 (g_xView ...)
+	FLUX_FREQUENCY_CLASS_BINDLESS = 3, // spine set 2 (g_axTextures)
+};
+
 enum LoadAction
 {
 	LOAD_ACTION_DONTCARE,
