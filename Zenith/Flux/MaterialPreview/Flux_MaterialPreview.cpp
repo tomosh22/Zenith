@@ -138,10 +138,10 @@ void Flux_MaterialPreviewImpl::Initialise()
 	m_axMeshes[MATERIAL_PREVIEW_MESH_PLANE].Set(Zenith_MeshGeometryAsset::CreateUnitCube());	// flattened via the model matrix
 	m_axMeshes[MATERIAL_PREVIEW_MESH_CYLINDER].Set(Zenith_MeshGeometryAsset::CreateUnitCylinder(32));
 
-	// Preview-camera FrameConstants clone (bound to the VIEW set).
-	m_xPreviewFrameConstants = Flux_GraphicsImpl::FrameConstants();
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&m_xPreviewFrameConstants,
-		sizeof(Flux_GraphicsImpl::FrameConstants), m_xPreviewFrameConstantsBuffer);
+	// Preview-camera VIEW constants (a real ViewConstants bound to the VIEW set).
+	m_xPreviewViewConstants = Flux_GraphicsImpl::ViewConstants();
+	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&m_xPreviewViewConstants,
+		sizeof(Flux_GraphicsImpl::ViewConstants), m_xPreviewViewConstantsBuffer);
 
 	// Preview GLOBAL constants (bound to the GLOBAL set — carries the preview sun).
 	m_xPreviewGlobalConstants = Flux_GraphicsImpl::GlobalConstants();
@@ -164,7 +164,7 @@ void Flux_MaterialPreviewImpl::Shutdown()
 	m_xBackgroundShader.Reset();
 	m_xTonemapShader.Reset();
 
-	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xPreviewFrameConstantsBuffer);
+	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xPreviewViewConstantsBuffer);
 	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xPreviewGlobalConstantsBuffer);
 
 	Flux_RenderAttachmentBuilder::Destroy(m_xPreviewHDR);
@@ -230,11 +230,11 @@ Zenith_Maths::Matrix4 Flux_MaterialPreviewImpl::GetActiveMeshModelMatrix() const
 
 // Prepare (main thread): rebuild + upload the preview camera's frame
 // constants from the orbit state.
-void Flux_MaterialPreviewImpl::UploadPreviewFrameConstants()
+void Flux_MaterialPreviewImpl::UploadPreviewViewConstants()
 {
 	if (!m_bActive) return;
 
-	Flux_GraphicsImpl::FrameConstants& xFC = m_xPreviewFrameConstants;
+	Flux_GraphicsImpl::ViewConstants& xFC = m_xPreviewViewConstants;
 
 	const float fCosPitch = cosf(m_fCameraPitch);
 	const Zenith_Maths::Vector3 xCameraPos(
@@ -252,27 +252,24 @@ void Flux_MaterialPreviewImpl::UploadPreviewFrameConstants()
 	xFC.m_xInvProjMat = glm::inverse(xFC.m_xProjMat);
 	xFC.m_xCamPos_Pad = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	// Rotatable preview light (UE L-drag). g_xSunDir points FROM the light
-	// INTO the scene (matches the deferred convention).
+	xFC.m_xScreenDims = { uPREVIEW_SIZE, uPREVIEW_SIZE };
+	xFC.m_xRcpScreenDims = { 1.0f / uPREVIEW_SIZE, 1.0f / uPREVIEW_SIZE };
+	xFC.m_xCameraNearFar = { 0.05f, 50.0f };
+
+	g_xEngine.FluxMemory().UploadBufferData(m_xPreviewViewConstantsBuffer.GetBuffer().m_xVRAMHandle,
+		&xFC, sizeof(Flux_GraphicsImpl::ViewConstants));
+
+	// Rotatable preview light (UE L-drag). g_xSunDir points FROM the light INTO the
+	// scene (matches the deferred convention). The sun lives in the GLOBAL set (set 0)
+	// — the spine forward shader reads it from g_xGlobalSet.g_xGlobal, not the VIEW set
+	// — so write it straight into the GLOBAL buffer (it is NOT a ViewConstants field).
 	const float fCosLightPitch = cosf(m_fLightPitch);
 	const Zenith_Maths::Vector3 xLightDir = -Zenith_Maths::Vector3(
 		fCosLightPitch * sinf(m_fLightYaw),
 		sinf(m_fLightPitch),
 		fCosLightPitch * cosf(m_fLightYaw));
-	xFC.m_xSunDir_Pad = Zenith_Maths::Vector4(glm::normalize(xLightDir), 0.0f);
-	xFC.m_xSunColour_Pad = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 3.0f);
-
-	xFC.m_xScreenDims = { uPREVIEW_SIZE, uPREVIEW_SIZE };
-	xFC.m_xRcpScreenDims = { 1.0f / uPREVIEW_SIZE, 1.0f / uPREVIEW_SIZE };
-	xFC.m_xCameraNearFar = { 0.05f, 50.0f };
-
-	g_xEngine.FluxMemory().UploadBufferData(m_xPreviewFrameConstantsBuffer.GetBuffer().m_xVRAMHandle,
-		&xFC, sizeof(Flux_GraphicsImpl::FrameConstants));
-
-	// Mirror the preview sun into the GLOBAL-set buffer — the spine forward shader
-	// reads the sun from g_xGlobalSet.g_xGlobal (set 0), not from the camera/VIEW set.
-	m_xPreviewGlobalConstants.m_xSunDir_Pad    = xFC.m_xSunDir_Pad;
-	m_xPreviewGlobalConstants.m_xSunColour_Pad = xFC.m_xSunColour_Pad;
+	m_xPreviewGlobalConstants.m_xSunDir_Pad    = Zenith_Maths::Vector4(glm::normalize(xLightDir), 0.0f);
+	m_xPreviewGlobalConstants.m_xSunColour_Pad = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 3.0f);
 	g_xEngine.FluxMemory().UploadBufferData(m_xPreviewGlobalConstantsBuffer.GetBuffer().m_xVRAMHandle,
 		&m_xPreviewGlobalConstants, sizeof(Flux_GraphicsImpl::GlobalConstants));
 }
@@ -285,7 +282,7 @@ void Flux_MaterialPreviewImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	const Flux_PassHandle xBackgroundPass = xGraph.AddPass("MaterialPreview Background", ExecutePreviewBackground)
 		.Prepare([](void*){
 			Flux_MaterialPreviewImpl& xPrev = g_xEngine.MaterialPreview();
-			xPrev.UploadPreviewFrameConstants();
+			xPrev.UploadPreviewViewConstants();
 			// Register the previewed material with the GPU table (MAIN THREAD), so the
 			// mesh pass's worker record reads a valid index + the textures are bindless.
 			if (xPrev.IsActive())
@@ -348,7 +345,7 @@ static void ExecutePreviewBackground(Flux_CommandBuffer* pxCmdList, void*)
 	// ParameterBlock spine: the preview camera is now the VIEW set (set 1)
 	// g_xView, still sourced from the PREVIEW camera buffer (a FrameConstants
 	// clone) so RayDir reconstructs through the orbit camera.
-	xBinder.BindCBV(BG::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(BG::hg_xView, &xZZ.m_xPreviewViewConstantsBuffer.GetCBV());
 	// The IBL prefiltered environment doubles as the visible background, so
 	// what you see is exactly what lights the mesh.
 	xBinder.BindSRV(BG::hg_xCubemap, &g_xEngine.IBL().GetPrefilteredMapSRV());
@@ -381,30 +378,12 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	namespace FW = Flux_Generated_MaterialPreview::MaterialPreview_Forward;
-	// ParameterBlock spine: the preview camera is now the VIEW set (set 1)
-	// g_xView, still sourced from the PREVIEW orbit camera buffer (its matrices +
-	// camera position are an identical prefix of ViewConstantsLayout). The preview
-	// sun moved to the GLOBAL set (set 0) g_xGlobal — its own preview buffer.
-	// Guard that prefix assumption: hg_xView is read by the shader as a
-	// ViewConstantsLayout, but we bind a FrameConstants clone. Only the view/proj +
-	// inv* matrices + camera position (up to m_xCamPos_Pad) are a byte-identical
-	// prefix of both structs — they DIVERGE right after (FrameConstants has sun
-	// fields where ViewConstants has screen dims), and the forward preview shader
-	// reads nothing past it. A future field reorder must fail the build, not
-	// silently render the preview through a garbage camera.
-	// Assert the ENTIRE bound prefix (everything the forward preview shader reads
-	// from VIEW), not just the campos offset — a reorder anywhere inside the matrix
-	// block would otherwise slip past a single-offset check.
-	static_assert(offsetof(Flux_GraphicsImpl::FrameConstants, m_xViewMat)        == offsetof(Flux_GraphicsImpl::ViewConstants, m_xViewMat)        &&
-	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xProjMat)        == offsetof(Flux_GraphicsImpl::ViewConstants, m_xProjMat)        &&
-	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xViewProjMat)    == offsetof(Flux_GraphicsImpl::ViewConstants, m_xViewProjMat)    &&
-	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xInvViewProjMat) == offsetof(Flux_GraphicsImpl::ViewConstants, m_xInvViewProjMat) &&
-	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xInvViewMat)     == offsetof(Flux_GraphicsImpl::ViewConstants, m_xInvViewMat)     &&
-	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xInvProjMat)     == offsetof(Flux_GraphicsImpl::ViewConstants, m_xInvProjMat)     &&
-	              offsetof(Flux_GraphicsImpl::FrameConstants, m_xCamPos_Pad)     == offsetof(Flux_GraphicsImpl::ViewConstants, m_xCamPos_Pad),
-		"MaterialPreview binds a FrameConstants clone to the VIEW set; the entire view/proj+inv*+campos prefix "
-		"must be byte-identical to ViewConstants (they legitimately diverge only AFTER m_xCamPos_Pad: sun vs screen dims)");
-	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewFrameConstantsBuffer.GetCBV());
+	// The preview camera is a real ViewConstants bound to the spine VIEW set (set 1)
+	// g_xView; the preview sun lives in the GLOBAL set (set 0) g_xGlobal. Because the
+	// bound buffer IS a ViewConstants, every field the forward shader reads from VIEW
+	// (incl. g_xRcpScreenDims, used by the clustered-lights path) is at the correct
+	// offset — no fragile shared-prefix assumption to guard.
+	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewViewConstantsBuffer.GetCBV());
 	xBinder.BindCBV(FW::hg_xGlobal, &xZZ.m_xPreviewGlobalConstantsBuffer.GetCBV());
 	// The g_axTextures bindless table (set 2). g_axMaterials is a DRAW-set (4) member
 	// bound per-draw below, right after DrawConstants (same set-4 group).

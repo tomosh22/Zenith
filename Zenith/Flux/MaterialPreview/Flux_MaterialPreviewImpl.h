@@ -83,7 +83,7 @@ public:
 	// Internals (public for the non-capturing graph trampolines)
 	//--------------------------------------------------------------------------
 
-	void UploadPreviewFrameConstants();	// Prepare (main thread)
+	void UploadPreviewViewConstants();	// Prepare (main thread)
 	Zenith_MeshGeometryAsset* GetActiveMeshGeometry();
 	Zenith_Maths::Matrix4 GetActiveMeshModelMatrix() const;
 
@@ -104,11 +104,13 @@ public:
 	Flux_RenderAttachment m_xPreviewDepth;	// D32
 	Flux_RenderAttachment m_xPreviewLDR;	// RGBA8 (ImGui samples this)
 
-	// Preview-camera FrameConstants clone — bound to the spine VIEW set (set 1)
-	// g_xView; its matrices + camera position are an identical prefix of
-	// ViewConstantsLayout so the converted forward shader reads them correctly.
-	Flux_GraphicsImpl::FrameConstants m_xPreviewFrameConstants;
-	Flux_DynamicConstantBuffer        m_xPreviewFrameConstantsBuffer;
+	// Preview-camera VIEW constants — a real ViewConstants bound to the spine VIEW
+	// set (set 1) g_xView. (It used to be a FrameConstants clone relying on a shared
+	// prefix, but the forward preview shader also reads g_xView.g_xRcpScreenDims,
+	// which lies in the region where FrameConstants and ViewConstants diverge — only
+	// a true ViewConstants places every field the shader reads at the right offset.)
+	Flux_GraphicsImpl::ViewConstants m_xPreviewViewConstants;
+	Flux_DynamicConstantBuffer       m_xPreviewViewConstantsBuffer;
 
 	// Preview GLOBAL constants — bound to the spine GLOBAL set (set 0) g_xGlobal.
 	// The spine split moved the sun out of the camera clone, so the rotatable
