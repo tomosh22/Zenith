@@ -342,9 +342,9 @@ static void ExecutePreviewBackground(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	namespace BG = Flux_Generated_MaterialPreview::MaterialPreview_Background;
-	// ParameterBlock spine: the preview camera is now the VIEW set (set 1)
-	// g_xView, still sourced from the PREVIEW camera buffer (a FrameConstants
-	// clone) so RayDir reconstructs through the orbit camera.
+	// ParameterBlock spine: the preview camera is the VIEW set (set 1) g_xView,
+	// sourced from the PREVIEW orbit-camera buffer (a real ViewConstants) so the
+	// spine's RayDir reconstruction works unmodified.
 	xBinder.BindCBV(BG::hg_xView, &xZZ.m_xPreviewViewConstantsBuffer.GetCBV());
 	// The IBL prefiltered environment doubles as the visible background, so
 	// what you see is exactly what lights the mesh.

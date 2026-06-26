@@ -5,9 +5,9 @@
 // Fills the preview HDR target with the scene's environment cubemap
 // seen through the preview orbit camera — the UE-style "environment
 // visible behind the preview mesh". The pass binds a subsystem-owned
-// VIEW set built from the orbit camera (the preview FrameConstants
-// clone, sourced from m_xPreviewFrameConstantsBuffer onto hg_xView), so
-// the spine's RayDir reconstruction works unmodified.
+// VIEW set built from the orbit camera (a real ViewConstants, sourced
+// from m_xPreviewViewConstantsBuffer onto hg_xView), so the spine's
+// RayDir reconstruction works unmodified.
 //
 // ParameterBlock spine: the camera arrives through the VIEW set (set 1)
 // from the PREVIEW camera buffer; this pass's only own resource (the
