@@ -8,9 +8,9 @@
 // identical to the G-buffer path), guarded on GetAlphaCutoff() > 0 so
 // opaque casters stay depth-only.
 //
-// The Bones UBO occupies binding 1, so the shadow matrix lives at binding 2
-// and the base-colour texture at binding 3 (matches the legacy Mesh_Vert
-// layout offsets).
+// The all-cascade sun view×proj matrices are now in the persistent VIEW set
+// (g_xViewSet.g_xShadowMatrices, Phase 5.4); the DRAW block holds only the
+// skinning Bones UBO + per-draw constants.
 // =====================================================================
 
 #include "Common/Bindings.slang"
@@ -40,16 +40,13 @@ struct VsOut
 
 struct BonesLayout      { float4x4 g_xBones[100]; };
 
-// Per-draw block (set 3): skinning bones + all-cascade shadow matrices + per-draw
-// material constants + base colour (for the masked cutout). ShadowMatrices holds all
-// 4 cascade sun view×proj matrices (Phase 4a); this caster selects element
-// DrawConstants.g_uShadowCascade (set per cascade pass). Member names preserved so the
-// codegen handle names (hBones, hShadowMatrices, hDrawConstants) — and the C++ binds —
-// stay stable.
+// Per-draw block (set 3): skinning bones + per-draw material constants + base colour
+// (for the masked cutout). The all-cascade sun view×proj matrices live in the persistent
+// VIEW set (g_xViewSet.g_xShadowMatrices, Phase 5.4); this caster selects element
+// DrawConstants.g_uShadowCascade (set per cascade pass).
 struct DrawParams
 {
 	ConstantBuffer<BonesLayout>         Bones;
-	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 };
 ParameterBlock<DrawParams> g_xDrawSet;
@@ -68,7 +65,7 @@ VsOut vsMain(VsIn input)
 	}
 
 	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, xFinalPosition).xyz;
-	o.position    = mul(g_xDrawSet.ShadowMatrices[g_xDrawSet.DrawConstants.g_uShadowCascade], float4(xWorldPos, 1.0));
+	o.position    = mul(g_xViewSet.g_xShadowMatrices[g_xDrawSet.DrawConstants.g_uShadowCascade], float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;

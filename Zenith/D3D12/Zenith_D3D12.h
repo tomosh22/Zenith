@@ -91,8 +91,9 @@ public:
 	void RecordFrame(const Flux_WorkDistribution& xWorkDistribution);
 	// Phase 5.1: no-op on the null backend — it has no persistent descriptor sets.
 	void PreparePersistentSets(Flux_BufferDescriptorHandle /*xGlobalCBV*/, Flux_BufferDescriptorHandle /*xMaterialsSSBO*/, Flux_BufferDescriptorHandle /*xViewCBV*/) { }
-	// Phase 5.4: no-op on the null backend (no real VIEW-set image descriptors).
+	// Phase 5.4: no-op on the null backend (no real VIEW-set image/buffer descriptors).
 	void WritePersistentViewImage(u_int /*uBinding*/, const Flux_ShaderResourceView& /*xSRV*/, const Zenith_D3D12_Sampler& /*xSampler*/) { }
+	void WritePersistentViewBuffer(u_int /*uBinding*/, const Flux_ShaderResourceView_Buffer& /*xSRV*/) { }
 	void EndFrame(bool /*bSubmitRenderWork*/) { }
 
 	// Wait for GPU idle — no-op (nothing is in flight in the null backend).

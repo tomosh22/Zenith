@@ -41,8 +41,7 @@ struct PassParams
 	Sampler3D u_xNoiseTexture3D;
 	Sampler2D u_xBlueNoiseTexture;
 
-	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
-	StructuredBuffer<float4x4> ShadowMatrices;
+	// (g_xShadowMatrices — all 4 cascade sun view×proj — is in the persistent VIEW set, Phase 5.4)
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -60,10 +59,10 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 float SampleVolumetricShadow(float3 worldPos)
 {
 	float4x4 axShadowMats[4] = {
-		g_xPassSet.ShadowMatrices[0],
-		g_xPassSet.ShadowMatrices[1],
-		g_xPassSet.ShadowMatrices[2],
-		g_xPassSet.ShadowMatrices[3],
+		g_xViewSet.g_xShadowMatrices[0],
+		g_xViewSet.g_xShadowMatrices[1],
+		g_xViewSet.g_xShadowMatrices[2],
+		g_xViewSet.g_xShadowMatrices[3],
 	};
 
 	const float2 axOffsets[4] = {

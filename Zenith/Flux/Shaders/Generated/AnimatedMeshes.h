@@ -53,6 +53,8 @@ namespace Flux_Generated_AnimatedMeshes
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -120,6 +122,8 @@ namespace Flux_Generated_AnimatedMeshes
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -129,10 +133,8 @@ namespace Flux_Generated_AnimatedMeshes
 			unsigned char m_ag_xBones[6400]; // slang=Array offset=0 arrayCount=100 (no C++ mapping)
 		};
 		static_assert(sizeof(Bones_CB) == 6400, "Bones_CB size drifted from Slang reflection");
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 2u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
 		{
 			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)

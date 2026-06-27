@@ -174,32 +174,26 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 
 	const uint32_t u = Flux_UnpackUserData<uint32_t>(pUserData);
 
-	// Non-capturing trampoline: recover the Shadows singleton, then route its
-	// own state (matrix buffers) through xZZ. Sibling subsystems (StaticMeshes /
-	// AnimatedMeshes) are recovered as their own singletons.
-	Flux_ShadowsImpl& xZZ = g_xEngine.Shadows();
-
 	// Fixed-function slope-scaled depth bias for shadow acne. The caster pipelines
 	// declare depth-bias + dynamic-depth-bias state; this sets it per cascade
 	// command list (dynamic state is per-command-buffer). Bias is applied entirely
 	// by the rasterizer here — never in the sampling shader.
 	pxCommandList->SetDepthBias(dbg_fShadowDepthBiasConstant, dbg_fShadowDepthBiasSlope, 0.f);
 
-	// All casters read the cascade matrix from the shared ShadowMatrices SSBO,
-	// selecting element `u` via the per-draw MeshDrawConstants cascade index.
-	Flux_ShaderResourceView_Buffer& xShadowMatricesSRV = xZZ.GetShadowMatricesSRV();
+	// All casters read the cascade matrix from the persistent VIEW set's all-cascade
+	// g_xShadowMatrices SSBO (Phase 5.4), selecting element `u` via the per-draw cascade index.
 
 	auto& xStaticMeshes = g_xEngine.StaticMeshes();
 	pxCommandList->SetPipeline(&xStaticMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	xStaticMeshes.RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
+	xStaticMeshes.RenderToShadowMap(*pxCommandList, u);
 
 	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
 	pxCommandList->SetPipeline(&xAnimatedMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
+	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, u);
 
 	// Instanced meshes (incl. terrain trees) cast shadows over ALL enabled casters
 	// (no camera culling — off-screen casters must still cast). The buffers it
@@ -207,10 +201,10 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// ReadBuffer declaration is needed; the cascade pass already declares the depth
 	// target write. RenderToShadowMap binds its own pipeline (only when casters
 	// exist) and early-returns when instanced meshes are disabled / no groups.
-	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
+	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, u);
 
 	// #TODO: Enable terrain shadow casting
-	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, xShadowMatricesSRV, u);
+	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, u);
 }
 
 void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

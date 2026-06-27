@@ -757,7 +757,6 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
 		// View constants (camera VIEW set) + bindless materials: g_axMaterials (GLOBAL
 		// set) + the g_axTextures table (set 2), bound once per pass after SetPipeline.
-		xBinder.BindCBV(GB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 		// (g_axMaterials lives in the persistent GLOBAL set now — no per-pass bind. Phase 5.3.)
 		pxCmdList->UseBindlessTextures(2);
 
@@ -812,7 +811,7 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade)
+void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
 	// WIRED into Flux_Shadows::ExecuteShadowCascade (per cascade). Instanced meshes
 	// (incl. the terrain trees) cast shadows over ALL ENABLED casters — there is NO
@@ -853,9 +852,9 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, co
 
 	// Shadow pass: per-draw DrawConstants + transform/visible-index SSBOs; the masked
 	// cutout samples the base colour bindlessly (g_axMaterials is in the persistent GLOBAL
-	// set, Phase 5.3). ShadowMatrices (all 4 cascade matrices, Phase 4a) + the g_axTextures
-	// table (set 2) are bound once here (after the shadow pipeline bind above).
-	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
+	// set, Phase 5.3). The all-cascade ShadowMatrices SSBO is in the persistent VIEW set
+	// (Phase 5.4); the g_axTextures table (set 2) is bound once here (after the shadow
+	// pipeline bind above).
 	xCmdBuf.UseBindlessTextures(2);
 
 	for (u_int uGroup = 0; uGroup < m_apxInstanceGroups.GetSize(); ++uGroup)

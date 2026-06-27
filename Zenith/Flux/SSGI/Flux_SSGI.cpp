@@ -251,11 +251,6 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	SSGIConstants xFrameConstants = dbg_xSSGIConstants;
 	xFrameConstants.m_uBinarySearchIterations = xZZ.ComputeEffectiveBinarySearchIterations();
 
-	// Converted to the ParameterBlock spine: the camera CB is now the VIEW set
-	// (set 1) g_xView, sourced from m_xViewConstantsBuffer. SSGI reads only the
-	// view/camera fields (g_xViewMat, g_xCameraNearFar) — no sun/global — so no
-	// GLOBAL-set bind is needed.
-	xBinder.BindCBV(RM::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindDrawConstants(RM::hSSGIConstants, &xFrameConstants, sizeof(SSGIConstants));
 
 	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV());

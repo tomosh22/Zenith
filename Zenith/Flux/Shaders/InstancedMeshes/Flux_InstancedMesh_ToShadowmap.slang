@@ -19,13 +19,14 @@
 // The masked-cutout base-colour texture is bindless now (set 2), resolved in
 // fsMain from the material record.
 //
+// The all-cascade sun view×proj matrices are in the persistent VIEW set
+// (g_xViewSet.g_xShadowMatrices, Phase 5.4), indexed by DrawConstants.g_uShadowCascade.
 // DRAW block (set 3) bindings:
-//   binding 0   ShadowMatrices (all-cascade sun view×proj SSBO; index = DrawConstants.g_uShadowCascade)
-//   binding 1   DrawConstants (material-table index + g_xVATParams: VAT texW/texH/enable)
-//   binding 2   TransformBuffer
-//   binding 3   AnimDataBuffer
-//   binding 4   VisibleIndexBuffer
-//   binding 5   g_xAnimationTex (VAT positions per frame; POINT sampler)
+//   binding 0   DrawConstants (material-table index + g_xVATParams: VAT texW/texH/enable)
+//   binding 1   TransformBuffer
+//   binding 2   AnimDataBuffer
+//   binding 3   VisibleIndexBuffer
+//   binding 4   g_xAnimationTex (VAT positions per frame; POINT sampler)
 // =====================================================================
 
 #include "Common/Bindings.slang"
@@ -51,18 +52,17 @@ struct VsOut
 	float4 vertexColor : TEXCOORD1;
 };
 
-// DRAW block (set 3) — all-cascade shadow matrices + per-draw constants + the
-// masked-cutout base-colour texture + the SAME instancing buffers and VAT animation
-// texture as the G-buffer pass (the shadow geometry MUST match the lit pose; see header).
-// ShadowMatrices holds all 4 cascade sun view×proj matrices (Phase 4a); this caster
-// selects element DrawConstants.g_uShadowCascade (set per cascade pass).
+// DRAW block (set 3) — per-draw constants + the masked-cutout base-colour texture + the
+// SAME instancing buffers and VAT animation texture as the G-buffer pass (the shadow
+// geometry MUST match the lit pose; see header). The all-cascade sun view×proj matrices
+// now live in the persistent VIEW set (g_xViewSet.g_xShadowMatrices, Phase 5.4); this
+// caster selects element DrawConstants.g_uShadowCascade (set per cascade pass).
 //
 // Masked cutout texture (g_xBaseColorTex) matches the G-buffer's base-colour slot
 // by name. VAT params live in DrawConstants.g_xVATParams (see Flux_InstancedMesh_ToGBuffer:
 // one scratch/draw-constants buffer per descriptor set, so VAT can't be a 2nd CB).
 struct DrawParams
 {
-	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 	StructuredBuffer<float4x4> TransformBuffer;
 	StructuredBuffer<uint4>    AnimDataBuffer;
@@ -125,7 +125,7 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 	}
 
 	float3 xWorldPos = mul(xModelMatrix, float4(xLocalPos, 1.0)).xyz;
-	o.position    = mul(g_xDrawSet.ShadowMatrices[dc.g_uShadowCascade], float4(xWorldPos, 1.0));
+	o.position    = mul(g_xViewSet.g_xShadowMatrices[dc.g_uShadowCascade], float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;

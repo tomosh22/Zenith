@@ -141,7 +141,6 @@ static void ExecuteSSAOGenerate(Flux_CommandBuffer* pxCommandList, void*)
 
 	namespace NS = Flux_Generated_SSAO::SSAO_Main;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(NS::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindDrawConstants(NS::hSSAOConstants, &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
 	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
 	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));

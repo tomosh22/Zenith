@@ -2,7 +2,8 @@
 
 #include "Core/ZenithConfig.h"
 #include "Collections/Zenith_Vector.h"
-#include "Flux/Flux_Types.h"   // Flux_VRAMHandle (complete, for the accessor trampoline)
+#include "Flux/Flux_Types.h"                  // Flux_VRAMHandle (complete, for the accessor trampoline)
+#include "Flux/Flux_PersistentSetLayouts.h"  // kuSetView (per-camera view-sharing guard)
 
 // =====================================================================
 // Phase 5.5 — VIEW/GLOBAL-set graph-Read() validator (pure core + registry).
@@ -82,7 +83,35 @@ struct Flux_ViewSetBinding
 	Flux_ViewSetSourceClass m_eSource             = FLUX_VIEWSET_SOURCE_CPU_GLOBAL_BUFFER;
 	Flux_VRAMHandle       (*m_pfnGetVRAMHandle)() = nullptr;                            // GRAPH_RESOURCE only; live handle this frame
 	bool                  (*m_pfnIsEnabled)()     = nullptr;                            // null ⇒ always enabled
+	bool                    m_bPerCamera          = false;                              // contents depend on the active camera (depth/HiZ/G-buffer/SSR) → unsafe in the SHARED VIEW set until multi-view (Phase 5.6)
 };
+
+// Multi-view (secondary-view PushViewSet/PopViewSet, Phase 5.6) is NOT implemented.
+// The persistent VIEW set is therefore SHARED: every view (incl. MaterialPreview's
+// secondary view) samples the MAIN camera's copy. A PER-CAMERA resource — one whose
+// contents depend on the active camera (scene depth, HiZ, G-buffer, SSR/SSGI/SSAO) —
+// MUST NOT be promoted into VIEW until 5.6, or a secondary view silently reads the
+// main camera's data and no validator catches it. View-invariant resources (CSM, IBL,
+// shadow matrices, light clusters) are always safe to share. Flip this when 5.6 lands.
+inline constexpr bool kbFluxMultiViewSupported = false;
+
+// Pure guard: false (naming the offender) if any VIEW (set 1) row is per-camera while
+// multi-view is unsupported. Device-free; unit-tested; asserted once at registry build,
+// so a future per-camera promotion fails loud instead of silently aliasing the camera.
+inline bool Flux_ViewSetRegistryRespectsViewSharing(const Flux_ViewSetBinding* axRows, u_int uCount,
+	bool bMultiViewSupported, const char** pszOffenderOut = nullptr)
+{
+	if (bMultiViewSupported) { return true; }
+	for (u_int u = 0; u < uCount; u++)
+	{
+		if (axRows[u].m_uSet == Flux_PersistentSetLayouts::kuSetView && axRows[u].m_bPerCamera)
+		{
+			if (pszOffenderOut) { *pszOffenderOut = axRows[u].m_szMemberName; }
+			return false;
+		}
+	}
+	return true;
+}
 
 // The canonical VIEW/GLOBAL member registry, built once. Currently only the
 // always-exempt CPU global buffers; Phase 5.4 adds one GRAPH_RESOURCE row per

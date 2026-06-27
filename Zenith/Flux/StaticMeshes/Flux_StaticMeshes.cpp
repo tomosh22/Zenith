@@ -336,7 +336,6 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	{
 		const bool bTwoSidedPass = (uCullPass == 1);
 		pxCmdList->SetPipeline(bTwoSidedPass ? &xZZ.m_xGBufferPipelineTwoSided : &xZZ.m_xGBufferPipeline);
-		xBinder.BindCBV(Flux_Generated_StaticMeshes::StaticMesh_ToGBuffer::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 		// (g_axMaterials lives in the persistent GLOBAL set now — no per-pass bind. Phase 5.3.)
 		pxCmdList->UseBindlessTextures(2);
 
@@ -348,15 +347,15 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade)
+void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	namespace SM = Flux_Generated_StaticMeshes::StaticMesh_ToShadowmap;
 	// Shadow pass binds per-draw DrawConstants; the masked alpha cutout samples the
 	// base-colour texture bindlessly (g_axMaterials is in the persistent GLOBAL set, Phase
-	// 5.3; opaque materials write cutoff 0 and the FS skips the sample). ShadowMatrices (all
-	// 4 cascade matrices, Phase 4a) + the g_axTextures table (set 2) are bound once here.
-	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
+	// 5.3; opaque materials write cutoff 0 and the FS skips the sample). The all-cascade
+	// ShadowMatrices SSBO is in the persistent VIEW set (Phase 5.4); the g_axTextures table
+	// (set 2) is bound once here.
 	xCmdBuf.UseBindlessTextures(2);
 
 	// Iterate the UNCULLLED shadow packet (EnsureShadowPacket, main thread) — off-screen

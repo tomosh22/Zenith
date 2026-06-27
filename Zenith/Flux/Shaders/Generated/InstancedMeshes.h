@@ -53,6 +53,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -121,12 +123,12 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hShadowMatrices{ 3u, 0u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
 		{
 			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
@@ -142,13 +144,13 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 	// ----- InstanceCulling (InstancedMeshes/Flux_InstanceCulling) -----
@@ -191,6 +193,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -261,6 +265,8 @@ namespace Flux_Generated_InstancedMeshes
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer

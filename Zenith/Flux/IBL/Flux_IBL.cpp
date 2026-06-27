@@ -308,8 +308,6 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandBuffer* pxCmd, void* pU
 	{
 		namespace IC = Flux_Generated_IBL::IBL_IrradianceConvolution;
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(IC::hg_xView, &xFG.m_xViewConstantsBuffer.GetCBV());
-		xBinder.BindCBV(IC::hg_xGlobal, &xFG.m_xGlobalConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(IC::hIrradianceConstants, &xConsts, sizeof(xConsts));
 		if (Zenith_TextureAsset* pxCubemap = xFG.m_xCubemapTexture.GetDirect())
 			xBinder.BindSRV(IC::hg_xSkyboxCubemap, &pxCubemap->GetSRV());
@@ -341,8 +339,6 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandBuffer* pxCmd, void* 
 	{
 		namespace PF = Flux_Generated_IBL::IBL_PrefilterEnvMap;
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(PF::hg_xView, &xFG.m_xViewConstantsBuffer.GetCBV());
-		xBinder.BindCBV(PF::hg_xGlobal, &xFG.m_xGlobalConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(PF::hPrefilterConstants, &xConsts, sizeof(xConsts));
 		if (Zenith_TextureAsset* pxCubemap = xFG.m_xCubemapTexture.GetDirect())
 			xBinder.BindSRV(PF::hg_xSkyboxCubemap, &pxCubemap->GetSRV());

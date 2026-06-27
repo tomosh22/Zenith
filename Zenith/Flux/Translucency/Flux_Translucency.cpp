@@ -233,8 +233,6 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 	Flux_TranslucencyImpl& xZZ = g_xEngine.Translucency();
 	if (xZZ.m_xDrawPacket.GetSize() == 0) return;
 
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -270,20 +268,14 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 
 			// (Re)bind the per-pass resources for the new pipeline.
 			namespace TF = Flux_Generated_Translucency::Translucent_Forward;
-			// Frequency-set spine: GLOBAL (sun/time) at set 0, VIEW (camera) at set 1.
-			// The shader reads the sun direction/colour (sun direct + CSM) and the
-			// camera, so both spine blocks are bound.
-			xBinder.BindCBV(TF::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
-			xBinder.BindCBV(TF::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 			// The g_axTextures bindless table (set 2). g_axMaterials is a DRAW-set (4) member
 			// bound per-draw below — it must be staged right after DrawConstants so the
 			// set-4 group isn't reset out from under it by the intervening PASS-set binds.
 			pxCmdList->UseBindlessTextures(2);
 			xBinder.BindDrawConstants(TF::hTranslucencyConstants, &xConstants, sizeof(xConstants));
 
-			// CSM is now in the persistent VIEW set (Phase 5.4) — no per-pass bind.
-			// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
-			xBinder.BindSRV_Buffer(TF::hShadowMatrices, xShadows.GetShadowMatricesSRV());
+			// CSM and the all-cascade ShadowMatrices SSBO are now in the persistent VIEW set
+			// (Phase 5.4) — no per-pass bind.
 
 			xBinder.BindSRV(TF::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
 			xBinder.BindSRV(TF::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());

@@ -247,7 +247,6 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAlpha, 1);
 
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			xBinder.BindCBV(PT::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
 			pxCommandList->UseBindlessTextures(2);
 
@@ -264,7 +263,6 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			pxCommandList->SetVertexBuffer(xParticles.m_xInstanceBufferAdditive, 1);
 
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			xBinder.BindCBV(PT::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
 			pxCommandList->UseBindlessTextures(2);
 

@@ -124,9 +124,7 @@ static void ExecuteLightClustering(Flux_CommandBuffer* pxCommandList, void* /*pU
 
 	namespace LC = Flux_Generated_DynamicLights::LightClustering;
 
-	// Inputs. Spine: camera CB is the VIEW set (g_xView), from m_xViewConstantsBuffer.
-	xBinder.BindCBV(LC::hg_xView,
-		&g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
+	// Inputs.
 	xBinder.BindSRV_Buffer(LC::hLightBuffer,
 		xDynamicLights.GetLightBufferSRV());
 

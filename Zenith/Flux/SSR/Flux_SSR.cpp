@@ -377,8 +377,6 @@ static void ExecuteSSRRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace RM = Flux_Generated_SSR::SSR_RayMarch;
-	// (set 1) g_xView — camera matrices + near/far, sourced from m_xViewConstantsBuffer.
-	xBinder.BindCBV(RM::hg_xView,        &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindCBV(RM::hSSRConstants,   &xSSR.m_xSSRConstantsBuffer.GetCBV());
 
 	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
@@ -437,8 +435,6 @@ static void ExecuteSSRDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace DH = Flux_Generated_SSR::SSR_DenoiseH;
-	// (set 1) g_xView — camera matrices + screen dims, sourced from m_xViewConstantsBuffer.
-	xBinder.BindCBV(DH::hg_xView,        &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
 	xBinder.BindDrawConstants(DH::hPushConstants, &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
 
@@ -467,8 +463,6 @@ static void ExecuteSSRDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace DV = Flux_Generated_SSR::SSR_DenoiseV;
-	// (set 1) g_xView — camera matrices + screen dims, sourced from m_xViewConstantsBuffer.
-	xBinder.BindCBV(DV::hg_xView,        &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
 	xBinder.BindDrawConstants(DV::hPushConstants, &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
 

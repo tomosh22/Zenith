@@ -9,7 +9,7 @@
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
-#include "Flux/Shadows/Flux_ShadowsImpl.h"   // GetShadowMatricesSRV() for the placeholder shadow bind
+#include "Flux/Shadows/Flux_ShadowsImpl.h"   // GetCSMArrayHandle() for the mesh-pass CSM graph Read()
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/MaterialPreview.h" // typed binding handles
@@ -342,10 +342,11 @@ static void ExecutePreviewBackground(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	namespace BG = Flux_Generated_MaterialPreview::MaterialPreview_Background;
-	// ParameterBlock spine: the preview camera is the VIEW set (set 1) g_xView,
-	// sourced from the PREVIEW orbit-camera buffer (a real ViewConstants) so the
-	// spine's RayDir reconstruction works unmodified.
-	xBinder.BindCBV(BG::hg_xView, &xZZ.m_xPreviewViewConstantsBuffer.GetCBV());
+	// VIEW (set 1) g_xView is the PERSISTENT main-camera set (Phase 5.1). Restoring the
+	// preview's own orbit camera needs a secondary-view override (Phase 5.6, skipped), so
+	// the preview currently renders with the main scene camera — an accepted, tools-only
+	// regression. The per-pass preview-camera bind here was a no-op (the persistent set
+	// wins) and is removed; m_xPreviewViewConstantsBuffer is retained as 5.6 scaffolding.
 	// The IBL prefiltered environment doubles as the visible background, so
 	// what you see is exactly what lights the mesh.
 	xBinder.BindSRV(BG::hg_xCubemap, &g_xEngine.IBL().GetPrefilteredMapSRV());
@@ -377,15 +378,13 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 	namespace FW = Flux_Generated_MaterialPreview::MaterialPreview_Forward;
-	// The preview camera is a real ViewConstants bound to the spine VIEW set (set 1)
-	// g_xView; the preview sun lives in the GLOBAL set (set 0) g_xGlobal. Because the
-	// bound buffer IS a ViewConstants, every field the forward shader reads from VIEW
-	// (incl. g_xRcpScreenDims, used by the clustered-lights path) is at the correct
-	// offset — no fragile shared-prefix assumption to guard.
-	xBinder.BindCBV(FW::hg_xView, &xZZ.m_xPreviewViewConstantsBuffer.GetCBV());
-	xBinder.BindCBV(FW::hg_xGlobal, &xZZ.m_xPreviewGlobalConstantsBuffer.GetCBV());
-	// The g_axTextures bindless table (set 2). g_axMaterials is a DRAW-set (4) member
-	// bound per-draw below, right after DrawConstants (same set-4 group).
+	// VIEW g_xView (set 1) + GLOBAL g_xGlobal (set 0) are the PERSISTENT main-camera/sun
+	// sets (Phase 5.1/5.3). The per-pass preview-camera/sun binds here were no-ops (the
+	// persistent sets win) and are removed, so the preview renders with the main scene
+	// camera/sun pending the Phase-5.6 secondary-view override (accepted, tools-only).
+	// m_xPreview{View,Global}ConstantsBuffer are retained as 5.6 scaffolding.
+	// The g_axTextures bindless table (set 2); g_axMaterials lives in the persistent
+	// GLOBAL set (Phase 5.3) — no per-draw re-stage.
 	pxCmdList->UseBindlessTextures(2);
 
 	// Shared forward-preview constants: IBL on, shadows + dynamic lights off.
@@ -404,9 +403,8 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	// CSM (g_xCSM) is now in the persistent VIEW set (Phase 5.4) — written once/frame in
 	// WritePersistentViewImage, no per-pass bind. The forward shader still samples it
 	// (shadows disabled via the constants) and the pass declares the graph Read().
-	// All 4 cascade matrices come from the single ShadowMatrices SSBO (Phase 4a).
-	// Real buffer (harmless — preview disables shadow sampling via the constants).
-	xBinder.BindSRV_Buffer(FW::hShadowMatrices, g_xEngine.Shadows().GetShadowMatricesSRV());
+	// The all-cascade ShadowMatrices SSBO is in the persistent VIEW set now (Phase 5.4) —
+	// no per-pass bind (preview disables shadow sampling via the constants anyway).
 
 	xBinder.BindSRV(FW::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
 	xBinder.BindSRV(FW::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());

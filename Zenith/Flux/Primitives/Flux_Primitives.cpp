@@ -884,9 +884,6 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	// Converted to the ParameterBlock spine: the camera CB is now the VIEW set
-	// (set 1) g_xView, sourced from m_xViewConstantsBuffer.
-	xBinder.BindCBV(Flux_Generated_Primitives::Primitives::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
 	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
 	xPrimitives.RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);

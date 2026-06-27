@@ -29,7 +29,7 @@ public:
 	void UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup);
 	void ClearAllGroups();
 
-	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade);
+	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade);
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

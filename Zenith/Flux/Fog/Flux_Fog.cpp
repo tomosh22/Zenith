@@ -178,9 +178,6 @@ static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace FS = Flux_Generated_Fog::Fog_Simple;
-	// Spine: GLOBAL (sun/time) at set 0, VIEW (camera) at set 1.
-	xBinder.BindCBV(FS::hg_xGlobal, &xGfx.m_xGlobalConstantsBuffer.GetCBV());
-	xBinder.BindCBV(FS::hg_xView, &xGfx.m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindSRV(FS::hg_xDepthTex, xGfx.GetDepthStencilSRV());
 	xBinder.BindDrawConstants(FS::hFogConstants, &dbg_xConstants, sizeof(Flux_FogConstants));
 

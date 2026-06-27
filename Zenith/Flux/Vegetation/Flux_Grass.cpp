@@ -236,8 +236,6 @@ static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void*)
 	{
 		namespace GR = Flux_Generated_Vegetation::Grass;
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(GR::hg_xGlobal, &g_xEngine.FluxGraphics().m_xGlobalConstantsBuffer.GetCBV());
-		xBinder.BindCBV(GR::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 		xBinder.BindCBV(GR::hGrassConstants, &xGrass.m_xGrassConstantsBuffer.GetCBV());
 		xBinder.BindUAV_Buffer(GR::hInstanceBuffer, &xGrass.m_xInstanceBuffer.GetUAV());
 	}

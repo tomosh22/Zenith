@@ -111,9 +111,6 @@ static void ExecuteQuads(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->SetVertexBuffer(xQuads.m_xInstanceBuffer, 1);
 
-	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(Flux_Generated_Quads::Quads::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
-
 	// Bindless table now lives at the spine's BINDLESS set (set 2), not the
 	// former set 1.
 	pxCommandList->UseBindlessTextures(2);

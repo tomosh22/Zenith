@@ -455,11 +455,6 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace AP = Flux_Generated_Decals::Decals_Apply;
 
-	// Spine: camera CB is the VIEW set (set 1) g_xView, sourced from
-	// m_xViewConstantsBuffer. The Apply shader reads only VIEW fields
-	// (g_xViewProjMat / g_xRcpScreenDims) — no GLOBAL (sun/time) bind needed.
-	xBinder.BindCBV(AP::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
-
 	xBinder.BindSRV(AP::hg_xDepthTex,       g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	xBinder.BindSRV(AP::hg_xNormalsCopyTex, &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
 	xBinder.BindSRV_Buffer(AP::hDecalBuffer, xDecals.m_xDecalBuffer.GetSRV());

@@ -31,6 +31,27 @@ const Zenith_Vector<Flux_ViewSetBinding>& Flux_GetViewSetBindingRegistry()
 		xReg.PushBack({ "g_xCSM", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
 			[]() -> Flux_VRAMHandle { return g_xEngine.Shadows().GetCSMArraySRV().m_xVRAMHandle; },
 			nullptr });
+		// Phase 5.4: g_xShadowMatrices (all-cascade sun view×proj SSBO) promoted into the
+		// persistent VIEW set. It is a frame-indexed Flux_DynamicReadWriteBuffer — graph-
+		// INVISIBLE by contract (host-coherent; visibility via the submit barrier), exactly
+		// like g_xView / g_axMaterials — so it is CPU_GLOBAL_BUFFER (no graph Read() demanded).
+		// Not flagged per-camera: although the cascade fit uses the main camera's frustum,
+		// the only secondary view (MaterialPreview) disables shadows — same view-sharing
+		// rationale as g_xCSM above (see kbFluxMultiViewSupported).
+		xReg.PushBack({ "g_xShadowMatrices", Flux_PersistentSetLayouts::kuSetView,
+			FLUX_VIEWSET_SOURCE_CPU_GLOBAL_BUFFER, nullptr, nullptr });
+
+		// Per-camera view-sharing guard (W2): with multi-view (Phase 5.6) unsupported the
+		// VIEW set is shared by every view, so a per-camera resource here would alias the
+		// main camera for secondary views (MaterialPreview). Fail loud at build-of-registry
+		// rather than render silently wrong. No per-camera VIEW row exists today (CSM is
+		// view-invariant); this guards future promotions.
+		const char* szOffender = nullptr;
+		Zenith_Assert(Flux_ViewSetRegistryRespectsViewSharing(xReg.GetDataPointer(), xReg.GetSize(),
+			kbFluxMultiViewSupported, &szOffender),
+			"Flux_ViewSetBinding: per-camera member '%s' promoted into the SHARED persistent VIEW set while "
+			"multi-view (Phase 5.6) is unsupported — keep it per-pass (set 3) or implement 5.6.",
+			szOffender ? szOffender : "?");
 		return xReg;
 	}();
 	return s_xRegistry;

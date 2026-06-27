@@ -53,6 +53,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -110,6 +112,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -167,6 +171,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -224,6 +230,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -283,6 +291,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -361,6 +371,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer

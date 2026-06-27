@@ -123,8 +123,6 @@ static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace SDF = Flux_Generated_SDFs::SDFs;
-	xBinder.BindCBV(SDF::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
-	xBinder.BindCBV(SDF::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
 	xBinder.BindCBV(SDF::hSphereData, &xSDFs.m_xSpheresBuffer.GetCBV());
 
 	pxCommandList->DrawIndexed(6);

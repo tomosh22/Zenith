@@ -1,5 +1,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/Flux_ViewSetBinding.h"
+#include "Flux/Flux_PersistentSetLayouts.h"   // kaszViewMemberNames / kuViewBindingCount (anti-drift test)
 #include <cstring>
 
 // ============================================================================
@@ -149,4 +150,49 @@ ZENITH_TEST(ViewSetBinding, RegistryUnknownMemberNotFound)
 		"an unregistered member resolves to nullptr (caller treats it as exempt)");
 	ZENITH_ASSERT_TRUE(Flux_FindViewSetBinding(nullptr) == nullptr,
 		"a null name resolves to nullptr");
+}
+
+ZENITH_TEST(ViewSetBinding, EveryViewMemberHasRegistryRow)
+{
+	// Anti-drift (W4): the canonical VIEW member list (Flux_PersistentSetLayouts, mirrored
+	// from Bindings.slang) and the registry must not drift. The boot assert already ties the
+	// manifest to reflection; this ties it to the registry, so a VIEW member promoted without
+	// a registry row — which silently drops its graph-Read() enforcement — fails at boot.
+	for (u_int u = 0; u < Flux_PersistentSetLayouts::kuViewBindingCount; u++)
+	{
+		const char* szName = Flux_PersistentSetLayouts::kaszViewMemberNames[u];
+		const Flux_ViewSetBinding* pxRow = Flux_FindViewSetBinding(szName);
+		ZENITH_ASSERT_TRUE(pxRow != nullptr,
+			"every canonical VIEW member must have a Flux_ViewSetBinding row (else its graph-Read() enforcement is silently dropped)");
+		ZENITH_ASSERT_TRUE(pxRow && pxRow->m_uSet == Flux_PersistentSetLayouts::kuSetView,
+			"a VIEW member's registry row must record set 1 (VIEW)");
+	}
+}
+
+ZENITH_TEST(ViewSetBinding, PerCameraMemberRejectedFromSharedViewSet)
+{
+	// W2 guard: a per-camera resource in the SHARED VIEW set would alias the main camera
+	// for secondary views while multi-view (Phase 5.6) is off — must be rejected.
+	const char* szOff = nullptr;
+	Flux_ViewSetBinding axMixed[2];
+	axMixed[0].m_szMemberName = "g_xView";  axMixed[0].m_uSet = Flux_PersistentSetLayouts::kuSetView; axMixed[0].m_bPerCamera = false;
+	axMixed[1].m_szMemberName = "g_xDepth"; axMixed[1].m_uSet = Flux_PersistentSetLayouts::kuSetView; axMixed[1].m_bPerCamera = true;
+	ZENITH_ASSERT_TRUE(!Flux_ViewSetRegistryRespectsViewSharing(axMixed, 2u, /*multiView*/false, &szOff),
+		"a per-camera VIEW member must be rejected while multi-view is unsupported");
+	ZENITH_ASSERT_TRUE(szOff && strcmp(szOff, "g_xDepth") == 0, "the offending per-camera member must be named");
+
+	// Once multi-view exists, per-camera VIEW members are fine.
+	ZENITH_ASSERT_TRUE(Flux_ViewSetRegistryRespectsViewSharing(axMixed, 2u, /*multiView*/true, nullptr),
+		"per-camera VIEW members are fine once multi-view (Phase 5.6) exists");
+
+	// The per-camera flag only matters for the shared VIEW set (set 1), not GLOBAL (set 0).
+	Flux_ViewSetBinding axGlobal[1];
+	axGlobal[0].m_szMemberName = "g_xGlobalPerCam"; axGlobal[0].m_uSet = Flux_PersistentSetLayouts::kuSetGlobal; axGlobal[0].m_bPerCamera = true;
+	ZENITH_ASSERT_TRUE(Flux_ViewSetRegistryRespectsViewSharing(axGlobal, 1u, false, nullptr),
+		"the per-camera guard only governs the shared VIEW set");
+
+	// And the LIVE registry must itself be clean under the current multi-view setting.
+	const Zenith_Vector<Flux_ViewSetBinding>& xReg = Flux_GetViewSetBindingRegistry();
+	ZENITH_ASSERT_TRUE(Flux_ViewSetRegistryRespectsViewSharing(xReg.GetDataPointer(), xReg.GetSize(), kbFluxMultiViewSupported, nullptr),
+		"the live VIEW-set registry must respect view-sharing under the current multi-view setting");
 }

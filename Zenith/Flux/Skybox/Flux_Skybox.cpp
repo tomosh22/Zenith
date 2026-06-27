@@ -301,10 +301,6 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		{
 			Flux_ShaderBinder xBinder(*pxCommandList);
 			namespace SkyAtmos = Flux_Generated_Skybox::SkyboxAtmosphere;
-			// Atmosphere shader reads the sun direction (GLOBAL set) and reconstructs
-			// the view ray via RayDir() (VIEW set), so bind both spine constants.
-			xBinder.BindCBV(SkyAtmos::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
-			xBinder.BindCBV(SkyAtmos::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 			xBinder.BindCBV(SkyAtmos::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
 			xBinder.BindSRV(SkyAtmos::hg_xSkyViewLUT, &xSkybox.m_xSkyViewLUT.SRV());
 		}
@@ -325,8 +321,6 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		namespace SkyCube = Flux_Generated_Skybox::SkyboxCubemap;
-		// Cubemap shader only reconstructs the view ray via RayDir() (VIEW set).
-		xBinder.BindCBV(SkyCube::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 		xBinder.BindSRV(SkyCube::hg_xCubemap, &pxCubemap->m_xSRV);
 		pxCommandList->DrawIndexed(6);
 	}
@@ -372,8 +366,6 @@ static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		namespace SkyView = Flux_Generated_Skybox::SkyboxSkyViewLUT;
-		// Sky-view LUT bake reads only the sun direction (GLOBAL set); no view ray.
-		xBinder.BindCBV(SkyView::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
 		xBinder.BindCBV(SkyView::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
 		xBinder.BindSRV(SkyView::hg_xTransmittanceLUT, &xSkybox.m_xTransmittanceLUT.SRV());
 	}

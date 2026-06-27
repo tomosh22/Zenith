@@ -87,7 +87,6 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 	// Get shared fog parameters
 	Flux_VolumeFogImpl& xVolumeFog = g_xEngine.VolumeFog();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
 	Flux_VolumeFogConstants& xShared = xVolumeFog.GetSharedConstants();
 
 	// Update constants
@@ -142,16 +141,12 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 	namespace RM = Flux_Generated_Fog::Fog_Raymarch;
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	// Spine: GLOBAL (sun) at set 0, VIEW (camera) at set 1.
-	xBinder.BindCBV(RM::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
-	xBinder.BindCBV(RM::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindSRV(RM::hu_xDepthTexture, xGraphics.GetDepthStencilSRV());
 	xBinder.BindSRV(RM::hu_xNoiseTexture3D, &xVolumeFog.GetNoiseTexture3D()->m_xSRV);
 	xBinder.BindSRV(RM::hu_xBlueNoiseTexture, &xVolumeFog.GetBlueNoiseTexture()->m_xSRV);
 
-	// CSM is now in the persistent VIEW set (Phase 5.4) — no per-pass bind. The 4 cascade
-	// matrices still come from the single ShadowMatrices SSBO (Phase 4a).
-	xBinder.BindSRV_Buffer(RM::hShadowMatrices, xShadows.GetShadowMatricesSRV());
+	// CSM and the all-cascade ShadowMatrices SSBO are now in the persistent VIEW set
+	// (Phase 5.4) — no per-pass bind.
 
 	xBinder.BindDrawConstants(RM::hRaymarchConstants, &m_xConstants, sizeof(Flux_RaymarchConstants));
 

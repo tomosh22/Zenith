@@ -314,7 +314,6 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace TX = Flux_Generated_Text::Text;
-	xBinder.BindCBV(TX::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	// The atlas is sampled via g_axTextures[g_uAtlasIdx] — bind the bindless set (set 2).
 	pxCommandList->UseBindlessTextures(2);
 

@@ -43,9 +43,10 @@ namespace Flux_PersistentSetLayouts
 	// builds the VIEW descriptor-set layout + writes its descriptors against these,
 	// and ValidateCanonicalGroup asserts the reflected layout matches. Phase 5.4
 	// grows this list as view-frequency SRVs are promoted into the persistent set.
-	inline constexpr u_int kuViewBinding_View = 0;   // g_xView  (ConstantBuffer)
-	inline constexpr u_int kuViewBinding_CSM  = 1;   // g_xCSM   (Sampler2DArray — cascaded shadows)
-	inline constexpr u_int kuViewBindingCount = 2;   // number of VIEW bindings currently in the spine
+	inline constexpr u_int kuViewBinding_View           = 0;   // g_xView           (ConstantBuffer)
+	inline constexpr u_int kuViewBinding_CSM            = 1;   // g_xCSM            (Sampler2DArray — cascaded shadows)
+	inline constexpr u_int kuViewBinding_ShadowMatrices = 2;   // g_xShadowMatrices (StructuredBuffer<float4x4> — all-cascade sun view×proj)
+	inline constexpr u_int kuViewBindingCount           = 3;   // number of VIEW bindings currently in the spine
 
 	// Canonical binding-0 member name of each persistent set (mirrors the spine
 	// ParameterBlocks in Common/Bindings.slang). Reflection tags a group's class by
@@ -53,6 +54,19 @@ namespace Flux_PersistentSetLayouts
 	inline constexpr const char* kszGlobalMember0   = "g_xGlobal";
 	inline constexpr const char* kszViewMember0     = "g_xView";
 	inline constexpr const char* kszBindlessMember0 = "g_axTextures";
+
+	// Canonical VIEW-set member names by binding index — mirrors the ViewParams member
+	// declaration order in Common/Bindings.slang AND the kuViewBinding_* enum above.
+	// Every entry past binding 0 (g_xView, a CPU buffer) MUST have a Flux_ViewSetBinding
+	// registry row, or the draw-time graph-Read() validator can't see it and a missing
+	// barrier goes silent. The boot assert ties this manifest to reflection; the
+	// EveryViewMemberHasRegistryRow unit test ties it to the registry — together they
+	// close the manifest↔reflection↔registry triangle so a promotion can't half-land.
+	inline constexpr const char* kaszViewMemberNames[kuViewBindingCount] = {
+		kszViewMember0,       // binding 0 — g_xView           (kuViewBinding_View)
+		"g_xCSM",             // binding 1 — g_xCSM            (kuViewBinding_CSM, Phase 5.4)
+		"g_xShadowMatrices",  // binding 2 — g_xShadowMatrices (kuViewBinding_ShadowMatrices, Phase 5.4)
+	};
 
 	// Classify a (set, member name) pair into its persistence class. Returns GENERIC
 	// for anything that is not a canonical spine member — so a non-spine program (no
@@ -76,7 +90,8 @@ namespace Flux_PersistentSetLayouts
 	//   GLOBAL = { binding 0: uniform buffer (g_xGlobal), binding 1: structured buffer
 	//             (g_axMaterials, Phase 5.3) }
 	//   VIEW   = { binding 0: uniform buffer (g_xView), binding 1: combined image
-	//             sampler (g_xCSM cascaded-shadow array, Phase 5.4) }
+	//             sampler (g_xCSM cascaded-shadow array, Phase 5.4), binding 2: structured
+	//             buffer (g_xShadowMatrices all-cascade sun view×proj, Phase 5.4) }
 	inline bool ValidateCanonicalGroup(FluxFrequencyClass eClass,
 	                                   const Flux_BindingGroupLayout& xGroup,
 	                                   std::string& strErrOut)
@@ -118,6 +133,12 @@ namespace Flux_PersistentSetLayouts
 			if (!x1.m_bPresent || !FluxKindIsSampledTexture(x1.m_eKind) || x1.m_uDescriptorCount != 1)
 			{
 				strErrOut = "persistent VIEW(1) set: binding 1 must be the single g_xCSM cascaded-shadow sampler (Phase 5.4)";
+				return false;
+			}
+			const Flux_BindingGroupEntry& x2 = xGroup.m_axBindings[kuViewBinding_ShadowMatrices];
+			if (!x2.m_bPresent || !FluxKindIsStorageBuffer(x2.m_eKind) || x2.m_uDescriptorCount != 1)
+			{
+				strErrOut = "persistent VIEW(1) set: binding 2 must be the single g_xShadowMatrices structured buffer (Phase 5.4)";
 				return false;
 			}
 			uFirstUnexpected = kuViewBindingCount;

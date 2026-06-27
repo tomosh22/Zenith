@@ -248,6 +248,12 @@ public:
 	// layout/contents barriers, so writing it once at frame start is safe.
 	void WritePersistentViewImage(u_int uBinding, const Flux_ShaderResourceView& xSRV, const Zenith_Vulkan_Sampler& xSampler);
 
+	// Phase 5.4: rewrite one VIEW-set storage buffer (SSBO) into the current frame's
+	// persistent VIEW set — the buffer analogue of WritePersistentViewImage, for
+	// view-frequency StructuredBuffers (the all-cascade ShadowMatrices SSBO, etc.).
+	// Same write-before-bind window; the buffer descriptor is stable across the frame.
+	void WritePersistentViewBuffer(u_int uBinding, const Flux_ShaderResourceView_Buffer& xSRV);
+
 	void EndFrame(bool bSubmitRenderWork);
 
 	// Wait for GPU to finish all work (blocks until idle)

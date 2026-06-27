@@ -8,11 +8,12 @@
 // masked cutout (SampleAlbedoWithCutout, identical to the G-buffer path),
 // guarded on GetAlphaCutoff(dc) > 0 so opaque casters stay depth-only.
 //
-// #includes the spine (Common/Bindings.slang) purely to reserve the
-// persistent sets 0/1/2 so this shader's own DRAW ParameterBlock lands at
-// set 3 like every other mesh shader (it does not read any spine resource —
-// the cascade view×proj is its own ShadowMatrix CB). Common.DrawConstants /
-// Common.Material / Common.MaterialSurface are pure helper modules.
+// #includes the spine (Common/Bindings.slang) for the persistent sets: the VS reads the
+// per-cascade sun view×proj from the VIEW set (g_xViewSet.g_xShadowMatrices, Phase 5.4)
+// and the FS reads the material record (GLOBAL set g_axMaterials) + base-colour texture
+// (BINDLESS set g_axTextures) for the masked cutout. Its own DRAW ParameterBlock lands at
+// set 3 like every other mesh shader. Common.DrawConstants / Common.Material /
+// Common.MaterialSurface are pure helper modules.
 // =====================================================================
 
 #include "Common/Bindings.slang"
@@ -45,14 +46,13 @@ struct VsOut
 	float4 vertexColor : TEXCOORD1;
 };
 
-// DRAW frequency (per-draw constants + all-cascade shadow matrices). Lands at set 3
-// (after the persistent spine). ShadowMatrices holds all 4 cascade sun view×proj
-// matrices (Phase 4a collapse); this caster selects element DrawConstants.g_uShadowCascade
-// (set per cascade pass). The base-colour texture for the cutout is bindless (set 2),
-// resolved in fsMain from the material record.
+// DRAW frequency (per-draw constants). Lands at set 3 (after the persistent spine).
+// The all-cascade sun view×proj matrices are now in the persistent VIEW set
+// (g_xViewSet.g_xShadowMatrices, Phase 5.4); this caster selects element
+// DrawConstants.g_uShadowCascade (set per cascade pass). The base-colour texture for the
+// cutout is bindless (set 2), resolved in fsMain from the material record.
 struct DrawParams
 {
-	StructuredBuffer<float4x4>          ShadowMatrices;
 	ConstantBuffer<DrawConstantsLayout> DrawConstants;
 };
 ParameterBlock<DrawParams> g_xDrawSet;
@@ -62,7 +62,7 @@ VsOut vsMain(VsIn input)
 {
 	VsOut o;
 	float3 xWorldPos = mul(g_xDrawSet.DrawConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
-	o.position    = mul(g_xDrawSet.ShadowMatrices[g_xDrawSet.DrawConstants.g_uShadowCascade], float4(xWorldPos, 1.0));
+	o.position    = mul(g_xViewSet.g_xShadowMatrices[g_xDrawSet.DrawConstants.g_uShadowCascade], float4(xWorldPos, 1.0));
 	o.uv          = input.a_xUV;
 	o.vertexColor = input.a_xColor;
 	return o;

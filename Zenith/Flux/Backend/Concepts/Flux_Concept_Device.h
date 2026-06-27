@@ -44,6 +44,7 @@ concept FluxBackendDevice = requires(
 	uint32_t u,
 	const Flux_WorkDistribution& xWork,
 	const Flux_ShaderResourceView& xView,
+	const Flux_ShaderResourceView_Buffer& xViewBuf,
 	const Flux_Sampler& xSampler,
 	Flux_BufferDescriptorHandle h)
 {
@@ -58,6 +59,7 @@ concept FluxBackendDevice = requires(
 	// the concept so D3D12 signature drift fails the build, not the first frame.
 	{ t.PreparePersistentSets(h, h, h)                               } -> std::same_as<void>;
 	{ t.WritePersistentViewImage(u, xView, xSampler)                 } -> std::same_as<void>;
+	{ t.WritePersistentViewBuffer(u, xViewBuf)                       } -> std::same_as<void>;
 };
 
 // Tools-only device methods (ImGui integration).

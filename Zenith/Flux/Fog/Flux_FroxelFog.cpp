@@ -243,8 +243,6 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandBuffer* pxCommandList)
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	namespace FI = Flux_Generated_Fog::Fog_FroxelInject;
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
-	// Spine: VIEW (camera matrices) at set 1. Inject reads no GLOBAL data.
-	xInjectBinder.BindCBV(FI::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xInjectBinder.BindSRV(FI::hu_xNoiseTexture3D, &g_xEngine.VolumeFog().GetNoiseTexture3D()->m_xSRV, &xGraphics.m_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(FI::hu_xDensityGrid, &GetDensityGridInternal().UAV(0));
 	xInjectBinder.BindDrawConstants(FI::hInjectConstants, &m_xInjectConstants, sizeof(InjectConstants));
@@ -260,8 +258,6 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandBuffer* pxCommandList)
 	extern u_int dbg_uVolFogDebugMode;
 	const Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
-
 	m_xLightConstants.m_xFogColour = xShared.m_xFogColour;
 	m_xLightConstants.m_xLightDirection = Zenith_Maths::Vector4(
 		xGraphics.m_xFrameConstants.m_xSunDir_Pad.x,
@@ -283,16 +279,12 @@ void Flux_FroxelFogImpl::RenderLight(Flux_CommandBuffer* pxCommandList)
 
 	namespace FL = Flux_Generated_Fog::Fog_FroxelLight;
 	Flux_ShaderBinder xLightBinder(*pxCommandList);
-	// Spine: GLOBAL (sun) at set 0, VIEW (camera) at set 1.
-	xLightBinder.BindCBV(FL::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
-	xLightBinder.BindCBV(FL::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xLightBinder.BindSRV(FL::hu_xDensityGrid, &GetDensityGridInternal().SRV());
 	xLightBinder.BindUAV_Texture(FL::hu_xLightingGrid, &GetLightingGridInternal().UAV(0));
 	xLightBinder.BindUAV_Texture(FL::hu_xScatteringGrid, &GetScatteringGridInternal().UAV(0));
 
-	// CSM is now in the persistent VIEW set (Phase 5.4) — no per-pass bind. The 4 cascade
-	// matrices still come from the single ShadowMatrices SSBO (Phase 4a).
-	xLightBinder.BindSRV_Buffer(FL::hShadowMatrices, xShadows.GetShadowMatricesSRV());
+	// CSM and the all-cascade ShadowMatrices SSBO are now in the persistent VIEW set
+	// (Phase 5.4) — no per-pass bind.
 
 	xLightBinder.BindDrawConstants(FL::hLightConstants, &m_xLightConstants, sizeof(LightConstants));
 	pxCommandList->Dispatch(
@@ -319,8 +311,6 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandBuffer* pxCommandList)
 
 	namespace FA = Flux_Generated_Fog::Fog_FroxelApply;
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
-	// Spine: VIEW (camera g_xInvProjMat) at set 1. Apply reads no GLOBAL data.
-	xApplyBinder.BindCBV(FA::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xApplyBinder.BindSRV(FA::hu_xDepthTexture, xGraphics.GetDepthStencilSRV());
 	xApplyBinder.BindSRV(FA::hu_xLightingGrid, &GetLightingGridInternal().SRV());
 	xApplyBinder.BindSRV(FA::hu_xScatteringGrid, &GetScatteringGridInternal().SRV());

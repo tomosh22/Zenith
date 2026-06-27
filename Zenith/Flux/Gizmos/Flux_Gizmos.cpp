@@ -326,8 +326,6 @@ static void ExecuteGizmos(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	// Create binder once - bind frame constants once (same for all gizmo components)
 	namespace GZ = Flux_Generated_Gizmos::Gizmos;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	// Spine: camera CB is the VIEW set (set 1) g_xView, from m_xViewConstantsBuffer.
-	xBinder.BindCBV(GZ::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)

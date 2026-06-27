@@ -1075,12 +1075,14 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 	// written BEFORE bind each frame (PreparePersistentSets, ahead of worker recording),
 	// so no update-after-bind is needed — a plain pool/layout keeps them simple.
 	// Per frame: GLOBAL holds g_xGlobal (uniform) + g_axMaterials (storage); VIEW holds
-	// g_xView (uniform) + g_xCSM (combined image sampler, Phase 5.4). The combined-image-
-	// sampler count grows as more view-frequency SRVs are promoted into VIEW.
+	// g_xView (uniform) + g_xCSM (combined image sampler, Phase 5.4) + g_xShadowMatrices
+	// (storage, Phase 5.4). Sizes are per-type sums across both persistent sets — bump
+	// these in lockstep when a VIEW/GLOBAL member of that type is added (uniform: g_xGlobal
+	// + g_xView = 2; storage: g_axMaterials + g_xShadowMatrices = 2; combined: g_xCSM = 1).
 	vk::DescriptorPoolSize axPoolSizes[] =
 	{
 		{ vk::DescriptorType::eUniformBuffer,        MAX_FRAMES_IN_FLIGHT * 2u },
-		{ vk::DescriptorType::eStorageBuffer,        MAX_FRAMES_IN_FLIGHT * 1u },
+		{ vk::DescriptorType::eStorageBuffer,        MAX_FRAMES_IN_FLIGHT * 2u },
 		{ vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 1u },
 	};
 	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
@@ -1092,7 +1094,8 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 	// Layouts must match exactly what the spine reflects so every pipeline's RootSig can
 	// borrow them (RootSigBuilder::FromSpecification, GLOBAL/VIEW classes):
 	//   GLOBAL = { b0: uniform (g_xGlobal), b1: storage (g_axMaterials, Phase 5.3) }
-	//   VIEW   = { b0: uniform (g_xView) }
+	//   VIEW   = { b0: uniform (g_xView), b1: combined image sampler (g_xCSM, Phase 5.4),
+	//             b2: storage (g_xShadowMatrices, Phase 5.4) }
 	{
 		vk::DescriptorSetLayoutBinding axBinds[2];
 		axBinds[0] = vk::DescriptorSetLayoutBinding().setBinding(0)
@@ -1103,16 +1106,20 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 		m_xGlobalSetLayout = VkUnwrap(m_xDevice.createDescriptorSetLayout(xInfo));
 	}
 	{
-		// VIEW = { b0: uniform (g_xView), b1: combined image sampler (g_xCSM, Phase 5.4) }.
-		// Grows in lockstep with the ViewParams block in Common/Bindings.slang and the
-		// canonical check in Flux_PersistentSetLayouts::ValidateCanonicalGroup.
-		vk::DescriptorSetLayoutBinding axBinds[2];
+		// VIEW = { b0: uniform (g_xView), b1: combined image sampler (g_xCSM, Phase 5.4),
+		// b2: storage (g_xShadowMatrices, Phase 5.4) }. Grows in lockstep with the ViewParams
+		// block in Common/Bindings.slang and the canonical check in
+		// Flux_PersistentSetLayouts::ValidateCanonicalGroup.
+		vk::DescriptorSetLayoutBinding axBinds[Flux_PersistentSetLayouts::kuViewBindingCount];
 		axBinds[Flux_PersistentSetLayouts::kuViewBinding_View] = vk::DescriptorSetLayoutBinding()
 			.setBinding(Flux_PersistentSetLayouts::kuViewBinding_View)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eAll);
 		axBinds[Flux_PersistentSetLayouts::kuViewBinding_CSM] = vk::DescriptorSetLayoutBinding()
 			.setBinding(Flux_PersistentSetLayouts::kuViewBinding_CSM)
 			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eAll);
+		axBinds[Flux_PersistentSetLayouts::kuViewBinding_ShadowMatrices] = vk::DescriptorSetLayoutBinding()
+			.setBinding(Flux_PersistentSetLayouts::kuViewBinding_ShadowMatrices)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eAll);
 		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo()
 			.setBindingCount(Flux_PersistentSetLayouts::kuViewBindingCount).setPBindings(axBinds);
 		m_xViewSetLayout = VkUnwrap(m_xDevice.createDescriptorSetLayout(xInfo));
@@ -1191,6 +1198,24 @@ void Zenith_Vulkan::WritePersistentViewImage(u_int uBinding, const Flux_ShaderRe
 		.setDstSet(m_pxCurrentFrame->m_xViewSet).setDstBinding(uBinding).setDstArrayElement(0)
 		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 		.setPImageInfo(&xImageInfo);
+	m_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
+}
+
+void Zenith_Vulkan::WritePersistentViewBuffer(u_int uBinding, const Flux_ShaderResourceView_Buffer& xSRV)
+{
+	// Main thread, once per frame, after PreparePersistentSets. Writes a VIEW-set storage
+	// buffer (e.g. the all-cascade ShadowMatrices SSBO) for the CURRENT frame slot. The
+	// buffer descriptor is stable across the frame; for a frame-indexed source buffer the
+	// accessor yields this frame's view (see the Flux.cpp hook). Mirrors the SSBO write in
+	// PreparePersistentSets (eStorageBuffer, setPBufferInfo).
+	Zenith_Assert(m_pxCurrentFrame != nullptr, "WritePersistentViewBuffer: no current frame slot");
+	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(),
+		"WritePersistentViewBuffer: SRV for VIEW binding %u has an invalid buffer descriptor", uBinding);
+	const vk::DescriptorBufferInfo xInfo = g_xEngine.FluxMemory().GetBufferDescriptor(xSRV.m_xBufferDescHandle);
+	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
+		.setDstSet(m_pxCurrentFrame->m_xViewSet).setDstBinding(uBinding).setDstArrayElement(0)
+		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eStorageBuffer)
+		.setPBufferInfo(&xInfo);
 	m_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
 }
 

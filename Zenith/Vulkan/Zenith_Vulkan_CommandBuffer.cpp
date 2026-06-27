@@ -428,8 +428,8 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	// Handle-tracked → bound once per command buffer; a pipeline switch keeps them bound
 	// because sets 0/1/2 are layout-identical across pipelines (prefix-compatible). BINDLESS
 	// (set 2) stays on the explicit UseBindlessTextures path; non-spine pipelines (class
-	// GENERIC) bind nothing. The leftover per-pass BindCBV(hg_xView/hg_xGlobal) stages into
-	// these borrowed sets but is skipped by the owned-set loop below — harmless.
+	// GENERIC) bind nothing. (The former per-pass BindCBV(hg_xView/hg_xGlobal) no-op binds
+	// were removed in the Phase-5 cleanup — the persistent set is now the sole provider.)
 	{
 		const u_int uBP = (m_eCurrentBindPoint == vk::PipelineBindPoint::eCompute) ? 1u : 0u;
 		const Zenith_Vulkan_RootSig& xRootSig = m_pxCurrentPipeline->m_xRootSig;

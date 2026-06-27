@@ -49,9 +49,14 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
 
 ## Data flow / contract
 
-- Per-cascade `sun view×proj` → 4 separate dynamic CBs `ShadowMatrix0..3`
-  (matrix only, 64 B). Also bound to the geometry caster shaders (Static/Animated/
-  Instanced `*_ToShadowmap.slang`) at their own set=1 slots.
+- All-cascade `sun view×proj` matrices → a single `StructuredBuffer<float4x4>
+  g_xShadowMatrices` in the persistent VIEW descriptor set (set 1, binding 2;
+  `g_xViewSet.g_xShadowMatrices` in `Common/Bindings.slang`, Phase 5.4). A frame-indexed
+  host-coherent dynamic buffer (graph-invisible), written once per frame by
+  `Zenith_Vulkan::WritePersistentViewBuffer`. The geometry caster shaders (Static/
+  Animated/Instanced/Terrain `*_ToShadowmap.slang`) and the lit/fog consumers read
+  element `DrawConstants.g_uShadowCascade` (or the explicit cascade) from it — no
+  per-pass shadow-matrices bind remains in any DRAW/PASS set.
 - `ShadowSampling` CB (binding 24, set 0) carries per-cascade split view-depths /
   world-per-texel / depth-range + global filter params. GPU mirror is
   `Flux_ShadowSamplingGPU` (`Flux_ShadowsImpl.h`); it MUST match

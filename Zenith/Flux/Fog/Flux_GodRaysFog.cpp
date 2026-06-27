@@ -124,9 +124,6 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 
 	namespace GR = Flux_Generated_Fog::Fog_GodRays;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	// Spine: GLOBAL (sun colour) at set 0, VIEW (camera) at set 1.
-	xBinder.BindCBV(GR::hg_xGlobal, &xGraphics.m_xGlobalConstantsBuffer.GetCBV());
-	xBinder.BindCBV(GR::hg_xView, &xGraphics.m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindSRV(GR::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
 
 	xBinder.BindDrawConstants(GR::hGodRaysConstants, &m_xConstants, sizeof(Flux_GodRaysConstants));

@@ -95,13 +95,6 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 
 	namespace DS = Flux_Generated_DeferredShading::DeferredShading;
 
-	// Frequency-set spine: GLOBAL (sun/time) at set 0, VIEW (camera) at set 1.
-	// The shader reads the sun direction/colour (CSM + NdotL debug), so both
-	// blocks are bound. All other binds below land in this pass's PassParams
-	// (set 3) and keep their generated handle names unchanged.
-	xBinder.BindCBV(DS::hg_xGlobal, &xFluxGraphics.m_xGlobalConstantsBuffer.GetCBV());
-	xBinder.BindCBV(DS::hg_xView, &xFluxGraphics.m_xViewConstantsBuffer.GetCBV());
-
 	// Bind G-buffer textures (named bindings)
 	xBinder.BindSRV(DS::hg_xDiffuseTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(DS::hg_xNormalsAmbientTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
@@ -109,10 +102,9 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
 	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV());
 
-	// CSM (g_xCSM) is now in the persistent VIEW set (Phase 5.4) — written once/frame
-	// in WritePersistentViewImage; no per-pass bind. The graph Read() below stays.
-	// Bind the single ShadowMatrices SSBO holding all 4 cascade matrices (Phase 4a).
-	xBinder.BindSRV_Buffer(DS::hShadowMatrices, xShadows.GetShadowMatricesSRV());
+	// CSM (g_xCSM) AND the all-cascade ShadowMatrices SSBO (g_xShadowMatrices) are now in
+	// the persistent VIEW set (Phase 5.4) — written once/frame in PreparePersistentSets /
+	// WritePersistentView*; no per-pass bind. The CSM graph Read() below stays.
 
 	// Shadow sampling parameters (per-cascade splits / texel sizes / depth ranges
 	// + global filtering config). Packed + uploaded by Flux_Shadows; bound here as

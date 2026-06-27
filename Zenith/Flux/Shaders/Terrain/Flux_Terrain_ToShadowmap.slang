@@ -3,9 +3,9 @@
 //
 // Subsystem: Terrain. Depth-only pass for cascaded shadow maps. Terrain
 // vertices are already in world space; only the cascade's view×proj matrix
-// is needed. Like every other caster (Phase 4a collapse), that matrix comes
-// from the shared all-cascade ShadowMatrices SSBO, selected by a per-pass
-// cascade index — both live in this shader's own DRAW ParameterBlock (set 3,
+// is needed. Like every other caster (Phase 5.4), that matrix comes from the
+// persistent VIEW set's all-cascade g_xShadowMatrices SSBO, selected by a
+// per-pass cascade index held in this shader's own DRAW ParameterBlock (set 3,
 // after the persistent 0/1/2 spine the include reserves).
 //
 // NOTE: terrain does NOT currently cast — Flux_TerrainImpl::RenderToShadowMap
@@ -26,13 +26,12 @@ struct VsIn
 	float4 a_xTangentPacked  : TANGENT;
 };
 
-// DRAW frequency (set 3, after the persistent spine). ShadowMatrices holds all
-// 4 cascade sun view×proj matrices (Phase 4a collapse); this caster selects
-// element TerrainShadowConstants.g_uShadowCascade (set per cascade pass).
+// DRAW frequency (set 3, after the persistent spine). The all-cascade sun view×proj
+// matrices are now in the persistent VIEW set (g_xViewSet.g_xShadowMatrices, Phase 5.4);
+// this caster selects element TerrainShadowConstants.g_uShadowCascade (set per cascade pass).
 struct TerrainShadowConstantsLayout { uint g_uShadowCascade; uint3 g_xPad; };
 struct DrawParams
 {
-	StructuredBuffer<float4x4>                   ShadowMatrices;
 	ConstantBuffer<TerrainShadowConstantsLayout> TerrainShadowConstants;
 };
 ParameterBlock<DrawParams> g_xDrawSet;
@@ -40,7 +39,7 @@ ParameterBlock<DrawParams> g_xDrawSet;
 [shader("vertex")]
 float4 vsMain(VsIn input) : SV_Position
 {
-	return mul(g_xDrawSet.ShadowMatrices[g_xDrawSet.TerrainShadowConstants.g_uShadowCascade], float4(input.a_xPosition, 1.0));
+	return mul(g_xViewSet.g_xShadowMatrices[g_xDrawSet.TerrainShadowConstants.g_uShadowCascade], float4(input.a_xPosition, 1.0));
 }
 
 [shader("fragment")]

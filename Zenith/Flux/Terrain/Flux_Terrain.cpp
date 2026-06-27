@@ -467,7 +467,6 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// from m_xViewConstantsBuffer (was the old per-frame FrameConstants bind).
 	// The GBuffer shader reads only the camera (no sun/time), so only g_xView is
 	// bound here. TerrainConstants (per-frame UV scale) is now a PassParams member.
-	xBinder.BindCBV(TGB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 	xBinder.BindCBV(TGB::hTerrainConstants, &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
 
 	// Phase 4c: bindless terrain layer textures via the material table. g_axMaterials is in
@@ -530,7 +529,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, const Flux_ShaderResourceView_Buffer&, u_int)
+void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, u_int)
 {
 	STUBBED
 }

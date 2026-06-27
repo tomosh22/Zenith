@@ -241,7 +241,6 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// Camera (VIEW set) + bindless materials: g_axMaterials (GLOBAL set) + the
 	// g_axTextures table (set 2). The lone FluxGraphics reach-in routes through the
 	// recovered instance's injected member.
-	xBinder.BindCBV(GB::hg_xView, &g_xEngine.FluxGraphics().m_xViewConstantsBuffer.GetCBV());
 	// (g_axMaterials lives in the persistent GLOBAL set now — no per-pass bind. Phase 5.3.)
 	pxCmdList->UseBindlessTextures(2);
 
@@ -320,7 +319,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, const Flux_ShaderResourceView_Buffer& xShadowMatricesSRV, u_int uCascade)
+void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
@@ -328,10 +327,10 @@ void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, con
 	namespace SM = Flux_Generated_AnimatedMeshes::AnimatedMesh_ToShadowmap;
 
 	// Shadow pass uses per-draw Bones + DrawConstants; the masked cutout samples the base
-	// colour bindlessly (g_axMaterials is in the persistent GLOBAL set, Phase 5.3).
-	// ShadowMatrices (all 4 cascade matrices, Phase 4a) + the g_axTextures table (set 2)
-	// are bound once here — the shadow pipeline was set by the caller (ExecuteShadowCascade).
-	xBinder.BindSRV_Buffer(SM::hShadowMatrices, xShadowMatricesSRV);
+	// colour bindlessly (g_axMaterials is in the persistent GLOBAL set, Phase 5.3). The
+	// all-cascade ShadowMatrices SSBO is in the persistent VIEW set (Phase 5.4); the
+	// g_axTextures table (set 2) is bound once here — the shadow pipeline was set by the
+	// caller (ExecuteShadowCascade).
 	xCmdBuf.UseBindlessTextures(2);
 
 	// Iterate the packet gathered on the main thread (GatherDrawPacket). This is

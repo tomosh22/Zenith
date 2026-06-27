@@ -66,8 +66,7 @@ struct PassParams
 {
 	ConstantBuffer<DeferredShadingConstantsLayout> DeferredShadingConstants;
 
-	// All 4 cascade sun view×proj matrices in one StructuredBuffer (Phase 4a collapse).
-	StructuredBuffer<float4x4> ShadowMatrices;
+	// (g_xShadowMatrices — all 4 cascade sun view×proj — is in the persistent VIEW set, Phase 5.4)
 
 	Sampler2D   g_xDiffuseTex;
 	Sampler2D   g_xNormalsAmbientTex;
@@ -138,7 +137,7 @@ float4 GatherCascadeDepth(int iCascade, float2 xUV)
 // directly indexable by the runtime cascade index (no per-CB switch needed).
 float4x4 ShadowMatrixForCascade(int iCascade)
 {
-	return g_xPassSet.ShadowMatrices[iCascade];
+	return g_xViewSet.g_xShadowMatrices[iCascade];
 }
 
 // Multi-tap PCF. Each Vogel tap issues a 4-texel Gather and compares each texel

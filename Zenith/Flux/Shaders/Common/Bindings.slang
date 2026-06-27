@@ -71,12 +71,14 @@ public struct ViewConstantsLayout
 };
 struct ViewParams
 {
-	ConstantBuffer<ViewConstantsLayout> g_xView;   // binding 0
-	Sampler2DArray                      g_xCSM;    // binding 1 — cascaded shadow-map array (Phase 5.4)
-	// (more view-frequency SRVs — G-buffer / depth / IBL / clusters — are added
-	//  here as the consuming shaders are converted, in lockstep with the VIEW
-	//  layout in Zenith_Vulkan::CreatePersistentDescriptorSets + the canonical
-	//  layout check in Flux_PersistentSetLayouts::ValidateCanonicalGroup.)
+	ConstantBuffer<ViewConstantsLayout> g_xView;            // binding 0
+	Sampler2DArray                      g_xCSM;             // binding 1 — cascaded shadow-map array (Phase 5.4)
+	StructuredBuffer<float4x4>          g_xShadowMatrices;  // binding 2 — all-cascade sun view×proj SSBO (Phase 5.4)
+	// (more view-frequency resources — IBL / clusters — are added here as the
+	//  consuming shaders are converted, in lockstep with the VIEW layout in
+	//  Zenith_Vulkan::CreatePersistentDescriptorSets + the canonical layout check
+	//  in Flux_PersistentSetLayouts::ValidateCanonicalGroup + the kaszViewMemberNames
+	//  manifest + the Flux_ViewSetBinding registry row.)
 };
 ParameterBlock<ViewParams> g_xViewSet;
 
