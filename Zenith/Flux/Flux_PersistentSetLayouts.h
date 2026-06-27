@@ -49,7 +49,10 @@ namespace Flux_PersistentSetLayouts
 	inline constexpr u_int kuViewBinding_LightBuffer         = 3;   // g_xLightBuffer         (StructuredBuffer<LightInstance> — dynamic light list)
 	inline constexpr u_int kuViewBinding_ClusterLightCounts  = 4;   // g_xClusterLightCounts  (StructuredBuffer<uint> — per-cluster light count)
 	inline constexpr u_int kuViewBinding_ClusterLightIndices = 5;   // g_xClusterLightIndices (StructuredBuffer<uint> — per-cluster light index list)
-	inline constexpr u_int kuViewBindingCount                = 6;   // number of VIEW bindings currently in the spine
+	inline constexpr u_int kuViewBinding_BRDFLUT             = 6;   // g_xBRDFLUT             (Sampler2D — IBL BRDF integration LUT)
+	inline constexpr u_int kuViewBinding_IrradianceMap       = 7;   // g_xIrradianceMap       (SamplerCube — IBL diffuse irradiance)
+	inline constexpr u_int kuViewBinding_PrefilteredMap      = 8;   // g_xPrefilteredMap      (SamplerCube — IBL prefiltered specular)
+	inline constexpr u_int kuViewBindingCount                = 9;   // number of VIEW bindings currently in the spine
 
 	// Canonical binding-0 member name of each persistent set (mirrors the spine
 	// ParameterBlocks in Common/Bindings.slang). Reflection tags a group's class by
@@ -72,6 +75,9 @@ namespace Flux_PersistentSetLayouts
 		"g_xLightBuffer",          // binding 3 — g_xLightBuffer         (kuViewBinding_LightBuffer, Phase 5.4)
 		"g_xClusterLightCounts",   // binding 4 — g_xClusterLightCounts  (kuViewBinding_ClusterLightCounts, Phase 5.4)
 		"g_xClusterLightIndices",  // binding 5 — g_xClusterLightIndices (kuViewBinding_ClusterLightIndices, Phase 5.4)
+		"g_xBRDFLUT",              // binding 6 — g_xBRDFLUT             (kuViewBinding_BRDFLUT, Phase 5.4)
+		"g_xIrradianceMap",        // binding 7 — g_xIrradianceMap       (kuViewBinding_IrradianceMap, Phase 5.4)
+		"g_xPrefilteredMap",       // binding 8 — g_xPrefilteredMap      (kuViewBinding_PrefilteredMap, Phase 5.4)
 	};
 
 	// Classify a (set, member name) pair into its persistence class. Returns GENERIC
@@ -95,9 +101,10 @@ namespace Flux_PersistentSetLayouts
 	// Canonical layout (kept in lockstep with the spine blocks in Common/Bindings.slang):
 	//   GLOBAL = { binding 0: uniform buffer (g_xGlobal), binding 1: structured buffer
 	//             (g_axMaterials, Phase 5.3) }
-	//   VIEW   = { binding 0: uniform buffer (g_xView), binding 1: combined image
-	//             sampler (g_xCSM cascaded-shadow array, Phase 5.4), binding 2: structured
-	//             buffer (g_xShadowMatrices all-cascade sun view×proj, Phase 5.4) }
+	//   VIEW   = { binding 0: uniform buffer (g_xView), binding 1: combined image sampler
+	//             (g_xCSM), binding 2: structured buffer (g_xShadowMatrices), bindings 3-5:
+	//             structured buffers (g_xLightBuffer + cluster counts/indices), bindings 6-8:
+	//             combined image samplers (IBL BRDF LUT + irradiance/prefiltered) — all Phase 5.4 }
 	inline bool ValidateCanonicalGroup(FluxFrequencyClass eClass,
 	                                   const Flux_BindingGroupLayout& xGroup,
 	                                   std::string& strErrOut)
@@ -155,6 +162,17 @@ namespace Flux_PersistentSetLayouts
 				if (!xB.m_bPresent || !FluxKindIsStorageBuffer(xB.m_eKind) || xB.m_uDescriptorCount != 1)
 				{
 					strErrOut = "persistent VIEW(1) set: bindings 3-5 must be the clustered-lighting storage buffers (Phase 5.4)";
+					return false;
+				}
+			}
+			// Bindings 6-8 (Phase 5.4): the IBL trio — BRDF LUT (2D) + irradiance + prefiltered
+			// (cubes) — each a single sampled texture (combined image sampler).
+			for (u_int uB = kuViewBinding_BRDFLUT; uB <= kuViewBinding_PrefilteredMap; uB++)
+			{
+				const Flux_BindingGroupEntry& xB = xGroup.m_axBindings[uB];
+				if (!xB.m_bPresent || !FluxKindIsSampledTexture(xB.m_eKind) || xB.m_uDescriptorCount != 1)
+				{
+					strErrOut = "persistent VIEW(1) set: bindings 6-8 must be the IBL sampled textures (Phase 5.4)";
 					return false;
 				}
 			}

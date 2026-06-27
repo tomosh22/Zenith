@@ -3,6 +3,7 @@
 #include "Core/Zenith_Engine.h"               // g_xEngine.Shadows()
 #include "Flux/Shadows/Flux_ShadowsImpl.h"    // GetCSMArraySRV (Phase 5.4 GRAPH_RESOURCE row)
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"  // GetClusterLight*SRV (Phase 5.4 GRAPH_RESOURCE rows)
+#include "Flux/IBL/Flux_IBLImpl.h"                         // GetBRDFLUTSRV / GetIrradiance|PrefilteredMapSRV (Phase 5.4 IBL rows)
 #include "Flux/Flux_PersistentSetLayouts.h"   // VIEW-set binding indices
 
 #include <cstring>   // strcmp
@@ -58,6 +59,17 @@ const Zenith_Vector<Flux_ViewSetBinding>& Flux_GetViewSetBindingRegistry()
 		xReg.PushBack({ "g_xClusterLightIndices", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
 			[]() -> Flux_VRAMHandle { return g_xEngine.LightClustering().GetClusterLightIndicesSRV().m_xVRAMHandle; },
 			[]() -> bool { return g_xEngine.LightClustering().IsInitialised(); } });
+		// Phase 5.4: the IBL trio — graph-tracked render attachments (BRDF LUT 2D + irradiance/
+		// prefiltered cubes), written by the IBL bake passes and read by DeferredShading/
+		// Translucency/MaterialPreview (which declare unconditional graph Reads) → GRAPH_RESOURCE.
+		// Always allocated + always read-declared → always-enabled (nullptr IsEnabled).
+		// View-invariant (environment lighting), so not flagged per-camera.
+		xReg.PushBack({ "g_xBRDFLUT", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
+			[]() -> Flux_VRAMHandle { return g_xEngine.IBL().GetBRDFLUTSRV().m_xVRAMHandle; }, nullptr });
+		xReg.PushBack({ "g_xIrradianceMap", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
+			[]() -> Flux_VRAMHandle { return g_xEngine.IBL().GetIrradianceMapSRV().m_xVRAMHandle; }, nullptr });
+		xReg.PushBack({ "g_xPrefilteredMap", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
+			[]() -> Flux_VRAMHandle { return g_xEngine.IBL().GetPrefilteredMapSRV().m_xVRAMHandle; }, nullptr });
 
 		// Per-camera view-sharing guard (W2): with multi-view (Phase 5.6) unsupported the
 		// VIEW set is shared by every view, so a per-camera resource here would alias the

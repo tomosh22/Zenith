@@ -73,9 +73,7 @@ struct PassParams
 	Sampler2D   g_xMaterialTex;
 	Sampler2D   g_xDepthTex;
 
-	Sampler2D   g_xBRDFLUT;
-	SamplerCube g_xIrradianceMap;
-	SamplerCube g_xPrefilteredMap;
+	// (IBL trio — g_xBRDFLUT + g_xIrradianceMap + g_xPrefilteredMap — is in the persistent VIEW set now, Phase 5.4)
 	Sampler2D   g_xSSRTex;
 	Sampler2D   g_xSSGITex;
 
@@ -254,7 +252,7 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, fRoughness);
 
 	float  fRoughnessForLUT = clamp(fRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-	float2 xBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
+	float2 xBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
 	// SSR specular contribution (Fresnel applied here, not in SSR shader,
 	// so SSR + IBL share consistent Fresnel and energy is conserved).
@@ -287,7 +285,7 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
 	if (g_xPassSet.DeferredShadingConstants.g_bIBLDiffuseEnabled != 0)
 	{
-		float3 xIrradiance = g_xPassSet.g_xIrradianceMap.Sample(xNormal).rgb;
+		float3 xIrradiance = g_xViewSet.g_xIrradianceMap.Sample(xNormal).rgb;
 		xDiffuseIBL        = kD * xIrradiance * xAlbedo;
 	}
 
@@ -310,7 +308,7 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	{
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fLOD     = fRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
+		float3 xPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
 		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughness, xBRDF);
 	}
 
@@ -335,10 +333,10 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	{
 		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
 		float fCoatRoughForLUT = clamp(fClearCoatRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-		float2 xCoatBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float2 xCoatBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fCoatLOD = fClearCoatRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xCoatPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
 		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * fClearCoat;
 		xBase = xBase * (1.0 - fClearCoat * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
@@ -488,7 +486,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		{
 			float2 xLutUV = float2((input.uv.x - fMinX) / fSize,
 									(input.uv.y - fMinY) / fSize);
-			float2 xBRDF  = g_xPassSet.g_xBRDFLUT.Sample(xLutUV).rg;
+			float2 xBRDF  = g_xViewSet.g_xBRDFLUT.Sample(xLutUV).rg;
 			return float4(xBRDF.r, xBRDF.g, 0.0, 1.0);
 		}
 	}
@@ -670,7 +668,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			LightInstance xL = g_xViewSet.g_xLightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
 			                            xDiffuse.rgb, fMetallic, fRoughness, fSpecular,
-			                            g_xPassSet.g_xBRDFLUT);
+			                            g_xViewSet.g_xBRDFLUT);
 		}
 		xColour.rgb += xDynLights;
 	}

@@ -70,9 +70,7 @@ struct PassParams
 
 	// (g_xShadowMatrices — all 4 cascade sun view×proj — is in the persistent VIEW set, Phase 5.4)
 
-	Sampler2D   g_xBRDFLUT;
-	SamplerCube g_xIrradianceMap;
-	SamplerCube g_xPrefilteredMap;
+	// (IBL trio — g_xBRDFLUT + g_xIrradianceMap + g_xPrefilteredMap — is in the persistent VIEW set now, Phase 5.4)
 
 	// (Clustered dynamic lights — g_xLightBuffer + g_xClusterLightCounts/Indices — are in the persistent VIEW set now, Phase 5.4.)
 };
@@ -217,7 +215,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, s.roughness);
 
 	float  fRoughnessForLUT = clamp(s.roughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-	float2 xBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
+	float2 xBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
 	float3 kS = F;
 	float3 kD = (1.0 - kS) * (1.0 - s.metallic);
@@ -225,7 +223,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
 	if (g_xPassSet.TranslucencyConstants.g_bIBLDiffuseEnabled != 0u)
 	{
-		float3 xIrradiance = g_xPassSet.g_xIrradianceMap.Sample(s.worldNormal).rgb;
+		float3 xIrradiance = g_xViewSet.g_xIrradianceMap.Sample(s.worldNormal).rgb;
 		xDiffuseIBL        = kD * xIrradiance * s.albedo.rgb;
 	}
 
@@ -234,7 +232,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	{
 		float3 xReflect = reflect(-xViewDir, s.worldNormal);
 		float  fLOD     = s.roughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
+		float3 xPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
 		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughnessForLUT, xBRDF);
 	}
 
@@ -250,10 +248,10 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	{
 		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
 		float fCoatRoughForLUT = clamp(s.ccRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-		float2 xCoatBRDF = g_xPassSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float2 xCoatBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
 		float3 xReflect = reflect(-xViewDir, s.worldNormal);
 		float  fCoatLOD = s.ccRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xCoatPrefiltered = g_xPassSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
 		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * s.ccStrength;
 		xBase = xBase * (1.0 - s.ccStrength * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
@@ -356,7 +354,7 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 			LightInstance xL = g_xViewSet.g_xLightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, input.worldPos, xSurface.worldNormal, xViewDir,
 			                            xSurface.albedo.rgb, xSurface.metallic, xSurface.roughness,
-			                            xSurface.specular, g_xPassSet.g_xBRDFLUT);
+			                            xSurface.specular, g_xViewSet.g_xBRDFLUT);
 		}
 		xColour += xDynLights;
 	}

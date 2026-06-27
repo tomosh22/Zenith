@@ -109,10 +109,8 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	// a regular CBV (mirrors ShadowSamplingLayout in Flux_DeferredShading.slang).
 	xBinder.BindCBV(DS::hShadowSampling, &xShadows.GetShadowSamplingBuffer().GetCBV());
 
-	// Bind IBL textures
-	xBinder.BindSRV(DS::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
-	xBinder.BindSRV(DS::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
-	xBinder.BindSRV(DS::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
+	// (IBL textures — BRDF LUT + irradiance/prefiltered cubes — are in the persistent VIEW
+	// set now, Phase 5.4; read via g_xViewSet. The graph Reads stay in SetupRenderGraph.)
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
 	// This avoids Vulkan validation errors for unbound descriptors

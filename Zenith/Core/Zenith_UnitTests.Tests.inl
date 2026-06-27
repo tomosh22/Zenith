@@ -16417,12 +16417,19 @@ ZENITH_TEST(Flux, PersistentSetLayouts)
 			x.m_axBindings[uB].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
 			x.m_axBindings[uB].m_uDescriptorCount = 1;
 		}
+		// Bindings 6-8 (Phase 5.4): the IBL trio (combined image samplers).
+		for (u_int uB = 6u; uB <= 8u; uB++)
+		{
+			x.m_axBindings[uB].m_bPresent         = true;
+			x.m_axBindings[uB].m_eKind            = FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER;
+			x.m_axBindings[uB].m_uDescriptorCount = 1;
+		}
 		return x;
 	};
 
 	std::string strErr;
 	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, fnGlobalCanonical(), strErr), "GLOBAL = CBV@0 + materials SSBO@1 is canonical");
-	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnViewCanonical(), strErr), "VIEW = CBV@0 + g_xCSM sampler@1 + SSBOs@2-5 (shadow-matrices + clustered-lighting) is canonical");
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnViewCanonical(), strErr), "VIEW = CBV@0 + g_xCSM sampler@1 + SSBOs@2-5 (shadow-matrices + clustered-lighting) + IBL samplers@6-8 is canonical");
 	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GENERIC, Flux_BindingGroupLayout(), strErr), "GENERIC class never asserted");
 
 	// GLOBAL without its binding-1 materials SSBO is now rejected (spine/manifest drift).
@@ -16470,10 +16477,15 @@ ZENITH_TEST(Flux, PersistentSetLayouts)
 	}
 	{
 		Flux_BindingGroupLayout x = fnViewCanonical();
-		x.m_axBindings[6].m_bPresent         = true; // VIEW must stop at binding 5 (until more resources promoted)
-		x.m_axBindings[6].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
-		x.m_axBindings[6].m_uDescriptorCount = 1;
-		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW extra member at slot 6 rejected");
+		x.m_axBindings[7].m_eKind = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER; // wrong kind at IBL binding 7 (must be a sampler)
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW IBL binding 7 wrong kind rejected");
+	}
+	{
+		Flux_BindingGroupLayout x = fnViewCanonical();
+		x.m_axBindings[9].m_bPresent         = true; // VIEW must stop at binding 8 (until more resources promoted)
+		x.m_axBindings[9].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+		x.m_axBindings[9].m_uDescriptorCount = 1;
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW extra member at slot 9 rejected");
 	}
 	{
 		Flux_BindingGroupLayout x = fnGlobalCanonical();

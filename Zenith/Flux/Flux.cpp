@@ -141,6 +141,22 @@ void Flux_RendererImpl::RecordFrame()
 		Flux_PersistentSetLayouts::kuViewBinding_ClusterLightIndices,
 		g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 
+	// Phase 5.4: the IBL trio (BRDF LUT + irradiance/prefiltered cubes) are graph-tracked
+	// render attachments sampled by DeferredShading/Translucency/MaterialPreview. They use
+	// the SAME combined-image-sampler write as g_xCSM (a cube's cube-ness lives in the image
+	// view, so no special path); m_xRepeatSampler matches the per-pass BindSRV default
+	// (render-identical). Always allocated; the hook rewrites the current SRV each frame so
+	// an IBL re-bake (sky change) is absorbed.
+	g_xEngine.FluxBackend().WritePersistentViewImage(
+		Flux_PersistentSetLayouts::kuViewBinding_BRDFLUT,
+		g_xEngine.IBL().GetBRDFLUTSRV(), g_xEngine.FluxGraphics().m_xRepeatSampler);
+	g_xEngine.FluxBackend().WritePersistentViewImage(
+		Flux_PersistentSetLayouts::kuViewBinding_IrradianceMap,
+		g_xEngine.IBL().GetIrradianceMapSRV(), g_xEngine.FluxGraphics().m_xRepeatSampler);
+	g_xEngine.FluxBackend().WritePersistentViewImage(
+		Flux_PersistentSetLayouts::kuViewBinding_PrefilteredMap,
+		g_xEngine.IBL().GetPrefilteredMapSRV(), g_xEngine.FluxGraphics().m_xRepeatSampler);
+
 	// Drive the backend to record every queued pass directly into its worker
 	// command buffers (Vulkan: parallel worker task; D3D12 null backend: serial
 	// callback loop). Runs synchronously inside the render-task safe window and

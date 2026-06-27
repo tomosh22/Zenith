@@ -277,9 +277,7 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			// CSM and the all-cascade ShadowMatrices SSBO are now in the persistent VIEW set
 			// (Phase 5.4) — no per-pass bind.
 
-			xBinder.BindSRV(TF::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
-			xBinder.BindSRV(TF::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
-			xBinder.BindSRV(TF::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
+			// (IBL textures are in the persistent VIEW set now — Phase 5.4; no per-pass bind.)
 
 			// (Clustered dynamic lights are in the persistent VIEW set now — Phase 5.4; no per-pass bind.)
 		}

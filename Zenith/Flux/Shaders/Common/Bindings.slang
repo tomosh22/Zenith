@@ -78,7 +78,10 @@ struct ViewParams
 	StructuredBuffer<LightInstance>     g_xLightBuffer;         // binding 3 — dynamic light list (Phase 5.4)
 	StructuredBuffer<uint>              g_xClusterLightCounts;  // binding 4 — per-cluster light count (Phase 5.4)
 	StructuredBuffer<uint>              g_xClusterLightIndices; // binding 5 — per-cluster light index list (Phase 5.4)
-	// (more view-frequency resources — IBL — are added here as the consuming shaders
+	Sampler2D                           g_xBRDFLUT;             // binding 6 — IBL BRDF integration LUT (Phase 5.4)
+	SamplerCube                         g_xIrradianceMap;       // binding 7 — IBL diffuse irradiance cube (Phase 5.4)
+	SamplerCube                         g_xPrefilteredMap;      // binding 8 — IBL prefiltered specular cube (Phase 5.4)
+	// (further view-frequency resources are added here as the consuming shaders
 	//  are converted, in lockstep with the VIEW layout in
 	//  Zenith_Vulkan::CreatePersistentDescriptorSets + the canonical layout check
 	//  in Flux_PersistentSetLayouts::ValidateCanonicalGroup + the kaszViewMemberNames

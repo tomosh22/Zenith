@@ -1079,12 +1079,13 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 	// (storage, Phase 5.4). Sizes are per-type sums across both persistent sets — bump
 	// these in lockstep when a VIEW/GLOBAL member of that type is added (uniform: g_xGlobal
 	// + g_xView = 2; storage: g_axMaterials + g_xShadowMatrices + g_xLightBuffer +
-	// g_xClusterLightCounts + g_xClusterLightIndices = 5; combined: g_xCSM = 1).
+	// g_xClusterLightCounts + g_xClusterLightIndices = 5; combined: g_xCSM + IBL trio
+	// (g_xBRDFLUT + g_xIrradianceMap + g_xPrefilteredMap) = 4).
 	vk::DescriptorPoolSize axPoolSizes[] =
 	{
 		{ vk::DescriptorType::eUniformBuffer,        MAX_FRAMES_IN_FLIGHT * 2u },
 		{ vk::DescriptorType::eStorageBuffer,        MAX_FRAMES_IN_FLIGHT * 5u },
-		{ vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 1u },
+		{ vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 4u },
 	};
 	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
 		.setPoolSizeCount(COUNT_OF(axPoolSizes))
@@ -1095,9 +1096,10 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 	// Layouts must match exactly what the spine reflects so every pipeline's RootSig can
 	// borrow them (RootSigBuilder::FromSpecification, GLOBAL/VIEW classes):
 	//   GLOBAL = { b0: uniform (g_xGlobal), b1: storage (g_axMaterials, Phase 5.3) }
-	//   VIEW   = { b0: uniform (g_xView), b1: combined image sampler (g_xCSM, Phase 5.4),
+	//   VIEW   = { b0: uniform (g_xView), b1: combined image sampler (g_xCSM),
 	//             b2: storage (g_xShadowMatrices), b3-5: storage (g_xLightBuffer +
-	//             g_xClusterLightCounts + g_xClusterLightIndices), all Phase 5.4 }
+	//             g_xClusterLightCounts + g_xClusterLightIndices), b6-8: combined image
+	//             samplers (IBL BRDF LUT + irradiance/prefiltered), all Phase 5.4 }
 	{
 		vk::DescriptorSetLayoutBinding axBinds[2];
 		axBinds[0] = vk::DescriptorSetLayoutBinding().setBinding(0)
@@ -1110,7 +1112,8 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 	{
 		// VIEW = { b0: uniform (g_xView), b1: combined image sampler (g_xCSM), b2: storage
 		// (g_xShadowMatrices), b3-5: storage (g_xLightBuffer + g_xClusterLightCounts +
-		// g_xClusterLightIndices) — all Phase 5.4 }. Grows in lockstep with the ViewParams
+		// g_xClusterLightIndices), b6-8: combined image samplers (IBL BRDF LUT +
+		// irradiance/prefiltered) — all Phase 5.4 }. Grows in lockstep with the ViewParams
 		// block in Common/Bindings.slang and the canonical check in
 		// Flux_PersistentSetLayouts::ValidateCanonicalGroup.
 		vk::DescriptorSetLayoutBinding axBinds[Flux_PersistentSetLayouts::kuViewBindingCount];
@@ -1128,6 +1131,12 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 		{
 			axBinds[uB] = vk::DescriptorSetLayoutBinding().setBinding(uB)
 				.setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eAll);
+		}
+		// Bindings 6-8 (Phase 5.4): the IBL trio — combined image samplers (BRDF LUT 2D + 2 cubes).
+		for (u_int uB = Flux_PersistentSetLayouts::kuViewBinding_BRDFLUT; uB <= Flux_PersistentSetLayouts::kuViewBinding_PrefilteredMap; uB++)
+		{
+			axBinds[uB] = vk::DescriptorSetLayoutBinding().setBinding(uB)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eAll);
 		}
 		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo()
 			.setBindingCount(Flux_PersistentSetLayouts::kuViewBindingCount).setPBindings(axBinds);

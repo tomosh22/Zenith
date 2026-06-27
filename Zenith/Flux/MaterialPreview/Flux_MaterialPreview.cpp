@@ -406,9 +406,8 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	// The all-cascade ShadowMatrices SSBO is in the persistent VIEW set now (Phase 5.4) —
 	// no per-pass bind (preview disables shadow sampling via the constants anyway).
 
-	xBinder.BindSRV(FW::hg_xBRDFLUT, &xIBL.GetBRDFLUTSRV());
-	xBinder.BindSRV(FW::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
-	xBinder.BindSRV(FW::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
+	// (IBL textures are in the persistent VIEW set now — Phase 5.4; no per-pass bind. The mesh
+	// pass declares the IBL graph Reads in SetupRenderGraph for the bake->sample barrier.)
 
 	// (Clustered dynamic lights are in the persistent VIEW set now — Phase 5.4; the preview
 	// disables dynamic lights via the constants anyway. The mesh pass declares the cluster
