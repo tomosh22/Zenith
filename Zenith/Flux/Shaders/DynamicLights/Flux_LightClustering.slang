@@ -34,7 +34,8 @@ struct PushConstantsLayout
 // PASS frequency (this compute pass's own buffers + constants) -> set 3.
 struct PassParams
 {
-	StructuredBuffer<LightInstance>   LightBuffer;
+	// g_xLightBuffer (the dynamic light list) is in the persistent VIEW set now (Phase 5.4);
+	// read via g_xViewSet.g_xLightBuffer. The cluster outputs stay PASS-frequency UAVs here.
 	RWStructuredBuffer<uint>          ClusterLightCounts;
 	RWStructuredBuffer<uint>          ClusterLightIndices;
 	ConstantBuffer<PushConstantsLayout> PushConstants;
@@ -71,7 +72,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	{
 		if (uLocalCount >= MAX_LIGHTS_PER_CLUSTER) break;
 
-		LightInstance xLight = g_xPassSet.LightBuffer[i];
+		LightInstance xLight = g_xViewSet.g_xLightBuffer[i];
 		uint uType = uint(xLight.m_xTypeOuter.y);
 
 		bool bInclude = false;

@@ -79,12 +79,9 @@ struct PassParams
 	Sampler2D   g_xSSRTex;
 	Sampler2D   g_xSSGITex;
 
-	// Clustered dynamic lights — populated each frame by Flux_LightClustering.
-	// LightBuffer is the full list (point + spot + directional, type-tagged).
-	// The cluster buffers index into LightBuffer per-pixel.
-	StructuredBuffer<LightInstance> LightBuffer;
-	StructuredBuffer<uint>          ClusterLightCounts;
-	StructuredBuffer<uint>          ClusterLightIndices;
+	// (Clustered dynamic lights — g_xLightBuffer + g_xClusterLightCounts/Indices — are in
+	//  the persistent VIEW set now, Phase 5.4. Populated each frame by Flux_LightClustering;
+	//  the cluster buffers index into the light list per-pixel.)
 
 	// 4th G-buffer target: HDR emissive RGB + clear-coat roughness in A.
 	Sampler2D   g_xGBufferEmissiveTex;
@@ -664,13 +661,13 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		float fViewZ = DepthToViewZ(input.uv, fDepth);
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(input.uv, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
-		uint  uLightCount   = g_xPassSet.ClusterLightCounts[uClusterIdx];
+		uint  uLightCount   = g_xViewSet.g_xClusterLightCounts[uClusterIdx];
 
 		float3 xDynLights = float3(0.0, 0.0, 0.0);
 		for (uint i = 0u; i < uLightCount; ++i)
 		{
-			uint uLightIdx = g_xPassSet.ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
-			LightInstance xL = g_xPassSet.LightBuffer[uLightIdx];
+			uint uLightIdx = g_xViewSet.g_xClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
+			LightInstance xL = g_xViewSet.g_xLightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
 			                            xDiffuse.rgb, fMetallic, fRoughness, fSpecular,
 			                            g_xPassSet.g_xBRDFLUT);

@@ -74,9 +74,7 @@ struct PassParams
 	SamplerCube g_xIrradianceMap;
 	SamplerCube g_xPrefilteredMap;
 
-	StructuredBuffer<LightInstance> LightBuffer;
-	StructuredBuffer<uint>          ClusterLightCounts;
-	StructuredBuffer<uint>          ClusterLightIndices;
+	// (Clustered dynamic lights — g_xLightBuffer + g_xClusterLightCounts/Indices — are in the persistent VIEW set now, Phase 5.4.)
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -349,13 +347,13 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 		float2 xScreenUV = input.position.xy * g_xViewSet.g_xView.g_xRcpScreenDims;
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(xScreenUV, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
-		uint  uLightCount   = g_xPassSet.ClusterLightCounts[uClusterIdx];
+		uint  uLightCount   = g_xViewSet.g_xClusterLightCounts[uClusterIdx];
 
 		float3 xDynLights = float3(0.0, 0.0, 0.0);
 		for (uint i = 0u; i < uLightCount; ++i)
 		{
-			uint uLightIdx = g_xPassSet.ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
-			LightInstance xL = g_xPassSet.LightBuffer[uLightIdx];
+			uint uLightIdx = g_xViewSet.g_xClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
+			LightInstance xL = g_xViewSet.g_xLightBuffer[uLightIdx];
 			xDynLights += EvaluateLight(xL, input.worldPos, xSurface.worldNormal, xViewDir,
 			                            xSurface.albedo.rgb, xSurface.metallic, xSurface.roughness,
 			                            xSurface.specular, g_xPassSet.g_xBRDFLUT);

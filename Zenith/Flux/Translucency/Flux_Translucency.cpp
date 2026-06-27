@@ -281,9 +281,7 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 			xBinder.BindSRV(TF::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
 			xBinder.BindSRV(TF::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
 
-			xBinder.BindSRV_Buffer(TF::hLightBuffer, g_xEngine.DynamicLights().GetLightBufferSRV());
-			xBinder.BindSRV_Buffer(TF::hClusterLightCounts, g_xEngine.LightClustering().GetClusterLightCountsSRV());
-			xBinder.BindSRV_Buffer(TF::hClusterLightIndices, g_xEngine.LightClustering().GetClusterLightIndicesSRV());
+			// (Clustered dynamic lights are in the persistent VIEW set now — Phase 5.4; no per-pass bind.)
 		}
 
 		pxCmdList->SetVertexBuffer(xItem.m_pxMeshInstance->GetVertexBuffer());

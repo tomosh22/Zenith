@@ -124,9 +124,7 @@ static void ExecuteLightClustering(Flux_CommandBuffer* pxCommandList, void* /*pU
 
 	namespace LC = Flux_Generated_DynamicLights::LightClustering;
 
-	// Inputs.
-	xBinder.BindSRV_Buffer(LC::hLightBuffer,
-		xDynamicLights.GetLightBufferSRV());
+	// Input light list is in the persistent VIEW set now (g_xViewSet.g_xLightBuffer, Phase 5.4).
 
 	// Outputs (UAVs).
 	xBinder.BindUAV_Buffer(LC::hClusterLightCounts,

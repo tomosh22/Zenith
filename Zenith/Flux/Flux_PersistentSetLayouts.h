@@ -43,10 +43,13 @@ namespace Flux_PersistentSetLayouts
 	// builds the VIEW descriptor-set layout + writes its descriptors against these,
 	// and ValidateCanonicalGroup asserts the reflected layout matches. Phase 5.4
 	// grows this list as view-frequency SRVs are promoted into the persistent set.
-	inline constexpr u_int kuViewBinding_View           = 0;   // g_xView           (ConstantBuffer)
-	inline constexpr u_int kuViewBinding_CSM            = 1;   // g_xCSM            (Sampler2DArray — cascaded shadows)
-	inline constexpr u_int kuViewBinding_ShadowMatrices = 2;   // g_xShadowMatrices (StructuredBuffer<float4x4> — all-cascade sun view×proj)
-	inline constexpr u_int kuViewBindingCount           = 3;   // number of VIEW bindings currently in the spine
+	inline constexpr u_int kuViewBinding_View                = 0;   // g_xView                (ConstantBuffer)
+	inline constexpr u_int kuViewBinding_CSM                 = 1;   // g_xCSM                 (Sampler2DArray — cascaded shadows)
+	inline constexpr u_int kuViewBinding_ShadowMatrices      = 2;   // g_xShadowMatrices      (StructuredBuffer<float4x4> — all-cascade sun view×proj)
+	inline constexpr u_int kuViewBinding_LightBuffer         = 3;   // g_xLightBuffer         (StructuredBuffer<LightInstance> — dynamic light list)
+	inline constexpr u_int kuViewBinding_ClusterLightCounts  = 4;   // g_xClusterLightCounts  (StructuredBuffer<uint> — per-cluster light count)
+	inline constexpr u_int kuViewBinding_ClusterLightIndices = 5;   // g_xClusterLightIndices (StructuredBuffer<uint> — per-cluster light index list)
+	inline constexpr u_int kuViewBindingCount                = 6;   // number of VIEW bindings currently in the spine
 
 	// Canonical binding-0 member name of each persistent set (mirrors the spine
 	// ParameterBlocks in Common/Bindings.slang). Reflection tags a group's class by
@@ -63,9 +66,12 @@ namespace Flux_PersistentSetLayouts
 	// EveryViewMemberHasRegistryRow unit test ties it to the registry — together they
 	// close the manifest↔reflection↔registry triangle so a promotion can't half-land.
 	inline constexpr const char* kaszViewMemberNames[kuViewBindingCount] = {
-		kszViewMember0,       // binding 0 — g_xView           (kuViewBinding_View)
-		"g_xCSM",             // binding 1 — g_xCSM            (kuViewBinding_CSM, Phase 5.4)
-		"g_xShadowMatrices",  // binding 2 — g_xShadowMatrices (kuViewBinding_ShadowMatrices, Phase 5.4)
+		kszViewMember0,            // binding 0 — g_xView                (kuViewBinding_View)
+		"g_xCSM",                  // binding 1 — g_xCSM                 (kuViewBinding_CSM, Phase 5.4)
+		"g_xShadowMatrices",       // binding 2 — g_xShadowMatrices      (kuViewBinding_ShadowMatrices, Phase 5.4)
+		"g_xLightBuffer",          // binding 3 — g_xLightBuffer         (kuViewBinding_LightBuffer, Phase 5.4)
+		"g_xClusterLightCounts",   // binding 4 — g_xClusterLightCounts  (kuViewBinding_ClusterLightCounts, Phase 5.4)
+		"g_xClusterLightIndices",  // binding 5 — g_xClusterLightIndices (kuViewBinding_ClusterLightIndices, Phase 5.4)
 	};
 
 	// Classify a (set, member name) pair into its persistence class. Returns GENERIC
@@ -140,6 +146,17 @@ namespace Flux_PersistentSetLayouts
 			{
 				strErrOut = "persistent VIEW(1) set: binding 2 must be the single g_xShadowMatrices structured buffer (Phase 5.4)";
 				return false;
+			}
+			// Bindings 3-5 (Phase 5.4): the clustered-lighting read buffers — g_xLightBuffer,
+			// g_xClusterLightCounts, g_xClusterLightIndices — each a single storage buffer.
+			for (u_int uB = kuViewBinding_LightBuffer; uB <= kuViewBinding_ClusterLightIndices; uB++)
+			{
+				const Flux_BindingGroupEntry& xB = xGroup.m_axBindings[uB];
+				if (!xB.m_bPresent || !FluxKindIsStorageBuffer(xB.m_eKind) || xB.m_uDescriptorCount != 1)
+				{
+					strErrOut = "persistent VIEW(1) set: bindings 3-5 must be the clustered-lighting storage buffers (Phase 5.4)";
+					return false;
+				}
 			}
 			uFirstUnexpected = kuViewBindingCount;
 		}

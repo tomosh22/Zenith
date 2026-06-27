@@ -2,6 +2,7 @@
 #include "Flux/Flux_ViewSetBinding.h"
 #include "Core/Zenith_Engine.h"               // g_xEngine.Shadows()
 #include "Flux/Shadows/Flux_ShadowsImpl.h"    // GetCSMArraySRV (Phase 5.4 GRAPH_RESOURCE row)
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h"  // GetClusterLight*SRV (Phase 5.4 GRAPH_RESOURCE rows)
 #include "Flux/Flux_PersistentSetLayouts.h"   // VIEW-set binding indices
 
 #include <cstring>   // strcmp
@@ -40,6 +41,23 @@ const Zenith_Vector<Flux_ViewSetBinding>& Flux_GetViewSetBindingRegistry()
 		// rationale as g_xCSM above (see kbFluxMultiViewSupported).
 		xReg.PushBack({ "g_xShadowMatrices", Flux_PersistentSetLayouts::kuSetView,
 			FLUX_VIEWSET_SOURCE_CPU_GLOBAL_BUFFER, nullptr, nullptr });
+		// Phase 5.4: clustered-lighting read buffers. g_xLightBuffer is a frame-indexed
+		// Flux_DynamicReadWriteBuffer (graph-invisible) → CPU_GLOBAL_BUFFER (exempt). The
+		// cluster count/index buffers are GPU-only Flux_ReadWriteBuffers, written by the
+		// LightClustering compute (UAV) and read by the consumers (SRV) → GRAPH_RESOURCE: the
+		// consumers' ReadBuffer decls (guarded by IsInitialised) drive the UAV→SRV barrier and
+		// the validator enforces them; IsEnabled mirrors that guard. Like g_xCSM / g_xShadowMatrices,
+		// the cluster grid is MAIN-camera-derived (ComputeClusterAABB uses g_xView), but it is
+		// shareable across views — not flagged per-camera — because the only secondary view
+		// (MaterialPreview) disables dynamic lights, so it never meaningfully samples it.
+		xReg.PushBack({ "g_xLightBuffer", Flux_PersistentSetLayouts::kuSetView,
+			FLUX_VIEWSET_SOURCE_CPU_GLOBAL_BUFFER, nullptr, nullptr });
+		xReg.PushBack({ "g_xClusterLightCounts", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
+			[]() -> Flux_VRAMHandle { return g_xEngine.LightClustering().GetClusterLightCountsSRV().m_xVRAMHandle; },
+			[]() -> bool { return g_xEngine.LightClustering().IsInitialised(); } });
+		xReg.PushBack({ "g_xClusterLightIndices", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
+			[]() -> Flux_VRAMHandle { return g_xEngine.LightClustering().GetClusterLightIndicesSRV().m_xVRAMHandle; },
+			[]() -> bool { return g_xEngine.LightClustering().IsInitialised(); } });
 
 		// Per-camera view-sharing guard (W2): with multi-view (Phase 5.6) unsupported the
 		// VIEW set is shared by every view, so a per-camera resource here would alias the

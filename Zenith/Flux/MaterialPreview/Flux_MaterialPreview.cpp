@@ -410,14 +410,9 @@ static void ExecutePreviewMesh(Flux_CommandBuffer* pxCmdList, void*)
 	xBinder.BindSRV(FW::hg_xIrradianceMap, &xIBL.GetIrradianceMapSRV());
 	xBinder.BindSRV(FW::hg_xPrefilteredMap, &xIBL.GetPrefilteredMapSRV());
 
-	// Clustered-light buffers — bind the live scene buffers; the preview's
-	// cluster lookup never accumulates because counts only cover the scene
-	// camera's clusters and the preview constants disable nothing here, but
-	// any contribution is negligible at preview scale. (Counts buffer could
-	// be zeroed in future if it ever shows.)
-	xBinder.BindSRV_Buffer(FW::hLightBuffer, g_xEngine.DynamicLights().GetLightBufferSRV());
-	xBinder.BindSRV_Buffer(FW::hClusterLightCounts, g_xEngine.LightClustering().GetClusterLightCountsSRV());
-	xBinder.BindSRV_Buffer(FW::hClusterLightIndices, g_xEngine.LightClustering().GetClusterLightIndicesSRV());
+	// (Clustered dynamic lights are in the persistent VIEW set now — Phase 5.4; the preview
+	// disables dynamic lights via the constants anyway. The mesh pass declares the cluster
+	// ReadBuffer decls in SetupRenderGraph for graph-completeness / the VIEW-set validator.)
 
 	// Per-draw constants (model + material-table index). Material textures are bindless
 	// (set 2), bound once per pass above; the material was registered in the Background

@@ -16409,12 +16409,20 @@ ZENITH_TEST(Flux, PersistentSetLayouts)
 		x.m_axBindings[2].m_bPresent         = true;
 		x.m_axBindings[2].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
 		x.m_axBindings[2].m_uDescriptorCount = 1;
+		// Bindings 3-5 (Phase 5.4): clustered-lighting storage buffers (g_xLightBuffer,
+		// g_xClusterLightCounts, g_xClusterLightIndices).
+		for (u_int uB = 3u; uB <= 5u; uB++)
+		{
+			x.m_axBindings[uB].m_bPresent         = true;
+			x.m_axBindings[uB].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+			x.m_axBindings[uB].m_uDescriptorCount = 1;
+		}
 		return x;
 	};
 
 	std::string strErr;
 	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GLOBAL, fnGlobalCanonical(), strErr), "GLOBAL = CBV@0 + materials SSBO@1 is canonical");
-	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnViewCanonical(), strErr), "VIEW = CBV@0 + g_xCSM sampler@1 + g_xShadowMatrices SSBO@2 is canonical");
+	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW,   fnViewCanonical(), strErr), "VIEW = CBV@0 + g_xCSM sampler@1 + SSBOs@2-5 (shadow-matrices + clustered-lighting) is canonical");
 	ZENITH_ASSERT_TRUE(ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_GENERIC, Flux_BindingGroupLayout(), strErr), "GENERIC class never asserted");
 
 	// GLOBAL without its binding-1 materials SSBO is now rejected (spine/manifest drift).
@@ -16452,10 +16460,20 @@ ZENITH_TEST(Flux, PersistentSetLayouts)
 	}
 	{
 		Flux_BindingGroupLayout x = fnViewCanonical();
-		x.m_axBindings[3].m_bPresent         = true; // VIEW must stop at binding 2 (until more resources promoted)
-		x.m_axBindings[3].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
-		x.m_axBindings[3].m_uDescriptorCount = 1;
-		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW extra member at slot 3 rejected");
+		x.m_axBindings[4].m_bPresent = false; // drop g_xClusterLightCounts (Phase 5.4)
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW missing a clustered-lighting SSBO (b4) rejected");
+	}
+	{
+		Flux_BindingGroupLayout x = fnViewCanonical();
+		x.m_axBindings[5].m_eKind = FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER; // wrong kind at binding 5 (must be a storage buffer)
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW binding 5 wrong kind rejected");
+	}
+	{
+		Flux_BindingGroupLayout x = fnViewCanonical();
+		x.m_axBindings[6].m_bPresent         = true; // VIEW must stop at binding 5 (until more resources promoted)
+		x.m_axBindings[6].m_eKind            = FLUX_RESOURCE_KIND_STRUCTURED_BUFFER;
+		x.m_axBindings[6].m_uDescriptorCount = 1;
+		ZENITH_ASSERT_TRUE(!ValidateCanonicalGroup(FLUX_FREQUENCY_CLASS_VIEW, x, strErr), "VIEW extra member at slot 6 rejected");
 	}
 	{
 		Flux_BindingGroupLayout x = fnGlobalCanonical();

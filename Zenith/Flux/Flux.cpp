@@ -125,6 +125,22 @@ void Flux_RendererImpl::RecordFrame()
 		Flux_PersistentSetLayouts::kuViewBinding_ShadowMatrices,
 		g_xEngine.Shadows().GetShadowMatricesSRV());
 
+	// Phase 5.4: the clustered-lighting read buffers also live in the persistent VIEW set.
+	// g_xLightBuffer is a frame-indexed dynamic buffer (current-frame SRV each frame); the
+	// cluster count/index buffers are GPU-only (graph-tracked — the LightClustering compute
+	// writes them via UAV, consumers read these persistent SRVs with graph-driven barriers).
+	// All three are always allocated post-init, so the descriptor is always valid — VIEW
+	// bindings 3-5 must never be left unwritten (consumers statically sample them).
+	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+		Flux_PersistentSetLayouts::kuViewBinding_LightBuffer,
+		g_xEngine.DynamicLights().GetLightBufferSRV());
+	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+		Flux_PersistentSetLayouts::kuViewBinding_ClusterLightCounts,
+		g_xEngine.LightClustering().GetClusterLightCountsSRV());
+	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+		Flux_PersistentSetLayouts::kuViewBinding_ClusterLightIndices,
+		g_xEngine.LightClustering().GetClusterLightIndicesSRV());
+
 	// Drive the backend to record every queued pass directly into its worker
 	// command buffers (Vulkan: parallel worker task; D3D12 null backend: serial
 	// callback loop). Runs synchronously inside the render-task safe window and

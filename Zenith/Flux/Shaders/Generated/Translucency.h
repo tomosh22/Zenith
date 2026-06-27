@@ -55,6 +55,12 @@ namespace Flux_Generated_Translucency
 		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
@@ -86,12 +92,6 @@ namespace Flux_Generated_Translucency
 		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hLightBuffer{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightCounts{ 3u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hClusterLightIndices{ 3u, 6u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB

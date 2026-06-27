@@ -20,6 +20,7 @@
 // =====================================================================
 
 import Common.MaterialTable;   // MaterialGPU (no bindings — does not shift the spine spaces)
+import Common.Lighting;        // LightInstance (no bindings — does not shift the spine spaces)
 
 // Directional light data struct (moved from Common.Frame so spine shaders keep it).
 public struct DirectionalLight
@@ -73,9 +74,12 @@ struct ViewParams
 {
 	ConstantBuffer<ViewConstantsLayout> g_xView;            // binding 0
 	Sampler2DArray                      g_xCSM;             // binding 1 — cascaded shadow-map array (Phase 5.4)
-	StructuredBuffer<float4x4>          g_xShadowMatrices;  // binding 2 — all-cascade sun view×proj SSBO (Phase 5.4)
-	// (more view-frequency resources — IBL / clusters — are added here as the
-	//  consuming shaders are converted, in lockstep with the VIEW layout in
+	StructuredBuffer<float4x4>          g_xShadowMatrices;      // binding 2 — all-cascade sun view×proj SSBO (Phase 5.4)
+	StructuredBuffer<LightInstance>     g_xLightBuffer;         // binding 3 — dynamic light list (Phase 5.4)
+	StructuredBuffer<uint>              g_xClusterLightCounts;  // binding 4 — per-cluster light count (Phase 5.4)
+	StructuredBuffer<uint>              g_xClusterLightIndices; // binding 5 — per-cluster light index list (Phase 5.4)
+	// (more view-frequency resources — IBL — are added here as the consuming shaders
+	//  are converted, in lockstep with the VIEW layout in
 	//  Zenith_Vulkan::CreatePersistentDescriptorSets + the canonical layout check
 	//  in Flux_PersistentSetLayouts::ValidateCanonicalGroup + the kaszViewMemberNames
 	//  manifest + the Flux_ViewSetBinding registry row.)

@@ -82,8 +82,6 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_SSRImpl& xSSR = g_xEngine.SSR();
 	Flux_SSGIImpl& xSSGI = g_xEngine.SSGI();
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
-	Flux_DynamicLightsImpl& xDynamicLights = g_xEngine.DynamicLights();
-	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
 
 	pxCommandList->SetPipeline(&xDS.m_xPipeline);
 
@@ -150,16 +148,9 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 			bUseBlurred ? &xSSAO.GetBlurred().SRV() : &xSSAO.GetRawOcclusion().SRV());
 	}
 
-	// Clustered dynamic lights — buffers populated by Flux_LightClustering.
-	// All three are statically referenced by the shader, so all must be
-	// bound regardless of whether dynamic lights exist this frame (the
-	// fragment shader's cluster loop runs zero iterations when count = 0).
-	xBinder.BindSRV_Buffer(DS::hLightBuffer,
-		xDynamicLights.GetLightBufferSRV());
-	xBinder.BindSRV_Buffer(DS::hClusterLightCounts,
-		xLightClustering.GetClusterLightCountsSRV());
-	xBinder.BindSRV_Buffer(DS::hClusterLightIndices,
-		xLightClustering.GetClusterLightIndicesSRV());
+	// (Clustered dynamic lights — LightBuffer + cluster counts/indices — are in the
+	// persistent VIEW set now (Phase 5.4); read via g_xViewSet, no per-pass bind. The
+	// cluster ReadBuffer decls in SetupRenderGraph drive the UAV→SRV barrier.)
 
 	// Pass constants to shader
 	struct DeferredShadingConstants
