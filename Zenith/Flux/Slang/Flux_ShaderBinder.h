@@ -3,17 +3,18 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_BackendTypes.h"
 
-// Helper class for binding shader resources by name. Looks up the binding
-// slot via the shader's reflection on every call; an internal pointer-identity
-// cache (NAME_CACHE_SIZE entries, no hashing) absorbs the lookup cost when
-// callers pass string literals. The resource-type assertion catches Bind*
-// mix-ups (e.g. BindCBV called on a binding that reflection says is a
-// texture) at the call site, which is far clearer than the eventual Vulkan
+// Helper class for binding shader resources via typed binding handles. Each Bind*
+// takes a generated `Flux_BindingHandle` (set / binding / kind / count, emitted into
+// Flux/Shaders/Generated/<Feature>.h by the codegen) — there is no name lookup and no
+// runtime name cache (both were removed in the binding-model overhaul). A debug
+// resource-kind assertion catches Bind* mix-ups (e.g. BindCBV on a handle reflection
+// says is a texture) at the call site, which is far clearer than the eventual Vulkan
 // validation-layer error.
 //
 // Usage:
 //   Flux_ShaderBinder xBinder(*pxCmdBuf);
-//   xBinder.BindCBV(g_xShader, "FrameConstants", &buffer.GetCBV());
+//   namespace DS = Flux_Generated_DeferredShading::DeferredShading;
+//   xBinder.BindCBV(DS::hg_xView, &buffer.GetCBV());
 //   xBinder.BindSRV(g_xShader, "g_xDiffuseTex", &texture.GetSRV());
 //   xBinder.BindDrawConstants(g_xShader, "pushConstants", &xData, sizeof(xData));
 //

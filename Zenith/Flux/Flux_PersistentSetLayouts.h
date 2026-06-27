@@ -54,6 +54,18 @@ namespace Flux_PersistentSetLayouts
 	inline constexpr u_int kuViewBinding_PrefilteredMap      = 8;   // g_xPrefilteredMap      (SamplerCube — IBL prefiltered specular)
 	inline constexpr u_int kuViewBindingCount                = 9;   // number of VIEW bindings currently in the spine
 
+	// DELIBERATELY NOT promoted into the VIEW set (kept per-pass at set 3) — do not "finish
+	// the job" by adding these here:
+	//  - Per-pass TRANSIENTS (G-buffer MRTs, SSR/SSGI/SSAO outputs): narrow producer->consumer
+	//    chains whose contents change every frame and are read by only 1-2 passes; a persistent
+	//    set is the wrong home (the descriptor would churn regardless).
+	//  - PER-CAMERA resources (scene depth, HiZ): contents depend on the active camera, so a
+	//    SHARED VIEW set would alias the main camera for a secondary view (MaterialPreview)
+	//    while multi-view (Phase 5.6) is unsupported. The Flux_ViewSetBinding per-camera guard
+	//    (m_bPerCamera + kbFluxMultiViewSupported) rejects such a promotion at boot until 5.6.
+	//  Shadow / IBL / clustered-lighting data IS shareable here — though main-camera-derived —
+	//  only because the one secondary view (MaterialPreview) disables those features.
+
 	// Canonical binding-0 member name of each persistent set (mirrors the spine
 	// ParameterBlocks in Common/Bindings.slang). Reflection tags a group's class by
 	// matching the binding-0 member name to one of these.

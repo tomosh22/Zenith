@@ -90,12 +90,19 @@ to lower without it.
 
 ## Descriptor Set Convention
 
-See `BINDING_CONVENTION.md` for the current per-subsystem layout.
+The binding model is a frequency-based spine, declared once in `Common/Bindings.slang`
+(text-`#include`d first by every shader) and **enforced in code**
+(`Flux_ShaderCatalog::ValidateFrequencyTaxonomy`, `Flux_PersistentSetLayouts::ValidateCanonicalGroup`,
+`Flux_ViewSetBinding`):
 
-General pattern:
-- **Set 0**: frame-level (camera, sun, screen dims, subsystem constants)
-- **Set 1**: per-draw (material block, textures, instance buffers)
-- **Set 2+**: reserved for subsystem-specific extensions
+- **Set 0 — GLOBAL**: view-invariant per-frame data (`g_xGlobal` + `g_axMaterials`).
+- **Set 1 — VIEW**: per-camera data + promoted view-frequency resources (`g_xView`, CSM,
+  shadow matrices, clustered-lighting buffers, IBL — see `Flux/Flux_PersistentSetLayouts.h`).
+- **Set 2 — BINDLESS**: the unbounded `g_axTextures[]` table.
+- **Set 3 — PASS / Set 4 — DRAW**: each shader's own local `ParameterBlock`s.
+
+Shaders carry NO `[[vk::binding]]` — every resource is a member of its frequency block.
+(The old per-subsystem `BINDING_CONVENTION.md` is retired.)
 
 ## Vertex-Stage Buffer Reads
 
