@@ -730,6 +730,14 @@ static void ExecuteInstancedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		return;
 	}
 
+	// A/B with the unified GPU-driven path (Stage 3): when on, it draws the instanced foliage
+	// into the G-buffer through the one shared core, so this loop steps aside (avoids double-draw),
+	// mirroring the StaticMeshes G-buffer gate.
+	if (g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled())
+	{
+		return;
+	}
+
 	// Trampoline: recover the subsystem singleton first, then route all reaches
 	// through its members.
 	Flux_InstancedMeshesImpl& xZZ = g_xEngine.InstancedMeshes();
@@ -830,6 +838,13 @@ void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_
 	// The shadow shader reads TransformBuffer[VisibleIndexBuffer[i]] — correct for
 	// all enabled casters.
 	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
+	{
+		return;
+	}
+
+	// A/B: when the unified GPU-driven path is on it casts the foliage shadows (per-cascade
+	// frustum-culled) through the one shared core, so this enabled-list draw steps aside.
+	if (g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled())
 	{
 		return;
 	}

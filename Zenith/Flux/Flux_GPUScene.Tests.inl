@@ -595,3 +595,52 @@ ZENITH_TEST(GPUScene, CascadeCasterExtendRetainsNearOccluders)
 	ZENITH_ASSERT_FALSE(Flux_CullDrawItemAgainstFrustum(xFar, xUnitSphere, axPlanes),
 		"occluder past the cascade far plane is culled");
 }
+
+// ---- incremental build: snapshot statics + foliage instances in one scene (Stage 3b) --
+
+ZENITH_TEST(GPUScene, IncrementalBuildMixesItemsAndInstances)
+{
+	Flux_GPUSceneBucketRegistry xReg;
+	Flux_GPUSceneBuildResult xOut;
+
+	Flux_BeginGPUSceneBuild(xOut, xReg);
+
+	// One static model item with two submeshes -> two distinct buckets.
+	Flux_GPUSceneSourceItem xItem;
+	xItem.m_xWorldMatrix = Zenith_Maths::Matrix4(1.0f);
+	xItem.m_xSubmeshes.PushBack(GPUScene_MakeSub(1u, uFLUX_GPUSCENE_CULL_ONE_SIDED, 100u, 0u));
+	xItem.m_xSubmeshes.PushBack(GPUScene_MakeSub(2u, uFLUX_GPUSCENE_CULL_TWO_SIDED, 200u, 0u));
+	Flux_AppendGPUSceneItem(xItem, xReg, xOut);
+
+	// Two foliage instances sharing ONE (mesh,cull,material,VAT) bucket (the N-trees collapse).
+	Flux_GPUSceneBucketKey xTreeKey;
+	xTreeKey.m_uMeshGeometryId   = 9u;
+	xTreeKey.m_uCullMode         = uFLUX_GPUSCENE_CULL_TWO_SIDED;
+	xTreeKey.m_ulMaterialAssetId = 777u;
+	xTreeKey.m_ulVATTextureId    = 555u;
+	const Zenith_Maths::Vector4 xSphere(0.0f, 0.0f, 0.0f, 3.0f);
+	const u_int uPacked = Flux_PackVATAnim(0u, 120u);
+	Flux_AppendGPUSceneInstance(xReg, xOut, Zenith_Maths::Matrix4(1.0f),
+		uFLUX_GPUSCENE_OBJFLAG_VAT, uPacked, 0u, xTreeKey, xSphere, 0xAABBCCDDu);
+	Flux_AppendGPUSceneInstance(xReg, xOut, Zenith_Maths::Matrix4(2.0f),
+		uFLUX_GPUSCENE_OBJFLAG_VAT, uPacked, 0u, xTreeKey, xSphere, 0x11223344u);
+
+	Flux_EndGPUSceneBuild(xOut, xReg);
+
+	ZENITH_ASSERT_EQ(xOut.m_xObjects.GetSize(), 3u, "1 model + 2 instances -> 3 objects");
+	ZENITH_ASSERT_EQ(xOut.m_xDrawItems.GetSize(), 4u, "2 submeshes + 2 instances -> 4 draw-items");
+	ZENITH_ASSERT_EQ(xReg.GetLiveBucketCount(), 3u, "2 static buckets + 1 shared tree bucket");
+	ZENITH_ASSERT_EQ(xReg.GetBucketRefcount(xTreeKey), 2u, "both instances reference the one tree bucket");
+
+	// Instance objects (indices 1,2) carry the VAT flag + packed anim; the static object (0) does not.
+	ZENITH_ASSERT_TRUE((xOut.m_xObjects.Get(0).m_uFlags & uFLUX_GPUSCENE_OBJFLAG_VAT) == 0u, "static object: no VAT flag");
+	ZENITH_ASSERT_TRUE((xOut.m_xObjects.Get(1).m_uFlags & uFLUX_GPUSCENE_OBJFLAG_VAT) != 0u, "instance object: VAT flag set");
+	ZENITH_ASSERT_EQ((xOut.m_xObjects.Get(1).m_uVATAnimPacked >> 16) & 0xFFFFu, 120u, "instance frame count packed");
+
+	// The two instance draw-items point at distinct objects but share the one tree bucket.
+	const Flux_GPUSceneDrawItem& xA = xOut.m_xDrawItems.Get(2);
+	const Flux_GPUSceneDrawItem& xB = xOut.m_xDrawItems.Get(3);
+	ZENITH_ASSERT_EQ(xA.m_uBucketIndex, xB.m_uBucketIndex, "both instances in one bucket");
+	ZENITH_ASSERT_TRUE(xA.m_uObjectIndex != xB.m_uObjectIndex, "distinct instance objects");
+	ZENITH_ASSERT_EQ(xA.m_uColorTintPacked, 0xAABBCCDDu, "instance A tint preserved");
+}

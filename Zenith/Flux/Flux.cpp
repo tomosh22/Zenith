@@ -32,6 +32,7 @@
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
+#include "Flux/InstancedMeshes/Flux_InstanceGroup.h"      // Stage 3b: fold instance-group foliage into the unified scene
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
@@ -228,33 +229,32 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
 	Zenith_MaterialAsset* pxBlankMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 
-	// Mesh-geometry id assignment + residency refcount diff runs over the same walk.
+	// ONE sync covers both sources: snapshot statics (Zenith_ModelComponent meshes) AND
+	// instance-group foliage (trees). The mesh-geometry residency refcount + the GPU-scene
+	// record build + the bucket-topology refcount diff all run over this single main-thread
+	// walk (the proven WS7 single-writer shape).
 	m_xUnifiedMeshGeometryRegistry.BeginSync();
+	Flux_BeginGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 
-	Zenith_Vector<Flux_GPUSceneSourceItem> xSourceItems;
-	xSourceItems.Reserve(xSnapshot.GetNumItems());
-
+	// ---- snapshot statics ----
+	Flux_GPUSceneSourceItem xItem;   // reused per model (cleared each iteration)
 	const Zenith_Vector<Flux_RenderSceneItem>& xItems = xSnapshot.Items();
 	for (u_int uItem = 0; uItem < xItems.GetSize(); ++uItem)
 	{
 		const Flux_RenderSceneItem& xSrc = xItems.Get(uItem);
 		Flux_ModelInstance* pxModel = xSrc.m_pxModelInstance;
-		if (pxModel == nullptr)
-		{
-			continue;
-		}
-		// Animated-skinned models draw via Flux_AnimatedMeshes (Stage 5), not the static
-		// unified path — skip the whole item (mirrors the StaticMeshes consumer filter).
-		if (xSrc.m_bAnimatedSkinned)
+		// Animated-skinned models draw via Flux_AnimatedMeshes (Stage 5); skip (mirrors the
+		// StaticMeshes consumer filter).
+		if (pxModel == nullptr || xSrc.m_bAnimatedSkinned)
 		{
 			continue;
 		}
 
-		// Build into the back item in place (Reserve above guarantees no realloc, so the
-		// reference stays valid); drop it again if no opaque submesh survived the filter.
-		xSourceItems.EmplaceBack();
-		Flux_GPUSceneSourceItem& xOutItem = xSourceItems.Get(xSourceItems.GetSize() - 1u);
-		xOutItem.m_xWorldMatrix = xSrc.m_xWorldMatrix;
+		xItem.m_xSubmeshes.Clear();
+		xItem.m_xWorldMatrix     = xSrc.m_xWorldMatrix;
+		xItem.m_uFlags           = 0u;   // statics carry no VAT
+		xItem.m_uVATAnimPacked   = 0u;
+		xItem.m_uVATAnimTimeBits = 0u;
 
 		const uint32_t uNumMeshes = pxModel->GetNumMeshes();
 		for (uint32_t uMesh = 0; uMesh < uNumMeshes; ++uMesh)
@@ -272,13 +272,10 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 			}
 
 			// Translucent / additive submeshes belong on the forward Translucency path.
-			if (pxMat != nullptr)
+			const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+			if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
 			{
-				const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
-				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
-				{
-					continue;
-				}
+				continue;
 			}
 
 			// Stable mesh-geometry identity -> meshGeometryId.
@@ -300,34 +297,113 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 			const u_int uMeshGeometryId = m_xUnifiedMeshGeometryRegistry.Reference(xMeshKey);
 			if (uMeshGeometryId == uFLUX_INVALID_MESH_GEOMETRY_ID)
 			{
-				continue;   // build failed (only the real provider can fail; never in Stage 0)
+				continue;   // build failed (only the real provider can fail)
 			}
 
-			const bool bTwoSided = (pxMat != nullptr) && pxMat->GetResolved().m_xParams.m_bTwoSided;
+			const bool bTwoSided = pxMat->GetResolved().m_xParams.m_bTwoSided;
 			const Zenith_AABB& xLocal = pxMesh->GetLocalBounds();
 
 			Flux_GPUSceneSourceSubmesh xSub;
 			xSub.m_uMeshGeometryId    = uMeshGeometryId;
 			xSub.m_uCullMode          = bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
-			xSub.m_ulMaterialAssetId  = reinterpret_cast<u_int64>(pxMat);   // in-session grouping identity (see Flux_GPUSceneBucketKey::m_ulMaterialAssetId)
-			xSub.m_ulVATTextureId     = 0u;   // static meshes carry no VAT (foliage: Stage 3)
+			xSub.m_ulMaterialAssetId  = reinterpret_cast<u_int64>(pxMat);   // in-session grouping identity
+			xSub.m_ulVATTextureId     = 0u;   // static meshes carry no VAT
 			xSub.m_xLocalBoundsSphere = Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax);
 			xSub.m_uColorTintPacked   = uFLUX_GPUSCENE_TINT_WHITE;
 			xSub.m_uFlags             = 0u;
-			xOutItem.m_xSubmeshes.PushBack(xSub);
+			xItem.m_xSubmeshes.PushBack(xSub);
 		}
 
-		if (xOutItem.m_xSubmeshes.GetSize() == 0u)
+		if (xItem.m_xSubmeshes.GetSize() > 0u)
 		{
-			xSourceItems.PopBack();   // no opaque static submesh -> not a unified-path item
+			Flux_AppendGPUSceneItem(xItem, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
 		}
 	}
 
-	m_xUnifiedMeshGeometryRegistry.EndSync();
+	// ---- instance-group foliage (Stage 3b) ----
+	// Each enabled instance becomes one GPUSceneObject (its world transform + VAT anim) and one
+	// draw-item in the group's (mesh, cull, material, VAT) bucket. The mesh-geometry registry
+	// de-dupes geometry across groups + instances, so N identical trees collapse to ONE shared
+	// VB/IB + ONE indirect draw (instanceCount = surviving instances after the GPU cull).
+	Flux_InstancedMeshesImpl& xInstanced = g_xEngine.InstancedMeshes();
+	for (u_int uGroup = 0; uGroup < xInstanced.m_apxInstanceGroups.GetSize(); ++uGroup)
+	{
+		Flux_InstanceGroup* pxGroup = xInstanced.m_apxInstanceGroups.Get(uGroup);
+		if (pxGroup == nullptr || pxGroup->GetMesh() == nullptr || pxGroup->GetInstanceCount() == 0u)
+		{
+			continue;
+		}
 
-	// Build the GPU-scene record arrays + run the bucket-topology refcount diff. INERT:
-	// m_xUnifiedGPUScene + the registries are ready for Stage 1; nothing uploads/draws them.
-	Flux_BuildGPUScene(xSourceItems, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
+		Zenith_MaterialAsset* pxMat = pxGroup->GetMaterial();
+		if (pxMat == nullptr)
+		{
+			pxMat = pxBlankMaterial;
+		}
+		const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+		if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+		{
+			continue;   // forward path (mirror the static filter; instanced foliage is opaque/masked)
+		}
+
+		Flux_MeshInstance* pxMesh = pxGroup->GetMesh();
+		Flux_MeshGeometryKey xMeshKey;
+		if (Zenith_MeshAsset* pxAsset = pxMesh->GetSourceAsset())
+		{
+			xMeshKey.m_pvIdentity = pxAsset;
+			xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_ASSET;
+		}
+		else if (const Flux_MeshGeometry* pxProc = pxMesh->GetProceduralGeometry())
+		{
+			xMeshKey.m_pvIdentity = pxProc;
+			xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_PROCEDURAL;
+		}
+		else
+		{
+			continue;
+		}
+		const u_int uMeshGeometryId = m_xUnifiedMeshGeometryRegistry.Reference(xMeshKey);
+		if (uMeshGeometryId == uFLUX_INVALID_MESH_GEOMETRY_ID)
+		{
+			continue;
+		}
+
+		Flux_AnimationTexture* pxVAT = pxGroup->GetAnimationTexture();
+		const bool bGroupHasVAT = (pxVAT != nullptr);
+
+		Flux_GPUSceneBucketKey xKey;
+		xKey.m_uMeshGeometryId   = uMeshGeometryId;
+		xKey.m_uCullMode         = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
+		xKey.m_ulMaterialAssetId = reinterpret_cast<u_int64>(pxMat);
+		xKey.m_ulVATTextureId    = bGroupHasVAT ? reinterpret_cast<u_int64>(pxVAT) : 0u;
+
+		const Flux_InstanceBounds& xBounds = pxGroup->GetBounds();
+		const Zenith_Maths::Vector4 xSphere(xBounds.m_xCenter.x, xBounds.m_xCenter.y, xBounds.m_xCenter.z, xBounds.m_fRadius);
+
+		const Zenith_Vector<Zenith_Maths::Matrix4>& axTransforms = pxGroup->GetTransforms();
+		const Zenith_Vector<Flux_InstanceAnimData>& axAnim       = pxGroup->GetAnimData();
+		const u_int uCount = pxGroup->GetInstanceCount();
+		for (u_int uInst = 0; uInst < uCount; ++uInst)
+		{
+			const Flux_InstanceAnimData& xAnim = axAnim.Get(uInst);
+			if (xAnim.m_uFlags == 0u)
+			{
+				continue;   // disabled slot (matches Flux_InstanceGroup::ComputeVisibleIndices)
+			}
+
+			// VAT is per-instance: bit 1 of the instance flags + the group having a VAT texture.
+			const bool  bVAT       = bGroupHasVAT && ((xAnim.m_uFlags & 2u) != 0u);
+			const u_int uObjFlags  = bVAT ? uFLUX_GPUSCENE_OBJFLAG_VAT : 0u;
+			const u_int uVATPacked = Flux_PackVATAnim(xAnim.m_uAnimationIndex, xAnim.m_uFrameCount);
+			u_int uVATTimeBits = 0u;
+			memcpy(&uVATTimeBits, &xAnim.m_fAnimTime, sizeof(uVATTimeBits));
+
+			Flux_AppendGPUSceneInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
+				axTransforms.Get(uInst), uObjFlags, uVATPacked, uVATTimeBits, xKey, xSphere, xAnim.m_uColorTint);
+		}
+	}
+
+	Flux_EndGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
+	m_xUnifiedMeshGeometryRegistry.EndSync();
 
 #ifdef ZENITH_DEBUG
 	// One-shot proof the build ran on a real (non-empty) scene. Silent on empty snapshots

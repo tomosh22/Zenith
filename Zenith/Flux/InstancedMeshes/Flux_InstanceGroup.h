@@ -156,6 +156,11 @@ public:
 
 	// Access to CPU-side transform data (for serialization)
 	const Zenith_Vector<Zenith_Maths::Matrix4>& GetTransforms() const { return m_axTransforms; }
+	// Access to CPU-side per-instance anim/colour/flags data (parallel to GetTransforms()).
+	// Read by the unified GPU-scene ingest (Stage 3): each enabled slot (m_uFlags != 0)
+	// becomes one GPUSceneObject; the VAT bit (m_uFlags & 2), anim index/frame/time, and
+	// colour tint drive the unified record. Slots are contiguous [0, GetInstanceCount()).
+	const Zenith_Vector<Flux_InstanceAnimData>& GetAnimData() const { return m_axAnimData; }
 
 	// READ accessors consumed inside the worker-thread record callbacks
 	// (ExecuteCulling / ExecuteInstancedGBuffer / RenderToShadowMap). These stay

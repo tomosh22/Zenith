@@ -322,6 +322,27 @@ private:
 void Flux_BuildGPUScene(const Zenith_Vector<Flux_GPUSceneSourceItem>& xItems,
 	Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut);
 
+// ---- incremental build API (Stage 3) ----------------------------------------
+// Lets the renderer fold TWO sources into ONE scene under a single bucket-registry
+// sync: snapshot statics (multi-submesh model items) AND instance-group foliage
+// (single-submesh per instance). Drive: Begin -> (AppendItem | AppendInstance)* -> End.
+// Flux_BuildGPUScene above is now a thin wrapper over these (so its golden-hash tests
+// still pin the exact output).
+void Flux_BeginGPUSceneBuild(Flux_GPUSceneBuildResult& xOut, Flux_GPUSceneBucketRegistry& xRegistry);
+
+// Append one multi-submesh source item (snapshot-static shape): 1 object + N draw-items.
+void Flux_AppendGPUSceneItem(const Flux_GPUSceneSourceItem& xItem,
+	Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut);
+
+// Append one single-submesh instance (foliage shape): 1 object (carrying the instance
+// transform + VAT anim) + 1 draw-item, with NO per-instance source-item allocation —
+// the path that scales to thousands of trees built CPU-side each frame.
+void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
+	const Zenith_Maths::Matrix4& xModel, u_int uObjFlags, u_int uVATAnimPacked, u_int uVATAnimTimeBits,
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked);
+
+void Flux_EndGPUSceneBuild(Flux_GPUSceneBuildResult& xOut, Flux_GPUSceneBucketRegistry& xRegistry);
+
 // FNV-1a golden hash over the built record arrays (deterministic: every struct
 // pad is explicitly zeroed by the pack helpers). For characterisation tests.
 u_int64 Flux_HashGPUSceneForTest(const Flux_GPUSceneBuildResult& xResult);
