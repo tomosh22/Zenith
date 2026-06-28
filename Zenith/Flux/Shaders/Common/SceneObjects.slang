@@ -21,11 +21,14 @@
 struct GPUSceneObject
 {
     float4x4 m_xModelMatrix;     // offset  0 — object world transform
-    uint     m_uFlags;           // offset 64
+    uint     m_uFlags;           // offset 64 — FLUX_GPUSCENE_OBJFLAG_* (bit 0 = VAT)
     uint     m_uBonePaletteRef;  // offset 68 — reserved (Stage 5)
-    uint     m_uPad0;            // offset 72
-    uint     m_uPad1;            // offset 76
+    uint     m_uVATAnimPacked;   // offset 72 — VAT animIndex (low 16) | frameCount (high 16)
+    uint     m_uVATAnimTime;     // offset 76 — VAT normalised anim time (float bits)
 };                               // size 80
+
+// Object flag bits (mirror uFLUX_GPUSCENE_OBJFLAG_* in Flux_GPUScene.h).
+static const uint FLUX_GPUSCENE_OBJFLAG_VAT = 0x1u;
 
 struct GPUSceneDrawItem
 {

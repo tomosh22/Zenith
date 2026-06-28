@@ -36,20 +36,45 @@ namespace
 
 // ---- pack helpers ----------------------------------------------------------
 
-ZENITH_TEST(GPUScene, PackObjectSetsFieldsAndZeroesPads)
+ZENITH_TEST(GPUScene, PackObjectSetsFieldsAndZeroesVATForStatics)
 {
 	Zenith_Maths::Matrix4 xModel(1.0f);
 	xModel[3] = Zenith_Maths::Vector4(3.0f, 4.0f, 5.0f, 1.0f);   // translation column
 
+	// Static object: VAT params default to 0 — byte-identical to the old zeroed pads, so the
+	// VS skips VAT and the golden hash of a static scene is unchanged from Stage 0.
 	Flux_GPUSceneObject xObj;
 	Flux_BuildGPUSceneObject(xObj, xModel, 0x5u, 17u);
 
 	ZENITH_ASSERT_EQ(xObj.m_uFlags, 0x5u, "object flags must round-trip");
 	ZENITH_ASSERT_EQ(xObj.m_uBonePaletteRef, 17u, "bone-palette ref must round-trip");
-	ZENITH_ASSERT_EQ(xObj.m_uPad0, 0u, "pad0 must be zeroed");
-	ZENITH_ASSERT_EQ(xObj.m_uPad1, 0u, "pad1 must be zeroed");
+	ZENITH_ASSERT_EQ(xObj.m_uVATAnimPacked, 0u, "static object has no VAT anim (zeroed)");
+	ZENITH_ASSERT_EQ(xObj.m_uVATAnimTime, 0u, "static object has no VAT time (zeroed)");
 	ZENITH_ASSERT_EQ_FLOAT(xObj.m_xModelMatrix[3].x, 3.0f, 0.0001f, "model translation X must round-trip");
 	ZENITH_ASSERT_EQ_FLOAT(xObj.m_xModelMatrix[3].z, 5.0f, 0.0001f, "model translation Z must round-trip");
+}
+
+ZENITH_TEST(GPUScene, PackObjectCarriesVATAnimFields)
+{
+	// VAT (foliage) object: animIndex/frameCount packed into one word, time bits in another,
+	// and the VAT flag set so the VS samples the animation texture.
+	const u_int uPacked = Flux_PackVATAnim(/*animIndex*/ 3u, /*frameCount*/ 120u);
+	ZENITH_ASSERT_EQ(uPacked & 0xFFFFu, 3u, "low 16 bits = anim index");
+	ZENITH_ASSERT_EQ((uPacked >> 16) & 0xFFFFu, 120u, "high 16 bits = frame count");
+
+	const float fTime = 0.25f;
+	u_int uTimeBits = 0u;
+	static_assert(sizeof(float) == sizeof(u_int), "VAT time bit-reinterpret assumes 4-byte float");
+	memcpy(&uTimeBits, &fTime, sizeof(uTimeBits));
+
+	Flux_GPUSceneObject xObj;
+	Flux_BuildGPUSceneObject(xObj, Zenith_Maths::Matrix4(1.0f), uFLUX_GPUSCENE_OBJFLAG_VAT, 0u, uPacked, uTimeBits);
+
+	ZENITH_ASSERT_TRUE((xObj.m_uFlags & uFLUX_GPUSCENE_OBJFLAG_VAT) != 0u, "VAT flag set on a foliage object");
+	ZENITH_ASSERT_EQ(xObj.m_uVATAnimPacked, uPacked, "packed VAT anim round-trips");
+	float fRoundTrip = 0.0f;
+	memcpy(&fRoundTrip, &xObj.m_uVATAnimTime, sizeof(fRoundTrip));
+	ZENITH_ASSERT_EQ_FLOAT(fRoundTrip, 0.25f, 0.0001f, "VAT time bit-reinterpret round-trips");
 }
 
 ZENITH_TEST(GPUScene, PackDrawItemCarriesAllFields)

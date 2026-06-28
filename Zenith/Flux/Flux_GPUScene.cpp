@@ -121,7 +121,8 @@ void Flux_BuildGPUScene(const Zenith_Vector<Flux_GPUSceneSourceItem>& xItems,
 
 		const u_int uObjectIndex = xOut.m_xObjects.GetSize();
 		Flux_GPUSceneObject xObj;
-		Flux_BuildGPUSceneObject(xObj, xItem.m_xWorldMatrix, xItem.m_uFlags, xItem.m_uBonePaletteRef);
+		Flux_BuildGPUSceneObject(xObj, xItem.m_xWorldMatrix, xItem.m_uFlags, xItem.m_uBonePaletteRef,
+			xItem.m_uVATAnimPacked, xItem.m_uVATAnimTimeBits);
 		xOut.m_xObjects.PushBack(xObj);
 
 		for (u_int uSub = 0; uSub < xItem.m_xSubmeshes.GetSize(); ++uSub)

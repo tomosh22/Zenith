@@ -33,17 +33,21 @@
 // helpers so a full-struct byte feed is deterministic.
 // ============================================================================
 
+// Per-object flags (m_uFlags).
+inline constexpr u_int uFLUX_GPUSCENE_OBJFLAG_VAT = 0x1u;  // object uses VAT (foliage); gates SampleVAT in the VS
+
 struct Flux_GPUSceneObject
 {
 	Zenith_Maths::Matrix4 m_xModelMatrix;     // offset  0 — object world transform
-	u_int                 m_uFlags;           // offset 64 — object flags (reserved)
+	u_int                 m_uFlags;           // offset 64 — object flags (uFLUX_GPUSCENE_OBJFLAG_*)
 	u_int                 m_uBonePaletteRef;  // offset 68 — bone-palette base (reserved -> Stage 5)
-	u_int                 m_uPad0;            // offset 72
-	u_int                 m_uPad1;            // offset 76
+	u_int                 m_uVATAnimPacked;   // offset 72 — VAT: animIndex (low 16) | frameCount (high 16); 0 = no VAT
+	u_int                 m_uVATAnimTime;     // offset 76 — VAT: normalised anim time (float bits)
 };
 static_assert(sizeof(Flux_GPUSceneObject) == 80, "Flux_GPUSceneObject must be 80 bytes (mirrors GPUSceneObject in Common/SceneObjects.slang)");
 static_assert(offsetof(Flux_GPUSceneObject, m_uFlags) == 64, "Flux_GPUSceneObject::m_uFlags must sit at offset 64");
 static_assert(offsetof(Flux_GPUSceneObject, m_uBonePaletteRef) == 68, "Flux_GPUSceneObject::m_uBonePaletteRef must sit at offset 68");
+static_assert(offsetof(Flux_GPUSceneObject, m_uVATAnimPacked) == 72, "Flux_GPUSceneObject::m_uVATAnimPacked must sit at offset 72");
 
 struct Flux_GPUSceneDrawItem
 {
@@ -63,15 +67,24 @@ inline constexpr u_int uFLUX_GPUSCENE_TINT_WHITE = 0xffffffffu;
 inline constexpr u_int uFLUX_GPUSCENE_CULL_ONE_SIDED = 0u;  // CULL_MODE_BACK (default)
 inline constexpr u_int uFLUX_GPUSCENE_CULL_TWO_SIDED = 1u;  // CULL_MODE_NONE (material m_bTwoSided)
 
-// ---- pure pack helpers (field-by-field; pads explicitly zeroed) -------------
+// ---- pure pack helpers (field-by-field; unused VAT fields explicitly zeroed) -
+// uVATAnimPacked = animIndex|(frameCount<<16); uVATAnimTime = the float bits of the
+// normalised anim time. Static (non-foliage) objects pass 0/0 and a flags word without
+// uFLUX_GPUSCENE_OBJFLAG_VAT, so the VS skips VAT and the bytes match the old zeroed pads.
 inline void Flux_BuildGPUSceneObject(Flux_GPUSceneObject& xOut, const Zenith_Maths::Matrix4& xModel,
-	u_int uFlags, u_int uBonePaletteRef)
+	u_int uFlags, u_int uBonePaletteRef, u_int uVATAnimPacked = 0u, u_int uVATAnimTimeBits = 0u)
 {
 	xOut.m_xModelMatrix    = xModel;
 	xOut.m_uFlags          = uFlags;
 	xOut.m_uBonePaletteRef = uBonePaletteRef;
-	xOut.m_uPad0           = 0u;
-	xOut.m_uPad1           = 0u;
+	xOut.m_uVATAnimPacked  = uVATAnimPacked;
+	xOut.m_uVATAnimTime    = uVATAnimTimeBits;
+}
+
+// Pack a VAT animation descriptor into the object's m_uVATAnimPacked word.
+inline u_int Flux_PackVATAnim(u_int uAnimIndex, u_int uFrameCount)
+{
+	return (uAnimIndex & 0xFFFFu) | ((uFrameCount & 0xFFFFu) << 16);
 }
 
 inline void Flux_BuildGPUSceneDrawItem(Flux_GPUSceneDrawItem& xOut, u_int uObjectIndex, u_int uBucketIndex,
@@ -230,8 +243,10 @@ struct Flux_GPUSceneSourceSubmesh
 struct Flux_GPUSceneSourceItem
 {
 	Zenith_Maths::Matrix4 m_xWorldMatrix = Zenith_Maths::Matrix4(1.0f);
-	u_int   m_uFlags          = 0u;
-	u_int   m_uBonePaletteRef = 0u;
+	u_int   m_uFlags           = 0u;   // uFLUX_GPUSCENE_OBJFLAG_* (e.g. VAT)
+	u_int   m_uBonePaletteRef  = 0u;
+	u_int   m_uVATAnimPacked   = 0u;   // VAT animIndex|frameCount (0 = none)
+	u_int   m_uVATAnimTimeBits = 0u;   // VAT normalised time (float bits)
 	Zenith_Vector<Flux_GPUSceneSourceSubmesh> m_xSubmeshes;
 };
 

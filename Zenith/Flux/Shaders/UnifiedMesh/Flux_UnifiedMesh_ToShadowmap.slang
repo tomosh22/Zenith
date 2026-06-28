@@ -27,6 +27,7 @@
 
 #include "Common/Bindings.slang"
 #include "Common/SceneObjects.slang"
+#include "Common/VAT.slang"
 import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
@@ -60,16 +61,18 @@ ParameterBlock<PassParams> g_xPassSet;
 // list. Same UnifiedDrawConstantsLayout as the GBuffer caster (g_uShadowCascade live here).
 struct UnifiedDrawConstantsLayout
 {
-    uint g_uMaterialIndex;
-    uint g_uBucketOffset;   // per-view base: cascadeView*totalDrawItems + bucketOffset[b]
-    uint g_uShadowCascade;  // selects g_xViewSet.g_xShadowMatrices[cascade]
-    uint g_uPad0;
+    uint   g_uMaterialIndex;
+    uint   g_uBucketOffset;   // per-view base: cascadeView*totalDrawItems + bucketOffset[b]
+    uint   g_uShadowCascade;  // selects g_xViewSet.g_xShadowMatrices[cascade]
+    uint   g_uPad0;
+    float4 g_xVATParams;      // xy = VAT texture size, z = >0 when the bucket has a VAT texture
 };
 
 struct DrawParams
 {
     ConstantBuffer<UnifiedDrawConstantsLayout> DrawConstants;
     StructuredBuffer<uint>                     VisibleIndexBuffer;
+    Sampler2D                                  g_xAnimationTex;   // per-bucket VAT positions (POINT sampler; white dummy when none)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -85,7 +88,11 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
     GPUSceneDrawItem di  = g_xPassSet.DrawItems[gid];
     GPUSceneObject   obj = g_xPassSet.Objects[di.m_uObjectIndex];
 
-    float3 xWorldPos = mul(obj.m_xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
+    // IDENTICAL VAT deformation to the GBuffer VS — the shadow pose must match the lit pose
+    // exactly or self-shadows flicker as foliage sways.
+    float3 xLocalPos = Flux_ApplyVAT(g_xDrawSet.g_xAnimationTex, vertexId, input.a_xPosition,
+        obj.m_uFlags, obj.m_uVATAnimPacked, asfloat(obj.m_uVATAnimTime), dc.g_xVATParams);
+    float3 xWorldPos = mul(obj.m_xModelMatrix, float4(xLocalPos, 1.0)).xyz;
     o.position    = mul(g_xViewSet.g_xShadowMatrices[dc.g_uShadowCascade], float4(xWorldPos, 1.0));
     o.uv          = input.a_xUV;
     o.vertexColor = input.a_xColor;

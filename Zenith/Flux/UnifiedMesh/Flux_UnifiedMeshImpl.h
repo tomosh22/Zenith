@@ -4,9 +4,11 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Collections/Zenith_Vector.h"
+#include "Maths/Zenith_Maths.h"
 
 class Flux_ShaderBinder;
 class Flux_MeshInstance;
+class Flux_AnimationTexture;
 
 // =====================================================================
 // Flux_UnifiedMeshImpl — the unified GPU-driven opaque static-mesh feature
@@ -45,6 +47,10 @@ struct Flux_UnifiedBucketDraw
 	u_int              m_uVisibleOffset = 0u;  // base offset of the bucket's slice in the visible-index buffer
 	u_int              m_uCullMode      = 0u;  // uFLUX_GPUSCENE_CULL_* (one-sided / two-sided pipeline)
 	Flux_MeshInstance* m_pxMesh         = nullptr; // shared geometry (VB/IB) for the indirect draw
+	// VAT (Stage 3): the bucket's vertex-animation texture (null = static / no VAT) + the
+	// per-bucket params (texW, texH, enabled, 0) bound into the DRAW set each draw.
+	const Flux_AnimationTexture* m_pxVATTexture = nullptr;
+	Zenith_Maths::Vector4        m_xVATParams   = Zenith_Maths::Vector4(0.0f);
 };
 
 class Flux_UnifiedMeshImpl

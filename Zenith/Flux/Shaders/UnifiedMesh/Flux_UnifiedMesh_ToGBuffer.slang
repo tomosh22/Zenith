@@ -25,6 +25,7 @@
 
 #include "Common/Bindings.slang"
 #include "Common/SceneObjects.slang"
+#include "Common/VAT.slang"
 import Common.MaterialTable;
 import Common.Material;
 import Common.MaterialSurface;
@@ -71,16 +72,18 @@ ParameterBlock<PassParams> g_xPassSet;
 // GBuffer.
 struct UnifiedDrawConstantsLayout
 {
-    uint g_uMaterialIndex;  // index into g_axMaterials (GLOBAL set 0)
-    uint g_uBucketOffset;   // base offset of this draw's slice in VisibleIndexBuffer (per-view)
-    uint g_uShadowCascade;  // cascade index (shadow VS); 0 for the camera GBuffer
-    uint g_uPad0;
+    uint   g_uMaterialIndex;  // index into g_axMaterials (GLOBAL set 0)
+    uint   g_uBucketOffset;   // base offset of this draw's slice in VisibleIndexBuffer (per-view)
+    uint   g_uShadowCascade;  // cascade index (shadow VS); 0 for the camera GBuffer
+    uint   g_uPad0;
+    float4 g_xVATParams;      // xy = VAT texture size, z = >0 when the bucket has a VAT texture, w unused
 };
 
 struct DrawParams
 {
     ConstantBuffer<UnifiedDrawConstantsLayout> DrawConstants;
     StructuredBuffer<uint>                     VisibleIndexBuffer;
+    Sampler2D                                  g_xAnimationTex;   // per-bucket VAT positions (POINT sampler; white dummy when none)
 };
 ParameterBlock<DrawParams> g_xDrawSet;
 
@@ -109,7 +112,11 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
     float4x4 xModelMatrix  = obj.m_xModelMatrix;
     float4   xInstanceTint = UnpackRGBA8(di.m_uColorTintPacked);
 
-    float3   xWorldPos     = mul(xModelMatrix, float4(input.a_xPosition, 1.0)).xyz;
+    // VAT (foliage) deforms the local position before the world transform; static objects
+    // (flag clear / no bucket VAT texture) pass through unchanged. Shadow VS matches this.
+    float3   xLocalPos     = Flux_ApplyVAT(g_xDrawSet.g_xAnimationTex, vertexId, input.a_xPosition,
+        obj.m_uFlags, obj.m_uVATAnimPacked, asfloat(obj.m_uVATAnimTime), dc.g_xVATParams);
+    float3   xWorldPos     = mul(xModelMatrix, float4(xLocalPos, 1.0)).xyz;
     float3x3 xNormalMatrix = transpose(Inverse3x3((float3x3)xModelMatrix));
 
     o.uv          = input.a_xUV;

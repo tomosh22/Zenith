@@ -12,8 +12,10 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/InstancedMeshes/Flux_InstanceCulling.h"   // Flux_FrustumPlaneGPU + ExtractFrustumPlanes (reused)
 #include "Flux/Shadows/Flux_ShadowsImpl.h"               // ZENITH_FLUX_NUM_CSMS, CSM_FORMAT, cascade matrices
+#include "Flux/InstancedMeshes/Flux_AnimationTexture.h"  // per-bucket VAT texture resolve (Stage 3)
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"           // white dummy VAT texture SRV
 #include "Core/Zenith_GraphicsOptions.h"                 // m_bShadowsEnabled (active-view count)
 #include "Profiling/Zenith_Profiling.h"
 
@@ -61,8 +63,43 @@ namespace
 		u_int m_uBucketOffset;   // per-view base: view*totalDrawItems + bucketOffset[slot]
 		u_int m_uShadowCascade;  // shadow VS cascade select; 0 for the camera GBuffer
 		u_int m_uPad0;
+		Zenith_Maths::Vector4 m_xVATParams;  // xy = VAT texture size, z = >0 when the bucket has VAT, w unused
 	};
-	static_assert(sizeof(UnifiedDrawConstants) == 16, "UnifiedDrawConstants must be 16 bytes");
+	static_assert(sizeof(UnifiedDrawConstants) == 32, "UnifiedDrawConstants must be 32 bytes (matches UnifiedDrawConstantsLayout)");
+
+	// Resolve a bucket's VAT texture from its key id (raw Flux_AnimationTexture* used as the
+	// in-session grouping id, like the material id) + compute the (texW, texH, enabled, 0) params.
+	// Returns null + zero params for static buckets (VAT id 0) or a VAT without GPU resources.
+	const Flux_AnimationTexture* ResolveBucketVAT(u_int64 ulVATTextureId, Zenith_Maths::Vector4& xParamsOut)
+	{
+		xParamsOut = Zenith_Maths::Vector4(0.0f);
+		const Flux_AnimationTexture* pxVAT = reinterpret_cast<const Flux_AnimationTexture*>(ulVATTextureId);
+		if (pxVAT != nullptr && pxVAT->HasGPUResources())
+		{
+			xParamsOut = Zenith_Maths::Vector4(
+				static_cast<float>(pxVAT->GetTextureWidth()),
+				static_cast<float>(pxVAT->GetTextureHeight()), 1.0f, 0.0f);
+			return pxVAT;
+		}
+		return nullptr;
+	}
+
+	// Bind the per-bucket VAT texture (POINT sampler) into the DRAW set's g_xAnimationTex; falls
+	// back to the white dummy when the bucket has no VAT so the descriptor is always valid.
+	void BindBucketVAT(Flux_ShaderBinder& xBinder, Flux_Shader& xShader, const Flux_AnimationTexture* pxVAT)
+	{
+		Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+		if (pxVAT != nullptr)
+		{
+			xBinder.BindSRV(xShader, "g_xAnimationTex",
+				&pxVAT->GetPositionTexture()->m_xSRV, &xGraphics.m_xPointSampler);
+		}
+		else
+		{
+			xBinder.BindSRV(xShader, "g_xAnimationTex",
+				&xGraphics.m_xWhiteTexture.GetDirect()->m_xSRV, &xGraphics.m_xPointSampler);
+		}
+	}
 
 	// Multi-view culling constants (mirrors CullingConstantsLayout in Flux_UnifiedMesh_Culling.slang).
 	// Per-view 6 frustum planes (camera + each cascade's sun ortho view-proj), extracted CPU-side.
@@ -429,6 +466,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 		xDraw.m_uVisibleOffset = m_auBucketOffsetScratch.Get(uSlot);
 		xDraw.m_uCullMode      = pxKey->m_uCullMode;
 		xDraw.m_pxMesh         = pxMesh;
+		xDraw.m_pxVATTexture   = ResolveBucketVAT(pxKey->m_ulVATTextureId, xDraw.m_xVATParams);
 		m_axBucketDraws.PushBack(xDraw);
 	}
 
@@ -559,13 +597,15 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 			pxCmdList->SetVertexBuffer(xDraw.m_pxMesh->GetVertexBuffer());
 			pxCmdList->SetIndexBuffer(xDraw.m_pxMesh->GetIndexBuffer());
 
-			// DRAW block (set 4) — per-bucket constants + the bucket's visible slice.
-			// BindDrawConstants resets set 4, so re-bind the visible-index SRV after it.
+			// DRAW block (set 4) — per-bucket constants + the bucket's visible slice + VAT texture.
+			// BindDrawConstants resets set 4, so re-bind the visible-index SRV + VAT after it.
 			UnifiedDrawConstants xConsts = {};
 			xConsts.m_uMaterialIndex = xDraw.m_uMaterialIndex;
 			xConsts.m_uBucketOffset  = xDraw.m_uVisibleOffset;
+			xConsts.m_xVATParams     = xDraw.m_xVATParams;
 			xBinder.BindDrawConstants(xSelf.m_xGBufferShader, "DrawConstants", &xConsts, sizeof(xConsts));
 			xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "VisibleIndexBuffer", xSelf.m_xVisibleIndexBuffer.GetSRV());
+			BindBucketVAT(xBinder, xSelf.m_xGBufferShader, xDraw.m_pxVATTexture);
 
 			pxCmdList->DrawIndexedIndirect(&xSelf.m_xIndirectBuffer, 1u, xDraw.m_uSlot * kuINDIRECT_STRIDE, kuINDIRECT_STRIDE);
 		}
@@ -615,8 +655,10 @@ void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int 
 		xConsts.m_uMaterialIndex = xDraw.m_uMaterialIndex;
 		xConsts.m_uBucketOffset  = Flux_UnifiedVisibleWriteIndex(uView, m_uTotalDrawItems, xDraw.m_uVisibleOffset, 0u);
 		xConsts.m_uShadowCascade = uCascade;
+		xConsts.m_xVATParams     = xDraw.m_xVATParams;
 		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xConsts, sizeof(xConsts));
 		xBinder.BindSRV_Buffer(m_xShadowShader, "VisibleIndexBuffer", m_xVisibleIndexBuffer.GetSRV());
+		BindBucketVAT(xBinder, m_xShadowShader, xDraw.m_pxVATTexture);
 
 		const u_int uIndirectByteOffset =
 			Flux_UnifiedIndirectCommandWord(uView, xDraw.m_uSlot, m_uBucketSlotCount) * (u_int)sizeof(u_int);
