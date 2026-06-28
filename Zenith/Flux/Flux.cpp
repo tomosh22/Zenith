@@ -120,8 +120,9 @@ void Flux_RendererImpl::RecordFrame()
 	// Phase 5.4: the all-cascade ShadowMatrices SSBO is also a VIEW-frequency resource.
 	// It is a frame-indexed Flux_DynamicReadWriteBuffer (graph-invisible by contract, like
 	// g_xView / g_axMaterials), so GetShadowMatricesSRV() yields THIS frame's buffer view —
-	// re-written into the persistent VIEW set every frame (no staleness). Updated earlier
-	// this frame by the shadow PreExecute (UpdateShadowMatrices), which runs before record.
+	// re-written into the persistent VIEW set every frame (no staleness). Updated earlier this
+	// frame by UpdateShadowMatrices (hoisted to the Zenith_Core main-thread seam), which runs
+	// before record.
 	g_xEngine.FluxBackend().WritePersistentViewBuffer(
 		Flux_PersistentSetLayouts::kuViewBinding_ShadowMatrices,
 		g_xEngine.Shadows().GetShadowMatricesSRV());

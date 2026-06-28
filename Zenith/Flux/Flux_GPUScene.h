@@ -134,6 +134,32 @@ inline void Flux_PackResetIndirectCommand(u_int auOut[uFLUX_GPUSCENE_INDIRECT_WO
 	auOut[4] = 0u;           // firstInstance
 }
 
+// ---- multi-view cull-output index math (Stage 2) ----------------------------
+// The shared cull-output buffers fan out over VIEWS (view 0 = camera, views 1..N =
+// the shadow cascades), laid out view-major:
+//   visibleIndex : per view a uTotalDrawItems-wide slice (base v*uTotalDrawItems),
+//                  internally partitioned per bucket by the (view-invariant) prefix-
+//                  sum bucketOffset[b].
+//   indirect     : one VkDrawIndexedIndirectCommand per (view,bucket), command (v,b)
+//                  at word offset (v*uNumBuckets + b)*uFLUX_GPUSCENE_INDIRECT_WORDS.
+// These are the single C++ source of truth for the reset/cull/draw kernels' addressing
+// (the .slang shaders mirror them); they are pure so a stride drift fails a unit test,
+// not the GPU. Used by Flux_UnifiedMeshImpl's GBuffer + shadow indirect draws.
+
+// Word offset of view v / bucket b's VkDrawIndexedIndirectCommand in the indirect buffer.
+inline u_int Flux_UnifiedIndirectCommandWord(u_int uView, u_int uBucket, u_int uNumBuckets)
+{
+	return (uView * uNumBuckets + uBucket) * uFLUX_GPUSCENE_INDIRECT_WORDS;
+}
+
+// Index into the visible-index buffer for view v, given the bucket's within-view base
+// (bucketOffset[b]) and a local survivor slot. The cull writes here; the draw reads from
+// the bucket base (uLocalSlot 0) for uBucketOffset = v*uTotalDrawItems + bucketOffset[b].
+inline u_int Flux_UnifiedVisibleWriteIndex(u_int uView, u_int uTotalDrawItems, u_int uBucketOffset, u_int uLocalSlot)
+{
+	return uView * uTotalDrawItems + uBucketOffset + uLocalSlot;
+}
+
 // ============================================================================
 // Bucket model. A BUCKET is one DrawIndexedIndirect unit: every draw-item sharing
 // the same (meshGeometry, cullMode, material, VAT) identity. The key is STABLE

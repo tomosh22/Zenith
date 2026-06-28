@@ -10,9 +10,11 @@
 #include "Flux/Flux_MaterialTable.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "Flux/InstancedMeshes/Flux_InstanceCulling.h"   // Flux_CullingConstants + ExtractFrustumPlanes (reused)
+#include "Flux/InstancedMeshes/Flux_InstanceCulling.h"   // Flux_FrustumPlaneGPU + ExtractFrustumPlanes (reused)
+#include "Flux/Shadows/Flux_ShadowsImpl.h"               // ZENITH_FLUX_NUM_CSMS, CSM_FORMAT, cascade matrices
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "Core/Zenith_GraphicsOptions.h"                 // m_bShadowsEnabled (active-view count)
 #include "Profiling/Zenith_Profiling.h"
 
 // =====================================================================
@@ -35,25 +37,45 @@ namespace
 	constexpr u_int kuINDIRECT_WORDS = 5u;   // VkDrawIndexedIndirectCommand = 5 uints
 	constexpr u_int kuINDIRECT_STRIDE = kuINDIRECT_WORDS * sizeof(u_int); // 20 bytes
 
-	// Per-bucket reset constants (mirrors ResetConstantsLayout in Flux_UnifiedMesh_Reset.slang).
+	// Views the cull/draw fan out over (Stage 2): view 0 = camera, views 1..N = the CSM
+	// cascades. The shared cull-output buffers (visible-index / indirect) are sized to this
+	// many views; the camera path is view 0 so its offsets are unchanged from Stage 1. MUST
+	// match kUNIFIED_NUM_VIEWS in Flux_UnifiedMesh_Culling.slang.
+	constexpr u_int kuUNIFIED_NUM_VIEWS = 1u + ZENITH_FLUX_NUM_CSMS;   // 1 camera + 4 cascades
+	static_assert(kuUNIFIED_NUM_VIEWS == 5u, "kUNIFIED_NUM_VIEWS in Flux_UnifiedMesh_Culling.slang assumes 5 views");
+
+	// Reset constants (mirrors ResetConstantsLayout in Flux_UnifiedMesh_Reset.slang).
 	struct UnifiedResetConstants
 	{
-		u_int m_uNumBuckets;
+		u_int m_uNumBuckets;   // per-view bucket stride
+		u_int m_uNumViews;     // active views this frame
 		u_int m_uPad0;
 		u_int m_uPad1;
-		u_int m_uPad2;
 	};
 	static_assert(sizeof(UnifiedResetConstants) == 16, "UnifiedResetConstants must be 16 bytes");
 
-	// Per-bucket draw constants (mirrors UnifiedDrawConstantsLayout in Flux_UnifiedMesh_ToGBuffer.slang).
+	// Per-draw constants (mirrors UnifiedDrawConstantsLayout in the GBuffer + ToShadowmap shaders).
 	struct UnifiedDrawConstants
 	{
 		u_int m_uMaterialIndex;
-		u_int m_uBucketOffset;
+		u_int m_uBucketOffset;   // per-view base: view*totalDrawItems + bucketOffset[slot]
+		u_int m_uShadowCascade;  // shadow VS cascade select; 0 for the camera GBuffer
 		u_int m_uPad0;
-		u_int m_uPad1;
 	};
 	static_assert(sizeof(UnifiedDrawConstants) == 16, "UnifiedDrawConstants must be 16 bytes");
+
+	// Multi-view culling constants (mirrors CullingConstantsLayout in Flux_UnifiedMesh_Culling.slang).
+	// Per-view 6 frustum planes (camera + each cascade's sun ortho view-proj), extracted CPU-side.
+	struct UnifiedCullingConstants
+	{
+		Flux_FrustumPlaneGPU  m_axFrustumPlanes[kuUNIFIED_NUM_VIEWS * 6];  // 30 * 16 = 480
+		Zenith_Maths::Vector4 m_xCameraPosition;                          // 16
+		u_int                 m_uTotalDrawItemCount;                      // per-view draw-item count
+		u_int                 m_uNumViews;                                // active views this frame
+		u_int                 m_uNumBuckets;                              // per-view indirect stride
+		u_int                 m_uPad0;                                    // 16
+	};
+	static_assert(sizeof(UnifiedCullingConstants) == 512, "UnifiedCullingConstants must match CullingConstantsLayout (kUNIFIED_NUM_VIEWS*6 planes)");
 
 	void GrowDynamicRW(Flux_DynamicReadWriteBuffer& xBuf, u_int& uCap, u_int uNeeded, size_t ulElemSize)
 	{
@@ -113,6 +135,27 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineTwoSided, xSpec);
 	}
 
+	// Stage 2: depth-only shadow caster pipeline. Mirrors Flux_StaticMeshes' single shadow
+	// pipeline (no per-material cull split for shadows) — one pipeline draws every bucket.
+	// Same vertex layout as the GBuffer so the shadow VS's two-level indirection reads the
+	// identical vertex stream; depth bias is dynamic (vkCmdSetDepthBias per cascade in
+	// Flux_Shadows::ExecuteShadowCascade).
+	{
+		m_xShadowShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_ToShadowmap);
+
+		Flux_PipelineSpecification xShadowSpec;
+		xShadowSpec.m_eDepthStencilFormat = CSM_FORMAT;
+		xShadowSpec.m_uNumColourAttachments = 0u;
+		xShadowSpec.m_pxShader = &m_xShadowShader;
+		xShadowSpec.m_xVertexInputDesc = xVertexDesc;
+		xShadowSpec.m_bDepthBias = true;
+		xShadowSpec.m_bDynamicDepthBias = true;
+		xShadowSpec.m_fDepthBiasConstant = 1.75f;
+		xShadowSpec.m_fDepthBiasSlope = 3.0f;
+		m_xShadowShader.GetReflection().PopulateLayout(xShadowSpec.m_xPipelineLayout);
+		Flux_PipelineBuilder::FromSpecification(m_xShadowPipeline, xShadowSpec);
+	}
+
 	// Cull compute.
 	{
 		m_xCullingShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_Culling);
@@ -141,12 +184,17 @@ void Flux_UnifiedMeshImpl::Initialise()
 	// the object) thereafter. Initial capacities cover typical scenes.
 	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
 
-	xMem.InitialiseReadWriteBuffer(nullptr, kuINITIAL_DRAWITEMS * sizeof(u_int), m_xVisibleIndexBuffer);
-	m_uVisibleIndexCapacity = kuINITIAL_DRAWITEMS;
+	// Persistent cull-output buffers are sized for ALL views (camera + cascades): the
+	// visible-index list is kuUNIFIED_NUM_VIEWS per-view slices; the indirect buffer is one
+	// command per (view,bucket). Capacities below track the PER-VIEW count; allocation
+	// multiplies by kuUNIFIED_NUM_VIEWS.
+	xMem.InitialiseReadWriteBuffer(nullptr, kuINITIAL_DRAWITEMS * kuUNIFIED_NUM_VIEWS * sizeof(u_int), m_xVisibleIndexBuffer);
+	m_uVisibleIndexCapacity = kuINITIAL_DRAWITEMS;   // per-view draw-item capacity
 
-	xMem.InitialiseIndirectBuffer(kuINITIAL_BUCKETS * kuINDIRECT_STRIDE, m_xIndirectBuffer);
-	m_uIndirectBucketCapacity = kuINITIAL_BUCKETS;
+	xMem.InitialiseIndirectBuffer(kuINITIAL_BUCKETS * kuUNIFIED_NUM_VIEWS * kuINDIRECT_STRIDE, m_xIndirectBuffer);
+	m_uIndirectBucketCapacity = kuINITIAL_BUCKETS;   // per-view bucket capacity
 
+	// Dynamic inputs are view-INVARIANT (one record set shared across all views).
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_OBJECTS * sizeof(Flux_GPUSceneObject), m_xObjectsBuffer);
 	m_uObjectCapacity = kuINITIAL_OBJECTS;
 
@@ -157,23 +205,23 @@ void Flux_UnifiedMeshImpl::Initialise()
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_BUCKETS * sizeof(u_int), m_xBucketIndexCountBuffer);
 	m_uBucketMetaCapacity = kuINITIAL_BUCKETS;
 
-	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), m_xCullingConstantsBuffer);
+	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(UnifiedCullingConstants), m_xCullingConstantsBuffer);
 
-	// Defensive zero-init of the two persistent GPU buffers. The per-frame reset compute
-	// only rewrites the LIVE bucket slots, so slots between the live count and the
-	// allocated capacity would otherwise hold whatever garbage device memory contained.
-	// Those slots are never drawn today (the GBuffer iterates only live buckets), but a
-	// garbage VkDrawIndexedIndirectCommand is the classic GPU-TDR landmine, so seed the
-	// whole indirect + visible-index buffers to zero once at allocation. Init-time only.
+	// Defensive zero-init of the two persistent GPU buffers (whole allocation, all views).
+	// The per-frame reset compute only rewrites the live (view,bucket) commands, so slots
+	// beyond the live count would otherwise hold garbage device memory. Those slots are
+	// never drawn (the GBuffer/shadow loops iterate only live buckets), but a garbage
+	// VkDrawIndexedIndirectCommand is the classic GPU-TDR landmine, so seed both buffers to
+	// zero once at allocation. Init-time only.
 	{
-		const u_int uZeroWords = kuINITIAL_DRAWITEMS;   // covers both buffers (>= buckets*5)
+		const u_int uZeroWords = kuINITIAL_DRAWITEMS * kuUNIFIED_NUM_VIEWS;   // covers both buffers
 		Zenith_Vector<u_int> auZeros;
 		auZeros.Reserve(uZeroWords);
 		for (u_int u = 0; u < uZeroWords; ++u) auZeros.PushBack(0u);
 		xMem.UploadBufferData(m_xIndirectBuffer.GetBuffer().m_xVRAMHandle,
-			auZeros.GetDataPointer(), kuINITIAL_BUCKETS * kuINDIRECT_STRIDE);
+			auZeros.GetDataPointer(), kuINITIAL_BUCKETS * kuUNIFIED_NUM_VIEWS * kuINDIRECT_STRIDE);
 		xMem.UploadBufferData(m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle,
-			auZeros.GetDataPointer(), kuINITIAL_DRAWITEMS * sizeof(u_int));
+			auZeros.GetDataPointer(), kuINITIAL_DRAWITEMS * kuUNIFIED_NUM_VIEWS * sizeof(u_int));
 	}
 
 	m_bResourcesReady = true;
@@ -197,9 +245,11 @@ void Flux_UnifiedMeshImpl::Shutdown()
 
 	m_xGBufferPipeline.Reset();
 	m_xGBufferPipelineTwoSided.Reset();
+	m_xShadowPipeline.Reset();
 	m_xCullingPipeline.Reset();
 	m_xResetPipeline.Reset();
 	m_xGBufferShader.Reset();
+	m_xShadowShader.Reset();
 	m_xCullingShader.Reset();
 	m_xResetShader.Reset();
 
@@ -210,6 +260,7 @@ void Flux_UnifiedMeshImpl::Reset()
 {
 	m_uTotalDrawItems = 0u;
 	m_uBucketSlotCount = 0u;
+	m_uNumViews = 1u;
 	m_axBucketDraws.Clear();
 }
 
@@ -270,6 +321,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 
 	m_uTotalDrawItems = 0u;
 	m_uBucketSlotCount = 0u;
+	m_uNumViews = 1u;
 	m_axBucketDraws.Clear();
 
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
@@ -291,18 +343,19 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 
 	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
 
-	// Grow GPU buffers if the scene outgrew the current capacity (reuses the object).
+	// Grow GPU buffers if the scene outgrew the current PER-VIEW capacity (reuses the object).
+	// Both persistent buffers are sized for all kuUNIFIED_NUM_VIEWS views.
 	if (uNumDrawItems > m_uVisibleIndexCapacity)
 	{
 		xMem.DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
 		m_uVisibleIndexCapacity = (m_uVisibleIndexCapacity * 2u > uNumDrawItems) ? m_uVisibleIndexCapacity * 2u : uNumDrawItems;
-		xMem.InitialiseReadWriteBuffer(nullptr, m_uVisibleIndexCapacity * sizeof(u_int), m_xVisibleIndexBuffer);
+		xMem.InitialiseReadWriteBuffer(nullptr, m_uVisibleIndexCapacity * kuUNIFIED_NUM_VIEWS * sizeof(u_int), m_xVisibleIndexBuffer);
 	}
 	if (uSlotCount > m_uIndirectBucketCapacity)
 	{
 		xMem.DestroyIndirectBuffer(m_xIndirectBuffer);
 		m_uIndirectBucketCapacity = (m_uIndirectBucketCapacity * 2u > uSlotCount) ? m_uIndirectBucketCapacity * 2u : uSlotCount;
-		xMem.InitialiseIndirectBuffer(m_uIndirectBucketCapacity * kuINDIRECT_STRIDE, m_xIndirectBuffer);
+		xMem.InitialiseIndirectBuffer(m_uIndirectBucketCapacity * kuUNIFIED_NUM_VIEWS * kuINDIRECT_STRIDE, m_xIndirectBuffer);
 	}
 	GrowDynamicRW(m_xObjectsBuffer,         m_uObjectCapacity,     uNumObjects,   sizeof(Flux_GPUSceneObject));
 	GrowDynamicRW(m_xDrawItemsBuffer,       m_uDrawItemCapacity,   uNumDrawItems, sizeof(Flux_GPUSceneDrawItem));
@@ -389,15 +442,36 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	xMem.UploadBufferData(m_xBucketIndexCountBuffer.GetBuffer().m_xVRAMHandle,
 		m_auBucketIndexCountScratch.GetDataPointer(), uSlotCount * sizeof(u_int));
 
-	// --- culling constants (frustum + camera + draw-item count) ---
-	Flux_CullingConstants xCull = {};
-	Flux_InstanceCullingUtil::ExtractFrustumPlanes(g_xEngine.FluxGraphics().GetViewProjMatrix(), xCull.m_axFrustumPlanes);
-	xCull.m_xCameraPosition = Zenith_Maths::Vector4(g_xEngine.FluxGraphics().GetCameraPosition(), 0.0f);
-	xCull.m_uTotalInstanceCount = uNumDrawItems;   // shader reads this as totalDrawItemCount
+	// --- multi-view culling constants (per-view frustum planes + camera + counts) ---
+	// Active views: camera (view 0) always; the 4 cascades (views 1..N) only when shadows are
+	// enabled. When shadows are off the cascade passes early-out and never read the shadow-view
+	// partitions, so culling them would be wasted — and UpdateShadowMatrices may not have run,
+	// leaving stale frustums. The cascade frustums come from UpdateShadowMatrices, hoisted to
+	// the main-thread seam (Zenith_Core) so they are current here regardless of .Prepare order.
+	const u_int uNumViews = Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? kuUNIFIED_NUM_VIEWS : 1u;
+
+	UnifiedCullingConstants xCull = {};
+	Flux_InstanceCullingUtil::ExtractFrustumPlanes(g_xEngine.FluxGraphics().GetViewProjMatrix(), &xCull.m_axFrustumPlanes[0]);
+	if (uNumViews > 1u)
+	{
+		Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
+		for (u_int uCascade = 0; uCascade < ZENITH_FLUX_NUM_CSMS; ++uCascade)
+		{
+			// The cascade ortho box already bakes in the caster near-plane extend, so the same
+			// 6-plane sphere test retains occluders behind the cascade that still cast into it.
+			Flux_InstanceCullingUtil::ExtractFrustumPlanes(
+				xShadows.GetSunViewProjMatrix(uCascade), &xCull.m_axFrustumPlanes[(uCascade + 1u) * 6u]);
+		}
+	}
+	xCull.m_xCameraPosition     = Zenith_Maths::Vector4(g_xEngine.FluxGraphics().GetCameraPosition(), 0.0f);
+	xCull.m_uTotalDrawItemCount = uNumDrawItems;
+	xCull.m_uNumViews           = uNumViews;
+	xCull.m_uNumBuckets         = uSlotCount;
 	xMem.UploadBufferData(m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle, &xCull, sizeof(xCull));
 
 	m_uTotalDrawItems  = uNumDrawItems;
 	m_uBucketSlotCount = uSlotCount;
+	m_uNumViews        = uNumViews;
 }
 
 //=============================================================================
@@ -417,11 +491,14 @@ static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void*)
 
 	UnifiedResetConstants xConsts = {};
 	xConsts.m_uNumBuckets = xSelf.m_uBucketSlotCount;
+	xConsts.m_uNumViews   = xSelf.m_uNumViews;
 	xBinder.BindDrawConstants(xSelf.m_xResetShader, "ResetConstants", &xConsts, sizeof(xConsts));
 	xBinder.BindUAV_Buffer(xSelf.m_xResetShader, "bucketIndexCount", &xSelf.m_xBucketIndexCountBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(xSelf.m_xResetShader, "indirect",         &xSelf.m_xIndirectBuffer.GetUAV());
 
-	pxCmdList->Dispatch((xSelf.m_uBucketSlotCount + 63u) / 64u, 1u, 1u);
+	// One thread per (view, bucket) — reset every active view's indirect commands.
+	const u_int uResetThreads = xSelf.m_uBucketSlotCount * xSelf.m_uNumViews;
+	pxCmdList->Dispatch((uResetThreads + 63u) / 64u, 1u, 1u);
 }
 
 static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void*)
@@ -442,7 +519,9 @@ static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void*)
 	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "visibleIndex",     &xSelf.m_xVisibleIndexBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "indirect",         &xSelf.m_xIndirectBuffer.GetUAV());
 
-	pxCmdList->Dispatch((xSelf.m_uTotalDrawItems + 63u) / 64u, 1u, 1u);
+	// One thread per (view, draw-item) — cull every active view's frustum in one dispatch.
+	const u_int uCullThreads = xSelf.m_uTotalDrawItems * xSelf.m_uNumViews;
+	pxCmdList->Dispatch((uCullThreads + 63u) / 64u, 1u, 1u);
 }
 
 static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
@@ -490,5 +569,57 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 
 			pxCmdList->DrawIndexedIndirect(&xSelf.m_xIndirectBuffer, 1u, xDraw.m_uSlot * kuINDIRECT_STRIDE, kuINDIRECT_STRIDE);
 		}
+	}
+}
+
+//=============================================================================
+// Stage 2 — per-cascade shadow caster draw (invoked from Flux_Shadows::ExecuteShadowCascade,
+// worker thread, inside cascade pass uCascade's record). Reads the shadow-view partition the
+// cull populated for view (uCascade+1). One shadow pipeline draws every live bucket (no
+// per-material cull split for shadows, matching Flux_StaticMeshes). Translucent/additive
+// submeshes were already excluded from the GPU scene, so every bucket is a valid caster.
+//=============================================================================
+void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
+{
+	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled() || m_axBucketDraws.GetSize() == 0u)
+	{
+		return;
+	}
+	// view 0 = camera; cascade c uses view c+1. If shadows were inactive this frame
+	// (m_uNumViews == 1) the shadow-view partitions were never culled — skip.
+	const u_int uView = uCascade + 1u;
+	if (uView >= m_uNumViews)
+	{
+		return;
+	}
+
+	xCmdBuf.SetPipeline(&m_xShadowPipeline);
+	Flux_ShaderBinder xBinder(xCmdBuf);
+	xCmdBuf.UseBindlessTextures(2);   // base-colour table for the masked-cutout FS
+
+	// PASS block (set 3) — scene records bound once for this cascade.
+	xBinder.BindSRV_Buffer(m_xShadowShader, "Objects",   m_xObjectsBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(m_xShadowShader, "DrawItems", m_xDrawItemsBuffer.GetSRV());
+
+	for (u_int u = 0; u < m_axBucketDraws.GetSize(); ++u)
+	{
+		const Flux_UnifiedBucketDraw& xDraw = m_axBucketDraws.Get(u);
+
+		xCmdBuf.SetVertexBuffer(xDraw.m_pxMesh->GetVertexBuffer());
+		xCmdBuf.SetIndexBuffer(xDraw.m_pxMesh->GetIndexBuffer());
+
+		// DRAW block (set 4) — per-bucket constants (this view's visible base + cascade) + the
+		// bucket's visible slice. BindDrawConstants resets set 4, so re-bind the SRV after it.
+		// Index math via the shared Flux_Unified* helpers (CPU source of truth, unit-tested).
+		UnifiedDrawConstants xConsts = {};
+		xConsts.m_uMaterialIndex = xDraw.m_uMaterialIndex;
+		xConsts.m_uBucketOffset  = Flux_UnifiedVisibleWriteIndex(uView, m_uTotalDrawItems, xDraw.m_uVisibleOffset, 0u);
+		xConsts.m_uShadowCascade = uCascade;
+		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xConsts, sizeof(xConsts));
+		xBinder.BindSRV_Buffer(m_xShadowShader, "VisibleIndexBuffer", m_xVisibleIndexBuffer.GetSRV());
+
+		const u_int uIndirectByteOffset =
+			Flux_UnifiedIndirectCommandWord(uView, xDraw.m_uSlot, m_uBucketSlotCount) * (u_int)sizeof(u_int);
+		xCmdBuf.DrawIndexedIndirect(&m_xIndirectBuffer, 1u, uIndirectByteOffset, kuINDIRECT_STRIDE);
 	}
 }

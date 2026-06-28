@@ -27,6 +27,8 @@
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"   // Stage 2: hoisted UpdateShadowMatrices (pre-gather)
+#include "Core/Zenith_GraphicsOptions.h"      // m_bShadowsEnabled gate for the hoisted update
 #ifdef ZENITH_TOOLS
 #include "AssetHandling/Zenith_PropertyTuning.h"
 #include "Editor/Zenith_Editor.h"
@@ -239,6 +241,18 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.FluxRenderer().RebuildSceneSnapshot,
 		ZENITH_PROFILE_ZONE("Snapshot::Build"), g_xEngine.Scenes().GetRenderMutationEpoch(),
 		g_xEngine.FluxGraphics().GetViewProjMatrix(), g_xEngine.FluxGraphics().IsCameraValid());
+
+	// Compute the sun cascade view×proj matrices here (main thread, before the render-task
+	// window) rather than in the shadow cascade-0 Prepare. Camera-derived like the snapshot
+	// frustum above, and hoisting it ahead of the render graph's Prepare phase means the unified
+	// mesh cull's Prepare — which runs earlier in topological order once the cascade passes read
+	// its cull-output buffers (Stage 2) — sees up-to-date cascade frustums. Behaviour-preserving
+	// for the non-unified shadow path: nothing consumes the matrices before the graph executes.
+	// (UpdateShadowMatrices profiles itself internally.)
+	if (Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
+	{
+		g_xEngine.Shadows().UpdateShadowMatrices();
+	}
 
 #ifdef ZENITH_TOOLS
 	// Phase 3: queue the scene-graph debug overlays (world-AABB wireframes + cull stats)

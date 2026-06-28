@@ -15,6 +15,8 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
+#include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"   // Stage 2: unified GPU-driven shadow casters
+#include "Flux/Flux_RendererImpl.h"                  // IsUnifiedGPUPathEnabled (static-shadow A/B gate)
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
 // destroyed by the render graph, sized from the descriptor in SetupRenderGraph.
@@ -150,19 +152,21 @@ static_assert(ZENITH_FLUX_NUM_CSMS == 4, "s_aszShadowCascadePassNames must match
 
 static void PreExecuteShadowMatrices(void*)
 {
-	// CPU-side shadow matrix update runs once per frame on the main thread
-	// before parallel cascade recording begins. Runs as a Prepare callback on
-	// cascade 0 so the cascade Execute callbacks can then record in parallel.
+	// Ensures the UNCULLLED static/animated geometry shadow packets once per frame on the main
+	// thread before parallel cascade recording (Phase 3 backstop: off-screen casters still cast
+	// even when the mesh G-buffer passes — which would otherwise build the packets — are
+	// force-disabled). Generation-guarded, so a no-op when the G-buffer prepares already built them.
+	//
+	// NOTE: the cascade view×proj matrices are NO LONGER computed here. UpdateShadowMatrices was
+	// hoisted to the main-thread seam in Zenith_Core (right after the snapshot rebuild) so the
+	// unified mesh cull's .Prepare — which runs earlier in topological order once the cascade
+	// passes read its cull-output buffers (Stage 2) — sees up-to-date cascade frustums. The
+	// matrices are still ready well before any cascade records.
 	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
 	{
 		return;
 	}
-	// Recover the instance ONCE (keeps this TU at its singleton-ratchet baseline). Phase 3:
-	// also ensure the geometry shadow packets here so off-screen casters still cast even when
-	// the mesh G-buffer passes (which would otherwise build the packets) are force-disabled.
-	Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
-	xShadows.UpdateShadowMatrices();
-	xShadows.EnsureGeometryShadowPackets();
+	g_xEngine.Shadows().EnsureGeometryShadowPackets();
 }
 
 static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserData)
@@ -183,11 +187,16 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// All casters read the cascade matrix from the persistent VIEW set's all-cascade
 	// g_xShadowMatrices SSBO (Phase 5.4), selecting element `u` via the per-draw cascade index.
 
-	auto& xStaticMeshes = g_xEngine.StaticMeshes();
-	pxCommandList->SetPipeline(&xStaticMeshes.GetShadowPipeline());
+	// Static opaque casters: the unified GPU-driven path draws them when enabled (A/B with the
+	// CPU StaticMeshes loop, mirroring the G-buffer A/B gate); otherwise the old path renders.
+	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled())
+	{
+		auto& xStaticMeshes = g_xEngine.StaticMeshes();
+		pxCommandList->SetPipeline(&xStaticMeshes.GetShadowPipeline());
 
-	// RenderToShadowMap handles all bindings via shader reflection
-	xStaticMeshes.RenderToShadowMap(*pxCommandList, u);
+		// RenderToShadowMap handles all bindings via shader reflection
+		xStaticMeshes.RenderToShadowMap(*pxCommandList, u);
+	}
 
 	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
 	pxCommandList->SetPipeline(&xAnimatedMeshes.GetShadowPipeline());
@@ -202,6 +211,12 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// target write. RenderToShadowMap binds its own pipeline (only when casters
 	// exist) and early-returns when instanced meshes are disabled / no groups.
 	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, u);
+
+	// Unified GPU-driven opaque static casters (Stage 2). Binds its own depth-only pipeline +
+	// draws cascade view (u+1) of the shared cull-output buffers (per-cascade frustum-culled).
+	// No-op when the unified path is off. The cascade pass declares the cull-output ReadBuffer
+	// (see SetupRenderGraph) so the reset->cull->cascade barrier is synthesised.
+	g_xEngine.UnifiedMesh().RenderToShadowMap(*pxCommandList, u);
 
 	// #TODO: Enable terrain shadow casting
 	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, u);
@@ -224,10 +239,20 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xCSMDesc.m_bIsDepthStencil = true;
 	m_xCSMArrayHandle = xGraph.CreateTransient(xCSMDesc);
 
+	// Stage 2: the unified GPU-driven path draws static shadow casters from its compute-culled
+	// per-(view,bucket) cull-output buffers. Each cascade pass must READ those persistent buffers
+	// so the graph orders reset->cull->cascade and synthesises the WRITE_UAV->READ barrier. The
+	// buffers exist after UnifiedMesh::Initialise (all Initialise precede all SetupRenderGraph).
+	// Declared UNCONDITIONALLY (not gated on the runtime toggle): the cull pass always writes
+	// them, the read is harmless when the unified path is off (the cascade draw early-outs), and
+	// keeping the declaration static means toggling the path needs no graph rebuild for shadows.
+	Flux_UnifiedMeshImpl& xUnified = g_xEngine.UnifiedMesh();
+	const bool bUnifiedResources = xUnified.m_bResourcesReady;
+
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		// CSM targets are depth textures — declared as per-layer DSV writes (mip 0,
-		// layer u). Cascade 0 owns the CPU-side matrix update via its pre-execute
+		// layer u). Cascade 0 owns the CPU-side geometry-packet ensure via its pre-execute
 		// callback; the disjoint-layer writes record in parallel.
 		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
 			.UserData(u)
@@ -235,6 +260,12 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			.WritesTransient(m_xCSMArrayHandle, RESOURCE_ACCESS_WRITE_DSV, 0, 1, u, 1);
 		if (u == 0)
 			xGraph.SetPrepare(xPass, PreExecuteShadowMatrices);
+
+		if (bUnifiedResources)
+		{
+			xGraph.ReadBuffer(xPass, xUnified.m_xVisibleIndexBuffer.GetBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
+			xGraph.ReadBuffer(xPass, xUnified.m_xIndirectBuffer.GetBuffer(),     RESOURCE_ACCESS_READ_INDIRECT_ARG);
+		}
 	}
 }
 

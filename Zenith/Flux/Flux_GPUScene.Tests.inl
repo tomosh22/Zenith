@@ -499,3 +499,74 @@ ZENITH_TEST(GPUScene, PackResetIndirectCommandLayout)
 	ZENITH_ASSERT_EQ(auCmd[3], 0u, "word 3 = vertexOffset 0");
 	ZENITH_ASSERT_EQ(auCmd[4], 0u, "word 4 = firstInstance 0");
 }
+
+// ---- multi-view cull-output index math (Stage 2 — shaders + draw code mirror these) --
+
+ZENITH_TEST(GPUScene, UnifiedIndirectCommandWordIsViewMajor)
+{
+	const u_int uNumBuckets = 3u;
+	// View 0 (camera) is byte-identical to the Stage-1 single-view layout: command b at word b*5.
+	ZENITH_ASSERT_EQ(Flux_UnifiedIndirectCommandWord(0u, 0u, uNumBuckets), 0u, "camera bucket 0 -> word 0");
+	ZENITH_ASSERT_EQ(Flux_UnifiedIndirectCommandWord(0u, 2u, uNumBuckets), 10u, "camera bucket 2 -> word 2*5");
+	// Each view starts a fresh numBuckets-wide command block (view-major layout).
+	ZENITH_ASSERT_EQ(Flux_UnifiedIndirectCommandWord(1u, 0u, uNumBuckets), 15u, "view 1 bucket 0 -> (1*3+0)*5");
+	ZENITH_ASSERT_EQ(Flux_UnifiedIndirectCommandWord(4u, 2u, uNumBuckets), (4u * 3u + 2u) * 5u, "view 4 bucket 2");
+}
+
+ZENITH_TEST(GPUScene, UnifiedVisibleWriteIndexIsViewMajor)
+{
+	const u_int uTotalDrawItems = 10u;
+	// View 0 (camera) base is the within-view bucket offset (Stage-1 layout unchanged).
+	ZENITH_ASSERT_EQ(Flux_UnifiedVisibleWriteIndex(0u, uTotalDrawItems, 4u, 0u), 4u, "camera base = bucketOffset");
+	ZENITH_ASSERT_EQ(Flux_UnifiedVisibleWriteIndex(0u, uTotalDrawItems, 4u, 2u), 6u, "camera slot 2 -> off+2");
+	// View v adds a v*totalDrawItems per-view stride on top of the within-view offset.
+	ZENITH_ASSERT_EQ(Flux_UnifiedVisibleWriteIndex(1u, uTotalDrawItems, 4u, 0u), 14u, "view 1 base = total+off");
+	ZENITH_ASSERT_EQ(Flux_UnifiedVisibleWriteIndex(3u, uTotalDrawItems, 4u, 2u), 36u, "view 3 slot 2 -> 3*10+4+2");
+}
+
+ZENITH_TEST(GPUScene, UnifiedViewPartitionsDoNotOverlap)
+{
+	// Each view's visible slice must end strictly below the next view's base, so the per-view
+	// partitions tile the buffer with no aliasing (worst case: every draw-item survives every view).
+	const u_int uTotalDrawItems = 10u;
+	for (u_int v = 0; v < 4u; ++v)
+	{
+		const u_int uLastInView = Flux_UnifiedVisibleWriteIndex(v, uTotalDrawItems, uTotalDrawItems - 1u, 0u);
+		const u_int uNextBase   = Flux_UnifiedVisibleWriteIndex(v + 1u, uTotalDrawItems, 0u, 0u);
+		ZENITH_ASSERT_TRUE(uLastInView < uNextBase, "view v's slice ends before view v+1's base");
+	}
+}
+
+// ---- cascade caster-extend retention (Stage 2 cull primitive vs an ortho box) --
+
+ZENITH_TEST(GPUScene, CascadeCasterExtendRetainsNearOccluders)
+{
+	// Model a cascade's light-space ortho box [-10,10]x[-10,10]x[0,100]. UpdateShadowMatrices
+	// pushes the light origin back past the camera-frustum slice (caster-extend) so off-frustum
+	// occluders BETWEEN the light and the slice still rasterise into the cascade. The cull must
+	// KEEP a caster in that extended near region and DROP ones outside the box.
+	Zenith_Maths::Vector4 axPlanes[6];
+	axPlanes[0] = Zenith_Maths::Vector4( 1.0f,  0.0f,  0.0f,  10.0f);  // x >= -10
+	axPlanes[1] = Zenith_Maths::Vector4(-1.0f,  0.0f,  0.0f,  10.0f);  // x <= +10
+	axPlanes[2] = Zenith_Maths::Vector4( 0.0f,  1.0f,  0.0f,  10.0f);  // y >= -10
+	axPlanes[3] = Zenith_Maths::Vector4( 0.0f, -1.0f,  0.0f,  10.0f);  // y <= +10
+	axPlanes[4] = Zenith_Maths::Vector4( 0.0f,  0.0f,  1.0f,   0.0f);  // z >= 0   (extended near)
+	axPlanes[5] = Zenith_Maths::Vector4( 0.0f,  0.0f, -1.0f, 100.0f);  // z <= 100 (far + extend)
+
+	const Zenith_Maths::Vector4 xUnitSphere(0.0f, 0.0f, 0.0f, 1.0f);
+
+	// Occluder near the light eye (z=3) — inside the extended near region -> still casts.
+	Zenith_Maths::Matrix4 xNear(1.0f); xNear[3] = Zenith_Maths::Vector4(0.0f, 0.0f, 3.0f, 1.0f);
+	ZENITH_ASSERT_TRUE(Flux_CullDrawItemAgainstFrustum(xNear, xUnitSphere, axPlanes),
+		"near occluder in the caster-extend region still casts");
+
+	// Occluder behind the near plane (z=-3, radius 1) -> fully outside z>=0 -> culled.
+	Zenith_Maths::Matrix4 xBehind(1.0f); xBehind[3] = Zenith_Maths::Vector4(0.0f, 0.0f, -3.0f, 1.0f);
+	ZENITH_ASSERT_FALSE(Flux_CullDrawItemAgainstFrustum(xBehind, xUnitSphere, axPlanes),
+		"occluder fully behind the cascade near plane is culled");
+
+	// Occluder past the far plane (z=103) -> culled.
+	Zenith_Maths::Matrix4 xFar(1.0f); xFar[3] = Zenith_Maths::Vector4(0.0f, 0.0f, 103.0f, 1.0f);
+	ZENITH_ASSERT_FALSE(Flux_CullDrawItemAgainstFrustum(xFar, xUnitSphere, axPlanes),
+		"occluder past the cascade far plane is culled");
+}

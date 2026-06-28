@@ -63,6 +63,13 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// Stage 2: per-cascade shadow caster draw, invoked from Flux_Shadows::ExecuteShadowCascade
+	// (worker thread, inside cascade pass uCascade's record) AFTER the cull has populated the
+	// shadow-view partitions of the shared cull-output buffers. Binds its own shadow pipeline
+	// (depth-only) + PASS block, then one DrawIndexedIndirect per live bucket at view
+	// (uCascade+1). No-op when the unified path is off / shadows view inactive / no buckets.
+	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade);
+
 	// WS7 keystone main-thread gather (hung via .Prepare on the cull pass). Reads the
 	// renderer's GPU scene + bucket registry (frozen by SyncUnifiedBucketsFromSnapshot
 	// earlier this frame), registers each bucket's material with the GPU table, grows
@@ -96,6 +103,8 @@ public:
 	Flux_Shader   m_xGBufferShader;
 	Flux_Pipeline m_xGBufferPipeline;          // one-sided (CULL_MODE_BACK)
 	Flux_Pipeline m_xGBufferPipelineTwoSided;  // two-sided (CULL_MODE_NONE)
+	Flux_Shader   m_xShadowShader;             // Stage 2: depth-only caster (one pipeline, all buckets)
+	Flux_Pipeline m_xShadowPipeline;
 	Flux_Shader   m_xCullingShader;
 	Flux_Pipeline m_xCullingPipeline;
 	Flux_RootSig  m_xCullingRootSig;
@@ -108,6 +117,7 @@ public:
 	// Per-frame frozen state (gather → execute).
 	u_int m_uTotalDrawItems  = 0u;
 	u_int m_uBucketSlotCount = 0u;
+	u_int m_uNumViews        = 1u;  // Stage 2: 1 (camera) or 1+ZENITH_FLUX_NUM_CSMS (shadows on)
 	Zenith_Vector<Flux_UnifiedBucketDraw> m_axBucketDraws;
 
 	// Reusable scratch for the per-bucket metadata (avoids per-frame allocation).

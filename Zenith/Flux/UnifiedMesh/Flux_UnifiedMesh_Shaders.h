@@ -10,12 +10,14 @@
 namespace Flux_UnifiedMeshShaders
 {
 	inline constexpr Flux_ShaderDecl xUnifiedMesh_ToGBuffer{ "UnifiedMesh_ToGBuffer", "UnifiedMesh/Flux_UnifiedMesh_ToGBuffer", "vsMain", "fsMain", nullptr, "spirv_1_3", "UnifiedMesh" };
+	inline constexpr Flux_ShaderDecl xUnifiedMesh_ToShadowmap{ "UnifiedMesh_ToShadowmap", "UnifiedMesh/Flux_UnifiedMesh_ToShadowmap", "vsMain", "fsMain", nullptr, "spirv_1_3", "UnifiedMesh" };
 	inline constexpr Flux_ShaderDecl xUnifiedMesh_Culling{ "UnifiedMesh_Culling", "UnifiedMesh/Flux_UnifiedMesh_Culling", nullptr, nullptr, "csMain", "spirv_1_3", "UnifiedMesh" };
 	inline constexpr Flux_ShaderDecl xUnifiedMesh_Reset{ "UnifiedMesh_Reset", "UnifiedMesh/Flux_UnifiedMesh_Reset", nullptr, nullptr, "csMain", "spirv_1_3", "UnifiedMesh" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
 		&xUnifiedMesh_ToGBuffer,
+		&xUnifiedMesh_ToShadowmap,
 		&xUnifiedMesh_Culling,
 		&xUnifiedMesh_Reset,
 	};

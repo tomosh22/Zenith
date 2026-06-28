@@ -1,24 +1,34 @@
 // =====================================================================
 // Flux_UnifiedMesh_Culling — Slang module (unified GPU-driven opaque-mesh pipeline).
 //
-// GPU frustum culling, ONE thread per DRAW-ITEM (submesh) over the whole scene
+// GPU frustum culling, ONE thread per (VIEW, DRAW-ITEM) pair over the whole scene
 // (64 per workgroup). Each draw-item carries its own local-space bounding sphere
 // and an objectIndex; the thread transforms the sphere by the object's world
-// matrix, tests it against the 6 frustum planes, and on survival appends the
-// global draw-item index into its bucket's partition of the shared visible-index
-// buffer + atomically bumps that bucket's indirect instanceCount.
+// matrix, tests it against the thread's VIEW frustum (6 planes), and on survival
+// appends the global draw-item index into that view's bucket partition of the
+// shared visible-index buffer + atomically bumps that (view,bucket) indirect
+// instanceCount.
 //
-// Output partitioning: the visible-index buffer is sized to the total draw-item
-// count and split into per-bucket sub-ranges by bucketOffset[] (a CPU prefix-sum
-// of per-bucket draw-item counts). A survivor for bucket b lands at
-// visibleIndex[bucketOffset[b] + localSlot], where localSlot is the value of the
-// atomic increment of the bucket's instanceCount (indirect[b*5+1]) — so that
-// instanceCount doubles as both the per-bucket output cursor AND the
-// VkDrawIndexedIndirectCommand instanceCount the GBuffer draw reads.
+// VIEW dimension (Stage 2): view 0 = camera, views 1..N = the shadow cascades.
+// The thread id decodes to (v, gid) view-major: v = tid / totalDrawItems,
+// gid = tid % totalDrawItems. Each view has its own 6 frustum planes (extracted
+// from the camera view-proj / each cascade's sun ortho view-proj on the CPU).
+//
+// Output partitioning: per view, the visible-index buffer holds a totalDrawItems-
+// wide slice (base v*totalDrawItems) split into per-bucket sub-ranges by
+// bucketOffset[] (a CPU prefix-sum of per-bucket draw-item counts, view-invariant).
+// A survivor for (view v, bucket b) lands at
+// visibleIndex[v*totalDrawItems + bucketOffset[b] + localSlot], where localSlot is
+// the atomic increment of that command's instanceCount (indirect[(v*numBuckets+b)*5+1])
+// — so instanceCount doubles as both the per-(view,bucket) output cursor AND the
+// VkDrawIndexedIndirectCommand instanceCount the GBuffer/shadow draw reads.
 // =====================================================================
 
 #include "Common/Bindings.slang"
 #include "Common/SceneObjects.slang"
+
+// Must match kuUNIFIED_NUM_VIEWS in Flux_UnifiedMesh.cpp (1 camera + 4 CSM cascades).
+static const uint kUNIFIED_NUM_VIEWS = 5u;
 
 struct FrustumPlane
 {
@@ -27,12 +37,12 @@ struct FrustumPlane
 
 struct CullingConstantsLayout
 {
-    FrustumPlane frustumPlanes[6]; // Left, Right, Bottom, Top, Near, Far
+    FrustumPlane frustumPlanes[kUNIFIED_NUM_VIEWS * 6]; // per view: Left,Right,Bottom,Top,Near,Far
     float4       cameraPosition;
-    uint         totalDrawItemCount;
+    uint         totalDrawItemCount;  // per-view draw-item count (per-view stride)
+    uint         numViews;            // active views this frame
+    uint         numBuckets;          // bucket slot count (per-view indirect stride)
     uint         pad0;
-    uint         pad1;
-    uint         pad2;
 };
 
 struct PassParams
@@ -40,19 +50,20 @@ struct PassParams
     ConstantBuffer<CullingConstantsLayout> CullingConstants;
     RWStructuredBuffer<GPUSceneObject>     Objects;       // dynamic (host-uploaded)
     RWStructuredBuffer<GPUSceneDrawItem>   DrawItems;     // dynamic (host-uploaded)
-    RWStructuredBuffer<uint>               bucketOffset;  // dynamic [numBuckets] prefix-sum
-    RWStructuredBuffer<uint>               visibleIndex;  // persistent [totalDrawItems] output
-    RWStructuredBuffer<uint>               indirect;      // persistent [numBuckets*5] instanceCount cursor
+    RWStructuredBuffer<uint>               bucketOffset;  // dynamic [numBuckets] prefix-sum (view-invariant)
+    RWStructuredBuffer<uint>               visibleIndex;  // persistent [numViews*totalDrawItems] output
+    RWStructuredBuffer<uint>               indirect;      // persistent [numViews*numBuckets*5] instanceCount cursor
 };
 ParameterBlock<PassParams> g_xPassSet;
 
-// True if the bounding sphere is at least partially inside the frustum.
-bool TestSphereFrustum(float3 center, float radius)
+// True if the bounding sphere is at least partially inside view v's frustum.
+bool TestSphereFrustum(uint v, float3 center, float radius)
 {
     const int kPlaneOrder[6] = { 4, 5, 0, 1, 2, 3 }; // near, far, then sides
+    uint base = v * 6u;
     for (int i = 0; i < 6; i++)
     {
-        FrustumPlane p = g_xPassSet.CullingConstants.frustumPlanes[kPlaneOrder[i]];
+        FrustumPlane p = g_xPassSet.CullingConstants.frustumPlanes[base + (uint)kPlaneOrder[i]];
         if (dot(p.normalAndDistance.xyz, center) + p.normalAndDistance.w < -radius) return false;
     }
     return true;
@@ -72,8 +83,12 @@ float GetMaxScale(float4x4 m)
 [numthreads(64, 1, 1)]
 void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
-    uint gid = dispatchId.x;
-    if (gid >= g_xPassSet.CullingConstants.totalDrawItemCount) return;
+    uint totalDrawItems = g_xPassSet.CullingConstants.totalDrawItemCount;
+    uint tid = dispatchId.x;
+    if (tid >= totalDrawItems * g_xPassSet.CullingConstants.numViews) return;
+
+    uint v   = tid / totalDrawItems;       // view (0 = camera, 1.. = cascades)
+    uint gid = tid - v * totalDrawItems;   // draw-item index within the view's slice
 
     GPUSceneDrawItem di  = g_xPassSet.DrawItems[gid];
     GPUSceneObject   obj = g_xPassSet.Objects[di.m_uObjectIndex];
@@ -82,14 +97,16 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
     float3 worldCenter = mul(obj.m_xModelMatrix, float4(sph.xyz, 1.0)).xyz;
     float  worldRadius = sph.w * GetMaxScale(obj.m_xModelMatrix);
 
-    if (!TestSphereFrustum(worldCenter, worldRadius)) return;
+    if (!TestSphereFrustum(v, worldCenter, worldRadius)) return;
 
+    uint numBuckets = g_xPassSet.CullingConstants.numBuckets;
     uint b = di.m_uBucketIndex;
 
-    // Atomically reserve this survivor's slot within the bucket. indirect[b*5+1] is
-    // the VkDrawIndexedIndirectCommand instanceCount — incrementing it returns the
-    // per-bucket local slot AND grows the draw's instance count in one operation.
+    // Atomically reserve this survivor's slot within (view v, bucket b).
+    // indirect[(v*numBuckets+b)*5+1] is the VkDrawIndexedIndirectCommand instanceCount
+    // — incrementing it returns the per-command local slot AND grows the draw's
+    // instance count in one operation.
     uint localSlot;
-    InterlockedAdd(g_xPassSet.indirect[b * 5u + 1u], 1u, localSlot);
-    g_xPassSet.visibleIndex[g_xPassSet.bucketOffset[b] + localSlot] = gid;
+    InterlockedAdd(g_xPassSet.indirect[(v * numBuckets + b) * 5u + 1u], 1u, localSlot);
+    g_xPassSet.visibleIndex[v * totalDrawItems + g_xPassSet.bucketOffset[b] + localSlot] = gid;
 }
