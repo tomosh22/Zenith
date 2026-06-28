@@ -35,6 +35,7 @@ class Flux_VolumeFogImpl;
 class Flux_GizmosImpl;
 class Flux_MaterialPreviewImpl;
 class Flux_InstancedMeshesImpl;
+class Flux_UnifiedMeshImpl;
 class Flux_ParticlesImpl;
 class Flux_ParticleGPUImpl;
 class Flux_TextImpl;
@@ -154,6 +155,7 @@ public:
 	// by Zenith_FontAsset::GetActiveOrDefaultMetrics for UI metric fallback.
 	Flux_TextImpl* TryGetText() const { return m_pxText; }
 	Flux_InstancedMeshesImpl& InstancedMeshes();
+	Flux_UnifiedMeshImpl& UnifiedMesh();
 	Flux_SSRImpl& SSR();
 	Flux_SSGIImpl& SSGI();
 	Flux_IBLImpl& IBL();
@@ -254,6 +256,7 @@ private:
 	Flux_ParticleGPUImpl*               m_pxParticleGPU      = nullptr;
 	Flux_TextImpl*                      m_pxText             = nullptr;
 	Flux_InstancedMeshesImpl*           m_pxInstancedMeshes  = nullptr;
+	Flux_UnifiedMeshImpl*               m_pxUnifiedMesh      = nullptr;
 	Flux_SSRImpl*                       m_pxSSR              = nullptr;
 	Flux_SSGIImpl*                      m_pxSSGI             = nullptr;
 	Flux_IBLImpl*                       m_pxIBL              = nullptr;

@@ -55,6 +55,7 @@
 #include "Flux/Particles/Flux_ParticleGPUImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
+#include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
@@ -211,6 +212,7 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_ParticlesImpl,               Particles,     
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_ParticleGPUImpl,             ParticleGPU,          m_pxParticleGPU)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TextImpl,                    Text,                 m_pxText)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_InstancedMeshesImpl,         InstancedMeshes,      m_pxInstancedMeshes)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_UnifiedMeshImpl,             UnifiedMesh,          m_pxUnifiedMesh)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SSRImpl,                     SSR,                  m_pxSSR)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_SSGIImpl,                    SSGI,                 m_pxSSGI)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_IBLImpl,                     IBL,                  m_pxIBL)
@@ -356,6 +358,7 @@ void Zenith_Engine::AllocateFluxSubsystems()
 	m_pxParticleGPU     = new Flux_ParticleGPUImpl();
 	m_pxText            = new Flux_TextImpl();
 	m_pxInstancedMeshes = new Flux_InstancedMeshesImpl();
+	m_pxUnifiedMesh     = new Flux_UnifiedMeshImpl();
 
 	// multi-pass effects.
 	m_pxSSR  = new Flux_SSRImpl();
@@ -922,6 +925,7 @@ void Zenith_Engine::DeleteRendererState()
 	delete m_pxParticleGPU;     m_pxParticleGPU = nullptr;
 	delete m_pxText;            m_pxText = nullptr;
 	delete m_pxInstancedMeshes; m_pxInstancedMeshes = nullptr;
+	delete m_pxUnifiedMesh;     m_pxUnifiedMesh = nullptr;
 	delete m_pxSSR;  m_pxSSR  = nullptr;
 	delete m_pxSSGI; m_pxSSGI = nullptr;
 	delete m_pxIBL;  m_pxIBL  = nullptr;

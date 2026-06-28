@@ -110,3 +110,9 @@ void Flux_MaterialTable::Upload()
 }
 
 #include "Flux/Flux_MaterialTable.Tests.inl"
+
+// Stage-0 unified-mesh GPU-scene tests. Hosted here (an always-linked core TU)
+// rather than in Flux_GPUScene.cpp because that TU is inert until Stage 0e
+// references it — see the NOTE at the bottom of Flux_GPUScene.cpp. The test
+// bodies call Flux_BuildGPUScene, which pulls Flux_GPUScene.obj into the link.
+#include "Flux/Flux_GPUScene.Tests.inl"

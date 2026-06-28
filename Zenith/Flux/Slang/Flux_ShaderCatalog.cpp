@@ -10,6 +10,7 @@
 // both tools configs (parity holds either way).
 #include "Flux/IBL/Flux_IBL_Shaders.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes_Shaders.h"
+#include "Flux/UnifiedMesh/Flux_UnifiedMesh_Shaders.h"
 #include "Flux/Terrain/Flux_Terrain_Shaders.h"
 #include "Flux/Primitives/Flux_Primitives_Shaders.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes_Shaders.h"
@@ -52,6 +53,7 @@ namespace
 	{
 		MakeBlock(Flux_IBLShaders::apxALL),
 		MakeBlock(Flux_StaticMeshesShaders::apxALL),
+		MakeBlock(Flux_UnifiedMeshShaders::apxALL),
 		MakeBlock(Flux_TerrainShaders::apxALL),
 		MakeBlock(Flux_PrimitivesShaders::apxALL),
 		MakeBlock(Flux_AnimatedMeshesShaders::apxALL),

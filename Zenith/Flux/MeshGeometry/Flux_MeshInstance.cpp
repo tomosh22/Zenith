@@ -694,3 +694,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 
 	return pxInstance;
 }
+
+// Stage-0b mesh-geometry registry tests, hosted in this always-linked TU so the
+// test-body calls pull the otherwise-inert Flux_MeshGeometryRegistry.obj into the
+// link (same pattern + rationale as the bottom of Flux_GPUScene.cpp).
+#include "Flux/Flux_MeshGeometryRegistry.Tests.inl"

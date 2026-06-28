@@ -18,6 +18,7 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
+#include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Flux/Translucency/Flux_TranslucencyImpl.h"
@@ -52,6 +53,7 @@
 #include "Flux/Primitives/Flux_Primitives_Shaders.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes_Shaders.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes_Shaders.h"
+#include "Flux/UnifiedMesh/Flux_UnifiedMesh_Shaders.h"
 #include "Flux/Skybox/Flux_Skybox_Shaders.h"
 #include "Flux/Decals/Flux_Decals_Shaders.h"
 #include "Flux/HiZ/Flux_HiZ_Shaders.h"
@@ -331,6 +333,10 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	RegisterFeature<&Zenith_Engine::IBL>(xReg, "IBL", Flux_IBLShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	RegisterFeature<&Zenith_Engine::StaticMeshes>(xReg, "StaticMeshes", Flux_StaticMeshesShaders::apxALL);
+	// Unified GPU-driven opaque static-mesh path (Stage 1). G-buffer producer, declared
+	// alongside StaticMeshes (which it A/B-replaces when Render/UnifiedMesh/Enabled is on);
+	// must precede DeferredShading which consumes the G-buffer.
+	RegisterFeature<&Zenith_Engine::UnifiedMesh>(xReg, "UnifiedMesh", Flux_UnifiedMeshShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::AnimatedMeshes>(xReg, "AnimatedMeshes", Flux_AnimatedMeshesShaders::apxALL);

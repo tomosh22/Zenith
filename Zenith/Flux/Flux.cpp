@@ -5,6 +5,7 @@
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type for the by-ptr snapshot (alloc/rebuild/free)
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"        // Stage 0e: per-submesh mesh-instance identity + local bounds
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
@@ -209,6 +210,141 @@ void Flux_RendererImpl::RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, cons
 		m_pxSceneSnapshot->SetCameraFrustum(xCameraViewProj);
 	}
 }
+
+// Build the unified GPU-driven mesh scene — the (mesh,cull,material,VAT) bucket topology +
+// the GPU-scene object/draw-item record arrays — from the just-rebuilt snapshot. Single
+// main-thread writer (the WS7 keystone shape), called from Zenith_Core right after
+// RebuildSceneSnapshot, before the render-task window opens. Consumed by the Flux_UnifiedMesh
+// feature's GatherUnifiedPacket (uploads + reset/cull/draw). The mesh-geometry registry's
+// real provider (wired in LateInitialise) builds one shared VB/IB per unique mesh identity.
+void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
+{
+	if (!m_bUnifiedGPUPathEnabled)
+	{
+		return;
+	}
+
+	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
+	Zenith_MaterialAsset* pxBlankMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+
+	// Mesh-geometry id assignment + residency refcount diff runs over the same walk.
+	m_xUnifiedMeshGeometryRegistry.BeginSync();
+
+	Zenith_Vector<Flux_GPUSceneSourceItem> xSourceItems;
+	xSourceItems.Reserve(xSnapshot.GetNumItems());
+
+	const Zenith_Vector<Flux_RenderSceneItem>& xItems = xSnapshot.Items();
+	for (u_int uItem = 0; uItem < xItems.GetSize(); ++uItem)
+	{
+		const Flux_RenderSceneItem& xSrc = xItems.Get(uItem);
+		Flux_ModelInstance* pxModel = xSrc.m_pxModelInstance;
+		if (pxModel == nullptr)
+		{
+			continue;
+		}
+		// Animated-skinned models draw via Flux_AnimatedMeshes (Stage 5), not the static
+		// unified path — skip the whole item (mirrors the StaticMeshes consumer filter).
+		if (xSrc.m_bAnimatedSkinned)
+		{
+			continue;
+		}
+
+		// Build into the back item in place (Reserve above guarantees no realloc, so the
+		// reference stays valid); drop it again if no opaque submesh survived the filter.
+		xSourceItems.EmplaceBack();
+		Flux_GPUSceneSourceItem& xOutItem = xSourceItems.Get(xSourceItems.GetSize() - 1u);
+		xOutItem.m_xWorldMatrix = xSrc.m_xWorldMatrix;
+
+		const uint32_t uNumMeshes = pxModel->GetNumMeshes();
+		for (uint32_t uMesh = 0; uMesh < uNumMeshes; ++uMesh)
+		{
+			Flux_MeshInstance* pxMesh = pxModel->GetMeshInstance(uMesh);
+			if (pxMesh == nullptr)
+			{
+				continue;
+			}
+
+			Zenith_MaterialAsset* pxMat = pxModel->GetMaterial(uMesh);
+			if (pxMat == nullptr)
+			{
+				pxMat = pxBlankMaterial;   // stable blank-material identity (never a null key)
+			}
+
+			// Translucent / additive submeshes belong on the forward Translucency path.
+			if (pxMat != nullptr)
+			{
+				const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+				{
+					continue;
+				}
+			}
+
+			// Stable mesh-geometry identity -> meshGeometryId.
+			Flux_MeshGeometryKey xMeshKey;
+			if (Zenith_MeshAsset* pxAsset = pxMesh->GetSourceAsset())
+			{
+				xMeshKey.m_pvIdentity = pxAsset;
+				xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_ASSET;
+			}
+			else if (const Flux_MeshGeometry* pxProc = pxMesh->GetProceduralGeometry())
+			{
+				xMeshKey.m_pvIdentity = pxProc;
+				xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_PROCEDURAL;
+			}
+			else
+			{
+				continue;   // no shareable mesh identity
+			}
+			const u_int uMeshGeometryId = m_xUnifiedMeshGeometryRegistry.Reference(xMeshKey);
+			if (uMeshGeometryId == uFLUX_INVALID_MESH_GEOMETRY_ID)
+			{
+				continue;   // build failed (only the real provider can fail; never in Stage 0)
+			}
+
+			const bool bTwoSided = (pxMat != nullptr) && pxMat->GetResolved().m_xParams.m_bTwoSided;
+			const Zenith_AABB& xLocal = pxMesh->GetLocalBounds();
+
+			Flux_GPUSceneSourceSubmesh xSub;
+			xSub.m_uMeshGeometryId    = uMeshGeometryId;
+			xSub.m_uCullMode          = bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
+			xSub.m_ulMaterialAssetId  = reinterpret_cast<u_int64>(pxMat);   // in-session grouping identity (see Flux_GPUSceneBucketKey::m_ulMaterialAssetId)
+			xSub.m_ulVATTextureId     = 0u;   // static meshes carry no VAT (foliage: Stage 3)
+			xSub.m_xLocalBoundsSphere = Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax);
+			xSub.m_uColorTintPacked   = uFLUX_GPUSCENE_TINT_WHITE;
+			xSub.m_uFlags             = 0u;
+			xOutItem.m_xSubmeshes.PushBack(xSub);
+		}
+
+		if (xOutItem.m_xSubmeshes.GetSize() == 0u)
+		{
+			xSourceItems.PopBack();   // no opaque static submesh -> not a unified-path item
+		}
+	}
+
+	m_xUnifiedMeshGeometryRegistry.EndSync();
+
+	// Build the GPU-scene record arrays + run the bucket-topology refcount diff. INERT:
+	// m_xUnifiedGPUScene + the registries are ready for Stage 1; nothing uploads/draws them.
+	Flux_BuildGPUScene(xSourceItems, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
+
+#ifdef ZENITH_DEBUG
+	// One-shot proof the build ran on a real (non-empty) scene. Silent on empty snapshots
+	// (Sokoban/Marble/Survival render no model-component static meshes), fires once on the
+	// first populated scene. Verified on RenderTest: identical-mesh items de-dupe to one
+	// shared geometry + per-(cull,material) buckets — mesh sharing + indirect-draw batching.
+	static bool ls_bLoggedUnifiedScene = false;
+	if (!ls_bLoggedUnifiedScene && m_xUnifiedGPUScene.m_xObjects.GetSize() > 0u)
+	{
+		ls_bLoggedUnifiedScene = true;
+		Zenith_Log(LOG_CATEGORY_RENDERER,
+			"[UnifiedMesh] scene built: %u objects, %u draw-items, %u buckets, %u meshes",
+			m_xUnifiedGPUScene.m_xObjects.GetSize(), m_xUnifiedGPUScene.m_xDrawItems.GetSize(),
+			m_xUnifiedBucketRegistry.GetLiveBucketCount(), m_xUnifiedMeshGeometryRegistry.GetLiveCount());
+	}
+#endif
+}
+
 bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 {
 	bool b = m_bGraphRebuildRequested;
@@ -393,6 +529,32 @@ void Flux_RendererImpl::LateInitialise()
 	// Create and compile the render graph
 	m_pxRenderGraph = new Flux_RenderGraph();
 
+	// Give the mesh-geometry registry its REAL provider so the first reference to a unique
+	// mesh builds ONE shared VB/IB (N identical meshes -> 1 bucket -> 1 indirect draw). This
+	// is a FUNCTIONAL requirement of the unified path (not debug tooling): it MUST be set in
+	// every config — without it the registry stays in id-only mode (m_pvBuilt == null), so
+	// GetUnifiedMeshGeometry returns null and the unified path builds no geometry and draws
+	// nothing. (Previously this lived inside the ZENITH_DEBUG_VARIABLES block below next to
+	// the toggle, so non-debug-variable builds silently got an inert unified path.)
+	m_xUnifiedMeshGeometryRegistry.SetProvider(Flux_MakeRealMeshGeometryProvider());
+
+	// CLI opt-in for the unified GPU-driven mesh path (default OFF). The DebugVariable
+	// toggle below only exists in ZENITH_DEBUG_VARIABLES builds, so this flag is the
+	// config-agnostic way to exercise the path (e.g. windowed VK validation in non-tools
+	// builds, and the eventual default-on flip in Stage 3). Set BEFORE the AddBoolean so a
+	// debug-variable build captures the enabled state into its tree.
+#ifdef ZENITH_WINDOWS
+	for (int i = 1; i < __argc; i++)
+	{
+		if (std::strcmp(__argv[i], "--flux-unified-mesh") == 0)
+		{
+			m_bUnifiedGPUPathEnabled = true;
+			Zenith_Log(LOG_CATEGORY_RENDERER, "[UnifiedMesh] --flux-unified-mesh: unified GPU-driven opaque path ENABLED");
+			break;
+		}
+	}
+#endif
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Debug-variable tree-path convention: most renderer variables live under
 	// "Render/...", but a handful of subsystems (HDR and HiZ) established a
@@ -407,6 +569,13 @@ void Flux_RendererImpl::LateInitialise()
 	// at each SetupRenderGraph invocation and calls SetAliasingEnabled; a
 	// change triggers MarkDirty so the next Compile rebuilds the pool layout.
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
+
+	// Toggle for the unified GPU-driven mesh path. When enabled, SyncUnifiedBucketsFromSnapshot
+	// builds the GPU-scene records + bucket topology each frame and the Flux_UnifiedMesh feature
+	// draws the opaque statics (Flux_StaticMeshes' G-buffer draw steps aside). When off, the old
+	// StaticMeshes path renders.
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "UnifiedMesh", "Enabled" }, g_xEngine.FluxRenderer().m_bUnifiedGPUPathEnabled);
+
 
 	// Click-to-log button: prints the compiled render-graph pass order. Useful
 	// for newcomers asking "what runs when?" — the answer is the topological

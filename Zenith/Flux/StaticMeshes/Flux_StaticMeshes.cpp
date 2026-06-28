@@ -11,6 +11,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
+#include "Flux/Flux_RendererImpl.h"   // unified-path A/B gate (IsUnifiedGPUPathEnabled)
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
@@ -320,6 +321,11 @@ void Flux_StaticMeshesImpl::RenderModelInstanceMeshes(Flux_CommandBuffer* pxCmdL
 static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
+
+	// A/B with the unified GPU-driven path: when it's enabled, it draws the opaque
+	// statics into the G-buffer instead, so this CPU draw loop steps aside (avoids
+	// double-draw). The shadow path stays live here until Stage 2 moves it across.
+	if (g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled()) return;
 
 	// Non-capturing graph callback: recover the singleton instance ONCE via
 	// g_xEngine.StaticMeshes() (it cannot capture), then drive the pipeline, shader,

@@ -247,6 +247,17 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 		g_xEngine.Scenes().GetRenderMutationEpoch());
 #endif
 
+	// Stage 0 (inert): build the unified GPU-driven mesh scene (bucket topology + GPU-scene
+	// records) from the just-rebuilt snapshot, on the main thread before the render-task
+	// window opens — the same single-writer placement as the snapshot rebuild. Its
+	// RequestGraphRebuild (Stage 1+) would land before ConsumeGraphRebuildRequest at the
+	// top of ExecuteRenderGraph, giving a same-frame rebuild. Sampled by nothing until
+	// Stage 1; gated on the Render/UnifiedMesh/Enabled toggle.
+	{
+		Zenith_Profiling::ScopeZone xUnifiedSyncProfile(ZENITH_PROFILE_ZONE("UnifiedMesh::Sync"));
+		g_xEngine.FluxRenderer().SyncUnifiedBucketsFromSnapshot();
+	}
+
 	g_xEngine.Scenes().SetRenderTasksActive(true);
 	ExecuteRenderGraph();
 	g_xEngine.Scenes().SetRenderTasksActive(false);

@@ -460,10 +460,16 @@
     <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_GPUScene.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_MaterialTable.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp">
@@ -636,6 +642,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Translucency\Flux_Translucency.cpp">
       <Filter>Flux\Translucency</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMesh.cpp">
+      <Filter>Flux\UnifiedMesh</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp">
       <Filter>Flux\Vegetation</Filter>
@@ -2529,6 +2538,12 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_GPUScene.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_GPUScene.Tests.inl">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_GraphicsImpl.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -2551,6 +2566,12 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.Tests.inl">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.Tests.inl">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h">
@@ -2782,6 +2803,9 @@
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\SceneObjects.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang">
@@ -3042,6 +3066,15 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Translucency\Flux_Translucent_Forward.slang">
       <Filter>Flux\Shaders\Translucency</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Culling.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Reset.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang">
       <Filter>Flux\Shaders\Vegetation</Filter>
     </ClInclude>
@@ -3134,6 +3167,12 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_Translucency_Shaders.h">
       <Filter>Flux\Translucency</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMeshImpl.h">
+      <Filter>Flux\UnifiedMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMesh_Shaders.h">
+      <Filter>Flux\UnifiedMesh</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h">
       <Filter>Flux\Vegetation</Filter>
@@ -3600,6 +3639,9 @@
     <Filter Include="Flux\Shaders\Translucency">
       <UniqueIdentifier>{536d9211-1876-ee20-9bf9-074bf2207d4e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\UnifiedMesh">
+      <UniqueIdentifier>{d87969e2-d7ae-159d-50e8-f347039e3779}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\Vegetation">
       <UniqueIdentifier>{cc361528-2c01-902a-6706-5126a9573784}</UniqueIdentifier>
     </Filter>
@@ -3626,6 +3668,9 @@
     </Filter>
     <Filter Include="Flux\Translucency">
       <UniqueIdentifier>{5a262800-1ab1-7880-9ed0-0660cc086c45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\UnifiedMesh">
+      <UniqueIdentifier>{f7f9248e-9304-b282-23bc-8229bb0fb3be}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Vegetation">
       <UniqueIdentifier>{82a3d927-f8ba-16d0-f637-8145163bb70a}</UniqueIdentifier>

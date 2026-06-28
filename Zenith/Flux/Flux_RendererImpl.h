@@ -3,8 +3,11 @@
 #include "Core/ZenithConfig.h"
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Flux.h"            // Flux_RenderPassEntry, Flux_WorkDistribution, Flux_RenderGraph_AttachmentRef/Pass
+#include "Flux/Flux_GPUScene.h"             // Flux_GPUSceneBucketRegistry / Flux_GPUSceneBuildResult (Stage 0)
+#include "Flux/Flux_MeshGeometryRegistry.h" // Flux_MeshGeometryRegistry (Stage 0)
 
 class Flux_RenderGraph;
+class Flux_MeshInstance;   // Stage 1: shared geometry resolved from the mesh-geometry registry for the unified draw
 // Held by POINTER (forward-declared, heap-allocated in Zenith_Engine::AllocateRenderer /
 // freed in Shutdown + the dtor backstop) rather than by value: the snapshot header pulls
 // Flux_ModelInstance.h -> AssetHandle ->
@@ -133,6 +136,27 @@ public:
 	void RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, const Zenith_Maths::Matrix4& xCameraViewProj, bool bCameraValid);
 	const Flux_RenderSceneSnapshot& GetSceneSnapshot() const { return *m_pxSceneSnapshot; }
 
+	// ===== Unified GPU-driven mesh scene =====
+	// Built once per frame (when m_bUnifiedGPUPathEnabled) from the scene snapshot, on the
+	// main thread right after RebuildSceneSnapshot: the (mesh,cull,material,VAT) bucket
+	// topology + the GPU-scene object/draw-item record arrays. Consumed by the
+	// Flux_UnifiedMesh feature's cull/draw passes (Stage 1: camera G-buffer; Stage 2: the
+	// shadow cascades) via GatherUnifiedPacket, which uploads the records and dispatches the
+	// reset→cull→draw kernels. Gated by IsUnifiedGPUPathEnabled() — when off, this is a no-op
+	// and the old StaticMeshes path renders.
+	void SyncUnifiedBucketsFromSnapshot();
+	bool IsUnifiedGPUPathEnabled() const { return m_bUnifiedGPUPathEnabled; }
+	const Flux_GPUSceneBuildResult&    GetUnifiedGPUScene()       const { return m_xUnifiedGPUScene; }
+	const Flux_GPUSceneBucketRegistry& GetUnifiedBucketRegistry() const { return m_xUnifiedBucketRegistry; }
+
+	// Stage 1: resolve a bucket's shared mesh geometry (VB/IB built by the mesh-geometry
+	// registry's real provider) for the per-bucket indirect draw. nullptr in id-only mode
+	// (Stage 0) or on a build failure.
+	Flux_MeshInstance* GetUnifiedMeshGeometry(u_int uMeshGeometryId) const
+	{
+		return static_cast<Flux_MeshInstance*>(m_xUnifiedMeshGeometryRegistry.GetBuilt(uMeshGeometryId));
+	}
+
 	// ===== Data members =====
 
 	// Render graph. Allocated in LateInitialise, freed in Shutdown.
@@ -159,6 +183,17 @@ public:
 	// the forward-decl note above). Rebuilt once per frame via RebuildSceneSnapshot; injected
 	// (by pointer) into the geometry consumers at the composition root.
 	Flux_RenderSceneSnapshot*             m_pxSceneSnapshot = nullptr;
+
+	// Unified GPU-driven mesh scene. All by value (light, default-constructed with the impl).
+	// The mesh-geometry registry's real provider (built shared VB/IB) is wired in
+	// LateInitialise; the Flux_UnifiedMesh feature owns the per-bucket GPU buffers.
+	Flux_MeshGeometryRegistry             m_xUnifiedMeshGeometryRegistry;
+	Flux_GPUSceneBucketRegistry           m_xUnifiedBucketRegistry;
+	Flux_GPUSceneBuildResult              m_xUnifiedGPUScene;
+	// Drawing is OPT-IN (default OFF) — the proven StaticMeshes path renders by default; flip
+	// Render/UnifiedMesh/Enabled on (or pass --flux-unified-mesh) to exercise the GPU-driven
+	// unified path. Stage 3 flips this default ON.
+	bool                                  m_bUnifiedGPUPathEnabled = false;
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;

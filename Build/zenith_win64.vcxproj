@@ -1262,6 +1262,8 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_FeatureRegistry.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_GPUScene.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_GPUScene.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_GraphicsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_GraphResource.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
@@ -1270,6 +1272,8 @@
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialGPU.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialTable.Tests.inl" />
+    <ClInclude Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_PersistentSetLayouts.h" />
@@ -1347,6 +1351,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialSurface.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialTable.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\SceneObjects.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_Apply.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_NormalsCopy.slang" />
@@ -1433,6 +1438,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Translucency\Flux_Translucent_Forward.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Culling.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Reset.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.slang" />
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_ShadowsImpl.h" />
@@ -1464,6 +1472,8 @@
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_TranslucencyImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_Translucency_Shaders.h" />
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMeshImpl.h" />
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMesh_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderFeatures.h" />
@@ -2183,8 +2193,10 @@
     <ClCompile Include="..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_GPUScene.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_MaterialTable.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_PerFrame.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp" />
@@ -2242,6 +2254,7 @@
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="..\Zenith\Flux\Text\Flux_TextQueue.cpp" />
     <ClCompile Include="..\Zenith\Flux\Translucency\Flux_Translucency.cpp" />
+    <ClCompile Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMesh.cpp" />
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp" />
     <ClCompile Include="..\Zenith\Flux\Zenith_GameRenderFeatures.cpp" />
     <ClCompile Include="..\Zenith\Flux\Zenith_RenderBus.cpp" />
