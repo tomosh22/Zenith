@@ -110,7 +110,7 @@ namespace
 		u_int                 m_uTotalDrawItemCount;                      // per-view draw-item count
 		u_int                 m_uNumViews;                                // active views this frame
 		u_int                 m_uNumBuckets;                              // per-view indirect stride
-		u_int                 m_uPad0;                                    // 16
+		u_int                 m_uNumObjects;                              // object-array size (bounds-guards Objects[] in the cull)
 	};
 	static_assert(sizeof(UnifiedCullingConstants) == 512, "UnifiedCullingConstants must match CullingConstantsLayout (kUNIFIED_NUM_VIEWS*6 planes)");
 
@@ -362,7 +362,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	m_axBucketDraws.Clear();
 
 	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
-	if (!xRenderer.IsUnifiedGPUPathEnabled() || !m_bResourcesReady)
+	if (!m_bResourcesReady)
 	{
 		return;
 	}
@@ -505,6 +505,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	xCull.m_uTotalDrawItemCount = uNumDrawItems;
 	xCull.m_uNumViews           = uNumViews;
 	xCull.m_uNumBuckets         = uSlotCount;
+	xCull.m_uNumObjects         = uNumObjects;   // cull bounds-guards Objects[di.m_uObjectIndex]
 	xMem.UploadBufferData(m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle, &xCull, sizeof(xCull));
 
 	m_uTotalDrawItems  = uNumDrawItems;
@@ -519,7 +520,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_UnifiedMeshImpl& xSelf = g_xEngine.UnifiedMesh();
-	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled() || xSelf.m_uTotalDrawItems == 0u)
+	if (xSelf.m_uTotalDrawItems == 0u)
 	{
 		return;
 	}
@@ -542,7 +543,7 @@ static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void*)
 static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_UnifiedMeshImpl& xSelf = g_xEngine.UnifiedMesh();
-	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled() || xSelf.m_uTotalDrawItems == 0u)
+	if (xSelf.m_uTotalDrawItems == 0u)
 	{
 		return;
 	}
@@ -565,7 +566,7 @@ static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void*)
 static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_UnifiedMeshImpl& xSelf = g_xEngine.UnifiedMesh();
-	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled() || xSelf.m_axBucketDraws.GetSize() == 0u)
+	if (xSelf.m_axBucketDraws.GetSize() == 0u)
 	{
 		return;
 	}
@@ -621,7 +622,7 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 //=============================================================================
 void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
-	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled() || m_axBucketDraws.GetSize() == 0u)
+	if (m_axBucketDraws.GetSize() == 0u)
 	{
 		return;
 	}

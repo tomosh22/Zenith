@@ -1306,7 +1306,6 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h" />
-    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h" />
     <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreviewImpl.h" />
     <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview_Shaders.h" />
@@ -1352,6 +1351,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialTable.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\SceneObjects.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\VAT.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_Apply.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_NormalsCopy.slang" />
@@ -1373,7 +1373,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HDR.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HiZ.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\IBL.h" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\InstancedMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\MaterialPreview.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Particles.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Present.h" />
@@ -1384,7 +1383,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSAO.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSGI.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSR.h" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\StaticMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Terrain.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Text.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Translucency.h" />
@@ -1401,10 +1399,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IrradianceConvolution.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToGBuffer.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToShadowmap.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceReset.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Forward.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Tonemap.slang" />
@@ -1430,8 +1424,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseV.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainResetCounters.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.slang" />
@@ -1441,6 +1433,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Culling.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Reset.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.slang" />
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_ShadowsImpl.h" />
@@ -1460,8 +1453,6 @@
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSRImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR_Shaders.h" />
-    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h" />
-    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainGPUStructs.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainImpl.h" />
@@ -2248,7 +2239,6 @@
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
     <ClCompile Include="..\Zenith\Flux\SSGI\Flux_SSGI.cpp" />
     <ClCompile Include="..\Zenith\Flux\SSR\Flux_SSR.cpp" />
-    <ClCompile Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.cpp" />
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />

@@ -48,6 +48,7 @@ static_assert(sizeof(Flux_GPUSceneObject) == 80, "Flux_GPUSceneObject must be 80
 static_assert(offsetof(Flux_GPUSceneObject, m_uFlags) == 64, "Flux_GPUSceneObject::m_uFlags must sit at offset 64");
 static_assert(offsetof(Flux_GPUSceneObject, m_uBonePaletteRef) == 68, "Flux_GPUSceneObject::m_uBonePaletteRef must sit at offset 68");
 static_assert(offsetof(Flux_GPUSceneObject, m_uVATAnimPacked) == 72, "Flux_GPUSceneObject::m_uVATAnimPacked must sit at offset 72");
+static_assert(offsetof(Flux_GPUSceneObject, m_uVATAnimTime) == 76, "Flux_GPUSceneObject::m_uVATAnimTime must sit at offset 76 (last word of the 80B record)");
 
 struct Flux_GPUSceneDrawItem
 {
@@ -58,6 +59,9 @@ struct Flux_GPUSceneDrawItem
 	Zenith_Maths::Vector4 m_xLocalBoundsSphere; // offset 16 — submesh local-space bounding sphere (center.xyz, radius.w)
 };
 static_assert(sizeof(Flux_GPUSceneDrawItem) == 32, "Flux_GPUSceneDrawItem must be 32 bytes (mirrors GPUSceneDrawItem in Common/SceneObjects.slang)");
+static_assert(offsetof(Flux_GPUSceneDrawItem, m_uBucketIndex) == 4, "Flux_GPUSceneDrawItem::m_uBucketIndex must sit at offset 4");
+static_assert(offsetof(Flux_GPUSceneDrawItem, m_uColorTintPacked) == 8, "Flux_GPUSceneDrawItem::m_uColorTintPacked must sit at offset 8");
+static_assert(offsetof(Flux_GPUSceneDrawItem, m_uFlags) == 12, "Flux_GPUSceneDrawItem::m_uFlags must sit at offset 12");
 static_assert(offsetof(Flux_GPUSceneDrawItem, m_xLocalBoundsSphere) == 16, "Flux_GPUSceneDrawItem::m_xLocalBoundsSphere must sit at offset 16");
 
 // Packed RGBA8 "no tint" default for the per-instance colour tint.

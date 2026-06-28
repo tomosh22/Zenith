@@ -7,7 +7,6 @@
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type for the by-ptr snapshot (alloc/rebuild/free)
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"        // Stage 0e: per-submesh mesh-instance identity + local bounds
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #ifdef ZENITH_WINDOWS
@@ -221,11 +220,6 @@ void Flux_RendererImpl::RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, cons
 // real provider (wired in LateInitialise) builds one shared VB/IB per unique mesh identity.
 void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 {
-	if (!m_bUnifiedGPUPathEnabled)
-	{
-		return;
-	}
-
 	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
 	Zenith_MaterialAsset* pxBlankMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 
@@ -615,29 +609,6 @@ void Flux_RendererImpl::LateInitialise()
 	// the toggle, so non-debug-variable builds silently got an inert unified path.)
 	m_xUnifiedMeshGeometryRegistry.SetProvider(Flux_MakeRealMeshGeometryProvider());
 
-	// CLI override for the unified GPU-driven mesh path. Default is ON (Stage 3c); these flags
-	// force it on/off config-agnostically (the DebugVariable toggle below only exists in
-	// ZENITH_DEBUG_VARIABLES builds). --no-flux-unified-mesh is the legacy-path fallback +
-	// the A/B-verification off-switch. Set BEFORE the AddBoolean so a debug-variable build
-	// captures the resolved state into its tree.
-#ifdef ZENITH_WINDOWS
-	for (int i = 1; i < __argc; i++)
-	{
-		if (std::strcmp(__argv[i], "--no-flux-unified-mesh") == 0)
-		{
-			m_bUnifiedGPUPathEnabled = false;
-			Zenith_Log(LOG_CATEGORY_RENDERER, "[UnifiedMesh] --no-flux-unified-mesh: unified path DISABLED (legacy StaticMeshes/InstancedMeshes paths)");
-			break;
-		}
-		if (std::strcmp(__argv[i], "--flux-unified-mesh") == 0)
-		{
-			m_bUnifiedGPUPathEnabled = true;
-			Zenith_Log(LOG_CATEGORY_RENDERER, "[UnifiedMesh] --flux-unified-mesh: unified GPU-driven opaque path ENABLED");
-			break;
-		}
-	}
-#endif
-
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Debug-variable tree-path convention: most renderer variables live under
 	// "Render/...", but a handful of subsystems (HDR and HiZ) established a
@@ -652,13 +623,6 @@ void Flux_RendererImpl::LateInitialise()
 	// at each SetupRenderGraph invocation and calls SetAliasingEnabled; a
 	// change triggers MarkDirty so the next Compile rebuilds the pool layout.
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
-
-	// Toggle for the unified GPU-driven mesh path. When enabled, SyncUnifiedBucketsFromSnapshot
-	// builds the GPU-scene records + bucket topology each frame and the Flux_UnifiedMesh feature
-	// draws the opaque statics (Flux_StaticMeshes' G-buffer draw steps aside). When off, the old
-	// StaticMeshes path renders.
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "UnifiedMesh", "Enabled" }, g_xEngine.FluxRenderer().m_bUnifiedGPUPathEnabled);
-
 
 	// Click-to-log button: prints the compiled render-graph pass order. Useful
 	// for newcomers asking "what runs when?" — the answer is the topological

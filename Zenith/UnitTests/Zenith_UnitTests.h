@@ -265,10 +265,6 @@ public:
 	// owner stamps a valid camera; cleared each Rebuild) so a camera-invalid frame culls
 	// nothing instead of culling against an identity/stale frustum.
 	static void TestSnapshotCameraFrustumValidGate();
-	// Round-3 review fix: drive the camera-valid gate THROUGH the real consumer packet build
-	// (Flux_StaticMeshesImpl::Build{Camera,Shadow}Packet) — valid frustum culls the off-screen
-	// item from the camera packet but never the shadow packet; invalid frustum culls nothing.
-	static void TestStaticMeshesCameraCullGate();
 
 	// Prefab system tests
 	static void TestPrefabCreateFromEntity();

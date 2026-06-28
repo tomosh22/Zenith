@@ -562,6 +562,35 @@ ZENITH_TEST(GPUScene, UnifiedViewPartitionsDoNotOverlap)
 	}
 }
 
+ZENITH_TEST(GPUScene, UnifiedLastViewSurvivorFitsAllocation)
+{
+	// The visible-index buffer is allocated kuUNIFIED_NUM_VIEWS * totalDrawItems wide. The highest
+	// possible write is the LAST view's last survivor: base bucketOffset = totalDrawItems-1, slot 0.
+	// It must land at exactly the final word (capacity-1), proving no per-view stride overruns the
+	// allocation even when every draw-item survives every view. Pins the Initialise() buffer sizing.
+	const u_int uTotalDrawItems = 8u;
+	const u_int uNumViews  = 5u;                          // 1 camera + 4 CSM cascades (kuUNIFIED_NUM_VIEWS)
+	const u_int uCapacity  = uNumViews * uTotalDrawItems;
+	const u_int uMaxIndex  = Flux_UnifiedVisibleWriteIndex(uNumViews - 1u, uTotalDrawItems, uTotalDrawItems - 1u, 0u);
+	ZENITH_ASSERT_TRUE(uMaxIndex < uCapacity, "last view's max survivor stays within the visible-index allocation");
+	ZENITH_ASSERT_EQ(uMaxIndex, uCapacity - 1u, "last view's last survivor is exactly the final buffer word");
+}
+
+ZENITH_TEST(GPUScene, UnifiedLastIndirectCommandFitsAllocation)
+{
+	// The indirect buffer is kuUNIFIED_NUM_VIEWS * numBuckets * 5 words. The last command (last
+	// view, last bucket) must occupy the final 5-word slot exactly — no view/bucket stride can
+	// address past the allocation. Pins the Initialise() indirect-buffer sizing against the addressing.
+	const u_int uNumViews   = 5u;
+	const u_int uNumBuckets  = 7u;
+	const u_int uCapacityWords = uNumViews * uNumBuckets * uFLUX_GPUSCENE_INDIRECT_WORDS;
+	const u_int uLastCmdWord   = Flux_UnifiedIndirectCommandWord(uNumViews - 1u, uNumBuckets - 1u, uNumBuckets);
+	ZENITH_ASSERT_EQ(uLastCmdWord, uCapacityWords - uFLUX_GPUSCENE_INDIRECT_WORDS,
+		"last command sits at the final 5-word slot of the indirect allocation");
+	ZENITH_ASSERT_EQ(uLastCmdWord + uFLUX_GPUSCENE_INDIRECT_WORDS, uCapacityWords,
+		"the last command's five words fit exactly within the allocation");
+}
+
 // ---- cascade caster-extend retention (Stage 2 cull primitive vs an ortho box) --
 
 ZENITH_TEST(GPUScene, CascadeCasterExtendRetainsNearOccluders)

@@ -42,7 +42,7 @@ struct CullingConstantsLayout
     uint         totalDrawItemCount;  // per-view draw-item count (per-view stride)
     uint         numViews;            // active views this frame
     uint         numBuckets;          // bucket slot count (per-view indirect stride)
-    uint         pad0;
+    uint         numObjects;          // object-array size — bounds-guards the Objects[] read
 };
 
 struct PassParams
@@ -90,8 +90,18 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
     uint v   = tid / totalDrawItems;       // view (0 = camera, 1.. = cascades)
     uint gid = tid - v * totalDrawItems;   // draw-item index within the view's slice
 
-    GPUSceneDrawItem di  = g_xPassSet.DrawItems[gid];
-    GPUSceneObject   obj = g_xPassSet.Objects[di.m_uObjectIndex];
+    GPUSceneDrawItem di = g_xPassSet.DrawItems[gid];
+
+    // Defensive bounds on the DATA-DRIVEN indices before any UAV access. A correct host
+    // build keeps objectIndex < numObjects and bucketIndex < numBuckets by construction,
+    // but the Objects[] read and the indirect/visibleIndex writes below are UAVs — an
+    // out-of-range bucketIndex would be an OOB UAV WRITE (GPU memory corruption / TDR).
+    // This converts a stale buffer slot or a future gather bug into a safe skip.
+    uint numBuckets = g_xPassSet.CullingConstants.numBuckets;
+    if (di.m_uObjectIndex >= g_xPassSet.CullingConstants.numObjects) return;
+    if (di.m_uBucketIndex >= numBuckets) return;
+
+    GPUSceneObject obj = g_xPassSet.Objects[di.m_uObjectIndex];
 
     float4 sph = di.m_xLocalBoundsSphere;
     float3 worldCenter = mul(obj.m_xModelMatrix, float4(sph.xyz, 1.0)).xyz;
@@ -99,7 +109,6 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 
     if (!TestSphereFrustum(v, worldCenter, worldRadius)) return;
 
-    uint numBuckets = g_xPassSet.CullingConstants.numBuckets;
     uint b = di.m_uBucketIndex;
 
     // Atomically reserve this survivor's slot within (view v, bucket b).

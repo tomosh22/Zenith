@@ -15,7 +15,6 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"
@@ -48,11 +47,9 @@
 // the registry carries structural shader ownership (drives hot-reload + the
 // catalog parity check). Pure-data leaf headers; no layering impact.
 #include "Flux/IBL/Flux_IBL_Shaders.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshes_Shaders.h"
 #include "Flux/Terrain/Flux_Terrain_Shaders.h"
 #include "Flux/Primitives/Flux_Primitives_Shaders.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes_Shaders.h"
-#include "Flux/InstancedMeshes/Flux_InstancedMeshes_Shaders.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMesh_Shaders.h"
 #include "Flux/Skybox/Flux_Skybox_Shaders.h"
 #include "Flux/Decals/Flux_Decals_Shaders.h"
@@ -332,15 +329,16 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 
 	RegisterFeature<&Zenith_Engine::IBL>(xReg, "IBL", Flux_IBLShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
-	RegisterFeature<&Zenith_Engine::StaticMeshes>(xReg, "StaticMeshes", Flux_StaticMeshesShaders::apxALL);
-	// Unified GPU-driven opaque static-mesh path (Stage 1). G-buffer producer, declared
-	// alongside StaticMeshes (which it A/B-replaces when Render/UnifiedMesh/Enabled is on);
-	// must precede DeferredShading which consumes the G-buffer.
+	// Unified GPU-driven opaque-mesh path: the single G-buffer producer for opaque statics +
+	// instanced foliage (Stage 4 retired the per-object StaticMeshes/InstancedMeshes draw loops;
+	// it sits at the old StaticMeshes slot). Must precede DeferredShading which consumes the G-buffer.
 	RegisterFeature<&Zenith_Engine::UnifiedMesh>(xReg, "UnifiedMesh", Flux_UnifiedMeshShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::AnimatedMeshes>(xReg, "AnimatedMeshes", Flux_AnimatedMeshesShaders::apxALL);
-	RegisterFeature<&Zenith_Engine::InstancedMeshes>(xReg, "InstancedMeshes", Flux_InstancedMeshesShaders::apxALL);
+	// Stage 4: InstancedMeshes is now a shader-less registration front-end (the unified path
+	// draws instanced foliage). Registered with the no-shader overload so it owns no programs.
+	RegisterFeature<&Zenith_Engine::InstancedMeshes>(xReg, "InstancedMeshes");
 	// Skybox renders AFTER all opaque G-buffer writers (above) so its fullscreen
 	// atmosphere/cubemap draw depth-TESTS against scene depth and only shades pixels
 	// where sky is actually visible (depth still at the far-cleared 1.0), instead of

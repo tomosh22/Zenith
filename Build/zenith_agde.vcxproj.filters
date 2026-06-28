@@ -625,9 +625,6 @@
     <ClCompile Include="..\Zenith\Flux\SSR\Flux_SSR.cpp">
       <Filter>Flux\SSR</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp">
-      <Filter>Flux\StaticMeshes</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp">
       <Filter>Flux\Terrain</Filter>
     </ClCompile>
@@ -2670,9 +2667,6 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes_Shaders.h">
-      <Filter>Flux\InstancedMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
@@ -2808,6 +2802,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\SceneObjects.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\VAT.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
@@ -2871,9 +2868,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\IBL.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\InstancedMeshes.h">
-      <Filter>Flux\Shaders\Generated</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\MaterialPreview.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
@@ -2902,9 +2896,6 @@
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSR.h">
-      <Filter>Flux\Shaders\Generated</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\StaticMeshes.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Terrain.h">
@@ -2954,18 +2945,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.slang">
       <Filter>Flux\Shaders\IBL</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.slang">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToGBuffer.slang">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToShadowmap.slang">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceReset.slang">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang">
       <Filter>Flux\Shaders\MaterialPreview</Filter>
@@ -3042,12 +3021,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang">
-      <Filter>Flux\Shaders\StaticMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToShadowmap.slang">
-      <Filter>Flux\Shaders\StaticMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
@@ -3073,6 +3046,9 @@
       <Filter>Flux\Shaders\UnifiedMesh</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToShadowmap.slang">
       <Filter>Flux\Shaders\UnifiedMesh</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang">
@@ -3131,12 +3107,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR_Shaders.h">
       <Filter>Flux\SSR</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h">
-      <Filter>Flux\StaticMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes_Shaders.h">
-      <Filter>Flux\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
       <Filter>Flux\Terrain</Filter>
@@ -3597,9 +3567,6 @@
     <Filter Include="Flux\Shaders\IBL">
       <UniqueIdentifier>{6d583209-5b9d-2c7d-8404-8b073c591308}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Flux\Shaders\InstancedMeshes">
-      <UniqueIdentifier>{b314e0cc-c57a-cfb4-9281-f0bd3ebfb433}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Flux\Shaders\MaterialPreview">
       <UniqueIdentifier>{aa152075-de9f-03b0-2f3c-77c6db29088c}</UniqueIdentifier>
     </Filter>
@@ -3627,9 +3594,6 @@
     <Filter Include="Flux\Shaders\Skybox">
       <UniqueIdentifier>{ed42d642-cecc-72a0-ed7f-7226dba9a2a4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Flux\Shaders\StaticMeshes">
-      <UniqueIdentifier>{4a04d367-57e9-320f-54b6-cdc21aeccc34}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Flux\Shaders\Terrain">
       <UniqueIdentifier>{20e59a91-5417-9c53-d557-a0dccb872bd0}</UniqueIdentifier>
     </Filter>
@@ -3656,9 +3620,6 @@
     </Filter>
     <Filter Include="Flux\Slang">
       <UniqueIdentifier>{bcaf7916-8dc3-e560-877d-372dcef62076}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Flux\StaticMeshes">
-      <UniqueIdentifier>{9b29d795-b53f-6d77-2c78-e46261ae5b81}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Terrain">
       <UniqueIdentifier>{e8234a3b-8c6b-26b9-aa00-d5423f3ce33b}</UniqueIdentifier>

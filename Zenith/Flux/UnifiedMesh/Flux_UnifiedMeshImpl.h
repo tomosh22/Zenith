@@ -32,10 +32,10 @@ class Flux_AnimationTexture;
 // per-bucket offset/index-count metadata are host-uploaded each frame into frame-
 // indexed dynamic buffers (not graph-tracked, like InstancedMeshes' transform buffer).
 //
-// Gated on Flux_RendererImpl::IsUnifiedGPUPathEnabled(): when on, this draws the
-// opaque statics and Flux_StaticMeshes' G-buffer draw skips (A/B); when off, this is
-// a no-op and the old StaticMeshes path renders. Shadows stay on the old path until
-// Stage 2.
+// This is THE opaque static + instanced-foliage mesh pipeline (Stage 4 retired the legacy
+// per-object StaticMeshes/InstancedMeshes G-buffer + shadow draw loops): it draws every
+// opaque bucket to the camera G-buffer and casts every shadow cascade. The passes self-guard
+// on the per-frame data (no draw-items / no buckets -> early-out) rather than any toggle.
 // =====================================================================
 
 // One live bucket's CPU-side draw record, frozen by the main-thread gather and read

@@ -29,7 +29,6 @@ class Flux_RendererImpl;
 class Flux_SDFsImpl;
 class Flux_SSAOImpl;
 class Flux_ShadowsImpl;
-class Flux_StaticMeshesImpl;
 class Flux_TerrainStreamingManagerImpl;
 class Flux_VolumeFogImpl;
 class Flux_GizmosImpl;
@@ -127,7 +126,6 @@ public:
 	Flux_MemoryManager& FluxMemory();
 	Flux_Swapchain& FluxSwapchain();
 	Flux_HiZImpl& HiZ();
-	Flux_StaticMeshesImpl& StaticMeshes();
 	Flux_AnimatedMeshesImpl& AnimatedMeshes();
 	// Heap-stable owning store of one Flux_AnimationController per entity
 	// (Wave-19 ownership relocation). Zenith_AnimatorComponent is a thin
@@ -235,7 +233,6 @@ private:
 	Flux_MemoryManager*             m_pxVulkanMemory    = nullptr;
 	Flux_Swapchain*                 m_pxVulkanSwapchain = nullptr;
 	Flux_HiZImpl*                       m_pxHiZ              = nullptr;
-	Flux_StaticMeshesImpl*              m_pxStaticMeshes     = nullptr;
 	Flux_AnimatedMeshesImpl*            m_pxAnimatedMeshes   = nullptr;
 	Flux_AnimationControllerStore*      m_pxAnimationControllers = nullptr;
 	Flux_DeferredShadingImpl*           m_pxDeferredShading  = nullptr;

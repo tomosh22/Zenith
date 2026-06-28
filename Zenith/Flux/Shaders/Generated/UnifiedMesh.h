@@ -11,10 +11,10 @@
 #include "glm/glm.hpp"
 #include <cstddef>
 
-namespace Flux_Generated_InstancedMeshes
+namespace Flux_Generated_UnifiedMesh
 {
-	// ----- InstancedMesh_ToGBuffer (InstancedMeshes/Flux_InstancedMesh_ToGBuffer) -----
-	namespace InstancedMesh_ToGBuffer
+	// ----- UnifiedMesh_ToGBuffer (UnifiedMesh/Flux_UnifiedMesh_ToGBuffer) -----
+	namespace UnifiedMesh_ToGBuffer
 	{
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -69,34 +69,33 @@ namespace Flux_Generated_InstancedMeshes
 		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hObjects{ 3u, 0u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hDrawItems{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
 		{
-			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-			unsigned int m_ug_uMaterialIndex; // slang=uint offset=64
-			unsigned int m_ug_uShadowCascade; // slang=uint offset=68
-			unsigned int m_ug_uPad1; // slang=uint offset=72
-			unsigned int m_ug_uPad2; // slang=uint offset=76
-			unsigned char m_ag_xVATParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
+			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
+			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
+			unsigned int m_ug_uShadowCascade; // slang=uint offset=8
+			unsigned int m_ug_uPad0; // slang=uint offset=12
+			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(DrawConstants_CB) == 96, "DrawConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 64, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
+		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 8, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 12, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 4u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
-	// ----- InstancedMesh_ToShadowmap (InstancedMeshes/Flux_InstancedMesh_ToShadowmap) -----
-	namespace InstancedMesh_ToShadowmap
+	// ----- UnifiedMesh_ToShadowmap (UnifiedMesh/Flux_UnifiedMesh_ToShadowmap) -----
+	namespace UnifiedMesh_ToShadowmap
 	{
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -151,34 +150,33 @@ namespace Flux_Generated_InstancedMeshes
 		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hObjects{ 3u, 0u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hDrawItems{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB
 		{
-			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
-			unsigned int m_ug_uMaterialIndex; // slang=uint offset=64
-			unsigned int m_ug_uShadowCascade; // slang=uint offset=68
-			unsigned int m_ug_uPad1; // slang=uint offset=72
-			unsigned int m_ug_uPad2; // slang=uint offset=76
-			unsigned char m_ag_xVATParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
+			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
+			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
+			unsigned int m_ug_uShadowCascade; // slang=uint offset=8
+			unsigned int m_ug_uPad0; // slang=uint offset=12
+			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(DrawConstants_CB) == 96, "DrawConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 64, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
+		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 8, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 12, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
-		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 4u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
-	// ----- InstanceCulling (InstancedMeshes/Flux_InstanceCulling) -----
-	namespace InstanceCulling
+	// ----- UnifiedMesh_Culling (UnifiedMesh/Flux_UnifiedMesh_Culling) -----
+	namespace UnifiedMesh_Culling
 	{
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -237,32 +235,32 @@ namespace Flux_Generated_InstancedMeshes
 		inline constexpr Flux_BindingHandle hCullingConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct CullingConstants_CB
 		{
-			unsigned char m_afrustumPlanes[96]; // slang=Array offset=0 arrayCount=6 (no C++ mapping)
-			unsigned char m_acameraPosition[16]; // slang=vector offset=96 arrayCount=4 (no C++ mapping)
-			unsigned int m_utotalInstanceCount; // slang=uint offset=112
-			unsigned int m_umeshIndexCount; // slang=uint offset=116
-			float m_fboundingSphereRadius; // slang=float offset=120
-			float m_fpadding; // slang=float offset=124
+			unsigned char m_afrustumPlanes[480]; // slang=Array offset=0 arrayCount=30 (no C++ mapping)
+			unsigned char m_acameraPosition[16]; // slang=vector offset=480 arrayCount=4 (no C++ mapping)
+			unsigned int m_utotalDrawItemCount; // slang=uint offset=496
+			unsigned int m_unumViews; // slang=uint offset=500
+			unsigned int m_unumBuckets; // slang=uint offset=504
+			unsigned int m_unumObjects; // slang=uint offset=508
 		};
-		static_assert(sizeof(CullingConstants_CB) == 128, "CullingConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_utotalInstanceCount) == 112, "CullingConstants.totalInstanceCount offset drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_umeshIndexCount) == 116, "CullingConstants.meshIndexCount offset drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_fboundingSphereRadius) == 120, "CullingConstants.boundingSphereRadius offset drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_fpadding) == 124, "CullingConstants.padding offset drifted from Slang reflection");
+		static_assert(sizeof(CullingConstants_CB) == 512, "CullingConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_utotalDrawItemCount) == 496, "CullingConstants.totalDrawItemCount offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_unumViews) == 500, "CullingConstants.numViews offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_unumBuckets) == 504, "CullingConstants.numBuckets offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_unumObjects) == 508, "CullingConstants.numObjects offset drifted from Slang reflection");
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hTransformBuffer{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hObjects{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hAnimDataBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hDrawItems{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hbucketOffset{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hvisibleIndex{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hindirectInstanceCount{ 3u, 5u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hindirect{ 3u, 5u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 	}
 
-	// ----- InstanceReset (InstancedMeshes/Flux_InstanceReset) -----
-	namespace InstanceReset
+	// ----- UnifiedMesh_Reset (UnifiedMesh/Flux_UnifiedMesh_Reset) -----
+	namespace UnifiedMesh_Reset
 	{
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -318,23 +316,23 @@ namespace Flux_Generated_InstancedMeshes
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct DrawConstants_CB
+		inline constexpr Flux_BindingHandle hResetConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct ResetConstants_CB
 		{
-			unsigned int m_uindexCount; // slang=uint offset=0
-			unsigned int m_upad0; // slang=uint offset=4
-			unsigned int m_upad1; // slang=uint offset=8
-			unsigned int m_upad2; // slang=uint offset=12
+			unsigned int m_unumBuckets; // slang=uint offset=0
+			unsigned int m_unumViews; // slang=uint offset=4
+			unsigned int m_upad0; // slang=uint offset=8
+			unsigned int m_upad1; // slang=uint offset=12
 		};
-		static_assert(sizeof(DrawConstants_CB) == 16, "DrawConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_uindexCount) == 0, "DrawConstants.indexCount offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_upad0) == 4, "DrawConstants.pad0 offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_upad1) == 8, "DrawConstants.pad1 offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_upad2) == 12, "DrawConstants.pad2 offset drifted from Slang reflection");
+		static_assert(sizeof(ResetConstants_CB) == 16, "ResetConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(ResetConstants_CB, m_unumBuckets) == 0, "ResetConstants.numBuckets offset drifted from Slang reflection");
+		static_assert(offsetof(ResetConstants_CB, m_unumViews) == 4, "ResetConstants.numViews offset drifted from Slang reflection");
+		static_assert(offsetof(ResetConstants_CB, m_upad0) == 8, "ResetConstants.pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(ResetConstants_CB, m_upad1) == 12, "ResetConstants.pad1 offset drifted from Slang reflection");
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hbucketIndexCount{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle hindirectInstanceCount{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hindirect{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 	}
 
 }

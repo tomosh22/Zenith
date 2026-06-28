@@ -12,11 +12,8 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
-#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"   // Stage 2: unified GPU-driven shadow casters
-#include "Flux/Flux_RendererImpl.h"                  // IsUnifiedGPUPathEnabled (static-shadow A/B gate)
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
 // destroyed by the render graph, sized from the descriptor in SetupRenderGraph.
@@ -187,35 +184,18 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// All casters read the cascade matrix from the persistent VIEW set's all-cascade
 	// g_xShadowMatrices SSBO (Phase 5.4), selecting element `u` via the per-draw cascade index.
 
-	// Static opaque casters: the unified GPU-driven path draws them when enabled (A/B with the
-	// CPU StaticMeshes loop, mirroring the G-buffer A/B gate); otherwise the old path renders.
-	if (!g_xEngine.FluxRenderer().IsUnifiedGPUPathEnabled())
-	{
-		auto& xStaticMeshes = g_xEngine.StaticMeshes();
-		pxCommandList->SetPipeline(&xStaticMeshes.GetShadowPipeline());
-
-		// RenderToShadowMap handles all bindings via shader reflection
-		xStaticMeshes.RenderToShadowMap(*pxCommandList, u);
-	}
-
+	// Skeletal-animated casters keep their own per-bone shadow path (Stage 5 territory).
 	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
 	pxCommandList->SetPipeline(&xAnimatedMeshes.GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
 	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, u);
 
-	// Instanced meshes (incl. terrain trees) cast shadows over ALL enabled casters
-	// (no camera culling — off-screen casters must still cast). The buffers it
-	// reads are frame-indexed (enabled-index + transform), so no per-cascade graph
-	// ReadBuffer declaration is needed; the cascade pass already declares the depth
-	// target write. RenderToShadowMap binds its own pipeline (only when casters
-	// exist) and early-returns when instanced meshes are disabled / no groups.
-	g_xEngine.InstancedMeshes().RenderToShadowMap(*pxCommandList, u);
-
-	// Unified GPU-driven opaque static casters (Stage 2). Binds its own depth-only pipeline +
-	// draws cascade view (u+1) of the shared cull-output buffers (per-cascade frustum-culled).
-	// No-op when the unified path is off. The cascade pass declares the cull-output ReadBuffer
-	// (see SetupRenderGraph) so the reset->cull->cascade barrier is synthesised.
+	// Unified GPU-driven opaque casters (Stage 4): the single path for opaque statics AND instanced
+	// foliage (the old StaticMeshes/InstancedMeshes shadow loops were retired here). Binds its own
+	// depth-only pipeline + draws cascade view (u+1) of the shared cull-output buffers (per-cascade
+	// frustum-culled). The cascade pass declares the cull-output ReadBuffer (see SetupRenderGraph)
+	// so the reset->cull->cascade barrier is synthesised.
 	g_xEngine.UnifiedMesh().RenderToShadowMap(*pxCommandList, u);
 
 	// #TODO: Enable terrain shadow casting
@@ -281,10 +261,10 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMArraySRV()
 
 void Flux_ShadowsImpl::EnsureGeometryShadowPackets()
 {
-	// Ensure the UNCULLLED geometry shadow packets (cascade-0 Prepare). Generation-guarded
-	// inside the consumers, so this is a no-op when the mesh G-buffer Prepares already built
-	// them this frame; it's the backstop when the G-buffer passes are force-disabled.
-	if (m_pxStaticMeshes)   m_pxStaticMeshes->EnsureShadowPacket();
+	// Ensure the UNCULLLED animated geometry shadow packet (cascade-0 Prepare). Generation-guarded
+	// inside the consumer, so this is a no-op when the animated G-buffer Prepare already built it
+	// this frame; it's the backstop when that G-buffer pass is force-disabled. (Opaque statics +
+	// instanced foliage now cast via the GPU-driven unified path, which needs no CPU packet.)
 	if (m_pxAnimatedMeshes) m_pxAnimatedMeshes->EnsureAnimatedPacket();
 }
 

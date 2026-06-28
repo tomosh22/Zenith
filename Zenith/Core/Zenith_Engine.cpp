@@ -34,7 +34,6 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/MeshAnimation/Flux_AnimationControllerStore.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
@@ -191,7 +190,6 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_MemoryManager,    FluxMemory,    m_pxVulkanM
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_Swapchain,        FluxSwapchain, m_pxVulkanSwapchain)
 
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_HiZImpl,                      HiZ,                  m_pxHiZ)
-ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_StaticMeshesImpl,            StaticMeshes,         m_pxStaticMeshes)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_AnimatedMeshesImpl,          AnimatedMeshes,       m_pxAnimatedMeshes)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_AnimationControllerStore,    AnimationControllers, m_pxAnimationControllers)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_DeferredShadingImpl,         DeferredShading,      m_pxDeferredShading)
@@ -327,8 +325,7 @@ void Zenith_Engine::AllocateFluxSubsystems()
 
 	// 5 small Flux subsystems -- mesh pipelines, deferred
 	// shading, SDFs, quads.
-	Zenith_Assert(m_pxStaticMeshes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxStaticMeshes    = new Flux_StaticMeshesImpl();
+	Zenith_Assert(m_pxAnimatedMeshes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxAnimatedMeshes  = new Flux_AnimatedMeshesImpl();
 	// Wave-19: heap-stable owning store of per-entity Flux_AnimationControllers.
 	// Allocated alongside the mesh subsystems; freed in Shutdown BEFORE the
@@ -607,13 +604,13 @@ void Zenith_Engine::InitialiseECS()
 	// Injection (vs the consumers reaching
 	// g_xEngine.FluxRenderer()) keeps those Flux TUs off the singleton ratchet.
 	const Flux_RenderSceneSnapshot* pxSceneSnapshot = &g_xEngine.FluxRenderer().GetSceneSnapshot();
-	g_xEngine.StaticMeshes().SetSnapshot(pxSceneSnapshot);
 	g_xEngine.AnimatedMeshes().SetSnapshot(pxSceneSnapshot);
 	g_xEngine.Translucency().SetSnapshot(pxSceneSnapshot);
 
-	// Phase 3: inject the geometry consumers into Shadows so the shadow cascade-0 Prepare can
-	// ensure their uncullled shadow packets (correct shadows even with the G-buffer disabled).
-	g_xEngine.Shadows().SetGeometryConsumers(&g_xEngine.StaticMeshes(), &g_xEngine.AnimatedMeshes());
+	// Phase 3: inject the animated geometry consumer into Shadows so the shadow cascade-0 Prepare
+	// can ensure its uncullled shadow packet (correct animated shadows even with its G-buffer
+	// disabled). Opaque statics + instanced foliage now cast via the GPU-driven unified path.
+	g_xEngine.Shadows().SetGeometryConsumers(&g_xEngine.AnimatedMeshes());
 
 #ifdef ZENITH_TOOLS
 	// Phase 3: install the scene-graph debug overlays (world-AABB wireframes + cull stats),
@@ -899,7 +896,6 @@ void Zenith_Engine::DeleteRendererState()
 	// Vulkan device to destroy any remaining native handles.
 	delete m_pxHiZ;
 	m_pxHiZ = nullptr;
-	delete m_pxStaticMeshes;    m_pxStaticMeshes = nullptr;
 	delete m_pxAnimatedMeshes;  m_pxAnimatedMeshes = nullptr;
 	// Wave-19: free the animation-controller store here (before the Vulkan
 	// device teardown below). By this point scene teardown has destroyed all

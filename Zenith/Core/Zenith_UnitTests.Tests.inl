@@ -13,7 +13,6 @@
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"  // Phase 2 snapshot tests
-#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"    // Phase 3 consumer cull-packet test
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -10815,20 +10814,6 @@ namespace
 		}
 	}
 
-	// Two-item fill for the consumer-level cull test (TestStaticMeshesCameraCullGate). Item 0
-	// sits INSIDE the ortho test frustum (x,y in [-10,10], z in [1,100]); item 1 is far OUTSIDE
-	// the +X plane. Both are non-animated (so the static consumer processes them) and carry valid
-	// world AABBs so the cull predicate is exercised (not the invalid-AABB never-cull bypass).
-	void Zenith_SnapshotCullStubFill(Zenith_Vector<Flux_RenderSceneItem>& xOutItems)
-	{
-		Flux_RenderSceneItem xInside;
-		xInside.m_xWorldAABB = Zenith_AABB(Zenith_Maths::Vector3(-1.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(1.0f, 1.0f, 51.0f));
-		xOutItems.PushBack(xInside);
-
-		Flux_RenderSceneItem xOutside;
-		xOutside.m_xWorldAABB = Zenith_AABB(Zenith_Maths::Vector3(49.0f, -1.0f, 49.0f), Zenith_Maths::Vector3(51.0f, 1.0f, 51.0f));
-		xOutItems.PushBack(xOutside);
-	}
 }
 
 ZENITH_TEST(Core, RenderMutationEpochIncrements) { Zenith_UnitTests::TestRenderMutationEpochIncrements(); }
@@ -10970,36 +10955,6 @@ void Zenith_UnitTests::TestSnapshotCameraFrustumValidGate(){
 	xSnapshot.SetCameraFrustum(Zenith_Maths::OrthographicProjection(-1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 10.0f));
 	xSnapshot.Reset();
 	ZENITH_ASSERT_FALSE(xSnapshot.IsCameraFrustumValid(), "FrustumGate: Reset clears the valid flag");
-}
-
-ZENITH_TEST(Core, StaticMeshesCameraCullGate) { Zenith_UnitTests::TestStaticMeshesCameraCullGate(); }
-void Zenith_UnitTests::TestStaticMeshesCameraCullGate(){
-	// Round-3 review fix: the prior tests only checked the snapshot's IsCameraFrustumValid
-	// boolean (and the AABB-frustum math) in ISOLATION — nothing drove the actual consumer
-	// packet build, so dropping/inverting the `bCull &&` guard (the regression R2 exists to
-	// prevent: cull-everything on a camera-invalid frame) would have passed silently. This
-	// drives the EXACT decision the G-buffer + shadow consumers use via the pure, GPU-free
-	// Flux_StaticMeshesImpl::Build{Camera,Shadow}Packet helpers against a hand-built snapshot.
-	Flux_RenderSceneSnapshot xSnapshot;
-	xSnapshot.Rebuild(&Zenith_SnapshotCullStubFill, 7);   // 2 items: [0] inside frustum, [1] far outside
-
-	// (a) Camera frustum VALID -> the camera packet culls the off-screen item (keeps 1); the
-	//     shadow packet is UNCULLLED (keeps both — an off-screen caster still casts).
-	xSnapshot.SetCameraFrustum(Zenith_Maths::OrthographicProjection(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.0f));
-	Zenith_Vector<Flux_StaticMeshDrawItem> xCamera;
-	Zenith_Vector<Flux_StaticMeshDrawItem> xShadow;
-	Flux_StaticMeshesImpl::BuildCameraPacket(xSnapshot, xCamera);
-	Flux_StaticMeshesImpl::BuildShadowPacket(xSnapshot, xShadow);
-	ZENITH_ASSERT_EQ(xCamera.GetSize(), (uint32_t)1, "StaticMeshes cull: a valid frustum drops the off-screen item from the camera packet");
-	ZENITH_ASSERT_EQ(xShadow.GetSize(), (uint32_t)2, "StaticMeshes cull: the shadow packet stays uncullled (off-screen casters cast)");
-
-	// (b) Camera frustum INVALID (no SetCameraFrustum since the last Rebuild) -> culling is
-	//     SKIPPED entirely, so the camera packet keeps BOTH. This is the camera-invalid-frame
-	//     case (e.g. boot before the camera entity resolves) that must NOT cull the whole scene.
-	xSnapshot.Rebuild(&Zenith_SnapshotCullStubFill, 8);   // Rebuild clears the valid flag
-	ZENITH_ASSERT_FALSE(xSnapshot.IsCameraFrustumValid(), "StaticMeshes cull: precondition — frustum invalid after Rebuild");
-	Flux_StaticMeshesImpl::BuildCameraPacket(xSnapshot, xCamera);
-	ZENITH_ASSERT_EQ(xCamera.GetSize(), (uint32_t)2, "StaticMeshes cull: a camera-invalid frame culls NOTHING (both items kept)");
 }
 
 ZENITH_TEST(Core, WorldAABBTransform) { Zenith_UnitTests::TestWorldAABBTransform(); }

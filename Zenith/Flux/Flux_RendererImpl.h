@@ -137,15 +137,13 @@ public:
 	const Flux_RenderSceneSnapshot& GetSceneSnapshot() const { return *m_pxSceneSnapshot; }
 
 	// ===== Unified GPU-driven mesh scene =====
-	// Built once per frame (when m_bUnifiedGPUPathEnabled) from the scene snapshot, on the
-	// main thread right after RebuildSceneSnapshot: the (mesh,cull,material,VAT) bucket
-	// topology + the GPU-scene object/draw-item record arrays. Consumed by the
-	// Flux_UnifiedMesh feature's cull/draw passes (Stage 1: camera G-buffer; Stage 2: the
-	// shadow cascades) via GatherUnifiedPacket, which uploads the records and dispatches the
-	// reset→cull→draw kernels. Gated by IsUnifiedGPUPathEnabled() — when off, this is a no-op
-	// and the old StaticMeshes path renders.
+	// Built once per frame from the scene snapshot, on the main thread right after
+	// RebuildSceneSnapshot: the (mesh,cull,material,VAT) bucket topology + the GPU-scene
+	// object/draw-item record arrays. Consumed by the Flux_UnifiedMesh feature's cull/draw
+	// passes (camera G-buffer + the shadow cascades) via GatherUnifiedPacket, which uploads the
+	// records and dispatches the reset→cull→draw kernels. This is THE opaque static + instanced
+	// mesh pipeline (Stage 4 retired the legacy per-object StaticMeshes/InstancedMeshes paths).
 	void SyncUnifiedBucketsFromSnapshot();
-	bool IsUnifiedGPUPathEnabled() const { return m_bUnifiedGPUPathEnabled; }
 	const Flux_GPUSceneBuildResult&    GetUnifiedGPUScene()       const { return m_xUnifiedGPUScene; }
 	const Flux_GPUSceneBucketRegistry& GetUnifiedBucketRegistry() const { return m_xUnifiedBucketRegistry; }
 
@@ -190,11 +188,6 @@ public:
 	Flux_MeshGeometryRegistry             m_xUnifiedMeshGeometryRegistry;
 	Flux_GPUSceneBucketRegistry           m_xUnifiedBucketRegistry;
 	Flux_GPUSceneBuildResult              m_xUnifiedGPUScene;
-	// Stage 3c: the unified GPU-driven path is the DEFAULT renderer for opaque statics +
-	// instanced foliage (the old StaticMeshes/InstancedMeshes G-buffer + shadow draws A/B-step
-	// aside when this is on). Force it off with --no-flux-unified-mesh or the
-	// Render/UnifiedMesh/Enabled debug toggle to fall back to the legacy per-object paths.
-	bool                                  m_bUnifiedGPUPathEnabled = true;
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;

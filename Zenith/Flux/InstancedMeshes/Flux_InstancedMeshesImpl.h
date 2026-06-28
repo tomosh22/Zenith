@@ -5,12 +5,14 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Collections/Zenith_Vector.h"
 
-class Flux_DynamicConstantBuffer;
 class Flux_InstanceGroup;
-class Flux_MeshInstance;
-class Flux_ShaderBinder;
 
-// Phase 9: state + behaviour for InstancedMeshes subsystem.
+// Stage 4: the InstancedMeshes subsystem is now a thin registration FRONT-END.
+// The legacy GPU cull -> indirect G-buffer + per-cascade shadow draw machinery
+// (compute/graphics pipelines, shaders, per-group cull-output buffers) was retired;
+// instanced foliage renders through the unified GPU-driven path (Flux_UnifiedMesh),
+// whose SyncUnifiedBucketsFromSnapshot reads each registered group's CPU transform/
+// anim SoA. This class owns only the live instance-group registry the sync consumes.
 class Flux_InstancedMeshesImpl
 {
 public:
@@ -20,64 +22,21 @@ public:
 	Flux_InstancedMeshesImpl(const Flux_InstancedMeshesImpl&) = delete;
 	Flux_InstancedMeshesImpl& operator=(const Flux_InstancedMeshesImpl&) = delete;
 
+	// FluxRenderFeature lifecycle. Initialise/BuildPipelines/Shutdown/SetupRenderGraph
+	// are no-ops now (the unified path owns all instanced GPU work); the methods stay so
+	// the type still satisfies the FluxRenderFeature concept used by RegisterFeature.
 	void Initialise();
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// The live instance-group registry the unified GPU-scene sync walks each frame.
 	void RegisterInstanceGroup(Flux_InstanceGroup* pxGroup);
 	void UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup);
 	void ClearAllGroups();
 
-	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade);
-
-	void SetupRenderGraph(Flux_RenderGraph& xGraph);
-
-	// WS7 keystone main-thread gather (mirrors Flux_StaticMeshesImpl::GatherDrawPacket).
-	// Hung via .Prepare on the first instanced pass; CallPrepareCallbacks runs it on
-	// the main thread BEFORE any record task dispatches. Walks m_apxInstanceGroups
-	// once: per group it does the CPU dirty-bookkeeping + GPU-buffer sync that the
-	// record callbacks used to do concurrently (UpdateGPUBuffers),
-	// uploads the per-group culling constants, and pre-computes the m_uTotalInstances
-	// / m_uVisibleInstances stats. After this returns, every group's state is frozen
-	// and ExecuteCulling / ExecuteInstancedGBuffer are pure readers.
-	void GatherInstancedPacket(void*);
-
-	// Promoted from a file-static helper so the ExecuteInstancedGBuffer trampoline
-	// can route material/instance-buffer binding through this subsystem's members
-	// (m_xGBufferShader) and g_xEngine's graphics state. bUseGPUCulling selects the
-	// VisibleIndexBuffer source (persistent camera-culled vs frame-indexed enabled).
-	void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup, bool bUseGPUCulling);
-
-	uint32_t GetTotalInstanceCount() const   { return m_uTotalInstances; }
-	uint32_t GetVisibleInstanceCount() const { return m_uVisibleInstances; }
-	uint32_t GetGroupCount() const           { return static_cast<uint32_t>(m_apxInstanceGroups.GetSize()); }
+	uint32_t GetGroupCount() const { return static_cast<uint32_t>(m_apxInstanceGroups.GetSize()); }
 
 	Zenith_Vector<Flux_InstanceGroup*> m_apxInstanceGroups;
-
-	Flux_Shader                m_xGBufferShader;
-	Flux_Pipeline              m_xGBufferPipeline;          // one-sided (CULL_MODE_BACK)
-	Flux_Pipeline              m_xGBufferPipelineTwoSided;  // two-sided (CULL_MODE_NONE) for m_bTwoSided materials
-	Flux_Shader                m_xShadowShader;
-	Flux_Pipeline              m_xShadowPipeline;
-
-	Flux_Shader                m_xCullingShader;
-	Flux_Pipeline              m_xCullingPipeline;
-	Flux_RootSig               m_xCullingRootSig;
-
-	// GPU reset compute (zeroes the persistent visible-count + indirect
-	// instanceCount each frame, before culling). Replaces the old out-of-band
-	// host upload of those persistent buffers, which raced the prior frame's
-	// indirect draw read of them (WRITE_AFTER_READ). Built alongside the
-	// culling pipeline in BuildPipelines; dispatched by ExecuteCullReset.
-	Flux_Shader                m_xResetShader;
-	Flux_Pipeline              m_xResetPipeline;
-	Flux_RootSig               m_xResetRootSig;
-
-	Flux_DynamicConstantBuffer m_xCullingConstantsBuffer;
-	bool                       m_bCullingInitialized = false;
-	bool                       m_bCullingEnabled     = true;
-
-	uint32_t                   m_uTotalInstances     = 0;
-	uint32_t                   m_uVisibleInstances   = 0;
 };

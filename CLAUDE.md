@@ -30,7 +30,7 @@ Zenith/
 │   └── ...            # + AnimatedMeshes, Backend, DeferredShading, DynamicLights,
 │                      #   InstancedMeshes, MaterialPreview, MeshGeometry, Particles,
 │                      #   Present, Primitives, Quads, SDFs, SceneGraph, Shaders, Skybox,
-│                      #   Slang, SSAO, StaticMeshes, Text, Translucency, and more
+│                      #   Slang, SSAO, UnifiedMesh, Text, Translucency, and more
 ├── AI/                # AI systems (see AI/CLAUDE.md)
 │   ├── BehaviorTree/  # Decision-making (see AI/BehaviorTree/CLAUDE.md)
 │   ├── Navigation/    # NavMesh pathfinding (see AI/Navigation/CLAUDE.md)

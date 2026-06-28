@@ -17,9 +17,9 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
               v
 +-----------------------------+    G-buffer build
 | Terrain                     |\
-| StaticMeshes                | >--> writes MRT diffuse / normals+ambient / material + scene depth
+| UnifiedMesh (statics+trees) | >--> writes MRT diffuse / normals+ambient / material + scene depth
 | AnimatedMeshes              |/
-| Vegetation (foliage)        |
+| Vegetation (grass)          |
 +-----------------------------+
               |
               v
@@ -75,7 +75,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Zenith_TextureAsset.h/cpp` - GPU texture wrapper with SRV
 
 ### Subdirectories
-- `StaticMeshes/` - Opaque geometry
+- `UnifiedMesh/` - **THE opaque static + instanced-foliage mesh pipeline** (GPU-driven: compute cull → indirect draw to the camera G-buffer + every shadow cascade, fed from the render snapshot). Stage 4 retired the legacy per-object StaticMeshes + InstancedMeshes draw loops in its favour.
 - `AnimatedMeshes/` - Skeletal animation rendering (bone buffers sourced from `Zenith_AnimatorComponent`)
 - `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md). ECS entry point is `Zenith_AnimatorComponent`, not `Zenith_ModelComponent`.
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
@@ -91,7 +91,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Text/` - Text rendering
 - `Primitives/` - Debug primitives
 - `Gizmos/` - Editor gizmos (see Gizmos/CLAUDE.md)
-- `InstancedMeshes/` - GPU-instanced static geometry (cull + indirect draw)
+- `InstancedMeshes/` - Instance-group registration front-end (`Flux_InstanceGroup` CPU transform/anim SoA + VAT). Stage 4: the draw/cull/shadow passes were retired; `UnifiedMesh` reads the registered groups and draws them. (`Flux_InstanceCulling.h`'s frustum helper is shared with `UnifiedMesh`.)
 - `DynamicLights/` - Clustered dynamic lighting (gather/upload front-end)
 - `HDR/` - HDR bloom + tonemap pipeline (see HDR/CLAUDE.md)
 - `HiZ/` - Hierarchical Z-buffer generation (see HiZ/CLAUDE.md)
