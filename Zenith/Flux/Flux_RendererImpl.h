@@ -190,10 +190,11 @@ public:
 	Flux_MeshGeometryRegistry             m_xUnifiedMeshGeometryRegistry;
 	Flux_GPUSceneBucketRegistry           m_xUnifiedBucketRegistry;
 	Flux_GPUSceneBuildResult              m_xUnifiedGPUScene;
-	// Drawing is OPT-IN (default OFF) — the proven StaticMeshes path renders by default; flip
-	// Render/UnifiedMesh/Enabled on (or pass --flux-unified-mesh) to exercise the GPU-driven
-	// unified path. Stage 3 flips this default ON.
-	bool                                  m_bUnifiedGPUPathEnabled = false;
+	// Stage 3c: the unified GPU-driven path is the DEFAULT renderer for opaque statics +
+	// instanced foliage (the old StaticMeshes/InstancedMeshes G-buffer + shadow draws A/B-step
+	// aside when this is on). Force it off with --no-flux-unified-mesh or the
+	// Render/UnifiedMesh/Enabled debug toggle to fall back to the legacy per-object paths.
+	bool                                  m_bUnifiedGPUPathEnabled = true;
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;

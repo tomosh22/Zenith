@@ -615,14 +615,20 @@ void Flux_RendererImpl::LateInitialise()
 	// the toggle, so non-debug-variable builds silently got an inert unified path.)
 	m_xUnifiedMeshGeometryRegistry.SetProvider(Flux_MakeRealMeshGeometryProvider());
 
-	// CLI opt-in for the unified GPU-driven mesh path (default OFF). The DebugVariable
-	// toggle below only exists in ZENITH_DEBUG_VARIABLES builds, so this flag is the
-	// config-agnostic way to exercise the path (e.g. windowed VK validation in non-tools
-	// builds, and the eventual default-on flip in Stage 3). Set BEFORE the AddBoolean so a
-	// debug-variable build captures the enabled state into its tree.
+	// CLI override for the unified GPU-driven mesh path. Default is ON (Stage 3c); these flags
+	// force it on/off config-agnostically (the DebugVariable toggle below only exists in
+	// ZENITH_DEBUG_VARIABLES builds). --no-flux-unified-mesh is the legacy-path fallback +
+	// the A/B-verification off-switch. Set BEFORE the AddBoolean so a debug-variable build
+	// captures the resolved state into its tree.
 #ifdef ZENITH_WINDOWS
 	for (int i = 1; i < __argc; i++)
 	{
+		if (std::strcmp(__argv[i], "--no-flux-unified-mesh") == 0)
+		{
+			m_bUnifiedGPUPathEnabled = false;
+			Zenith_Log(LOG_CATEGORY_RENDERER, "[UnifiedMesh] --no-flux-unified-mesh: unified path DISABLED (legacy StaticMeshes/InstancedMeshes paths)");
+			break;
+		}
 		if (std::strcmp(__argv[i], "--flux-unified-mesh") == 0)
 		{
 			m_bUnifiedGPUPathEnabled = true;
