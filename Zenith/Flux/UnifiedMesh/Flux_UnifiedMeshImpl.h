@@ -137,7 +137,9 @@ public:
 	Flux_ReadWriteBuffer        m_xSkinnedArenaBuffer;
 	u_int m_uSkinnedArenaVertCapacity = 0u;   // output verts (72B / 18 words each)
 
-	// Frame-indexed dynamic skinning inputs (host-uploaded each frame; NOT graph-tracked).
+	// Frame-indexed dynamic skinning inputs (NOT graph-tracked). The bind-pose pool holds STATIC
+	// content (rest-pose verts) so it is host-uploaded only on GROWTH (m_uBindPosePool* below); the
+	// palette + skin-jobs are genuinely per-frame and upload every frame.
 	Flux_DynamicReadWriteBuffer m_xBindPosePoolBuffer;   // 104B bind-pose verts, raw words (SRV)
 	Flux_DynamicReadWriteBuffer m_xBonePaletteBuffer;    // all live skeletons' skinning matrices
 	Flux_DynamicReadWriteBuffer m_xSkinJobsBuffer;       // Flux_GPUSkinJob[]
@@ -145,6 +147,11 @@ public:
 	u_int m_uBindPosePoolWordCapacity = 0u;  // 26-word input verts
 	u_int m_uBonePaletteMatCapacity   = 0u;
 	u_int m_uSkinJobCapacity          = 0u;
+	// Bind-pose pool is static + persistent: re-upload only after a CHANGE (grow or eviction
+	// re-pack — the renderer bumps a pool generation), for MAX_FRAMES_IN_FLIGHT frames (so every
+	// frame-indexed physical copy is refreshed), then skip on steady-state frames.
+	u_int m_uBindPosePoolUploadedGen = 0u;   // last pool generation uploaded to every copy
+	u_int m_uBindPosePoolDirtyFrames = 0u;   // frames left to re-upload after a change
 
 	bool m_bResourcesReady = false;
 

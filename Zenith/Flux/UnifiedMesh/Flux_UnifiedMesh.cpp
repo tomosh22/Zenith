@@ -332,6 +332,10 @@ void Flux_UnifiedMeshImpl::Shutdown()
 		xMem.DestroyDynamicReadWriteBuffer(m_xBonePaletteBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xSkinJobsBuffer);
 		xMem.DestroyDynamicConstantBuffer(m_xSkinConstantsBuffer);
+		// The renderer's persistent bind-pose pool is cleared on its shutdown; reset our GPU-upload
+		// generation so a re-init re-uploads from scratch (never reads stale device data).
+		m_uBindPosePoolUploadedGen = 0u;
+		m_uBindPosePoolDirtyFrames = 0u;
 		m_bResourcesReady = false;
 	}
 
@@ -525,15 +529,17 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 		Flux_MeshInstance* pxMesh = nullptr;
 		if (Flux_IsSkinnedMeshGeometryId(pxKey->m_uMeshGeometryId))
 		{
-			const u_int uSkinIdx = Flux_SkinnedMeshGeometryIndex(pxKey->m_uMeshGeometryId);
-			const Zenith_Vector<Flux_RendererImpl::Flux_UnifiedSkinnedDraw>& axSkinned = xRenderer.GetUnifiedSkinnedDraws();
-			if (uSkinIdx >= axSkinned.GetSize() || axSkinned.Get(uSkinIdx).m_pxMesh == nullptr)
+			// The low bits are now a STABLE skinned-instance id (not a per-frame array index);
+			// resolve the arena slice + IB mesh through the per-frame id->draw map.
+			const u_int uStableId = Flux_SkinnedMeshGeometryIndex(pxKey->m_uMeshGeometryId);
+			const Flux_RendererImpl::Flux_UnifiedSkinnedDraw* pxSD = xRenderer.GetUnifiedSkinnedDrawById().TryGet(uStableId);
+			if (pxSD == nullptr || pxSD->m_pxMesh == nullptr)
 			{
 				continue;
 			}
-			pxMesh                = axSkinned.Get(uSkinIdx).m_pxMesh;   // index buffer + count
+			pxMesh                = pxSD->m_pxMesh;   // index buffer + count
 			xDraw.m_bSkinned      = true;
-			xDraw.m_uVertexOffset = axSkinned.Get(uSkinIdx).m_uVertexOffset;
+			xDraw.m_uVertexOffset = pxSD->m_uVertexOffset;
 		}
 		else
 		{
@@ -610,6 +616,23 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	m_uSkinJobCount     = axJobs.GetSize();
 	m_uSkinMaxVertCount = xRenderer.GetUnifiedSkinMaxVerts();
 	m_uBonePaletteCount = axPalette.GetSize();
+
+	// Bind-pose pool refresh runs EVERY frame (NOT gated by skin-job count). The pool is persistent
+	// + STATIC; it changes only when a new distinct skinned mesh appears (grow) or an eviction
+	// re-packs it (shrink) — both bump the renderer's pool generation. Its GPU copy is frame-indexed,
+	// so a change must re-upload for MAX_FRAMES_IN_FLIGHT *consecutive* frames to refresh every
+	// physical copy. Gating this inside `m_uSkinJobCount > 0` would let a single no-skinned-content
+	// frame interrupt that run and leave one copy stale for a later dispatch — so ShouldUpload (which
+	// also advances the dirty counter) must tick every frame. The upload itself only fires when armed
+	// AND the pool is non-empty.
+	const bool bUploadBindPosePool = Flux_BindPosePoolShouldUpload(xRenderer.GetUnifiedBindPosePoolGeneration(),
+		MAX_FRAMES_IN_FLIGHT, m_uBindPosePoolUploadedGen, m_uBindPosePoolDirtyFrames);
+	if (bUploadBindPosePool && auBindPose.GetSize() > 0u)
+	{
+		GrowDynamicRW(m_xBindPosePoolBuffer, m_uBindPosePoolWordCapacity, auBindPose.GetSize(), sizeof(u_int));
+		xMem.UploadBufferData(m_xBindPosePoolBuffer.GetBuffer().m_xVRAMHandle, auBindPose.GetDataPointer(), auBindPose.GetSize() * sizeof(u_int));
+	}
+
 	if (m_uSkinJobCount > 0u)
 	{
 		const u_int uTotalOutVerts = xRenderer.GetUnifiedSkinTotalOutVerts();
@@ -620,10 +643,8 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 			xMem.InitialiseReadWriteBuffer(nullptr, (size_t)m_uSkinnedArenaVertCapacity * kuSKIN_OUTPUT_WORDS * sizeof(u_int),
 				m_xSkinnedArenaBuffer, /*bAlsoVertexBuffer*/ true);
 		}
-		GrowDynamicRW(m_xBindPosePoolBuffer, m_uBindPosePoolWordCapacity, auBindPose.GetSize(), sizeof(u_int));
 		GrowDynamicRW(m_xBonePaletteBuffer,  m_uBonePaletteMatCapacity,   axPalette.GetSize(),  sizeof(Zenith_Maths::Matrix4));
 		GrowDynamicRW(m_xSkinJobsBuffer,     m_uSkinJobCapacity,          axJobs.GetSize(),     sizeof(Flux_GPUSkinJob));
-		xMem.UploadBufferData(m_xBindPosePoolBuffer.GetBuffer().m_xVRAMHandle, auBindPose.GetDataPointer(), auBindPose.GetSize() * sizeof(u_int));
 		xMem.UploadBufferData(m_xBonePaletteBuffer.GetBuffer().m_xVRAMHandle,  axPalette.GetDataPointer(),  axPalette.GetSize() * sizeof(Zenith_Maths::Matrix4));
 		xMem.UploadBufferData(m_xSkinJobsBuffer.GetBuffer().m_xVRAMHandle,     axJobs.GetDataPointer(),     axJobs.GetSize() * sizeof(Flux_GPUSkinJob));
 	}

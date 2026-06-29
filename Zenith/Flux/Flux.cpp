@@ -232,7 +232,9 @@ Flux_RendererImpl::Flux_SkinnedPoseEntry* Flux_RendererImpl::GetOrBuildSkinnedPo
 	}
 	if (const u_int* puIdx = m_xUnifiedSkinnedPoseByAsset.TryGet(pxAsset))
 	{
-		return m_axUnifiedSkinnedPoseStore.Get(*puIdx);
+		Flux_SkinnedPoseEntry* pxHit = m_axUnifiedSkinnedPoseStore.Get(*puIdx);
+		pxHit->m_uLastRefSync = m_uSkinnedPoseSyncGen;   // referenced this sync -> survives the next eviction sweep
+		return pxHit;
 	}
 
 	const u_int uNumVerts = pxAsset->GetNumVerts();
@@ -285,10 +287,77 @@ Flux_RendererImpl::Flux_SkinnedPoseEntry* Flux_RendererImpl::GetOrBuildSkinnedPo
 		PushF(xBW.x);  PushF(xBW.y);  PushF(xBW.z);  PushF(xBW.w);
 	}
 
+	// Persistent bind-pose pool: append this mesh's static bind-pose words ONCE (the pool is
+	// grow-only across frames). The skin-job reads m_uPoolVertBase directly — no per-frame re-concat.
+	pxEntry->m_uPoolVertBase = (u_int)(m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS);
+	for (u_int w = 0; w < pxEntry->m_auBindPoseWords.GetSize(); ++w)
+	{
+		m_auUnifiedBindPosePoolWords.PushBack(pxEntry->m_auBindPoseWords.Get(w));
+	}
+	++m_uBindPosePoolGeneration;        // pool grew -> GPU re-upload next gather
+	pxEntry->m_pvSourceAsset = pxAsset;
+	pxEntry->m_uLastRefSync  = m_uSkinnedPoseSyncGen;
+
 	const u_int uIdx = m_axUnifiedSkinnedPoseStore.GetSize();
 	m_axUnifiedSkinnedPoseStore.PushBack(pxEntry);
 	m_xUnifiedSkinnedPoseByAsset.Insert(pxAsset, uIdx);
 	return pxEntry;
+}
+
+void Flux_RendererImpl::EvictUnreferencedSkinnedPoses()
+{
+	// Mark/sweep: free every skinned-pose entry NOT referenced by the most recent sync (its IB/VB
+	// go through Flux_MeshInstance::Destroy's deferred-delete wrappers, so an in-flight frame never
+	// references freed GPU memory). Eviction is a COLD path (only a character/scene unload), so when
+	// it fires we rebuild the persistent bind-pose pool + the asset->index map WHOLESALE from the
+	// survivors — no free-list / partial-compaction bookkeeping. The pool re-pack re-assigns each
+	// survivor's m_uPoolVertBase and bumps the pool generation -> the gather re-uploads it.
+	bool bAnyEvicted = false;
+	for (u_int u = 0; u < m_axUnifiedSkinnedPoseStore.GetSize(); ++u)
+	{
+		if (m_axUnifiedSkinnedPoseStore.Get(u)->m_uLastRefSync != m_uSkinnedPoseSyncGen)
+		{
+			bAnyEvicted = true;
+			break;
+		}
+	}
+	if (!bAnyEvicted)
+	{
+		return;   // steady state: nothing to free; pool + map + generation untouched (no GPU re-upload)
+	}
+
+	m_xUnifiedSkinnedPoseByAsset.Clear();
+	m_auUnifiedBindPosePoolWords.Clear();
+	u_int uWrite = 0u;
+	for (u_int u = 0; u < m_axUnifiedSkinnedPoseStore.GetSize(); ++u)
+	{
+		Flux_SkinnedPoseEntry* pxEntry = m_axUnifiedSkinnedPoseStore.Get(u);
+		if (pxEntry->m_uLastRefSync != m_uSkinnedPoseSyncGen)
+		{
+			// Not drawn last sync -> free it (deferred-delete the GPU IB/VB).
+			if (pxEntry->m_pxMesh != nullptr)
+			{
+				pxEntry->m_pxMesh->Destroy();
+				delete pxEntry->m_pxMesh;
+			}
+			delete pxEntry;
+			continue;
+		}
+		// Survivor: re-append its (unchanged) words to the re-packed pool + re-index it.
+		pxEntry->m_uPoolVertBase = (u_int)(m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS);
+		for (u_int w = 0; w < pxEntry->m_auBindPoseWords.GetSize(); ++w)
+		{
+			m_auUnifiedBindPosePoolWords.PushBack(pxEntry->m_auBindPoseWords.Get(w));
+		}
+		m_axUnifiedSkinnedPoseStore.Get(uWrite) = pxEntry;
+		m_xUnifiedSkinnedPoseByAsset.Insert(pxEntry->m_pvSourceAsset, uWrite);
+		++uWrite;
+	}
+	while (m_axUnifiedSkinnedPoseStore.GetSize() > uWrite)
+	{
+		m_axUnifiedSkinnedPoseStore.PopBack();
+	}
+	++m_uBindPosePoolGeneration;   // pool re-packed (survivor bases changed) -> force a GPU re-upload
 }
 
 // Build a static GPU-scene submesh descriptor from a mesh instance + material — resolving the
@@ -494,11 +563,18 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	// toggle is off / there is no animated content). When enabled, walk the snapshot's
 	// animated-skinned items: each skinned submesh-instance is compute-skinned to the arena and
 	// drawn through the unified kernels via its own per-instance skinned bucket.
+	// Evict skinned-pose entries not referenced by the PREVIOUS sync (frees their GPU IB/VB +
+	// re-packs the bind-pose pool) BEFORE this sync's walk, so this frame's skin-jobs see the
+	// re-packed pool bases consistently. THEN bump the generation so this sync's references mark
+	// survivors against the new value.
+	EvictUnreferencedSkinnedPoses();
+	++m_uSkinnedPoseSyncGen;
+
 	m_xUnifiedBonePalette.Begin(Flux_SkeletonInstance::MAX_BONES);
-	m_auUnifiedBindPosePoolWords.Clear();
-	m_xUnifiedBindPosePoolBaseByMesh.Clear();
+	// NOTE: m_auUnifiedBindPosePoolWords is PERSISTENT (grow-only between evictions) — NOT cleared here.
 	m_axUnifiedSkinJobs.Clear();
-	m_axUnifiedSkinnedDraws.Clear();
+	m_xUnifiedSkinnedDrawById.Clear();
+	m_xUnifiedSkinnedIdRegistry.BeginSync();   // stable skinned bucket ids: mark all unreferenced (EndSync after the walk recycles dropped instances)
 	m_uUnifiedSkinMaxVerts      = 0u;
 	m_uUnifiedSkinTotalOutVerts = 0u;
 	// Animated skinned meshes route through the unified compute-skinning path: each skinned
@@ -594,25 +670,9 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 					continue;   // forward path
 				}
 
-				// Bind-pose pool: append this mesh's words once per frame; reuse the base afterwards.
-				u_int uBindPoseBase;
-				if (const u_int* puBase = m_xUnifiedBindPosePoolBaseByMesh.TryGet(pxMeshInst->GetSourceAsset()))
-				{
-					uBindPoseBase = *puBase;
-				}
-				else
-				{
-					// The pool only ever grows by whole vertices (uFLUX_SKIN_INPUT_WORDS each), so its
-					// size is always a vertex multiple — the base divide below is exact.
-					Zenith_Assert(m_auUnifiedBindPosePoolWords.GetSize() % uFLUX_SKIN_INPUT_WORDS == 0u,
-						"Bind-pose pool size is not a whole-vertex multiple");
-					uBindPoseBase = m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS;
-					for (u_int w = 0; w < pxPose->m_auBindPoseWords.GetSize(); ++w)
-					{
-						m_auUnifiedBindPosePoolWords.PushBack(pxPose->m_auBindPoseWords.Get(w));
-					}
-					m_xUnifiedBindPosePoolBaseByMesh.Insert(pxMeshInst->GetSourceAsset(), uBindPoseBase);
-				}
+				// Stable base in the persistent bind-pose pool (the words were appended once when the
+				// pose entry was first built — see GetOrBuildSkinnedPose).
+				const u_int uBindPoseBase = pxPose->m_uPoolVertBase;
 
 				const u_int uOutVertBase = uArenaCursor;
 				uArenaCursor += pxPose->m_uNumVerts;
@@ -628,14 +688,21 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 				xJob.m_uBonePaletteBase  = uBonePaletteBase;
 				m_axUnifiedSkinJobs.PushBack(xJob);
 
-				const u_int uSkinIdx = m_axUnifiedSkinnedDraws.GetSize();
+				// Stable per-instance id (recycled across frames) -> the skinned bucket key. Identity =
+				// (this entity's skeleton instance, the submesh source asset, the submesh slot).
+				Flux_SkinnedInstanceKey xInstKey;
+				xInstKey.m_pvSkeleton   = pxSkeleton;
+				xInstKey.m_pvMeshAsset  = pxMeshInst->GetSourceAsset();
+				xInstKey.m_uSubmeshSlot = uMesh;
+				const u_int uStableId = m_xUnifiedSkinnedIdRegistry.Reference(xInstKey);
+
 				Flux_UnifiedSkinnedDraw xSD;
 				xSD.m_pxMesh        = pxPose->m_pxMesh;
 				xSD.m_uVertexOffset = uOutVertBase;
-				m_axUnifiedSkinnedDraws.PushBack(xSD);
+				m_xUnifiedSkinnedDrawById.Insert(uStableId, xSD);
 
 				Flux_GPUSceneBucketKey xKey;
-				xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | uSkinIdx;
+				xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | uStableId;
 				xKey.m_uCullMode         = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
 				xKey.m_ulMaterialAssetId = reinterpret_cast<u_int64>(pxMat);
 				xKey.m_ulVATTextureId    = 0u;   // skinned != VAT (keeps ResolveBucketVAT safe)
@@ -656,6 +723,7 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 			}
 		}
 		m_uUnifiedSkinTotalOutVerts = uArenaCursor;
+		m_xUnifiedSkinnedIdRegistry.EndSync();   // recycle stable ids for skinned instances no longer drawn
 	}
 
 	Flux_EndGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
@@ -1054,6 +1122,7 @@ void Flux_RendererImpl::Shutdown()
 	}
 	xRenderer.m_axUnifiedSkinnedPoseStore.Clear();
 	xRenderer.m_xUnifiedSkinnedPoseByAsset.Clear();
+	xRenderer.m_auUnifiedBindPosePoolWords.Clear();   // persistent pool: released with its pose entries
 
 	// Shut down any still-registered game render features (reverse registration
 	// order) AFTER the graph is gone, so a feature's Shutdown can't touch a live

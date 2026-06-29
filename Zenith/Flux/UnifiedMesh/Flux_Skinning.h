@@ -2,6 +2,7 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"   // Flux_SkinnedInstanceIdRegistry (stable skinned bucket key)
 #include <cstddef>   // offsetof, size_t
 
 // ============================================================================
@@ -281,3 +282,157 @@ inline u_int64 Flux_HashSkinnedForTest(const Flux_SkinOutputVertex* pxVerts, u_i
 	}
 	return uHash;
 }
+
+// ---- bind-pose pool upload gating (persistent pool) -------------------------
+// The bind-pose pool holds STATIC vertices. It changes only when a new distinct skinned
+// mesh appears (grow) or an eviction re-packs it (shrink + rebase) — both bump the
+// renderer's pool GENERATION counter. Its GPU copy is frame-indexed (MAX_FRAMES_IN_FLIGHT
+// physical buffers), so after ANY change we must re-upload for MAX_FRAMES_IN_FLIGHT
+// consecutive frames (refreshing every physical copy) and then skip uploads in steady
+// state. This pure state machine drives that decision; the renderer holds uUploadedGen +
+// uDirtyFrames across frames. Returns true iff the caller should upload the whole pool.
+// (Generation, not word count, so a re-pack that SHRINKS the pool still re-uploads.)
+inline bool Flux_BindPosePoolShouldUpload(u_int uPoolGeneration, u_int uMaxFramesInFlight,
+	u_int& uUploadedGeneration, u_int& uDirtyFrames)
+{
+	if (uPoolGeneration != uUploadedGeneration)
+	{
+		uDirtyFrames        = uMaxFramesInFlight;   // re-fill every frame-indexed physical copy
+		uUploadedGeneration = uPoolGeneration;
+	}
+	if (uDirtyFrames > 0u)
+	{
+		--uDirtyFrames;
+		return true;
+	}
+	return false;
+}
+
+// ============================================================================
+// Stable skinned-instance id allocator (optimization (iii)).
+//
+// Each skinned submesh-INSTANCE is skinned to its own arena slice, so each is its own
+// indirect draw needing a per-instance bucket. The bucket key's meshGeometryId used to
+// be `uFLUX_GPUSCENE_SKINNED_MESH_BIT | <per-frame iteration index>` — UNSTABLE frame to
+// frame, which made the bucket registry's topology/refcount-diff signal meaningless for
+// skinned buckets (and blocked Stage-6 batching). This allocator hands out a STABLE small
+// id per distinct (skeletonInstance, meshAsset, submeshSlot) identity, reused across
+// frames and recycled when an instance stops being drawn — the same refcount-diff shape
+// as Flux_MeshGeometryRegistry (BeginSync -> Reference -> EndSync), id-only (no GPU).
+//
+// The id seeds the skinned bucket key (the caller ORs in uFLUX_GPUSCENE_SKINNED_MESH_BIT),
+// so it must stay below that 0x80000000 high bit — asserted at allocation.
+// ============================================================================
+struct Flux_SkinnedInstanceKey
+{
+	const void* m_pvSkeleton   = nullptr;  // Flux_SkeletonInstance* (per-entity, stable across frames)
+	const void* m_pvMeshAsset  = nullptr;  // Zenith_MeshAsset* (the skinned submesh source)
+	u_int       m_uSubmeshSlot = 0u;       // submesh index within the model (disambiguates same-skeleton submeshes)
+
+	bool operator==(const Flux_SkinnedInstanceKey& xOther) const
+	{
+		return m_pvSkeleton == xOther.m_pvSkeleton
+		    && m_pvMeshAsset == xOther.m_pvMeshAsset
+		    && m_uSubmeshSlot == xOther.m_uSubmeshSlot;
+	}
+};
+
+// FNV-1a over the two identity pointers + the submesh slot.
+template<>
+struct Zenith_Hash<Flux_SkinnedInstanceKey>
+{
+	u_int64 operator()(const Flux_SkinnedInstanceKey& xKey) const noexcept
+	{
+		u_int64 uHash = 0xcbf29ce484222325ull;
+		auto Bytes = [&uHash](const void* p, size_t n)
+		{
+			const u_int8* pb = static_cast<const u_int8*>(p);
+			for (size_t i = 0; i < n; ++i) { uHash ^= pb[i]; uHash *= 0x100000001b3ull; }
+		};
+		Bytes(&xKey.m_pvSkeleton,   sizeof(xKey.m_pvSkeleton));
+		Bytes(&xKey.m_pvMeshAsset,  sizeof(xKey.m_pvMeshAsset));
+		Bytes(&xKey.m_uSubmeshSlot, sizeof(xKey.m_uSubmeshSlot));
+		return uHash;
+	}
+};
+
+// Collision-FREE stable id allocator (a raw hash could merge two distinct poses into one
+// bucket -> visible corruption). One hashmap lookup per skinned instance per frame.
+class Flux_SkinnedInstanceIdRegistry
+{
+public:
+	void BeginSync()
+	{
+		for (u_int u = 0; u < m_axEntries.GetSize(); ++u) { m_axEntries.Get(u).m_uRefcountThisSync = 0u; }
+	}
+
+	// STABLE id for this identity (allocates on first sight). NOT OR-ed with the skinned-mesh
+	// bit — that is the caller's job. The id stays < 0x80000000 (asserted).
+	u_int Reference(const Flux_SkinnedInstanceKey& xKey)
+	{
+		if (u_int* puSlot = m_xKeyToSlot.TryGet(xKey))
+		{
+			++m_axEntries.Get(*puSlot).m_uRefcountThisSync;
+			return *puSlot;
+		}
+		const u_int uSlot = AllocateSlot();
+		Entry& xEntry = m_axEntries.Get(uSlot);
+		xEntry.m_xKey              = xKey;
+		xEntry.m_uRefcountThisSync = 1u;
+		xEntry.m_bAlive            = true;
+		m_xKeyToSlot.Insert(xKey, uSlot);
+		++m_uLiveCount;
+		Zenith_Assert(uSlot < 0x80000000u, "skinned-instance id overflowed the 31-bit space (high bit reserved for the skinned-mesh tag)");
+		return uSlot;
+	}
+
+	void EndSync()
+	{
+		for (u_int u = 0; u < m_axEntries.GetSize(); ++u)
+		{
+			Entry& xEntry = m_axEntries.Get(u);
+			if (xEntry.m_bAlive && xEntry.m_uRefcountThisSync == 0u)
+			{
+				m_xKeyToSlot.Remove(xEntry.m_xKey);   // identity gone -> recycle its id
+				xEntry.m_bAlive = false;
+				m_auFreeSlots.PushBack(u);
+				--m_uLiveCount;
+			}
+		}
+	}
+
+	u_int GetLiveCount() const { return m_uLiveCount; }
+	bool  TryGetId(const Flux_SkinnedInstanceKey& xKey, u_int& uOut) const
+	{
+		const u_int* puSlot = m_xKeyToSlot.TryGet(xKey);
+		if (puSlot == nullptr) { return false; }
+		uOut = *puSlot;
+		return true;
+	}
+
+private:
+	struct Entry
+	{
+		Flux_SkinnedInstanceKey m_xKey;
+		u_int m_uRefcountThisSync = 0u;
+		bool  m_bAlive            = false;
+	};
+
+	u_int AllocateSlot()
+	{
+		if (m_auFreeSlots.GetSize() > 0u)
+		{
+			const u_int uSlot = m_auFreeSlots.Get(m_auFreeSlots.GetSize() - 1u);
+			m_auFreeSlots.PopBack();
+			return uSlot;
+		}
+		const u_int uSlot = m_axEntries.GetSize();
+		m_axEntries.PushBack(Entry{});
+		return uSlot;
+	}
+
+	Zenith_HashMap<Flux_SkinnedInstanceKey, u_int> m_xKeyToSlot;
+	Zenith_Vector<Entry> m_axEntries;
+	Zenith_Vector<u_int> m_auFreeSlots;
+	u_int m_uLiveCount = 0u;
+};

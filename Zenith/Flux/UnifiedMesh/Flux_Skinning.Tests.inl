@@ -344,3 +344,124 @@ ZENITH_TEST(Skinning, SkinnedHashIsDeterministicAndSensitive)
 	ZENITH_ASSERT_NE(Flux_HashSkinnedForTest(&xA, 1u), Flux_HashSkinnedForTest(&xC, 1u),
 		"a different bone pose must change the skinned hash");
 }
+
+// ---- persistent bind-pose pool: upload gating ------------------------------
+// The pool is persistent; its GPU copy is frame-indexed, so ANY change (a growth OR an
+// eviction re-pack, both bump the generation) must refresh every physical copy (upload for
+// MAX_FRAMES_IN_FLIGHT frames) then skip. Gated on the generation, not the word count, so a
+// re-pack that SHRINKS the pool still re-uploads.
+
+ZENITH_TEST(Skinning, BindPosePoolUploadsForMaxFramesAfterChangeThenSkips)
+{
+	const u_int uN = 3u;   // pretend MAX_FRAMES_IN_FLIGHT (test-local so it's platform-independent)
+	u_int uUploadedGen = 0u, uDirty = 0u;
+
+	// Generation bumps 0 -> 1 (a mesh was appended). Upload + arm the remaining copies.
+	ZENITH_ASSERT_TRUE(Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "change frame uploads");
+	ZENITH_ASSERT_EQ(uUploadedGen, 1u, "uploaded-generation tracks the pool generation");
+	// Next frames: generation unchanged, still refreshing the remaining frame-indexed copies.
+	ZENITH_ASSERT_TRUE(Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "copy 2 refreshed");
+	ZENITH_ASSERT_TRUE(Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "copy 3 refreshed");
+	// Steady state: every copy current -> skip (the whole point of the optimization).
+	ZENITH_ASSERT_FALSE(Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "steady state skips");
+	ZENITH_ASSERT_FALSE(Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "steady state stays skipped");
+}
+
+ZENITH_TEST(Skinning, BindPosePoolReArmsOnEachChangeIncludingShrink)
+{
+	const u_int uN = 2u;
+	u_int uUploadedGen = 0u, uDirty = 0u;
+	// First change (append): gen 1 -> upload + settle.
+	ZENITH_ASSERT_TRUE (Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "first change");
+	ZENITH_ASSERT_TRUE (Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "first change copy 2");
+	ZENITH_ASSERT_FALSE(Flux_BindPosePoolShouldUpload(1u, uN, uUploadedGen, uDirty), "settled");
+	// Second change — e.g. an eviction RE-PACK that shrinks the pool. Generation bumps to 2;
+	// the word count went DOWN, but generation-gating still re-arms (the load-bearing property).
+	ZENITH_ASSERT_TRUE (Flux_BindPosePoolShouldUpload(2u, uN, uUploadedGen, uDirty), "shrink/re-pack re-arms");
+	ZENITH_ASSERT_EQ(uUploadedGen, 2u, "uploaded-generation advances on re-pack");
+	ZENITH_ASSERT_TRUE (Flux_BindPosePoolShouldUpload(2u, uN, uUploadedGen, uDirty), "re-pack copy 2");
+	ZENITH_ASSERT_FALSE(Flux_BindPosePoolShouldUpload(2u, uN, uUploadedGen, uDirty), "settled again");
+}
+
+ZENITH_TEST(Skinning, BindPosePoolNeverUploadsWhenUnchanged)
+{
+	const u_int uN = 4u;
+	u_int uUploadedGen = 0u, uDirty = 0u;
+	// No skinned content / no change: generation stays 0 -> never upload (no traffic, no stale read).
+	ZENITH_ASSERT_FALSE(Flux_BindPosePoolShouldUpload(0u, uN, uUploadedGen, uDirty), "unchanged pool never uploads");
+	ZENITH_ASSERT_FALSE(Flux_BindPosePoolShouldUpload(0u, uN, uUploadedGen, uDirty), "still unchanged -> still skip");
+	ZENITH_ASSERT_EQ(uDirty, 0u, "no dirty frames armed for an unchanged pool");
+}
+
+// ---- stable skinned-instance id allocator (optimization (iii)) -------------
+
+ZENITH_TEST(Skinning, SkinnedIdIsStableAcrossSyncsAndDistinctPerIdentity)
+{
+	Flux_SkinnedInstanceIdRegistry xReg;
+	int iSkelA = 0, iSkelB = 0, iMesh = 0;   // distinct addresses = opaque identities (never deref'd)
+	Flux_SkinnedInstanceKey xA{ &iSkelA, &iMesh, 0u };
+	Flux_SkinnedInstanceKey xB{ &iSkelB, &iMesh, 0u };   // different skeleton instance
+	Flux_SkinnedInstanceKey xA1{ &iSkelA, &iMesh, 1u };  // same skeleton+mesh, different submesh slot
+
+	xReg.BeginSync();
+	const u_int uA  = xReg.Reference(xA);
+	const u_int uB  = xReg.Reference(xB);
+	const u_int uA1 = xReg.Reference(xA1);
+	xReg.EndSync();
+	ZENITH_ASSERT_NE(uA, uB,  "distinct skeleton instances -> distinct ids");
+	ZENITH_ASSERT_NE(uA, uA1, "distinct submesh slots -> distinct ids");
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 3u, "three live skinned instances");
+
+	// Next frame: the SAME identities -> the SAME ids (the whole point of the optimization).
+	xReg.BeginSync();
+	ZENITH_ASSERT_EQ(xReg.Reference(xA),  uA,  "id stable across syncs (A)");
+	ZENITH_ASSERT_EQ(xReg.Reference(xB),  uB,  "id stable across syncs (B)");
+	ZENITH_ASSERT_EQ(xReg.Reference(xA1), uA1, "id stable across syncs (A submesh 1)");
+	xReg.EndSync();
+}
+
+ZENITH_TEST(Skinning, SkinnedIdRecyclesWhenInstanceStopsBeingDrawn)
+{
+	Flux_SkinnedInstanceIdRegistry xReg;
+	int iSkelA = 0, iSkelB = 0, iMesh = 0;
+	Flux_SkinnedInstanceKey xA{ &iSkelA, &iMesh, 0u };
+	Flux_SkinnedInstanceKey xB{ &iSkelB, &iMesh, 0u };
+
+	xReg.BeginSync();
+	const u_int uA = xReg.Reference(xA);
+	xReg.EndSync();
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 1u, "A live");
+
+	// A despawns (not referenced this sync) -> its id is recycled, live count drops.
+	xReg.BeginSync();
+	xReg.EndSync();
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 0u, "A retired when no longer referenced");
+
+	// A brand-new instance gets the recycled slot (id space stays bounded over a session).
+	xReg.BeginSync();
+	const u_int uB = xReg.Reference(xB);
+	xReg.EndSync();
+	ZENITH_ASSERT_EQ(uB, uA, "freed id is recycled for the next new instance");
+}
+
+ZENITH_TEST(Skinning, SkinnedIdNoCollisionAcrossManyInstances)
+{
+	// 5000 distinct identities -> 5000 distinct ids, all in the 31-bit space. This guards the
+	// rejected 31-bit-HASH design: a hash collision would merge two distinct poses into one
+	// bucket -> the wrong arena slice -> visible corruption. The allocator is collision-free.
+	Flux_SkinnedInstanceIdRegistry xReg;
+	int iMesh = 0;
+	Zenith_HashMap<u_int, u_int> xSeen;
+	xReg.BeginSync();
+	for (u_int u = 0; u < 5000u; ++u)
+	{
+		// distinct fake skeleton pointers (the allocator only hashes/compares the bits)
+		Flux_SkinnedInstanceKey xK{ reinterpret_cast<const void*>((size_t)(u + 1u)), &iMesh, 0u };
+		const u_int uId = xReg.Reference(xK);
+		ZENITH_ASSERT_TRUE(uId < 0x80000000u, "id stays in the 31-bit space (high bit reserved for the skinned tag)");
+		ZENITH_ASSERT_FALSE(xSeen.Contains(uId), "no two distinct identities share an id");
+		xSeen.Insert(uId, u);
+	}
+	xReg.EndSync();
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 5000u, "all 5000 live + distinct");
+}
