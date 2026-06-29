@@ -162,10 +162,10 @@ public:
 	bool HasSkeleton() const { return m_pxSkeleton != nullptr; }
 
 	// True iff this is a skinned-animated model: it has a skeleton AND at least one
-	// skinned mesh instance. Flux_StaticMeshes skips these (they're drawn by
-	// Flux_AnimatedMeshes); a skeleton with NO skinned mesh still renders as static.
-	// Single source for the static/animated split (the snapshot fill stamps the
-	// advisory flag from this; the StaticMeshes filter calls it too).
+	// skinned mesh instance. The unified static-mesh walk skips these (they're drawn by
+	// the unified compute-skinning path); a skeleton with NO skinned mesh still renders
+	// as static. Single source for the static/animated split (the snapshot fill stamps the
+	// advisory flag from this; the unified gather's static filter calls it too).
 	bool IsAnimatedSkinned() const
 	{
 		if (!HasSkeleton()) return false;

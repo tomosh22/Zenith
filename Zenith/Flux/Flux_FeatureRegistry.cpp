@@ -15,7 +15,6 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
@@ -49,7 +48,6 @@
 #include "Flux/IBL/Flux_IBL_Shaders.h"
 #include "Flux/Terrain/Flux_Terrain_Shaders.h"
 #include "Flux/Primitives/Flux_Primitives_Shaders.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes_Shaders.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMesh_Shaders.h"
 #include "Flux/Skybox/Flux_Skybox_Shaders.h"
 #include "Flux/Decals/Flux_Decals_Shaders.h"
@@ -335,7 +333,6 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	RegisterFeature<&Zenith_Engine::UnifiedMesh>(xReg, "UnifiedMesh", Flux_UnifiedMeshShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
-	RegisterFeature<&Zenith_Engine::AnimatedMeshes>(xReg, "AnimatedMeshes", Flux_AnimatedMeshesShaders::apxALL);
 	// Stage 4: InstancedMeshes is now a shader-less registration front-end (the unified path
 	// draws instanced foliage). Registered with the no-shader overload so it owns no programs.
 	RegisterFeature<&Zenith_Engine::InstancedMeshes>(xReg, "InstancedMeshes");

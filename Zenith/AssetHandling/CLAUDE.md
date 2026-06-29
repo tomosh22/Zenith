@@ -213,7 +213,7 @@ modelSpaceTransform = parentModelSpace * localTransformMatrix
 skinningMatrix = modelSpaceTransform * inverseBindPose
 ```
 
-**GPU Upload:** Skinning matrices are uploaded to a constant buffer for GPU skinning. Triple-buffered to match frame-in-flight count.
+**GPU skinning:** Runtime skinning matrices (computed by `Flux_SkeletonInstance`) are read CPU-side by the unified compute-skinning pre-pass, which skins vertices into a shared GPU arena consumed by the GPU-driven mesh path — there is no per-instance bone constant buffer.
 
 ### Mesh Instance (`Flux_MeshInstance`)
 Three creation paths exist:

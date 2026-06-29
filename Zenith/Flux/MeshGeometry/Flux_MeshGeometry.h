@@ -4,9 +4,6 @@
 #include "Flux/Flux_Buffers.h"
 #include "Collections/Zenith_HashMap.h"
 
-// Forward declarations
-class Flux_AnimationController;
-
 #define MAX_BONES_PER_VERTEX 4
 
 class Flux_MeshGeometry
@@ -165,14 +162,4 @@ public:
 	u_int64 m_ulReservedVertexDataSize = 0;
 	u_int64 m_ulReservedIndexDataSize = 0;
 	u_int64 m_ulReservedPositionDataSize = 0;
-
-
-	// AnimationController provides state machines, blending, and IK.
-	Flux_AnimationController* m_pxAnimationController = nullptr;
-
-	// Check if this mesh has any animation system available
-	bool HasAnimation() const { return m_pxAnimationController != nullptr; }
-
-	// Get bone buffer for rendering
-	const Flux_DynamicConstantBuffer* GetBoneBuffer() const;
 };

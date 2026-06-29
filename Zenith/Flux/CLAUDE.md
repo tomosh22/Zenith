@@ -15,12 +15,12 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 +-----------------------------+
               |
               v
-+-----------------------------+    G-buffer build
-| Terrain                     |\
-| UnifiedMesh (statics+trees) | >--> writes MRT diffuse / normals+ambient / material + scene depth
-| AnimatedMeshes              |/
-| Vegetation (grass)          |
-+-----------------------------+
++-----------------------------------+  G-buffer build
+| Terrain                           |\
+| UnifiedMesh (statics + trees +    | >--> writes MRT diffuse / normals+ambient / material + scene depth
+|   compute-skinned animated meshes)|/
+| Vegetation (grass)                |
++-----------------------------------+
               |
               v
 +-----------------------------+    Screen-space effects
@@ -75,8 +75,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Zenith_TextureAsset.h/cpp` - GPU texture wrapper with SRV
 
 ### Subdirectories
-- `UnifiedMesh/` - **THE opaque static + instanced-foliage mesh pipeline** (GPU-driven: compute cull → indirect draw to the camera G-buffer + every shadow cascade, fed from the render snapshot). Stage 4 retired the legacy per-object StaticMeshes + InstancedMeshes draw loops in its favour.
-- `AnimatedMeshes/` - Skeletal animation rendering (bone buffers sourced from `Zenith_AnimatorComponent`)
+- `UnifiedMesh/` - **THE opaque mesh pipeline — static, instanced-foliage, AND skeletal** (GPU-driven: compute cull → indirect draw to the camera G-buffer + every shadow cascade, fed from the render snapshot). Skeletal meshes are GPU compute-skinned into a shared arena (Stage 5) then drawn like static geometry; `Flux_SkeletonInstance::GetSkinningMatrices` is the CPU input. Stage 4 retired the per-object StaticMeshes/InstancedMeshes draw loops and Stage 5 retired the per-object skeletal draw + its bone constant-buffer.
 - `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md). ECS entry point is `Zenith_AnimatorComponent`, not `Zenith_ModelComponent`.
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
 - `Shadows/` - Cascaded shadow maps

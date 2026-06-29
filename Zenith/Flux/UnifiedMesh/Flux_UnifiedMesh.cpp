@@ -4,6 +4,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_GPUScene.h"
+#include "Flux/UnifiedMesh/Flux_Skinning.h"   // Flux_GPUSkinJob (skin-job buffer element)
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -36,6 +37,14 @@ namespace
 	constexpr u_int kuINITIAL_OBJECTS   = 4096u;
 	constexpr u_int kuINITIAL_BUCKETS   = 1024u;
 
+	// Stage 5 compute-skinning initial capacities (grow-only). The arena + bind-pose pool
+	// are in VERTICES; the palette is in matrices (~40 skeletons * 100 bones).
+	constexpr u_int kuINITIAL_SKIN_VERTS   = 65536u;  // arena output verts + bind-pose pool input verts
+	constexpr u_int kuINITIAL_SKIN_JOBS    = 256u;
+	constexpr u_int kuINITIAL_PALETTE_MATS = 4096u;
+	constexpr u_int kuSKIN_INPUT_WORDS     = 26u;     // 104B bind-pose vertex (raw words) — matches uFLUX_SKIN_INPUT_WORDS
+	constexpr u_int kuSKIN_OUTPUT_WORDS    = 18u;     //  72B static vertex (raw words) — matches uFLUX_SKIN_OUTPUT_WORDS
+
 	constexpr u_int kuINDIRECT_WORDS = 5u;   // VkDrawIndexedIndirectCommand = 5 uints
 	constexpr u_int kuINDIRECT_STRIDE = kuINDIRECT_WORDS * sizeof(u_int); // 20 bytes
 
@@ -56,6 +65,16 @@ namespace
 	};
 	static_assert(sizeof(UnifiedResetConstants) == 16, "UnifiedResetConstants must be 16 bytes");
 
+	// Skinning constants (mirrors SkinConstantsLayout in Flux_UnifiedMesh_Skinning.slang).
+	struct UnifiedSkinConstants
+	{
+		u_int m_uNumJobs;       // active skin-job count (compute id.y guard)
+		u_int m_uPaletteCount;  // total matrices in the palette (bone-index bounds guard)
+		u_int m_uPad0;
+		u_int m_uPad1;
+	};
+	static_assert(sizeof(UnifiedSkinConstants) == 16, "UnifiedSkinConstants must be 16 bytes");
+
 	// Per-draw constants (mirrors UnifiedDrawConstantsLayout in the GBuffer + ToShadowmap shaders).
 	struct UnifiedDrawConstants
 	{
@@ -70,6 +89,9 @@ namespace
 	// Resolve a bucket's VAT texture from its key id (raw Flux_AnimationTexture* used as the
 	// in-session grouping id, like the material id) + compute the (texW, texH, enabled, 0) params.
 	// Returns null + zero params for static buckets (VAT id 0) or a VAT without GPU resources.
+	// LIFETIME: the id is reinterpreted back to a live Flux_AnimationTexture* — safe because the
+	// bucket key is rebuilt every frame from the current snapshot/instance-group VAT pointers, so a
+	// retired VAT never survives into a later frame's key (no use-after-free across frames).
 	const Flux_AnimationTexture* ResolveBucketVAT(u_int64 ulVATTextureId, Zenith_Maths::Vector4& xParamsOut)
 	{
 		xParamsOut = Zenith_Maths::Vector4(0.0f);
@@ -124,6 +146,7 @@ namespace
 	}
 }
 
+static void ExecuteUnifiedSkinning(Flux_CommandBuffer* pxCmdList, void* pUserData);
 static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void* pUserData);
 static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void* pUserData);
 static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
@@ -210,6 +233,15 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		xBuilder.WithShader(m_xResetShader).WithLayout(m_xResetRootSig.m_xLayout).Build(m_xResetPipeline);
 		m_xResetPipeline.m_xRootSig = m_xResetRootSig;
 	}
+
+	// Stage 5: compute-skinning pre-pass.
+	{
+		m_xSkinningShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_Skinning);
+		Flux_RootSigBuilder::FromReflection(m_xSkinningRootSig, m_xSkinningShader.GetReflection());
+		Flux_ComputePipelineBuilder xBuilder;
+		xBuilder.WithShader(m_xSkinningShader).WithLayout(m_xSkinningRootSig.m_xLayout).Build(m_xSkinningPipeline);
+		m_xSkinningPipeline.m_xRootSig = m_xSkinningRootSig;
+	}
 }
 
 void Flux_UnifiedMeshImpl::Initialise()
@@ -244,6 +276,24 @@ void Flux_UnifiedMeshImpl::Initialise()
 
 	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(UnifiedCullingConstants), m_xCullingConstantsBuffer);
 
+	// Stage 5 compute-skinning buffers. The arena is the only persistent one (grow-only,
+	// graph-tracked, BOTH UAV + VERTEX usage so it is the skinned draws' vertex source).
+	// The bind-pose pool / palette / skin-jobs are host-uploaded each frame (dynamic).
+	xMem.InitialiseReadWriteBuffer(nullptr, (size_t)kuINITIAL_SKIN_VERTS * kuSKIN_OUTPUT_WORDS * sizeof(u_int),
+		m_xSkinnedArenaBuffer, /*bAlsoVertexBuffer*/ true);
+	m_uSkinnedArenaVertCapacity = kuINITIAL_SKIN_VERTS;
+
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_SKIN_VERTS * kuSKIN_INPUT_WORDS * sizeof(u_int), m_xBindPosePoolBuffer);
+	m_uBindPosePoolWordCapacity = kuINITIAL_SKIN_VERTS * kuSKIN_INPUT_WORDS;
+
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_PALETTE_MATS * sizeof(Zenith_Maths::Matrix4), m_xBonePaletteBuffer);
+	m_uBonePaletteMatCapacity = kuINITIAL_PALETTE_MATS;
+
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_SKIN_JOBS * sizeof(Flux_GPUSkinJob), m_xSkinJobsBuffer);
+	m_uSkinJobCapacity = kuINITIAL_SKIN_JOBS;
+
+	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(UnifiedSkinConstants), m_xSkinConstantsBuffer);
+
 	// Defensive zero-init of the two persistent GPU buffers (whole allocation, all views).
 	// The per-frame reset compute only rewrites the live (view,bucket) commands, so slots
 	// beyond the live count would otherwise hold garbage device memory. Those slots are
@@ -277,6 +327,11 @@ void Flux_UnifiedMeshImpl::Shutdown()
 		xMem.DestroyDynamicReadWriteBuffer(m_xBucketOffsetBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xBucketIndexCountBuffer);
 		xMem.DestroyDynamicConstantBuffer(m_xCullingConstantsBuffer);
+		xMem.DestroyReadWriteBuffer(m_xSkinnedArenaBuffer);
+		xMem.DestroyDynamicReadWriteBuffer(m_xBindPosePoolBuffer);
+		xMem.DestroyDynamicReadWriteBuffer(m_xBonePaletteBuffer);
+		xMem.DestroyDynamicReadWriteBuffer(m_xSkinJobsBuffer);
+		xMem.DestroyDynamicConstantBuffer(m_xSkinConstantsBuffer);
 		m_bResourcesReady = false;
 	}
 
@@ -285,10 +340,12 @@ void Flux_UnifiedMeshImpl::Shutdown()
 	m_xShadowPipeline.Reset();
 	m_xCullingPipeline.Reset();
 	m_xResetPipeline.Reset();
+	m_xSkinningPipeline.Reset();
 	m_xGBufferShader.Reset();
 	m_xShadowShader.Reset();
 	m_xCullingShader.Reset();
 	m_xResetShader.Reset();
+	m_xSkinningShader.Reset();
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_UnifiedMesh shutdown");
 }
@@ -299,6 +356,9 @@ void Flux_UnifiedMeshImpl::Reset()
 	m_uBucketSlotCount = 0u;
 	m_uNumViews = 1u;
 	m_axBucketDraws.Clear();
+	m_uSkinJobCount = 0u;
+	m_uSkinMaxVertCount = 0u;
+	m_uBonePaletteCount = 0u;
 }
 
 //=============================================================================
@@ -311,6 +371,11 @@ void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		return;
 	}
+
+	// Pass 0 (Stage 5): compute-skinning pre-pass — skins animated submesh-instances into the
+	// object-space arena BEFORE cull/draw read it. View-independent (one pose feeds camera +
+	// every cascade). Self-guards on m_uSkinJobCount == 0 (no animated work -> no dispatch).
+	Flux_PassHandle xSkinPass = xGraph.AddPass("Unified Skinning", ExecuteUnifiedSkinning);
 
 	// Pass 1: per-bucket indirect-command reset (compute).
 	Flux_PassHandle xResetPass = xGraph.AddPass("Unified Cull Reset", ExecuteUnifiedReset);
@@ -346,6 +411,14 @@ void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// GBuffer reads the visible-index list (SSBO) and the indirect args.
 	xGraph.ReadBuffer(xGBufferPass, xVisible,  RESOURCE_ACCESS_READ_BUFFER_SRV);
 	xGraph.ReadBuffer(xGBufferPass, xIndirect, RESOURCE_ACCESS_READ_INDIRECT_ARG);
+
+	// Stage 5: the skinning pass writes the persistent arena; the GBuffer (and, via the same
+	// buffer, the shadow cascades) read it as the skinned buckets' vertex source. Declaring
+	// the write+read makes the graph order skinning before the consumers and synthesise the
+	// compute-write -> vertex-read barrier. (Inert until the gather produces skin-jobs.)
+	Flux_Buffer& xArena = m_xSkinnedArenaBuffer.GetBuffer();
+	xGraph.WriteBuffer(xSkinPass,    xArena, RESOURCE_ACCESS_WRITE_UAV);
+	xGraph.ReadBuffer(xGBufferPass,  xArena, RESOURCE_ACCESS_READ_VERTEX_BUFFER);   // fetched as a vertex stream
 }
 
 //=============================================================================
@@ -441,12 +514,38 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 			continue;   // retired or unreferenced slot — indirect cmd left zeroed (no draw)
 		}
 
-		Flux_MeshInstance* pxMesh = xRenderer.GetUnifiedMeshGeometry(pxKey->m_uMeshGeometryId);
-		if (pxMesh == nullptr)
+		Flux_UnifiedBucketDraw xDraw;
+		xDraw.m_uSlot          = uSlot;
+		xDraw.m_uVisibleOffset = m_auBucketOffsetScratch.Get(uSlot);
+		xDraw.m_uCullMode      = pxKey->m_uCullMode;
+
+		// SKINNED bucket (Stage 5): the meshGeometryId is a synthetic skin index, NOT a registry
+		// id — resolve the arena slice + the bind-pose mesh's IB from the renderer's per-frame
+		// skinned-draw array. Static/foliage buckets resolve the shared registry geometry + VAT.
+		Flux_MeshInstance* pxMesh = nullptr;
+		if (Flux_IsSkinnedMeshGeometryId(pxKey->m_uMeshGeometryId))
 		{
-			continue;
+			const u_int uSkinIdx = Flux_SkinnedMeshGeometryIndex(pxKey->m_uMeshGeometryId);
+			const Zenith_Vector<Flux_RendererImpl::Flux_UnifiedSkinnedDraw>& axSkinned = xRenderer.GetUnifiedSkinnedDraws();
+			if (uSkinIdx >= axSkinned.GetSize() || axSkinned.Get(uSkinIdx).m_pxMesh == nullptr)
+			{
+				continue;
+			}
+			pxMesh                = axSkinned.Get(uSkinIdx).m_pxMesh;   // index buffer + count
+			xDraw.m_bSkinned      = true;
+			xDraw.m_uVertexOffset = axSkinned.Get(uSkinIdx).m_uVertexOffset;
+		}
+		else
+		{
+			pxMesh = xRenderer.GetUnifiedMeshGeometry(pxKey->m_uMeshGeometryId);
+			if (pxMesh == nullptr)
+			{
+				continue;
+			}
+			xDraw.m_pxVATTexture = ResolveBucketVAT(pxKey->m_ulVATTextureId, xDraw.m_xVATParams);
 		}
 		m_auBucketIndexCountScratch.Get(uSlot) = pxMesh->GetNumIndices();
+		xDraw.m_pxMesh = pxMesh;
 
 		// Material registration is MAIN-THREAD only (this gather runs on the main
 		// thread via .Prepare). The key stores the asset pointer as the in-session id.
@@ -459,14 +558,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 			uMaterialIndex = pxMat->GetMaterialTableIndex();
 			if (uMaterialIndex == uFLUX_INVALID_MATERIAL_INDEX) uMaterialIndex = 0u;
 		}
-
-		Flux_UnifiedBucketDraw xDraw;
-		xDraw.m_uSlot          = uSlot;
 		xDraw.m_uMaterialIndex = uMaterialIndex;
-		xDraw.m_uVisibleOffset = m_auBucketOffsetScratch.Get(uSlot);
-		xDraw.m_uCullMode      = pxKey->m_uCullMode;
-		xDraw.m_pxMesh         = pxMesh;
-		xDraw.m_pxVATTexture   = ResolveBucketVAT(pxKey->m_ulVATTextureId, xDraw.m_xVATParams);
 		m_axBucketDraws.PushBack(xDraw);
 	}
 
@@ -508,6 +600,34 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	xCull.m_uNumObjects         = uNumObjects;   // cull bounds-guards Objects[di.m_uObjectIndex]
 	xMem.UploadBufferData(m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle, &xCull, sizeof(xCull));
 
+	// --- Stage 5: skinning inputs (host-uploaded) + arena grow ---
+	// The renderer built the bind-pose pool / bone palette / skin-jobs CPU-side in
+	// SyncUnifiedBucketsFromSnapshot; upload them + size the per-frame skinning dispatch. The arena
+	// is persistent grow-only (reuse the object so the graph barrier key stays valid).
+	const Zenith_Vector<u_int>&                 auBindPose = xRenderer.GetUnifiedBindPosePoolWords();
+	const Zenith_Vector<Zenith_Maths::Matrix4>& axPalette  = xRenderer.GetUnifiedBonePalette();
+	const Zenith_Vector<Flux_GPUSkinJob>&       axJobs     = xRenderer.GetUnifiedSkinJobs();
+	m_uSkinJobCount     = axJobs.GetSize();
+	m_uSkinMaxVertCount = xRenderer.GetUnifiedSkinMaxVerts();
+	m_uBonePaletteCount = axPalette.GetSize();
+	if (m_uSkinJobCount > 0u)
+	{
+		const u_int uTotalOutVerts = xRenderer.GetUnifiedSkinTotalOutVerts();
+		if (uTotalOutVerts > m_uSkinnedArenaVertCapacity)
+		{
+			xMem.DestroyReadWriteBuffer(m_xSkinnedArenaBuffer);
+			m_uSkinnedArenaVertCapacity = (m_uSkinnedArenaVertCapacity * 2u > uTotalOutVerts) ? m_uSkinnedArenaVertCapacity * 2u : uTotalOutVerts;
+			xMem.InitialiseReadWriteBuffer(nullptr, (size_t)m_uSkinnedArenaVertCapacity * kuSKIN_OUTPUT_WORDS * sizeof(u_int),
+				m_xSkinnedArenaBuffer, /*bAlsoVertexBuffer*/ true);
+		}
+		GrowDynamicRW(m_xBindPosePoolBuffer, m_uBindPosePoolWordCapacity, auBindPose.GetSize(), sizeof(u_int));
+		GrowDynamicRW(m_xBonePaletteBuffer,  m_uBonePaletteMatCapacity,   axPalette.GetSize(),  sizeof(Zenith_Maths::Matrix4));
+		GrowDynamicRW(m_xSkinJobsBuffer,     m_uSkinJobCapacity,          axJobs.GetSize(),     sizeof(Flux_GPUSkinJob));
+		xMem.UploadBufferData(m_xBindPosePoolBuffer.GetBuffer().m_xVRAMHandle, auBindPose.GetDataPointer(), auBindPose.GetSize() * sizeof(u_int));
+		xMem.UploadBufferData(m_xBonePaletteBuffer.GetBuffer().m_xVRAMHandle,  axPalette.GetDataPointer(),  axPalette.GetSize() * sizeof(Zenith_Maths::Matrix4));
+		xMem.UploadBufferData(m_xSkinJobsBuffer.GetBuffer().m_xVRAMHandle,     axJobs.GetDataPointer(),     axJobs.GetSize() * sizeof(Flux_GPUSkinJob));
+	}
+
 	m_uTotalDrawItems  = uNumDrawItems;
 	m_uBucketSlotCount = uSlotCount;
 	m_uNumViews        = uNumViews;
@@ -516,6 +636,32 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 //=============================================================================
 // Execute callbacks (worker threads — pure readers of the frozen gather state)
 //=============================================================================
+
+static void ExecuteUnifiedSkinning(Flux_CommandBuffer* pxCmdList, void*)
+{
+	Flux_UnifiedMeshImpl& xSelf = g_xEngine.UnifiedMesh();
+	if (xSelf.m_uSkinJobCount == 0u)
+	{
+		return;   // no animated work this frame
+	}
+
+	pxCmdList->BindComputePipeline(&xSelf.m_xSkinningPipeline);
+	Flux_ShaderBinder xBinder(*pxCmdList);
+
+	UnifiedSkinConstants xConsts = {};
+	xConsts.m_uNumJobs      = xSelf.m_uSkinJobCount;
+	xConsts.m_uPaletteCount = xSelf.m_uBonePaletteCount;
+	xBinder.BindDrawConstants(xSelf.m_xSkinningShader, "SkinConstants", &xConsts, sizeof(xConsts));
+	xBinder.BindSRV_Buffer(xSelf.m_xSkinningShader, "bindPose",     xSelf.m_xBindPosePoolBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(xSelf.m_xSkinningShader, "bonePalette",  xSelf.m_xBonePaletteBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(xSelf.m_xSkinningShader, "skinJobs",     xSelf.m_xSkinJobsBuffer.GetSRV());
+	xBinder.BindUAV_Buffer(xSelf.m_xSkinningShader, "skinnedArena", &xSelf.m_xSkinnedArenaBuffer.GetUAV());
+
+	// 2D dispatch: X = vertices (max over jobs, 64/group), Y = one row per skin-job. Each
+	// thread guards vx < job.vertCount and jobIdx < numJobs (the shader's own guards).
+	const u_int uGroupsX = (xSelf.m_uSkinMaxVertCount + 63u) / 64u;
+	pxCmdList->Dispatch(uGroupsX, xSelf.m_uSkinJobCount, 1u);
+}
 
 static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void*)
 {
@@ -595,7 +741,17 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 				continue;
 			}
 
-			pxCmdList->SetVertexBuffer(xDraw.m_pxMesh->GetVertexBuffer());
+			// SKINNED bucket: draw from the shared skinned arena at this instance's slice (byte
+			// offset = arena vertex base * 72); the index buffer is the bind-pose mesh's. Static:
+			// the registry mesh's own VB/IB.
+			if (xDraw.m_bSkinned)
+			{
+				pxCmdList->SetVertexBuffer(xSelf.m_xSkinnedArenaBuffer, 0u, (size_t)xDraw.m_uVertexOffset * kuSKIN_OUTPUT_WORDS * sizeof(u_int));
+			}
+			else
+			{
+				pxCmdList->SetVertexBuffer(xDraw.m_pxMesh->GetVertexBuffer());
+			}
 			pxCmdList->SetIndexBuffer(xDraw.m_pxMesh->GetIndexBuffer());
 
 			// DRAW block (set 4) — per-bucket constants + the bucket's visible slice + VAT texture.
@@ -608,7 +764,11 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 			xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "VisibleIndexBuffer", xSelf.m_xVisibleIndexBuffer.GetSRV());
 			BindBucketVAT(xBinder, xSelf.m_xGBufferShader, xDraw.m_pxVATTexture);
 
-			pxCmdList->DrawIndexedIndirect(&xSelf.m_xIndirectBuffer, 1u, xDraw.m_uSlot * kuINDIRECT_STRIDE, kuINDIRECT_STRIDE);
+			// Index math via the shared Flux_Unified* helper (camera = view 0) — the same source of
+			// truth RenderToShadowMap uses, so camera + shadow indirect addressing can never drift.
+			const u_int uIndirectByteOffset =
+				Flux_UnifiedIndirectCommandWord(0u, xDraw.m_uSlot, xSelf.m_uBucketSlotCount) * (u_int)sizeof(u_int);
+			pxCmdList->DrawIndexedIndirect(&xSelf.m_xIndirectBuffer, 1u, uIndirectByteOffset, kuINDIRECT_STRIDE);
 		}
 	}
 }
@@ -646,7 +806,15 @@ void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int 
 	{
 		const Flux_UnifiedBucketDraw& xDraw = m_axBucketDraws.Get(u);
 
-		xCmdBuf.SetVertexBuffer(xDraw.m_pxMesh->GetVertexBuffer());
+		// SKINNED caster: same object-space arena slice the camera draws (one pose, all views).
+		if (xDraw.m_bSkinned)
+		{
+			xCmdBuf.SetVertexBuffer(m_xSkinnedArenaBuffer, 0u, (size_t)xDraw.m_uVertexOffset * kuSKIN_OUTPUT_WORDS * sizeof(u_int));
+		}
+		else
+		{
+			xCmdBuf.SetVertexBuffer(xDraw.m_pxMesh->GetVertexBuffer());
+		}
 		xCmdBuf.SetIndexBuffer(xDraw.m_pxMesh->GetIndexBuffer());
 
 		// DRAW block (set 4) — per-bucket constants (this view's visible base + cascade) + the

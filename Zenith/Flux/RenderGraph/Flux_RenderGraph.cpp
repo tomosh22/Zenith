@@ -38,6 +38,7 @@ static bool IsReadAccess(ResourceAccess eAccess)
         case RESOURCE_ACCESS_READWRITE_UAV:
         case RESOURCE_ACCESS_READ_INDIRECT_ARG:
         case RESOURCE_ACCESS_READ_BUFFER_SRV:
+        case RESOURCE_ACCESS_READ_VERTEX_BUFFER:
             return true;
         case RESOURCE_ACCESS_UNDEFINED:
         case RESOURCE_ACCESS_WRITE_RTV:
@@ -65,6 +66,7 @@ static bool IsWriteAccess(ResourceAccess eAccess)
         case RESOURCE_ACCESS_READ_DEPTH:
         case RESOURCE_ACCESS_READ_INDIRECT_ARG:
         case RESOURCE_ACCESS_READ_BUFFER_SRV:
+        case RESOURCE_ACCESS_READ_VERTEX_BUFFER:
             return false;
     }
     Zenith_Assert(false, "IsWriteAccess: unknown ResourceAccess %d", (int)eAccess);
@@ -83,7 +85,8 @@ static bool IsAccessLegalForKind(ResourceAccess eAccess, Flux_GraphResourceKind 
             // instead of silently passing barrier synthesis.
             return eAccess != RESOURCE_ACCESS_UNDEFINED
                 && eAccess != RESOURCE_ACCESS_READ_INDIRECT_ARG
-                && eAccess != RESOURCE_ACCESS_READ_BUFFER_SRV;
+                && eAccess != RESOURCE_ACCESS_READ_BUFFER_SRV
+                && eAccess != RESOURCE_ACCESS_READ_VERTEX_BUFFER;
         case Flux_GraphResourceKind::Buffer:
             // Buffers can't be render targets or depth-stencil attachments; they
             // support SRV (structured read), UAV (compute write), read-modify-write
@@ -95,6 +98,7 @@ static bool IsAccessLegalForKind(ResourceAccess eAccess, Flux_GraphResourceKind 
                 || eAccess == RESOURCE_ACCESS_READWRITE_UAV
                 || eAccess == RESOURCE_ACCESS_READ_INDIRECT_ARG
                 || eAccess == RESOURCE_ACCESS_READ_BUFFER_SRV
+                || eAccess == RESOURCE_ACCESS_READ_VERTEX_BUFFER
                 || eAccess == RESOURCE_ACCESS_HOST_TRANSFER_WRITE;
     }
     return false;
@@ -113,6 +117,7 @@ static const char* AccessToString(ResourceAccess eAccess)
         case RESOURCE_ACCESS_READWRITE_UAV:      return "READWRITE_UAV";
         case RESOURCE_ACCESS_READ_INDIRECT_ARG:   return "READ_INDIRECT_ARG";
         case RESOURCE_ACCESS_READ_BUFFER_SRV:     return "READ_BUFFER_SRV";
+        case RESOURCE_ACCESS_READ_VERTEX_BUFFER:  return "READ_VERTEX_BUFFER";
         case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return "HOST_TRANSFER_WRITE";
     }
     return "???";

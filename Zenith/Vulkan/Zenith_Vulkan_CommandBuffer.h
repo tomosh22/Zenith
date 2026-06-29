@@ -82,6 +82,11 @@ public:
 	void EndAndCpuWait(bool bEndPass);
 	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
 	void SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
+	// Bind a compute-written read-write buffer as a vertex stream (Stage-5 skinned-vertex arena).
+	// The buffer must have been created with vertex-buffer usage (InitialiseReadWriteBuffer's
+	// bAlsoVertexBuffer). uByteOffset addresses a sub-range so per-instance skinned buckets share
+	// one arena buffer (each binds at its slice base in bytes).
+	void SetVertexBuffer(const Flux_ReadWriteBuffer& xVertexBuffer, uint32_t uBindPoint = 0, size_t uByteOffset = 0);
 	void SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);

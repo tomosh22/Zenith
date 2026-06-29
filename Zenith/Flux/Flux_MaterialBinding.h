@@ -5,8 +5,8 @@
 
 // ============================================================================
 // Mesh Draw Constants (96 bytes)
-// Per-draw constants for the shared mesh material path (StaticMeshes,
-// AnimatedMeshes, InstancedMeshes, Translucency, MaterialPreview). Carries only
+// Per-draw constants for the shared mesh material path (UnifiedMesh,
+// Translucency, MaterialPreview). Carries only
 // the model matrix + the GPU material-table index + the InstancedMeshes VAT
 // params. Material SCALARS and the 9 texture slots moved to the per-material GPU
 // record (Flux_MaterialGPU / g_axMaterials) — a draw selects its material by index.

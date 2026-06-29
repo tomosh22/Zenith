@@ -39,4 +39,17 @@ struct GPUSceneDrawItem
     float4 m_xLocalBoundsSphere; // offset 16 — submesh local sphere (center.xyz, radius.w)
 };                               // size 32
 
+// Stage-5 compute-skinning job descriptor (mirrors Flux_GPUSkinJob in
+// Flux/UnifiedMesh/Flux_Skinning.h, 16B all-uint — no vec3 alignment trap).
+// One per animated submesh-instance: where its bind-pose verts live in the shared
+// pool, where its skinned output goes in the arena, the vertex count, and its
+// skeleton's base in the bone palette.
+struct SkinJob
+{
+    uint m_uBindPoseVertBase;  // offset  0 — base vertex in the shared bind-pose pool
+    uint m_uOutVertBase;       // offset  4 — base vertex in the skinned-vertex arena
+    uint m_uVertCount;         // offset  8 — vertex count
+    uint m_uBonePaletteBase;   // offset 12 — base matrix in the bone palette
+};                             // size 16
+
 #endif // FLUX_COMMON_SCENEOBJECTS_SLANG

@@ -11,7 +11,6 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"   // Stage 2: unified GPU-driven shadow casters
 
@@ -147,25 +146,6 @@ static_assert(ZENITH_FLUX_NUM_CSMS == 4, "s_aszShadowCascadePassNames must match
 // Cascade index is passed through the graph's typed user-data slot — see
 // Flux_PassBuilder::UserData<T> / Flux_UnpackUserData<T> in Flux_RenderGraph.h.
 
-static void PreExecuteShadowMatrices(void*)
-{
-	// Ensures the UNCULLLED static/animated geometry shadow packets once per frame on the main
-	// thread before parallel cascade recording (Phase 3 backstop: off-screen casters still cast
-	// even when the mesh G-buffer passes — which would otherwise build the packets — are
-	// force-disabled). Generation-guarded, so a no-op when the G-buffer prepares already built them.
-	//
-	// NOTE: the cascade view×proj matrices are NO LONGER computed here. UpdateShadowMatrices was
-	// hoisted to the main-thread seam in Zenith_Core (right after the snapshot rebuild) so the
-	// unified mesh cull's .Prepare — which runs earlier in topological order once the cascade
-	// passes read its cull-output buffers (Stage 2) — sees up-to-date cascade frustums. The
-	// matrices are still ready well before any cascade records.
-	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
-	{
-		return;
-	}
-	g_xEngine.Shadows().EnsureGeometryShadowPackets();
-}
-
 static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
@@ -184,12 +164,9 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// All casters read the cascade matrix from the persistent VIEW set's all-cascade
 	// g_xShadowMatrices SSBO (Phase 5.4), selecting element `u` via the per-draw cascade index.
 
-	// Skeletal-animated casters keep their own per-bone shadow path (Stage 5 territory).
-	auto& xAnimatedMeshes = g_xEngine.AnimatedMeshes();
-	pxCommandList->SetPipeline(&xAnimatedMeshes.GetShadowPipeline());
-
-	// RenderToShadowMap handles all bindings via shader reflection
-	xAnimatedMeshes.RenderToShadowMap(*pxCommandList, u);
+	// Skeletal-animated casters cast through the unified path too (Stage 5: animated meshes are
+	// compute-skinned into the shared arena and drawn by the unified shadow kernel below, like
+	// static + instanced).
 
 	// Unified GPU-driven opaque casters (Stage 4): the single path for opaque statics AND instanced
 	// foliage (the old StaticMeshes/InstancedMeshes shadow loops were retired here). Binds its own
@@ -232,19 +209,23 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		// CSM targets are depth textures — declared as per-layer DSV writes (mip 0,
-		// layer u). Cascade 0 owns the CPU-side geometry-packet ensure via its pre-execute
-		// callback; the disjoint-layer writes record in parallel.
+		// layer u). The disjoint-layer writes record in parallel.
 		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
 			.UserData(u)
 			.ClearTargets()
 			.WritesTransient(m_xCSMArrayHandle, RESOURCE_ACCESS_WRITE_DSV, 0, 1, u, 1);
-		if (u == 0)
-			xGraph.SetPrepare(xPass, PreExecuteShadowMatrices);
 
 		if (bUnifiedResources)
 		{
 			xGraph.ReadBuffer(xPass, xUnified.m_xVisibleIndexBuffer.GetBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
 			xGraph.ReadBuffer(xPass, xUnified.m_xIndirectBuffer.GetBuffer(),     RESOURCE_ACCESS_READ_INDIRECT_ARG);
+			// Stage 5: skinned casters fetch the compute-skinned arena as a vertex stream
+			// (RenderToShadowMap binds it). Declare the read so the graph orders the skinning
+			// compute BEFORE this cascade and synthesises the compute-write -> vertex-input
+			// barrier (the GBuffer's own arena read only covers the GBuffer pass; shadow cascades
+			// run earlier in the frame so they need their own declared read). Unconditional +
+			// harmless with no skinned casters (the skinning dispatch is skipped at 0 jobs).
+			xGraph.ReadBuffer(xPass, xUnified.m_xSkinnedArenaBuffer.GetBuffer(), RESOURCE_ACCESS_READ_VERTEX_BUFFER);
 		}
 	}
 }
@@ -258,15 +239,6 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMArraySRV()
 	return GetCSMArray().SRV();
 }
 
-
-void Flux_ShadowsImpl::EnsureGeometryShadowPackets()
-{
-	// Ensure the UNCULLLED animated geometry shadow packet (cascade-0 Prepare). Generation-guarded
-	// inside the consumer, so this is a no-op when the animated G-buffer Prepare already built it
-	// this frame; it's the backstop when that G-buffer pass is force-disabled. (Opaque statics +
-	// instanced foliage now cast via the GPU-driven unified path, which needs no CPU packet.)
-	if (m_pxAnimatedMeshes) m_pxAnimatedMeshes->EnsureAnimatedPacket();
-}
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {

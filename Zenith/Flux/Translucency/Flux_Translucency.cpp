@@ -140,7 +140,7 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 // Prepare callback (main thread): pull every Translucent/Additive submesh out
 // of the EC-side model gather and depth-sort the result back-to-front.
-// StaticMeshes/AnimatedMeshes skip these submeshes symmetrically, so each
+// The opaque unified path skips these submeshes symmetrically, so each
 // submesh renders on exactly one path.
 void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 {

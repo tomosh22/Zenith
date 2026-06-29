@@ -116,3 +116,9 @@ void Flux_MaterialTable::Upload()
 // references it — see the NOTE at the bottom of Flux_GPUScene.cpp. The test
 // bodies call Flux_BuildGPUScene, which pulls Flux_GPUScene.obj into the link.
 #include "Flux/Flux_GPUScene.Tests.inl"
+
+// Stage-5 compute-skinning core tests. Hosted here for the same reason — the pure
+// Flux_SkinVertexCPU mirror is header-inline and not yet referenced by engine code
+// (the GPU skinning pass arrives in Stage 5d), so its static-init test registrations
+// would be dead-stripped from any inert host TU. This already-linked TU keeps them live.
+#include "Flux/UnifiedMesh/Flux_Skinning.Tests.inl"

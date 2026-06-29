@@ -1236,8 +1236,6 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsTransformSync.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_UISystem.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
-    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
-    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Device.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_MemoryAlloc.h" />
@@ -1338,8 +1336,6 @@
     <ClInclude Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs_Shaders.h" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Atmosphere.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Bindings.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\DrawConstants.slang" />
@@ -1364,7 +1360,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Light.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\AnimatedMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Decals.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DeferredShading.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DynamicLights.h" />
@@ -1386,6 +1381,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Terrain.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Text.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Translucency.h" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\UnifiedMesh.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Vegetation.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Water.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.slang" />
@@ -1432,6 +1428,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Translucency\Flux_Translucent_Forward.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Culling.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Reset.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Skinning.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang" />
@@ -1463,6 +1460,8 @@
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_TranslucencyImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_Translucency_Shaders.h" />
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_Skinning.h" />
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_Skinning.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMeshImpl.h" />
     <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMesh_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h" />
@@ -2175,7 +2174,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Decals\Flux_Decals.cpp" />
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />

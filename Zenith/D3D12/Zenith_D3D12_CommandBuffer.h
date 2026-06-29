@@ -54,6 +54,7 @@ public:
 	// ---- FluxBackendVertexIndexStreams -------------------------------------
 	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0) { }
 	void SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0) { }
+	void SetVertexBuffer(const Flux_ReadWriteBuffer& xVertexBuffer, uint32_t uBindPoint = 0, size_t uByteOffset = 0) { }
 	void SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer) { }
 
 	// ---- FluxBackendBasicDraws ---------------------------------------------

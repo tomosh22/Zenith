@@ -54,10 +54,14 @@ concept FluxBackendVertexIndexStreams = requires(
 	uint32_t uBindPoint,
 	const Flux_VertexBuffer& xVB,
 	const Flux_DynamicVertexBuffer& xDVB,
+	const Flux_ReadWriteBuffer& xRWVB,
 	const Flux_IndexBuffer& xIB)
 {
 	{ xRec.SetVertexBuffer(xVB, uBindPoint)                                                    } -> std::same_as<void>;
 	{ xRec.SetVertexBuffer(xDVB, uBindPoint)                                                   } -> std::same_as<void>;
+	// A compute-written read-write buffer bound as a vertex stream (Stage-5 skinned-vertex
+	// arena): the buffer is both a UAV (skinning compute write) and a vertex source (draw).
+	{ xRec.SetVertexBuffer(xRWVB, uBindPoint)                                                  } -> std::same_as<void>;
 	{ xRec.SetIndexBuffer(xIB)                                                                 } -> std::same_as<void>;
 };
 

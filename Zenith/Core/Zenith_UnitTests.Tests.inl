@@ -3938,7 +3938,7 @@ void Zenith_UnitTests::TestAnimatedVertexPositions(){
 	ZENITH_ASSERT_TRUE(pxMesh != nullptr && pxSkel != nullptr, "Failed to load test assets");
 
 	// Create skeleton instance for animation (CPU-only, no GPU buffer needed for unit tests)
-	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 	ZENITH_ASSERT_NOT_NULL(pxSkelInst, "Failed to create skeleton instance");
 
 	// Test at t=0.0 (should match bind pose)
@@ -13209,7 +13209,7 @@ void Zenith_UnitTests::TestInitializeRetroactiveLayerPoses(){
 	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
 	pxSkel->ComputeBindPoseMatrices();
 
-	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
 	Flux_AnimationController xController;
 
@@ -13321,7 +13321,7 @@ void Zenith_UnitTests::TestLayerCompositionOverrideBlend(){
 	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
 	pxSkel->ComputeBindPoseMatrices();
 
-	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
 	Flux_AnimationController xController;
 	xController.Initialize(pxSkelInst);
@@ -13405,7 +13405,7 @@ void Zenith_UnitTests::TestLayerCompositionAdditiveBlend(){
 	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
 	pxSkel->ComputeBindPoseMatrices();
 
-	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
 	Flux_AnimationController xController;
 	xController.Initialize(pxSkelInst);
@@ -13482,7 +13482,7 @@ void Zenith_UnitTests::TestLayerMaskedOverrideBlend(){
 	pxSkel->AddBone("Lower", 0, Zenith_Maths::Vector3(0, -1, 0), xIdentity, xUnitScale);
 	pxSkel->ComputeBindPoseMatrices();
 
-	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
 	Flux_AnimationController xController;
 	xController.Initialize(pxSkelInst);
@@ -13633,7 +13633,7 @@ void Zenith_UnitTests::TestTransitionCompletionFramePose(){
 	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
 	pxSkel->ComputeBindPoseMatrices();
 
-	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
 	// Test: after a transition completes, the output should be the target state's pose
 	// (not double-advanced by evaluating the blend tree twice on the completion frame)

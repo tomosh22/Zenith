@@ -34,7 +34,18 @@
 // ============================================================================
 
 // Per-object flags (m_uFlags).
-inline constexpr u_int uFLUX_GPUSCENE_OBJFLAG_VAT = 0x1u;  // object uses VAT (foliage); gates SampleVAT in the VS
+inline constexpr u_int uFLUX_GPUSCENE_OBJFLAG_VAT     = 0x1u;  // object uses VAT (foliage); gates SampleVAT in the VS
+inline constexpr u_int uFLUX_GPUSCENE_OBJFLAG_SKINNED = 0x2u;  // object is a compute-skinned animated instance (Stage 5)
+
+// Bucket meshGeometryId high bit: a SKINNED bucket's id is NOT a mesh-geometry-registry id
+// but uFLUX_GPUSCENE_SKINNED_MESH_BIT | perInstanceSkinIndex (the low bits index the renderer's
+// per-frame skinned-draw array). The draw branches on this bit: skinned buckets bind the shared
+// skinned-vertex arena + the mesh's index buffer; static buckets resolve the registry geometry.
+// Per-instance ids keep each skinned instance its OWN bucket in Stage 5 (Stage 6 drops them to
+// share a bucket + emit per-instance MultiDrawIndirect commands).
+inline constexpr u_int uFLUX_GPUSCENE_SKINNED_MESH_BIT = 0x80000000u;
+inline constexpr bool Flux_IsSkinnedMeshGeometryId(u_int uId) { return (uId & uFLUX_GPUSCENE_SKINNED_MESH_BIT) != 0u; }
+inline constexpr u_int Flux_SkinnedMeshGeometryIndex(u_int uId) { return uId & ~uFLUX_GPUSCENE_SKINNED_MESH_BIT; }
 
 struct Flux_GPUSceneObject
 {
@@ -139,16 +150,21 @@ bool Flux_CullDrawItemAgainstFrustum(const Zenith_Maths::Matrix4& xModel,
 
 // ---- reset-indirect packer (CPU mirror of Flux_UnifiedMesh_Reset.slang) ------
 // Packs one VkDrawIndexedIndirectCommand (5 uints): [indexCount, instanceCount=0,
-// firstIndex=0, vertexOffset=0, firstInstance=0]. The cull compute atomically increments
-// word 1 (instanceCount); every other word stays zero. Lives next to kuINDIRECT_WORDS.
+// firstIndex=0, vertexOffset, firstInstance=0]. The cull compute atomically increments
+// word 1 (instanceCount); every other word stays as packed. Lives next to kuINDIRECT_WORDS.
+// uVertexOffset is the bucket's base vertex into a shared vertex arena — 0 for static /
+// foliage buckets (geometry bound directly), and the skinned submesh-instance's arena
+// slice base for Stage-5 skinned buckets (the compute pre-pass writes there). Defaulting
+// it to 0 keeps every existing caller byte-identical to the pre-Stage-5 layout.
 inline constexpr u_int uFLUX_GPUSCENE_INDIRECT_WORDS = 5u;   // VkDrawIndexedIndirectCommand
-inline void Flux_PackResetIndirectCommand(u_int auOut[uFLUX_GPUSCENE_INDIRECT_WORDS], u_int uIndexCount)
+inline void Flux_PackResetIndirectCommand(u_int auOut[uFLUX_GPUSCENE_INDIRECT_WORDS], u_int uIndexCount,
+	u_int uVertexOffset = 0u)
 {
-	auOut[0] = uIndexCount;  // indexCount
-	auOut[1] = 0u;           // instanceCount (cull-incremented)
-	auOut[2] = 0u;           // firstIndex
-	auOut[3] = 0u;           // vertexOffset
-	auOut[4] = 0u;           // firstInstance
+	auOut[0] = uIndexCount;    // indexCount
+	auOut[1] = 0u;             // instanceCount (cull-incremented)
+	auOut[2] = 0u;             // firstIndex
+	auOut[3] = uVertexOffset;  // vertexOffset (skinned-arena slice base; 0 for static/foliage)
+	auOut[4] = 0u;             // firstInstance
 }
 
 // ---- multi-view cull-output index math (Stage 2) ----------------------------
@@ -343,6 +359,16 @@ void Flux_AppendGPUSceneItem(const Flux_GPUSceneSourceItem& xItem,
 // the path that scales to thousands of trees built CPU-side each frame.
 void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
 	const Zenith_Maths::Matrix4& xModel, u_int uObjFlags, u_int uVATAnimPacked, u_int uVATAnimTimeBits,
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked);
+
+// Append one compute-skinned animated submesh-instance (Stage 5): 1 object (carrying the
+// instance transform + its skeleton's bone-palette base + the SKINNED flag; no VAT) + 1
+// draw-item in a per-instance skinned bucket (xKey.m_uMeshGeometryId =
+// uFLUX_GPUSCENE_SKINNED_MESH_BIT | skinIndex). The submesh's bind-pose bounding sphere
+// (inflated for animation) is the cull primitive; the skinned arena slice the draw reads is
+// resolved per-bucket at gather (via the skinIndex), not stored here.
+void Flux_AppendGPUSceneSkinnedInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
+	const Zenith_Maths::Matrix4& xModel, u_int uBonePaletteBase,
 	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked);
 
 void Flux_EndGPUSceneBuild(Flux_GPUSceneBuildResult& xOut, Flux_GPUSceneBucketRegistry& xRegistry);

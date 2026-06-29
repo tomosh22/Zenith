@@ -158,6 +158,24 @@ void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GP
 	xOut.m_xDrawItems.PushBack(xDrawItem);
 }
 
+void Flux_AppendGPUSceneSkinnedInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
+	const Zenith_Maths::Matrix4& xModel, u_int uBonePaletteBase,
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked)
+{
+	const u_int uObjectIndex = xOut.m_xObjects.GetSize();
+	Flux_GPUSceneObject xObj;
+	// SKINNED object: carries the bone-palette base (consumed by the skinning compute via the
+	// skin-job, mirrored here for completeness) + the SKINNED flag; no VAT.
+	Flux_BuildGPUSceneObject(xObj, xModel, uFLUX_GPUSCENE_OBJFLAG_SKINNED, uBonePaletteBase, 0u, 0u);
+	xOut.m_xObjects.PushBack(xObj);
+
+	const u_int uBucket = xRegistry.Reference(xKey);
+
+	Flux_GPUSceneDrawItem xDrawItem;
+	Flux_BuildGPUSceneDrawItem(xDrawItem, uObjectIndex, uBucket, uColorTintPacked, 0u, xLocalBoundsSphere);
+	xOut.m_xDrawItems.PushBack(xDrawItem);
+}
+
 void Flux_EndGPUSceneBuild(Flux_GPUSceneBuildResult& xOut, Flux_GPUSceneBucketRegistry& xRegistry)
 {
 	xRegistry.EndSync();

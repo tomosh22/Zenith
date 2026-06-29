@@ -59,7 +59,6 @@ Zenith/EntityComponent/Zenith_GraphNode_Registration.cpp => g_xEngine | 1
 Zenith/EntityComponent/Zenith_GraphReload.cpp => g_xEngine | 2
 Zenith/EntityComponent/Zenith_PhysicsDebugDraw.cpp => g_xEngine | 5
 Zenith/EntityComponent/Zenith_PhysicsQuery.cpp => g_xEngine | 3
-Zenith/Flux/AnimatedMeshes/Flux_AnimatedMeshes.cpp => g_xEngine | 5
 Zenith/Flux/Decals/Flux_Decals.cpp => g_xEngine | 19
 Zenith/Flux/DeferredShading/Flux_DeferredShading.cpp => g_xEngine | 23
 Zenith/Flux/DynamicLights/Flux_DynamicLights.cpp => g_xEngine | 5

@@ -1,5 +1,4 @@
 #pragma once
-#include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -9,8 +8,8 @@
  *
  * This class represents a runtime instance of a skeleton asset. It manages:
  * - Current bone pose (position, rotation, scale per bone)
- * - Skinning matrix computation (model space * inverse bind pose)
- * - GPU buffer upload for shader access
+ * - Skinning matrix computation (model space * inverse bind pose), read on the CPU by the
+ *   unified compute-skinning path via GetSkinningMatrices()
  *
  * Created from a Zenith_SkeletonAsset which provides the bone hierarchy
  * and bind pose data. Multiple instances can share the same skeleton asset.
@@ -34,10 +33,9 @@ public:
 	/**
 	 * Factory method - create instance from skeleton asset
 	 * @param pxAsset Source skeleton asset (must remain valid for lifetime of instance)
-	 * @param bUploadToGPU If true, creates GPU buffer for skinning matrices. Set to false for CPU-only use (e.g., unit tests)
 	 * @return New skeleton instance, or nullptr on failure
 	 */
-	static Flux_SkeletonInstance* CreateFromAsset(Zenith_SkeletonAsset* pxAsset, bool bUploadToGPU = true);
+	static Flux_SkeletonInstance* CreateFromAsset(Zenith_SkeletonAsset* pxAsset);
 
 	/**
 	 * Destroy GPU resources
@@ -87,24 +85,13 @@ public:
 
 	/**
 	 * Compute final skinning matrices from current pose
-	 * Must be called after updating bone transforms and before UploadToGPU()
+	 * Must be called after updating bone transforms; the unified compute-skinning path then reads
+	 * the result via GetSkinningMatrices()
 	 *
 	 * For each bone: skinningMatrix = modelSpaceTransform * inverseBindPose
 	 * where modelSpaceTransform is computed by walking up the parent chain
 	 */
 	void ComputeSkinningMatrices();
-
-	/**
-	 * Upload skinning matrices to GPU buffer for current frame
-	 * Call after ComputeSkinningMatrices()
-	 */
-	void UploadToGPU();
-
-	/**
-	 * Upload skinning matrices to ALL frame buffers
-	 * Used during initialization to ensure all triple-buffered copies have valid data
-	 */
-	void UploadToAllFrameBuffers();
 
 	//=========================================================================
 	// Accessors
@@ -119,13 +106,6 @@ public:
 	 * Get number of bones in skeleton
 	 */
 	uint32_t GetNumBones() const;
-
-	/**
-	 * Get GPU buffer containing bone matrices
-	 * Used for binding to shaders during rendering
-	 */
-	const Flux_DynamicConstantBuffer& GetBoneBuffer() const { return m_xBoneBuffer; }
-	Flux_DynamicConstantBuffer& GetBoneBuffer() { return m_xBoneBuffer; }
 
 	/**
 	 * Get pointer to skinning matrices array
@@ -153,14 +133,9 @@ private:
 	// Cached model-space transforms (computed during ComputeSkinningMatrices)
 	Zenith_Maths::Matrix4 m_axModelSpaceTransforms[MAX_BONES];
 
-	// Final skinning matrices (model space * inverse bind pose)
+	// Final skinning matrices (model space * inverse bind pose). Read by the unified compute-
+	// skinning path via GetSkinningMatrices() (the legacy GPU bone-buffer upload was retired).
 	Zenith_Maths::Matrix4 m_axSkinningMatrices[MAX_BONES];
-
-	// GPU buffer for bone matrices
-	Flux_DynamicConstantBuffer m_xBoneBuffer;
-
-	// Flag to track if GPU resources are initialized
-	bool m_bGPUResourcesInitialized = false;
 
 	/**
 	 * Helper to compute model-space transform for a bone

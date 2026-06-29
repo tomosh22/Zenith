@@ -10,10 +10,9 @@
 
 Flux_AnimationControllerStore::~Flux_AnimationControllerStore()
 {
-	// Free every owned controller. Each was individually new'd. Their member
-	// Flux_DynamicConstantBuffer bone buffers release GPU handles here, so the
-	// engine MUST delete this store before the Vulkan device is destroyed (see
-	// Zenith_Engine::Shutdown ordering).
+	// Free every owned controller. Each was individually new'd. Controllers hold no
+	// GPU resources (skinning matrices are read CPU-side by the unified compute-skinning
+	// path), so no device-lifetime ordering constraint applies here.
 	for (u_int u = 0; u < m_xControllers.GetSize(); ++u)
 	{
 		delete m_xControllers.Get(u);
@@ -58,9 +57,8 @@ Flux_AnimationController& Flux_AnimationControllerStore::GetOrCreate(Zenith_Enti
 		// The slot was recycled to a NEW entity (different generation) while the
 		// PRIOR owner's controller was still mapped — i.e. the old owner's
 		// Destroy never ran before the slot was reissued. Tear the stale
-		// controller down (releasing its GPU bone buffer) so the new entity gets
-		// a clean controller rather than inheriting stale animation state, then
-		// fall through to create a fresh one.
+		// controller down so the new entity gets a clean controller rather than
+		// inheriting stale animation state, then fall through to create a fresh one.
 		DestroyControllerAt(uExisting, uSlot);
 	}
 
@@ -152,7 +150,7 @@ bool Flux_AnimationControllerStore::Destroy(Zenith_EntityID xID)
 
 void Flux_AnimationControllerStore::DestroyControllerAt(u_int uControllerIndex, u_int uSlot)
 {
-	// Free the owned controller (releases its GPU bone buffer).
+	// Free the owned controller.
 	delete m_xControllers.Get(uControllerIndex);
 
 	// Swap-and-pop the dense arrays. RemoveSwap moves the LAST element into

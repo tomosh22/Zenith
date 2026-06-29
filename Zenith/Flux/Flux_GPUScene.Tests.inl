@@ -521,7 +521,21 @@ ZENITH_TEST(GPUScene, PackResetIndirectCommandLayout)
 	ZENITH_ASSERT_EQ(auCmd[0], 1234u, "word 0 = indexCount from the bucket's mesh");
 	ZENITH_ASSERT_EQ(auCmd[1], 0u, "word 1 = instanceCount starts at 0 (cull increments it)");
 	ZENITH_ASSERT_EQ(auCmd[2], 0u, "word 2 = firstIndex 0");
-	ZENITH_ASSERT_EQ(auCmd[3], 0u, "word 3 = vertexOffset 0");
+	ZENITH_ASSERT_EQ(auCmd[3], 0u, "word 3 = vertexOffset 0 (static/foliage default)");
+	ZENITH_ASSERT_EQ(auCmd[4], 0u, "word 4 = firstInstance 0");
+}
+
+ZENITH_TEST(GPUScene, PackResetIndirectCommandCarriesVertexOffset)
+{
+	// Stage 5: a skinned bucket packs its skinned-arena slice base into word 3 (vertexOffset)
+	// so the fixed-function draw reaches that instance's slice; only word 3 differs from the
+	// static layout (the MDI-ready foundation for Stage 6's per-command vertexOffsets).
+	u_int auCmd[uFLUX_GPUSCENE_INDIRECT_WORDS] = { 0u, 0u, 0u, 0u, 0u };
+	Flux_PackResetIndirectCommand(auCmd, 360u, /*uVertexOffset*/ 4096u);
+	ZENITH_ASSERT_EQ(auCmd[0], 360u, "word 0 = indexCount");
+	ZENITH_ASSERT_EQ(auCmd[1], 0u, "word 1 = instanceCount 0");
+	ZENITH_ASSERT_EQ(auCmd[2], 0u, "word 2 = firstIndex 0");
+	ZENITH_ASSERT_EQ(auCmd[3], 4096u, "word 3 = the skinned-arena slice base (vertexOffset)");
 	ZENITH_ASSERT_EQ(auCmd[4], 0u, "word 4 = firstInstance 0");
 }
 

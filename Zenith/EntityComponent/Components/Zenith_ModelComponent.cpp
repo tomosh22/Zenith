@@ -12,8 +12,8 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "EntityComponent/Zenith_PhysicsDebugDraw.h"
-// Wave 3: EC-side model render-gather (so Flux_StaticMeshes / Flux_AnimatedMeshes drop
-// their Zenith_ModelComponent.h / Zenith_TransformComponent.h includes).
+// Wave 3: EC-side model render-gather (so the Flux mesh consumers drop their
+// Zenith_ModelComponent.h / Zenith_TransformComponent.h includes).
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -590,9 +590,9 @@ void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector
 // ---------------------------------------------------------------------------
 // Wave 3: model render-gather. Queries every Zenith_ModelComponent with a built
 // model instance and produces parallel (instance, world-matrix) lists for the
-// mesh renderers. Both Flux_StaticMeshes and Flux_AnimatedMeshes consume the full
-// list and filter it themselves (static skips skinned-animated models, animated
-// keeps them) -- identical to the per-renderer queries this replaces.
+// mesh renderers. The unified mesh path consumes the full list and filters it
+// itself (the static walk skips skinned-animated models; the skinned walk keeps
+// them) -- identical to the per-renderer queries this replaces.
 // ---------------------------------------------------------------------------
 // File-local scene-system accessor. This forwarder holds the SOLE engine-singleton
 // occurrence in this TU (baseline count 1): both the snapshot fill below AND every

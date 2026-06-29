@@ -42,9 +42,9 @@ class Flux_AnimationController;
 //     giving O(1) lookup keyed by EntityID slot with NO hash.
 //
 // Lifetime: created in Zenith_Engine::Initialise (alongside the Flux mesh
-// subsystems) and deleted in Zenith_Engine::Shutdown BEFORE the Vulkan device
-// is torn down — each owned controller holds a Flux_DynamicConstantBuffer bone
-// buffer (GPU resource) whose destructor needs the device alive.
+// subsystems) and deleted in Zenith_Engine::Shutdown. Controllers hold no GPU
+// resources (the unified compute-skinning path reads their CPU skinning matrices),
+// so there is no device-lifetime ordering constraint.
 //=============================================================================
 class Flux_AnimationControllerStore
 {

@@ -33,6 +33,7 @@ static const char* AccessToString(ResourceAccess eAccess)
         case RESOURCE_ACCESS_READWRITE_UAV:      return "READWRITE_UAV";
         case RESOURCE_ACCESS_READ_INDIRECT_ARG:   return "READ_INDIRECT_ARG";
         case RESOURCE_ACCESS_READ_BUFFER_SRV:     return "READ_BUFFER_SRV";
+        case RESOURCE_ACCESS_READ_VERTEX_BUFFER:  return "READ_VERTEX_BUFFER";
         case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return "HOST_TRANSFER_WRITE";
     }
     return "???";
@@ -1296,6 +1297,7 @@ static ResourceAccess RequiredPrePassAccess(ResourceAccess eAccess)
         case RESOURCE_ACCESS_READWRITE_UAV:      return RESOURCE_ACCESS_READWRITE_UAV;      // GENERAL
         case RESOURCE_ACCESS_READ_INDIRECT_ARG:  return RESOURCE_ACCESS_READ_INDIRECT_ARG;  // buffer-only, no layout
         case RESOURCE_ACCESS_READ_BUFFER_SRV:    return RESOURCE_ACCESS_READ_BUFFER_SRV;    // buffer-only, no layout
+        case RESOURCE_ACCESS_READ_VERTEX_BUFFER: return RESOURCE_ACCESS_READ_VERTEX_BUFFER; // buffer-only, no layout
         case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return RESOURCE_ACCESS_HOST_TRANSFER_WRITE; // buffer-only, never appears as a destination
         case RESOURCE_ACCESS_UNDEFINED:          return RESOURCE_ACCESS_UNDEFINED;
     }

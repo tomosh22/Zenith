@@ -45,9 +45,9 @@ void Zenith_D3D12_MemoryManager::InitialiseIndirectBuffer(size_t uSize, Flux_Ind
 	xBufferOut.GetUAV().m_xVRAMHandle = xBufferOut.GetBuffer().m_xVRAMHandle;
 }
 
-void Zenith_D3D12_MemoryManager::InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut)
+void Zenith_D3D12_MemoryManager::InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut, bool bAlsoVertexBuffer /*= false*/)
 {
-	(void)pData; (void)uSize;
+	(void)pData; (void)uSize; (void)bAlsoVertexBuffer;
 	xBufferOut.GetBuffer().m_xVRAMHandle.SetValue(ms_uDummyHandle++);
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 	xBufferOut.GetUAV().m_xBufferDescHandle.SetValue(ms_uDummyHandle++);

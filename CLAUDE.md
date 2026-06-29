@@ -27,7 +27,7 @@ Zenith/
 │   ├── SSGI/          # Screen-space GI (see Flux/SSGI/CLAUDE.md)
 │   ├── Terrain/       # Terrain rendering (see Flux/Terrain/CLAUDE.md)
 │   ├── Vegetation/    # Grass system (see Flux/Vegetation/CLAUDE.md)
-│   └── ...            # + AnimatedMeshes, Backend, DeferredShading, DynamicLights,
+│   └── ...            # + Backend, DeferredShading, DynamicLights,
 │                      #   InstancedMeshes, MaterialPreview, MeshGeometry, Particles,
 │                      #   Present, Primitives, Quads, SDFs, SceneGraph, Shaders, Skybox,
 │                      #   Slang, SSAO, UnifiedMesh, Text, Translucency, and more

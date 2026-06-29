@@ -51,6 +51,11 @@ struct Flux_UnifiedBucketDraw
 	// per-bucket params (texW, texH, enabled, 0) bound into the DRAW set each draw.
 	const Flux_AnimationTexture* m_pxVATTexture = nullptr;
 	Zenith_Maths::Vector4        m_xVATParams   = Zenith_Maths::Vector4(0.0f);
+	// Stage 5: a SKINNED bucket draws from the shared skinned-vertex arena (bound at this
+	// instance's byte offset) instead of m_pxMesh's vertex buffer; m_pxMesh then supplies only
+	// the index buffer + index count. m_uVertexOffset is the arena slice base IN VERTICES.
+	bool  m_bSkinned      = false;
+	u_int m_uVertexOffset = 0u;
 };
 
 class Flux_UnifiedMeshImpl
@@ -118,6 +123,29 @@ public:
 	Flux_Pipeline m_xResetPipeline;
 	Flux_RootSig  m_xResetRootSig;
 
+	// Stage 5: compute-skinning pre-pass (skeletal animated meshes -> object-space arena).
+	// Skins each animated submesh-instance to the 72-byte static layout in the persistent
+	// arena; the cull/draw/shadow kernels then consume it as ordinary static geometry. The
+	// pass self-guards on m_uSkinJobCount == 0 (no animated work this frame -> no dispatch).
+	Flux_Shader   m_xSkinningShader;
+	Flux_Pipeline m_xSkinningPipeline;
+	Flux_RootSig  m_xSkinningRootSig;
+
+	// Persistent, grow-only (graph-tracked) skinned-vertex arena: 72B static verts the
+	// skinned buckets draw via SetVertexBuffer(this) + per-bucket indirect vertexOffset.
+	// Created with BOTH UAV (compute write) and VERTEX (draw) usage.
+	Flux_ReadWriteBuffer        m_xSkinnedArenaBuffer;
+	u_int m_uSkinnedArenaVertCapacity = 0u;   // output verts (72B / 18 words each)
+
+	// Frame-indexed dynamic skinning inputs (host-uploaded each frame; NOT graph-tracked).
+	Flux_DynamicReadWriteBuffer m_xBindPosePoolBuffer;   // 104B bind-pose verts, raw words (SRV)
+	Flux_DynamicReadWriteBuffer m_xBonePaletteBuffer;    // all live skeletons' skinning matrices
+	Flux_DynamicReadWriteBuffer m_xSkinJobsBuffer;       // Flux_GPUSkinJob[]
+	Flux_DynamicConstantBuffer  m_xSkinConstantsBuffer;
+	u_int m_uBindPosePoolWordCapacity = 0u;  // 26-word input verts
+	u_int m_uBonePaletteMatCapacity   = 0u;
+	u_int m_uSkinJobCapacity          = 0u;
+
 	bool m_bResourcesReady = false;
 
 	// Per-frame frozen state (gather → execute).
@@ -125,6 +153,11 @@ public:
 	u_int m_uBucketSlotCount = 0u;
 	u_int m_uNumViews        = 1u;  // Stage 2: 1 (camera) or 1+ZENITH_FLUX_NUM_CSMS (shadows on)
 	Zenith_Vector<Flux_UnifiedBucketDraw> m_axBucketDraws;
+
+	// Stage 5 per-frame skinning state (gather -> skinning execute).
+	u_int m_uSkinJobCount     = 0u;  // animated submesh-instances to skin this frame (0 = no dispatch)
+	u_int m_uSkinMaxVertCount = 0u;  // largest job's vertex count (skinning dispatch X dimension)
+	u_int m_uBonePaletteCount = 0u;  // matrices uploaded into the palette (compute bounds-guard)
 
 	// Reusable scratch for the per-bucket metadata (avoids per-frame allocation).
 	Zenith_Vector<u_int> m_auBucketCountScratch;

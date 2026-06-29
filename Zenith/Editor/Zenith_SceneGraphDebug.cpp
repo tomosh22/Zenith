@@ -76,8 +76,9 @@ namespace Zenith_SceneGraphDebug
 			if (!xItem.m_xWorldAABB.IsValid()) { ++uVisible; continue; }   // no bounds -> never culled
 
 			// Mirror the consumers' conservative cull decision (pointer-free: world AABB only).
-			// Animated-skinned models are NOT camera-culled by Flux_AnimatedMeshes (no
-			// conservative animation bounds yet), so force them VISIBLE (green) rather than
+			// Animated-skinned models are conservatively force-shown in this debug overlay (the
+			// unified path culls them with an inflated bind-pose bound, which this pointer-free
+			// world-AABB mirror doesn't replicate), so mark them VISIBLE (green) rather than
 			// running the camera-cull test — but still DRAW their box (the bind-pose world AABB
 			// from the snapshot), so skinned characters get an overlay like everything else.
 			const bool bVisible = xItem.m_bAnimatedSkinned

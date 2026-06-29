@@ -15,7 +15,6 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_GraphicsOptions& xOpts = Get();
 
-	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "AnimatedMeshes", "Enabled" }, xOpts.m_bAnimatedMeshesEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "CPUParticles", "Enabled" }, xOpts.m_bCPUParticlesEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "DynamicLights", "Visible" }, xOpts.m_bDynamicLightsVisible);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Fog", "Enabled" }, xOpts.m_bFogEnabled);

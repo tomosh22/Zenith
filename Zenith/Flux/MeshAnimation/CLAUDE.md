@@ -24,13 +24,12 @@ Runtime skeleton state for a single animated entity.
 **Per-Bone State:**
 - Local position, rotation, scale (current pose)
 - Model-space transform (computed from hierarchy)
-- Skinning matrix (for GPU upload)
+- Skinning matrix (read CPU-side by the unified compute-skinning pass)
 
 **Key Methods:**
 - `SetToBindPose()` - Reset to skeleton asset's bind pose
 - `SetBoneLocalTransform()` - Set individual bone's local TRS
 - `ComputeSkinningMatrices()` - Walk hierarchy, compute skinning matrices
-- `UploadToGPU()` - Upload skinning matrices to constant buffer
 
 **Bone Ordering:** Bones are stored in hierarchical order (parents before children), allowing single-pass model-space computation without recursion.
 
@@ -59,7 +58,7 @@ Heap-stable owning store of one `Flux_AnimationController` per entity (`Flux_Ani
 
 **Why heap-stable matters:** the component caches a `Flux_AnimationController*` for the hot path, and games cache `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects. Because the controller is keyed by the **stable** `EntityID` slot and never relocates, those pointers survive a component-pool relocation and a cross-scene `MoveEntityToScene`.
 
-**Lifetime:** allocated in `Zenith_Engine::Initialise` (alongside the mesh subsystems) and deleted in `Zenith_Engine::Shutdown` **before** the Vulkan device teardown — each controller owns a `Flux_DynamicConstantBuffer` bone buffer whose destructor needs the device alive.
+**Lifetime:** allocated in `Zenith_Engine::Initialise` (alongside the mesh subsystems) and deleted in `Zenith_Engine::Shutdown`. Controllers hold no GPU resources (the unified compute-skinning path reads their CPU skinning matrices), so there is no device-lifetime ordering constraint.
 
 **Layering:** the store lives under `Flux/`, so it includes `Flux_AnimationController.h` freely. Its `.cpp` includes `EntityComponent/Zenith_Entity.h` for the `Zenith_EntityID` slot index (the store's single, allow-listed Flux→EntityComponent edge); the header only forward-declares the id.
 
@@ -80,11 +79,13 @@ skinningMatrix = modelSpaceTransform * inverseBindPose
 
 ## GPU Integration
 
-**Constant Buffer:** Skinning matrices are uploaded to a per-instance constant buffer indexed by bone ID.
+Skeletal meshes are skinned through the **unified GPU-driven mesh path** (`Flux/UnifiedMesh`):
 
-**Vertex Shader:** Animated mesh vertices include bone indices (uvec4) and weights (vec4). The shader samples the bone matrix buffer and computes the weighted sum.
+**Bone palette:** All live skeletons' `GetSkinningMatrices()` are concatenated CPU-side into a per-frame bone-palette SSBO (de-duplicated per `Flux_SkeletonInstance`). There is no per-instance bone constant buffer.
 
-**Triple Buffering:** Bone buffers are multi-buffered to match `MAX_FRAMES_IN_FLIGHT`, preventing GPU access conflicts.
+**Compute-skinning pre-pass:** A compute shader skins each animated submesh-instance's bind-pose vertices to OBJECT space into a shared, grow-only skinned-vertex arena (a buffer with both UAV and VERTEX usage).
+
+**Draw:** The existing GPU-driven cull/draw/shadow kernels consume the arena as ordinary static geometry (they apply the object's model matrix), so skeletal meshes need no dedicated draw or shadow shaders.
 
 ## Animation Data Flow
 
@@ -93,8 +94,9 @@ skinningMatrix = modelSpaceTransform * inverseBindPose
 3. **Update:** `Flux_AnimationController::Update()` advances time, samples clip
 4. **Apply:** Sampled TRS values written to `Flux_SkeletonInstance` bones
 5. **Compute:** `ComputeSkinningMatrices()` walks bone hierarchy
-6. **Upload:** Skinning matrices uploaded to GPU constant buffer
-7. **Render:** Animated mesh shader samples bone matrices for vertex skinning
+6. **Palette:** live skeletons' skinning matrices concatenated into the per-frame bone-palette SSBO
+7. **Skin:** the unified compute-skinning pre-pass writes object-space vertices into the shared arena
+8. **Render:** the GPU-driven mesh path draws the arena like static geometry
 
 ## Animation State Machine
 
@@ -179,5 +181,5 @@ MeshAnimation/
 
 ## Constants
 
-- `MAX_BONES = 100` - Maximum bones per skeleton (`Zenith_SkeletonAsset::MAX_BONES`, must match shader's `g_xBones[100]` array size)
+- `MAX_BONES = 100` - Maximum bones per skeleton (`Zenith_SkeletonAsset::MAX_BONES`; the bone-palette SSBO reserves a MAX_BONES block per skeleton)
 - `BONES_PER_VERTEX_LIMIT = 4` - Maximum bone influences per vertex (defined in AssetHandling/Zenith_MeshAsset.h)

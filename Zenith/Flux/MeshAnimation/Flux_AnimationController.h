@@ -5,7 +5,6 @@
 #include "Flux_AnimationStateMachine.h"
 #include "Flux_InverseKinematics.h"
 #include "Flux_AnimationLayer.h"
-#include "Flux/Flux_Buffers.h"  // Flux_DynamicConstantBuffer m_xBoneBuffer (was transitively via the deleted Flux_MeshAnimation.h)
 #include "AssetHandling/Zenith_AssetHandle.h"
 
 //=============================================================================
@@ -58,8 +57,7 @@ public:
 	// Get the number of bones from either system
 	uint32_t GetNumBones() const;
 
-	// Check if the controller has animation content (clips loaded or playing)
-	// Used by GetBoneBuffer() to decide whether to use this controller or fall back to legacy system
+	// Check if the controller has animation content (clips loaded or playing).
 	bool HasAnimationContent() const;
 
 	//=========================================================================
@@ -206,14 +204,6 @@ public:
 	void ClearEventCallback();
 
 	//=========================================================================
-	// GPU Buffer Access
-	//=========================================================================
-
-	// Get bone matrix buffer for rendering
-	const Flux_DynamicConstantBuffer& GetBoneBuffer() const { return m_xBoneBuffer; }
-	Flux_DynamicConstantBuffer& GetBoneBuffer() { return m_xBoneBuffer; }
-
-	//=========================================================================
 	// World Transform
 	//=========================================================================
 
@@ -240,9 +230,6 @@ public:
 private:
 	// Process animation events for the current frame
 	void ProcessEvents(float fPrevTime, float fCurrentTime);
-
-	// Upload bone matrices to GPU
-	void UploadToGPU();
 
 	// Update path for skeleton instance
 	void UpdateWithSkeletonInstance(float fDt);
@@ -285,9 +272,6 @@ private:
 	Flux_BlendTreeNode_Clip* m_pxDirectPlayNode = nullptr;
 	Flux_CrossFadeTransition* m_pxDirectTransition = nullptr;
 #endif
-
-	// GPU buffer for bone matrices
-	Flux_DynamicConstantBuffer m_xBoneBuffer;
 
 	// World transform (for IK)
 	Zenith_Maths::Matrix4 m_xWorldMatrix = glm::mat4(1.0f);

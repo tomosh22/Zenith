@@ -43,7 +43,6 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	, m_pxDirectPlayNode(xOther.m_pxDirectPlayNode)
 	, m_pxDirectTransition(xOther.m_pxDirectTransition)
 #endif
-	, m_xBoneBuffer(std::move(xOther.m_xBoneBuffer))
 	, m_xWorldMatrix(xOther.m_xWorldMatrix)
 	, m_xLayers(std::move(xOther.m_xLayers))
 	, m_xTempBlendPose(std::move(xOther.m_xTempBlendPose))
@@ -87,7 +86,6 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		m_bPaused = xOther.m_bPaused;
 		m_fPlaybackSpeed = xOther.m_fPlaybackSpeed;
 		m_eUpdateMode = xOther.m_eUpdateMode;
-		m_xBoneBuffer = std::move(xOther.m_xBoneBuffer);
 		m_xWorldMatrix = xOther.m_xWorldMatrix;
 		m_pfnEventCallback = xOther.m_pfnEventCallback;
 		m_pEventCallbackUserData = xOther.m_pEventCallbackUserData;
@@ -352,7 +350,8 @@ void Flux_AnimationController::ApplyOutputPoseToSkeleton()
 	}
 
 	m_pxSkeletonInstance->ComputeSkinningMatrices();
-	m_pxSkeletonInstance->UploadToGPU();
+	// (No GPU bone-buffer upload — the unified compute-skinning path reads the CPU skinning
+	// matrices directly via GetSkinningMatrices; the legacy per-frame bone CBV was retired.)
 }
 
 const Zenith_Maths::Matrix4* Flux_AnimationController::GetSkinningMatrices() const
@@ -608,12 +607,6 @@ void Flux_AnimationController::ProcessEvents(float fPrevTime, float fCurrentTime
 			m_pfnEventCallback(m_pEventCallbackUserData, xEvent.m_strEventName, xEvent.m_xData);
 		}
 	}
-}
-
-void Flux_AnimationController::UploadToGPU()
-{
-	// GPU upload is now handled by Flux_SkeletonInstance::UploadToGPU()
-	// which is called from UpdateWithSkeletonInstance()
 }
 
 #ifdef ZENITH_TOOLS

@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux_MeshGeometry.h"
-#include "Flux/MeshAnimation/Flux_AnimationController.h"
 
 void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
 {
@@ -762,14 +761,4 @@ Zenith_Maths::Vector3 Flux_MeshGeometry::GenerateTangent(uint32_t a, uint32_t b,
 	Zenith_Maths::Vector3 biCross = glm::cross(xTangent, xNormal);
 
 	return std::move(Zenith_Maths::Vector3(xTangent.x, xTangent.y, xTangent.z));
-}
-
-const Flux_DynamicConstantBuffer* Flux_MeshGeometry::GetBoneBuffer() const
-{
-	if (m_pxAnimationController)
-	{
-		return &m_pxAnimationController->GetBoneBuffer();
-	}
-
-	return nullptr;
 }

@@ -2,11 +2,14 @@
 
 #include "Core/ZenithConfig.h"
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Flux/Flux.h"            // Flux_RenderPassEntry, Flux_WorkDistribution, Flux_RenderGraph_AttachmentRef/Pass
 #include "Flux/Flux_GPUScene.h"             // Flux_GPUSceneBucketRegistry / Flux_GPUSceneBuildResult (Stage 0)
 #include "Flux/Flux_MeshGeometryRegistry.h" // Flux_MeshGeometryRegistry (Stage 0)
+#include "Flux/UnifiedMesh/Flux_Skinning.h" // Flux_BonePaletteBuilder / Flux_GPUSkinJob (Stage 5)
 
 class Flux_RenderGraph;
+class Zenith_MeshAsset;    // Stage 5: skinned-pose store keyed by mesh asset
 class Flux_MeshInstance;   // Stage 1: shared geometry resolved from the mesh-geometry registry for the unified draw
 // Held by POINTER (forward-declared, heap-allocated in Zenith_Engine::AllocateRenderer /
 // freed in Shutdown + the dtor backstop) rather than by value: the snapshot header pulls
@@ -155,6 +158,24 @@ public:
 		return static_cast<Flux_MeshInstance*>(m_xUnifiedMeshGeometryRegistry.GetBuilt(uMeshGeometryId));
 	}
 
+	// ===== Stage 5: compute-skinning data flow =====
+	// Animated skinned meshes are compute-skinned + drawn through the unified path.
+
+	// Per skinned bucket (indexed by the bucket's skinIndex = meshGeometryId low bits): the
+	// arena slice base + the mesh whose index buffer the skinned draw binds. GatherUnifiedPacket
+	// reads this to resolve a skinned bucket's draw.
+	struct Flux_UnifiedSkinnedDraw
+	{
+		Flux_MeshInstance* m_pxMesh        = nullptr;  // IB + index count
+		u_int              m_uVertexOffset = 0u;       // base vertex in the skinned arena (this instance's slice)
+	};
+	const Zenith_Vector<Flux_UnifiedSkinnedDraw>& GetUnifiedSkinnedDraws() const { return m_axUnifiedSkinnedDraws; }
+	const Zenith_Vector<u_int>&           GetUnifiedBindPosePoolWords() const { return m_auUnifiedBindPosePoolWords; }
+	const Zenith_Vector<Zenith_Maths::Matrix4>& GetUnifiedBonePalette() const { return m_xUnifiedBonePalette.Matrices(); }
+	const Zenith_Vector<Flux_GPUSkinJob>& GetUnifiedSkinJobs() const { return m_axUnifiedSkinJobs; }
+	u_int GetUnifiedSkinMaxVerts()      const { return m_uUnifiedSkinMaxVerts; }
+	u_int GetUnifiedSkinTotalOutVerts() const { return m_uUnifiedSkinTotalOutVerts; }
+
 	// ===== Data members =====
 
 	// Render graph. Allocated in LateInitialise, freed in Shutdown.
@@ -188,6 +209,30 @@ public:
 	Flux_MeshGeometryRegistry             m_xUnifiedMeshGeometryRegistry;
 	Flux_GPUSceneBucketRegistry           m_xUnifiedBucketRegistry;
 	Flux_GPUSceneBuildResult              m_xUnifiedGPUScene;
+
+	// ===== Stage 5: compute-skinning state =====
+	// Persistent per-distinct-skinned-mesh cache (keyed by Zenith_MeshAsset*): the bind-pose
+	// vertices as raw words (compute input) + the shared mesh instance for IB/counts. Built lazily
+	// (GetOrBuildSkinnedPose) and freed in Shutdown.
+	struct Flux_SkinnedPoseEntry
+	{
+		Zenith_Vector<u_int> m_auBindPoseWords;   // 104B-per-vertex interleaved (uFLUX_SKIN_INPUT_WORDS/vert)
+		Flux_MeshInstance*   m_pxMesh    = nullptr; // CreateSkinnedFromAsset → IB + index count + bounds
+		u_int                m_uNumVerts = 0u;
+	};
+	Flux_SkinnedPoseEntry* GetOrBuildSkinnedPose(Zenith_MeshAsset* pxAsset);  // defined in Flux.cpp
+
+	Zenith_Vector<Flux_SkinnedPoseEntry*> m_axUnifiedSkinnedPoseStore;        // owned entries
+	Zenith_HashMap<const void*, u_int>    m_xUnifiedSkinnedPoseByAsset;       // asset -> store index
+
+	// Per-frame skin-build state (rebuilt each SyncUnifiedBucketsFromSnapshot, read by GatherUnifiedPacket).
+	Flux_BonePaletteBuilder               m_xUnifiedBonePalette;             // dedup skeletons -> concatenated palette
+	Zenith_Vector<u_int>                  m_auUnifiedBindPosePoolWords;      // concatenated bind-pose words for this frame's jobs
+	Zenith_HashMap<const void*, u_int>    m_xUnifiedBindPosePoolBaseByMesh;  // asset -> base VERTEX in the pool (this frame)
+	Zenith_Vector<Flux_GPUSkinJob>        m_axUnifiedSkinJobs;               // one per animated submesh-instance
+	Zenith_Vector<Flux_UnifiedSkinnedDraw> m_axUnifiedSkinnedDraws;          // per skinned bucket (by skinIndex)
+	u_int m_uUnifiedSkinMaxVerts      = 0u;   // largest job's vertex count (skinning dispatch X)
+	u_int m_uUnifiedSkinTotalOutVerts = 0u;   // arena vertices used this frame
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;

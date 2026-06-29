@@ -10,7 +10,6 @@ struct Zenith_GraphicsOptions
 	uint32_t m_uWindowWidth = 1280;
 	uint32_t m_uWindowHeight = 720;
 
-	bool m_bAnimatedMeshesEnabled = true;
 	bool m_bCPUParticlesEnabled = true;
 	bool m_bDynamicLightsVisible = true;
 	bool m_bFogEnabled = true;

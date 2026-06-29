@@ -97,7 +97,7 @@ public:
 	void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
 	void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 	void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
-	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
+	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut, bool bAlsoVertexBuffer = false);
 	void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut);
 
 	// ===== Upload paths (FluxBackendMemoryAlloc) =====

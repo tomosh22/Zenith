@@ -13,8 +13,8 @@ class Flux_RenderSceneSnapshot;
 
 // Per-frame draw item resolved on the main thread during Prepare: one
 // translucent/additive SUBMESH (the gather walks every model's meshes and
-// pulls out only the blend-mode-routed ones — StaticMeshes/AnimatedMeshes
-// skip them symmetrically). Sorted back-to-front by view-space depth before
+// pulls out only the blend-mode-routed ones — the opaque unified path skips
+// them symmetrically). Sorted back-to-front by view-space depth before
 // the record callback runs.
 struct Flux_TranslucentDrawItem
 {

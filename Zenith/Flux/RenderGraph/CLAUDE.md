@@ -96,7 +96,7 @@ Subsystems must never call `vkCmdPipelineBarrier` or insert `Flux_CommandImageTr
 `Flux_RenderGraph::GetPassOrderDescription()` returns a human-readable dump of the compiled order:
 
 ```
-TerrainGBuffer -> StaticMeshesGBuffer -> AnimatedMeshesGBuffer -> Foliage -> HiZ -> SSAO -> SSR Raymarch -> ... -> Tonemap
+TerrainGBuffer -> Unified Skinning -> Unified Cull -> Unified GBuffer -> HiZ -> SSAO -> SSR Raymarch -> ... -> Tonemap
 ```
 
 It is bound to a debug variable button at `Render/RenderGraph/Print Pass Order` (`Flux.cpp:345`). When you're trying to figure out why a pass runs where it does, click the button and read the resulting log line — it is the live source of truth, ahead of any documentation.

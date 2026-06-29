@@ -433,9 +433,6 @@
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>FileAccess</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp">
-      <Filter>Flux\AnimatedMeshes</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp">
       <Filter>Flux\Backend</Filter>
     </ClCompile>
@@ -2457,12 +2454,6 @@
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
       <Filter>FileAccess</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h">
-      <Filter>Flux\AnimatedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes_Shaders.h">
-      <Filter>Flux\AnimatedMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h">
       <Filter>Flux\Backend\Concepts</Filter>
     </ClInclude>
@@ -2763,12 +2754,6 @@
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs_Shaders.h">
       <Filter>Flux\SDFs</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang">
-      <Filter>Flux\Shaders\AnimatedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToShadowmap.slang">
-      <Filter>Flux\Shaders\AnimatedMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Atmosphere.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
@@ -2841,9 +2826,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\AnimatedMeshes.h">
-      <Filter>Flux\Shaders\Generated</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Decals.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
@@ -2905,6 +2887,9 @@
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Translucency.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\UnifiedMesh.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Vegetation.h">
@@ -3045,6 +3030,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Reset.slang">
       <Filter>Flux\Shaders\UnifiedMesh</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Skinning.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang">
       <Filter>Flux\Shaders\UnifiedMesh</Filter>
     </ClInclude>
@@ -3137,6 +3125,12 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Translucency\Flux_Translucency_Shaders.h">
       <Filter>Flux\Translucency</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_Skinning.h">
+      <Filter>Flux\UnifiedMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_Skinning.Tests.inl">
+      <Filter>Flux\UnifiedMesh</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\UnifiedMesh\Flux_UnifiedMeshImpl.h">
       <Filter>Flux\UnifiedMesh</Filter>
@@ -3456,9 +3450,6 @@
     <Filter Include="Flux">
       <UniqueIdentifier>{5bb3301c-8912-f15d-75cc-d44dbb6f5ace}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Flux\AnimatedMeshes">
-      <UniqueIdentifier>{bf2887ce-a035-709c-1b23-f354257dbdb0}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Flux\Backend">
       <UniqueIdentifier>{d65fb194-fec4-5546-28de-fa5f31c432fa}</UniqueIdentifier>
     </Filter>
@@ -3533,9 +3524,6 @@
     </Filter>
     <Filter Include="Flux\Shaders">
       <UniqueIdentifier>{64ae2a77-12ed-fc55-5117-fc86e630299b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Flux\Shaders\AnimatedMeshes">
-      <UniqueIdentifier>{8f44994f-bb49-ad0f-3b7f-a61cceb4e752}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Common">
       <UniqueIdentifier>{69171996-a11b-940f-8826-64d9fb56053a}</UniqueIdentifier>

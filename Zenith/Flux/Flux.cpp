@@ -6,8 +6,9 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type for the by-ptr snapshot (alloc/rebuild/free)
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"        // Stage 0e: per-submesh mesh-instance identity + local bounds
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"   // Stage 5: per-instance skinning matrices + MAX_BONES
+#include "AssetHandling/Zenith_MeshAsset.h"             // Stage 5: bind-pose vertex arrays for the skinned-pose store
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #ifdef ZENITH_WINDOWS
 #include "Flux/Slang/Flux_SlangCompiler.h"
@@ -218,6 +219,78 @@ void Flux_RendererImpl::RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, cons
 // RebuildSceneSnapshot, before the render-task window opens. Consumed by the Flux_UnifiedMesh
 // feature's GatherUnifiedPacket (uploads + reset/cull/draw). The mesh-geometry registry's
 // real provider (wired in LateInitialise) builds one shared VB/IB per unique mesh identity.
+// Stage 5: build (or fetch the cache of) a distinct skinned mesh's bind-pose data — the 104-byte
+// interleaved vertices as raw words (the compute-skinning input) + a Flux_MeshInstance for the
+// shared index buffer / counts the skinned draw binds. Replicates the interleave done by
+// Flux_MeshInstance::CreateSkinnedFromAsset so the words byte-match the 104B skinned vertex layout
+// (Flux_SkinInputVertex). Cached per Zenith_MeshAsset*; entries freed in Shutdown.
+Flux_RendererImpl::Flux_SkinnedPoseEntry* Flux_RendererImpl::GetOrBuildSkinnedPose(Zenith_MeshAsset* pxAsset)
+{
+	if (pxAsset == nullptr)
+	{
+		return nullptr;
+	}
+	if (const u_int* puIdx = m_xUnifiedSkinnedPoseByAsset.TryGet(pxAsset))
+	{
+		return m_axUnifiedSkinnedPoseStore.Get(*puIdx);
+	}
+
+	const u_int uNumVerts = pxAsset->GetNumVerts();
+	if (uNumVerts == 0u || !pxAsset->HasSkinning())
+	{
+		return nullptr;
+	}
+
+	Flux_MeshInstance* pxMesh = Flux_MeshInstance::CreateSkinnedFromAsset(pxAsset);
+	if (pxMesh == nullptr)
+	{
+		return nullptr;
+	}
+
+	Flux_SkinnedPoseEntry* pxEntry = new Flux_SkinnedPoseEntry();
+	pxEntry->m_pxMesh    = pxMesh;
+	pxEntry->m_uNumVerts = uNumVerts;
+
+	// Interleave the 104B skinned vertex as 26 raw words/vertex (mirror Flux_MeshInstance.cpp's
+	// CreateSkinnedFromAsset packing: pos uv normal tangent bitangent color boneIDs boneWeights).
+	const bool bHasPos = pxAsset->m_xPositions.GetSize()  >= uNumVerts;
+	const bool bHasUV  = pxAsset->m_xUVs.GetSize()        >= uNumVerts;
+	const bool bHasNrm = pxAsset->m_xNormals.GetSize()    >= uNumVerts;
+	const bool bHasTan = pxAsset->m_xTangents.GetSize()   >= uNumVerts;
+	const bool bHasBit = pxAsset->m_xBitangents.GetSize() >= uNumVerts;
+	const bool bHasCol = pxAsset->m_xColors.GetSize()     >= uNumVerts;
+	const bool bHasBI  = pxAsset->m_xBoneIndices.GetSize()>= uNumVerts;
+	const bool bHasBW  = pxAsset->m_xBoneWeights.GetSize()>= uNumVerts;
+
+	pxEntry->m_auBindPoseWords.Reserve((size_t)uNumVerts * uFLUX_SKIN_INPUT_WORDS);
+	auto PushF = [&](float f) { pxEntry->m_auBindPoseWords.PushBack(Flux_SkinDetail::FloatToWord(f)); };
+	auto PushU = [&](u_int u) { pxEntry->m_auBindPoseWords.PushBack(u); };
+	for (u_int v = 0; v < uNumVerts; ++v)
+	{
+		const Zenith_Maths::Vector3 xPos = bHasPos ? pxAsset->m_xPositions.Get(v)  : Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+		const Zenith_Maths::Vector2 xUV  = bHasUV  ? pxAsset->m_xUVs.Get(v)        : Zenith_Maths::Vector2(0.0f, 0.0f);
+		const Zenith_Maths::Vector3 xNrm = bHasNrm ? pxAsset->m_xNormals.Get(v)    : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+		const Zenith_Maths::Vector3 xTan = bHasTan ? pxAsset->m_xTangents.Get(v)   : Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+		const Zenith_Maths::Vector3 xBit = bHasBit ? pxAsset->m_xBitangents.Get(v) : Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		const Zenith_Maths::Vector4 xCol = bHasCol ? pxAsset->m_xColors.Get(v)     : Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+		const glm::uvec4 xBI = bHasBI ? pxAsset->m_xBoneIndices.Get(v) : glm::uvec4(0u, 0u, 0u, 0u);
+		const glm::vec4  xBW = bHasBW ? pxAsset->m_xBoneWeights.Get(v) : glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+		PushF(xPos.x); PushF(xPos.y); PushF(xPos.z);
+		PushF(xUV.x);  PushF(xUV.y);
+		PushF(xNrm.x); PushF(xNrm.y); PushF(xNrm.z);
+		PushF(xTan.x); PushF(xTan.y); PushF(xTan.z);
+		PushF(xBit.x); PushF(xBit.y); PushF(xBit.z);
+		PushF(xCol.x); PushF(xCol.y); PushF(xCol.z); PushF(xCol.w);
+		PushU(xBI.x);  PushU(xBI.y);  PushU(xBI.z);  PushU(xBI.w);
+		PushF(xBW.x);  PushF(xBW.y);  PushF(xBW.z);  PushF(xBW.w);
+	}
+
+	const u_int uIdx = m_axUnifiedSkinnedPoseStore.GetSize();
+	m_axUnifiedSkinnedPoseStore.PushBack(pxEntry);
+	m_xUnifiedSkinnedPoseByAsset.Insert(pxAsset, uIdx);
+	return pxEntry;
+}
+
 void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 {
 	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
@@ -237,8 +310,8 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	{
 		const Flux_RenderSceneItem& xSrc = xItems.Get(uItem);
 		Flux_ModelInstance* pxModel = xSrc.m_pxModelInstance;
-		// Animated-skinned models draw via Flux_AnimatedMeshes (Stage 5); skip (mirrors the
-		// StaticMeshes consumer filter).
+		// Animated-skinned models draw via the unified compute-skinning path (appended as
+		// per-skinned buckets below); skip them in this static-mesh walk.
 		if (pxModel == nullptr || xSrc.m_bAnimatedSkinned)
 		{
 			continue;
@@ -396,6 +469,138 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 		}
 	}
 
+	// ---- animated skinned models (Stage 5) ----
+	// Reset the per-frame skin builders ALWAYS (so GatherUnifiedPacket sees 0 jobs when the
+	// toggle is off / there is no animated content). When enabled, walk the snapshot's
+	// animated-skinned items: each skinned submesh-instance is compute-skinned to the arena and
+	// drawn through the unified kernels via its own per-instance skinned bucket.
+	m_xUnifiedBonePalette.Begin(Flux_SkeletonInstance::MAX_BONES);
+	m_auUnifiedBindPosePoolWords.Clear();
+	m_xUnifiedBindPosePoolBaseByMesh.Clear();
+	m_axUnifiedSkinJobs.Clear();
+	m_axUnifiedSkinnedDraws.Clear();
+	m_uUnifiedSkinMaxVerts      = 0u;
+	m_uUnifiedSkinTotalOutVerts = 0u;
+	// Animated skinned meshes route through the unified compute-skinning path: each skinned
+	// submesh-instance is skinned to object space here, then drawn by the unified GPU-driven path.
+	{
+		u_int uArenaCursor = 0u;
+		for (u_int uItem = 0; uItem < xItems.GetSize(); ++uItem)
+		{
+			const Flux_RenderSceneItem& xSrc = xItems.Get(uItem);
+			Flux_ModelInstance* pxModel = xSrc.m_pxModelInstance;
+			if (pxModel == nullptr || !xSrc.m_bAnimatedSkinned)
+			{
+				continue;
+			}
+			Flux_SkeletonInstance* pxSkeleton = pxModel->GetSkeletonInstance();
+			if (pxSkeleton == nullptr)
+			{
+				continue;
+			}
+
+			// Dedup this instance's skeleton into the shared palette; fill its block on first sight.
+			bool bNewSkel = false;
+			const u_int uBonePaletteBase = m_xUnifiedBonePalette.GetOrAddSkeleton(
+				reinterpret_cast<u_int64>(pxSkeleton), bNewSkel);
+			if (bNewSkel)
+			{
+				const u_int uNumBones = pxSkeleton->GetNumBones();
+				const Zenith_Maths::Matrix4* pxMats = pxSkeleton->GetSkinningMatrices();
+				for (u_int b = 0; b < uNumBones && b < Flux_SkeletonInstance::MAX_BONES; ++b)
+				{
+					m_xUnifiedBonePalette.Matrices().Get(uBonePaletteBase + b) = pxMats[b];
+				}
+			}
+
+			const uint32_t uNumMeshes = pxModel->GetNumMeshes();
+			for (uint32_t uMesh = 0; uMesh < uNumMeshes; ++uMesh)
+			{
+				if (pxModel->GetSkinnedMeshInstance(uMesh) == nullptr)
+				{
+					// A non-skinned submesh of an animated-skinned model: NOT drawn by the unified
+					// path. The static walk above skips the whole m_bAnimatedSkinned item, and this
+					// walk only skins+draws the skinned submeshes — so a mixed model's static
+					// submeshes are currently dropped. This is a known gap for hypothetical mixed
+					// models (TODO: route such submeshes to the static GPU-scene with the model's
+					// world matrix if a real case appears).
+					continue;
+				}
+				Flux_MeshInstance* pxMeshInst = pxModel->GetMeshInstance(uMesh);
+				if (pxMeshInst == nullptr)
+				{
+					continue;
+				}
+				Flux_SkinnedPoseEntry* pxPose = GetOrBuildSkinnedPose(pxMeshInst->GetSourceAsset());
+				if (pxPose == nullptr || pxPose->m_uNumVerts == 0u)
+				{
+					continue;
+				}
+
+				Zenith_MaterialAsset* pxMat = pxModel->GetMaterial(uMesh);
+				if (pxMat == nullptr)
+				{
+					pxMat = pxBlankMaterial;   // blank fallback (unifies the null-material policy)
+				}
+				const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+				{
+					continue;   // forward path
+				}
+
+				// Bind-pose pool: append this mesh's words once per frame; reuse the base afterwards.
+				u_int uBindPoseBase;
+				if (const u_int* puBase = m_xUnifiedBindPosePoolBaseByMesh.TryGet(pxMeshInst->GetSourceAsset()))
+				{
+					uBindPoseBase = *puBase;
+				}
+				else
+				{
+					uBindPoseBase = m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS;
+					for (u_int w = 0; w < pxPose->m_auBindPoseWords.GetSize(); ++w)
+					{
+						m_auUnifiedBindPosePoolWords.PushBack(pxPose->m_auBindPoseWords.Get(w));
+					}
+					m_xUnifiedBindPosePoolBaseByMesh.Insert(pxMeshInst->GetSourceAsset(), uBindPoseBase);
+				}
+
+				const u_int uOutVertBase = uArenaCursor;
+				uArenaCursor += pxPose->m_uNumVerts;
+				if (pxPose->m_uNumVerts > m_uUnifiedSkinMaxVerts)
+				{
+					m_uUnifiedSkinMaxVerts = pxPose->m_uNumVerts;
+				}
+
+				Flux_GPUSkinJob xJob;
+				xJob.m_uBindPoseVertBase = uBindPoseBase;
+				xJob.m_uOutVertBase      = uOutVertBase;
+				xJob.m_uVertCount        = pxPose->m_uNumVerts;
+				xJob.m_uBonePaletteBase  = uBonePaletteBase;
+				m_axUnifiedSkinJobs.PushBack(xJob);
+
+				const u_int uSkinIdx = m_axUnifiedSkinnedDraws.GetSize();
+				Flux_UnifiedSkinnedDraw xSD;
+				xSD.m_pxMesh        = pxPose->m_pxMesh;
+				xSD.m_uVertexOffset = uOutVertBase;
+				m_axUnifiedSkinnedDraws.PushBack(xSD);
+
+				Flux_GPUSceneBucketKey xKey;
+				xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | uSkinIdx;
+				xKey.m_uCullMode         = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
+				xKey.m_ulMaterialAssetId = reinterpret_cast<u_int64>(pxMat);
+				xKey.m_ulVATTextureId    = 0u;   // skinned != VAT (keeps ResolveBucketVAT safe)
+
+				const Zenith_AABB& xLocal = pxMeshInst->GetLocalBounds();
+				const Zenith_Maths::Vector4 xSphere = Flux_InflateBoundsSphere(
+					Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax), fFLUX_SKIN_BOUNDS_INFLATION);
+
+				Flux_AppendGPUSceneSkinnedInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
+					xSrc.m_xWorldMatrix, uBonePaletteBase, xKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE);
+			}
+		}
+		m_uUnifiedSkinTotalOutVerts = uArenaCursor;
+	}
+
 	Flux_EndGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 	m_xUnifiedMeshGeometryRegistry.EndSync();
 
@@ -520,7 +725,7 @@ void Flux_RendererImpl::LateInitialise()
 	//
 	// MemoryManager -> SlangCompiler -> Swapchain -> Graphics
 	// Graphics -> HDR -> DeferredShading
-	// Graphics -> Shadows, Skybox, StaticMeshes, AnimatedMeshes, InstancedMeshes, Primitives
+	// Graphics -> Shadows, Skybox, UnifiedMesh, InstancedMeshes, Primitives
 	// Skybox -> IBL (environment probes use skybox cubemap)
 	// Terrain -> Grass (vegetation placed on terrain)
 	// HiZ -> SSR, SSGI (screen-space effects use Hi-Z pyramid)
@@ -774,6 +979,24 @@ void Flux_RendererImpl::Shutdown()
 	// stale pointer survives into a fresh renderer on engine reinit.
 	delete xRenderer.m_pxSceneSnapshot;
 	xRenderer.m_pxSceneSnapshot = nullptr;
+
+	// Stage 5: free the skinned-pose store (each entry owns a Flux_MeshInstance — destroy its
+	// GPU buffers while the Vulkan device is still up, then delete the entry).
+	for (u_int u = 0; u < xRenderer.m_axUnifiedSkinnedPoseStore.GetSize(); ++u)
+	{
+		Flux_SkinnedPoseEntry* pxEntry = xRenderer.m_axUnifiedSkinnedPoseStore.Get(u);
+		if (pxEntry != nullptr)
+		{
+			if (pxEntry->m_pxMesh != nullptr)
+			{
+				pxEntry->m_pxMesh->Destroy();
+				delete pxEntry->m_pxMesh;
+			}
+			delete pxEntry;
+		}
+	}
+	xRenderer.m_axUnifiedSkinnedPoseStore.Clear();
+	xRenderer.m_xUnifiedSkinnedPoseByAsset.Clear();
 
 	// Shut down any still-registered game render features (reverse registration
 	// order) AFTER the graph is gone, so a feature's Shutdown can't touch a live

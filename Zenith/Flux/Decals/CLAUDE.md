@@ -39,9 +39,9 @@ is one extra full-screen RGBA16F bandwidth, not a permanent allocation.
 
 ## Pass placement
 
-Inserted between the **G-buffer writers** (Terrain, StaticMeshes, Primitives,
-AnimatedMeshes, InstancedMeshes, Skybox — Grass does not qualify because it
-writes the forward-lit HDR target, not G-buffer MRTs) and the
+Inserted between the **G-buffer writers** (Terrain, UnifiedMesh, Primitives,
+Skybox — Grass does not qualify because it writes the forward-lit HDR target,
+not G-buffer MRTs) and the
 **G-buffer readers** (HiZ, SSR, SSGI, SSAO, DeferredShading). Source-side
 registration order matters — the topo sort's `FindBestWriter` picks the
 nearest writer in declaration order, so registering Decals after the geometry

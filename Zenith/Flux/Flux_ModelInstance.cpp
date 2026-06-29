@@ -305,7 +305,8 @@ void Flux_ModelInstance::UpdateAnimation()
 {
 	if (m_pxSkeleton)
 	{
+		// Compute the CPU skinning matrices; the unified compute-skinning path reads them via
+		// GetSkinningMatrices (no GPU bone-buffer upload — the legacy per-draw bone CBV was retired).
 		m_pxSkeleton->ComputeSkinningMatrices();
-		m_pxSkeleton->UploadToGPU();
 	}
 }

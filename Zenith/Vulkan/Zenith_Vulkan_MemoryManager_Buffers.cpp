@@ -154,9 +154,14 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndirectBuffer(size_t uSize, Flux_In
 	xUAV.m_xVRAMHandle = xHandle;
 }
 
-void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut)
+void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut, bool bAlsoVertexBuffer /*= false*/)
 {
-	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_GPU);
+	u_int uFlags = 1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ;
+	if (bAlsoVertexBuffer)
+	{
+		uFlags |= 1 << MEMORY_FLAGS__VERTEX_BUFFER;   // Stage-5 skinned arena: also bindable as a vertex stream
+	}
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(uFlags), MEMORY_RESIDENCY_GPU);
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 

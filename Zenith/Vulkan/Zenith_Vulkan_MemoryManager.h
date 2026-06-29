@@ -136,7 +136,10 @@ public:
 	void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
 	void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 	void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
-	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
+	// bAlsoVertexBuffer adds vertex-buffer usage so the RW buffer can be bound as a vertex
+	// stream as well as a compute UAV/SSBO (Stage-5 skinned-vertex arena). Defaults off so
+	// existing callers are unchanged.
+	void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut, bool bAlsoVertexBuffer = false);
 	void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut);
 
 	void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);

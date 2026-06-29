@@ -138,14 +138,14 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 }
 
 template<typename T>
-void BindVertexBufferImpl(Zenith_Vulkan& rxVulkan, vk::CommandBuffer& cmdBuffer, const T& xVertexBuffer, uint32_t uBindPoint)
+void BindVertexBufferImpl(Zenith_Vulkan& rxVulkan, vk::CommandBuffer& cmdBuffer, const T& xVertexBuffer, uint32_t uBindPoint, vk::DeviceSize uByteOffset = 0)
 {
 	Zenith_Assert(xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid(), "Vertex buffer has invalid VRAM handle - did you forget to upload to GPU?");
 	Zenith_Vulkan_VRAM* pxVRAM = rxVulkan.GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle);
 	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for vertex buffer");
 	if (!pxVRAM) return;  // Safety guard for release builds
 	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
-	vk::DeviceSize offset = 0;
+	vk::DeviceSize offset = uByteOffset;
 	cmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, &offset);
 }
 
@@ -157,6 +157,15 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVert
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
 	BindVertexBufferImpl(*m_pxVulkan, m_xCurrentCmdBuffer, xVertexBuffer, uBindPoint);
+}
+
+void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_ReadWriteBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/, size_t uByteOffset /*= 0*/)
+{
+	// Same fixed-function bind as a regular VB (the templated impl only needs GetBuffer()).
+	// The RW buffer carries both UAV/SSBO and vertex-buffer usage. uByteOffset addresses a
+	// sub-range (Stage-5 skinned arena: each instance's slice base in bytes) so per-instance
+	// skinned buckets share one arena buffer + one bind point.
+	BindVertexBufferImpl(*m_pxVulkan, m_xCurrentCmdBuffer, xVertexBuffer, uBindPoint, (vk::DeviceSize)uByteOffset);
 }
 
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
@@ -932,6 +941,15 @@ void Flux_ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
 		eOutStage  = vk::PipelineStageFlagBits::eVertexShader
 		           | vk::PipelineStageFlagBits::eFragmentShader
 		           | vk::PipelineStageFlagBits::eComputeShader;
+		break;
+	case RESOURCE_ACCESS_READ_VERTEX_BUFFER:
+		// Buffer-only — a compute-written buffer fetched as a vertex stream (Stage-5
+		// skinned arena). The fetch happens at the fixed-function VERTEX_INPUT stage,
+		// which is EARLIER than the vertex shader — so READ_BUFFER_SRV's shader-stage
+		// barrier would not make the compute write visible to the attribute fetch.
+		eOutLayout = vk::ImageLayout::eUndefined;
+		eOutAccess = vk::AccessFlagBits::eVertexAttributeRead;
+		eOutStage  = vk::PipelineStageFlagBits::eVertexInput;
 		break;
 	case RESOURCE_ACCESS_HOST_TRANSFER_WRITE:
 		// Buffer-only — synthetic predecessor for a host-issued

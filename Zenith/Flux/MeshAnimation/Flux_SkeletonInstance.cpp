@@ -16,8 +16,6 @@ Flux_SkeletonInstance::~Flux_SkeletonInstance()
 Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther)
 	: m_xSourceSkeleton(std::move(xOther.m_xSourceSkeleton))
 	, m_uNumBones(xOther.m_uNumBones)
-	, m_xBoneBuffer(std::move(xOther.m_xBoneBuffer))
-	, m_bGPUResourcesInitialized(xOther.m_bGPUResourcesInitialized)
 {
 	// Copy fixed-size arrays
 	for (uint32_t i = 0; i < MAX_BONES; ++i)
@@ -31,7 +29,6 @@ Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther)
 
 	// Clear source to prevent double destruction
 	xOther.m_uNumBones = 0;
-	xOther.m_bGPUResourcesInitialized = false;
 }
 
 //=============================================================================
@@ -47,8 +44,6 @@ Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& 
 		// Move data
 		m_xSourceSkeleton = std::move(xOther.m_xSourceSkeleton);
 		m_uNumBones = xOther.m_uNumBones;
-		m_xBoneBuffer = std::move(xOther.m_xBoneBuffer);
-		m_bGPUResourcesInitialized = xOther.m_bGPUResourcesInitialized;
 
 		// Copy fixed-size arrays
 		for (uint32_t i = 0; i < MAX_BONES; ++i)
@@ -62,7 +57,6 @@ Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& 
 
 		// Clear source
 		xOther.m_uNumBones = 0;
-		xOther.m_bGPUResourcesInitialized = false;
 	}
 	return *this;
 }
@@ -70,7 +64,7 @@ Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& 
 //=============================================================================
 // Factory Method
 //=============================================================================
-Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAsset* pxAsset, bool bUploadToGPU)
+Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAsset* pxAsset)
 {
 	if (!pxAsset)
 	{
@@ -108,26 +102,9 @@ Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAss
 	// Copy bind pose values from skeleton asset
 	pxInstance->SetToBindPose();
 
-	// Create GPU buffer for bone matrices (skip for CPU-only use, e.g. unit tests)
-	if (bUploadToGPU)
-	{
-		g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(
-			nullptr,
-			MAX_BONES * sizeof(Zenith_Maths::Matrix4),
-			pxInstance->m_xBoneBuffer
-		);
-		pxInstance->m_bGPUResourcesInitialized = true;
-
-		// Compute initial skinning matrices and upload to ALL frame buffers
-		// This prevents flickering by ensuring all triple-buffered copies have valid data
-		pxInstance->ComputeSkinningMatrices();
-		pxInstance->UploadToAllFrameBuffers();
-	}
-	else
-	{
-		pxInstance->m_bGPUResourcesInitialized = false;
-		pxInstance->ComputeSkinningMatrices();
-	}
+	// Compute the initial (bind-pose) skinning matrices. The unified compute-skinning path reads
+	// these CPU matrices (GetSkinningMatrices) directly — there is no GPU bone buffer.
+	pxInstance->ComputeSkinningMatrices();
 
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] Created instance with %u bones", pxInstance->m_uNumBones);
 
@@ -149,12 +126,6 @@ Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAss
 //=============================================================================
 void Flux_SkeletonInstance::Destroy()
 {
-	if (m_bGPUResourcesInitialized)
-	{
-		g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xBoneBuffer);
-		m_bGPUResourcesInitialized = false;
-	}
-
 	m_xSourceSkeleton.Clear();
 	m_uNumBones = 0;
 }
@@ -392,43 +363,3 @@ void Flux_SkeletonInstance::ComputeSkinningMatrices()
 	}
 }
 
-//=============================================================================
-// UploadToGPU
-//=============================================================================
-void Flux_SkeletonInstance::UploadToGPU()
-{
-	if (!m_bGPUResourcesInitialized)
-	{
-		Zenith_Warning(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] UploadToGPU called but GPU resources not initialized");
-		return;
-	}
-
-	g_xEngine.FluxMemory().UploadBufferData(
-		m_xBoneBuffer.GetBuffer().m_xVRAMHandle,
-		m_axSkinningMatrices,
-		MAX_BONES * sizeof(Zenith_Maths::Matrix4)
-	);
-}
-
-//=============================================================================
-// UploadToAllFrameBuffers
-//=============================================================================
-void Flux_SkeletonInstance::UploadToAllFrameBuffers()
-{
-	if (!m_bGPUResourcesInitialized)
-	{
-		Zenith_Warning(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] UploadToAllFrameBuffers called but GPU resources not initialized");
-		return;
-	}
-
-	// Upload to all triple-buffered frame copies to prevent flickering
-	// This ensures all frame buffers have valid bone data from initialization
-	for (uint32_t uFrame = 0; uFrame < MAX_FRAMES_IN_FLIGHT; uFrame++)
-	{
-		g_xEngine.FluxMemory().UploadBufferData(
-			m_xBoneBuffer.GetBufferForFrameInFlight(uFrame).m_xVRAMHandle,
-			m_axSkinningMatrices,
-			MAX_BONES * sizeof(Zenith_Maths::Matrix4)
-		);
-	}
-}

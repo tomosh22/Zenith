@@ -20,9 +20,9 @@ Zenith/
 │   ├── SSGI/          # Screen-space GI (see Flux/SSGI/AGENTS.md)
 │   ├── Terrain/       # Terrain rendering (see Flux/Terrain/AGENTS.md)
 │   ├── Vegetation/    # Grass system (see Flux/Vegetation/AGENTS.md)
-│   └── ...            # + AnimatedMeshes, DeferredShading, DynamicLights,
+│   └── ...            # + DeferredShading, DynamicLights,
 │                      #   InstancedMeshes, Particles, Primitives, Shadows,
-│                      #   Skybox, SSAO, StaticMeshes, Text, and more
+│                      #   Skybox, SSAO, Text, UnifiedMesh, and more
 ├── AI/                # AI systems (see AI/AGENTS.md)
 │   ├── BehaviorTree/  # Decision-making (see AI/BehaviorTree/AGENTS.md)
 │   ├── Navigation/    # NavMesh pathfinding (see AI/Navigation/AGENTS.md)

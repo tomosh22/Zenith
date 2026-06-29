@@ -5,6 +5,12 @@
 > declared in [Shaders/Common/Bindings.slang](Shaders/Common/Bindings.slang) as `g_xBindlessSet.g_axTextures`).
 > Evidence is file:line against the committed tree (`f96ec370`). Update as consumers migrate.
 
+> **Historical note (superseded):** the per-feature opaque-mesh shaders this audit references
+> (`Flux_StaticMesh_*`, `Flux_AnimatedMesh_*`, `Flux_InstancedMesh_*`) were since folded into the single
+> GPU-driven **UnifiedMesh** path (skeletal meshes are compute-skinned into a shared arena). Those rows
+> are retained for the bindless-design rationale only; the live table-set / cubemap-carve-out /
+> `NonUniformResourceIndex` guidance below still holds.
+
 ## How to read the uniformity column
 A consumer that, after migration, computes its `g_axTextures[idx]` index from a **per-draw constant** (a
 material index in draw constants) is **DRAW-UNIFORM** → plain `g_axTextures[idx]`. A consumer whose index
