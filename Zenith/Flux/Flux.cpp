@@ -213,151 +213,103 @@ void Flux_RendererImpl::RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, cons
 	}
 }
 
-// Build the unified GPU-driven mesh scene — the (mesh,cull,material,VAT) bucket topology +
-// the GPU-scene object/draw-item record arrays — from the just-rebuilt snapshot. Single
-// main-thread writer (the WS7 keystone shape), called from Zenith_Core right after
-// RebuildSceneSnapshot, before the render-task window opens. Consumed by the Flux_UnifiedMesh
-// feature's GatherUnifiedPacket (uploads + reset/cull/draw). The mesh-geometry registry's
-// real provider (wired in LateInitialise) builds one shared VB/IB per unique mesh identity.
-// Stage 5: build (or fetch the cache of) a distinct skinned mesh's bind-pose data — the 104-byte
-// interleaved vertices as raw words (the compute-skinning input) + a Flux_MeshInstance for the
-// shared index buffer / counts the skinned draw binds. Replicates the interleave done by
-// Flux_MeshInstance::CreateSkinnedFromAsset so the words byte-match the 104B skinned vertex layout
-// (Flux_SkinInputVertex). Cached per Zenith_MeshAsset*; entries freed in Shutdown.
-Flux_RendererImpl::Flux_SkinnedPoseEntry* Flux_RendererImpl::GetOrBuildSkinnedPose(Zenith_MeshAsset* pxAsset)
+// ----------------------------------------------------------------------------
+// Real skinned-pose provider (Stage 5) — the only GPU-touching part of the pose store.
+// build   = Flux_MeshInstance::CreateSkinnedFromAsset + replicate its 104B interleave
+//           (Flux_SkinInputVertex) into raw words (uFLUX_SKIN_INPUT_WORDS/vert), the
+//           compute-skinning input. Returns false (no live entry) for an empty / non-skinned
+//           asset. destroy = deferred-delete the shared IB/VB + free the heap entry.
+// The persistent bind-pose POOL append + repack is owned by Flux_SkinnedPoseRegistry (the pool
+// is ITS state); this provider only builds/destroys one entry. Wired in LateInitialise; runs
+// windowed, never headless (the pure registry orchestration is mock-provider unit-tested).
+// ----------------------------------------------------------------------------
+namespace
 {
-	if (pxAsset == nullptr)
+	bool Flux_RealBuildSkinnedPose(const Flux_SkinnedPoseKey& xKey, Flux_SkinnedPoseEntry*& pxOut)
 	{
-		return nullptr;
-	}
-	if (const u_int* puIdx = m_xUnifiedSkinnedPoseByAsset.TryGet(pxAsset))
-	{
-		Flux_SkinnedPoseEntry* pxHit = m_axUnifiedSkinnedPoseStore.Get(*puIdx);
-		pxHit->m_uLastRefSync = m_uSkinnedPoseSyncGen;   // referenced this sync -> survives the next eviction sweep
-		return pxHit;
-	}
-
-	const u_int uNumVerts = pxAsset->GetNumVerts();
-	if (uNumVerts == 0u || !pxAsset->HasSkinning())
-	{
-		return nullptr;
-	}
-
-	Flux_MeshInstance* pxMesh = Flux_MeshInstance::CreateSkinnedFromAsset(pxAsset);
-	if (pxMesh == nullptr)
-	{
-		return nullptr;
-	}
-
-	Flux_SkinnedPoseEntry* pxEntry = new Flux_SkinnedPoseEntry();
-	pxEntry->m_pxMesh    = pxMesh;
-	pxEntry->m_uNumVerts = uNumVerts;
-
-	// Interleave the 104B skinned vertex as 26 raw words/vertex (mirror Flux_MeshInstance.cpp's
-	// CreateSkinnedFromAsset packing: pos uv normal tangent bitangent color boneIDs boneWeights).
-	const bool bHasPos = pxAsset->m_xPositions.GetSize()  >= uNumVerts;
-	const bool bHasUV  = pxAsset->m_xUVs.GetSize()        >= uNumVerts;
-	const bool bHasNrm = pxAsset->m_xNormals.GetSize()    >= uNumVerts;
-	const bool bHasTan = pxAsset->m_xTangents.GetSize()   >= uNumVerts;
-	const bool bHasBit = pxAsset->m_xBitangents.GetSize() >= uNumVerts;
-	const bool bHasCol = pxAsset->m_xColors.GetSize()     >= uNumVerts;
-	const bool bHasBI  = pxAsset->m_xBoneIndices.GetSize()>= uNumVerts;
-	const bool bHasBW  = pxAsset->m_xBoneWeights.GetSize()>= uNumVerts;
-
-	pxEntry->m_auBindPoseWords.Reserve((size_t)uNumVerts * uFLUX_SKIN_INPUT_WORDS);
-	auto PushF = [&](float f) { pxEntry->m_auBindPoseWords.PushBack(Flux_SkinDetail::FloatToWord(f)); };
-	auto PushU = [&](u_int u) { pxEntry->m_auBindPoseWords.PushBack(u); };
-	for (u_int v = 0; v < uNumVerts; ++v)
-	{
-		const Zenith_Maths::Vector3 xPos = bHasPos ? pxAsset->m_xPositions.Get(v)  : Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
-		const Zenith_Maths::Vector2 xUV  = bHasUV  ? pxAsset->m_xUVs.Get(v)        : Zenith_Maths::Vector2(0.0f, 0.0f);
-		const Zenith_Maths::Vector3 xNrm = bHasNrm ? pxAsset->m_xNormals.Get(v)    : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-		const Zenith_Maths::Vector3 xTan = bHasTan ? pxAsset->m_xTangents.Get(v)   : Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
-		const Zenith_Maths::Vector3 xBit = bHasBit ? pxAsset->m_xBitangents.Get(v) : Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
-		const Zenith_Maths::Vector4 xCol = bHasCol ? pxAsset->m_xColors.Get(v)     : Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-		const glm::uvec4 xBI = bHasBI ? pxAsset->m_xBoneIndices.Get(v) : glm::uvec4(0u, 0u, 0u, 0u);
-		const glm::vec4  xBW = bHasBW ? pxAsset->m_xBoneWeights.Get(v) : glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
-		PushF(xPos.x); PushF(xPos.y); PushF(xPos.z);
-		PushF(xUV.x);  PushF(xUV.y);
-		PushF(xNrm.x); PushF(xNrm.y); PushF(xNrm.z);
-		PushF(xTan.x); PushF(xTan.y); PushF(xTan.z);
-		PushF(xBit.x); PushF(xBit.y); PushF(xBit.z);
-		PushF(xCol.x); PushF(xCol.y); PushF(xCol.z); PushF(xCol.w);
-		PushU(xBI.x);  PushU(xBI.y);  PushU(xBI.z);  PushU(xBI.w);
-		PushF(xBW.x);  PushF(xBW.y);  PushF(xBW.z);  PushF(xBW.w);
-	}
-
-	// Persistent bind-pose pool: append this mesh's static bind-pose words ONCE (the pool is
-	// grow-only across frames). The skin-job reads m_uPoolVertBase directly — no per-frame re-concat.
-	pxEntry->m_uPoolVertBase = (u_int)(m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS);
-	for (u_int w = 0; w < pxEntry->m_auBindPoseWords.GetSize(); ++w)
-	{
-		m_auUnifiedBindPosePoolWords.PushBack(pxEntry->m_auBindPoseWords.Get(w));
-	}
-	++m_uBindPosePoolGeneration;        // pool grew -> GPU re-upload next gather
-	pxEntry->m_pvSourceAsset = pxAsset;
-	pxEntry->m_uLastRefSync  = m_uSkinnedPoseSyncGen;
-
-	const u_int uIdx = m_axUnifiedSkinnedPoseStore.GetSize();
-	m_axUnifiedSkinnedPoseStore.PushBack(pxEntry);
-	m_xUnifiedSkinnedPoseByAsset.Insert(pxAsset, uIdx);
-	return pxEntry;
-}
-
-void Flux_RendererImpl::EvictUnreferencedSkinnedPoses()
-{
-	// Mark/sweep: free every skinned-pose entry NOT referenced by the most recent sync (its IB/VB
-	// go through Flux_MeshInstance::Destroy's deferred-delete wrappers, so an in-flight frame never
-	// references freed GPU memory). Eviction is a COLD path (only a character/scene unload), so when
-	// it fires we rebuild the persistent bind-pose pool + the asset->index map WHOLESALE from the
-	// survivors — no free-list / partial-compaction bookkeeping. The pool re-pack re-assigns each
-	// survivor's m_uPoolVertBase and bumps the pool generation -> the gather re-uploads it.
-	bool bAnyEvicted = false;
-	for (u_int u = 0; u < m_axUnifiedSkinnedPoseStore.GetSize(); ++u)
-	{
-		if (m_axUnifiedSkinnedPoseStore.Get(u)->m_uLastRefSync != m_uSkinnedPoseSyncGen)
+		pxOut = nullptr;
+		Zenith_MeshAsset* pxAsset = static_cast<Zenith_MeshAsset*>(const_cast<void*>(xKey.m_pvAsset));
+		if (pxAsset == nullptr)
 		{
-			bAnyEvicted = true;
-			break;
+			return false;
 		}
-	}
-	if (!bAnyEvicted)
-	{
-		return;   // steady state: nothing to free; pool + map + generation untouched (no GPU re-upload)
+
+		const u_int uNumVerts = pxAsset->GetNumVerts();
+		if (uNumVerts == 0u || !pxAsset->HasSkinning())
+		{
+			return false;
+		}
+
+		Flux_MeshInstance* pxMesh = Flux_MeshInstance::CreateSkinnedFromAsset(pxAsset);
+		if (pxMesh == nullptr)
+		{
+			return false;
+		}
+
+		Flux_SkinnedPoseEntry* pxEntry = new Flux_SkinnedPoseEntry();
+		pxEntry->m_pxMesh        = pxMesh;
+		pxEntry->m_uNumVerts     = uNumVerts;
+		pxEntry->m_pvSourceAsset = pxAsset;
+
+		// Interleave the 104B skinned vertex as 26 raw words/vertex (mirror Flux_MeshInstance.cpp's
+		// CreateSkinnedFromAsset packing: pos uv normal tangent bitangent color boneIDs boneWeights).
+		const bool bHasPos = pxAsset->m_xPositions.GetSize()  >= uNumVerts;
+		const bool bHasUV  = pxAsset->m_xUVs.GetSize()        >= uNumVerts;
+		const bool bHasNrm = pxAsset->m_xNormals.GetSize()    >= uNumVerts;
+		const bool bHasTan = pxAsset->m_xTangents.GetSize()   >= uNumVerts;
+		const bool bHasBit = pxAsset->m_xBitangents.GetSize() >= uNumVerts;
+		const bool bHasCol = pxAsset->m_xColors.GetSize()     >= uNumVerts;
+		const bool bHasBI  = pxAsset->m_xBoneIndices.GetSize()>= uNumVerts;
+		const bool bHasBW  = pxAsset->m_xBoneWeights.GetSize()>= uNumVerts;
+
+		pxEntry->m_auBindPoseWords.Reserve((size_t)uNumVerts * uFLUX_SKIN_INPUT_WORDS);
+		auto PushF = [&](float f) { pxEntry->m_auBindPoseWords.PushBack(Flux_SkinDetail::FloatToWord(f)); };
+		auto PushU = [&](u_int u) { pxEntry->m_auBindPoseWords.PushBack(u); };
+		for (u_int v = 0; v < uNumVerts; ++v)
+		{
+			const Zenith_Maths::Vector3 xPos = bHasPos ? pxAsset->m_xPositions.Get(v)  : Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+			const Zenith_Maths::Vector2 xUV  = bHasUV  ? pxAsset->m_xUVs.Get(v)        : Zenith_Maths::Vector2(0.0f, 0.0f);
+			const Zenith_Maths::Vector3 xNrm = bHasNrm ? pxAsset->m_xNormals.Get(v)    : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+			const Zenith_Maths::Vector3 xTan = bHasTan ? pxAsset->m_xTangents.Get(v)   : Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+			const Zenith_Maths::Vector3 xBit = bHasBit ? pxAsset->m_xBitangents.Get(v) : Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+			const Zenith_Maths::Vector4 xCol = bHasCol ? pxAsset->m_xColors.Get(v)     : Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+			const glm::uvec4 xBI = bHasBI ? pxAsset->m_xBoneIndices.Get(v) : glm::uvec4(0u, 0u, 0u, 0u);
+			const glm::vec4  xBW = bHasBW ? pxAsset->m_xBoneWeights.Get(v) : glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+			PushF(xPos.x); PushF(xPos.y); PushF(xPos.z);
+			PushF(xUV.x);  PushF(xUV.y);
+			PushF(xNrm.x); PushF(xNrm.y); PushF(xNrm.z);
+			PushF(xTan.x); PushF(xTan.y); PushF(xTan.z);
+			PushF(xBit.x); PushF(xBit.y); PushF(xBit.z);
+			PushF(xCol.x); PushF(xCol.y); PushF(xCol.z); PushF(xCol.w);
+			PushU(xBI.x);  PushU(xBI.y);  PushU(xBI.z);  PushU(xBI.w);
+			PushF(xBW.x);  PushF(xBW.y);  PushF(xBW.z);  PushF(xBW.w);
+		}
+
+		pxOut = pxEntry;
+		return true;
 	}
 
-	m_xUnifiedSkinnedPoseByAsset.Clear();
-	m_auUnifiedBindPosePoolWords.Clear();
-	u_int uWrite = 0u;
-	for (u_int u = 0; u < m_axUnifiedSkinnedPoseStore.GetSize(); ++u)
+	void Flux_RealDestroySkinnedPose(Flux_SkinnedPoseEntry*& pxEntry)
 	{
-		Flux_SkinnedPoseEntry* pxEntry = m_axUnifiedSkinnedPoseStore.Get(u);
-		if (pxEntry->m_uLastRefSync != m_uSkinnedPoseSyncGen)
+		if (pxEntry != nullptr)
 		{
-			// Not drawn last sync -> free it (deferred-delete the GPU IB/VB).
 			if (pxEntry->m_pxMesh != nullptr)
 			{
-				pxEntry->m_pxMesh->Destroy();
+				pxEntry->m_pxMesh->Destroy();   // deferred-delete the shared IB/VB
 				delete pxEntry->m_pxMesh;
 			}
 			delete pxEntry;
-			continue;
+			pxEntry = nullptr;
 		}
-		// Survivor: re-append its (unchanged) words to the re-packed pool + re-index it.
-		pxEntry->m_uPoolVertBase = (u_int)(m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS);
-		for (u_int w = 0; w < pxEntry->m_auBindPoseWords.GetSize(); ++w)
-		{
-			m_auUnifiedBindPosePoolWords.PushBack(pxEntry->m_auBindPoseWords.Get(w));
-		}
-		m_axUnifiedSkinnedPoseStore.Get(uWrite) = pxEntry;
-		m_xUnifiedSkinnedPoseByAsset.Insert(pxEntry->m_pvSourceAsset, uWrite);
-		++uWrite;
 	}
-	while (m_axUnifiedSkinnedPoseStore.GetSize() > uWrite)
-	{
-		m_axUnifiedSkinnedPoseStore.PopBack();
-	}
-	++m_uBindPosePoolGeneration;   // pool re-packed (survivor bases changed) -> force a GPU re-upload
+}
+
+Flux_SkinnedPoseRegistry::Provider Flux_MakeRealSkinnedPoseProvider()
+{
+	Flux_SkinnedPoseRegistry::Provider xProvider;
+	xProvider.m_pfnBuild   = &Flux_RealBuildSkinnedPose;
+	xProvider.m_pfnDestroy = &Flux_RealDestroySkinnedPose;
+	return xProvider;
 }
 
 // Build a static GPU-scene submesh descriptor from a mesh instance + material — resolving the
@@ -565,13 +517,11 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	// drawn through the unified kernels via its own per-instance skinned bucket.
 	// Evict skinned-pose entries not referenced by the PREVIOUS sync (frees their GPU IB/VB +
 	// re-packs the bind-pose pool) BEFORE this sync's walk, so this frame's skin-jobs see the
-	// re-packed pool bases consistently. THEN bump the generation so this sync's references mark
-	// survivors against the new value.
-	EvictUnreferencedSkinnedPoses();
-	++m_uSkinnedPoseSyncGen;
+	// re-packed pool bases consistently, then open this sync's references (refcount-diff).
+	m_xUnifiedSkinnedPoseRegistry.BeginFrameEvictingPrevious();
 
 	m_xUnifiedBonePalette.Begin(Flux_SkeletonInstance::MAX_BONES);
-	// NOTE: m_auUnifiedBindPosePoolWords is PERSISTENT (grow-only between evictions) — NOT cleared here.
+	// NOTE: the bind-pose pool is PERSISTENT (grow-only between evictions) — owned by the pose registry.
 	m_axUnifiedSkinJobs.Clear();
 	m_xUnifiedSkinnedDrawById.Clear();
 	m_xUnifiedSkinnedIdRegistry.BeginSync();   // stable skinned bucket ids: mark all unreferenced (EndSync after the walk recycles dropped instances)
@@ -643,7 +593,7 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 				{
 					continue;
 				}
-				Flux_SkinnedPoseEntry* pxPose = GetOrBuildSkinnedPose(pxMeshInst->GetSourceAsset());
+				Flux_SkinnedPoseEntry* pxPose = m_xUnifiedSkinnedPoseRegistry.Reference(pxMeshInst->GetSourceAsset());
 				if (pxPose == nullptr || pxPose->m_uNumVerts == 0u)
 				{
 #ifdef ZENITH_DEBUG
@@ -671,7 +621,7 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 				}
 
 				// Stable base in the persistent bind-pose pool (the words were appended once when the
-				// pose entry was first built — see GetOrBuildSkinnedPose).
+				// pose entry was first built — see Flux_SkinnedPoseRegistry::Reference).
 				const u_int uBindPoseBase = pxPose->m_uPoolVertBase;
 
 				const u_int uOutVertBase = uArenaCursor;
@@ -938,6 +888,9 @@ void Flux_RendererImpl::LateInitialise()
 	// nothing. (Previously this lived inside the ZENITH_DEBUG_VARIABLES block below next to
 	// the toggle, so non-debug-variable builds silently got an inert unified path.)
 	m_xUnifiedMeshGeometryRegistry.SetProvider(Flux_MakeRealMeshGeometryProvider());
+	// Same for the skinned-pose store: its real provider builds one cached bind-pose (CPU words +
+	// shared IB) per distinct skinned mesh asset, freed when the asset stops being drawn.
+	m_xUnifiedSkinnedPoseRegistry.SetProvider(Flux_MakeRealSkinnedPoseProvider());
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Debug-variable tree-path convention: most renderer variables live under
@@ -1106,23 +1059,9 @@ void Flux_RendererImpl::Shutdown()
 	xRenderer.m_pxSceneSnapshot = nullptr;
 
 	// Stage 5: free the skinned-pose store (each entry owns a Flux_MeshInstance — destroy its
-	// GPU buffers while the Vulkan device is still up, then delete the entry).
-	for (u_int u = 0; u < xRenderer.m_axUnifiedSkinnedPoseStore.GetSize(); ++u)
-	{
-		Flux_SkinnedPoseEntry* pxEntry = xRenderer.m_axUnifiedSkinnedPoseStore.Get(u);
-		if (pxEntry != nullptr)
-		{
-			if (pxEntry->m_pxMesh != nullptr)
-			{
-				pxEntry->m_pxMesh->Destroy();
-				delete pxEntry->m_pxMesh;
-			}
-			delete pxEntry;
-		}
-	}
-	xRenderer.m_axUnifiedSkinnedPoseStore.Clear();
-	xRenderer.m_xUnifiedSkinnedPoseByAsset.Clear();
-	xRenderer.m_auUnifiedBindPosePoolWords.Clear();   // persistent pool: released with its pose entries
+	// GPU buffers while the Vulkan device is still up, then delete the entry; the owned bind-pose
+	// pool is released with them).
+	xRenderer.m_xUnifiedSkinnedPoseRegistry.Shutdown();
 
 	// Shut down any still-registered game render features (reverse registration
 	// order) AFTER the graph is gone, so a feature's Shutdown can't touch a live

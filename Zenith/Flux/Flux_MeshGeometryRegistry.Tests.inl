@@ -25,20 +25,23 @@ namespace
 	}
 
 	// Fake non-null handle derived from the identity (never dereferenced).
-	void* MeshReg_MockBuild(const Flux_MeshGeometryKey& xKey)
+	bool MeshReg_MockBuild(const Flux_MeshGeometryKey& xKey, void*& pvOut)
 	{
 		++g_iMeshRegBuilds;
-		return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(xKey.m_pvIdentity) | 0x1u);
+		pvOut = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(xKey.m_pvIdentity) | 0x1u);
+		return true;
 	}
-	void MeshReg_MockDestroy(void* pvBuilt)
+	void MeshReg_MockDestroy(void*& pvBuilt)
 	{
 		++g_iMeshRegDestroys;
 		g_pvMeshRegLastDestroyed = pvBuilt;
+		pvBuilt = nullptr;
 	}
-	void* MeshReg_FailBuild(const Flux_MeshGeometryKey&)
+	bool MeshReg_FailBuild(const Flux_MeshGeometryKey&, void*& pvOut)
 	{
 		++g_iMeshRegBuilds;
-		return nullptr;
+		pvOut = nullptr;
+		return false;   // build failure => invalid id, no entry
 	}
 
 	Flux_MeshGeometryRegistry::Provider MeshReg_MockProvider()

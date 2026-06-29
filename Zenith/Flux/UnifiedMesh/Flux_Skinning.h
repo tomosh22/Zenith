@@ -3,6 +3,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"   // Flux_SkinnedInstanceIdRegistry (stable skinned bucket key)
+#include "Flux/Flux_RefcountDiffRegistry.h"   // shared refcount-diff sync machinery
 #include <cstddef>   // offsetof, size_t
 
 // ============================================================================
@@ -357,82 +358,153 @@ struct Zenith_Hash<Flux_SkinnedInstanceKey>
 };
 
 // Collision-FREE stable id allocator (a raw hash could merge two distinct poses into one
-// bucket -> visible corruption). One hashmap lookup per skinned instance per frame.
-class Flux_SkinnedInstanceIdRegistry
+// bucket -> visible corruption). One hashmap lookup per skinned instance per frame. Thin
+// instantiation of Flux_RefcountDiffRegistry<Key> (no payload, id-only): the sync + recycle
+// machinery is the base's; this class only enforces the 31-bit id ceiling.
+class Flux_SkinnedInstanceIdRegistry : public Flux_RefcountDiffRegistry<Flux_SkinnedInstanceKey>
 {
 public:
-	void BeginSync()
-	{
-		for (u_int u = 0; u < m_axEntries.GetSize(); ++u) { m_axEntries.Get(u).m_uRefcountThisSync = 0u; }
-	}
-
 	// STABLE id for this identity (allocates on first sight). NOT OR-ed with the skinned-mesh
-	// bit — that is the caller's job. The id stays < 0x80000000 (asserted).
+	// bit — that is the caller's job. The id stays < 0x80000000 (asserted). BeginSync / EndSync /
+	// GetLiveCount / TryGetId are inherited.
 	u_int Reference(const Flux_SkinnedInstanceKey& xKey)
 	{
-		if (u_int* puSlot = m_xKeyToSlot.TryGet(xKey))
-		{
-			++m_axEntries.Get(*puSlot).m_uRefcountThisSync;
-			return *puSlot;
-		}
-		const u_int uSlot = AllocateSlot();
-		Entry& xEntry = m_axEntries.Get(uSlot);
-		xEntry.m_xKey              = xKey;
-		xEntry.m_uRefcountThisSync = 1u;
-		xEntry.m_bAlive            = true;
-		m_xKeyToSlot.Insert(xKey, uSlot);
-		++m_uLiveCount;
+		const u_int uSlot = Flux_RefcountDiffRegistry<Flux_SkinnedInstanceKey>::Reference(xKey);
 		Zenith_Assert(uSlot < 0x80000000u, "skinned-instance id overflowed the 31-bit space (high bit reserved for the skinned-mesh tag)");
 		return uSlot;
 	}
+};
 
+// ============================================================================
+// Stable skinned-POSE store — folded onto the refcount-diff base.
+//
+// One cached bind-pose entry per DISTINCT skinned mesh asset: the 104B interleaved
+// bind-pose vertices (compute-skinning input, uFLUX_SKIN_INPUT_WORDS/vert) + the shared
+// mesh instance (IB/counts). Lifetime is the refcount-diff sync — Reference(asset) on each
+// drawn skinned submesh; an entry not referenced a whole sync is evicted (its GPU IB/VB
+// deferred-freed by the provider) and the persistent bind-pose POOL re-packed. This registry
+// OWNS that pool: each entry's words are concatenated once on create (m_uPoolVertBase
+// recorded) and the pool is re-packed wholesale when anything retires (the cold path: a
+// character/scene unload). The pool generation bumps on grow/repack -> the gather re-uploads.
+//
+// EVICTION ORDERING (asymmetric, on purpose): the evict + repack must finish BEFORE the
+// per-frame walk builds skin-jobs (they capture pool bases), so the registry is driven by
+// BeginFrameEvictingPrevious() at frame start (evict the PRIOR sync's unreferenced poses,
+// then open this sync) rather than an EndSync() at frame end.
+// ============================================================================
+class Flux_MeshInstance;   // entry holds a shared mesh instance by pointer (IB/counts)
+
+struct Flux_SkinnedPoseEntry
+{
+	Zenith_Vector<u_int> m_auBindPoseWords;        // 104B-per-vertex interleaved (uFLUX_SKIN_INPUT_WORDS/vert)
+	Flux_MeshInstance*   m_pxMesh        = nullptr; // CreateSkinnedFromAsset -> IB + index count + bounds
+	const void*          m_pvSourceAsset = nullptr; // Zenith_MeshAsset* (the skinned submesh source)
+	u_int                m_uNumVerts     = 0u;
+	u_int                m_uPoolVertBase = 0u;       // base VERTEX in the persistent bind-pose pool (re-assigned on a repack)
+};
+
+struct Flux_SkinnedPoseKey
+{
+	const void* m_pvAsset = nullptr;   // Zenith_MeshAsset* (one cached pose per distinct skinned mesh)
+
+	bool operator==(const Flux_SkinnedPoseKey& xOther) const { return m_pvAsset == xOther.m_pvAsset; }
+};
+
+// FNV-1a over the asset pointer bits.
+template<>
+struct Zenith_Hash<Flux_SkinnedPoseKey>
+{
+	u_int64 operator()(const Flux_SkinnedPoseKey& xKey) const noexcept
+	{
+		u_int64 uHash = 0xcbf29ce484222325ull;
+		const u_int8* pb = reinterpret_cast<const u_int8*>(&xKey.m_pvAsset);
+		for (size_t i = 0; i < sizeof(xKey.m_pvAsset); ++i) { uHash ^= pb[i]; uHash *= 0x100000001b3ull; }
+		return uHash;
+	}
+};
+
+class Flux_SkinnedPoseRegistry : public Flux_RefcountDiffRegistry<Flux_SkinnedPoseKey, Flux_SkinnedPoseEntry*>
+{
+public:
+	// Reference the cached pose for a skinned mesh asset (builds on first sight via the provider,
+	// appending its bind-pose words to the owned pool). Returns nullptr on build failure / null asset.
+	Flux_SkinnedPoseEntry* Reference(const void* pvMeshAsset)
+	{
+		if (pvMeshAsset == nullptr) { return nullptr; }
+		Flux_SkinnedPoseKey xKey;
+		xKey.m_pvAsset = pvMeshAsset;
+		bool bCreated = false;
+		const u_int uSlot = Flux_RefcountDiffRegistry<Flux_SkinnedPoseKey, Flux_SkinnedPoseEntry*>::Reference(xKey, &bCreated);
+		if (uSlot == uFLUX_REFCOUNT_REGISTRY_INVALID_SLOT) { return nullptr; }
+		Flux_SkinnedPoseEntry** ppEntry = TryGetPayloadMutable(uSlot);
+		Flux_SkinnedPoseEntry* pxEntry = ppEntry ? *ppEntry : nullptr;
+		if (bCreated && pxEntry != nullptr)
+		{
+			// First sight: concatenate this mesh's static bind-pose words into the persistent pool
+			// (grow-only between repacks); the skin-job reads m_uPoolVertBase directly.
+			pxEntry->m_uPoolVertBase = static_cast<u_int>(m_auBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS);
+			AppendWords(pxEntry->m_auBindPoseWords);
+			++m_uPoolGeneration;   // pool grew -> GPU re-upload next gather
+		}
+		return pxEntry;
+	}
+
+	// Frame boundary. Evicts poses unreferenced LAST sync (freeing their GPU IB/VB via the provider
+	// + re-packing the pool) and opens THIS sync. Asymmetric on purpose — see the class comment.
+	void BeginFrameEvictingPrevious()
+	{
+		EndSync();     // retire prior-sync's unreferenced poses (refcounts still hold last sync) + repack
+		BeginSync();   // reset refcounts for this sync
+	}
+
+	// EndSync = base retire (provider-destroys each unreferenced entry) + a pool re-pack iff anything
+	// retired (survivors' bases shift -> bump the generation so the gather re-uploads).
 	void EndSync()
 	{
-		for (u_int u = 0; u < m_axEntries.GetSize(); ++u)
+		Flux_RefcountDiffRegistry<Flux_SkinnedPoseKey, Flux_SkinnedPoseEntry*>::EndSync();
+		if (WasAnyRetiredThisSync())
 		{
-			Entry& xEntry = m_axEntries.Get(u);
-			if (xEntry.m_bAlive && xEntry.m_uRefcountThisSync == 0u)
-			{
-				m_xKeyToSlot.Remove(xEntry.m_xKey);   // identity gone -> recycle its id
-				xEntry.m_bAlive = false;
-				m_auFreeSlots.PushBack(u);
-				--m_uLiveCount;
-			}
+			RepackPool();
 		}
 	}
 
-	u_int GetLiveCount() const { return m_uLiveCount; }
-	bool  TryGetId(const Flux_SkinnedInstanceKey& xKey, u_int& uOut) const
+	// Free EVERY cached pose (GPU IB/VB + heap entry) — renderer shutdown, device still up.
+	void Shutdown()
 	{
-		const u_int* puSlot = m_xKeyToSlot.TryGet(xKey);
-		if (puSlot == nullptr) { return false; }
-		uOut = *puSlot;
-		return true;
+		BeginSync();   // mark all unreferenced
+		EndSync();     // -> provider-destroys them all + repacks the pool to empty
 	}
+
+	const Zenith_Vector<u_int>& GetPoolWords()      const { return m_auBindPosePoolWords; }
+	u_int                       GetPoolGeneration() const { return m_uPoolGeneration; }
 
 private:
-	struct Entry
+	void AppendWords(const Zenith_Vector<u_int>& auWords)
 	{
-		Flux_SkinnedInstanceKey m_xKey;
-		u_int m_uRefcountThisSync = 0u;
-		bool  m_bAlive            = false;
-	};
-
-	u_int AllocateSlot()
-	{
-		if (m_auFreeSlots.GetSize() > 0u)
-		{
-			const u_int uSlot = m_auFreeSlots.Get(m_auFreeSlots.GetSize() - 1u);
-			m_auFreeSlots.PopBack();
-			return uSlot;
-		}
-		const u_int uSlot = m_axEntries.GetSize();
-		m_axEntries.PushBack(Entry{});
-		return uSlot;
+		for (u_int w = 0; w < auWords.GetSize(); ++w) { m_auBindPosePoolWords.PushBack(auWords.Get(w)); }
 	}
 
-	Zenith_HashMap<Flux_SkinnedInstanceKey, u_int> m_xKeyToSlot;
-	Zenith_Vector<Entry> m_axEntries;
-	Zenith_Vector<u_int> m_auFreeSlots;
-	u_int m_uLiveCount = 0u;
+	// Wholesale re-pack from the live entries (cold path). Re-assigns each survivor's
+	// m_uPoolVertBase and bumps the generation so the gather re-uploads.
+	void RepackPool()
+	{
+		m_auBindPosePoolWords.Clear();
+		for (u_int u = 0; u < GetSlotCount(); ++u)
+		{
+			Flux_SkinnedPoseEntry** ppEntry = TryGetPayloadMutable(u);
+			Flux_SkinnedPoseEntry* pxEntry = ppEntry ? *ppEntry : nullptr;
+			if (pxEntry == nullptr) { continue; }
+			pxEntry->m_uPoolVertBase = static_cast<u_int>(m_auBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS);
+			AppendWords(pxEntry->m_auBindPoseWords);
+		}
+		++m_uPoolGeneration;
+	}
+
+	Zenith_Vector<u_int> m_auBindPosePoolWords;   // persistent grow-only bind-pose pool
+	u_int                m_uPoolGeneration = 0u;  // bumped on append / repack -> gates the GPU re-upload
 };
+
+// Production provider: build = Flux_MeshInstance::CreateSkinnedFromAsset + bind-pose interleave,
+// destroy = Flux_MeshInstance::Destroy + delete. GPU-touching -> wired by the renderer
+// (LateInitialise) and exercised windowed, never headless. Defined in Flux.cpp.
+Flux_SkinnedPoseRegistry::Provider Flux_MakeRealSkinnedPoseProvider();

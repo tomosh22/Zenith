@@ -3,6 +3,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
+#include "Flux/Flux_RefcountDiffRegistry.h"
 #include <cstddef>   // offsetof, size_t
 #include <cmath>     // sqrtf
 
@@ -286,55 +287,29 @@ struct Flux_GPUSceneBuildResult
 // unit-tested. bucketIndex is stable across frames for a live key; freed indices
 // are recycled (retire + create both flag topology, so a recycled index never
 // silently aliases — Stage 1 owns the in-flight per-bucket buffer lifetime).
+//
+// Thin instantiation of Flux_RefcountDiffRegistry<Key> (no payload, no provider):
+// the sync machinery + topology signal + slot iteration live in the base; this
+// class only re-exposes them under bucket-domain names.
 // ============================================================================
-class Flux_GPUSceneBucketRegistry
+class Flux_GPUSceneBucketRegistry : public Flux_RefcountDiffRegistry<Flux_GPUSceneBucketKey>
 {
 public:
-	// One refcount-diff sync = BeginSync() -> Reference() per draw-item -> EndSync().
-	void  BeginSync();
-	u_int Reference(const Flux_GPUSceneBucketKey& xKey);
-	void  EndSync();
-
-	bool  WasTopologyChangedThisSync() const { return m_bTopologyChangedThisSync; }
-	u_int GetLiveBucketCount()         const { return m_uLiveCount; }
-	u_int GetHighWaterBucketSlots()    const { return m_uHighWater; }
+	// BeginSync / Reference / EndSync / WasTopologyChangedThisSync are inherited.
+	u_int GetLiveBucketCount()      const { return GetLiveCount(); }
+	u_int GetHighWaterBucketSlots() const { return GetHighWaterSlots(); }
 
 	// Read-only lookups (also exercised by tests).
-	bool  TryGetBucketIndex(const Flux_GPUSceneBucketKey& xKey, u_int& uOut) const;
-	bool  HasBucket(const Flux_GPUSceneBucketKey& xKey) const;
-	u_int GetBucketRefcount(const Flux_GPUSceneBucketKey& xKey) const;
+	bool  TryGetBucketIndex(const Flux_GPUSceneBucketKey& xKey, u_int& uOut) const { return TryGetId(xKey, uOut); }
+	bool  HasBucket(const Flux_GPUSceneBucketKey& xKey) const { return HasKey(xKey); }
+	u_int GetBucketRefcount(const Flux_GPUSceneBucketKey& xKey) const { return GetCommittedRefcount(xKey); }
 
 	// Live-bucket iteration for the draw consumer (Stage 1). Slots are stable
 	// indices in [0, GetBucketSlotCount()); a retired slot returns nullptr until
 	// recycled. The returned key gives the consumer the meshGeometryId / material /
 	// cull mode for the bucket's indirect draw.
-	u_int GetBucketSlotCount() const { return m_axBuckets.GetSize(); }
-	const Flux_GPUSceneBucketKey* TryGetBucketKey(u_int uSlot) const
-	{
-		if (uSlot >= m_axBuckets.GetSize() || !m_axBuckets.Get(uSlot).m_bAlive)
-		{
-			return nullptr;
-		}
-		return &m_axBuckets.Get(uSlot).m_xKey;
-	}
-
-private:
-	struct Bucket
-	{
-		Flux_GPUSceneBucketKey m_xKey;
-		u_int m_uRefcountThisSync  = 0u;
-		u_int m_uCommittedRefcount = 0u;
-		bool  m_bAlive             = false;
-	};
-
-	u_int AllocateSlot();
-
-	Zenith_HashMap<Flux_GPUSceneBucketKey, u_int> m_xKeyToSlot;  // key -> index into m_axBuckets
-	Zenith_Vector<Bucket> m_axBuckets;                           // indexed by bucketIndex (stable)
-	Zenith_Vector<u_int>  m_auFreeSlots;                         // recycled bucketIndices
-	u_int m_uHighWater = 0u;   // max slots ever allocated (Stage-1 pre-declare hint)
-	u_int m_uLiveCount = 0u;
-	bool  m_bTopologyChangedThisSync = false;
+	u_int GetBucketSlotCount() const { return GetSlotCount(); }
+	const Flux_GPUSceneBucketKey* TryGetBucketKey(u_int uSlot) const { return TryGetKey(uSlot); }
 };
 
 // Pure build: walk source items -> object + draw-item arrays, driving the bucket

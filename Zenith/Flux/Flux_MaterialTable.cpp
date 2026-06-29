@@ -111,6 +111,11 @@ void Flux_MaterialTable::Upload()
 
 #include "Flux/Flux_MaterialTable.Tests.inl"
 
+// The shared refcount-diff registry the unified-mesh registries all instantiate. Pure
+// (synthetic key + mock provider), hosted here (always-linked core TU) so its static-init
+// test registrations are never dead-stripped — same rationale as the GPU-scene tests below.
+#include "Flux/Flux_RefcountDiffRegistry.Tests.inl"
+
 // Stage-0 unified-mesh GPU-scene tests. Hosted here (an always-linked core TU)
 // rather than in Flux_GPUScene.cpp because that TU is inert until Stage 0e
 // references it — see the NOTE at the bottom of Flux_GPUScene.cpp. The test

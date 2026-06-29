@@ -1,7 +1,6 @@
 #pragma once
 
-#include "Collections/Zenith_Vector.h"
-#include "Collections/Zenith_HashMap.h"
+#include "Flux/Flux_RefcountDiffRegistry.h"
 #include <cstddef>   // size_t
 
 // ============================================================================
@@ -13,14 +12,14 @@
 // its own VB/IB (Flux_MeshInstance::CreateFromAsset allocates per instance) and so
 // its own bucket — defeating indirect-draw batching.
 //
-// Lifetime model = the same refcount-diff sync the bucket registry uses, driven by
-// the SAME per-frame snapshot walk (the adapter in Stage 0e):
-//   BeginSync() -> Reference(key) per source submesh -> EndSync().
-// First reference to a key BUILDS the shared geometry; the last reference going
-// away RETIRES it (deferred-delete teardown). Geometry is built/torn-down through
-// an injectable Provider so the registry's id/refcount/topology ORCHESTRATION is
-// headless-unit-testable with a mock (the real provider touches the GPU via
-// Flux_MeshInstance, so it can only run windowed).
+// This is a thin instantiation of Flux_RefcountDiffRegistry<Key, void*>: the shared
+// refcount-diff sync machinery (BeginSync -> Reference per source submesh -> EndSync,
+// build-on-create / teardown-on-retire, id recycling) lives in the base; this class
+// adds only the mesh-domain accessor names + the GPU build/destroy Provider. First
+// reference to a key BUILDS the shared geometry; the last reference going away RETIRES
+// it (deferred-delete teardown). Geometry is built/torn-down through the injectable
+// Provider so the orchestration is headless-unit-testable with a mock (the real
+// provider touches the GPU via Flux_MeshInstance, so it can only run windowed).
 //
 // The key stores an opaque identity pointer (Zenith_MeshAsset* for asset meshes,
 // Flux_MeshGeometry* for procedural meshes) + a kind tag, so the header stays free
@@ -33,7 +32,8 @@ enum FluxMeshGeometrySourceKind : u_int
 	FLUX_MESH_GEOMETRY_SOURCE_PROCEDURAL = 1u,  // m_pvIdentity is a Flux_MeshGeometry*
 };
 
-inline constexpr u_int uFLUX_INVALID_MESH_GEOMETRY_ID = 0xffffffffu;
+// A failed build returns the registry's invalid-slot sentinel.
+inline constexpr u_int uFLUX_INVALID_MESH_GEOMETRY_ID = uFLUX_REFCOUNT_REGISTRY_INVALID_SLOT;
 
 struct Flux_MeshGeometryKey
 {
@@ -64,58 +64,21 @@ struct Zenith_Hash<Flux_MeshGeometryKey>
 	}
 };
 
-class Flux_MeshGeometryRegistry
+// Payload = the opaque provider build handle (Flux_MeshInstance* in prod; a fake
+// non-null handle in tests). The base stores/recycles it; this class just exposes it.
+class Flux_MeshGeometryRegistry : public Flux_RefcountDiffRegistry<Flux_MeshGeometryKey, void*>
 {
 public:
-	// GPU build/teardown is delegated so the registry's orchestration is
-	// headless-testable with a mock. Captureless trampolines (codebase idiom):
-	//   m_pfnBuild   : build the shared geometry for a key; return an opaque handle
-	//                  the registry stores and passes back to m_pfnDestroy. Return
-	//                  nullptr to signal BUILD FAILURE (the key is then NOT
-	//                  registered and Reference returns uFLUX_INVALID_MESH_GEOMETRY_ID).
-	//   m_pfnDestroy : tear down a handle previously returned by m_pfnBuild.
-	// If m_pfnBuild is null the registry runs in ID-ONLY mode (entries are created
-	// with a null built-handle) — used by the inert Stage-0 scaffold + pure tests.
-	struct Provider
+	// BeginSync / Reference / EndSync / SetProvider / GetLiveCount / GetHighWaterSlots /
+	// TryGetId are inherited. Reference returns uFLUX_INVALID_MESH_GEOMETRY_ID on build
+	// failure (the base's invalid sentinel). Below: mesh-domain accessor names.
+	void* GetBuilt(u_int uMeshGeometryId) const            // provider handle, or nullptr
 	{
-		void* (*m_pfnBuild)(const Flux_MeshGeometryKey& xKey) = nullptr;
-		void  (*m_pfnDestroy)(void* pvBuilt)                  = nullptr;
-	};
-
-	void SetProvider(const Provider& xProvider) { m_xProvider = xProvider; }
-
-	// One refcount-diff sync = BeginSync() -> Reference() per source submesh -> EndSync().
-	void  BeginSync();
-	u_int Reference(const Flux_MeshGeometryKey& xKey);   // builds on create; invalid id on build-fail
-	void  EndSync();                                      // tears down retired geometry
-
-	void* GetBuilt(u_int uMeshGeometryId) const;          // provider handle (Flux_MeshInstance* in prod) or nullptr
-	bool  IsValidId(u_int uMeshGeometryId) const;
-	u_int GetLiveCount()      const { return m_uLiveCount; }
-	u_int GetHighWaterSlots() const { return m_uHighWater; }
-
-	// Read-only lookups (also exercised by tests).
-	bool  TryGetId(const Flux_MeshGeometryKey& xKey, u_int& uOut) const;
-	u_int GetRefcount(const Flux_MeshGeometryKey& xKey) const;
-
-private:
-	struct Entry
-	{
-		Flux_MeshGeometryKey m_xKey;
-		void* m_pvBuilt            = nullptr;
-		u_int m_uRefcountThisSync  = 0u;
-		u_int m_uCommittedRefcount = 0u;
-		bool  m_bAlive             = false;
-	};
-
-	u_int AllocateSlot();
-
-	Zenith_HashMap<Flux_MeshGeometryKey, u_int> m_xKeyToSlot;  // key -> index into m_axEntries
-	Zenith_Vector<Entry> m_axEntries;                          // indexed by meshGeometryId
-	Zenith_Vector<u_int> m_auFreeSlots;                        // recycled ids
-	u_int    m_uHighWater = 0u;
-	u_int    m_uLiveCount = 0u;
-	Provider m_xProvider;
+		void* const* ppBuilt = TryGetPayload(uMeshGeometryId);
+		return ppBuilt ? *ppBuilt : nullptr;
+	}
+	bool  IsValidId(u_int uMeshGeometryId) const { return IsSlotAlive(uMeshGeometryId); }
+	u_int GetRefcount(const Flux_MeshGeometryKey& xKey) const { return GetCommittedRefcount(xKey); }
 };
 
 // Production provider: build = Flux_MeshInstance::CreateFromAsset / CreateFromGeometry,

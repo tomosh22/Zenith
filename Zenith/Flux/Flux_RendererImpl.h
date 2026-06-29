@@ -170,8 +170,8 @@ public:
 		u_int              m_uVertexOffset = 0u;       // base vertex in the skinned arena (this instance's slice)
 	};
 	const Zenith_HashMap<u_int, Flux_UnifiedSkinnedDraw>& GetUnifiedSkinnedDrawById() const { return m_xUnifiedSkinnedDrawById; }
-	const Zenith_Vector<u_int>&           GetUnifiedBindPosePoolWords() const { return m_auUnifiedBindPosePoolWords; }
-	u_int GetUnifiedBindPosePoolGeneration() const { return m_uBindPosePoolGeneration; }
+	const Zenith_Vector<u_int>&           GetUnifiedBindPosePoolWords() const { return m_xUnifiedSkinnedPoseRegistry.GetPoolWords(); }
+	u_int GetUnifiedBindPosePoolGeneration() const { return m_xUnifiedSkinnedPoseRegistry.GetPoolGeneration(); }
 	const Zenith_Vector<Zenith_Maths::Matrix4>& GetUnifiedBonePalette() const { return m_xUnifiedBonePalette.Matrices(); }
 	const Zenith_Vector<Flux_GPUSkinJob>& GetUnifiedSkinJobs() const { return m_axUnifiedSkinJobs; }
 	u_int GetUnifiedSkinMaxVerts()      const { return m_uUnifiedSkinMaxVerts; }
@@ -212,37 +212,15 @@ public:
 	Flux_GPUSceneBuildResult              m_xUnifiedGPUScene;
 
 	// ===== Stage 5: compute-skinning state =====
-	// Persistent per-distinct-skinned-mesh cache (keyed by Zenith_MeshAsset*): the bind-pose
-	// vertices as raw words (compute input) + the shared mesh instance for IB/counts. Built lazily
-	// (GetOrBuildSkinnedPose) and freed in Shutdown.
-	// GROWTH BOUND: one entry per DISTINCT skinned mesh asset ever drawn (NOT per frame / per
-	// instance), and each entry holds its Zenith_MeshAsset alive via the Flux_MeshInstance handle —
-	// so there is no dangling pointer and growth is bounded by the count of unique skinned meshes a
-	// session loads. Per-mesh eviction (routing this through the refcount-diff mesh-geometry
-	// registry) is a deferred optimisation; until then entries live until Shutdown.
-	struct Flux_SkinnedPoseEntry
-	{
-		Zenith_Vector<u_int> m_auBindPoseWords;   // 104B-per-vertex interleaved (uFLUX_SKIN_INPUT_WORDS/vert)
-		Flux_MeshInstance*   m_pxMesh        = nullptr; // CreateSkinnedFromAsset → IB + index count + bounds
-		const void*          m_pvSourceAsset = nullptr; // Zenith_MeshAsset* (asset-map key; needed to rebuild the map after an eviction)
-		u_int                m_uNumVerts     = 0u;
-		u_int                m_uPoolVertBase = 0u;      // base VERTEX in the persistent bind-pose pool (re-assigned on an eviction re-pack)
-		u_int                m_uLastRefSync  = 0u;      // sync generation this entry was last referenced (eviction mark/sweep)
-	};
-	Flux_SkinnedPoseEntry* GetOrBuildSkinnedPose(Zenith_MeshAsset* pxAsset);  // defined in Flux.cpp
-	void                   EvictUnreferencedSkinnedPoses();                   // mark/sweep; defined in Flux.cpp
-
-	Zenith_Vector<Flux_SkinnedPoseEntry*> m_axUnifiedSkinnedPoseStore;        // owned entries
-	Zenith_HashMap<const void*, u_int>    m_xUnifiedSkinnedPoseByAsset;       // asset -> store index
-	// PERSISTENT grow-only bind-pose pool: each distinct skinned mesh's 104B interleaved words are
-	// concatenated ONCE (in GetOrBuildSkinnedPose), its slice base recorded in the entry's
-	// m_uPoolVertBase. Static content (the rest pose) -> uploaded to the GPU only when it grows.
-	Zenith_Vector<u_int>                  m_auUnifiedBindPosePoolWords;
+	// Persistent per-distinct-skinned-mesh bind-pose cache + its owned grow-only bind-pose pool,
+	// reclaimed via the shared refcount-diff sync (see Flux_SkinnedPoseRegistry). One entry per
+	// DISTINCT skinned mesh asset drawn (NOT per frame/instance); each holds its Zenith_MeshAsset
+	// alive via the Flux_MeshInstance handle. Driven each frame by BeginFrameEvictingPrevious()
+	// before the skinned walk; the real provider is wired in LateInitialise; freed in Shutdown.
+	Flux_SkinnedPoseRegistry              m_xUnifiedSkinnedPoseRegistry;
 	// Stable per-(skeleton,mesh,submesh) skinned-instance id allocator -> the skinned bucket key's
 	// meshGeometryId (persistent: ids reused across frames, recycled when an instance stops drawing).
 	Flux_SkinnedInstanceIdRegistry        m_xUnifiedSkinnedIdRegistry;
-	u_int m_uBindPosePoolGeneration = 0u;   // bumped on pool append / eviction re-pack -> gates the GPU re-upload
-	u_int m_uSkinnedPoseSyncGen     = 0u;   // per-sync generation for the skinned-pose-store eviction mark/sweep
 
 	// Per-frame skin-build state (rebuilt each SyncUnifiedBucketsFromSnapshot, read by GatherUnifiedPacket).
 	Flux_BonePaletteBuilder               m_xUnifiedBonePalette;             // dedup skeletons -> concatenated palette

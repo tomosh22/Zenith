@@ -465,3 +465,167 @@ ZENITH_TEST(Skinning, SkinnedIdNoCollisionAcrossManyInstances)
 	xReg.EndSync();
 	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 5000u, "all 5000 live + distinct");
 }
+
+// ---- skinned-pose store (folded onto the refcount-diff base) ----------------
+// Headless via a MOCK provider (no GPU): each build mints a heap entry with fake bind-pose
+// words so the registry's create/evict orchestration + the OWNED bind-pose pool (append on
+// create, wholesale re-pack on retire, generation gating) are exercised without a renderer.
+
+namespace
+{
+	int         g_iPoseBuilds        = 0;
+	int         g_iPoseDestroys      = 0;
+	const void* g_pvPoseLastDestroyed = nullptr;
+	constexpr u_int kuPOSE_TEST_VERTS = 2u;   // each mock pose is 2 verts
+
+	void Pose_ResetCounters()
+	{
+		g_iPoseBuilds         = 0;
+		g_iPoseDestroys       = 0;
+		g_pvPoseLastDestroyed = nullptr;
+	}
+
+	bool Pose_MockBuild(const Flux_SkinnedPoseKey& xKey, Flux_SkinnedPoseEntry*& pxOut)
+	{
+		++g_iPoseBuilds;
+		Flux_SkinnedPoseEntry* pxEntry = new Flux_SkinnedPoseEntry();
+		pxEntry->m_pxMesh        = nullptr;   // mock destroy never dereferences it
+		pxEntry->m_pvSourceAsset = xKey.m_pvAsset;
+		pxEntry->m_uNumVerts     = kuPOSE_TEST_VERTS;
+		for (u_int i = 0; i < kuPOSE_TEST_VERTS * uFLUX_SKIN_INPUT_WORDS; ++i)
+		{
+			pxEntry->m_auBindPoseWords.PushBack(i);
+		}
+		pxOut = pxEntry;
+		return true;
+	}
+	void Pose_MockDestroy(Flux_SkinnedPoseEntry*& pxEntry)
+	{
+		++g_iPoseDestroys;
+		if (pxEntry != nullptr)
+		{
+			g_pvPoseLastDestroyed = pxEntry->m_pvSourceAsset;
+			delete pxEntry;
+			pxEntry = nullptr;
+		}
+	}
+	Flux_SkinnedPoseRegistry::Provider Pose_MockProvider()
+	{
+		Flux_SkinnedPoseRegistry::Provider x;
+		x.m_pfnBuild   = &Pose_MockBuild;
+		x.m_pfnDestroy = &Pose_MockDestroy;
+		return x;
+	}
+}
+
+ZENITH_TEST(SkinnedPose, BuildsOncePerAssetAndAppendsToPoolOnce)
+{
+	Flux_SkinnedPoseRegistry xReg;
+	xReg.SetProvider(Pose_MockProvider());
+	Pose_ResetCounters();
+	int iAssetA = 0;
+
+	// Two instances of the SAME skinned mesh in one sync -> one build, one pool slice.
+	xReg.BeginFrameEvictingPrevious();
+	Flux_SkinnedPoseEntry* pxA  = xReg.Reference(&iAssetA);
+	Flux_SkinnedPoseEntry* pxA2 = xReg.Reference(&iAssetA);
+
+	ZENITH_ASSERT_NOT_NULL(pxA, "first reference builds the pose");
+	ZENITH_ASSERT_EQ(pxA, pxA2, "same asset -> same cached pose entry");
+	ZENITH_ASSERT_EQ(g_iPoseBuilds, 1, "the pose is built exactly once for repeated references");
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 1u, "one distinct skinned mesh -> one live entry");
+	ZENITH_ASSERT_EQ(pxA->m_uPoolVertBase, 0u, "first pose sits at pool vertex base 0");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().GetSize(), kuPOSE_TEST_VERTS * uFLUX_SKIN_INPUT_WORDS,
+		"the pool holds exactly one mesh's bind-pose words");
+
+	xReg.Shutdown();   // free the heap entry (no GPU in the mock)
+}
+
+ZENITH_TEST(SkinnedPose, EvictsUndrawnAssetAndRepacksPool)
+{
+	Flux_SkinnedPoseRegistry xReg;
+	xReg.SetProvider(Pose_MockProvider());
+	Pose_ResetCounters();
+	int iAssetA = 0, iAssetB = 0;
+
+	// Frame 1: draw A + B.
+	xReg.BeginFrameEvictingPrevious();
+	xReg.Reference(&iAssetA);
+	xReg.Reference(&iAssetB);
+	ZENITH_ASSERT_EQ(g_iPoseBuilds, 2, "two distinct meshes built");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().GetSize(), 2u * kuPOSE_TEST_VERTS * uFLUX_SKIN_INPUT_WORDS, "pool holds both meshes");
+	const u_int uGenAfterF1 = xReg.GetPoolGeneration();
+
+	// Frame 2: draw only A. B is unreferenced THIS sync but not yet evicted (eviction is deferred
+	// to the next frame's BeginFrameEvictingPrevious, so pool bases stay stable through this walk).
+	xReg.BeginFrameEvictingPrevious();
+	xReg.Reference(&iAssetA);
+	ZENITH_ASSERT_EQ(g_iPoseDestroys, 0, "nothing evicted yet (B was referenced in frame 1)");
+	ZENITH_ASSERT_EQ(xReg.GetPoolGeneration(), uGenAfterF1, "steady frame does not bump the pool generation");
+
+	// Frame 3: the deferred evict of B fires -> its entry destroyed, pool re-packed to just A.
+	xReg.BeginFrameEvictingPrevious();
+	ZENITH_ASSERT_EQ(g_iPoseDestroys, 1, "B is evicted when it stops being drawn");
+	ZENITH_ASSERT_EQ(g_pvPoseLastDestroyed, (const void*)&iAssetB, "the correct (B's) pose is destroyed");
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 1u, "only A remains live");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().GetSize(), kuPOSE_TEST_VERTS * uFLUX_SKIN_INPUT_WORDS, "pool re-packed to one mesh");
+	ZENITH_ASSERT_TRUE(xReg.GetPoolGeneration() != uGenAfterF1, "an eviction re-pack bumps the pool generation");
+
+	// A survivor's base is re-assigned by the re-pack (here back to 0).
+	u_int uIdA = 0u;
+	Flux_SkinnedPoseKey xKeyA; xKeyA.m_pvAsset = &iAssetA;
+	ZENITH_ASSERT_TRUE(xReg.TryGetId(xKeyA, uIdA), "A still resolves after the re-pack");
+	ZENITH_ASSERT_EQ((*xReg.TryGetPayload(uIdA))->m_uPoolVertBase, 0u, "the survivor's pool base is re-packed to 0");
+
+	xReg.Shutdown();
+}
+
+ZENITH_TEST(SkinnedPose, NewAssetAfterRepackAppendsAtPostRepackTailAndPoolContentIntact)
+{
+	// After an eviction re-pack shrinks the pool, a brand-new asset must append at the POST-repack tail
+	// (not a stale pre-repack offset), and the survivor's bind-pose words must be intact in the pool.
+	// The mock writes sequential words 0,1,2,... per mesh, so the pool slice content is verifiable.
+	Flux_SkinnedPoseRegistry xReg;
+	xReg.SetProvider(Pose_MockProvider());
+	Pose_ResetCounters();
+	int iAssetA = 0, iAssetB = 0, iAssetC = 0;
+	const u_int uWordsPerMesh = kuPOSE_TEST_VERTS * uFLUX_SKIN_INPUT_WORDS;
+	const u_int uLastWord = uWordsPerMesh - 1u;   // mock's highest word value in a slice
+
+	// F1: A + B.
+	xReg.BeginFrameEvictingPrevious();
+	Flux_SkinnedPoseEntry* pxA = xReg.Reference(&iAssetA);
+	xReg.Reference(&iAssetB);
+	ZENITH_ASSERT_EQ(pxA->m_uPoolVertBase, 0u, "A at base 0");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().Get(0u), 0u, "pool holds A's first bind-pose word");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().Get(uLastWord), uLastWord, "pool holds A's last bind-pose word (full slice copied)");
+
+	// F2: only A (B unreferenced; eviction deferred to F3).
+	xReg.BeginFrameEvictingPrevious();
+	xReg.Reference(&iAssetA);
+
+	// F3: deferred evict of B + re-pack (A -> base 0). A brand-new asset C must append at the
+	// post-repack tail = A's word count, NOT B's old base.
+	xReg.BeginFrameEvictingPrevious();
+	xReg.Reference(&iAssetA);
+	Flux_SkinnedPoseEntry* pxC = xReg.Reference(&iAssetC);
+	ZENITH_ASSERT_NOT_NULL(pxC, "C built after the re-pack");
+	ZENITH_ASSERT_EQ(pxC->m_uPoolVertBase, kuPOSE_TEST_VERTS, "C appends at the post-repack tail (after A's one mesh)");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().GetSize(), 2u * uWordsPerMesh, "pool holds A + C, B's slice reclaimed");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().Get(0u), 0u, "A's words survive the re-pack intact (first word)");
+	ZENITH_ASSERT_EQ(xReg.GetPoolWords().Get(uWordsPerMesh), 0u, "C's slice begins at the post-repack tail (first word)");
+
+	xReg.Shutdown();
+}
+
+ZENITH_TEST(SkinnedPose, NullAssetIsRejected)
+{
+	Flux_SkinnedPoseRegistry xReg;
+	xReg.SetProvider(Pose_MockProvider());
+	Pose_ResetCounters();
+
+	xReg.BeginFrameEvictingPrevious();
+	ZENITH_ASSERT_NULL(xReg.Reference(nullptr), "a null asset builds no pose");
+	ZENITH_ASSERT_EQ(g_iPoseBuilds, 0, "a null asset never invokes the provider");
+	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 0u, "a null asset registers no entry");
+}
