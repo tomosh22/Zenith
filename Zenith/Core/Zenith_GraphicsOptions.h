@@ -28,7 +28,11 @@ struct Zenith_GraphicsOptions
 	bool m_bSSAOEnabled = true;
 	bool m_bSSGIEnabled = false;
 	bool m_bSSREnabled = true;
-	bool m_bStaticMeshesEnabled = true;
+	// Gates the forward Translucency pass. (Was m_bStaticMeshesEnabled: it historically also gated
+	// the now-deleted StaticMeshes opaque feature; the opaque model meshes now render through the
+	// UnifiedMesh path, which has its own enablement, so this toggle's sole remaining effect is the
+	// translucent draw — named for what it actually does.)
+	bool m_bTranslucencyEnabled = true;
 	bool m_bTerrainEnabled = true;
 	bool m_bTextEnabled = true;
 

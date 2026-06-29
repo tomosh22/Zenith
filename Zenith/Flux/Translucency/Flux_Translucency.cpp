@@ -228,7 +228,7 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 
 static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 {
-	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
+	if (!Zenith_GraphicsOptions::Get().m_bTranslucencyEnabled) return;
 
 	Flux_TranslucencyImpl& xZZ = g_xEngine.Translucency();
 	if (xZZ.m_xDrawPacket.GetSize() == 0) return;

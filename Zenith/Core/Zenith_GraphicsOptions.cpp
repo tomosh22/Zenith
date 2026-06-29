@@ -33,7 +33,7 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSAO", "Enabled" }, xOpts.m_bSSAOEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSGI", "Enabled" }, xOpts.m_bSSGIEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSR", "Enabled" }, xOpts.m_bSSREnabled);
-	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "StaticMeshes", "Enabled" }, xOpts.m_bStaticMeshesEnabled);
+	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Translucency", "Enabled" }, xOpts.m_bTranslucencyEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Terrain", "Enabled" }, xOpts.m_bTerrainEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Text", "Enabled" }, xOpts.m_bTextEnabled);
 

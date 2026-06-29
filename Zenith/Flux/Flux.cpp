@@ -291,6 +291,64 @@ Flux_RendererImpl::Flux_SkinnedPoseEntry* Flux_RendererImpl::GetOrBuildSkinnedPo
 	return pxEntry;
 }
 
+// Build a static GPU-scene submesh descriptor from a mesh instance + material — resolving the
+// shared mesh geometry (referencing it for this sync's residency refcount) and the cull mode /
+// in-session material identity / local bounding sphere. Returns false to SKIP the submesh: a null
+// mesh, no shareable geometry identity, a geometry build failure, or a translucent/additive
+// material (those divert to the forward Translucency path). Shared by the static-model walk AND
+// the static submeshes of mixed static+skinned animated models, so both stay byte-identical.
+static bool BuildStaticSubmeshDesc(Flux_MeshGeometryRegistry& xRegistry, Flux_MeshInstance* pxMesh,
+	Zenith_MaterialAsset* pxMat, Zenith_MaterialAsset* pxBlankMaterial, Flux_GPUSceneSourceSubmesh& xOut)
+{
+	if (pxMesh == nullptr)
+	{
+		return false;
+	}
+	if (pxMat == nullptr)
+	{
+		pxMat = pxBlankMaterial;   // stable blank-material identity (never a null key)
+	}
+
+	// Translucent / additive submeshes belong on the forward Translucency path.
+	const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+	if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+	{
+		return false;
+	}
+
+	// Stable mesh-geometry identity -> meshGeometryId.
+	Flux_MeshGeometryKey xMeshKey;
+	if (Zenith_MeshAsset* pxAsset = pxMesh->GetSourceAsset())
+	{
+		xMeshKey.m_pvIdentity = pxAsset;
+		xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_ASSET;
+	}
+	else if (const Flux_MeshGeometry* pxProc = pxMesh->GetProceduralGeometry())
+	{
+		xMeshKey.m_pvIdentity = pxProc;
+		xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_PROCEDURAL;
+	}
+	else
+	{
+		return false;   // no shareable mesh identity
+	}
+	const u_int uMeshGeometryId = xRegistry.Reference(xMeshKey);
+	if (uMeshGeometryId == uFLUX_INVALID_MESH_GEOMETRY_ID)
+	{
+		return false;   // build failed (only the real provider can fail)
+	}
+
+	const Zenith_AABB& xLocal = pxMesh->GetLocalBounds();
+	xOut.m_uMeshGeometryId    = uMeshGeometryId;
+	xOut.m_uCullMode          = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
+	xOut.m_ulMaterialAssetId  = reinterpret_cast<u_int64>(pxMat);   // in-session grouping identity
+	xOut.m_ulVATTextureId     = 0u;   // static meshes carry no VAT
+	xOut.m_xLocalBoundsSphere = Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax);
+	xOut.m_uColorTintPacked   = uFLUX_GPUSCENE_TINT_WHITE;
+	xOut.m_uFlags             = 0u;
+	return true;
+}
+
 void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 {
 	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
@@ -300,6 +358,15 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	// instance-group foliage (trees). The mesh-geometry residency refcount + the GPU-scene
 	// record build + the bucket-topology refcount diff all run over this single main-thread
 	// walk (the proven WS7 single-writer shape).
+	//
+	// NOTE — this deliberately does NOT call RequestGraphRebuild() on a bucket-topology change.
+	// The unified path's graph structure is bucket-count-INDEPENDENT: a fixed set of passes
+	// (skinning -> reset -> cull -> GBuffer, plus the 4 shadow cascades) drives N per-bucket draws
+	// inside ONE pass each, over two persistent cull-output buffers that grow in place (reusing the
+	// same Flux_Buffer object, so the graph's barrier keys stay valid). So adding/retiring buckets
+	// changes only per-frame dispatch/draw counts, never the pass graph. The bucket registry's
+	// topology-change flag / high-water count are still computed (and unit-tested) as an available
+	// signal for a future per-pass design, but the renderer has nothing to rebuild.
 	m_xUnifiedMeshGeometryRegistry.BeginSync();
 	Flux_BeginGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 
@@ -326,59 +393,12 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 		const uint32_t uNumMeshes = pxModel->GetNumMeshes();
 		for (uint32_t uMesh = 0; uMesh < uNumMeshes; ++uMesh)
 		{
-			Flux_MeshInstance* pxMesh = pxModel->GetMeshInstance(uMesh);
-			if (pxMesh == nullptr)
-			{
-				continue;
-			}
-
-			Zenith_MaterialAsset* pxMat = pxModel->GetMaterial(uMesh);
-			if (pxMat == nullptr)
-			{
-				pxMat = pxBlankMaterial;   // stable blank-material identity (never a null key)
-			}
-
-			// Translucent / additive submeshes belong on the forward Translucency path.
-			const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
-			if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
-			{
-				continue;
-			}
-
-			// Stable mesh-geometry identity -> meshGeometryId.
-			Flux_MeshGeometryKey xMeshKey;
-			if (Zenith_MeshAsset* pxAsset = pxMesh->GetSourceAsset())
-			{
-				xMeshKey.m_pvIdentity = pxAsset;
-				xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_ASSET;
-			}
-			else if (const Flux_MeshGeometry* pxProc = pxMesh->GetProceduralGeometry())
-			{
-				xMeshKey.m_pvIdentity = pxProc;
-				xMeshKey.m_uKind = FLUX_MESH_GEOMETRY_SOURCE_PROCEDURAL;
-			}
-			else
-			{
-				continue;   // no shareable mesh identity
-			}
-			const u_int uMeshGeometryId = m_xUnifiedMeshGeometryRegistry.Reference(xMeshKey);
-			if (uMeshGeometryId == uFLUX_INVALID_MESH_GEOMETRY_ID)
-			{
-				continue;   // build failed (only the real provider can fail)
-			}
-
-			const bool bTwoSided = pxMat->GetResolved().m_xParams.m_bTwoSided;
-			const Zenith_AABB& xLocal = pxMesh->GetLocalBounds();
-
 			Flux_GPUSceneSourceSubmesh xSub;
-			xSub.m_uMeshGeometryId    = uMeshGeometryId;
-			xSub.m_uCullMode          = bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
-			xSub.m_ulMaterialAssetId  = reinterpret_cast<u_int64>(pxMat);   // in-session grouping identity
-			xSub.m_ulVATTextureId     = 0u;   // static meshes carry no VAT
-			xSub.m_xLocalBoundsSphere = Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax);
-			xSub.m_uColorTintPacked   = uFLUX_GPUSCENE_TINT_WHITE;
-			xSub.m_uFlags             = 0u;
-			xItem.m_xSubmeshes.PushBack(xSub);
+			if (BuildStaticSubmeshDesc(m_xUnifiedMeshGeometryRegistry, pxModel->GetMeshInstance(uMesh),
+				pxModel->GetMaterial(uMesh), pxBlankMaterial, xSub))
+			{
+				xItem.m_xSubmeshes.PushBack(xSub);
+			}
 		}
 
 		if (xItem.m_xSubmeshes.GetSize() > 0u)
@@ -507,23 +527,39 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 			{
 				const u_int uNumBones = pxSkeleton->GetNumBones();
 				const Zenith_Maths::Matrix4* pxMats = pxSkeleton->GetSkinningMatrices();
+				// GetOrAddSkeleton appended a MAX_BONES-sized block at uBonePaletteBase, so the fill
+				// (bounded b < MAX_BONES) can never spill into the next skeleton's block.
+				Zenith_Assert(uBonePaletteBase + Flux_SkeletonInstance::MAX_BONES <= m_xUnifiedBonePalette.Matrices().GetSize(),
+					"Bone-palette block overruns the concatenated palette buffer");
 				for (u_int b = 0; b < uNumBones && b < Flux_SkeletonInstance::MAX_BONES; ++b)
 				{
 					m_xUnifiedBonePalette.Matrices().Get(uBonePaletteBase + b) = pxMats[b];
 				}
 			}
 
+			// Mixed static+skinned model: the static walk above skipped the whole m_bAnimatedSkinned
+			// item, so this walk owns BOTH the skinned submeshes (compute-skinned below) AND any
+			// non-skinned submeshes — the latter accumulate into one static GPU-scene item (the
+			// model's world matrix, no VAT/skin) appended after the submesh loop.
+			Flux_GPUSceneSourceItem xStaticOfAnimated;
+			xStaticOfAnimated.m_xWorldMatrix     = xSrc.m_xWorldMatrix;
+			xStaticOfAnimated.m_uFlags           = 0u;
+			xStaticOfAnimated.m_uVATAnimPacked   = 0u;
+			xStaticOfAnimated.m_uVATAnimTimeBits = 0u;
+
 			const uint32_t uNumMeshes = pxModel->GetNumMeshes();
 			for (uint32_t uMesh = 0; uMesh < uNumMeshes; ++uMesh)
 			{
 				if (pxModel->GetSkinnedMeshInstance(uMesh) == nullptr)
 				{
-					// A non-skinned submesh of an animated-skinned model: NOT drawn by the unified
-					// path. The static walk above skips the whole m_bAnimatedSkinned item, and this
-					// walk only skins+draws the skinned submeshes — so a mixed model's static
-					// submeshes are currently dropped. This is a known gap for hypothetical mixed
-					// models (TODO: route such submeshes to the static GPU-scene with the model's
-					// world matrix if a real case appears).
+					// Non-skinned submesh of an animated model -> draw it as STATIC geometry (the
+					// model's world matrix). Skinned submeshes (below) are compute-skinned instead.
+					Flux_GPUSceneSourceSubmesh xStaticSub;
+					if (BuildStaticSubmeshDesc(m_xUnifiedMeshGeometryRegistry, pxModel->GetMeshInstance(uMesh),
+						pxModel->GetMaterial(uMesh), pxBlankMaterial, xStaticSub))
+					{
+						xStaticOfAnimated.m_xSubmeshes.PushBack(xStaticSub);
+					}
 					continue;
 				}
 				Flux_MeshInstance* pxMeshInst = pxModel->GetMeshInstance(uMesh);
@@ -534,6 +570,16 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 				Flux_SkinnedPoseEntry* pxPose = GetOrBuildSkinnedPose(pxMeshInst->GetSourceAsset());
 				if (pxPose == nullptr || pxPose->m_uNumVerts == 0u)
 				{
+#ifdef ZENITH_DEBUG
+					// A skinned submesh whose bind-pose build failed renders NOTHING — make that
+					// detectable rather than a silent drop (the gather is the single writer, so this
+					// is the one place a missing skinned pose surfaces).
+					if (pxPose == nullptr)
+					{
+						Zenith_Log(LOG_CATEGORY_RENDERER,
+							"[UnifiedMesh] skinned submesh %u of an animated model has no bind-pose (skipped)", uMesh);
+					}
+#endif
 					continue;
 				}
 
@@ -556,6 +602,10 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 				}
 				else
 				{
+					// The pool only ever grows by whole vertices (uFLUX_SKIN_INPUT_WORDS each), so its
+					// size is always a vertex multiple — the base divide below is exact.
+					Zenith_Assert(m_auUnifiedBindPosePoolWords.GetSize() % uFLUX_SKIN_INPUT_WORDS == 0u,
+						"Bind-pose pool size is not a whole-vertex multiple");
 					uBindPoseBase = m_auUnifiedBindPosePoolWords.GetSize() / uFLUX_SKIN_INPUT_WORDS;
 					for (u_int w = 0; w < pxPose->m_auBindPoseWords.GetSize(); ++w)
 					{
@@ -596,6 +646,13 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 
 				Flux_AppendGPUSceneSkinnedInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
 					xSrc.m_xWorldMatrix, uBonePaletteBase, xKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE);
+			}
+
+			// Append the model's non-skinned submeshes (if any) as one static item — drawn via the
+			// model's world matrix, sharing the static buckets with regular static models.
+			if (xStaticOfAnimated.m_xSubmeshes.GetSize() > 0u)
+			{
+				Flux_AppendGPUSceneItem(xStaticOfAnimated, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
 			}
 		}
 		m_uUnifiedSkinTotalOutVerts = uArenaCursor;

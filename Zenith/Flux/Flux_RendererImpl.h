@@ -214,6 +214,11 @@ public:
 	// Persistent per-distinct-skinned-mesh cache (keyed by Zenith_MeshAsset*): the bind-pose
 	// vertices as raw words (compute input) + the shared mesh instance for IB/counts. Built lazily
 	// (GetOrBuildSkinnedPose) and freed in Shutdown.
+	// GROWTH BOUND: one entry per DISTINCT skinned mesh asset ever drawn (NOT per frame / per
+	// instance), and each entry holds its Zenith_MeshAsset alive via the Flux_MeshInstance handle —
+	// so there is no dangling pointer and growth is bounded by the count of unique skinned meshes a
+	// session loads. Per-mesh eviction (routing this through the refcount-diff mesh-geometry
+	// registry) is a deferred optimisation; until then entries live until Shutdown.
 	struct Flux_SkinnedPoseEntry
 	{
 		Zenith_Vector<u_int> m_auBindPoseWords;   // 104B-per-vertex interleaved (uFLUX_SKIN_INPUT_WORDS/vert)
