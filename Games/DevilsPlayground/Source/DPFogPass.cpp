@@ -272,9 +272,9 @@ namespace
 		pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(*s_pxShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindSRV(*s_pxShader, "g_xDepthTex",     g_xEngine.FluxGraphics().GetDepthStencilSRV());
-		xBinder.BindDrawConstants(*s_pxShader, "DPFogConstants", &s_xPayload, sizeof(s_xPayload));
+		namespace NS = Flux_Generated_Fog::DevilsPlayground_DPFog;
+		xBinder.BindSRV(NS::hg_xDepthTex, g_xEngine.FluxGraphics().GetDepthStencilSRV());
+		xBinder.BindDrawConstants(NS::hDPFogConstants, &s_xPayload, sizeof(s_xPayload));
 
 		pxCommandList->DrawIndexed(6);
 	}
